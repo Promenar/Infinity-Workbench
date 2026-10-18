@@ -65,18 +65,18 @@ class AccessibilitySmokeTest {
             }
         }
 
-        // 展示胶囊采用已批准的 36dp 规格；输入、附件与生成主操作继续遵守 48dp 门禁。
+        // 工具行可见高 40dp，模型胶囊采用 40dp 触控例外；其它动作校验实际触控边界。
         composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR)
             .assertHasClickAction()
-            .assertHeightIsAtLeast(36.dp)
+            .assertHeightIsAtLeast(40.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR)
             .assertHasClickAction()
-            .assertHeightIsAtLeast(36.dp)
+            .assertHeightIsAtLeast(40.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_INPUT)
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT)
             .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(40.dp)
             .assert(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
@@ -84,6 +84,13 @@ class AccessibilitySmokeTest {
                         .getString(R.string.common_state_collapsed),
                 )
             )
+        listOf(UiTags.CHAT_ADD_ATTACHMENT, UiTags.CHAT_TOKEN_INDICATOR).forEach { tag ->
+            val node = composeRule.onNodeWithTag(tag).fetchSemanticsNode()
+            val bounds = node.touchBoundsInRoot
+            val density = node.layoutInfo.density.density
+            assertTrue("$tag 触控宽度", bounds.width / density >= 47.5f)
+            assertTrue("$tag 触控高度", bounds.height / density >= 47.5f)
+        }
         composeRule.onNodeWithTag(UiTags.CHAT_COMPOSER)
             .assertIsDisplayed()
 
@@ -122,7 +129,7 @@ class AccessibilitySmokeTest {
                     LiveRegionMode.Polite,
                 )
             )
-        val bounds = action.fetchSemanticsNode().boundsInRoot
+        val bounds = action.fetchSemanticsNode().touchBoundsInRoot
         val minimumPx = 48f * InstrumentationRegistry.getInstrumentation()
             .targetContext.resources.displayMetrics.density
         assertTrue(bounds.width >= minimumPx)

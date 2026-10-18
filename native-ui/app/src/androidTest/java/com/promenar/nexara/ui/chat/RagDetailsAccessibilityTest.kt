@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -11,6 +13,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -21,10 +24,12 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.then
 import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
@@ -34,6 +39,7 @@ import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagPhase
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.ui.chat.components.RagDetailsSheetContent
 import com.promenar.nexara.ui.theme.NexaraTheme
@@ -99,7 +105,7 @@ class RagDetailsAccessibilityTest {
                     ProgressBarRangeInfo(0.42f, 0f..1f),
                 ),
             )
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsEqualTo(44.dp)
             .performClick()
         rule.onNodeWithTag("RAG_DETAILS_ROOT").assertIsDisplayed()
     }
@@ -143,6 +149,79 @@ class RagDetailsAccessibilityTest {
             useUnmergedTree = true,
         ).assertCountEquals(0)
         rule.onAllNodes(hasText(done), useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun partialKnowledgeRetrievalKeepsActualResultsErrorTextAndDetailsAction() {
+        val failure = resources().getString(R.string.chat_inline_retrieval_partial_failure)
+        val completed = resources().getString(R.string.chat_inline_retrieval_knowledge_completed)
+        val resultCount = resources().getQuantityString(R.plurals.chat_inline_retrieval_result_count, 2, 2)
+        var errorColor = Color.Unspecified
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                errorColor = MaterialTheme.colorScheme.error
+                RagProgressCard(
+                    phases = emptyList(),
+                    references = emptyList(),
+                    kgPaths = longKgPaths().take(2),
+                    isComplete = true,
+                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED),
+                )
+            }
+        }
+
+        rule.onNodeWithTag("RAG_PROGRESS_CARD")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, failure))
+            .assert(
+                SemanticsMatcher("部分检索保留实际结果数与失败提示") { node ->
+                    val description = runCatching { node.config[SemanticsProperties.ContentDescription] }
+                        .getOrDefault(emptyList()).joinToString(" ")
+                    description.contains(completed) && description.contains(resultCount) && description.contains(failure)
+                },
+            )
+            .assertHasClickAction()
+
+        // 失败提示是摘要后独立的错误色文字段；实际结果数所在的摘要保持中性色。
+        val failureLayouts = mutableListOf<TextLayoutResult>()
+        rule.onNodeWithTag("CHAT_STEP_FAILURE", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(failureLayouts) }
+        assertThat(failureLayouts.single().layoutInput.text.text).contains(failure)
+        assertThat(failureLayouts.single().layoutInput.style.color).isEqualTo(errorColor)
+        val summaryLayouts = mutableListOf<TextLayoutResult>()
+        rule.onNodeWithTag("CHAT_STEP_SUMMARY", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(summaryLayouts) }
+        assertThat(summaryLayouts.single().layoutInput.text.text).doesNotContain(failure)
+        assertThat(summaryLayouts.single().layoutInput.style.color).isNotEqualTo(errorColor)
+        rule.onNodeWithTag("RAG_PROGRESS_CARD").performClick()
+        rule.onNodeWithTag("RAG_DETAILS_ROOT").assertIsDisplayed()
+    }
+
+    @Test
+    fun partialWebRetrievalUsesWebSourceAndActualCitationCount() {
+        val failure = resources().getString(R.string.chat_inline_retrieval_partial_failure)
+        val completed = resources().getString(R.string.chat_inline_retrieval_web_completed)
+        val resultCount = resources().getQuantityString(R.plurals.chat_inline_retrieval_result_count, 3, 3)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagProgressCard(
+                    phases = emptyList(),
+                    references = emptyList(),
+                    citations = longCitations().take(3),
+                    isComplete = true,
+                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+                )
+            }
+        }
+
+        rule.onNodeWithTag("RAG_PROGRESS_CARD")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, failure))
+            .assert(
+                SemanticsMatcher("部分网页检索保留网页来源与实际引用数") { node ->
+                    val description = runCatching { node.config[SemanticsProperties.ContentDescription] }
+                        .getOrDefault(emptyList()).joinToString(" ")
+                    description.contains(completed) && description.contains(resultCount) && description.contains(failure)
+                },
+            )
     }
 
     @Test

@@ -1,4 +1,3 @@
-// UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 各种聊天辅助组件（进度条、思考框、审批卡等）的 UI 渲染与排版布局逻辑，不包含任何数据模型算法判定，故依全局开发规范 §3.4 予以单元测试豁免。
 package com.promenar.nexara.ui.chat
 
 
@@ -27,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -58,10 +58,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.NexaraMetaLine
-import com.promenar.nexara.ui.chat.components.RagOutcomeTone
-import com.promenar.nexara.ui.chat.components.ragCardSummary
-import com.promenar.nexara.ui.chat.components.kgSummarySegments
-import com.promenar.nexara.ui.chat.components.ragOutcomeTone
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraElevation
@@ -276,38 +272,6 @@ fun RagOmniIndicator(
     }
 }
 
-private val RAG_DEFAULT_PHASES = listOf(
-    RagPhase("query_intent", "query_intent", PhaseStatus.DONE, 100),
-    RagPhase("vector_search", "vector_search", PhaseStatus.DONE, 100),
-    RagPhase("keyword_search", "keyword_search", PhaseStatus.DONE, 100),
-    RagPhase("hybrid_merge", "hybrid_merge", PhaseStatus.DONE, 100),
-    RagPhase("kg_retrieval", "kg_retrieval", PhaseStatus.DONE, 100),
-    RagPhase("rerank", "rerank", PhaseStatus.DONE, 100),
-    RagPhase("context_compress", "context_compress", PhaseStatus.DONE, 100),
-    RagPhase("prompt_build", "prompt_build", PhaseStatus.DONE, 100)
-)
-
-@Composable
-private fun localizedRagPhaseName(phase: RagPhase): String {
-    val resourceId = when (phase.id) {
-        "query_intent" -> R.string.chat_rag_phase_query_intent
-        "embed" -> R.string.chat_rag_phase_embedding
-        "memory" -> R.string.chat_rag_phase_memory
-        "vector_search", "docs" -> R.string.chat_rag_phase_documents
-        "keyword_search" -> R.string.chat_rag_phase_keyword
-        "hybrid_merge", "hybrid" -> R.string.chat_rag_phase_hybrid
-        "rank" -> R.string.chat_rag_phase_ranking
-        "rerank" -> R.string.chat_rag_phase_rerank
-        "kg_retrieval", "kg" -> R.string.chat_rag_phase_knowledge_graph
-        "context_compress" -> R.string.chat_rag_phase_context_compress
-        "prompt_build" -> R.string.chat_rag_phase_prompt_build
-        "ready" -> R.string.chat_rag_phase_context_ready
-        "retrieved" -> R.string.chat_rag_phase_retrieved
-        else -> null
-    }
-    return resourceId?.let { stringResource(it) } ?: phase.name
-}
-
 @Composable
 fun RagProgressCard(
     phases: List<RagPhase>,
@@ -320,47 +284,48 @@ fun RagProgressCard(
 ) {
     var showDetailsSheet by remember { mutableStateOf(false) }
 
-    val displayPhases = if (phases.isEmpty() && isComplete) RAG_DEFAULT_PHASES else phases
-    val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
-    val ready = isComplete || displayPhases.any { it.id == "ready" && it.status == PhaseStatus.DONE }
+    val summary = ragInlineSummary(
+        phases = phases,
+        referenceCount = references.orEmpty().size,
+        knowledgePathCount = kgPaths.orEmpty().size,
+        citationCount = citations.orEmpty().size,
+        isComplete = isComplete,
+        trace = trace,
+    )
+    val activePhase = phases.find { it.status == PhaseStatus.ACTIVE }
+    val ready = summary.status != RagInlineStatus.RUNNING
     val progress = if (ready) 1f else (activePhase?.progress ?: 0).coerceIn(0, 100) / 100f
-    val webOnly = trace == null && references.isNullOrEmpty() && kgPaths.isNullOrEmpty() && !citations.isNullOrEmpty()
-    val source = stringResource(if (webOnly) R.string.chat_rag_source_web else R.string.chat_rag_source_knowledge)
+    val webOnly = summary.source == RagInlineSource.WEB
+    val summaryText = stringResource(
+        when (summary.status) {
+            RagInlineStatus.RUNNING -> if (webOnly) R.string.chat_inline_retrieval_web_running else R.string.chat_inline_retrieval_knowledge_running
+            RagInlineStatus.COMPLETED -> if (webOnly) R.string.chat_inline_retrieval_web_completed else R.string.chat_inline_retrieval_knowledge_completed
+            RagInlineStatus.FAILED -> if (webOnly) R.string.chat_inline_retrieval_web_failed else R.string.chat_inline_retrieval_knowledge_failed
+        },
+    )
     val segments = buildList {
-        add(source)
-        when {
-            ready && trace != null -> ragCardSummary(trace, references.orEmpty().size).forEach { part ->
-                add(stringResource(part.resId, *part.args.toTypedArray()))
-            }
-            ready && !references.isNullOrEmpty() -> add(stringResource(R.string.chat_rag_summary_hit, references.size))
-            ready -> add(stringResource(R.string.chat_rag_summary_ready))
-            activePhase != null -> add(localizedRagPhaseName(activePhase))
-            else -> add(stringResource(R.string.chat_rag_preparing))
+        add(summaryText)
+        summary.resultCount?.let { count ->
+            add(pluralStringResource(R.plurals.chat_inline_retrieval_result_count, count, count))
         }
-        if (ready && !citations.isNullOrEmpty()) add(stringResource(R.string.chat_rag_summary_web, citations.size))
-        if (ready) addAll(kgSummarySegments(kgPaths.orEmpty()))
-        if (!ready) add("${(progress * 100).toInt()}%")
     }
-    val tone = trace?.let(::ragOutcomeTone) ?: RagOutcomeTone.HIT
+    val partialFailureText = if (summary.partialFailure) {
+        stringResource(R.string.chat_inline_retrieval_partial_failure)
+    } else null
     val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
     CompactStepRow(
         segments = segments,
-        icon = when (tone) {
-            RagOutcomeTone.HIT -> Icons.Rounded.CheckCircle
-            RagOutcomeTone.NEUTRAL -> Icons.Rounded.Info
-            RagOutcomeTone.ATTENTION -> Icons.Rounded.Warning
-        },
+        icon = Icons.Rounded.Search,
         active = !ready,
         progress = if (ready) null else progress,
-        tone = when (tone) {
-            RagOutcomeTone.ATTENTION -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        state = if (ready) stringResource(R.string.chat_rag_done) else segments.last(),
+        tone = if (summary.status == RagInlineStatus.FAILED) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        state = partialFailureText ?: if (summary.status == RagInlineStatus.COMPLETED) stringResource(R.string.chat_rag_done) else summaryText,
         clickLabel = openDetailsLabel,
         tag = UiTags.RAG_PROGRESS_CARD,
         onClick = { showDetailsSheet = true },
         modifier = modifier,
+        failureText = partialFailureText,
     )
 
     if (showDetailsSheet) {
@@ -807,7 +772,7 @@ data class ApprovalDisplayCall(
 )
 
 @Composable
-private fun approvalPreviewTitle(preview: ApprovalPreview.Preview): String {
+private fun approvalPreviewTitle(preview: ApprovalPreview.Preview, displayedTarget: String? = null): String {
     val action = stringResource(
         when (preview.action) {
             ApprovalPreview.Action.OVERWRITE -> R.string.chat_approval_preview_overwrite
@@ -819,7 +784,7 @@ private fun approvalPreviewTitle(preview: ApprovalPreview.Preview): String {
             ApprovalPreview.Action.SCRIPT -> R.string.chat_approval_preview_script
         },
     )
-    return if (preview.target.isBlank()) action else "$action  ${preview.target}"
+    return if (preview.target.isBlank() || preview.target == displayedTarget) action else "$action  ${preview.target}"
 }
 
 @Composable
@@ -847,28 +812,82 @@ internal fun localizeApprovalPreviewDetail(
     else -> detail
 }
 
+private val approvalTechnicalLine = Regex("^(?:Execution mode|Arguments?|Parameters?|参数)\\s*[:：]", RegexOption.IGNORE_CASE)
+private val approvalRiskStatement = Regex(
+    "不可(?:恢复|撤销|逆)|高风险|(?:允许|可)联网|会(?:修改|删除|覆盖)|" +
+        "irreversible|cannot be undone|high[- ]risk|network (?:access|enabled)|" +
+        "(?:will|can) (?:modify|delete|overwrite|remove)|access(?:es)? the network",
+    RegexOption.IGNORE_CASE,
+)
+
+private fun approvalExplanationLines(description: String): List<String> = description.lineSequence()
+    .map(String::trim).filter { it.isNotBlank() && !approvalTechnicalLine.containsMatchIn(it) }.toList()
+
+internal fun approvalRequestReason(description: String): String = approvalExplanationLines(description)
+    .filterNot(approvalRiskStatement::containsMatchIn).joinToString("\n")
+
+internal fun approvalRiskSummary(description: String, riskLabel: String, facts: List<String>): String =
+    (facts + approvalExplanationLines(description).filter(approvalRiskStatement::containsMatchIn))
+        .map(String::trim).filter(String::isNotBlank).distinct().joinToString(" ").ifBlank { riskLabel }
+
 @Composable
-private fun ApprovalTextBlock(text: String, monospace: Boolean = true) {
+private fun ApprovalToolIdentity(name: String, description: String) {
+    SelectionContainer {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val reason = approvalRequestReason(description)
+    if (reason.isNotBlank()) {
+        Text(
+            text = reason,
+            style = MaterialTheme.typography.bodySmall.forReading(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("CHAT_APPROVAL_REASON"),
+        )
+    }
+}
+
+@Composable
+private fun ApprovalTextBlock(text: String) {
+    val collapsedLines = 6
+    var expanded by remember(text) { mutableStateOf(false) }
+    val explicitLineOverflow = remember(text, collapsedLines) {
+        text.lineSequence().take(collapsedLines + 1).count() > collapsedLines
+    }
+    var hasOverflow by remember(text, collapsedLines) { mutableStateOf(explicitLineOverflow) }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        SelectionContainer {
-            Text(
-                text = text,
-                style = if (monospace) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-                    else MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                softWrap = !monospace,
-                modifier = Modifier
-                    .then(if (monospace) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
-                    .padding(NexaraSpacing.Medium),
-            )
+        Column(Modifier.padding(10.dp)) {
+            SelectionContainer {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
+                    overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { layout -> if (!expanded) hasOverflow = explicitLineOverflow || layout.hasVisualOverflow },
+                )
+            }
+            if (hasOverflow || expanded) {
+                ChatExpandLink(
+                    text = stringResource(if (expanded) R.string.chat_inline_collapse else R.string.chat_inline_expand_all),
+                    onClick = { expanded = !expanded },
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ApprovalCard(
     toolName: String,
@@ -882,7 +901,6 @@ fun ApprovalCard(
     onApproveAll: (() -> Unit)? = null,
     onAlwaysAllow: (() -> Unit)? = null,
 ) {
-    val accentColor = if (isExecuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
     val currentCall = calls.firstOrNull()
     val remainingCount = (calls.size - 1).coerceAtLeast(0)
     val currentName = currentCall?.name ?: toolName
@@ -906,201 +924,137 @@ fun ApprovalCard(
             .fillMaxWidth()
             .padding(vertical = NexaraSpacing.Small)
             .testTag(UiTags.CHAT_APPROVAL_CARD),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = NexaraElevation.Level0,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            Box(
-                modifier = Modifier
-                    .width(NexaraSpacing.XSmall)
-                    .fillMaxHeight()
-                    .background(accentColor)
-            )
-            
-            Column(
-                modifier = Modifier.padding(NexaraSpacing.Large).alpha(if (isExecuted) 0.7f else 1f),
-                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.testTag(
+                    if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    modifier = Modifier.testTag(
-                        if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)
-                ) {
-                    Icon(
-                        if (isExecuted) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                        null,
-                        tint = accentColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = (if (isExecuted) stringResource(R.string.chat_approval_executed) else stringResource(R.string.chat_approval_required)).uppercase(),
-                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-                        color = accentColor
-                    )
-                }
+                Icon(
+                    imageVector = if (isExecuted) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = if (isExecuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = stringResource(if (isExecuted) R.string.chat_approval_executed else R.string.chat_approval_required),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
 
-                Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
-                    if (calls.isEmpty()) {
-                        Text(
-                            text = toolName,
-                            style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        calls.forEachIndexed { index, call ->
-                            if (index == 0) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (calls.isEmpty()) {
+                    Text(
+                        text = toolFriendlyName(toolName),
+                        style = MaterialTheme.typography.bodyMedium.forReading(),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    ApprovalToolIdentity(toolName, description)
+                } else {
+                    calls.forEachIndexed { index, call ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (calls.size > 1 && index == 0) {
                                 Text(
                                     text = stringResource(R.string.chat_approval_current),
-                                    style = NexaraTypography.labelSmall,
-                                    color = accentColor,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            } else {
+                            } else if (index > 0) {
                                 if (index == 1) {
                                     Text(
                                         text = stringResource(R.string.chat_approval_remaining, remainingCount),
-                                        style = NexaraTypography.labelSmall,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             }
-                            Column(
-                                modifier = Modifier.padding(vertical = NexaraSpacing.XSmall),
-                                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-                            ) {
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                                ) {
-                                    Text(
-                                        text = call.name,
-                                        style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = call.riskLabel,
-                                        style = NexaraTypography.labelSmall,
-                                        color = if (call.highRisk) MaterialTheme.colorScheme.error else accentColor,
-                                    )
+                            val preview = call.preview
+                            val target = call.executionTarget?.let(ToolExecutionTargets::display)
+                                ?: preview?.target?.takeIf(String::isNotBlank)
+                            NexaraMetaLine(
+                                segments = listOf(toolFriendlyName(call.name),
+                                    target ?: stringResource(R.string.chat_approval_execution_target_unknown)),
+                                style = MaterialTheme.typography.bodyMedium.forReading(),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            ApprovalToolIdentity(call.name, if (index == 0) description else "")
+                            val riskFacts = buildList {
+                                if (preview?.action == ApprovalPreview.Action.DELETE && !preview.detail.isNullOrBlank()) {
+                                    add(approvalPreviewDetail(preview, preview.detail))
+                                } else if (call.highRisk && !target.isNullOrBlank()) {
+                                    add(stringResource(R.string.chat_approval_high_risk_target_warning))
                                 }
+                                if (preview?.scriptAllowsNetwork == true) add(stringResource(R.string.agent_panels_network_allowed))
+                            }
+                            val riskText = approvalRiskSummary(if (index == 0) description else "", call.riskLabel, riskFacts)
+                            if (riskText.isNotBlank()) {
+                                Text(riskText, style = MaterialTheme.typography.bodySmall.forReading(), color = MaterialTheme.colorScheme.error)
+                            }
+                            if (preview == null) {
+                                ApprovalTextBlock(text = call.argumentsSummary)
+                            } else {
                                 Text(
-                                    text = call.executionTarget?.let { target ->
-                                        stringResource(R.string.chat_approval_execution_target, ToolExecutionTargets.display(target))
-                                    } ?: stringResource(R.string.chat_approval_execution_target_unknown),
-                                    style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = if (call.highRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                    text = approvalPreviewTitle(preview, target),
+                                    style = MaterialTheme.typography.bodyMedium.forReading(),
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
-                                if (call.highRisk && !isExecuted) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.errorContainer,
-                                        shape = MaterialTheme.shapes.small,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.chat_approval_high_risk_target_warning),
-                                            style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.padding(NexaraSpacing.Small),
-                                        )
-                                    }
-                                }
-                                val preview = call.preview
-                                if (preview == null) {
-                                    ApprovalTextBlock(text = call.argumentsSummary)
-                                } else {
-                                    Text(
-                                        text = approvalPreviewTitle(preview),
-                                        style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    preview.detail?.let { detail ->
-                                        val displayDetail = approvalPreviewDetail(preview, detail)
-                                        if (preview.action == ApprovalPreview.Action.SCRIPT) {
-                                            val hasNetworkLabel = preview.scriptAllowsNetwork
-                                            if (hasNetworkLabel) {
-                                                Text(
-                                                    stringResource(R.string.agent_panels_network_allowed),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                            val script = if (hasNetworkLabel) {
-                                                detail.removePrefix(ApprovalPreview.NETWORK_ALLOWED).removePrefix("\n")
-                                            } else detail
-                                            if (script.isNotBlank()) ApprovalTextBlock(text = script)
-                                        } else {
-                                            ApprovalTextBlock(
-                                                text = displayDetail,
-                                                monospace = preview.action != ApprovalPreview.Action.DELETE,
-                                            )
-                                        }
+                                preview.detail?.let { detail ->
+                                    if (preview.action != ApprovalPreview.Action.DELETE) {
+                                        val body = if (preview.action == ApprovalPreview.Action.SCRIPT && preview.scriptAllowsNetwork) {
+                                            detail.removePrefix(ApprovalPreview.NETWORK_ALLOWED).removePrefix("\n")
+                                        } else approvalPreviewDetail(preview, detail)
+                                        if (body.isNotBlank()) ApprovalTextBlock(body)
                                     }
                                 }
                             }
                         }
-                    }
-                    if (!isExecuted) {
-                        Text(
-                            text = description,
-                            style = NexaraTypography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else if (executionTime != null) {
-                        Text(
-                            text = stringResource(R.string.chat_approval_executed_at, executionTime),
-                            style = NexaraTypography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
                     }
                 }
+                val fallbackRisk = approvalRiskSummary(description, "", emptyList())
+                if (calls.isEmpty() && fallbackRisk.isNotBlank()) {
+                    Text(
+                        text = fallbackRisk,
+                        style = MaterialTheme.typography.bodySmall.forReading(),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (isExecuted && executionTime != null) {
+                    Text(
+                        text = stringResource(R.string.chat_approval_executed_at, executionTime),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
-                if (!isExecuted) {
-                  Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
+            if (!isExecuted) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
                     ) {
-                        Button(
-                            onClick = onDecline,
-                            enabled = enabled,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                                .semantics {
-                                    contentDescription = declineA11y
-                                }
-                                .testTag(UiTags.CHAT_APPROVAL_DECLINE),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Text(stringResource(R.string.chat_approval_decline_current), style = NexaraTypography.labelMedium)
-                        }
-                        Button(
-                            onClick = onApprove,
-                            enabled = enabled,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                                .semantics {
-                                    contentDescription = approveA11y
-                                }
-                                .testTag(UiTags.CHAT_APPROVAL_APPROVE),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary,
-                                contentColor = MaterialTheme.colorScheme.onTertiary
-                            ),
-                            shape = MaterialTheme.shapes.medium,
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = NexaraElevation.Level2)
-                        ) {
-                            Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        }
+                        ChatCompactApprovalButton(
+                            label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_reject_current else R.string.chat_inline_approval_reject),
+                            onClick = onDecline, outlined = true, enabled = enabled,
+                            modifier = Modifier.semantics { contentDescription = declineA11y }.testTag(UiTags.CHAT_APPROVAL_DECLINE),
+                        )
+                        ChatCompactApprovalButton(
+                            label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_approve_current else R.string.chat_inline_approval_approve),
+                            onClick = onApprove, outlined = false, enabled = enabled,
+                            modifier = Modifier.semantics { contentDescription = approveA11y }.testTag(UiTags.CHAT_APPROVAL_APPROVE),
+                        )
                     }
                     if (onAlwaysAllow != null && !currentTarget.isNullOrBlank() && ToolExecutionTargets.canRemember(currentTarget)) {
                         val alwaysAllowA11y = stringResource(
@@ -1111,35 +1065,24 @@ fun ApprovalCard(
                         TextButton(
                             onClick = onAlwaysAllow,
                             enabled = enabled,
-                            modifier = Modifier
-                                .fillMaxWidth()
+                            modifier = Modifier.align(Alignment.End)
                                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                                 .semantics { contentDescription = alwaysAllowA11y },
                         ) {
-                            Text(
-                                text = stringResource(R.string.chat_approval_always_allow_target),
-                                style = NexaraTypography.labelMedium,
-                                color = if (currentCall?.highRisk == true) MaterialTheme.colorScheme.error else accentColor,
-                            )
+                            Text(stringResource(R.string.chat_inline_approval_always_allow), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                     if (onApproveAll != null && remainingCount > 0) {
                         TextButton(
                             onClick = onApproveAll,
                             enabled = enabled,
-                            modifier = Modifier
-                                .fillMaxWidth()
+                            modifier = Modifier.align(Alignment.End)
                                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                                 .testTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
                         ) {
-                            Text(
-                                stringResource(R.string.chat_approval_approve_all, calls.size),
-                                style = NexaraTypography.labelMedium,
-                                color = accentColor,
-                            )
+                            Text(stringResource(R.string.chat_approval_approve_all, calls.size), style = MaterialTheme.typography.labelMedium)
                         }
                     }
-                  }
                 }
             }
         }

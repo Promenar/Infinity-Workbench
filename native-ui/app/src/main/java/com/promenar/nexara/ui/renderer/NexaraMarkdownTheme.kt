@@ -3,6 +3,9 @@ package com.promenar.nexara.ui.renderer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -27,105 +30,62 @@ fun nexaraMarkdownColors(
     tableBackground = MaterialTheme.colorScheme.surfaceContainer,
 )
 
+internal fun nexaraMarkdownBodyStyle(baseFontSize: Int, fontStyle: FontStyle? = null): TextStyle =
+    NexaraTypography.bodyMedium.copy(
+        fontSize = baseFontSize.sp,
+        lineHeight = (baseFontSize * 1.6).sp,
+        letterSpacing = 0.01.em,
+        fontStyle = fontStyle,
+        lineBreak = NexaraReadingLineBreak,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    )
+
+internal fun nexaraMarkdownHeadingStyle(level: Int, baseFontSize: Int, fontStyle: FontStyle? = null): TextStyle {
+    val multiplier = when (level) { 1 -> 1.35; 2 -> 1.2; 3 -> 1.1; else -> 1.0 }
+    val size = (baseFontSize * multiplier).sp
+    return NexaraTypography.titleMedium.copy(
+        fontSize = size,
+        fontWeight = FontWeight.SemiBold,
+        lineHeight = (size.value * 1.35).sp,
+        fontStyle = fontStyle,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    )
+}
+
+internal fun nexaraMarkdownCodeStyle(fontStyle: FontStyle? = null): TextStyle =
+    NexaraTypography.bodySmall.copy(
+        fontSize = 13.sp,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = 20.sp,
+        fontStyle = fontStyle,
+        lineBreak = NexaraInputLineBreak,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    )
+
 @Composable
 fun nexaraMarkdownTypography(
-    baseFontSize: Int = 13,
-    fontStyle: FontStyle? = null
+    baseFontSize: Int = 15,
+    fontStyle: FontStyle? = null,
 ): MarkdownTypography {
-    val base = baseFontSize.sp
-    val h1 = (baseFontSize * 1.2).sp
-    val h2 = (baseFontSize * 1.15).sp
-    val h3 = (baseFontSize * 1.1).sp
-    val h4 = (baseFontSize * 1.1).sp
-    val h5 = base
-    val h6 = (baseFontSize * 0.9).sp
-
-    // 标题沿用界面换行；正文、列表、引用为阅读换行；代码块保持逐字符贪心换行，不做短语重排。
+    val body = nexaraMarkdownBodyStyle(baseFontSize, fontStyle)
     return markdownTypography(
-        h1 = NexaraTypography.headlineLarge.copy(
-            fontSize = h1,
-            lineHeight = (h1.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        h2 = NexaraTypography.headlineMedium.copy(
-            fontSize = h2,
-            lineHeight = (h2.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        h3 = NexaraTypography.headlineMedium.copy(
-            fontSize = h3,
-            lineHeight = (h3.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        h4 = NexaraTypography.headlineMedium.copy(
-            fontSize = h4,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = (h4.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        h5 = NexaraTypography.headlineMedium.copy(
-            fontSize = h5,
-            fontWeight = FontWeight.Medium,
-            lineHeight = (h5.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        h6 = NexaraTypography.headlineMedium.copy(
-            fontSize = h6,
-            fontWeight = FontWeight.Medium,
-            lineHeight = (h6.value * 1.4).sp,
-            fontStyle = fontStyle,
-        ),
-        text = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.6).sp,
-            letterSpacing = 0.01.em,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        code = NexaraTypography.bodySmall.copy(
-            fontSize = (baseFontSize - 1).sp,
-            fontFamily = FontFamily.Monospace,
-            lineHeight = (baseFontSize * 1.4).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraInputLineBreak,
-        ),
-        inlineCode = NexaraTypography.bodySmall.copy(
-            fontSize = base,
-            fontFamily = FontFamily.Monospace,
-            lineHeight = (baseFontSize * 1.3).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        paragraph = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.6).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        ordered = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.6).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        bullet = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.6).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        list = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.6).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
-        quote = NexaraTypography.bodyMedium.copy(
-            fontSize = base,
-            lineHeight = (baseFontSize * 1.5).sp,
-            fontStyle = fontStyle,
-            lineBreak = NexaraReadingLineBreak,
-        ),
+        h1 = nexaraMarkdownHeadingStyle(1, baseFontSize, fontStyle),
+        h2 = nexaraMarkdownHeadingStyle(2, baseFontSize, fontStyle),
+        h3 = nexaraMarkdownHeadingStyle(3, baseFontSize, fontStyle),
+        h4 = nexaraMarkdownHeadingStyle(4, baseFontSize, fontStyle),
+        h5 = nexaraMarkdownHeadingStyle(5, baseFontSize, fontStyle),
+        h6 = nexaraMarkdownHeadingStyle(6, baseFontSize, fontStyle),
+        text = body,
+        code = nexaraMarkdownCodeStyle(fontStyle),
+        inlineCode = body.copy(fontFamily = FontFamily.Monospace),
+        paragraph = body,
+        ordered = body,
+        bullet = body,
+        list = body,
+        quote = body,
     )
 }
 

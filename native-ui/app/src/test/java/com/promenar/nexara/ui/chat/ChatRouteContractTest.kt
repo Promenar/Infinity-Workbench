@@ -65,7 +65,8 @@ class ChatRouteContractTest {
         assertThat(route).contains("ActivityResultContracts.OpenMultipleDocuments()")
         assertThat(route).contains("chatViewModel.importFullContextDocuments(uris)")
         assertThat(route).contains("onBranchMessage = { messageId ->")
-        assertThat(screen).contains("DocumentDraftStrip(")
+        assertThat(screen).contains("ChatComposerAttachments(")
+        assertThat(screen).contains("onRemoveDocument = actions.onRemoveDocument")
         assertThat(screen).contains("onPickDocument = actions.onPickDocuments")
         assertThat(pipeline).contains("MessageDocumentSummary(message.userDocuments.orEmpty())")
         assertThat(pipeline).contains("stringResource(R.string.chat_action_branch)")
@@ -132,8 +133,8 @@ class ChatRouteContractTest {
         val inputModel = content.substringAfter("val modelDisplayName =")
             .substringBefore("if (selectedImageUris.isNotEmpty())")
         val pipelineLookup = pipelineFunction
-            .substringAfter("if (!lastMsg.modelId.isNullOrBlank())")
-            .substringBefore("Text(")
+            .substringAfter("val modelDisplayName = if (lastMsg.modelId.isNullOrBlank())")
+            .substringBefore("AssistantActionRow(")
         val compactInputModel = inputModel.replace(Regex("\\s+"), "")
         val compactPipelineLookup = pipelineLookup.replace(Regex("\\s+"), "")
 
@@ -141,14 +142,14 @@ class ChatRouteContractTest {
         assertThat(compactInputModel).contains(
             "uiState.session?.modelId?.let(state.modelDisplayNames::get).orEmpty()",
         )
-        assertThat(inputModel).contains("ChatInputTopBar(")
+        assertThat(inputModel).contains("ChatInputBar(")
         assertThat(inputModel).contains("modelName = modelDisplayName")
         assertThat(pipelineFunction).contains(
             "modelDisplayNames: Map<String, String> = emptyMap()",
         )
         assertThat(compactPipelineLookup).contains("modelDisplayNames[lastMsg.modelId]")
         assertThat(compactPipelineLookup).contains(
-            "?:lastMsg.modelId?.substringAfter(\"::\",lastMsg.modelId).orEmpty()",
+            "?:lastMsg.modelId.substringAfter(\"::\",lastMsg.modelId)",
         )
         assertThat(content).doesNotContain("findModelSpec(")
         assertThat(content).doesNotContain("resolveModelDisplayName(")

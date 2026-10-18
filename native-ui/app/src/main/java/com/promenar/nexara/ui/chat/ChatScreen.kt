@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
@@ -16,8 +15,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,13 +38,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,23 +61,18 @@ import com.promenar.nexara.ui.common.ModelBrandIcon
 import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.HourglassEmpty
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -107,6 +106,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -132,7 +132,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
@@ -148,7 +147,6 @@ import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
 import com.promenar.nexara.ui.theme.NexaraElevation
-import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
@@ -261,6 +259,9 @@ fun ChatScreenContent(
     }
 
     val sessionTitle = uiState.session?.title ?: stringResource(R.string.chat_title_new)
+    val showTopBarDivider by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
+    }
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
@@ -295,8 +296,6 @@ fun ChatScreenContent(
 
     val describeImagePrompt = stringResource(R.string.chat_image_only_prompt)
     val documentOnlyPrompt = stringResource(R.string.chat_document_only_prompt)
-    val approvalArgumentsLabel = stringResource(R.string.chat_approval_arguments)
-    val approvalFallback = stringResource(R.string.chat_approval_fallback)
 
     // ═══════════════════════════════════════════════════════════
     //  智能视角追踪 — Pin to Bottom
@@ -318,7 +317,7 @@ fun ChatScreenContent(
     }
 
     suspend fun scrollItemAboveComposer(activeIndex: Int) {
-        if (activeIndex < 0) return
+        if (activeIndex < 0 || !autoFollowEnabled) return
 
         val liveComposerInsets = chatComposerInsets(
             with(density) { currentComposerHeightPx.toDp() },
@@ -328,6 +327,7 @@ fun ChatScreenContent(
         // 基于最新一次布局读取目标 item，做像素级遮挡校正。
         // 目标 item 不在组成窗口内时直接返回，由调用方先粗滚再重新校正。
         suspend fun correctActiveOverlap() {
+            if (!autoFollowEnabled) return
             val layoutInfo = listState.layoutInfo
             val activeItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
                 ?: return
@@ -400,18 +400,28 @@ fun ChatScreenContent(
         }
     }
 
-    // IME 键盘避让：IME 弹出会通过 imePadding() 持续收缩列表视口。同步观察 inset
-    // 与视口末端，确保动画每次推进都以最新布局即时校正尾消息。
-    val isImeVisible = WindowInsets.isImeVisible
+    // 输入区首次测量、多行输入与 IME 动画都会改变尾部可见范围。
+    // 同时观察目标条目的位置与高度，覆盖流结束后的操作行、积压放出与异步解析。
     val imeInsets = WindowInsets.ime
-    LaunchedEffect(isImeVisible, autoFollowEnabled, pipelineGroups.size) {
-        if (!isImeVisible || !autoFollowEnabled || pipelineGroups.isEmpty()) return@LaunchedEffect
+    val followTargetIndex = when {
+        approvalIdentity != null -> approvalItemIndex
+        showCompressionFeedback -> compressionItemIndex
+        else -> pipelineGroups.lastIndex
+    }
+    LaunchedEffect(autoFollowEnabled, followTargetIndex, approvalIdentity) {
+        if (!autoFollowEnabled || followTargetIndex < 0) return@LaunchedEffect
 
         snapshotFlow {
-            imeInsets.getBottom(density) to listState.layoutInfo.viewportEndOffset
-        }.collectLatest { (insetBottom, viewportEnd) ->
-            if (insetBottom <= 0 || viewportEnd <= 0) return@collectLatest
-            scrollToStreamingTail()
+            val layout = listState.layoutInfo
+            val target = layout.visibleItemsInfo.firstOrNull { it.index == followTargetIndex }
+            listOf(
+                currentComposerHeightPx, imeInsets.getBottom(density), layout.viewportEndOffset,
+                layout.afterContentPadding, layout.totalItemsCount,
+                target?.offset ?: Int.MIN_VALUE, target?.size ?: 0,
+            )
+        }.collectLatest { geometry ->
+            if (geometry[0] <= 0 || geometry[2] <= 0 || geometry[4] == 0) return@collectLatest
+            scrollItemAboveComposer(followTargetIndex)
         }
     }
 
@@ -444,10 +454,10 @@ fun ChatScreenContent(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-              Column {
+              Column(Modifier.statusBarsPadding()) {
                 ChatTopBar(
                     title = sessionTitle,
-                    subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
+                    showDivider = showTopBarDivider,
                     onBack = actions.onNavigateBack,
                     onWorkspace = actions.onOpenWorkspace,
                     onSettings = actions.onOpenSettings,
@@ -478,31 +488,26 @@ fun ChatScreenContent(
                 }
             }
         ) { padding ->
-            BoxWithConstraints(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .imePadding(),
             ) {
-            val isLandscape = maxWidth > maxHeight
             val renderStateTag = chatRenderStateTag(uiState)
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxHeight()
-                    .widthIn(max = 960.dp)
+                    .widthIn(max = NexaraSpacing.ChatMaxWidth)
                     .fillMaxWidth()
                     .nestedScroll(userScrollConnection)
                     .testTag(renderStateTag),
                 contentPadding = PaddingValues(
-                    start = NexaraSpacing.Large,
-                    end = NexaraSpacing.Large,
-                    top = if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Large,
-                    bottom = composerInsets.contentBottom,
-                ),
-                verticalArrangement = Arrangement.spacedBy(
-                    if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Medium,
+                    start = NexaraSpacing.ChatHorizontal,
+                    end = NexaraSpacing.ChatHorizontal,
+                    bottom = composerInsets.contentBottom - NexaraSpacing.XLarge,
                 ),
             ) {
                 // pipelineGroups 已在外部通过 remember 计算，此处直接引用
@@ -510,7 +515,17 @@ fun ChatScreenContent(
                     val group = pipelineGroups[idx]
                     val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
+                    val itemKind = if (group.isUser) ChatItemKind.USER else ChatItemKind.ASSISTANT
+                    val previousKind = pipelineGroups.getOrNull(idx - 1)?.let {
+                        if (it.isUser) ChatItemKind.USER else ChatItemKind.ASSISTANT
+                    }
+                    val spacing = chatItemSpacing(previousKind, itemKind)
+                    val hasRagContent = selectRagActiveMessage(group.assistantMessages)?.let {
+                        (if (isGeneratingGroup) ragPhases else emptyList()).isNotEmpty() || it.hasRagArtifacts()
+                    } == true
                     PipelineBubble(
+                        hasRagContent = hasRagContent,
+                        modifier = Modifier.padding(top = spacing.beforeDp.dp),
                         ragContent = {
                             val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
@@ -535,8 +550,9 @@ fun ChatScreenContent(
                         isGenerating = isGeneratingGroup,
                         status = uiState.status,
                         streamingContent = uiState.streamingContent,
-                        fontSize = uiState.session?.options?.fontSize ?: 13,
+                        fontSize = uiState.session?.options?.fontSize ?: 15,
                         modelDisplayNames = state.modelDisplayNames,
+                        onMessageContentChange = actions.onContentChange,
                         onContentChange = { newContent ->
                             group.assistantMessages.lastOrNull()?.let { lastMsg ->
                                 actions.onContentChange(lastMsg.id, newContent)
@@ -582,11 +598,7 @@ fun ChatScreenContent(
                                 toolName = request.calls.firstOrNull()?.toolName
                                     ?: request.toolName
                                     ?: stringResource(R.string.chat_approval_unknown_tool),
-                                description = approvalDescription(
-                                    request,
-                                    approvalArgumentsLabel,
-                                    approvalFallback,
-                                ),
+                                description = request.reason.orEmpty(),
                                 calls = request.calls.map { call ->
                                     ApprovalDisplayCall(
                                         name = call.toolName,
@@ -598,6 +610,12 @@ fun ChatScreenContent(
                                             ApprovalPreview.forCall(call, uiState.messages, request.assistantMessageId)
                                         },
                                     )
+                                }.ifEmpty {
+                                    listOf(ApprovalDisplayCall(
+                                        name = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
+                                        argumentsSummary = request.args.orEmpty(),
+                                        riskLabel = approvalRiskLabel(request.type.orEmpty()),
+                                    ))
                                 },
                                 enabled = !uiState.isApprovalSubmitting,
                                 onApprove = { actions.onApprove(request) },
@@ -610,7 +628,9 @@ fun ChatScreenContent(
                 }
 
                 item(key = "bottom_spacer") {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(chatItemSpacing(
+                        previous = null, current = ChatItemKind.ASSISTANT, isLast = true,
+                    ).afterDp.dp))
                 }
             }
 
@@ -622,7 +642,7 @@ fun ChatScreenContent(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxHeight()
-                    .widthIn(max = 960.dp)
+                    .widthIn(max = NexaraSpacing.ChatMaxWidth)
                     .fillMaxWidth()
                     .padding(bottom = 160.dp)
                     .testTag(UiTags.CHAT_LOADING_SKELETON)
@@ -630,95 +650,29 @@ fun ChatScreenContent(
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
             }
 
-            // ── 单层稳定 Material 3 composer ──
-            Surface(
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .widthIn(max = 960.dp)
+                    .widthIn(max = NexaraSpacing.ChatMaxWidth)
                     .fillMaxWidth()
                     .onSizeChanged { composerHeightPx = it.height }
                     .onGloballyPositioned { composerTopInRoot = it.boundsInRoot().top }
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 8.dp)
                     .testTag(UiTags.CHAT_COMPOSER),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = NexaraElevation.Level0,
-                shadowElevation = NexaraElevation.Level0,
             ) {
-                Column(
-                    modifier = Modifier.padding(
-                        horizontal = NexaraSpacing.Large,
-                        vertical = NexaraSpacing.Small,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                ) {
-                    val modelDisplayName = uiState.session?.modelId
-                        ?.let(state.modelDisplayNames::get)
-                        .orEmpty()
-                    ChatInputTopBar(
-                        modelName = modelDisplayName,
-                        modelId = uiState.session?.modelId,
-                        tokenState = tokenState.copy(isGenerating = tokenState.isGenerating || uiState.isGenerating),
-                        isCompressing = compressionState.isCompressing,
-                        taskPanel = state.taskPanel,
-                        postProcessTasks = state.postProcessTasks,
-                        onRemovePostProcessTask = actions.onRemovePostProcessTask,
-                        onModelClick = actions.onOpenSettings,
-                        onManualSummary = actions.onManualSummary,
-                        onTaskClick = {
-                            autoFollowEnabled = false
-                            scope.launch {
-                                listState.animateScrollToItem(pipelineGroups.size)
-                            }
-                        },
-                    )
-
-                    if (selectedImageUris.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(selectedImageUris.size) { index ->
-                                val uri = selectedImageUris[index]
-                                Box(modifier = Modifier.size(72.dp)) {
-                                    coil3.compose.AsyncImage(
-                                        model = uri,
-                                        contentDescription = stringResource(R.string.chat_cd_selected_image),
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .align(Alignment.BottomStart)
-                                            .clip(RoundedCornerShape(12.dp)),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                    Surface(
-                                        onClick = { actions.onRemoveImage(index) },
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        contentColor = MaterialTheme.colorScheme.onSurface,
-                                        shadowElevation = 2.dp,
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(28.dp),
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                Icons.Rounded.Close,
-                                                stringResource(R.string.chat_cd_remove_image),
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (draftDocuments.isNotEmpty() || state.isImportingDocument) {
-                        DocumentDraftStrip(
-                            documents = draftDocuments,
-                            isImporting = state.isImportingDocument,
-                            onRemove = actions.onRemoveDocument,
-                        )
-                    }
-
+                val modelDisplayName = uiState.session?.modelId
+                    ?.let(state.modelDisplayNames::get)
+                    .orEmpty()
+                ChatComposerStatusBar(
+                    taskPanel = state.taskPanel,
+                    postProcessTasks = state.postProcessTasks,
+                    onRemovePostProcessTask = actions.onRemovePostProcessTask,
+                    onTaskClick = {
+                        autoFollowEnabled = false
+                        scope.launch { listState.animateScrollToItem(pipelineGroups.size) }
+                    },
+                )
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
                             text = inputText,
@@ -760,6 +714,21 @@ fun ChatScreenContent(
                             attachmentMenuExpanded = attachmentMenuExpanded,
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
+                            modelName = modelDisplayName,
+                            modelId = uiState.session?.modelId,
+                            tokenState = tokenState.copy(isGenerating = tokenState.isGenerating || uiState.isGenerating),
+                            isCompressing = compressionState.isCompressing,
+                            onModelClick = actions.onOpenSettings,
+                            onManualSummary = actions.onManualSummary,
+                            attachmentContent = {
+                                ChatComposerAttachments(
+                                    imageUris = selectedImageUris,
+                                    documents = draftDocuments,
+                                    isImporting = state.isImportingDocument,
+                                    onRemoveImage = actions.onRemoveImage,
+                                    onRemoveDocument = actions.onRemoveDocument,
+                                )
+                            },
                         )
 
                         // ── 模型未选择提示气泡 ──
@@ -788,7 +757,6 @@ fun ChatScreenContent(
                             }
                         }
                     }
-                }
             }
 
             AnimatedVisibility(
@@ -850,25 +818,6 @@ fun ChatScreenContent(
     }
 }
 
-private fun approvalDescription(
-    request: com.promenar.nexara.data.model.ApprovalRequest,
-    argumentsLabel: String,
-    fallback: String,
-): String {
-    val reason = request.reason?.takeIf { it.isNotBlank() }
-    val args = request.args
-        ?.takeIf { it.isNotBlank() }
-        ?.replace(Regex("\\s+"), " ")
-        ?.let { if (it.length > 180) it.take(177) + "..." else it }
-
-    return listOfNotNull(
-        reason,
-        args?.let { "$argumentsLabel: $it" }
-    ).joinToString("\n").ifBlank {
-        fallback
-    }
-}
-
 @Composable
 private fun approvalRiskLabel(risk: String): String = stringResource(
     when (risk) {
@@ -920,126 +869,83 @@ fun ContextCircularIndicator(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChatInputTopBar(
-    modelName: String,
-    modelId: String?,
-    tokenState: ChatViewModel.TokenIndicatorState,
-    isCompressing: Boolean,
+internal fun ChatComposerStatusBar(
     taskPanel: TaskPanelUiState?,
     postProcessTasks: List<PostProcessTask>,
-    onRemovePostProcessTask: (String) -> Unit,
-    onModelClick: () -> Unit,
-    onManualSummary: () -> Unit,
-    onTaskClick: () -> Unit,
+    onRemovePostProcessTask: (String) -> Unit = {},
+    onTaskClick: () -> Unit = {},
 ) {
-    androidx.compose.foundation.layout.FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+    val panel = taskPanel?.takeUnless { it.isCompleted }
+    if (panel == null && postProcessTasks.isEmpty()) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            .horizontalScroll(rememberScrollState()).height(28.dp)
+            .testTag("chat_composer_status_bar"),
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // 用户裁决：胶囊为展示元素，高度统一 36dp（低于 48dp 触控标准为可接受的取舍）
-        val capsuleHeight = 36.dp
-        // Model Indicator
-        AssistChip(
-            onClick = onModelClick,
-            modifier = Modifier
-                .heightIn(min = capsuleHeight)
-                .testTag(UiTags.CHAT_MODEL_SELECTOR),
-            shape = CircleShape,
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                labelColor = MaterialTheme.colorScheme.onSurface,
-                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-            border = AssistChipDefaults.assistChipBorder(
-                enabled = true,
-                borderColor = Color.Transparent,
-                disabledBorderColor = Color.Transparent,
-            ),
-            label = {
-                Text(
-                    text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
-                    style = NexaraTypography.labelMedium,
-                    color = if (modelName.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            leadingIcon = {
-                ModelBrandIcon(
-                    modelId = modelId,
-                    modifier = Modifier.size(20.dp),
-                    fallbackTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-        )
-
-        // Token Indicator
-        TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
-
-        taskPanel?.takeUnless { it.isCompleted }?.let { panel ->
-            val isGenerating = panel.capsuleMode == TaskCapsuleMode.GENERATING
-            val accessibilityLabel = if (isGenerating) {
-                stringResource(R.string.chat_task_generating)
-            } else {
-                stringResource(R.string.chat_task_pending_accessibility, panel.pendingCount)
-            }
-            AssistChip(
-                onClick = onTaskClick,
-                modifier = Modifier
-                    .heightIn(min = capsuleHeight)
-                    .semantics { contentDescription = accessibilityLabel }
+        panel?.let {
+            val generating = it.capsuleMode == TaskCapsuleMode.GENERATING
+            val description = if (generating) stringResource(R.string.chat_task_generating)
+                else stringResource(R.string.chat_task_pending_accessibility, it.pendingCount)
+            Row(
+                modifier = Modifier.height(28.dp).clip(RoundedCornerShape(14.dp))
+                    .clickable(role = Role.Button, onClick = onTaskClick)
+                    .padding(horizontal = 8.dp)
+                    .semantics { contentDescription = description }
                     .testTag(UiTags.CHAT_TASK_CAPSULE),
-                shape = CircleShape,
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    labelColor = MaterialTheme.colorScheme.onSurface,
-                    leadingIconContentColor = if (isGenerating) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.tertiary
-                    },
-                ),
-                border = AssistChipDefaults.assistChipBorder(
-                    enabled = true,
-                    borderColor = Color.Transparent,
-                    disabledBorderColor = Color.Transparent,
-                ),
-                leadingIcon = {
-                    TaskStatusDot(
-                        pulsing = panel.shouldPulse,
-                        color = if (isGenerating) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
-                    )
-                },
-                label = {
-                    Text(
-                        text = if (isGenerating) {
-                            stringResource(R.string.chat_task_generating)
-                        } else {
-                            stringResource(R.string.chat_task_pending, panel.pendingCount)
-                        },
-                        style = NexaraTypography.labelMedium,
-                        maxLines = 1,
-                    )
-                },
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TaskStatusDot(
+                    pulsing = it.shouldPulse,
+                    color = if (generating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                )
+                Text(
+                    text = if (generating) stringResource(R.string.chat_task_generating)
+                        else stringResource(R.string.chat_task_pending, it.pendingCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
         }
-
-        // PostProcess Tasks (e.g. Session RAG, Summary)
         postProcessTasks.forEach { task ->
-            PostProcessChip(
-                task = task,
-                onRemove = { onRemovePostProcessTask(task.id) }
-            )
+            PostProcessChip(task = task, onRemove = { onRemovePostProcessTask(task.id) })
         }
+    }
+}
 
+@Composable
+internal fun ChatModelSelector(
+    modelName: String,
+    modelId: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.height(40.dp)
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sheet_tab_model), onClick = onClick)
+            .testTag(UiTags.CHAT_MODEL_SELECTOR),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            modifier = Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).padding(horizontal = 6.dp)
+                .testTag("chat_model_capsule"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ModelBrandIcon(modelId = modelId, modifier = Modifier.size(16.dp), fallbackTint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).widthIn(max = 160.dp),
+            )
+            Icon(Icons.Rounded.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -1051,44 +957,30 @@ private fun TokenIndicator(
 ) {
     var showTooltip by remember { mutableStateOf(false) }
 
+    val progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f)
+    val percentage = (state.used.toDouble() / state.max.coerceAtLeast(1) * 100).toInt()
+    val description = stringResource(R.string.chat_context_usage_percent, percentage)
     Box {
-        AssistChip(
-            onClick = { showTooltip = !showTooltip },
-            modifier = Modifier
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                .testTag(UiTags.CHAT_TOKEN_INDICATOR),
-            shape = CircleShape,
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                labelColor = MaterialTheme.colorScheme.onSurface,
-                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-            border = AssistChipDefaults.assistChipBorder(
-                enabled = true,
-                borderColor = Color.Transparent,
-                disabledBorderColor = Color.Transparent,
-            ),
-            label = {
-                Text(
-                    text = stringResource(
-                        R.string.chat_context_usage_fraction,
-                        ChatViewModel.formatTokenCount(state.used),
-                        ChatViewModel.formatTokenCount(state.max),
-                    ),
-                    style = NexaraTypography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                )
-            },
-            leadingIcon = {
-                ContextCircularIndicator(
-                    progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f),
-                    color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(12.dp)
-                )
-            },
-        )
+        Row(
+            modifier = Modifier.height(40.dp).clickable(role = Role.Button) { showTooltip = !showTooltip }
+                .semantics { contentDescription = description }
+                .testTag(UiTags.CHAT_TOKEN_INDICATOR)
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ContextCircularIndicator(
+                progress = progress,
+                color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = stringResource(R.string.chat_context_percentage, percentage),
+                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
 
         if (showTooltip) {
             DropdownMenu(
@@ -1276,54 +1168,39 @@ private fun TokenDetailRow(label: String, value: Int) {
 @Composable
 fun ChatTopBar(
     title: String,
-    subtitle: String,
     onBack: () -> Unit,
     onWorkspace: () -> Unit,
     onSettings: () -> Unit,
     onSessionPrompt: () -> Unit = {},
     onClearHistory: () -> Unit,
     onRename: () -> Unit,
-    onDeleteSession: () -> Unit
+    onDeleteSession: () -> Unit,
+    showDivider: Boolean = false,
+    windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
+    val dividerAlpha by animateFloatAsState(
+        targetValue = if (showDivider) 1f else 0f,
+        animationSpec = tween(150),
+        label = "chat_top_divider",
+    )
+    Box {
     TopAppBar(
+        expandedHeight = 56.dp,
+        windowInsets = windowInsets,
         title = {
-            Column(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = stringResource(R.string.chat_menu_rename),
-                        onClick = onRename,
-                    )
-                    .padding(vertical = 4.dp, horizontal = 2.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        style = NexaraTypography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        style = NexaraTypography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.chat_menu_rename), onClick = onRename)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .testTag("chat_top_title"),
+            )
         },
         navigationIcon = {
             NexaraBackButton(onClick = onBack)
@@ -1331,9 +1208,10 @@ fun ChatTopBar(
         actions = {
             IconButton(onClick = onWorkspace) {
                 Icon(
-                    Icons.Rounded.Folder,
+                    Icons.Outlined.Folder,
                     stringResource(R.string.chat_cd_workspace),
                     tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(22.dp),
                 )
             }
             Box {
@@ -1441,8 +1319,12 @@ fun ChatTopBar(
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+        modifier = Modifier.testTag("chat_top_bar"),
     )
+    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier.align(Alignment.BottomCenter).alpha(dividerAlpha))
+    }
 }
 
 @Composable
@@ -1485,75 +1367,59 @@ fun RenameDialog(
 }
 
 @Composable
-private fun DocumentDraftStrip(
+internal fun ChatComposerAttachments(
+    imageUris: List<android.net.Uri>,
     documents: List<MessageDocumentAttachment>,
     isImporting: Boolean,
-    onRemove: (String) -> Unit,
+    onRemoveImage: (Int) -> Unit = {},
+    onRemoveDocument: (String) -> Unit = {},
 ) {
+    if (imageUris.isEmpty() && documents.isEmpty() && !isImporting) return
     val removeDescription = stringResource(R.string.chat_cd_remove_document)
     LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(UiTags.CHAT_DOCUMENT_CHIPS),
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            .then(if (documents.isNotEmpty() || isImporting) Modifier.testTag(UiTags.CHAT_DOCUMENT_CHIPS) else Modifier),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        items(imageUris.size) { index ->
+            Box(Modifier.size(56.dp)) {
+                coil3.compose.AsyncImage(
+                    model = imageUris[index],
+                    contentDescription = stringResource(R.string.chat_cd_selected_image),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                )
+                IconButton(onClick = { onRemoveImage(index) }, modifier = Modifier.size(48.dp).align(Alignment.TopEnd)) {
+                    Icon(Icons.Rounded.Close, stringResource(R.string.chat_cd_remove_image),
+                        modifier = Modifier.size(20.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape).padding(2.dp))
+                }
+            }
+        }
         items(documents, key = MessageDocumentAttachment::id) { document ->
-            AssistChip(
-                modifier = Modifier
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+            Box(
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .clickable(role = Role.Button, onClickLabel = removeDescription) { onRemoveDocument(document.id) }
                     .testTag(UiTags.chatDocumentChip(document.id)),
-                onClick = { onRemove(document.id) },
-                label = {
-                    Column(modifier = Modifier.widthIn(max = 220.dp)) {
-                        Text(
-                            text = document.name,
-                            style = NexaraTypography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = formatDocumentBytes(document.sizeBytes),
-                            style = NexaraTypography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                leadingIcon = { Icon(Icons.Rounded.Description, null, Modifier.size(18.dp)) },
-                trailingIcon = {
-                    Icon(
-                        Icons.Rounded.Close,
-                        removeDescription,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .testTag(UiTags.chatDocumentRemove(document.id)),
-                    )
-                },
-            )
+            ) {
+                Column(Modifier.fillMaxSize().padding(4.dp), verticalArrangement = Arrangement.Bottom) {
+                    Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(document.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(
+                    onClick = { onRemoveDocument(document.id) },
+                    modifier = Modifier.size(48.dp).align(Alignment.TopEnd).testTag(UiTags.chatDocumentRemove(document.id)),
+                ) { Icon(Icons.Rounded.Close, removeDescription, modifier = Modifier.size(16.dp)) }
+            }
         }
         if (isImporting) {
             item(key = "document_importing") {
-                Row(
-                    modifier = Modifier
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Box(Modifier.size(56.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(
-                        stringResource(R.string.chat_document_importing),
-                        style = NexaraTypography.labelMedium,
-                    )
                 }
             }
         }
     }
-}
-
-private fun formatDocumentBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
 }
 
 @Composable
@@ -1575,6 +1441,13 @@ fun ChatInputBar(
     attachmentMenuExpanded: Boolean = false,
     onAttachmentMenuExpandedChange: (Boolean) -> Unit = {},
     onAttachmentAnchorBoundsChange: (Rect) -> Unit = {},
+    modelName: String = "",
+    modelId: String? = null,
+    tokenState: ChatViewModel.TokenIndicatorState = ChatViewModel.TokenIndicatorState(),
+    isCompressing: Boolean = false,
+    onModelClick: () -> Unit = {},
+    onManualSummary: () -> Unit = {},
+    attachmentContent: @Composable () -> Unit = {},
 ) {
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
@@ -1592,107 +1465,83 @@ fun ChatInputBar(
     val attachmentContentDescription = stringResource(
         if (attachmentMenuExpanded) R.string.common_dismiss else R.string.chat_cd_add_attachment,
     )
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .clip(NexaraShapes.extraLarge as RoundedCornerShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f))
-            .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
+    // 不裁剪首末行行距：最多六行的高度上限按完整行高计算，第六行墨迹不会被输入框底边裁掉。
+    val inputStyle = MaterialTheme.typography.bodyLarge.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+            alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+            trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.None,
+        ),
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth().animateContentSize().testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 4.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { onAttachmentMenuExpandedChange(!attachmentMenuExpanded) },
-                modifier = Modifier
-                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .onGloballyPositioned { onAttachmentAnchorBoundsChange(it.boundsInRoot()) }
-                    .semantics {
-                        stateDescription = attachmentStateDescription
-                        contentDescription = attachmentContentDescription
-                    }
-                    .testTag(UiTags.CHAT_ADD_ATTACHMENT),
-                enabled = !isGenerating && !isImportingDocument,
-            ) {
-                if (isImportingDocument) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = if (hasImages || hasDocuments) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier
-                            .size(22.dp)
-                            .rotate(attachmentIconRotation),
-                    )
-                }
-            }
-
+        // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
+        val hasAttachments = hasImages || hasDocuments || isImportingDocument
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp)) {
+            attachmentContent()
             BasicTextField(
                 value = text,
                 onValueChange = onTextChange,
-                modifier = Modifier
-                    .weight(1f)
+                modifier = Modifier.fillMaxWidth()
                     .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .semantics {
-                        if (placeholder.isNotBlank()) {
-                            contentDescription = placeholder
-                        }
-                    }
+                    .semantics { if (placeholder.isNotBlank()) contentDescription = placeholder }
                     .testTag(UiTags.CHAT_INPUT),
-                textStyle = NexaraTypography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground).forInput(),
+                textStyle = inputStyle.forInput(),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 enabled = !isGenerating,
+                minLines = 1,
+                maxLines = 6,
                 decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                            .padding(vertical = NexaraSpacing.Small),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        if (text.isEmpty()) {
-                            Text(
-                                text = placeholder,
-                                style = NexaraTypography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
+                        if (text.isEmpty()) Text(placeholder, style = inputStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         innerTextField()
                     }
-                }
-            )
-
-            GenerationStatusButton(
-                status = effectiveStatus,
-                onSend = {
-                    if (isModelSelected) onSend() else onModelHint()
                 },
-                onStop = onStop,
-                onDismissError = onDismissError,
-                enabled = (text.isNotBlank() || hasImages || hasDocuments) && !isImportingDocument,
-                isModelSelected = isModelSelected
             )
+            Row(
+                modifier = Modifier.fillMaxWidth().height(40.dp).testTag("chat_composer_toolbar"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ChatCompactIconButton(
+                    onClick = { onAttachmentMenuExpandedChange(!attachmentMenuExpanded) },
+                    // 按钮左缘贴齐容器边缘：图标墨迹距输入文字左缘约 1.6dp，且不被容器裁剪。
+                    modifier = Modifier.offset(x = (-12).dp)
+                        .onGloballyPositioned { onAttachmentAnchorBoundsChange(it.boundsInRoot()) }
+                        .semantics {
+                            stateDescription = attachmentStateDescription
+                            contentDescription = attachmentContentDescription
+                        }
+                        .testTag(UiTags.CHAT_ADD_ATTACHMENT),
+                    enabled = !isGenerating && !isImportingDocument,
+                ) {
+                    if (isImportingDocument) CircularProgressIndicator(Modifier.size(20.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), strokeWidth = 2.dp)
+                    else Icon(Icons.Rounded.Add, contentDescription = null,
+                        tint = if (hasImages || hasDocuments) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp).rotate(attachmentIconRotation))
+                }
+                Box(Modifier.weight(1f)) {
+                    ChatModelSelector(modelName, modelId, onModelClick, Modifier.widthIn(max = 216.dp))
+                }
+                TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
+                Spacer(Modifier.width(4.dp))
+                GenerationStatusButton(
+                    status = effectiveStatus,
+                    onSend = { if (isModelSelected) onSend() else onModelHint() },
+                    onStop = onStop,
+                    onDismissError = onDismissError,
+                    enabled = (text.isNotBlank() || hasImages || hasDocuments) && !isImportingDocument,
+                    isModelSelected = isModelSelected,
+                )
+            }
         }
     }
 }
-
-
-
-
 
 @Composable
 private fun GenerationStatusButton(
@@ -1703,105 +1552,17 @@ private fun GenerationStatusButton(
     enabled: Boolean,
     isModelSelected: Boolean = true
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "gen_status")
-    
-    // Track last active status to show where error occurred
-    var lastActiveStatus by remember { mutableStateOf(GenerationStatus.IDLE) }
-    LaunchedEffect(status) {
-        if (status != GenerationStatus.ERROR && status != GenerationStatus.IDLE && status != GenerationStatus.COMPLETED) {
-            lastActiveStatus = status
-        }
+    val active = status == GenerationStatus.UPLOADING || status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING
+    val canSend = enabled && isModelSelected
+    val containerColor = when {
+        status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.error
+        active || canSend -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
-
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation"
-    )
-
-    val errorFlash by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(400, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "error_flash"
-    )
-
-    val shakeOffset by infiniteTransition.animateFloat(
-        initialValue = -2f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(50, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "shake"
-    )
-
-    val containerColor by animateColorAsState(
-        when (status) {
-            GenerationStatus.IDLE -> {
-                if (enabled) {
-                    if (isModelSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                }
-            }
-            GenerationStatus.UPLOADING -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
-            GenerationStatus.THINKING -> MaterialTheme.colorScheme.primary
-            GenerationStatus.RECEIVING -> MaterialTheme.colorScheme.error
-            GenerationStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-            GenerationStatus.ERROR -> MaterialTheme.colorScheme.error
-        },
-        label = "container_color"
-    )
-
-    val contentColor by animateColorAsState(
-        when (status) {
-            GenerationStatus.IDLE -> {
-                if (enabled) {
-                    if (isModelSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            }
-            GenerationStatus.UPLOADING -> MaterialTheme.colorScheme.onPrimary
-            GenerationStatus.THINKING -> MaterialTheme.colorScheme.onPrimary
-            GenerationStatus.RECEIVING -> MaterialTheme.colorScheme.onError
-            GenerationStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimary
-            GenerationStatus.ERROR -> MaterialTheme.colorScheme.onError
-        },
-        label = "content_color"
-    )
-
-    fun getIconForStatus(s: GenerationStatus) = when (s) {
-        GenerationStatus.IDLE -> Icons.Rounded.ArrowUpward
-        GenerationStatus.UPLOADING -> Icons.Rounded.CloudUpload
-        GenerationStatus.THINKING -> Icons.Rounded.HourglassEmpty
-        GenerationStatus.RECEIVING -> Icons.Rounded.Close
-        GenerationStatus.COMPLETED -> Icons.Rounded.Check
-        GenerationStatus.ERROR -> Icons.Rounded.ErrorOutline
-    }
-
-    val icon = if (status == GenerationStatus.ERROR) {
-        if (errorFlash > 0.5f) Icons.Rounded.ErrorOutline else getIconForStatus(lastActiveStatus)
-    } else {
-        getIconForStatus(status)
+    val contentColor = when {
+        status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.onError
+        active || canSend -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
     }
     val statusDescription = stringResource(
         when (status) {
@@ -1822,7 +1583,7 @@ private fun GenerationStatusButton(
         GenerationStatus.ERROR -> statusDescription
     }
 
-    IconButton(
+    ChatCompactIconButton(
         onClick = {
             when (status) {
                 GenerationStatus.IDLE -> onSend()
@@ -1832,10 +1593,6 @@ private fun GenerationStatusButton(
             }
         },
         modifier = Modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .offset { IntOffset(x = if (status == GenerationStatus.ERROR) (shakeOffset.dp).roundToPx() else 0, y = 0) }
-            .clip(CircleShape)
-            .background(containerColor)
             .semantics {
                 stateDescription = statusDescription
                 liveRegion = if (status == GenerationStatus.ERROR) {
@@ -1845,20 +1602,20 @@ private fun GenerationStatusButton(
                 }
             }
             .testTag(UiTags.CHAT_GENERATION_ACTION),
+        containerColor = containerColor,
         enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING || status == GenerationStatus.ERROR)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = actionDescription,
-            tint = contentColor,
-            modifier = Modifier
-                .size(20.dp)
-                .then(
-                    if (status == GenerationStatus.THINKING || (status == GenerationStatus.ERROR && lastActiveStatus == GenerationStatus.THINKING)) 
-                        Modifier.rotate(rotation)
-                    else Modifier
-                )
-        )
+        if (active) {
+            Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(contentColor)
+                .semantics { contentDescription = actionDescription })
+        } else {
+            Icon(
+                imageVector = if (status == GenerationStatus.ERROR) Icons.Rounded.ErrorOutline else Icons.Rounded.ArrowUpward,
+                contentDescription = actionDescription,
+                tint = contentColor,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 

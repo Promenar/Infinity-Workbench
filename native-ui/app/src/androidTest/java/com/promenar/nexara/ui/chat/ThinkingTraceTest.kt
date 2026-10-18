@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
@@ -10,6 +11,11 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -30,6 +36,44 @@ class ThinkingTraceTest {
     }
 
     @Test
+    fun expandedThinkingRendersMarkdownListsAndCode() {
+        rule.setContent {
+            NexaraTheme {
+                ThinkingTrace(
+                    reasoning = "**核对重点**\n\n- 检查输入\n\n```kotlin\nprintln(1)\n```",
+                    isGenerating = false, fontSize = 15, initiallyExpanded = true,
+                )
+            }
+        }
+        rule.onNodeWithText("核对重点").assertIsDisplayed()
+        rule.onNodeWithText("检查输入").assertIsDisplayed()
+        rule.onNodeWithText("println(1)").assertIsDisplayed()
+        rule.onNodeWithText("**核对重点**").assertDoesNotExist()
+    }
+
+    @Test
+    fun expandedThinkingRendersFormulaWithoutRawMarkdownDelimiters() {
+        rule.setContent {
+            NexaraTheme {
+                ThinkingTrace(
+                    reasoning = "公式前说明。\n\n\$x+y=z\$\n\n公式后说明。",
+                    isGenerating = false, fontSize = 15, initiallyExpanded = true,
+                )
+            }
+        }
+        rule.waitUntil(15_000) {
+            rule.onAllNodesWithContentDescription("Math: x+y=z", useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        val formula = rule.onNodeWithContentDescription("Math: x+y=z", useUnmergedTree = true)
+            .assertIsDisplayed().assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Image))
+            .fetchSemanticsNode()
+        org.junit.Assert.assertTrue(formula.boundsInRoot.width > 0f && formula.boundsInRoot.height > 0f)
+        rule.onNodeWithText("公式前说明。").assertIsDisplayed()
+        rule.onNodeWithText("公式后说明。").assertIsDisplayed()
+        rule.onAllNodes(hasText("\$", substring = true), useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
     fun completedThinkingTraceCanExpandAndCollapse() {
         rule.setContent {
             NexaraTheme {
@@ -41,11 +85,11 @@ class ThinkingTraceTest {
             }
         }
 
-        // 验证 toggle 可见，且具有点击动作和至少 48dp 高度
+        // 验证 toggle 可见，且具有点击动作和44dp 行高
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE)
             .assertIsDisplayed()
             .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(44.dp)
         assertExpansionState(R.string.common_state_collapsed)
 
         // 默认折叠，内容不可见
@@ -70,7 +114,7 @@ class ThinkingTraceTest {
             }
         }
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE)
-            .assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(48.dp)
+            .assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(44.dp)
         assertExpansionState(R.string.common_state_collapsed)
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()

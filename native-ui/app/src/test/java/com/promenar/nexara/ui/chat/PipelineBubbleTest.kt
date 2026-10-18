@@ -9,6 +9,50 @@ import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import org.junit.jupiter.api.Test
 
 class PipelineBubbleTest {
+    @Test
+    fun `工具轮尾部空助手消息不夺走最后正文的所属消息`() {
+        val answer = Message("answer", MessageRole.ASSISTANT, "这是需要保留的正文。")
+        val emptyTail = Message("empty-tail", MessageRole.ASSISTANT, "", executionSteps = listOf(
+            ExecutionStep("call", "tool_call", "read_file", "{}", "tool", timestamp = 1_000),
+            ExecutionStep("result", "tool_result", "read_file", toolCallId = "tool", content = "完成", timestamp = 1_400),
+        ))
+        val messages = listOf(answer, emptyTail)
+        val plan = buildPipelineRenderPlan(messages, false, false)
+        val content = plan.steps.filterIsInstance<PipelineStep.Content>().last()
+        assertThat(content.messageId).isEqualTo("answer")
+        assertThat(pipelineContentOwner(messages, content)).isEqualTo(answer)
+    }
+
+    @Test
+    fun `多个正文片段各自保留所属消息供长按和编辑使用`() {
+        val first = Message("first", MessageRole.ASSISTANT, "前段正文")
+        val second = Message("second", MessageRole.ASSISTANT, "最终正文")
+        val messages = listOf(first, second)
+        val content = buildPipelineRenderPlan(messages, false, false).steps.filterIsInstance<PipelineStep.Content>()
+        assertThat(content.map { it.messageId }).containsExactly("first", "second").inOrder()
+        assertThat(pipelineContentOwner(messages, content.first())).isEqualTo(first)
+        assertThat(pipelineContentOwner(messages, content.last())).isEqualTo(second)
+    }
+
+    @Test
+    fun `工具信封清理后的正文与流式占位均保留真实消息身份`() {
+        val cleaned = Message("cleaned", MessageRole.ASSISTANT, """{"tool_name":"read_file","query":"资料"} 剩余正文""")
+        val content = buildPipelineRenderPlan(listOf(cleaned), false, false).steps.filterIsInstance<PipelineStep.Content>().single()
+        assertThat(content.content).isEqualTo("剩余正文")
+        assertThat(content.messageId).isEqualTo("cleaned")
+        val streaming = Message("stream", MessageRole.ASSISTANT, "")
+        val placeholder = buildPipelineRenderPlan(listOf(streaming), true, true).steps.filterIsInstance<PipelineStep.Content>().single()
+        assertThat(placeholder.messageId).isEqualTo("stream")
+        assertThat(pipelineContentOwner(listOf(streaming), placeholder)).isEqualTo(streaming)
+    }
+
+    @Test
+    fun `正文来源不存在时不会回退到其它消息`() {
+        val source = Message("source", MessageRole.ASSISTANT, "正文")
+        val step = buildPipelineRenderPlan(listOf(source), false, false).steps.filterIsInstance<PipelineStep.Content>().single()
+        assertThat(pipelineContentOwner(listOf(Message("other", MessageRole.ASSISTANT, "其它正文")), step)).isNull()
+    }
+
 
     @Test
     fun `孤立错误助手消息不并入上一条成功回复`() {
@@ -26,13 +70,6 @@ class PipelineBubbleTest {
         assertThat(groups).hasSize(2)
         assertThat(groups[0].messages.map(Message::id)).containsExactly("ok")
         assertThat(groups[1].messages.map(Message::id)).containsExactly("error")
-    }
-
-    private fun pipelineBubbleSource(): String {
-        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
-            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
-        }
-        return moduleRoot.resolve("src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt").readText()
     }
 
     @Test
@@ -125,40 +162,19 @@ class PipelineBubbleTest {
         assertThat(plan.showContentCursor).isFalse()
     }
 
-    @Test
-    fun `AI 元信息模型名与时间作为左对齐同组渲染`() {
-        val source = pipelineBubbleSource()
-        val signature = "private fun AssistantMetadataRow("
-        assertThat(source).contains(signature)
-        val metadataSignatureRemainder = source.substringAfter(signature)
-        val signatureTerminator = ")"
-        assertThat(metadataSignatureRemainder).contains(signatureTerminator)
-        val metadataParameters = metadataSignatureRemainder.substringBefore(signatureTerminator)
-        assertThat(metadataParameters).contains("modelDisplayName: String")
-        assertThat(metadataParameters).contains("timestamp: String")
-
-        val metadata = metadataSignatureRemainder.substringAfter(signatureTerminator)
-            .substringBefore("private fun")
-        val compactMetadata = metadata.replace(Regex("\\s+"), "")
-
-        assertThat(metadata).contains("horizontalArrangement = Arrangement.spacedBy")
-        assertThat(metadata).contains("modelDisplayName")
-        assertThat(metadata).contains("timestamp")
-        assertThat(compactMetadata).contains(".weight(1f,fill=false)")
-        assertThat(compactMetadata).doesNotContainMatch("\\.weight\\(1f\\s*\\)")
-        assertThat(compactMetadata).doesNotContainMatch("\\.weight\\(1f\\s*,\\s*fill\\s*=\\s*true\\)")
-    }
 
     @Test
-    fun `助手短回答长按区保持最小触摸高度`() {
-        val source = pipelineBubbleSource()
-        val contentSegment = source
-            .substringAfter("private fun ContentSegment(")
-            .substringBefore("//  PipelineConnector")
-
-        assertThat(contentSegment).contains(
-            ".heightIn(min = NexaraSpacing.MinimumTouchTarget)\n" +
-                "                .combinedClickable(",
+    fun `复制整轮按正文顺序保留工具前后内容且排除思考参数结果`() {
+        val messages = listOf(
+            Message("first", MessageRole.ASSISTANT, "前段正文", reasoning = "秘密思考"),
+            Message("tool", MessageRole.ASSISTANT, "", executionSteps = listOf(
+                ExecutionStep("call", "tool_call", "read_file", "秘密参数", "call", timestamp = 100),
+                ExecutionStep("result", "tool_result", "read_file", content = "秘密结果", toolCallId = "call", timestamp = 200),
+            )),
+            Message("last", MessageRole.ASSISTANT, "末段正文"),
         )
+        val steps = buildPipelineRenderPlan(messages, false, false).steps
+        assertThat(pipelineReplyCopyText(steps)).isEqualTo("前段正文\n\n末段正文")
+        assertThat(pipelineReplyCopyText(emptyList())).isEmpty()
     }
 }

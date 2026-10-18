@@ -9,10 +9,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.ShareEnqueueResult
 import com.promenar.nexara.ShareIntentQueue
+import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.rag.DocumentReferenceExtractor
@@ -26,10 +28,12 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class ShareImportAndroidEndToEndTest {
+    private var lastStartupState: BackupStartupState? = null
+
     @Test
     fun activityDispatchStagesBeforeClearingIntentAndFreshMainActivityMountsSheet() {
         val authority = "${com.promenar.nexara.test.BuildConfig.APPLICATION_ID}.sharefixture"
-        val uri = Uri.parse("content://$authority/${ShareFixtureProvider.VALID_FILE}")
+        val uri = uniqueFixtureUri(authority, ShareFixtureProvider.VALID_FILE)
         val context = ApplicationProvider.getApplicationContext<NexaraApplication>()
         val intent = Intent(
             Intent.ACTION_SEND,
@@ -47,7 +51,8 @@ class ShareImportAndroidEndToEndTest {
         val firstActivity = instrumentation.startActivitySync(intent) as MainActivity
         instrumentation.waitForIdleSync()
         try {
-            assertThat(waitForShareSheet(instrumentation, firstActivity)).isTrue()
+            val sheetShown = waitForShareSheet(instrumentation, firstActivity)
+            assertWithMessage("启动状态 $lastStartupState").that(sheetShown).isTrue()
             instrumentation.runOnMainSync {
                 firstActivityIdentity = System.identityHashCode(firstActivity)
                 assertThat(firstActivity.intent.action).isEqualTo(Intent.ACTION_MAIN)
@@ -63,7 +68,8 @@ class ShareImportAndroidEndToEndTest {
 
         val mainIntent = Intent(context, MainActivity::class.java).apply { action = Intent.ACTION_MAIN }
         ActivityScenario.launch<MainActivity>(mainIntent).use { mainScenario ->
-            assertThat(waitForShareSheet(mainScenario)).isTrue()
+            val sheetShown = waitForShareSheet(mainScenario)
+            assertWithMessage("启动状态 $lastStartupState").that(sheetShown).isTrue()
             mainScenario.onActivity { activity ->
                 assertThat(System.identityHashCode(activity)).isNotEqualTo(firstActivityIdentity)
                 assertThat(activity.intent.action).isEqualTo(Intent.ACTION_MAIN)
@@ -80,8 +86,8 @@ class ShareImportAndroidEndToEndTest {
         val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val authority = "${com.promenar.nexara.test.BuildConfig.APPLICATION_ID}.sharefixture"
-        val firstUri = Uri.parse("content://$authority/${ShareFixtureProvider.BLOCKING_FILE}")
-        val secondUri = Uri.parse("content://$authority/${ShareFixtureProvider.SECOND_FILE}")
+        val firstUri = uniqueFixtureUri(authority, ShareFixtureProvider.BLOCKING_FILE)
+        val secondUri = uniqueFixtureUri(authority, ShareFixtureProvider.SECOND_FILE)
         val inbox = DurableShareInbox.get(app.noBackupFilesDir)
         drainInbox(inbox)
         callFixture(app, authority, ShareFixtureProvider.METHOD_RESET_BLOCKING_READ)
@@ -89,11 +95,12 @@ class ShareImportAndroidEndToEndTest {
         val firstActivity = instrumentation.startActivitySync(firstIntent) as MainActivity
         val firstIdentity = System.identityHashCode(firstActivity)
         try {
-            assertThat(callFixture(
+            val blockingReadStarted = callFixture(
                 app,
                 authority,
                 ShareFixtureProvider.METHOD_AWAIT_BLOCKING_READ,
-            ).getBoolean(ShareFixtureProvider.RESULT_READY)).isTrue()
+            ).getBoolean(ShareFixtureProvider.RESULT_READY)
+            assertWithMessage("启动状态 ${app.startupState.value}").that(blockingReadStarted).isTrue()
             app.startActivity(shareActivityIntent(app, secondUri))
             val delivered = waitForDeliveredShare(
                 instrumentation = instrumentation,
@@ -111,7 +118,8 @@ class ShareImportAndroidEndToEndTest {
                 inbox,
                 setOf(ShareFixtureProvider.BLOCKING_FILE, ShareFixtureProvider.SECOND_FILE),
             )).isTrue()
-            assertThat(waitForShareSheet(instrumentation, firstActivity)).isTrue()
+            val sheetShown = waitForShareSheet(instrumentation, firstActivity)
+            assertWithMessage("启动状态 $lastStartupState").that(sheetShown).isTrue()
             instrumentation.runOnMainSync {
                 assertThat(firstActivity.shareImportStateForTesting().pendingCount).isAtLeast(2)
             }
@@ -362,7 +370,7 @@ class ShareImportAndroidEndToEndTest {
     private fun waitForShareSheet(scenario: ActivityScenario<MainActivity>): Boolean {
         repeat(200) {
             var visible = false
-            scenario.onActivity { activity -> visible = activity.shareImportStateForTesting().visible }
+            scenario.onActivity { activity -> visible = activity.shareSheetVisibleAfterStartup() }
             if (visible) return true
             android.os.SystemClock.sleep(100)
         }
@@ -376,12 +384,19 @@ class ShareImportAndroidEndToEndTest {
         repeat(200) {
             var visible = false
             instrumentation.runOnMainSync {
-                if (!activity.isDestroyed) visible = activity.shareImportStateForTesting().visible
+                if (!activity.isDestroyed) visible = activity.shareSheetVisibleAfterStartup()
             }
             if (visible) return true
             android.os.SystemClock.sleep(100)
         }
         return false
+    }
+
+    /** 与生产路径一致：启动恢复就绪前不触碰分享导入状态（其依赖在启动迁移中初始化）。 */
+    private fun MainActivity.shareSheetVisibleAfterStartup(): Boolean {
+        val state = (application as NexaraApplication).startupState.value
+        lastStartupState = state
+        return state == BackupStartupState.Ready && shareImportStateForTesting().visible
     }
 
     private fun waitForDestroyed(
@@ -407,6 +422,13 @@ class ShareImportAndroidEndToEndTest {
         flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
         putExtra(Intent.EXTRA_STREAM, uri)
     }
+
+    /**
+     * 收件箱按 action、MIME 与 URI 永久记录已消费的分享指纹；固定 URI 在同一设备上重跑会被判为重复而不再展示。
+     * Provider 只按末段路径解析文件，前置一次性目录段使每次运行的指纹唯一，文件名不变。
+     */
+    private fun uniqueFixtureUri(authority: String, name: String): Uri =
+        Uri.parse("content://$authority/${UUID.randomUUID()}/$name")
 
     private fun callFixture(context: NexaraApplication, authority: String, method: String) =
         checkNotNull(context.contentResolver.call(Uri.parse("content://$authority"), method, null, null))

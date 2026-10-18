@@ -150,3 +150,36 @@ fun String.breakableIdentifier(): String = buildString(length + length / 4) {
 }
 
 private const val IDENTIFIER_BREAK_BEFORE_LETTER = "-_.:?&=@"
+
+/**
+ * 末字连写：在最后两个相邻的中日韩文字之间插入词连接符（U+2060），自动折行时末行至少保留两个字，
+ * 用于段落换行策略下的说明文字（段落策略不平衡行长，窄屏大字号会留下单字末行）。末尾标点不计入；
+ * 末两字之间已有空格或非中日韩文字时原样返回。可选择文本复制时会带上该不可见字符，但只作用于末尾中日韩字符，
+ * 不影响地址、命令等 ASCII 标识符；不得用于比较或存储。
+ */
+fun String.keepCjkTailTogether(): String {
+    val last = indexOfLast { !it.isWhitespace() && !it.isPunctuationLike() }
+    if (last < 1 || !this[last].isCjkGlyph() || !this[last - 1].isCjkGlyph()) return this
+    return substring(0, last) + '\u2060' + substring(last)
+}
+
+private fun Char.isCjkGlyph(): Boolean = when (Character.UnicodeScript.of(code)) {
+    Character.UnicodeScript.HAN,
+    Character.UnicodeScript.HIRAGANA,
+    Character.UnicodeScript.KATAKANA,
+    Character.UnicodeScript.HANGUL,
+    -> true
+    else -> false
+}
+
+private fun Char.isPunctuationLike(): Boolean = when (Character.getType(this).toByte()) {
+    Character.CONNECTOR_PUNCTUATION,
+    Character.DASH_PUNCTUATION,
+    Character.START_PUNCTUATION,
+    Character.END_PUNCTUATION,
+    Character.INITIAL_QUOTE_PUNCTUATION,
+    Character.FINAL_QUOTE_PUNCTUATION,
+    Character.OTHER_PUNCTUATION,
+    -> true
+    else -> false
+}

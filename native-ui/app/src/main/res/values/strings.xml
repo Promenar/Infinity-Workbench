@@ -518,9 +518,7 @@
     <string name="chat_approval_unknown_tool">Tool request</string>
     <string name="chat_approval_current">Current approval</string>
     <string name="chat_approval_remaining">Next waiting: %1$d</string>
-    <string name="chat_approval_approve_current">Approve current</string>
     <string name="chat_approval_approve_all">Approve all (%1$d)</string>
-    <string name="chat_approval_decline_current">Reject current</string>
     <string name="chat_approval_approve_current_a11y">Approve current %1$s, risk %2$s, %3$d remaining</string>
     <string name="chat_approval_decline_current_a11y">Reject current %1$s, risk %2$s, %3$d remaining</string>
     <string name="chat_approval_risk_safe_read">Safe read</string>
@@ -1321,7 +1319,6 @@
     <string name="rag_status_error">Error</string>
     <string name="rag_status_pending">Pending</string>
     <string name="chat_status_thinking">Thinking…</string>
-    <string name="chat_status_thought">Thought completed</string>
     <string name="chat_model_placeholder">No model configured</string>
 
     <!-- SearchConfigScreen engine labels -->
@@ -1463,29 +1460,9 @@
     <string name="recycle_bin_operation_dismiss">Dismiss status</string>
 
     <!-- Release-reachable chat presentation -->
-    <string name="chat_tool_default_name">Tool</string>
     <string name="chat_tool_error">Invalid tool request</string>
-    <string name="chat_tool_arguments">Arguments: %1$s</string>
     <string name="chat_cd_tool_image">Image returned by a tool</string>
     <string name="chat_cd_attached_image">Image attached to the message</string>
-    <string name="chat_rag_phase_query_intent">Analyzing query intent</string>
-    <string name="chat_rag_phase_embedding">Embedding query</string>
-    <string name="chat_rag_phase_memory">Searching memory</string>
-    <string name="chat_rag_phase_documents">Searching documents</string>
-    <string name="chat_rag_phase_keyword">Searching keywords</string>
-    <string name="chat_rag_phase_hybrid">Merging retrieval results</string>
-    <string name="chat_rag_phase_ranking">Ranking results</string>
-    <string name="chat_rag_phase_rerank">Reranking results</string>
-    <string name="chat_rag_phase_knowledge_graph">Searching knowledge graph</string>
-    <string name="chat_rag_phase_context_compress">Compressing context</string>
-    <string name="chat_rag_phase_prompt_build">Preparing model context</string>
-    <string name="chat_rag_phase_context_ready">Retrieval context ready</string>
-    <string name="chat_rag_phase_retrieved">Retrieved context</string>
-    <string name="chat_rag_ready_references">✓ References ready</string>
-    <string name="chat_rag_ready_web">✓ Web results ready</string>
-    <string name="chat_rag_ready_knowledge">✓ Knowledge retrieval ready</string>
-    <string name="chat_rag_ready_generic">✓ Retrieval ready</string>
-    <string name="chat_rag_preparing">Preparing retrieval context…</string>
     <string name="chat_rag_done">Done</string>
     <string name="chat_postprocess_memory">Memory</string>
     <string name="chat_postprocess_summary">Summary</string>
@@ -1620,15 +1597,8 @@
     <string name="model_catalog_records">%1$d records</string>
     <string name="model_catalog_bundled_snapshot">Bundled snapshot</string>
     <string name="local_models_slot_empty">No models</string>
-    <string name="chat_rag_source_knowledge">Knowledge base</string>
     <string name="chat_rag_summary_ready">Searched</string>
-    <string name="chat_thinking_elapsed">%1$d s</string>
-    <string name="chat_thought_duration">Thought for %1$d s</string>
-    <string name="chat_tools_count">Called %1$d tools</string>
     <string name="chat_tool_duration">%1$d ms</string>
-    <string name="chat_tool_pending">Pending</string>
-    <string name="chat_tool_failed">Failed</string>
-    <string name="chat_rag_source_web">Web search</string>
     <string name="chat_tool_duration_seconds">%1$s s</string>
     <string name="rag_details_kg_sources">Sources: %1$s</string>
 </resources>

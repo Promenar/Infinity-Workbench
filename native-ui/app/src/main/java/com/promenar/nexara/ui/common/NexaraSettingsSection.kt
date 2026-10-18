@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forReading
+import com.promenar.nexara.ui.theme.keepCjkTailTogether
 
 /** Bettbox 风格设置分组：弱化标题，设置行收进统一圆角色面。 */
 @Composable
@@ -57,7 +58,7 @@ fun NexaraSettingsGroup(
         if (!footer.isNullOrBlank()) {
             SelectionContainer {
                 Text(
-                    text = footer,
+                    text = footer.keepCjkTailTogether(),
                     style = MaterialTheme.typography.bodySmall.forReading(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = footerModifier.padding(

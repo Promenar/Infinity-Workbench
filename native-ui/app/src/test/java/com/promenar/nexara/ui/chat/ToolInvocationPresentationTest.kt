@@ -6,6 +6,157 @@ import org.junit.jupiter.api.Test
 
 class ToolInvocationPresentationTest {
     @Test
+    fun `停止生成后未完成工具展示等待而非运行或成功`() {
+        val invocations = toolInvocations(listOf(
+            call("a", "1", "web_search", 1_000),
+            call("b", "2", "read_file", 1_100), result("br", "2", 1_500),
+        ))
+        val display = toolGroupDisplaySummary(invocations, isExecuting = false)
+        assertThat(display.status).isEqualTo(ToolSummaryStatus.PENDING)
+        assertThat(display.pendingCount).isEqualTo(1)
+        assertThat(display.runningAction).isNull()
+        assertThat(display.durationMs).isNull()
+        assertThat(toolGroupSummary(invocations).status).isEqualTo(ToolSummaryStatus.RUNNING)
+    }
+
+    @Test
+    fun `活动工具组保留最后未完成类别且等待数量不包含已完成调用`() {
+        val invocations = toolInvocations(listOf(
+            call("a", "1", "ssh_exec", 1_000),
+            call("b", "2", "web_search", 1_100),
+            call("c", "3", "read_file", 1_200), result("cr", "3", 1_500),
+        ))
+        val display = toolGroupDisplaySummary(invocations, isExecuting = true)
+        assertThat(display.status).isEqualTo(ToolSummaryStatus.RUNNING)
+        assertThat(display.runningAction).isEqualTo(ToolSummaryAction.WEB_SEARCH)
+        assertThat(display.pendingCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `历史等待组保留失败数量且完成组不会变成等待`() {
+        val steps = listOf(
+            call("a", "1", "ssh_exec", 1_000), result("ar", "1", 1_200).copy(type = "error"),
+            call("b", "2", "web_search", 1_300),
+        )
+        val pending = toolGroupDisplaySummary(toolInvocations(steps), isExecuting = false)
+        assertThat(pending.status).isEqualTo(ToolSummaryStatus.PENDING)
+        assertThat(pending.failedCount).isEqualTo(1)
+        assertThat(pending.pendingCount).isEqualTo(1)
+        val finished = toolGroupDisplaySummary(toolInvocations(steps + result("br", "2", 1_500)), isExecuting = false)
+        assertThat(finished.status).isEqualTo(ToolSummaryStatus.FAILED)
+        assertThat(finished.pendingCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `工具摘要严格按规格映射所有工具且保留检索与实用子类别`() {
+        val cases = listOf(
+            listOf("termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read", "ssh_session_close", "run_script", "exec_js") to ToolSummaryAction.COMMAND,
+            listOf("web_search", "search_tavily", "search_searxng") to ToolSummaryAction.WEB_SEARCH,
+            listOf("web_fetch") to ToolSummaryAction.WEB_READ,
+            listOf("read_file", "list_files", "search_files", "read_tool_output", "read_skill_file") to ToolSummaryAction.FILE_READ,
+            listOf("write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file", "create_directory") to ToolSummaryAction.FILE_EDIT,
+            listOf("knowledge_search") to ToolSummaryAction.KNOWLEDGE_SEARCH,
+            listOf("memory_search") to ToolSummaryAction.MEMORY_SEARCH,
+            listOf("generate_image", "image_generation") to ToolSummaryAction.IMAGE,
+            listOf("initialize_plan", "update_plan", "get_plan", "drop_plan") to ToolSummaryAction.PLAN,
+            listOf("current_time") to ToolSummaryAction.TIME,
+            listOf("calculator") to ToolSummaryAction.CALCULATE,
+            listOf("activate_skill") to ToolSummaryAction.SKILL,
+        )
+        cases.forEach { (names, expected) ->
+            names.forEach { name ->
+                val summary = toolGroupSummary(completedInvocations(name))
+                assertThat(summary.parts).containsExactly(ToolSummaryPart(expected, 1))
+                assertThat(summary.count).isEqualTo(1)
+                assertThat(summary.status).isEqualTo(ToolSummaryStatus.COMPLETED)
+                assertThat(summary.durationMs).isEqualTo(400L)
+            }
+        }
+    }
+
+    @Test
+    fun `未知名称与MCP工具不能凭子串归入内置类别`() {
+        val summary = toolGroupSummary(completedInvocations("search", "mcp__files__read_file", "Read_File", "custom_exec"))
+        assertThat(summary.parts).containsExactly(ToolSummaryPart(ToolSummaryAction.OTHER, 4))
+        assertThat(summary.categories).containsExactly(ToolSummaryCategory.OTHER)
+    }
+
+    @Test
+    fun `两类别按首次出现顺序汇总并且统计每次调用`() {
+        val summary = toolGroupSummary(completedInvocations("read_file", "ssh_exec", "list_files", "exec_js"))
+        assertThat(summary.parts).containsExactly(
+            ToolSummaryPart(ToolSummaryAction.FILE_READ, 2), ToolSummaryPart(ToolSummaryAction.COMMAND, 2),
+        ).inOrder()
+        assertThat(summary.useGenericSummary).isFalse()
+        assertThat(summary.count).isEqualTo(4)
+    }
+
+    @Test
+    fun `三类别使用总调用数摘要而非列出内部工具`() {
+        val summary = toolGroupSummary(completedInvocations("read_file", "web_search", "calculator", "read_file"))
+        assertThat(summary.useGenericSummary).isTrue()
+        assertThat(summary.count).isEqualTo(4)
+        assertThat(summary.categories).hasSize(3)
+    }
+
+    @Test
+    fun `知识与记忆检索和时间与计算分别保留动作但只算两大类别`() {
+        val summary = toolGroupSummary(completedInvocations("memory_search", "calculator", "knowledge_search", "current_time"))
+        assertThat(summary.categories).containsExactly(ToolSummaryCategory.RETRIEVAL, ToolSummaryCategory.UTILITY).inOrder()
+        assertThat(summary.parts.map { it.action }).containsExactly(
+            ToolSummaryAction.MEMORY_SEARCH, ToolSummaryAction.KNOWLEDGE_SEARCH,
+            ToolSummaryAction.CALCULATE, ToolSummaryAction.TIME,
+        ).inOrder()
+        assertThat(summary.useGenericSummary).isFalse()
+    }
+
+    @Test
+    fun `进行中取最后一个未完成调用而非最后一个事件或首个调用`() {
+        val invocations = toolInvocations(listOf(
+            call("a", "1", "ssh_exec", 1_000),
+            call("b", "2", "web_search", 1_100),
+            call("c", "3", "read_file", 1_200), result("cr", "3", 1_300),
+            call("d", "4", "calculator", 1_400), result("dr", "4", 1_500),
+        ))
+        val summary = toolGroupSummary(invocations)
+        assertThat(summary.status).isEqualTo(ToolSummaryStatus.RUNNING)
+        assertThat(summary.runningAction).isEqualTo(ToolSummaryAction.WEB_SEARCH)
+        assertThat(summary.count).isEqualTo(4)
+    }
+
+    @Test
+    fun `失败数量按调用而非错误事件计数且进行状态优先`() {
+        val steps = listOf(
+            call("a", "1", "ssh_exec", 1_000), result("ar", "1", 1_400).copy(type = "error"),
+            result("ar2", "1", 1_500).copy(type = "error"),
+            call("b", "2", "read_file", 1_600), result("br", "2", 2_000).copy(type = "error"),
+        )
+        val summary = toolGroupSummary(toolInvocations(steps))
+        assertThat(summary.failedCount).isEqualTo(2)
+        assertThat(summary.status).isEqualTo(ToolSummaryStatus.FAILED)
+        assertThat(summary.durationMs).isEqualTo(1_000L)
+        assertThat(toolGroupSummary(toolInvocations(steps + call("c", "3", "web_search", 2_100))).status)
+            .isEqualTo(ToolSummaryStatus.RUNNING)
+    }
+
+    @Test
+    fun `空工具组没有运行状态耗时或虚构调用`() {
+        val summary = toolGroupSummary(emptyList())
+        assertThat(summary.parts).isEmpty()
+        assertThat(summary.categories).isEmpty()
+        assertThat(summary.status).isEqualTo(ToolSummaryStatus.EMPTY)
+        assertThat(summary.count).isEqualTo(0)
+        assertThat(summary.failedCount).isEqualTo(0)
+        assertThat(summary.runningAction).isNull()
+        assertThat(summary.durationMs).isNull()
+    }
+
+    private fun completedInvocations(vararg names: String) = toolInvocations(names.flatMapIndexed { index, name ->
+        val start = 1_000L + index * 500L
+        listOf(call("c$index", "$index", name, start), result("r$index", "$index", start + 400))
+    })
+
+    @Test
     fun `审批决定不能增加工具数量或阻止工具完成`() {
         val invocations = toolInvocations(listOf(
             ExecutionStep("approval", "intervention_result", content = "已批准"),

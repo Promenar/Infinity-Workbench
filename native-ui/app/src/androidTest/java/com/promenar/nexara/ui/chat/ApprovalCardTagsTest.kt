@@ -36,6 +36,9 @@ class ApprovalCardTagsTest {
 
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_REQUIRED).assertIsDisplayed()
+        rule.onNodeWithText("write_file").assertIsDisplayed()
+        rule.onNodeWithText("Approve").assertIsDisplayed()
+        rule.onNodeWithText("Reject").assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_DECLINE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).performClick()
         rule.runOnIdle {
@@ -62,10 +65,31 @@ class ApprovalCardTagsTest {
 
         rule.onNodeWithText("Current approval").assertIsDisplayed()
         rule.onNodeWithText("Next waiting: 1").assertIsDisplayed()
-        rule.onNodeWithText("Approve current").assertIsNotEnabled()
-        rule.onNodeWithText("Reject current").assertIsNotEnabled()
+        rule.onNodeWithText("Approve current").assertIsDisplayed()
+        rule.onNodeWithText("Reject current").assertIsDisplayed()
+        rule.onNodeWithText("write_file").assertIsDisplayed()
+        rule.onNodeWithText("delete_file").assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).assertIsNotEnabled()
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_DECLINE).assertIsNotEnabled()
         rule.onNodeWithContentDescription("Approve current write_file, risk file write, 1 remaining")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun mcpAndUnknownCallsKeepTheirExactVisibleIds() {
+        rule.setContent {
+            NexaraTheme {
+                ApprovalCard(
+                    toolName = "mcp__files__remove", description = "Review the request",
+                    calls = listOf(
+                        ApprovalDisplayCall("mcp__files__remove", "{}", "External write"),
+                        ApprovalDisplayCall("custom_unknown_tool", "{}", "Unknown risk"),
+                    ),
+                )
+            }
+        }
+        rule.onNodeWithText("mcp__files__remove").assertIsDisplayed()
+        rule.onNodeWithText("custom_unknown_tool").assertIsDisplayed()
     }
 
     @Test
@@ -82,6 +106,7 @@ class ApprovalCardTagsTest {
 
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_EXECUTED).assertIsDisplayed()
+        rule.onNodeWithText("write_file").assertIsDisplayed()
         rule.onAllNodesWithTag(UiTags.CHAT_APPROVAL_APPROVE).assertCountEquals(0)
         rule.onAllNodesWithTag(UiTags.CHAT_APPROVAL_DECLINE).assertCountEquals(0)
     }

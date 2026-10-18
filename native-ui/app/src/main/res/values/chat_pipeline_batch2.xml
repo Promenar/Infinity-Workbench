@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_step_summary_separator">", "</string>
+    <string name="chat_step_more_actions">More message actions</string>
+    <string name="chat_step_expand_all">Show all</string>
+    <string name="chat_step_collapse_all">Collapse</string>
+    <string name="chat_step_thought">Thought</string>
+    <plurals name="chat_step_thinking"><item quantity="one">Thinking · %1$ds</item><item quantity="other">Thinking · %1$ds</item></plurals>
+    <plurals name="chat_step_thought_duration"><item quantity="one">Thought for %1$ds</item><item quantity="other">Thought for %1$ds</item></plurals>
+    <plurals name="chat_step_failed_count"><item quantity="one">%1$d failed</item><item quantity="other">%1$d failed</item></plurals>
+    <plurals name="chat_step_duration_ms"><item quantity="one">%1$dms</item><item quantity="other">%1$dms</item></plurals>
+    <plurals name="chat_step_duration_seconds"><item quantity="one">%1$ss</item><item quantity="other">%1$ss</item></plurals>
+    <plurals name="chat_step_command_done"><item quantity="one">Ran %1$d command</item><item quantity="other">Ran %1$d commands</item></plurals>
+    <plurals name="chat_step_web_search_once"><item quantity="other">Searched the web</item></plurals>
+    <plurals name="chat_step_web_search_done"><item quantity="one">Searched the web</item><item quantity="other">Searched the web %1$d times</item></plurals>
+    <plurals name="chat_step_web_read_done"><item quantity="one">Read %1$d page</item><item quantity="other">Read %1$d pages</item></plurals>
+    <plurals name="chat_step_file_read_done"><item quantity="one">Read %1$d file</item><item quantity="other">Read %1$d files</item></plurals>
+    <plurals name="chat_step_file_edit_done"><item quantity="one">Edited %1$d file</item><item quantity="other">Edited %1$d files</item></plurals>
+    <plurals name="chat_step_knowledge_done"><item quantity="one">Searched knowledge</item><item quantity="other">Searched knowledge %1$d times</item></plurals>
+    <plurals name="chat_step_memory_done"><item quantity="one">Searched memory</item><item quantity="other">Searched memory %1$d times</item></plurals>
+    <plurals name="chat_step_image_done"><item quantity="one">Generated %1$d image</item><item quantity="other">Generated %1$d images</item></plurals>
+    <plurals name="chat_step_plan_done"><item quantity="one">Updated the plan</item><item quantity="other">Updated the plan %1$d times</item></plurals>
+    <plurals name="chat_step_time_done"><item quantity="one">Checked the time</item><item quantity="other">Checked the time %1$d times</item></plurals>
+    <plurals name="chat_step_calculate_done"><item quantity="one">Calculated</item><item quantity="other">Calculated %1$d times</item></plurals>
+    <plurals name="chat_step_skill_done"><item quantity="one">Activated a skill</item><item quantity="other">Activated %1$d skills</item></plurals>
+    <plurals name="chat_step_other_done"><item quantity="one">Used %1$d tool</item><item quantity="other">Used %1$d tools</item></plurals>
+    <string name="chat_step_command_running">Running a command…</string>
+    <string name="chat_step_web_search_running">Searching the web…</string>
+    <string name="chat_step_web_read_running">Reading a webpage…</string>
+    <string name="chat_step_file_read_running">Reading files…</string>
+    <string name="chat_step_file_edit_running">Editing files…</string>
+    <string name="chat_step_knowledge_running">Searching knowledge…</string>
+    <string name="chat_step_memory_running">Searching memory…</string>
+    <string name="chat_step_image_running">Generating an image…</string>
+    <string name="chat_step_plan_running">Updating the plan…</string>
+    <string name="chat_step_time_running">Checking the time…</string>
+    <string name="chat_step_calculate_running">Calculating…</string>
+    <string name="chat_step_skill_running">Activating a skill…</string>
+    <string name="chat_step_other_running">Using a tool…</string>
+    <string name="chat_step_command_name">Command</string>
+    <string name="chat_step_web_search_name">Web search</string>
+    <string name="chat_step_web_read_name">Webpage</string>
+    <string name="chat_step_file_read_name">Read files</string>
+    <string name="chat_step_file_edit_name">Edit files</string>
+    <string name="chat_step_knowledge_name">Knowledge search</string>
+    <string name="chat_step_memory_name">Memory search</string>
+    <string name="chat_step_image_name">Image generation</string>
+    <string name="chat_step_plan_name">Task plan</string>
+    <string name="chat_step_time_name">Current time</string>
+    <string name="chat_step_calculate_name">Calculation</string>
+    <string name="chat_step_skill_name">Activate skill</string>
+    <string name="chat_step_other_name">Other tool</string>
+    <plurals name="chat_step_pending_count"><item quantity="one">%1$d tool is waiting</item><item quantity="other">%1$d tools are waiting</item></plurals>
+</resources>

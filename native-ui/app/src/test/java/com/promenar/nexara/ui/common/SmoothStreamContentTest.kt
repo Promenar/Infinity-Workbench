@@ -1,170 +1,209 @@
 package com.promenar.nexara.ui.common
 
-import android.os.Trace
-import android.util.Log
-import androidx.compose.runtime.AbstractApplier
-import androidx.compose.runtime.BroadcastFrameClock
-import androidx.compose.runtime.Composition
-import androidx.compose.runtime.Recomposer
-import com.google.common.truth.Truth.assertThat
-import io.mockk.every
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Test
-import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class SmoothStreamContentTest {
+    private val frameNanos = 16_666_667L
 
-    private class NoOpApplier : AbstractApplier<Unit>(Unit) {
-        override fun insertBottomUp(index: Int, instance: Unit) = Unit
+    @Test
+    fun `流式中途挂载立即显示当前全文且不为历史文字添加渐显`() {
+        val revealer = StreamRevealer()
+        val current = "已经读过的👩🏽‍💻正文".repeat(400)
 
-        override fun insertTopDown(index: Int, instance: Unit) = Unit
+        val frame = revealer.updateTarget(current, true, 1_000_000_000L)
 
-        override fun move(from: Int, to: Int, count: Int) = Unit
-
-        override fun remove(index: Int, count: Int) = Unit
-
-        override fun onClear() = Unit
+        assertEquals(current, frame.text)
+        assertFalse(frame.hasFadingText)
+        assertFalse(revealer.hasPendingText)
     }
 
     @Test
-    fun `首次组合已有流式正文时立即显示完整内容`() = runTest {
-        mockAndroidComposeRuntime()
-        val frameClock = BroadcastFrameClock()
-        val compositionContext = coroutineContext + frameClock
-        val recomposer = Recomposer(compositionContext)
-        val composition = Composition(NoOpApplier(), recomposer)
-        val recomposition = launch(compositionContext, start = CoroutineStart.UNDISPATCHED) {
-            recomposer.runRecomposeAndApplyChanges()
-        }
-        var rendered: String? = null
+    fun `挂载之后新增的增量才逐帧放出并保留历史前缀`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("已读正文", true, 1_000_000_000L)
 
-        try {
-            composition.setContent {
-                rendered = rememberSmoothStreamContent(
-                    content = "首个流式片段",
-                    isStreaming = true,
-                    cps = StreamSpeed.SMOOTH.cps
-                )
+        val arrived = revealer.updateTarget("已读正文" + "新".repeat(100), true, 1_100_000_000L)
+        val advanced = revealer.advanceFrame(1_100_000_000L + frameNanos)
+
+        assertEquals("已读正文", arrived.text)
+        assertTrue(advanced.text.startsWith("已读正文"))
+        assertTrue(advanced.text.length in 5..103)
+        assertTrue(advanced.recentRanges.all { it.start >= 4 })
+    }
+
+    @Test
+    fun `部分放出帧携带原始目标来源以证明稳定前缀`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("已读", true, 0L)
+        val target = "已读" + "新".repeat(100)
+        revealer.updateTarget(target, true, 100_000_000L)
+
+        val frame = revealer.advanceFrame(100_000_000L + frameNanos)
+
+        assertTrue(frame.text.length < target.length)
+        assertSame(target, frame.sourceText)
+    }
+
+    @Test
+    fun `每100毫秒到达5字符时稳态逐帧平滑且有积压时不停顿6帧`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", isStreaming = true, nowNanos = 0L)
+        val deltas = mutableListOf<Int>()
+        var previousLength = 0
+        var pausedFrames = 0
+        var longestPause = 0
+        var target = ""
+        for (frame in 1..180) {
+            val now = frame * frameNanos
+            if (frame % 6 == 0) {
+                target += "甲乙丙丁戊"
+                revealer.updateTarget(target, isStreaming = true, nowNanos = now)
             }
-            runCurrent()
-
-            assertThat(rendered).isEqualTo("首个流式片段")
-        } finally {
-            composition.dispose()
-            recomposer.cancel()
-            recomposition.join()
-            unmockkStatic(Log::class, Trace::class)
+            val text = revealer.advanceFrame(now).text
+            val delta = text.length - previousLength
+            if (now >= 500_000_000L) {
+                deltas += delta
+                pausedFrames = if (delta == 0 && text.length < target.length) pausedFrames + 1 else 0
+                longestPause = maxOf(longestPause, pausedFrames)
+            }
+            previousLength = text.length
         }
+        val median = deltas.sorted()[deltas.size / 2]
+        assertTrue("稳态每帧最多显示2字符：$deltas", deltas.all { it in 0..2 })
+        assertTrue("单帧不能超过中位数3倍", deltas.max() <= median * 3)
+        assertTrue("积压期间最长停顿为 $longestPause 帧", longestPause < 6)
     }
 
     @Test
-    fun `后续追加内容按设定速率平滑推进`() {
-        val rendered = reduceSmoothStreamContent(
-            displayed = "首",
-            target = "首个流式片段",
-            isStreaming = true,
-            cps = StreamSpeed.SMOOTH.cps
-        )
-
-        assertThat(rendered).isEqualTo("首个")
+    fun `2000字符积压遵守每秒2000字符上限并在1200毫秒内追平`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", isStreaming = true, nowNanos = 0L)
+        val arrivedAt = 100_000_000L
+        val target = "字".repeat(2000)
+        revealer.updateTarget(target, isStreaming = true, nowNanos = arrivedAt)
+        for (frame in 1..36) revealer.advanceFrame(arrivedAt + frame * frameNanos)
+        assertTrue("600毫秒最多放出1200字符", revealer.shownLength <= 1200)
+        assertTrue("速率上限意味着至少1000毫秒", revealer.shownLength < target.length)
+        for (frame in 37..72) revealer.advanceFrame(arrivedAt + frame * frameNanos)
+        assertEquals(target, revealer.visibleText)
     }
 
     @Test
-    fun `默认平衡模式不积压普通chunk而由绘制层负责尾部淡入`() {
-        val target = "这是一个需要平滑呈现的普通流式文本片段"
-
-        val rendered = reduceSmoothStreamContent(
-            displayed = "",
-            target = target,
-            isStreaming = true,
-            cps = StreamSpeed.BALANCED.cps,
-        )
-
-        assertThat(rendered).isEqualTo(target)
+    fun `结束时300字符积压在300毫秒内完整放出`() {
+        val target = "字".repeat(300)
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", isStreaming = true, nowNanos = 0L)
+        revealer.updateTarget(target, isStreaming = true, nowNanos = 0L)
+        revealer.updateTarget(target, isStreaming = false, nowNanos = 0L)
+        for (frame in 1..17) revealer.advanceFrame(frame * frameNanos)
+        assertTrue(revealer.shownLength < target.length)
+        assertEquals(target, revealer.advanceFrame(300_000_000L).text)
     }
 
     @Test
-    fun `尾部淡入只在流式正文非空时启用`() {
-        assertThat(streamTailFadeStartAlpha(true, "", "hello", 1f)).isLessThan(1f)
-        assertThat(streamTailFadeStartAlpha(false, "", "hello", 1f)).isEqualTo(1f)
-        assertThat(streamTailFadeStartAlpha(true, "hello", "other", 0.8f)).isEqualTo(1f)
-        assertThat(streamTailFadeStartAlpha(true, "hello", "hello world", 0.9f)).isGreaterThan(0.68f)
-        assertThat(streamTailFadeStartAlpha(true, "hello", "hello world", 0.9f)).isAtLeast(0.84f)
-        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtLeast(180)
-        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtMost(260)
+    fun `非流式消息直接显示全文`() {
+        val revealer = StreamRevealer()
+        assertEquals("历史消息", revealer.updateTarget("历史消息", false, 0L).text)
+        assertFalse(revealer.hasPendingText)
     }
 
     @Test
-    fun `截图检查模式关闭尾部淡入而真实流式界面保持动画`() {
-        assertThat(shouldAnimateStreamingTail(isStreaming = true, inspectionMode = false)).isTrue()
-        assertThat(shouldAnimateStreamingTail(isStreaming = true, inspectionMode = true)).isFalse()
-        assertThat(shouldAnimateStreamingTail(isStreaming = false, inspectionMode = false)).isFalse()
-        assertThat(shouldAnimateStreamingTail(isStreaming = false, inspectionMode = true)).isFalse()
+    fun `动画禁用时流式内容直接显示全文`() {
+        val revealer = StreamRevealer()
+        assertEquals("完整内容", revealer.updateTarget("完整内容", true, 0L, animationsEnabled = false).text)
+        assertFalse(revealer.hasPendingText)
     }
 
     @Test
-    fun `尾部淡入使用透明alpha遮罩且不覆盖整个富媒体容器`() {
-        val root = File(System.getProperty("user.dir") ?: ".").let {
-            if (it.resolve("src/main").isDirectory) it else it.resolve("app")
+    fun `流结束后没有增长时全文保持稳定`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("最终答案", true, 0L)
+        revealer.updateTarget("最终答案", false, 0L)
+        revealer.advanceFrame(300_000_000L)
+        assertEquals("最终答案", revealer.advanceFrame(500_000_000L).text)
+        assertEquals("最终答案", revealer.updateTarget("最终答案", false, 900_000_000L).text)
+        assertFalse(revealer.hasPendingText)
+    }
+
+    @Test
+    fun `不拆开代理对组合字符肤色ZWJ国旗与变体序列`() {
+        val clusters = listOf("A", "🚀", "e\u0301", "👩🏽‍💻", "👨‍👩‍👧‍👦", "🇨🇳", "1️⃣", "Z")
+        val target = clusters.joinToString("")
+        val boundaries = clusters.runningFold(0) { length, cluster -> length + cluster.length }.toSet()
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", true, 0L)
+        revealer.updateTarget(target, true, 0L)
+        for (frame in 1..100) {
+            val shown = revealer.advanceFrame(frame * frameNanos).text
+            assertTrue("非法字形截断 ${shown.length}: $shown", shown.length in boundaries)
+            assertTrue(target.startsWith(shown))
         }
-        val source = root.resolve(
-            "src/main/java/com/promenar/nexara/ui/common/MarkdownText.kt",
-        ).readText()
-
-        assertThat(source).contains("BlendMode.DstIn")
-        assertThat(source).contains("CompositingStrategy.Offscreen")
-        assertThat(source).contains("index == mergedSegments.lastIndex")
-        assertThat(source).doesNotContain("veilColor")
+        assertEquals(target, revealer.visibleText)
     }
 
     @Test
-    fun `流式目标发生等长非追加替换时从新正文起点重新推进`() {
-        val rendered = reduceSmoothStreamContent(
-            displayed = "旧内容",
-            target = "新答案",
-            isStreaming = true,
-            cps = StreamSpeed.SMOOTH.cps
-        )
-
-        assertThat(rendered).isEqualTo("新")
+    fun `文本改写时立即退回已显示文本的公共字形前缀`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("相同👩🏽‍💻旧答案", false, 0L)
+        val rewritten = revealer.updateTarget("相同👩🏽‍💻新答案", true, frameNanos)
+        assertEquals("相同👩🏽‍💻", rewritten.text)
+        assertTrue(revealer.hasPendingText)
     }
 
     @Test
-    fun `流式目标截短时直接同步避免显示旧尾部`() {
-        val rendered = reduceSmoothStreamContent(
-            displayed = "已显示的旧尾部",
-            target = "已显示",
-            isStreaming = true,
-            cps = StreamSpeed.SMOOTH.cps
-        )
-
-        assertThat(rendered).isEqualTo("已显示")
+    fun `改写发生在组合字形内部时回退至字形之前`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("相同e\u0301旧", false, 0L)
+        assertEquals("相同", revealer.updateTarget("相同e\u0300新", true, frameNanos).text)
     }
 
     @Test
-    fun `流式结束时立即同步最新完整正文`() {
-        val rendered = reduceSmoothStreamContent(
-            displayed = "首个",
-            target = "首个流式片段（完成）",
-            isStreaming = false,
-            cps = StreamSpeed.SMOOTH.cps
-        )
-
-        assertThat(rendered).isEqualTo("首个流式片段（完成）")
+    fun `积压超过4000字符时跳到末尾前200字符`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", true, 0L)
+        val target = "甲".repeat(5000)
+        assertEquals(target.take(4800), revealer.updateTarget(target, true, 0L).text)
+        assertEquals(4800, revealer.shownLength)
     }
 
-    private fun mockAndroidComposeRuntime() {
-        mockkStatic(Log::class)
-        every { Log.e(any(), any(), any()) } answers { throw thirdArg<Throwable>() }
-        mockkStatic(Trace::class)
-        every { Trace.beginSection(any()) } returns Unit
-        every { Trace.endSection() } returns Unit
+    @Test
+    fun `积压跳转同样不能拆开emoji`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", true, 0L)
+        val target = "甲".repeat(4799) + "👩🏽‍💻" + "乙".repeat(199)
+        val shown = revealer.updateTarget(target, true, 0L).text
+        assertEquals("甲".repeat(4799), shown)
+    }
+
+    @Test
+    fun `到达速率按增长间隔以0点3指数平均`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", true, 0L)
+        revealer.updateTarget("甲".repeat(10), true, 100_000_000L)
+        revealer.updateTarget("甲".repeat(20), true, 200_000_000L)
+        revealer.updateTarget("甲".repeat(50), true, 300_000_000L)
+        assertEquals(160.0, revealer.estimatedRate, 0.0001)
+    }
+
+    @Test
+    fun `时钟没有推进时不额外放出字符`() {
+        val revealer = StreamRevealer()
+        revealer.updateTarget("", true, 0L)
+        revealer.updateTarget("新内容", true, 0L)
+        assertEquals("", revealer.advanceFrame(0L).text)
+        assertEquals("", revealer.advanceFrame(0L).text)
+    }
+
+    @Test
+    fun `新文字注解透明度按60和120毫秒分档`() {
+        assertEquals(0.3f, streamRevealAlpha(ageNanos = 0L), 0.001f)
+        assertEquals(0.3f, streamRevealAlpha(ageNanos = 59_999_999L), 0.001f)
+        assertEquals(0.65f, streamRevealAlpha(ageNanos = 60_000_000L), 0.001f)
+        assertEquals(0.65f, streamRevealAlpha(ageNanos = 119_999_999L), 0.001f)
+        assertEquals(1f, streamRevealAlpha(ageNanos = 120_000_000L), 0.001f)
     }
 }

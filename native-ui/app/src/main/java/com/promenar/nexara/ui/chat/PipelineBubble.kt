@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,17 +24,21 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.common.NexaraMetaSeparator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -54,7 +59,6 @@ import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.renderer.ImageLightbox
-import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
@@ -115,6 +119,9 @@ internal fun messageCopyOverride(
     { copyHandler(content) }
 }
 
+internal fun pipelineReplyCopyText(steps: List<PipelineStep>): String =
+    steps.filterIsInstance<PipelineStep.Content>().map { it.content }.filter(String::isNotBlank).joinToString("\n\n")
+
 internal fun historicalGenerationFailureNotice(errorMessage: String?): UiStatusNotice =
     GenerationFailureNotice.fromPersisted(errorMessage)
 
@@ -129,8 +136,8 @@ internal fun streamingReasoningPreview(reasoning: String, maxChars: Int = 180): 
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * 将一组 ASSISTANT+TOOL 消息渲染为单一气泡，
- * 检索、思考、工具与正文共享同一垂直间距，详情由各步骤按需展开。
+ * 将一轮助手响应渲染为通栏内容，步骤相邻排列，正文边界保留阅读间距。
+ * 检索、思考与工具详情由对应步骤按需展开。
  */
 @Composable
 fun PipelineBubble(
@@ -146,18 +153,20 @@ fun PipelineBubble(
     onDelete: ((String) -> Unit)? = null,
     onBranch: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    hasRagContent: Boolean = false,
+    onMessageContentChange: ((String, String) -> Unit)? = null,
     ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isUser) {
-        // USER 消息保持原样
         val msg = group.messages.first()
         UserMessageBubble(
             message = msg,
             fontSize = fontSize,
+            modifier = modifier,
             onDelete = { onDelete?.invoke(msg.id) },
             onCopy = messageCopyOverride(onCopy, msg.content),
-            onRegenerate = { onRegenerate?.invoke(msg.id) },
-            onBranch = { onBranch?.invoke(msg.id) },
+            onRegenerate = onRegenerate?.let { handler -> { handler(msg.id) } },
+            onBranch = onBranch?.let { handler -> { handler(msg.id) } },
         )
         return
     }
@@ -171,94 +180,78 @@ fun PipelineBubble(
     }
     val allSteps = renderPlan.steps
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.Transparent
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(ChatStepSpacing)
-        ) {
-            ragContent()
-            allSteps.forEachIndexed { index, step ->
-                val isLastInGroup = index == allSteps.lastIndex
-                
-                key(when (step) {
-                    is PipelineStep.Thinking -> "thinking:${step.messageId}"
-                    is PipelineStep.ToolExec -> "tools:${step.steps.firstOrNull()?.id}"
-                    is PipelineStep.Content -> "content:$index"
-                }) {
-                    when (step) {
-                        is PipelineStep.Thinking -> {
-                            val isThinkingStreaming = isGenerating && isLastInGroup && streamingContent.isEmpty()
-
-                            ThinkingTrace(
-                                reasoning = step.reasoning,
-                                isGenerating = isThinkingStreaming,
-                                fontSize = fontSize
-                            )
-                        }
-                        is PipelineStep.ToolExec -> {
-                            InlineToolRow(
-                                steps = step.steps,
-                                isExecuting = step.isExecuting,
-                                fontSize = fontSize
-                            )
-                        }
-                        is PipelineStep.Content -> {
-                            val displayContent = if (isLastInGroup && isGenerating) {
-                                streamingContent.ifEmpty { step.content }
-                            } else {
-                                step.content
-                            }
-                            val lastMsg = group.assistantMessages.lastOrNull()
-                            val copySource = lastMsg?.content ?: displayContent
-                            ContentSegment(
-                                content = displayContent,
-                                isStreaming = isLastInGroup && isGenerating,
-                                showStreamingCursor = renderPlan.showContentCursor,
-                                fontSize = fontSize,
-                                onContentChange = onContentChange,
-                                onCopy = messageCopyOverride(onCopy, copySource),
-                                onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
-                                onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } },
-                                onBranch = { lastMsg?.let { onBranch?.invoke(it.id) } },
-                            )
-                        }
+    val footerContent = allSteps.filterIsInstance<PipelineStep.Content>().lastOrNull { it.content.isNotBlank() }
+    val replyCopyText = remember(allSteps) { pipelineReplyCopyText(allSteps) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        ragContent()
+        allSteps.forEachIndexed { index, step ->
+            val isLastInGroup = index == allSteps.lastIndex
+            val followsContent = allSteps.getOrNull(index - 1) is PipelineStep.Content
+            if ((index > 0 && (step is PipelineStep.Content || followsContent)) ||
+                (index == 0 && hasRagContent && step is PipelineStep.Content)
+            ) {
+                Spacer(Modifier.height(8.dp))
+            }
+            key(when (step) {
+                is PipelineStep.Thinking -> "thinking:${step.messageId}"
+                is PipelineStep.ToolExec -> "tools:${step.steps.firstOrNull()?.id}"
+                is PipelineStep.Content -> "content:$index"
+            }) {
+                when (step) {
+                    is PipelineStep.Thinking -> ThinkingTrace(
+                        reasoning = step.reasoning,
+                        isGenerating = isGenerating && isLastInGroup && streamingContent.isEmpty(),
+                        fontSize = fontSize,
+                    )
+                    is PipelineStep.ToolExec -> InlineToolRow(
+                        steps = step.steps, isExecuting = step.isExecuting, fontSize = fontSize,
+                    )
+                    is PipelineStep.Content -> {
+                        val displayContent = if (isLastInGroup && isGenerating) {
+                            streamingContent.ifEmpty { step.content }
+                        } else step.content
+                        val sourceMessage = pipelineContentOwner(group.messages, step)
+                        ContentSegment(
+                            content = displayContent,
+                            isStreaming = isLastInGroup && isGenerating,
+                            showStreamingCursor = renderPlan.showContentCursor,
+                            fontSize = fontSize,
+                            onContentChange = sourceMessage?.let { msg ->
+                                onMessageContentChange?.let { handler -> { content: String -> handler(msg.id, content) } }
+                            } ?: onContentChange,
+                            onCopy = messageCopyOverride(onCopy, displayContent),
+                            onRegenerate = sourceMessage?.let { msg -> onRegenerate?.let { handler -> { handler(msg.id) } } },
+                            onDelete = sourceMessage?.let { msg -> onDelete?.let { handler -> { handler(msg.id) } } },
+                            onBranch = sourceMessage?.let { msg -> onBranch?.let { handler -> { handler(msg.id) } } },
+                        )
                     }
-
                 }
             }
-
-            // ── 生成中闪烁光标：仅在 pipeline 无 Content 步骤时（TTFT 期）渲染 ──
-            //    正文可见后不再追加独立块光标，避免尾部出现悬空色块。
-            if (renderPlan.showStandaloneCursor) {
-                StreamingCursor()
+        }
+        if (renderPlan.showStandaloneCursor) StreamingCursor()
+        if (footerContent != null) {
+            pipelineContentOwner(group.messages, footerContent)?.let { lastMsg ->
+                val context = LocalContext.current
+                val timestamp = remember(lastMsg.createdAt) {
+                    java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(lastMsg.createdAt))
+                }
+                val modelDisplayName = if (lastMsg.modelId.isNullOrBlank()) "" else {
+                    modelDisplayNames[lastMsg.modelId]?.takeIf(String::isNotBlank)
+                        ?: lastMsg.modelId.substringAfter("::", lastMsg.modelId)
+                }
+                AssistantActionRow(
+                    modelDisplayName = modelDisplayName,
+                    timestamp = timestamp,
+                    isGenerating = isGenerating,
+                    onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
+                    onRegenerate = onRegenerate?.let { handler -> { handler(lastMsg.id) } },
+                    onBranch = onBranch?.let { handler -> { handler(lastMsg.id) } },
+                    onDelete = onDelete?.let { handler -> { handler(lastMsg.id) } },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
         }
-    }
-
-    // ── 元信息行（模型名 + 时间戳）──
-    group.assistantMessages.lastOrNull()?.let { lastMsg ->
-        val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-        val timestamp = remember(lastMsg.createdAt) { timeFormat.format(java.util.Date(lastMsg.createdAt)) }
-        val modelDisplayName = if (lastMsg.modelId.isNullOrBlank()) {
-            ""
-        } else {
-            modelDisplayNames[lastMsg.modelId]
-                ?.takeIf(String::isNotBlank)
-                ?: lastMsg.modelId?.substringAfter("::", lastMsg.modelId).orEmpty()
-        }
-
-        AssistantMetadataRow(
-            modelDisplayName = modelDisplayName,
-            timestamp = timestamp,
-            fontSize = fontSize,
-        )
     }
 
     // ── 错误信息 ──
@@ -343,8 +336,13 @@ internal sealed class PipelineStep {
 
     data class Content(
         val content: String,
+        val messageId: String = "",
     ) : PipelineStep()
 }
+
+/** 正文的展示来源由消息 ID 定位，缺失来源时不猜测其它消息。 */
+internal fun pipelineContentOwner(messages: List<Message>, content: PipelineStep.Content): Message? =
+    messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.id == content.messageId }
 
 internal data class PipelineRenderPlan(
     val steps: List<PipelineStep>,
@@ -369,7 +367,7 @@ internal fun buildPipelineRenderPlan(
     val finalAssistantIsPlaceholder = finalAssistant != null && finalAssistant.content.isBlank()
 
     if (isGenerating && hasStreamingContent && finalAssistantIsPlaceholder) {
-        steps.add(PipelineStep.Content(content = ""))
+        steps.add(PipelineStep.Content(content = "", messageId = requireNotNull(finalAssistant).id))
     }
 
     return PipelineRenderPlan(
@@ -500,10 +498,10 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
                     // 清洗后的剩余正文（移除工具 JSON/XML 部分）
                     val cleanContent = stripToolArtifacts(msg.content)
                     if (cleanContent.isNotBlank()) {
-                        steps.add(PipelineStep.Content(content = cleanContent))
+                        steps.add(PipelineStep.Content(content = cleanContent, messageId = msg.id))
                     }
                 } else {
-                    steps.add(PipelineStep.Content(content = msg.content))
+                    steps.add(PipelineStep.Content(content = msg.content, messageId = msg.id))
                 }
             }
         }
@@ -531,8 +529,9 @@ internal fun ThinkingTrace(
     fontSize: Int,
     modifier: Modifier = Modifier,
     elapsedMs: Long? = null,
+    initiallyExpanded: Boolean = false,
 ) {
-    var internalExpanded by rememberSaveable { mutableStateOf(false) }
+    var internalExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     var measuredElapsed by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(isGenerating) {
         if (isGenerating) {
@@ -547,25 +546,20 @@ internal fun ThinkingTrace(
             }
         }
     }
-    val duration = elapsedMs ?: measuredElapsed
-    val seconds = duration?.coerceAtLeast(0)?.div(1000)
-    val segments = if (isGenerating) {
-        listOf(stringResource(R.string.chat_thinking_elapsed, seconds ?: 0L), stringResource(R.string.chat_status_thinking))
-    } else listOf(
-        if (seconds == null) stringResource(R.string.chat_status_thought)
-        else stringResource(R.string.chat_thought_duration, seconds),
-    )
-    val expansionState = stringResource(
-        if (internalExpanded) R.string.common_state_expanded else R.string.common_state_collapsed,
-    )
+    val seconds = (elapsedMs ?: measuredElapsed)?.coerceAtLeast(0)?.div(1_000)?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+    val summary = when {
+        isGenerating -> pluralStringResource(R.plurals.chat_step_thinking, seconds ?: 0, seconds ?: 0)
+        seconds != null -> pluralStringResource(R.plurals.chat_step_thought_duration, seconds, seconds)
+        else -> stringResource(R.string.chat_step_thought)
+    }
     Column(modifier = modifier.fillMaxWidth().testTag(UiTags.CHAT_THINKING_TRACE)) {
         CompactStepRow(
-            segments = segments,
+            segments = listOf(summary),
             icon = Icons.Rounded.CheckCircle,
             active = isGenerating,
             fontSize = fontSize,
             expanded = internalExpanded,
-            state = expansionState,
+            state = stringResource(if (internalExpanded) R.string.common_state_expanded else R.string.common_state_collapsed),
             tag = UiTags.CHAT_THINKING_TOGGLE,
             clickLabel = stringResource(if (internalExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
             onClick = { internalExpanded = !internalExpanded },
@@ -575,78 +569,190 @@ internal fun ThinkingTrace(
                 LaunchedEffect(tail) {
                     snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) }
                 }
-                Box(
-                    modifier = Modifier.weight(0.52f).fadingReasoningTail(),
-                ) {
+                Box(modifier = Modifier.weight(1f).fadingReasoningTail(enabled = scroll.maxValue > 0).testTag("CHAT_THINKING_PREVIEW")) {
                     Text(
                         text = tail,
                         softWrap = false,
                         maxLines = 1,
                         modifier = Modifier.horizontalScroll(scroll, enabled = false),
-                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        style = NexaraTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                     )
                 }
             }} else null,
         )
         if (internalExpanded && reasoning.isNotBlank()) {
-            MarkdownText(
-                markdown = reasoning,
-                isStreaming = isGenerating,
-                fontSize = (fontSize - 2).coerceAtLeast(10),
-                showCursor = false,
-                overrideColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                compactSpacing = true,
-                modifier = Modifier.fillMaxWidth()
-                    .testTag(UiTags.CHAT_THINKING_CONTENT)
-                    .padding(horizontal = 8.dp),
-            )
+            val ruleColor = MaterialTheme.colorScheme.outlineVariant
+            Box(modifier = Modifier.fillMaxWidth().testTag(UiTags.CHAT_THINKING_CONTENT)) {
+                Box(Modifier.matchParentSize()) {
+                    Spacer(Modifier.width(2.dp).fillMaxHeight().background(ruleColor))
+                }
+                MarkdownText(
+                    markdown = reasoning,
+                    fontSize = NexaraTypography.bodySmall.fontSize.value.toInt(),
+                    overrideColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    showCursor = false,
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 可见操作行 36dp，按钮使用独立的 48dp 触控区域。 */
+@Composable
+internal fun AssistantActionRow(
+    modelDisplayName: String,
+    timestamp: String,
+    isGenerating: Boolean,
+    onCopy: () -> Unit,
+    onRegenerate: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    if (isGenerating) return
+    var showMore by remember { mutableStateOf(false) }
+    val metaStyle = NexaraTypography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Box(modifier = modifier.fillMaxWidth().height(36.dp).testTag("CHAT_ASSISTANT_ACTIONS")) {
+        Row(
+            modifier = Modifier.align(Alignment.Center).layout { measurable, constraints ->
+                val bleed = 17.5.dp.roundToPx()
+                val row = measurable.measure(constraints.copy(minWidth = constraints.maxWidth + bleed, maxWidth = constraints.maxWidth + bleed))
+                layout(constraints.maxWidth, row.height) { row.placeRelative(-bleed, 0) }
+            }.fillMaxWidth().wrapContentHeight(unbounded = true).height(48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onCopy, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_COPY")) {
+                Icon(Icons.Rounded.ContentCopy, stringResource(R.string.chat_action_copy), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            }
+            if (onRegenerate != null) {
+                IconButton(onClick = onRegenerate, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_REGENERATE")) {
+                    Icon(Icons.Rounded.Refresh, stringResource(R.string.chat_action_regenerate), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+            Box {
+                IconButton(
+                    onClick = { showMore = true },
+                    enabled = onBranch != null || onDelete != null,
+                    modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_MORE"),
+                ) {
+                    Icon(Icons.Rounded.MoreHoriz, stringResource(R.string.chat_step_more_actions), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                NexaraDropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                    if (onBranch != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_action_branch)) },
+                            leadingIcon = { Icon(Icons.Rounded.ForkRight, null, modifier = Modifier.size(18.dp)) },
+                            modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
+                            onClick = { onBranch(); showMore = false },
+                        )
+                    }
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
+                            onClick = { onDelete(); showMore = false },
+                        )
+                    }
+                }
+            }
+            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (modelDisplayName.isNotBlank()) {
+                    Text(
+                        text = modelDisplayName,
+                        style = metaStyle,
+                        modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
+                }
+                Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
+            }
         }
     }
 }
 
 @Composable
-private fun AssistantMetadataRow(
-    modelDisplayName: String,
-    timestamp: String,
-    fontSize: Int,
-    modifier: Modifier = Modifier
-) {
-    val metaStyle = NexaraTypography.labelSmall.copy(
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-        fontSize = (fontSize - 2).coerceAtLeast(9).sp,
-    )
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp, start = 4.dp, end = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (modelDisplayName.isNotBlank()) {
-            Text(
-                text = modelDisplayName,
-                style = metaStyle,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Text(
-            text = timestamp,
-            style = metaStyle,
-            modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA),
-            maxLines = 1,
-        )
+private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
+    val resId = when (part.action) {
+        ToolSummaryAction.COMMAND -> R.plurals.chat_step_command_done
+        ToolSummaryAction.WEB_SEARCH -> if (part.count == 1) R.plurals.chat_step_web_search_once else R.plurals.chat_step_web_search_done
+        ToolSummaryAction.WEB_READ -> R.plurals.chat_step_web_read_done
+        ToolSummaryAction.FILE_READ -> R.plurals.chat_step_file_read_done
+        ToolSummaryAction.FILE_EDIT -> R.plurals.chat_step_file_edit_done
+        ToolSummaryAction.KNOWLEDGE_SEARCH -> R.plurals.chat_step_knowledge_done
+        ToolSummaryAction.MEMORY_SEARCH -> R.plurals.chat_step_memory_done
+        ToolSummaryAction.IMAGE -> R.plurals.chat_step_image_done
+        ToolSummaryAction.PLAN -> R.plurals.chat_step_plan_done
+        ToolSummaryAction.TIME -> R.plurals.chat_step_time_done
+        ToolSummaryAction.CALCULATE -> R.plurals.chat_step_calculate_done
+        ToolSummaryAction.SKILL -> R.plurals.chat_step_skill_done
+        ToolSummaryAction.OTHER -> R.plurals.chat_step_other_done
     }
+    return pluralStringResource(resId, part.count, part.count)
+}
+
+@Composable
+internal fun toolFriendlyName(toolName: String?): String = stringResource(when (toolSummaryAction(toolName)) {
+    ToolSummaryAction.COMMAND -> R.string.chat_step_command_name
+    ToolSummaryAction.WEB_SEARCH -> R.string.chat_step_web_search_name
+    ToolSummaryAction.WEB_READ -> R.string.chat_step_web_read_name
+    ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_name
+    ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_name
+    ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_name
+    ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_name
+    ToolSummaryAction.IMAGE -> R.string.chat_step_image_name
+    ToolSummaryAction.PLAN -> R.string.chat_step_plan_name
+    ToolSummaryAction.TIME -> R.string.chat_step_time_name
+    ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_name
+    ToolSummaryAction.SKILL -> R.string.chat_step_skill_name
+    ToolSummaryAction.OTHER -> R.string.chat_step_other_name
+})
+
+@Composable
+internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
+    if (summary.status == ToolSummaryStatus.PENDING) {
+        return pluralStringResource(R.plurals.chat_step_pending_count, summary.pendingCount, summary.pendingCount)
+    }
+    summary.runningAction?.let { action ->
+        return stringResource(when (action) {
+            ToolSummaryAction.COMMAND -> R.string.chat_step_command_running
+            ToolSummaryAction.WEB_SEARCH -> R.string.chat_step_web_search_running
+            ToolSummaryAction.WEB_READ -> R.string.chat_step_web_read_running
+            ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_running
+            ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_running
+            ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_running
+            ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_running
+            ToolSummaryAction.IMAGE -> R.string.chat_step_image_running
+            ToolSummaryAction.PLAN -> R.string.chat_step_plan_running
+            ToolSummaryAction.TIME -> R.string.chat_step_time_running
+            ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_running
+            ToolSummaryAction.SKILL -> R.string.chat_step_skill_running
+            ToolSummaryAction.OTHER -> R.string.chat_step_other_running
+        })
+    }
+    if (summary.useGenericSummary || summary.parts.isEmpty()) {
+        return pluralStringResource(R.plurals.chat_step_other_done, summary.count, summary.count)
+    }
+    val separator = stringResource(R.string.chat_step_summary_separator)
+    return summary.parts.map { toolSummaryCompletedText(it) }.joinToString(separator)
+}
+
+@Composable
+private fun stepDurationText(durationMs: Long): String = if (durationMs < 1_000) {
+    pluralStringResource(R.plurals.chat_step_duration_ms, durationMs.toInt(), durationMs)
+} else {
+    pluralStringResource(
+        R.plurals.chat_step_duration_seconds,
+        (durationMs / 1_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        String.format(java.util.Locale.ROOT, "%.1f", durationMs / 1_000.0),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  InlineToolRow — 紧凑工具执行指示器（气泡内联版本）
+//  InlineToolRow — 工具摘要与按需展开的调用详情
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
@@ -654,89 +760,102 @@ internal fun InlineToolRow(
     steps: List<ExecutionStep>,
     isExecuting: Boolean,
     fontSize: Int,
+    initiallyExpanded: Boolean = false,
 ) {
-    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val invocations = remember(steps) { toolInvocations(steps) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(isExecuting) {
-        if (isExecuting) while (true) {
-            now = System.currentTimeMillis()
-            delay(200L)
-        }
-    }
-    val hasError = invocations.any { it.failed }
-    val state = stringResource(when {
-        isExecuting -> R.string.chat_tool_running
-        hasError -> R.string.chat_tool_failed
-        invocations.any { !it.complete } -> R.string.chat_tool_pending
-        else -> R.string.chat_tool_completed
-    })
-    val name = if (invocations.size > 1) stringResource(R.string.chat_tools_count, invocations.size)
-        else invocations.firstOrNull()?.name ?: stringResource(R.string.chat_tool_default_name)
-    val duration = toolGroupDurationMs(invocations, nowMs = if (isExecuting) now else null)
+    val summary = remember(invocations, isExecuting) { toolGroupDisplaySummary(invocations, isExecuting) }
     val segments = buildList {
-        add(name)
-        add(state)
-        if (duration != null) add(toolDurationText(duration).let { stringResource(it.resId, *it.args.toTypedArray()) })
+        add(toolGroupSummaryText(summary))
+        if (summary.failedCount == 0 && summary.runningAction == null) summary.durationMs?.let { add(stepDurationText(it)) }
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         CompactStepRow(
             segments = segments,
-            icon = if (hasError) Icons.Rounded.Cancel else Icons.Rounded.CheckCircle,
-            active = isExecuting,
+            icon = Icons.Rounded.CheckCircle,
+            active = summary.status == ToolSummaryStatus.RUNNING,
             fontSize = fontSize,
             expanded = isExpanded,
             state = stringResource(if (isExpanded) R.string.common_state_expanded else R.string.common_state_collapsed),
             clickLabel = stringResource(if (isExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
             tag = "CHAT_TOOL_TOGGLE",
-            tone = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )
         if (isExpanded) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(ChatStepSpacing),
-            ) {
+            Column(modifier = Modifier.fillMaxWidth().testTag("CHAT_TOOL_DETAILS"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 invocations.forEach { invocation ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        NexaraMetaLine(
-                            segments = buildList {
-                                add(invocation.name ?: stringResource(R.string.chat_tool_default_name))
-                                invocation.durationMs?.let { ms -> add(toolDurationText(ms).let { stringResource(it.resId, *it.args.toTypedArray()) }) }
-                            },
-                            style = NexaraTypography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        invocation.call?.toolArgs?.takeIf(String::isNotBlank)?.let { args ->
-                            Text(
-                                text = stringResource(R.string.chat_tool_arguments, args),
-                                style = NexaraTypography.bodySmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        invocation.results.forEach { result ->
-                            val images = remember(result.data) { extractToolImageModels(result.data) }
-                            images.take(4).forEach { imageModel ->
-                                ChatImageThumbnail(
-                                    imageModel = imageModel,
-                                    contentDescription = stringResource(R.string.chat_cd_tool_image),
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp)
-                                        .clip(MaterialTheme.shapes.small),
-                                    contentScale = ContentScale.Fit,
-                                )
+                    key(invocation.steps.firstOrNull()?.id) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(toolFriendlyName(invocation.name), style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                invocation.name?.let { name ->
+                                    Text(
+                                        name,
+                                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                invocation.durationMs?.let { Text(stepDurationText(it), style = NexaraTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
-                            result.content?.takeIf(String::isNotBlank)?.let { content ->
-                                Text(
-                                    text = content,
-                                    style = NexaraTypography.bodySmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
-                                    color = if (result.type == "error") MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            invocation.call?.toolArgs?.takeIf(String::isNotBlank)?.let { args ->
+                                ExpandableToolText(text = args, collapsedLines = 6, arguments = true)
+                            }
+                            invocation.results.forEach { result ->
+                                val images = remember(result.data) { extractToolImageModels(result.data) }
+                                images.take(4).forEach { imageModel ->
+                                    ChatImageThumbnail(
+                                        imageModel = imageModel,
+                                        contentDescription = stringResource(R.string.chat_cd_tool_image),
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp).clip(MaterialTheme.shapes.small),
+                                        contentScale = ContentScale.Fit,
+                                    )
+                                }
+                                result.content?.takeIf(String::isNotBlank)?.let { content ->
+                                    ExpandableToolText(text = content, collapsedLines = 12, error = result.type == "error")
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun ExpandableToolText(
+    text: String,
+    collapsedLines: Int,
+    arguments: Boolean = false,
+    error: Boolean = false,
+) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    val explicitLineOverflow = remember(text, collapsedLines) {
+        text.lineSequence().take(collapsedLines + 1).count() > collapsedLines
+    }
+    var overflows by remember(text, collapsedLines) { mutableStateOf(explicitLineOverflow) }
+    Column(
+        modifier = if (arguments) Modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp)).padding(10.dp)
+        else Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = text,
+            style = if (arguments) NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp)
+                else NexaraTypography.bodySmall.forReading(),
+            color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) overflows = explicitLineOverflow || it.hasVisualOverflow },
+            modifier = Modifier.testTag(if (arguments) "CHAT_TOOL_ARGUMENTS" else "CHAT_TOOL_RESULT"),
+        )
+        if (overflows || expanded) {
+            ChatExpandLink(
+                text = stringResource(if (expanded) R.string.chat_step_collapse_all else R.string.chat_step_expand_all),
+                onClick = { expanded = !expanded }, modifier = Modifier.testTag("CHAT_TOOL_EXPAND_ALL"),
+            )
         }
     }
 }
@@ -747,7 +866,7 @@ internal fun InlineToolRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ContentSegment(
+internal fun ContentSegment(
     content: String,
     isStreaming: Boolean,
     showStreamingCursor: Boolean,
@@ -767,7 +886,7 @@ private fun ContentSegment(
             color = Color.Transparent,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .testTag("CHAT_ASSISTANT_BODY")
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {
@@ -805,9 +924,7 @@ private fun ContentSegment(
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  PipelineConnector — 竖线连接器
-// ─────────────────────────────────────────────────────────────────
-// PipelineConnector 已移除（用户裁决：竖向引导线多余，步骤间以间距代替）
+//  工具图片结果解析
 // ─────────────────────────────────────────────────────────────────
 
 private fun extractToolImageModels(data: String?): List<String> {
@@ -853,108 +970,70 @@ fun UserMessageBubble(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
-    var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
-    val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-    val timestamp = remember(message.createdAt) { timeFormat.format(java.util.Date(message.createdAt)) }
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.End
+    val timestamp = remember(message.createdAt) {
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(message.createdAt))
+    }
+    val legacyAttachments by produceState(
+        initialValue = emptyList(), key1 = message.legacyAttachmentsPayload, key2 = message.userImages,
     ) {
-        Box {
-            Surface(
-                shape = NexaraCustomShapes.ChatBubbleUser,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                modifier = Modifier
-                    .widthIn(max = 320.dp)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            pressOffset = DpOffset.Zero
-                            showMenu = true
-                        }
-                    )
+        value = withContext(Dispatchers.Default) {
+            LegacyAttachmentCodec.parse(message.legacyAttachmentsPayload).filterNot { item ->
+                item.type == "IMAGE" && item.uri in message.userImages.orEmpty()
+            }
+        }
+    }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val bubbleMaxWidth = maxWidth * 0.82f
+        Box(modifier = Modifier.align(Alignment.TopEnd).widthIn(max = bubbleMaxWidth)) {
+            Column(
+                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column {
-                    if (!message.userDocuments.isNullOrEmpty()) {
-                        MessageDocumentSummary(message.userDocuments.orEmpty())
-                    }
-                    if (!message.userImages.isNullOrEmpty()) {
-                        Column(
-                            modifier = Modifier.padding(
-                                start = NexaraSpacing.Small,
-                                end = NexaraSpacing.Small,
-                                top = NexaraSpacing.Small
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)
-                        ) {
-                            message.userImages!!.forEach { dataUrl ->
-                                ChatImageThumbnail(
-                                    imageModel = dataUrl,
-                                    contentDescription = stringResource(R.string.chat_cd_attached_image),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 120.dp, max = 240.dp)
-                                        .clip(MaterialTheme.shapes.small)
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            }
-                        }
-                    }
-                    val legacyAttachments by produceState(
-                        initialValue = emptyList(),
-                        key1 = message.legacyAttachmentsPayload,
-                        key2 = message.userImages,
+                if (!message.userDocuments.isNullOrEmpty()) MessageDocumentSummary(message.userDocuments.orEmpty())
+                if (!message.userImages.isNullOrEmpty()) {
+                    Row(
+                        modifier = Modifier.widthIn(max = bubbleMaxWidth).horizontalScroll(rememberScrollState()).testTag("CHAT_USER_IMAGES"),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        value = withContext(Dispatchers.Default) {
-                            LegacyAttachmentCodec.parse(message.legacyAttachmentsPayload).filterNot { item ->
-                                item.type == "IMAGE" && item.uri in message.userImages.orEmpty()
-                            }
+                        message.userImages.orEmpty().forEach { dataUrl ->
+                            ChatImageThumbnail(
+                                imageModel = dataUrl,
+                                contentDescription = stringResource(R.string.chat_cd_attached_image),
+                                modifier = Modifier.size(160.dp).clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                contentScale = ContentScale.Crop,
+                            )
                         }
                     }
-                    if (legacyAttachments.isNotEmpty()) {
-                        LegacyAttachmentSummary(legacyAttachments)
-                    }
-                    if (message.content.isNotBlank()) {
+                }
+                if (legacyAttachments.isNotEmpty()) LegacyAttachmentSummary(legacyAttachments)
+                if (message.content.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.widthIn(max = bubbleMaxWidth).testTag("CHAT_USER_BUBBLE"),
+                    ) {
                         Text(
                             text = message.content,
-                            style = NexaraTypography.bodyMedium.copy(
-                                fontSize = fontSize.sp,
-                                lineHeight = (fontSize * 1.5).sp
-                            ).forReading(),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(NexaraSpacing.Large)
+                            style = NexaraTypography.bodyLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.5).sp).forReading(),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                         )
                     }
                 }
             }
-
             MessageContextMenu(
                 expanded = showMenu,
                 onDismiss = { showMenu = false },
-                onCopy = {
-                    onCopy?.invoke() ?: copyToClipboard(context, message.content)
-                    showMenu = false
-                },
+                onCopy = { onCopy?.invoke() ?: copyToClipboard(context, message.content); showMenu = false },
                 onRegenerate = onRegenerate,
                 onBranch = onBranch,
-                onDelete = {
-                    onDelete?.invoke()
-                    showMenu = false
-                },
+                onDelete = { onDelete?.invoke(); showMenu = false },
                 isUser = true,
-                offset = pressOffset
+                timestamp = timestamp,
             )
         }
-        Text(
-            text = timestamp,
-            style = NexaraTypography.labelSmall.copy(
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = (fontSize - 2).coerceAtLeast(9).sp
-            ),
-            modifier = Modifier.padding(top = 4.dp, end = 4.dp)
-        )
     }
 }
 
@@ -964,9 +1043,9 @@ private fun LegacyAttachmentSummary(items: List<LegacyAttachmentItem>) {
     val scope = rememberCoroutineScope()
     Column(
         modifier = Modifier
-            .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small)
             .testTag(UiTags.CHAT_LEGACY_ATTACHMENTS),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.End,
     ) {
         Text(stringResource(R.string.chat_legacy_attachments_title), style = NexaraTypography.labelMedium)
         items.forEach { item ->
@@ -997,7 +1076,7 @@ private fun LegacyAttachmentSummary(items: List<LegacyAttachmentItem>) {
                     Text(
                         if (item.unreadableReason == null) item.mimeType else stringResource(R.string.chat_legacy_attachment_unreadable),
                         style = NexaraTypography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -1027,38 +1106,20 @@ private fun ChatImageThumbnail(
 @Composable
 private fun MessageDocumentSummary(documents: List<MessageDocumentAttachment>) {
     Column(
-        modifier = Modifier
-            .padding(
-                start = NexaraSpacing.Large,
-                end = NexaraSpacing.Large,
-                top = NexaraSpacing.Medium,
-            )
-            .testTag(UiTags.CHAT_MESSAGE_DOCUMENTS),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+        modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_DOCUMENTS),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.End,
     ) {
         documents.forEach { document ->
             Row(
-                modifier = Modifier.heightIn(min = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp)).padding(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Rounded.Description,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Column(modifier = Modifier.widthIn(max = 240.dp)) {
-                    Text(
-                        text = document.name,
-                        style = NexaraTypography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = formatMessageDocumentBytes(document.sizeBytes),
-                        style = NexaraTypography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-                    )
+                Icon(Icons.Rounded.Description, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Column(modifier = Modifier.widthIn(max = 220.dp)) {
+                    Text(document.name, style = NexaraTypography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(formatMessageDocumentBytes(document.sizeBytes), style = NexaraTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -1116,13 +1177,17 @@ fun MessageContextMenu(
     onBranch: (() -> Unit)? = null,
     onDelete: () -> Unit,
     isUser: Boolean = false,
-    offset: DpOffset = DpOffset.Zero
+    offset: DpOffset = DpOffset.Zero,
+    timestamp: String? = null,
 ) {
     NexaraDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         offset = offset,
     ) {
+        if (timestamp != null) {
+            DropdownMenuItem(text = { Text(timestamp, style = NexaraTypography.labelSmall) }, onClick = {}, enabled = false)
+        }
         DropdownMenuItem(
             leadingIcon = {
                 Icon(

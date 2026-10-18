@@ -4,16 +4,19 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import com.promenar.nexara.data.model.Message
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
@@ -53,9 +56,8 @@ class ChatScreenContentStateTest {
             .assertIsDisplayed()
             .assertHeightIsAtLeast(100.dp)
         val titles = rule.onAllNodesWithText("E2E Chat")
-        titles.assertCountEquals(2)
+        titles.assertCountEquals(1)
         titles[0].assertIsDisplayed()
-        titles[1].assertIsDisplayed()
         rule.onNodeWithText("Model E2E").assertIsDisplayed()
         rule.onNodeWithText(resource(R.string.chat_input_placeholder_default)).assertIsDisplayed()
     }
@@ -116,9 +118,10 @@ class ChatScreenContentStateTest {
             ),
         )
 
+        assertMinimumTouchTarget(UiTags.CHAT_TASK_CAPSULE)
         rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
             .assertContentDescriptionEquals(resource(R.string.chat_task_pending_accessibility, 1))
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(28.dp)
             .performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).performClick()
@@ -190,15 +193,35 @@ class ChatScreenContentStateTest {
         )
 
         rule.onNodeWithTag(UiTags.CHAT_STATE_APPROVAL).assertHeightIsAtLeast(100.dp)
-        rule.onNodeWithText("write_file").assertIsDisplayed()
-        rule.onNodeWithText("delete_file").assertIsDisplayed()
+        rule.onAllNodesWithText(resource(R.string.chat_step_file_edit_name), substring = true).assertCountEquals(2)
         rule.onNodeWithText("notes.md", substring = true).assertIsDisplayed()
         rule.onNodeWithText("old.md", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("write_file").assertIsDisplayed()
+        rule.onNodeWithText("delete_file").assertIsDisplayed()
         rule.onNodeWithText(resource(R.string.chat_approval_risk_file_write)).assertIsDisplayed()
         rule.onNodeWithText(resource(R.string.chat_approval_risk_delete)).assertIsDisplayed()
         rule.onNodeWithText("Update workspace", substring = true).assertIsDisplayed()
+        fun textColor(text: String): androidx.compose.ui.graphics.Color {
+            val results = mutableListOf<TextLayoutResult>()
+            rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+            return results.single().layoutInput.style.color
+        }
+        assertThat(textColor("Update workspace")).isEqualTo(textColor("write_file"))
+        assertThat(textColor("Update workspace")).isNotEqualTo(textColor(resource(R.string.chat_approval_risk_file_write)))
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).performClick()
         rule.runOnIdle { assertThat(approved).isTrue() }
+    }
+
+    @Test
+    fun legacyApprovalKeepsArgumentsInOneParameterBlock() {
+        render(ChatUiState(session = session, approvalRequest = ApprovalRequest(
+            toolName = "write_file", args = "{\"path\":\"legacy.md\"}",
+            reason = "Execution mode: semi\nUpdate workspace",
+        )))
+        rule.onNodeWithText("write_file").assertIsDisplayed()
+        rule.onAllNodesWithText("{\"path\":\"legacy.md\"}").assertCountEquals(1)
+        rule.onNodeWithText("Update workspace").assertIsDisplayed()
+        rule.onNodeWithText("Execution mode: semi").assertDoesNotExist()
     }
 
     @Test
@@ -218,7 +241,7 @@ class ChatScreenContentStateTest {
     }
 
     @Test
-    fun assistantMetadata_shortModelName_layout_keepsLeftToRightAndBottomAlignment() {
+    fun assistantMetadata_shortModelName_layout_keepsRightAlignmentAndVisibleTime() {
         val displayName = "Nova Chat"
         val modelId = "provider/model-e2e"
         val createdAt = 1_700_000_000_000L
@@ -260,7 +283,7 @@ class ChatScreenContentStateTest {
         assertThat(abs(modelBounds.bottom - timeBounds.bottom)).isAtMost(tolerancePx)
 
         val centerX = readyBounds.left + (readyBounds.width / 2f)
-        assertThat(timeBounds.right).isLessThan(centerX)
+        assertThat(timeBounds.right).isGreaterThan(centerX)
     }
 
     @Test
@@ -305,7 +328,7 @@ class ChatScreenContentStateTest {
         assertThat(modelBounds.height).isAtMost(timeBounds.height + tolerancePx)
 
         val centerX = readyBounds.left + (readyBounds.width / 2f)
-        assertThat(timeBounds.right).isLessThan(centerX)
+        assertThat(timeBounds.right).isGreaterThan(centerX)
     }
 
     @Test
@@ -384,4 +407,11 @@ class ChatScreenContentStateTest {
 
     private fun resource(id: Int, vararg args: Any): String =
         InstrumentationRegistry.getInstrumentation().targetContext.getString(id, *args)
+    private fun assertMinimumTouchTarget(tag: String) {
+        val node = rule.onNodeWithTag(tag).fetchSemanticsNode()
+        val bounds = node.touchBoundsInRoot
+        val density = node.layoutInfo.density.density
+        assertThat(bounds.width / density).isAtLeast(47.5f)
+        assertThat(bounds.height / density).isAtLeast(47.5f)
+    }
 }

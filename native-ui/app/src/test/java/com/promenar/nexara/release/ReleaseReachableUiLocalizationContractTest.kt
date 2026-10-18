@@ -78,29 +78,9 @@ class ReleaseReachableUiLocalizationContractTest {
         "retrieval_rerank_model_unconfigured",
         "retrieval_rerank_model_unavailable_message",
         "agent_retrieval_rerank_model_unavailable_message",
-        "chat_tool_default_name",
         "chat_tool_error",
-        "chat_tool_arguments",
         "chat_cd_tool_image",
         "chat_cd_attached_image",
-        "chat_rag_phase_query_intent",
-        "chat_rag_phase_embedding",
-        "chat_rag_phase_memory",
-        "chat_rag_phase_documents",
-        "chat_rag_phase_keyword",
-        "chat_rag_phase_hybrid",
-        "chat_rag_phase_ranking",
-        "chat_rag_phase_rerank",
-        "chat_rag_phase_knowledge_graph",
-        "chat_rag_phase_context_compress",
-        "chat_rag_phase_prompt_build",
-        "chat_rag_phase_context_ready",
-        "chat_rag_phase_retrieved",
-        "chat_rag_ready_references",
-        "chat_rag_ready_web",
-        "chat_rag_ready_knowledge",
-        "chat_rag_ready_generic",
-        "chat_rag_preparing",
         "chat_rag_done",
         "chat_postprocess_memory",
         "chat_postprocess_summary",
@@ -161,7 +141,16 @@ class ReleaseReachableUiLocalizationContractTest {
         assertThat(avatar).contains("Role.Button")
         assertThat(avatar).contains("R.string.agent_avatar_edit")
         assertThat(avatar).contains("onClickLabel = avatarDescription")
-        assertThat(inline).contains("\"ready\" -> R.string.chat_rag_phase_context_ready")
+        assertThat(inline).contains("ragInlineSummary(")
+        assertThat(inline).contains("R.string.chat_inline_retrieval_knowledge_completed")
+        assertThat(inline).contains("R.string.chat_inline_retrieval_knowledge_failed")
+        for (folder in listOf("values", "values-zh-rCN")) {
+            val resources = resource("$folder/chat_inline_batch2.xml")
+            listOf("chat_inline_retrieval_knowledge_running", "chat_inline_retrieval_knowledge_completed",
+                "chat_inline_retrieval_knowledge_failed", "chat_inline_retrieval_result_count").forEach { key ->
+                assertThat(resources).contains("name=\"$key\"")
+            }
+        }
     }
 
     @Test

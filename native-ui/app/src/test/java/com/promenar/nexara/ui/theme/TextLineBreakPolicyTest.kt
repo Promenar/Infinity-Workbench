@@ -18,6 +18,20 @@ class TextLineBreakPolicyTest {
     }
 
     @Test
+    fun `cjk tail joins the last two glyphs and ignores trailing punctuation`() {
+        assertThat("技能包本身不执行代码。".keepCjkTailTogether()).isEqualTo("技能包本身不执行代\u2060码。")
+        assertThat("保留最近轮次".keepCjkTailTogether()).isEqualTo("保留最近轮\u2060次")
+        assertThat("参考资料」）".keepCjkTailTogether()).isEqualTo("参考资\u2060料」）")
+        assertThat("加载 SKILL.md".keepCjkTailTogether()).isEqualTo("加载 SKILL.md")
+        assertThat("使用 Token".keepCjkTailTogether()).isEqualTo("使用 Token")
+        assertThat("文 字".keepCjkTailTogether()).isEqualTo("文 字")
+        assertThat("字".keepCjkTailTogether()).isEqualTo("字")
+        assertThat("".keepCjkTailTogether()).isEqualTo("")
+        assertThat("Skill packs do not execute code.".keepCjkTailTogether())
+            .isEqualTo("Skill packs do not execute code.")
+    }
+
+    @Test
     fun `every typography role declares an explicit line break policy`() {
         val roles = with(NexaraTypography) {
             listOf(

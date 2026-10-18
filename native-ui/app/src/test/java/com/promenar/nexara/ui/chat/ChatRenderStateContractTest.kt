@@ -51,21 +51,21 @@ class ChatRenderStateContractTest {
     }
 
     @Test
-    fun `模型与上下文动作使用低对比 AssistChip 而非选择型 FilterChip`() {
+    fun `模型与上下文动作位于同一条四十 dp 工具行`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
         }
         val source = moduleRoot.resolve(
             "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
         ).readText()
-        val inputActions = source
-            .substringAfter("private fun ChatInputTopBar(")
-            .substringBefore("private fun TokenDetailRow(")
-
-        assertThat(inputActions).contains("AssistChip(")
-        assertThat(inputActions).contains("AssistChipDefaults.assistChipColors(")
-        assertThat(inputActions).contains("surfaceContainerLow")
-        assertThat(inputActions).doesNotContain("FilterChip(")
+        val composer = source.substringAfter("fun ChatInputBar(")
+            .substringBefore("private fun GenerationStatusButton(")
+        assertThat(source).doesNotContain("ChatInputTopBar(")
+        assertThat(composer).contains(".height(40.dp)")
+        assertThat(composer).contains("ChatModelSelector(")
+        assertThat(composer).contains("TokenIndicator(")
+        assertThat(composer).contains("maxLines = 6")
+        assertThat(composer).contains("MaterialTheme.typography.bodyLarge")
     }
 
     @Test
@@ -136,27 +136,20 @@ class ChatRenderStateContractTest {
     }
 
     @Test
-    fun `横屏会话列表压缩顶部与条目间距且不依赖初始索引裁剪消息`() {
+    fun `会话列表按消息角色安排间距并限制宽屏阅读宽度`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
         }
         val source = moduleRoot.resolve(
             "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
         ).readText()
-        val conversationList = source
-            .substringAfter("BoxWithConstraints(")
+        val conversationList = source.substringAfter("LazyColumn(")
             .substringBefore("// ── Skeleton")
-
-        assertThat(conversationList).contains("val isLandscape = maxWidth > maxHeight")
-        assertThat(conversationList).contains(
-            "top = if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Large",
-        )
-        assertThat(conversationList).contains(
-            "if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Medium",
-        )
+        assertThat(conversationList).contains("NexaraSpacing.ChatMaxWidth")
+        assertThat(conversationList).contains("NexaraSpacing.ChatHorizontal")
+        assertThat(conversationList).contains("chatItemSpacing(")
+        assertThat(conversationList.substringBefore(") {\n")).doesNotContain("spacedBy(")
         assertThat(source).doesNotContain("initialStreamingIndex")
-        assertThat(source).doesNotContain("LocalConfiguration")
-        assertThat(source).doesNotContain("Configuration.ORIENTATION_LANDSCAPE")
     }
 
     @Test

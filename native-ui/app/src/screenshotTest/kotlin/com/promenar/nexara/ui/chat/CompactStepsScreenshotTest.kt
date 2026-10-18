@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -22,12 +24,12 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 
 @PreviewTest
-@Preview(name = "紧凑步骤 深色中文", widthDp = 412, heightDp = 1050, locale = "zh-rCN")
+@Preview(name = "紧凑步骤 深色中文", widthDp = 411, heightDp = 1050, locale = "zh-rCN")
 @Composable
 fun compactStepsDarkPreview() = CompactStepsPreview(dark = true)
 
 @PreviewTest
-@Preview(name = "紧凑步骤 浅色英文", widthDp = 412, heightDp = 1050, locale = "en")
+@Preview(name = "紧凑步骤 浅色英文", widthDp = 411, heightDp = 1050, locale = "en")
 @Composable
 fun compactStepsLightPreview() = CompactStepsPreview(dark = false)
 
@@ -89,6 +91,7 @@ private fun CompactStepsPreview(dark: Boolean) {
                     phases = emptyList(), references = emptyList(), isComplete = true,
                     trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
                 )
+                Spacer(Modifier.height(8.dp))
                 MarkdownText(
                     markdown = """
                         ## 计算与方案

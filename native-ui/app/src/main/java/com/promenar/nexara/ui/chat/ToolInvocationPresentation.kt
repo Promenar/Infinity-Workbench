@@ -82,3 +82,95 @@ internal fun toolDurationText(durationMs: Long): ToolDurationText =
 
 /** 待本地化的文案：资源 ID 加格式参数。 */
 internal data class ToolDurationText(val resId: Int, val args: List<Any>)
+
+internal enum class ToolSummaryCategory {
+    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, IMAGE, PLAN, UTILITY, SKILL, OTHER,
+}
+
+internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
+    COMMAND(ToolSummaryCategory.COMMAND),
+    WEB_SEARCH(ToolSummaryCategory.WEB_SEARCH),
+    WEB_READ(ToolSummaryCategory.WEB_READ),
+    FILE_READ(ToolSummaryCategory.FILE_READ),
+    FILE_EDIT(ToolSummaryCategory.FILE_EDIT),
+    KNOWLEDGE_SEARCH(ToolSummaryCategory.RETRIEVAL),
+    MEMORY_SEARCH(ToolSummaryCategory.RETRIEVAL),
+    IMAGE(ToolSummaryCategory.IMAGE),
+    PLAN(ToolSummaryCategory.PLAN),
+    TIME(ToolSummaryCategory.UTILITY),
+    CALCULATE(ToolSummaryCategory.UTILITY),
+    SKILL(ToolSummaryCategory.SKILL),
+    OTHER(ToolSummaryCategory.OTHER),
+}
+
+internal enum class ToolSummaryStatus { EMPTY, RUNNING, PENDING, COMPLETED, FAILED }
+
+internal data class ToolSummaryPart(val action: ToolSummaryAction, val count: Int)
+
+internal data class ToolGroupSummary(
+    val parts: List<ToolSummaryPart>,
+    val count: Int,
+    val status: ToolSummaryStatus,
+    val failedCount: Int,
+    val durationMs: Long?,
+    val runningAction: ToolSummaryAction? = null,
+    val pendingCount: Int = 0,
+) {
+    val categories: List<ToolSummaryCategory> get() = parts.map { it.action.category }.distinct()
+    val useGenericSummary: Boolean get() = categories.size >= 3
+}
+
+/** 内置工具仅按完整 ID 匹配，MCP 命名空间与未知工具统一归入其它。 */
+internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
+    "termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read",
+    "ssh_session_close", "run_script", "exec_js" -> ToolSummaryAction.COMMAND
+    "web_search", "search_tavily", "search_searxng" -> ToolSummaryAction.WEB_SEARCH
+    "web_fetch" -> ToolSummaryAction.WEB_READ
+    "read_file", "list_files", "search_files", "read_tool_output", "read_skill_file" -> ToolSummaryAction.FILE_READ
+    "write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file",
+    "create_directory" -> ToolSummaryAction.FILE_EDIT
+    "knowledge_search" -> ToolSummaryAction.KNOWLEDGE_SEARCH
+    "memory_search" -> ToolSummaryAction.MEMORY_SEARCH
+    "generate_image", "image_generation" -> ToolSummaryAction.IMAGE
+    "initialize_plan", "update_plan", "get_plan", "drop_plan" -> ToolSummaryAction.PLAN
+    "current_time" -> ToolSummaryAction.TIME
+    "calculator" -> ToolSummaryAction.CALCULATE
+    "activate_skill" -> ToolSummaryAction.SKILL
+    else -> ToolSummaryAction.OTHER
+}
+
+/** 摘要保留类别首次出现顺序；同一类别中的检索与实用动作分别计数。 */
+internal fun toolGroupSummary(invocations: List<ToolInvocationPresentation>): ToolGroupSummary {
+    val actions = invocations.map { toolSummaryAction(it.name) }
+    val categories = actions.map { it.category }.distinct()
+    val parts = categories.flatMap { category ->
+        actions.filter { it.category == category }.groupingBy { it }.eachCount()
+            .map { (action, count) -> ToolSummaryPart(action, count) }
+    }
+    val unfinished = invocations.lastOrNull { !it.complete }
+    val failedCount = invocations.count { it.failed }
+    return ToolGroupSummary(
+        parts = parts,
+        count = invocations.size,
+        status = when {
+            invocations.isEmpty() -> ToolSummaryStatus.EMPTY
+            unfinished != null -> ToolSummaryStatus.RUNNING
+            failedCount > 0 -> ToolSummaryStatus.FAILED
+            else -> ToolSummaryStatus.COMPLETED
+        },
+        failedCount = failedCount,
+        durationMs = toolGroupDurationMs(invocations),
+        runningAction = unfinished?.let { toolSummaryAction(it.name) },
+        pendingCount = invocations.count { !it.complete },
+    )
+}
+
+internal fun toolGroupDisplaySummary(
+    invocations: List<ToolInvocationPresentation>,
+    isExecuting: Boolean,
+): ToolGroupSummary {
+    val summary = toolGroupSummary(invocations)
+    return if (!isExecuting && summary.status == ToolSummaryStatus.RUNNING) {
+        summary.copy(status = ToolSummaryStatus.PENDING, runningAction = null)
+    } else summary
+}

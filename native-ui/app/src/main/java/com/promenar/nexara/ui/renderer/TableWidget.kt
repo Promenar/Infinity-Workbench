@@ -167,7 +167,7 @@ private fun RowScope.TableCell(
         text = text,
         style = if (isHeader) {
             NexaraTypography.labelMedium.copy(
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = fontSize.sp,
                 lineHeight = (fontSize * 1.4).sp
@@ -175,8 +175,8 @@ private fun RowScope.TableCell(
         } else {
             NexaraTypography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = (fontSize - 1).coerceAtLeast(10).sp,
-                lineHeight = ((fontSize - 1).coerceAtLeast(10) * 1.4).sp
+                fontSize = fontSize.sp,
+                lineHeight = (fontSize * 1.4).sp
             )
         },
         modifier = Modifier

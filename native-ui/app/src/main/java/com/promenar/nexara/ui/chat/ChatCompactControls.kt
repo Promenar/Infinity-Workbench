@@ -1,0 +1,78 @@
+package com.promenar.nexara.ui.chat
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+
+/** 可见尺寸与布局尺寸一致；clickable 按平台的最小触控尺寸向外扩展命中范围。 */
+@Composable
+internal fun ChatCompactIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    containerColor: Color = Color.Transparent,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier.size(40.dp).clip(CircleShape).background(containerColor)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+@Composable
+internal fun ChatCompactApprovalButton(
+    label: String,
+    onClick: () -> Unit,
+    outlined: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val fill = when {
+        outlined -> Color.Transparent
+        enabled -> colors.primary
+        else -> colors.onSurface.copy(alpha = 0.12f)
+    }
+    val textColor = when {
+        !enabled -> colors.onSurface.copy(alpha = 0.38f)
+        outlined -> colors.primary
+        else -> colors.onPrimary
+    }
+    Box(
+        modifier = modifier.height(40.dp).clip(ButtonDefaults.shape).background(fill)
+            .then(if (outlined) Modifier.border(BorderStroke(1.dp, colors.outline), ButtonDefaults.shape) else Modifier)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = textColor)
+    }
+}
+
+/** 文字链接的 48dp 命中范围不参与可见留白计算。 */
+@Composable
+internal fun ChatExpandLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.padding(top = 4.dp).clickable(role = Role.Button, onClick = onClick),
+    )
+}

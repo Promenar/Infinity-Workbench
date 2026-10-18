@@ -523,9 +523,7 @@
     <string name="chat_approval_unknown_tool">工具请求</string>
     <string name="chat_approval_current">当前待审批</string>
     <string name="chat_approval_remaining">后续等待 %1$d 项</string>
-    <string name="chat_approval_approve_current">批准当前项</string>
     <string name="chat_approval_approve_all">全部批准（%1$d 项）</string>
-    <string name="chat_approval_decline_current">拒绝当前项</string>
     <string name="chat_approval_approve_current_a11y">批准当前工具 %1$s，风险 %2$s，后续等待 %3$d 项</string>
     <string name="chat_approval_decline_current_a11y">拒绝当前工具 %1$s，风险 %2$s，后续等待 %3$d 项</string>
     <string name="chat_approval_risk_safe_read">安全读取</string>
@@ -1352,7 +1350,6 @@
     <string name="skills_implementation">实现（JS/Kotlin 沙箱）</string>
     <string name="skills_code_example">// 示例：\n// return "我的工具结果";</string>
     <string name="chat_status_thinking">思考中...</string>
-    <string name="chat_status_thought">已完成思考</string>
     <string name="chat_menu_clear_history">清除历史</string>
     <string name="chat_menu_rename">重命名</string>
     <string name="chat_menu_delete_session">删除会话</string>
@@ -1464,29 +1461,9 @@
     <string name="recycle_bin_operation_dismiss">关闭状态提示</string>
 
     <!-- 发布可达的聊天展示层 -->
-    <string name="chat_tool_default_name">工具</string>
     <string name="chat_tool_error">工具指令有误</string>
-    <string name="chat_tool_arguments">调用参数：%1$s</string>
     <string name="chat_cd_tool_image">工具返回的图片</string>
     <string name="chat_cd_attached_image">消息附带的图片</string>
-    <string name="chat_rag_phase_query_intent">分析查询意图</string>
-    <string name="chat_rag_phase_embedding">生成查询向量</string>
-    <string name="chat_rag_phase_memory">检索会话记忆</string>
-    <string name="chat_rag_phase_documents">检索知识库文档</string>
-    <string name="chat_rag_phase_keyword">执行关键词检索</string>
-    <string name="chat_rag_phase_hybrid">融合检索结果</string>
-    <string name="chat_rag_phase_ranking">排序检索结果</string>
-    <string name="chat_rag_phase_rerank">重排检索结果</string>
-    <string name="chat_rag_phase_knowledge_graph">检索知识图谱</string>
-    <string name="chat_rag_phase_context_compress">压缩检索上下文</string>
-    <string name="chat_rag_phase_prompt_build">准备模型上下文</string>
-    <string name="chat_rag_phase_context_ready">检索上下文已就绪</string>
-    <string name="chat_rag_phase_retrieved">已检索上下文</string>
-    <string name="chat_rag_ready_references">✓ 引用内容就绪</string>
-    <string name="chat_rag_ready_web">✓ 联网搜索就绪</string>
-    <string name="chat_rag_ready_knowledge">✓ 知识检索就绪</string>
-    <string name="chat_rag_ready_generic">✓ 检索就绪</string>
-    <string name="chat_rag_preparing">正在准备检索上下文…</string>
     <string name="chat_rag_done">完成</string>
     <string name="chat_postprocess_memory">记忆</string>
     <string name="chat_postprocess_summary">摘要</string>
@@ -1619,15 +1596,8 @@
     <string name="model_catalog_records">%1$d 条</string>
     <string name="model_catalog_bundled_snapshot">内置快照</string>
     <string name="local_models_slot_empty">暂无模型</string>
-    <string name="chat_rag_source_knowledge">知识库</string>
     <string name="chat_rag_summary_ready">已检索</string>
-    <string name="chat_thinking_elapsed">%1$d 秒</string>
-    <string name="chat_thought_duration">已思考 %1$d 秒</string>
-    <string name="chat_tools_count">调用了 %1$d 个工具</string>
     <string name="chat_tool_duration">%1$d 毫秒</string>
-    <string name="chat_tool_pending">等待执行</string>
-    <string name="chat_tool_failed">失败</string>
-    <string name="chat_rag_source_web">联网检索</string>
     <string name="chat_tool_duration_seconds">%1$s 秒</string>
     <string name="rag_details_kg_sources">来源文档：%1$s</string>
 </resources>
