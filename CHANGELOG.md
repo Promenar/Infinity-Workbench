@@ -31,8 +31,8 @@ All notable changes to this project will be documented in this file.
 
 ### 打包 Python
 
-- 两个渠道随 APK 打包官方 CPython 3.14.8 Android 嵌入包（arm64-v8a、x86_64），供后续内置命令执行使用；构建时从 python.org 下载并按 SHA-256 校验，产物不入库。标准库存为不压缩 zip，原生扩展从安装目录加载，运行时不解压、不从应用数据目录加载代码。armeabi-v7a 与 x86 设备没有 Python。
-- 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 41.3 MB，安装后原生库目录约 33 MB（单 ABI）。
+- 两个渠道随 APK 打包官方 CPython 3.14.8 Android 嵌入包（Release 通用包只带 arm64-v8a；按 ABI 过滤的构建可带 x86_64），供后续内置命令执行使用；构建时从 python.org 下载并按 SHA-256 校验，产物不入库。标准库存为不压缩 zip，原生扩展从安装目录加载，运行时不解压、不从应用数据目录加载代码。armeabi-v7a、x86 与 x86_64 设备上的 Release 没有 Python。
+- 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 29.8 MB，安装后原生库目录约 33 MB（单 ABI）。
 - 发行 APK 敏感信息扫描对打包的官方 Python 条目放行上游构建机 `runner` 路径，并对标准库 zip 放行保留地址常量与 venv 示例路径；凭据类模式、其它用户路径及自编译启动器照常检查。
 
 ### 会话界面视觉重设计

@@ -38,7 +38,7 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 ## 打包 Python
 
-两个渠道都随 APK 打包官方 CPython Android 嵌入包（版本与 SHA-256 见 `native-ui/app/python/python-android.properties`，与 python.org 发布页及 sigstore 包内摘要一致）。官方只提供 arm64-v8a 与 x86_64：变体的 `abiFilters` 包含哪些就准备哪些，未设过滤的 Release 两者都带；armeabi-v7a 与 x86 设备上没有 Python。
+两个渠道都随 APK 打包官方 CPython Android 嵌入包（版本与 SHA-256 见 `native-ui/app/python/python-android.properties`，与 python.org 发布页及 sigstore 包内摘要一致）。官方只提供 arm64-v8a 与 x86_64：设了 `abiFilters` 的变体（Debug、DeviceTest、MinifiedTest）按过滤准备；未设过滤的 Release 通用包只带 arm64-v8a，x86_64 Python 约 11.5 MB 只服务 x86_64 设备，不放进通用包。armeabi-v7a、x86 与 x86_64 设备上的 Release 没有 Python。
 
 构建任务 `fetchPackagedPython<ABI>` 下载到 Gradle 用户目录的 `caches/nexara-python-android/`，摘要不符时失败且不落盘；缓存命中时不联网。离线构建可用 `-Pnexara.pythonDistDir=<目录>` 指向已放好官方压缩包的目录，文件仍按 SHA-256 校验。`preparePackagedPython<ABI>` 把压缩包整理到 `app/build/generated/packagedPython/<ABI>/` 并作为生成的 jniLibs 目录接入，不入库：
 
@@ -51,7 +51,7 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 设备回归类为 `com.promenar.nexara.data.exec.PackagedPythonDeviceTest`，已纳入 `android-device-core-e2e.sh`：检查原生库已解压、版本与 `BuildConfig.PACKAGED_PYTHON_VERSION` 一致、ssl/sqlite3/hashlib/zlib/ctypes/decimal/socket 可用且扩展来自 `nativeLibraryDir`、`test` 包已裁剪，以及退出码与 stderr 原样返回。
 
-发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 41.3 MB，校验上限 50 MB。
+发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 29.8 MB，校验上限 50 MB。
 
 升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，再运行设备回归。
 

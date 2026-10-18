@@ -217,9 +217,11 @@ val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
 
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
-    // 只为变体实际打包的 ABI 准备 Python；未设 abiFilters 的变体打包全部官方 ABI。
+    // 只为变体实际打包的 ABI 准备 Python。未设 abiFilters 的通用包（Release）只带 arm64-v8a：
+    // x86_64 Python 约 11.5 MB 只服务 x86_64 设备，通用 APK 需为发行校验的 50 MB 上限留出余量。
     val variantAbis = android.defaultConfig.ndk.abiFilters + android.buildTypes.getByName(variant.buildType!!).ndk.abiFilters
-    preparePackagedPython.filterKeys { variantAbis.isEmpty() || it in variantAbis }.values.forEach { prepare ->
+    val pythonAbis = variantAbis.ifEmpty { setOf("arm64-v8a") }
+    preparePackagedPython.filterKeys { it in pythonAbis }.values.forEach { prepare ->
         variant.sources.jniLibs?.addGeneratedSourceDirectory(prepare, PreparePackagedPython::getOutputDirectory)
     }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {

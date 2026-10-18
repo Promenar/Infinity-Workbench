@@ -101,9 +101,9 @@ ToolExecutor
 | git | dulwich（纯 Python，随 stdlib zip 打包）+ `git` 包装 | 支持 clone、status、add、commit、log、diff、push、pull 的常用子集；不支持的子命令返回 `GIT_UNSUPPORTED` 与指引 |
 | CA bundle | 首次运行由 conscrypt 证书拼出，存于 `noBackupFilesDir` | 系统证书更新后按 apex 版本重建 |
 
-ABI：官方包只有 arm64-v8a 与 x86_64。变体的 `abiFilters` 决定打包哪些；当前发行产物是不按 ABI 拆分的通用 APK，两者都带，armeabi-v7a 与 x86 设备上 `PackagedPython.isAvailable` 为 false，内置后端须给出不可用指引。
+ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过滤打包；发行产物是不按 ABI 拆分的通用 APK，只带 arm64-v8a Python（x86_64 约 11.5 MB 只服务 x86_64 设备）。armeabi-v7a、x86 与 x86_64 设备上的 Release 中 `PackagedPython.isAvailable` 为 false，内置后端须给出不可用指引。
 
-清单变更：`packaging.jniLibs.useLegacyPackaging = true`，全部原生库改为压缩存放并在安装时解压到 `nativeLibraryDir`。实测：单 ABI 打包 Python 后 deviceTest APK 增加 11.3 MB，安装后 `nativeLibraryDir` 为 33 MB；Release 通用 APK 由约 20.8 MB 增至约 41.3 MB（两个 ABI 各约 11.3 MB）。需在发布说明中披露。
+清单变更：`packaging.jniLibs.useLegacyPackaging = true`，全部原生库改为压缩存放并在安装时解压到 `nativeLibraryDir`。实测：单 ABI 打包 Python 后 deviceTest APK 增加 11.3 MB，安装后 `nativeLibraryDir` 为 33 MB；Release 通用 APK 由约 20.8 MB 增至约 29.8 MB。需在发布说明中披露。
 
 ### 4.2 进程与安全
 
@@ -188,5 +188,4 @@ ABI：官方包只有 arm64-v8a 与 x86_64。变体的 `abiFilters` 决定打包
 | 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
-| Release 通用 APK 41.3 MB，距发行校验上限 50 MB 只剩约 8.7 MB；x86_64 Python（约 11.5 MB）只服务 x86_64 设备 | 后续新增依赖前需评估；可选方案是 Release 只带 arm64-v8a Python，或改发按 ABI 拆分的 APK |
 | `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |
