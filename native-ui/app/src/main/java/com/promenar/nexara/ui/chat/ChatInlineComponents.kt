@@ -996,6 +996,10 @@ fun ApprovalCard(
                                     add(stringResource(R.string.chat_approval_high_risk_target_warning))
                                 }
                                 if (preview?.scriptAllowsNetwork == true) add(stringResource(R.string.agent_panels_network_allowed))
+                                // 参数预览因摘要不一致缺失时，仍按工具名提示内置命令的工作区风险。
+                                if (preview?.commandRunsInWorkspace == true || call.name == "shell_exec" || call.name == "python_exec") {
+                                    add(stringResource(R.string.chat_approval_builtin_exec_warning))
+                                }
                             }
                             val riskText = approvalRiskSummary(if (index == 0) description else "", call.riskLabel, riskFacts)
                             if (riskText.isNotBlank()) {

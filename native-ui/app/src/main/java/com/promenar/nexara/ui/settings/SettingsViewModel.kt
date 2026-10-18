@@ -676,6 +676,8 @@ class SettingsViewModel(
             Triple("create_directory", R.string.skill_create_directory, R.string.skill_create_directory_desc),
             Triple("move_file", R.string.skill_move_file, R.string.skill_move_file_desc),
             Triple("delete_file", R.string.skill_delete_file, R.string.skill_delete_file_desc),
+            Triple("shell_exec", R.string.skill_shell_exec, R.string.skill_shell_exec_desc),
+            Triple("python_exec", R.string.skill_python_exec, R.string.skill_python_exec_desc),
         ).map { (id, nameRes, descRes) ->
             SkillInfo(id, app.getString(nameRes), app.getString(descRes), BuiltinToolPreferences.isEnabled(prefs, id))
         }

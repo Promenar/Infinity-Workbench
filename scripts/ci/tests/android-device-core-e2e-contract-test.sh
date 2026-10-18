@@ -109,6 +109,7 @@ assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.chat.ChatImageEncoder
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.hub.AgentHubScreenContentTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.exec.PackagedPythonDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.exec.BuiltinExecDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.onboarding.WelcomeScreenLayoutTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.TextWrappingDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUNNER}"'

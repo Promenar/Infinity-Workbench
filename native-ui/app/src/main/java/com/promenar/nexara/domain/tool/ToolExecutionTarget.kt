@@ -43,9 +43,16 @@ object ToolExecutionTargets {
             // 远端相对路径和符号链接的语义由服务器决定，授权键保留原始路径。
             return sshTarget("remote_path", host, path, sshIdentities)
         }
+        if (tool.risk == ToolRisk.PROCESS && tool.function.name == "python_exec" && tool.sourceId == "builtin") {
+            val code = args.string("code")?.takeIf(String::isNotBlank) ?: return null
+            return tuple("process", "python", code)
+        }
         if (tool.risk == ToolRisk.PROCESS) {
-            val host = if (tool.function.name == "termux_exec") "termux"
-                else args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
+            val host = when (tool.function.name) {
+                "termux_exec" -> "termux"
+                "shell_exec" -> "builtin".takeIf { tool.sourceId == "builtin" }
+                else -> null
+            } ?: args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
             if (tool.function.name == "ssh_exec") {
                 if (!SSH_ALIAS.matches(host)) return null

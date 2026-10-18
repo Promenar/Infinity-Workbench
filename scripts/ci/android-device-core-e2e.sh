@@ -447,6 +447,8 @@ run_test agent-hub-content "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.hub.AgentHubScreenContentTest
 run_test packaged-python "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.exec.PackagedPythonDeviceTest
+run_test builtin-exec "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.exec.BuiltinExecDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then

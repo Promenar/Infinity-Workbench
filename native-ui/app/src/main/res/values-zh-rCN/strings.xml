@@ -1573,6 +1573,10 @@
     <string name="skill_move_file_desc">移动或重命名工作区文件与目录</string>
     <string name="skill_delete_file">删除文件</string>
     <string name="skill_delete_file_desc">将工作区文件与目录移入回收站</string>
+    <string name="skill_shell_exec">Shell 命令</string>
+    <string name="skill_shell_exec_desc">无需 Termux，在会话工作区内用系统 sh 执行命令；按执行模式审批</string>
+    <string name="skill_python_exec">Python</string>
+    <string name="skill_python_exec_desc">在会话工作区内用内置 Python 3.14 运行代码（arm64 设备）；按执行模式审批</string>
     <string name="agent_skills_intro">技能包是可复用的任务指令（SKILL.md）。启用后，助手只在任务与技能描述相符时加载其指令与参考文件；技能包不会执行代码。</string>
     <string name="agent_skills_empty">尚未安装技能包。可导入 .zip 或 SKILL.md，或新建一个。</string>
     <string name="agent_skills_import">导入</string>

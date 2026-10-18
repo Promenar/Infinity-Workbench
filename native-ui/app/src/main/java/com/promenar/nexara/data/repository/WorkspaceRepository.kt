@@ -21,6 +21,10 @@ import java.io.File
 import java.util.UUID
 import java.io.OutputStream
 import com.promenar.nexara.data.session.SessionExecutionGate
+import com.promenar.nexara.data.rag.DocumentReferenceExtractor
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
+import kotlinx.coroutines.CancellationException
 
 
 interface WorkspaceDeleteBarrierLease {
@@ -67,7 +71,9 @@ class WorkspaceRepository(
     private val clock: () -> Long = System::currentTimeMillis,
     private val executionGate: SessionExecutionGate? = null,
     private val mutationJournal: WorkspaceFileMutationJournal? = null,
-) : IWorkspaceRepository {
+    private val treeScanner: WorkspaceTreeScanner = SecureWorkspaceTreeScanner,
+    private val indexEventSink: FileIndexEventSink = FileIndexEventSink.None,
+) : IWorkspaceRepository, WorkspaceCommandHost {
     @Volatile
     private var defaultParentIdentity: String? = null
     private val creationRollbackAuthorizations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -877,6 +883,210 @@ class WorkspaceRepository(
                 }
             }
 
+    override suspend fun <T> runCommandInWorkspace(
+        workspaceRootUuid: String,
+        sessionId: String?,
+        block: suspend (physicalRoot: File) -> T,
+    ): WorkspaceCommandOutcome<T> = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+        val rootPath = File(root.physicalRootPath).toPath()
+        val identity = WorkspaceRootIdentityGuard.capture(rootPath)
+        // 标记先于前快照写入，否则对账会把它当作命令改动的保留路径。
+        if (!fileOps.exists(rootPath, listOf(COMMAND_PENDING_MARKER))) {
+            fileOps.createFile(rootPath, listOf(COMMAND_PENDING_MARKER), byteArrayOf())
+        }
+        val before = try {
+            treeScanner.scan(rootPath)
+        } catch (failure: Throwable) {
+            runCatching { fileOps.delete(rootPath, listOf(COMMAND_PENDING_MARKER)) }.exceptionOrNull()?.let(failure::addSuppressed)
+            throw failure
+        }
+        var failure: Throwable? = null
+        var value: Result<T>? = null
+        try {
+            value = Result.success(block(rootPath.toFile()))
+        } catch (thrown: Throwable) {
+            failure = thrown
+        }
+        val reconciled = withContext(NonCancellable) {
+            runCatching {
+                val identityRestored = identity.restoreIfChanged()
+                reconcileCommandLocked(root, before, sessionId).let { report ->
+                    if (identityRestored) {
+                        report.copy(reservedChanges = (report.reservedChanges + "/${WORKSPACE_ROOT_IDENTITY_MARKER}").distinct().sorted())
+                    } else report
+                }
+            }.onSuccess {
+                runCatching { fileOps.delete(rootPath, listOf(COMMAND_PENDING_MARKER)) }
+                    .exceptionOrNull()?.let { NexaraLogger.logError("WorkspaceCommand.clearMarker", it) }
+            }.onFailure { NexaraLogger.logError("WorkspaceCommand.reconcile", it) }
+        }
+        failure?.let { thrown ->
+            reconciled.exceptionOrNull()?.let(thrown::addSuppressed)
+            throw thrown
+        }
+        WorkspaceCommandOutcome(
+            value = checkNotNull(value).getOrThrow(),
+            changes = reconciled.getOrNull(),
+            reconcileError = reconciled.exceptionOrNull()?.let { error ->
+                (error as? SecurityException)?.message ?: "工作区索引对账失败（${error::class.java.simpleName}）"
+            },
+        )
+    } }
+
+    /** 上次命令未完成对账（进程被杀或崩溃）时，下一次修改工作区前先按磁盘收敛索引。 */
+    private suspend fun recoverInterruptedCommandLocked(root: FileEntry) {
+        val rootPath = File(root.physicalRootPath).toPath()
+        if (!fileOps.exists(rootPath, listOf(COMMAND_PENDING_MARKER))) return
+        try {
+            withContext(NonCancellable) {
+                reconcileCommandLocked(root, before = null, sessionId = null)
+                fileOps.delete(rootPath, listOf(COMMAND_PENDING_MARKER))
+            }
+        } catch (failure: Exception) {
+            NexaraLogger.logError("WorkspaceCommand.recover", failure)
+        }
+    }
+
+    private suspend fun reconcileCommandLocked(
+        root: FileEntry,
+        before: WorkspaceTreeSnapshot?,
+        sessionId: String?,
+    ): WorkspaceChangeReport {
+        val rootPath = File(root.physicalRootPath).toPath()
+        val after = treeScanner.scan(rootPath)
+        val active = dao.getAllStatesByWorkspaceRootForCleanup(root.uuid).filter { entry ->
+            !entry.inRecycleBin && entry.uuid != root.uuid && entry.parentUuid != null &&
+                relative(entry.materializedPath).none(::isReservedWorkspaceName)
+        }
+        val byUuid = active.associateBy { it.uuid }
+        val plan = WorkspaceReconcilePlanner.plan(
+            indexed = active.map { entry ->
+                IndexedWorkspaceNode(
+                    uuid = entry.uuid,
+                    parentUuid = entry.parentUuid,
+                    path = normalizeMaterializedPath(entry.materializedPath),
+                    isDirectory = entry.isDirectory,
+                    sizeBytes = entry.sizeBytes,
+                    hash = entry.hash,
+                )
+            },
+            before = before,
+            after = after,
+        ) { path ->
+            runCatching { fileOps.inspect(rootPath, relative(path)) }.getOrNull()
+                ?.takeIf { it.kind == "file" }?.sha256
+        }
+        if (!plan.isEmpty) applyCommandReconcile(root, plan, byUuid, sessionId)
+        return WorkspaceChangeReport.from(plan)
+    }
+
+    private suspend fun applyCommandReconcile(
+        root: FileEntry,
+        plan: WorkspaceReconcilePlan,
+        byUuid: Map<String, FileEntry>,
+        sessionId: String?,
+    ) {
+        val rootPath = File(root.physicalRootPath).toPath()
+        val deletedIds = plan.deletes.map { it.uuid }
+        if (deletedIds.isNotEmpty()) {
+            val barrier = beforeDeleteCommitted(root.uuid, deletedIds)
+            try {
+                barrier.awaitReady()
+                requireNotNull(deleteCommitter) { "命令对账删除必须配置包含派生数据清理的事务提交器" }
+                    .invoke(root.uuid, deletedIds)
+            } catch (failure: Throwable) {
+                withContext(NonCancellable) {
+                    runCatching { barrier.abort() }.exceptionOrNull()?.let(failure::addSuppressed)
+                }
+                throw failure
+            }
+            withContext(NonCancellable) {
+                barrier.commit()
+                runCatching { afterDeleteCommitted(root.uuid, deletedIds) }
+                    .exceptionOrNull()?.let { NexaraLogger.logError("WorkspaceCommand.afterDelete", it) }
+            }
+            deletedIds.forEach { fileUuid ->
+                val versions = workspaceVersionSnapshotDirectory(root.uuid, fileUuid)
+                runCatching { if (fileOps.exists(rootPath, versions)) fileOps.delete(rootPath, versions) }
+            }
+        }
+
+        val deleted = deletedIds.toSet()
+        val pathToUuid = HashMap<String, String>()
+        pathToUuid["/"] = root.uuid
+        byUuid.values.filter { it.uuid !in deleted }.forEach { pathToUuid[normalizeMaterializedPath(it.materializedPath)] = it.uuid }
+        plan.moves.forEach { move ->
+            pathToUuid.remove(move.from)
+            pathToUuid[move.to] = move.uuid
+        }
+        val insertedIds = plan.inserts.associate { it.path to UUID.randomUUID().toString() }
+        pathToUuid.putAll(insertedIds)
+        fun parentOf(path: String): String = pathToUuid[parentPath(path)]
+            ?: throw IllegalStateException("命令对账无法定位父目录")
+
+        val now = clock()
+        val inserts = plan.inserts.map { insert ->
+            val name = insert.path.substringAfterLast('/')
+            FileEntry(
+                uuid = insertedIds.getValue(insert.path),
+                workspaceRootUuid = root.uuid,
+                parentUuid = parentOf(insert.path),
+                name = name,
+                hash = insert.hash,
+                mimeType = if (insert.isDirectory) null else WorkspaceCommandMimeTypes.guess(name, insert.sizeBytes) {
+                    runCatching {
+                        fileOps.readLimited(rootPath, relative(insert.path), WorkspaceCommandMimeTypes.SNIFF_LIMIT_BYTES)
+                    }.getOrNull()
+                },
+                sizeBytes = insert.sizeBytes,
+                isDirectory = insert.isDirectory,
+                physicalRootPath = root.physicalRootPath,
+                materializedPath = insert.path,
+                lastWriteSessionId = sessionId,
+                createdAt = now,
+                updatedAt = now,
+            )
+        }
+        val updates = LinkedHashMap<String, FileEntry>()
+        plan.updates.forEach { update ->
+            val entry = byUuid.getValue(update.uuid)
+            updates[entry.uuid] = entry.copy(
+                hash = update.hash,
+                sizeBytes = update.sizeBytes,
+                lastWriteSessionId = sessionId,
+                vectorizedAt = null,
+                kgExtractedAt = null,
+                updatedAt = nextMutationEpoch(now, entry.updatedAt),
+            )
+        }
+        plan.moves.forEach { move ->
+            val entry = updates[move.uuid] ?: byUuid.getValue(move.uuid)
+            updates[move.uuid] = entry.copy(
+                name = move.to.substringAfterLast('/'),
+                materializedPath = move.to,
+                parentUuid = parentOf(move.to),
+                updatedAt = nextMutationEpoch(now, entry.updatedAt),
+            )
+        }
+        byUuid.values.filter { it.uuid !in deleted }.forEach { original ->
+            val entry = updates[original.uuid] ?: original
+            val expectedParent = parentOf(normalizeMaterializedPath(entry.materializedPath))
+            if (entry.parentUuid != expectedParent) updates[entry.uuid] = entry.copy(parentUuid = expectedParent)
+        }
+        dao.commitCommandReconcile(inserts, updates.values.toList())
+
+        (inserts + updates.values).filter(DocumentReferenceExtractor::supports).forEach { entry ->
+            try {
+                indexEventSink.publish(FileIndexEvent.Changed(root.uuid, entry.uuid, entry.hash, entry.updatedAt.coerceAtLeast(1)))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // 索引记录已提交；未发布的事件由待处理索引协调器按 vectorized_at 补偿。
+                NexaraLogger.logError("WorkspaceCommand.publishIndex", failure)
+            }
+        }
+    }
+
     override suspend fun getNextSeqForDate(dateKey: String): Int = seqDao.getNextSeqForDate(dateKey)
 
     override suspend fun resetAllRAGStatus(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
@@ -916,6 +1126,7 @@ class WorkspaceRepository(
             val currentRoot = requireRoot(workspaceRootUuid)
             recoverPendingTombstonesLocked(currentRoot)
             cleanupCompletedOwnersBeforeMutation(currentRoot)
+            recoverInterruptedCommandLocked(currentRoot)
             block(requireRoot(workspaceRootUuid))
         }
     }
@@ -1385,6 +1596,9 @@ class WorkspaceRepository(
         normalizeMaterializedPath(parentPath).trimEnd('/') + "/" + name
 
 }
+
+/** 命令运行期间存在于工作区根；进程被杀后由下一次工作区修改触发恢复对账。 */
+internal const val COMMAND_PENDING_MARKER = ".nexara_command_pending"
 
 internal fun workspaceVersionDeletionToken(fileUuid: String): String =
     Sha256Utils.hash("workspace-version:$fileUuid").take(24)

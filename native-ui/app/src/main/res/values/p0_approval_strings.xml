@@ -5,4 +5,5 @@
     <string name="chat_approval_high_risk_target_warning">Deletion and process commands can change or remove data. Check the target before allowing repeated execution in this session.</string>
     <string name="chat_approval_always_allow_target">Always allow this target in this session</string>
     <string name="chat_approval_always_allow_target_a11y">Approve %1$s and always allow target %2$s in this session</string>
+    <string name="chat_approval_builtin_exec_warning">Runs inside the session workspace and can access Nexara private data and the network. Files the command deletes or overwrites skip the recycle bin and cannot be recovered.</string>
 </resources>

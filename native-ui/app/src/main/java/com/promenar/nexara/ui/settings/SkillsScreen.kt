@@ -175,6 +175,8 @@ fun SkillsScreen(
             "create_directory" to Icons.Rounded.Folder,
             "move_file" to Icons.Rounded.Sync,
             "delete_file" to Icons.Rounded.Delete,
+            "shell_exec" to Icons.Rounded.Code,
+            "python_exec" to Icons.Rounded.Code,
         )
     }
     val presetSkills by viewModel.skills.collectAsState()

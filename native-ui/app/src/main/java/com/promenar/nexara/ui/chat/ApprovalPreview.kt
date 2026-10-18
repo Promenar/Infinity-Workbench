@@ -29,6 +29,8 @@ object ApprovalPreview {
         val target: String,
         val detail: String?,
         val scriptAllowsNetwork: Boolean = false,
+        /** 内置执行后端：命令直接改动工作区且可访问应用私有数据与网络。 */
+        val commandRunsInWorkspace: Boolean = false,
     )
 
     fun forCall(call: ApprovalCallIdentity, messages: List<Message>, assistantMessageId: String?): Preview? {
@@ -58,6 +60,12 @@ object ApprovalPreview {
                 args.string("code")?.let { append(excerpt(it, "")) }
             }.trimEnd().ifEmpty { null },
                 scriptAllowsNetwork = (args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true)
+            "shell_exec", "python_exec" -> Preview(
+                Action.SCRIPT,
+                "",
+                (args.string("command") ?: args.string("code"))?.let { excerpt(it, "") },
+                commandRunsInWorkspace = true,
+            )
             "move_file" -> Preview(
                 Action.MOVE,
                 target,

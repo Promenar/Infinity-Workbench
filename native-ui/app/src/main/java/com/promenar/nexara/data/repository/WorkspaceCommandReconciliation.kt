@@ -1,0 +1,362 @@
+package com.promenar.nexara.data.repository
+
+import java.io.File
+import java.net.URLConnection
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.NotDirectoryException
+import java.nio.file.Path
+import java.nio.file.SecureDirectoryStream
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+/**
+ * 命令直接改动工作区物理目录后的索引对账。
+ *
+ * 命令运行前后各遍历一次物理树，以数据库索引为准计算新增、修改、删除与移动：
+ * 只对 size、mtime、inode 有变化或缺少前快照的文件重算 SHA-256；同一 inode 换路径且内容未变视为移动，保留条目身份。
+ * 保留路径（`.nexara*`、`.recycle_bin`、未入索引的顶层 `mnt`）、符号链接与特殊文件不写入索引，只作为警告返回。
+ */
+enum class WorkspaceScanKind { FILE, DIRECTORY, UNSUPPORTED }
+
+data class WorkspaceScanNode(
+    val kind: WorkspaceScanKind,
+    val sizeBytes: Long,
+    val modifiedNanos: Long,
+    val fileKey: String?,
+)
+
+/** 键为以 `/` 开头的虚拟路径。 */
+data class WorkspaceTreeSnapshot(
+    val nodes: Map<String, WorkspaceScanNode>,
+    val reserved: Map<String, WorkspaceScanNode>,
+)
+
+fun interface WorkspaceTreeScanner {
+    fun scan(root: Path): WorkspaceTreeSnapshot
+}
+
+internal fun isReservedWorkspaceName(name: String): Boolean =
+    name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin"
+
+/** 现有文件工具拒绝的名称：命令可以创建，但不进入索引。 */
+internal fun isIndexableWorkspaceName(name: String): Boolean =
+    name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name && '\u0000' !in name
+
+/** 经 SecureDirectoryStream 逐级打开目录且不跟随符号链接，遍历期间目录被替换为链接也不会越出工作区。 */
+object SecureWorkspaceTreeScanner : WorkspaceTreeScanner {
+    override fun scan(root: Path): WorkspaceTreeSnapshot {
+        val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (attributes.isSymbolicLink || !attributes.isDirectory) throw SecurityException("工作区根目录身份无效")
+        val stream = Files.newDirectoryStream(root)
+        val secure = stream as? SecureDirectoryStream<Path> ?: run {
+            stream.close()
+            throw SecurityException("当前文件系统不支持 SecureDirectoryStream，拒绝遍历工作区")
+        }
+        val nodes = LinkedHashMap<String, WorkspaceScanNode>()
+        val reserved = LinkedHashMap<String, WorkspaceScanNode>()
+        secure.use { walk(it, "", inReserved = false, nodes, reserved) }
+        return WorkspaceTreeSnapshot(nodes, reserved)
+    }
+
+    private fun walk(
+        directory: SecureDirectoryStream<Path>,
+        prefix: String,
+        inReserved: Boolean,
+        nodes: MutableMap<String, WorkspaceScanNode>,
+        reserved: MutableMap<String, WorkspaceScanNode>,
+    ) {
+        val names = directory.map { it.fileName }.sortedBy { it.toString() }
+        for (name in names) {
+            val text = name.toString()
+            val path = "$prefix/$text"
+            val attributes = try {
+                directory.getFileAttributeView(name, BasicFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)
+                    .readAttributes()
+            } catch (_: NoSuchFileException) {
+                continue
+            }
+            val isReserved = inReserved || isReservedWorkspaceName(text)
+            val kind = when {
+                !isIndexableWorkspaceName(text) -> WorkspaceScanKind.UNSUPPORTED
+                attributes.isSymbolicLink || attributes.isOther -> WorkspaceScanKind.UNSUPPORTED
+                attributes.isDirectory -> WorkspaceScanKind.DIRECTORY
+                attributes.isRegularFile -> WorkspaceScanKind.FILE
+                else -> WorkspaceScanKind.UNSUPPORTED
+            }
+            val node = WorkspaceScanNode(
+                kind = kind,
+                sizeBytes = if (kind == WorkspaceScanKind.FILE) attributes.size() else 0L,
+                modifiedNanos = attributes.lastModifiedTime().to(TimeUnit.NANOSECONDS),
+                fileKey = attributes.fileKey()?.toString(),
+            )
+            (if (isReserved) reserved else nodes)[path] = node
+            if (kind != WorkspaceScanKind.DIRECTORY) continue
+            val child = try {
+                directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)
+            } catch (_: NoSuchFileException) {
+                continue
+            } catch (_: NotDirectoryException) {
+                continue
+            }
+            child.use { walk(it, path, isReserved, nodes, reserved) }
+        }
+    }
+}
+
+/** 数据库中的活动条目（不含根、回收区与系统条目）。 */
+data class IndexedWorkspaceNode(
+    val uuid: String,
+    val parentUuid: String?,
+    val path: String,
+    val isDirectory: Boolean,
+    val sizeBytes: Long,
+    val hash: String,
+)
+
+data class PlannedWorkspaceInsert(val path: String, val isDirectory: Boolean, val sizeBytes: Long, val hash: String)
+data class PlannedWorkspaceUpdate(val uuid: String, val path: String, val sizeBytes: Long, val hash: String)
+data class PlannedWorkspaceMove(val uuid: String, val from: String, val to: String)
+
+data class WorkspaceReconcilePlan(
+    val inserts: List<PlannedWorkspaceInsert>,
+    val updates: List<PlannedWorkspaceUpdate>,
+    val moves: List<PlannedWorkspaceMove>,
+    val deletes: List<IndexedWorkspaceNode>,
+    /** 命令新建或改动的保留路径。 */
+    val reservedChanges: List<String>,
+    /** 命令新建或改动的符号链接、特殊文件与无效名称。 */
+    val unsupported: List<String>,
+) {
+    val isEmpty: Boolean get() = inserts.isEmpty() && updates.isEmpty() && moves.isEmpty() && deletes.isEmpty()
+}
+
+object WorkspaceReconcilePlanner {
+    /**
+     * @param before 命令前快照；崩溃恢复时为 null，此时全部文件重算哈希且不识别移动。
+     * @param hash 读取当前文件的 SHA-256；文件已消失时返回 null。
+     */
+    fun plan(
+        indexed: List<IndexedWorkspaceNode>,
+        before: WorkspaceTreeSnapshot?,
+        after: WorkspaceTreeSnapshot,
+        hash: (String) -> String?,
+    ): WorkspaceReconcilePlan {
+        val removed = mutableListOf<IndexedWorkspaceNode>()
+        val kept = HashSet<String>()
+        val updates = mutableListOf<PlannedWorkspaceUpdate>()
+        for (entry in indexed.sortedBy { it.path }) {
+            val node = after.nodes[entry.path]
+            val sameKind = node != null && node.kind != WorkspaceScanKind.UNSUPPORTED &&
+                (node.kind == WorkspaceScanKind.DIRECTORY) == entry.isDirectory
+            if (!sameKind) {
+                removed += entry
+                continue
+            }
+            kept += entry.path
+            if (entry.isDirectory) continue
+            if (before?.nodes?.get(entry.path) == node && node.sizeBytes == entry.sizeBytes) continue
+            val current = hash(entry.path)
+            if (current == null) {
+                kept -= entry.path
+                removed += entry
+            } else if (current != entry.hash || node.sizeBytes != entry.sizeBytes) {
+                updates += PlannedWorkspaceUpdate(entry.uuid, entry.path, node.sizeBytes, current)
+            }
+        }
+
+        val reserved = sortedSetOf<String>()
+        val candidates = after.nodes.filter { (path, node) ->
+            node.kind != WorkspaceScanKind.UNSUPPORTED && path !in kept
+        }.keys.filter { path ->
+            // 顶层 mnt 是挂载命名空间；命令新建的同名目录会被挂载遮蔽，不入索引。
+            val mountNamespace = path == "/mnt" || path.startsWith("/mnt/")
+            if (mountNamespace) reserved += path
+            !mountNamespace
+        }.sortedWith(compareBy({ it.count { char -> char == '/' } }, { it }))
+
+        val removedByKey = removed.mapNotNull { entry ->
+            val prior = before?.nodes?.get(entry.path) ?: return@mapNotNull null
+            val key = prior.fileKey ?: return@mapNotNull null
+            if ((prior.kind == WorkspaceScanKind.DIRECTORY) != entry.isDirectory) return@mapNotNull null
+            key to entry
+        }.groupBy({ it.first }, { it.second }).filterValues { it.size == 1 }.mapValues { it.value.single() }
+        val moved = HashSet<String>()
+        val moves = mutableListOf<PlannedWorkspaceMove>()
+        val inserts = mutableListOf<PlannedWorkspaceInsert>()
+        for (path in candidates) {
+            val node = after.nodes.getValue(path)
+            val source = node.fileKey?.let(removedByKey::get)?.takeIf {
+                it.uuid !in moved && it.isDirectory == (node.kind == WorkspaceScanKind.DIRECTORY)
+            }
+            val pureMove = source != null && (source.isDirectory || run {
+                val prior = before?.nodes?.get(source.path)
+                prior != null && prior.sizeBytes == node.sizeBytes && prior.modifiedNanos == node.modifiedNanos &&
+                    source.sizeBytes == node.sizeBytes
+            })
+            if (source != null && pureMove) {
+                moved += source.uuid
+                moves += PlannedWorkspaceMove(source.uuid, source.path, path)
+                continue
+            }
+            if (node.kind == WorkspaceScanKind.DIRECTORY) {
+                inserts += PlannedWorkspaceInsert(path, isDirectory = true, sizeBytes = 0L, hash = "")
+            } else {
+                val current = hash(path) ?: continue
+                inserts += PlannedWorkspaceInsert(path, isDirectory = false, sizeBytes = node.sizeBytes, hash = current)
+            }
+        }
+
+        val unsupported = after.nodes.filter { (path, node) ->
+            node.kind == WorkspaceScanKind.UNSUPPORTED && before?.nodes?.get(path) != node
+        }.keys.sorted()
+        if (before != null) {
+            (before.reserved.keys + after.reserved.keys).filterTo(reserved) { path ->
+                before.reserved[path] != after.reserved[path]
+            }
+        }
+        return WorkspaceReconcilePlan(
+            inserts = inserts,
+            updates = updates,
+            moves = moves,
+            deletes = removed.filter { it.uuid !in moved },
+            reservedChanges = reserved.toList(),
+            unsupported = unsupported,
+        )
+    }
+}
+
+/** 对账结果中返回给模型的路径变化；目录整体删除或移动时只列最上层。 */
+data class WorkspaceChangeReport(
+    val added: List<String> = emptyList(),
+    val modified: List<String> = emptyList(),
+    val removed: List<String> = emptyList(),
+    val moved: List<Pair<String, String>> = emptyList(),
+    val reservedChanges: List<String> = emptyList(),
+    val unsupported: List<String> = emptyList(),
+) {
+    val isEmpty: Boolean get() = added.isEmpty() && modified.isEmpty() && removed.isEmpty() && moved.isEmpty()
+
+    companion object {
+        fun from(plan: WorkspaceReconcilePlan): WorkspaceChangeReport {
+            val removedPaths = plan.deletes.map { it.path }.toSet()
+            val movedPairs = plan.moves.associate { it.from to it.to }
+            return WorkspaceChangeReport(
+                added = plan.inserts.map { it.path },
+                modified = plan.updates.map { it.path },
+                removed = removedPaths.filter { path -> parentPath(path) !in removedPaths }.sorted(),
+                moved = plan.moves.filter { move ->
+                    val parent = parentPath(move.from)
+                    movedPairs[parent] != parentPath(move.to)
+                }.map { it.from to it.to },
+                reservedChanges = plan.reservedChanges,
+                unsupported = plan.unsupported,
+            )
+        }
+    }
+}
+
+internal fun parentPath(path: String): String = path.substringBeforeLast('/').ifEmpty { "/" }
+
+/** 命令直接在工作区物理根内运行的宿主：运行期间独占工作区写锁，结束后（含失败与取消）对账索引。 */
+interface WorkspaceCommandHost {
+    suspend fun <T> runCommandInWorkspace(
+        workspaceRootUuid: String,
+        sessionId: String?,
+        block: suspend (physicalRoot: File) -> T,
+    ): WorkspaceCommandOutcome<T>
+}
+
+/** 对账失败时 [changes] 为 null，[reconcileError] 给出不含物理路径的原因。 */
+data class WorkspaceCommandOutcome<T>(
+    val value: T,
+    val changes: WorkspaceChangeReport?,
+    val reconcileError: String? = null,
+)
+
+/**
+ * 根身份标记被命令删除或改写会让后续全部工作区操作失败；命令前读取原始字节，结束后按需写回。
+ * 根目录本身在持锁期间已核验，写回只作用于根下这一个名称且不跟随符号链接。
+ */
+internal class WorkspaceRootIdentityGuard private constructor(
+    private val root: Path,
+    private val rootKey: Any?,
+    private val original: ByteArray?,
+) {
+    /** @return 是否写回了标记。 */
+    fun restoreIfChanged(): Boolean {
+        val bytes = original ?: return false
+        val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (attributes.isSymbolicLink || !attributes.isDirectory || attributes.fileKey() != rootKey) {
+            throw SecurityException("工作区根目录在命令运行期间被替换")
+        }
+        val marker = root.resolve(WORKSPACE_ROOT_IDENTITY_MARKER)
+        val current = runCatching {
+            Files.readAttributes(marker, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        }.getOrNull()
+        if (current != null && current.isRegularFile && runCatching { Files.readAllBytes(marker) }.getOrNull()?.contentEquals(bytes) == true) {
+            return false
+        }
+        if (current != null) {
+            if (current.isDirectory) throw SecurityException("工作区根身份标记被替换为目录，无法自动恢复")
+            Files.delete(marker)
+        }
+        Files.write(marker, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+        return true
+    }
+
+    companion object {
+        fun capture(root: Path): WorkspaceRootIdentityGuard {
+            val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            val marker = root.resolve(WORKSPACE_ROOT_IDENTITY_MARKER)
+            val original = runCatching {
+                val markerAttributes = Files.readAttributes(marker, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                if (markerAttributes.isRegularFile) Files.readAllBytes(marker) else null
+            }.getOrNull()
+            return WorkspaceRootIdentityGuard(root, attributes.fileKey(), original)
+        }
+    }
+}
+
+/** 命令新增文件的 MIME：与文件工具和索引管线认可的类型对齐，未知扩展名的小文件按 UTF-8 文本嗅探。 */
+internal object WorkspaceCommandMimeTypes {
+    const val SNIFF_LIMIT_BYTES = 256L * 1024L
+
+    fun guess(name: String, sizeBytes: Long, read: () -> ByteArray?): String {
+        val extension = name.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
+        when (extension) {
+            "md", "markdown" -> return "text/markdown"
+            "csv" -> return "text/csv"
+            "json" -> return "application/json"
+            "html", "htm" -> return "text/html"
+            "pdf" -> return "application/pdf"
+            "docx" -> return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        if (WorkspaceTextContentPolicy.isTextExtension(extension)) return "text/plain"
+        runCatching { URLConnection.guessContentTypeFromName(name) }.getOrNull()?.let { return it }
+        if (extension.isEmpty() || sizeBytes <= SNIFF_LIMIT_BYTES) {
+            val bytes = if (sizeBytes <= SNIFF_LIMIT_BYTES) read() else null
+            if (bytes != null && looksLikeUtf8Text(bytes)) return "text/plain"
+        }
+        return "application/octet-stream"
+    }
+
+    private fun looksLikeUtf8Text(bytes: ByteArray): Boolean {
+        if (bytes.any { it == 0.toByte() }) return false
+        return runCatching {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+        }.isSuccess
+    }
+}
+
+/** 与 SecureWorkspaceFileOps 写入的根身份标记同名。 */
+internal const val WORKSPACE_ROOT_IDENTITY_MARKER = ".nexara_root_identity"

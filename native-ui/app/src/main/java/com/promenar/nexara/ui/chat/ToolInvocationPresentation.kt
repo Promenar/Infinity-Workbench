@@ -122,7 +122,7 @@ internal data class ToolGroupSummary(
 
 /** 内置工具仅按完整 ID 匹配，MCP 命名空间与未知工具统一归入其它。 */
 internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
-    "termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read",
+    "shell_exec", "python_exec", "termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read",
     "ssh_session_close", "run_script", "exec_js" -> ToolSummaryAction.COMMAND
     "web_search", "search_tavily", "search_searxng" -> ToolSummaryAction.WEB_SEARCH
     "web_fetch" -> ToolSummaryAction.WEB_READ

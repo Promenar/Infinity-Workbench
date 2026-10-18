@@ -28,6 +28,16 @@ interface FileEntryDao {
     @Update
     suspend fun updateAll(entries: List<FileEntry>)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAllAbort(entries: List<FileEntry>)
+
+    /** 命令对账的新增与更新在同一事务提交，避免索引停在半套状态。 */
+    @Transaction
+    suspend fun commitCommandReconcile(inserts: List<FileEntry>, updates: List<FileEntry>) {
+        if (inserts.isNotEmpty()) insertAllAbort(inserts)
+        if (updates.isNotEmpty()) updateAll(updates)
+    }
+
     @Delete
     suspend fun delete(entry: FileEntry)
 

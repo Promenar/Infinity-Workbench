@@ -621,6 +621,24 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             },
             executionGate = sessionExecutionGate,
             mutationJournal = workspaceFileMutationJournal,
+            // 延迟到发布时解析，避免与索引协调器的初始化互相依赖。
+            indexEventSink = com.promenar.nexara.data.rag.FileIndexEventSink { event ->
+                pendingDocumentIndexCoordinator.publish(event)
+            },
+        )
+    }
+
+    val builtinExecService: com.promenar.nexara.data.exec.BuiltinExecService by lazy {
+        com.promenar.nexara.data.exec.BuiltinExecService(
+            workspace = workspaceRepository as com.promenar.nexara.data.repository.WorkspaceCommandHost,
+            runner = com.promenar.nexara.data.exec.BuiltinCommandRunner(
+                groupLauncher = listOf("/system/bin/setsid"),
+                shell = "/system/bin/sh",
+                signaller = com.promenar.nexara.data.exec.AndroidProcessGroupSignaller,
+                scratchDirectory = { File(cacheDir, "exec-run") },
+            ),
+            environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this),
+            unavailablePythonAbi = { android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" },
         )
     }
 
@@ -704,6 +722,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(mounted(DeleteFileSkill(workspaceRepository)))
             register(ExecJsSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.RunScriptSkill(scriptToolRunner))
+            register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService))
+            register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService))
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))

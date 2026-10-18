@@ -35,6 +35,12 @@ All notable changes to this project will be documented in this file.
 - 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 29.8 MB，安装后原生库目录约 33 MB（单 ABI）。
 - 发行 APK 敏感信息扫描对打包的官方 Python 条目放行上游构建机 `runner` 路径，并对标准库 zip 放行保留地址常量与 venv 示例路径；凭据类模式、其它用户路径及自编译启动器照常检查。
 
+### 内置命令执行
+
+- 新增 `shell_exec` 与 `python_exec`：不安装 Termux 也能在会话工作区根目录运行系统 sh 命令与内置 Python 3.14 代码（Python 仅 arm64-v8a 设备；其它架构返回 `EXEC_PYTHON_UNAVAILABLE` 与改用 Termux/SSH 的指引）。两者为 PROCESS 风险，半自动与手动模式下逐次审批并绑定完整命令或代码；审批卡提示可访问 Nexara 私有数据与网络、删除或覆盖的文件不进回收站。
+- 命令运行期间独占工作区写锁，结束（含失败、超时与取消）后按磁盘对账：新增条目入索引并按扩展名或内容判定 MIME，修改的文件更新哈希并重新排入文档索引，删除的条目连同派生数据与版本快照清理，同一 inode 的纯重命名保留条目身份与版本历史。结果的 `workspace_changes` 列出路径（超过 200 项截断并给计数），改动保留路径或创建符号链接、特殊文件时给出 `WORKSPACE_RESERVED_PATH` / `WORKSPACE_UNSUPPORTED_ENTRY` 警告；命令删除根身份标记时自动写回。进程中途被杀时，下一次修改工作区前先按磁盘收敛索引。
+- 命令以白名单环境变量在独立进程组中启动；超时先 SIGTERM、2 秒后 SIGKILL 整个进程组，正常结束时同组残留的后台进程同样被结束。输出中的工作区物理路径显示为 `$NEXARA_WORKSPACE`。Python 的 HTTPS 使用由系统证书拼成的 CA bundle。
+
 ### 会话界面视觉重设计
 
 - 自动跟随覆盖生成结束后的操作行、积压放出与长回复异步解析，用户上滑后保持阅读位置；复制操作包含整轮全部正文，展开思考支持 Markdown。

@@ -165,6 +165,8 @@ class WorkspaceTextContentPolicy {
             maxOutputBytes = 1L * 1024L * 1024L,
         )
 
+        fun isTextExtension(extension: String): Boolean = extension.lowercase() in TEXT_EXTENSIONS
+
         fun budgetFor(operation: WorkspaceTextOperation): WorkspaceTextBudget =
             if (operation == WorkspaceTextOperation.EDITOR) DEFAULT_EDITOR_BUDGET else DEFAULT_TOOL_BUDGET
 
