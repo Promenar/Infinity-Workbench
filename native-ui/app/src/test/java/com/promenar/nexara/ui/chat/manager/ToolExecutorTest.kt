@@ -1752,6 +1752,50 @@ class ToolExecutorTest {
         }
     }
 
+    @Test
+    fun `成功结果的文件改动摘要只复制到执行步骤而不进入模型内容`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val change = FileChangeSummary(
+            path = "/src/a.kt",
+            change = FileChangeType.MODIFIED,
+            added = 1,
+            removed = 1,
+            hunks = listOf(FileChangeHunk(1, 1, 1, 1, listOf("-old", "+new"))),
+        )
+        val oversized = FileChangeSummary(
+            path = "/src/big.kt",
+            change = FileChangeType.MODIFIED,
+            added = 1,
+            removed = 0,
+            hunks = listOf(FileChangeHunk(1, 0, 1, 1, listOf("+" + "x".repeat(40 * 1024)))),
+        )
+        val success = testSkill("safe_tool") { ToolResult("ok", "saved", fileChanges = listOf(change, oversized)) }
+        val failure = testSkill("fail_tool") { ToolResult("err", "failed", status = "error", fileChanges = listOf(change)) }
+        val registry = skillsRegistry(success, failure)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+
+        // 两次调用分开执行，避免同批并行写步骤时相互覆盖，专注验证字段复制。
+        executor.executeTools("s1", "m1", listOf(ToolCall("ok", "safe_tool", "{}")), preparedTools = preparedFor(registry, "safe_tool"))
+        advanceUntilIdle()
+        executor.executeTools("s1", "m1", listOf(ToolCall("bad", "fail_tool", "{}")), preparedTools = preparedFor(registry, "fail_tool"))
+        advanceUntilIdle()
+
+        val session = store.getSession("s1")!!
+        val steps = session.messages.single { it.id == "m1" }.executionSteps.orEmpty()
+        val resultStep = steps.single { it.toolCallId == "ok" && it.type == "tool_result" }
+        assertThat(resultStep.content).isEqualTo("saved")
+        assertThat(resultStep.fileChanges!!.first()).isEqualTo(change)
+        // 单文件 hunk 超过 32 KiB 时丢弃 hunk，计数保留。
+        assertThat(resultStep.fileChanges!![1].hunks).isNull()
+        assertThat(resultStep.fileChanges!![1].hunksOmitted).isEqualTo(FileChangeHunkOmission.SIZE_LIMIT)
+        assertThat(resultStep.fileChanges!![1].added).isEqualTo(1)
+        assertThat(steps.single { it.toolCallId == "bad" && it.type == "error" }.fileChanges).isNull()
+        steps.filter { it.type == "tool_call" }.forEach { assertThat(it.fileChanges).isNull() }
+        val toolMessages = session.messages.filter { it.role == MessageRole.TOOL }.associateBy { it.toolCallId }
+        assertThat(toolMessages.getValue("ok").content).isEqualTo("saved")
+        assertThat(toolMessages.values.joinToString { it.content }).doesNotContain("/src/a.kt")
+    }
+
     private fun testSkill(
         name: String,
         description: String = "test",

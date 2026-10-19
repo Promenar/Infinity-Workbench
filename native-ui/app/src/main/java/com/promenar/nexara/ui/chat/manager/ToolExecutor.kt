@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.withinHunkBudget
 import com.promenar.nexara.data.generation.SessionToolResolver
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.data.repository.ToolExecutionKey
@@ -327,7 +328,9 @@ class ToolExecutor internal constructor(
             content = finalContent,
             data = safeResultData,
             timestamp = System.currentTimeMillis(),
-            taskStepId = currentFocusId
+            taskStepId = currentFocusId,
+            // 改动摘要只进入界面步骤，不进入下方发给模型的工具结果与账本。
+            fileChanges = if (failed) null else result.fileChanges?.takeIf { it.isNotEmpty() }?.withinHunkBudget(),
         ))
 
         hooks.beforeLedgerFinish()

@@ -140,7 +140,7 @@ class ScriptWorkspaceGateway private constructor(
             override val isApprovalBoundExecution = true
         }
         currentCoroutineContext().ensureActive()
-        val result = MountedWorkspaceSkill(skill, mounts, workspace, files, indexEvents).execute(args, boundContext)
+        val result = MountedWorkspaceSkill(skill, mounts, workspace, files, indexEvents, captureFileChanges = false).execute(args, boundContext)
         if (result.status != "success") throw ScriptFailure("FILE_ERROR", result.content.take(512))
         return buildJsonObject { put("message", result.content); put("path", path) }
     }

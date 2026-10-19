@@ -1,6 +1,9 @@
 package com.promenar.nexara.ui.chat
 
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.FileChangeSummary
+import com.promenar.nexara.ui.chat.diff.WorkspaceChangeList
+import com.promenar.nexara.ui.chat.diff.parseWorkspaceChanges
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,7 +34,24 @@ internal data class ToolInvocationPresentation(val steps: List<ExecutionStep>) {
         val end = results.maxOfOrNull { it.timestamp } ?: return null
         return (end - start).takeIf { it >= 0 }
     }
+
+    /** 成功结果携带的文件改动摘要；历史消息没有该字段时为空，界面保持原样。 */
+    val fileChanges: List<FileChangeSummary>
+        get() = results.filter { it.type == "tool_result" }.flatMap { it.fileChanges.orEmpty() }
+
+    /** 内置命令在会话私有工作区的改动清单；自选目录工作区与其它工具为空。 */
+    val workspaceChanges: WorkspaceChangeList?
+        get() = if (name !in WORKSPACE_TRACKED_COMMANDS) null
+        else results.firstNotNullOfOrNull { parseWorkspaceChanges(it.content) }
+
+    private companion object {
+        val WORKSPACE_TRACKED_COMMANDS = setOf("shell_exec", "python_exec")
+    }
 }
+
+/** 一组工具调用中全部成功文件工具的改动摘要，按调用顺序排列。 */
+internal fun toolGroupFileChanges(invocations: List<ToolInvocationPresentation>): List<FileChangeSummary> =
+    invocations.flatMap { it.fileChanges }
 
 /** 调用 ID 优先；兼容 res_步骤ID 与按名称顺序返回的历史记录，不把结果再计作一次调用。 */
 internal fun toolInvocations(steps: List<ExecutionStep>): List<ToolInvocationPresentation> {
@@ -117,6 +137,7 @@ internal data class ToolGroupSummary(
     val pendingCount: Int = 0,
 ) {
     val categories: List<ToolSummaryCategory> get() = parts.map { it.action.category }.distinct()
+    val isFileEditOnly: Boolean get() = categories == listOf(ToolSummaryCategory.FILE_EDIT)
     val useGenericSummary: Boolean get() = categories.size >= 3
 }
 

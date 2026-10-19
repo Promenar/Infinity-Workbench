@@ -600,6 +600,13 @@ fun ChatScreenContent(
                                         preview = remember(call, request.assistantMessageId, uiState.messages) {
                                             ApprovalPreview.forCall(call, uiState.messages, request.assistantMessageId)
                                         },
+                                        diffPreview = com.promenar.nexara.ui.chat.diff.rememberApprovalDiffPreview(
+                                            call = call,
+                                            messages = uiState.messages,
+                                            assistantMessageId = request.assistantMessageId,
+                                            sessionId = uiState.session?.id,
+                                            privateWorkspaceRootUuid = uiState.session?.workspaceRootUuid,
+                                        ),
                                     )
                                 }.ifEmpty {
                                     listOf(ApprovalDisplayCall(

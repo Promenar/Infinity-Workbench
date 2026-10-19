@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.rounded.VerticalSplit
 import androidx.compose.material.icons.rounded.ViewStream
@@ -56,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -294,6 +296,12 @@ private sealed interface DiffListItem {
         override val key: String get() = "fold-$segmentIndex"
         override val contentType: Int get() = 2
     }
+
+    /** 内容未保存的未变更区段（见 [OmittedDiffSegment]），不可展开。 */
+    data class Omitted(val segmentIndex: Int, val lineCount: Int?) : DiffListItem {
+        override val key: String get() = "omitted-$segmentIndex"
+        override val contentType: Int get() = 3
+    }
 }
 
 private fun buildDiffItems(
@@ -303,6 +311,7 @@ private fun buildDiffItems(
 ): List<DiffListItem> = buildList {
     segments.forEachIndexed { segmentIndex, segment ->
         when {
+            segment is OmittedDiffSegment -> add(DiffListItem.Omitted(segmentIndex, segment.lineCount))
             segment is DiffSegment.Folded && segmentIndex !in expanded ->
                 add(DiffListItem.Fold(segmentIndex, segment.lines.size))
             pairedSegments != null -> pairedSegments[segmentIndex].forEachIndexed { index, row ->
@@ -413,6 +422,7 @@ private fun DiffViewport(
                         colors = colors,
                         onExpand = { expanded = expanded + item.segmentIndex },
                     )
+                    is DiffListItem.Omitted -> OmittedDiffRow(item.lineCount, colors)
                 }
             }
         }
@@ -609,6 +619,39 @@ private fun FoldedDiffRow(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** 未保存内容的折叠区段：与折叠行同样的底色，但不可点击，说明这些未变更行没有随记录保存。 */
+@Composable
+private fun OmittedDiffRow(lineCount: Int?, colors: FileDiffColors) {
+    val label = if (lineCount != null) {
+        pluralStringResource(R.plurals.file_diff_omitted_unchanged, lineCount, lineCount)
+    } else {
+        stringResource(R.string.file_diff_omitted_unknown)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+            .background(colors.fold)
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.XSmall),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.MoreHoriz,
+            contentDescription = null,
+            tint = colors.number,
+            modifier = Modifier.size(NexaraSpacing.RowIconSize),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.number,
             modifier = Modifier.weight(1f),
         )
     }

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="file_diff_omitted_unchanged">
+        <item quantity="one">%1$d unchanged line not saved</item>
+        <item quantity="other">%1$d unchanged lines not saved</item>
+    </plurals>
+    <string name="file_diff_omitted_unknown">Unchanged lines not saved</string>
+    <plurals name="file_change_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <string name="file_change_title_with_counts">%1$s %2$s</string>
+    <string name="file_change_type_created">Created</string>
+    <string name="file_change_type_modified">Modified</string>
+    <string name="file_change_type_deleted">Deleted</string>
+    <string name="file_change_type_moved">Moved</string>
+    <string name="file_change_moved_from">From %1$s</string>
+    <string name="file_change_badge_binary">Binary</string>
+    <string name="file_change_badge_large">Large file</string>
+    <string name="file_change_open_diff_action">View changes</string>
+    <string name="file_change_row_a11y">%1$s, %2$s</string>
+    <string name="file_change_reason_binary">Binary file. Line changes are not shown.</string>
+    <string name="file_change_reason_large">The file exceeds the line-by-line diff limit, so only line counts were recorded.</string>
+    <string name="file_change_reason_too_complex">The change is too complex to compare line by line, so only line counts were recorded.</string>
+    <string name="file_change_reason_size_limit">The changed lines were too large to save with the conversation, so only line counts were recorded.</string>
+    <string name="file_change_reason_unavailable">The file could not be read before or after the change, so no line changes were recorded.</string>
+    <string name="file_change_reason_directory">This is a directory and has no line content.</string>
+    <string name="file_change_reason_unchanged">The content did not change.</string>
+    <string name="file_change_reason_missing">Line changes were not recorded for this file.</string>
+    <string name="file_change_workspace_changes_title">Workspace changes</string>
+    <string name="file_change_workspace_changes_truncated">More changes are not listed.</string>
+    <string name="file_change_moved_path">%1$s → %2$s</string>
+    <plurals name="file_change_approval_delete_lines">
+        <item quantity="one">Deletes %1$d line</item>
+        <item quantity="other">Deletes %1$d lines</item>
+    </plurals>
+</resources>

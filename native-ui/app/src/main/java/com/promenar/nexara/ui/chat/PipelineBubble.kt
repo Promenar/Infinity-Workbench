@@ -768,9 +768,17 @@ internal fun InlineToolRow(
     var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val invocations = remember(steps) { toolInvocations(steps) }
     val summary = remember(invocations, isExecuting) { toolGroupDisplaySummary(invocations, isExecuting) }
+    val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
+    var openedChange by remember { mutableStateOf<com.promenar.nexara.data.model.FileChangeSummary?>(null) }
+    val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
     val segments = buildList {
-        add(toolGroupSummaryText(summary))
+        // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
+        if (!showFileTitle || !summary.isFileEditOnly) add(toolGroupSummaryText(summary))
+        if (showFileTitle) add(com.promenar.nexara.ui.chat.diff.fileChangesTitle(fileChanges))
         if (summary.failedCount == 0 && summary.runningAction == null) summary.durationMs?.let { add(stepDurationText(it)) }
+    }
+    openedChange?.let { change ->
+        com.promenar.nexara.ui.chat.diff.FileChangeDiffSheet(change, onDismissRequest = { openedChange = null })
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         CompactStepRow(
@@ -803,6 +811,12 @@ internal fun InlineToolRow(
                                 }
                                 invocation.durationMs?.let { Text(stepDurationText(it), style = NexaraTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
+                            val invocationChanges = remember(invocation) { invocation.fileChanges }
+                            if (invocationChanges.isNotEmpty()) {
+                                com.promenar.nexara.ui.chat.diff.FileChangeList(invocationChanges, onOpen = { openedChange = it })
+                            }
+                            val workspaceChanges = remember(invocation) { invocation.workspaceChanges }
+                            workspaceChanges?.let { com.promenar.nexara.ui.chat.diff.WorkspaceChangesList(it) }
                             invocation.call?.toolArgs?.takeIf(String::isNotBlank)?.let { args ->
                                 ExpandableToolText(text = args, collapsedLines = 6, arguments = true)
                             }

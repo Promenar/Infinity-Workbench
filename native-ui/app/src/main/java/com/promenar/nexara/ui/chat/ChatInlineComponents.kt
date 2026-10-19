@@ -769,6 +769,8 @@ data class ApprovalDisplayCall(
     val preview: ApprovalPreview.Preview? = null,
     val executionTarget: String? = null,
     val highRisk: Boolean = false,
+    /** 文件写入类工具的差异预览；为空时使用 [preview] 的文本片段。 */
+    val diffPreview: com.promenar.nexara.ui.chat.diff.ApprovalDiffPreview? = null,
 )
 
 @Composable
@@ -958,7 +960,24 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            if (body.isNotBlank()) ApprovalTextBlock(body)
+            val diffPreview = call.diffPreview
+            when {
+                diffPreview is com.promenar.nexara.ui.chat.diff.ApprovalDiffPreview.Diff && preview.action in DiffPreviewActions ->
+                    // 审批卡位于聊天列表中，差异视口必须限高。
+                    com.promenar.nexara.ui.common.diff.FileDiffView(
+                        model = diffPreview.model,
+                        maxViewportHeight = ApprovalDiffViewportHeight,
+                        modifier = Modifier.testTag("CHAT_APPROVAL_DIFF"),
+                    )
+                diffPreview is com.promenar.nexara.ui.chat.diff.ApprovalDiffPreview.Deletion && preview.action == ApprovalPreview.Action.DELETE ->
+                    Text(
+                        text = pluralStringResource(R.plurals.file_change_approval_delete_lines, diffPreview.lines, diffPreview.lines),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("CHAT_APPROVAL_DELETE_LINES"),
+                    )
+                body.isNotBlank() -> ApprovalTextBlock(body)
+            }
         }
         // 参数预览因摘要不一致缺失时，仍按工具名提示内置命令的工作区风险。
         val builtinExec = preview?.commandRunsInWorkspace == true || call.name == "shell_exec" || call.name == "python_exec"
@@ -975,6 +994,16 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
         approvalRiskLines(description, riskFacts).forEach { ApprovalRiskLine(it) }
     }
 }
+
+/** 可用差异预览替换文本片段的动作。 */
+private val DiffPreviewActions = setOf(
+    ApprovalPreview.Action.OVERWRITE,
+    ApprovalPreview.Action.CREATE_FILE,
+    ApprovalPreview.Action.EDIT,
+)
+
+/** 审批卡内差异视口的最大高度；超出部分在视口内滚动。 */
+private val ApprovalDiffViewportHeight = 280.dp
 
 @Composable
 private fun ApprovalTextBlock(text: String) {

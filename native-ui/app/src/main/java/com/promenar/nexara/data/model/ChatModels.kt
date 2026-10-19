@@ -267,7 +267,11 @@ data class ExecutionStep(
     val data: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val throttledUntil: Long? = null,
-    val taskStepId: String? = null
+    val taskStepId: String? = null,
+    /** 文件工具成功执行时的改动摘要，仅供界面展示；为空时不写入 JSON。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val fileChanges: List<FileChangeSummary>? = null,
 )
 
 @Serializable
@@ -282,7 +286,11 @@ data class ToolResult(
     val id: String,
     val content: String,
     val status: String = "success",
-    val data: String? = null
+    val data: String? = null,
+    /** 文件改动摘要，只复制到执行步骤供界面展示，不进入发给模型的 [content]。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val fileChanges: List<FileChangeSummary>? = null,
 )
 
 @Serializable

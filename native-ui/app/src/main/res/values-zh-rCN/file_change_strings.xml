@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="file_diff_omitted_unchanged">
+        <item quantity="other">%1$d 行未变更内容未保存</item>
+    </plurals>
+    <string name="file_diff_omitted_unknown">未变更内容未保存</string>
+    <plurals name="file_change_file_count">
+        <item quantity="other">%1$d 个文件</item>
+    </plurals>
+    <string name="file_change_title_with_counts">%1$s %2$s</string>
+    <string name="file_change_type_created">新建</string>
+    <string name="file_change_type_modified">修改</string>
+    <string name="file_change_type_deleted">删除</string>
+    <string name="file_change_type_moved">移动</string>
+    <string name="file_change_moved_from">原路径：%1$s</string>
+    <string name="file_change_badge_binary">二进制</string>
+    <string name="file_change_badge_large">大文件</string>
+    <string name="file_change_open_diff_action">查看差异</string>
+    <string name="file_change_row_a11y">%1$s，%2$s</string>
+    <string name="file_change_reason_binary">二进制文件，不显示逐行差异。</string>
+    <string name="file_change_reason_large">文件超过逐行差异阈值，只记录了行数。</string>
+    <string name="file_change_reason_too_complex">改动过于复杂，无法逐行比较，只记录了行数。</string>
+    <string name="file_change_reason_size_limit">改动内容过大，未随对话保存，只记录了行数。</string>
+    <string name="file_change_reason_unavailable">改动前后的文件内容无法读取，未记录逐行差异。</string>
+    <string name="file_change_reason_directory">这是目录，没有逐行内容。</string>
+    <string name="file_change_reason_unchanged">内容没有变化。</string>
+    <string name="file_change_reason_missing">该文件未记录逐行差异。</string>
+    <string name="file_change_workspace_changes_title">工作区改动</string>
+    <string name="file_change_workspace_changes_truncated">另有改动未列出。</string>
+    <string name="file_change_moved_path">%1$s → %2$s</string>
+    <plurals name="file_change_approval_delete_lines">
+        <item quantity="other">将删除 %1$d 行</item>
+    </plurals>
+</resources>

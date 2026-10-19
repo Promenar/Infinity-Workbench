@@ -33,7 +33,11 @@ object ApprovalPreview {
         val commandRunsInWorkspace: Boolean = false,
     )
 
-    fun forCall(call: ApprovalCallIdentity, messages: List<Message>, assistantMessageId: String?): Preview? {
+    fun forCall(call: ApprovalCallIdentity, messages: List<Message>, assistantMessageId: String?): Preview? =
+        arguments(call, messages, assistantMessageId)?.let { format(call.toolName, it) }
+
+    /** 与审批身份摘要完全一致的原始参数；摘要不一致或无法解析时为 null。差异预览与文本预览共用。 */
+    fun arguments(call: ApprovalCallIdentity, messages: List<Message>, assistantMessageId: String?): JsonObject? {
         val arguments = messages
             .firstOrNull { it.id == assistantMessageId }
             ?.toolCalls
@@ -42,7 +46,7 @@ object ApprovalPreview {
             ?: return null
         val validated = ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid ?: return null
         if (validated.sha256 != call.argumentsDigest) return null
-        return format(call.toolName, validated.arguments)
+        return validated.arguments
     }
 
     fun format(toolName: String, args: JsonObject): Preview? {

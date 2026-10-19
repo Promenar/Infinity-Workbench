@@ -131,16 +131,21 @@ class FilePatchSkill(
         }
     }.toString()
 
-    private fun parseOperations(raw: JsonArray): List<PatchOperation>? = raw.map { element ->
-        val obj = element as? JsonObject ?: return null
-        PatchOperation(
-            action = obj.stringArgument("action") ?: return null,
-            startLine = obj["startLine"]?.jsonPrimitive?.intOrNull,
-            endLine = obj["endLine"]?.jsonPrimitive?.intOrNull,
-            afterLine = obj["afterLine"]?.jsonPrimitive?.intOrNull,
-            newContent = obj.stringArgument("newContent"),
-            expectedContent = obj.stringArgument("expectedContent"),
-        )
+    private fun parseOperations(raw: JsonArray): List<PatchOperation>? = parsePatchOperations(raw)
+
+    internal companion object {
+        /** 解析 operations 参数；任一项结构无效时返回 null。审批差异预览复用同一解析做干运行。 */
+        fun parsePatchOperations(raw: JsonArray): List<PatchOperation>? = raw.map { element ->
+            val obj = element as? JsonObject ?: return null
+            PatchOperation(
+                action = obj.stringArgument("action") ?: return null,
+                startLine = obj["startLine"]?.jsonPrimitive?.intOrNull,
+                endLine = obj["endLine"]?.jsonPrimitive?.intOrNull,
+                afterLine = obj["afterLine"]?.jsonPrimitive?.intOrNull,
+                newContent = obj.stringArgument("newContent"),
+                expectedContent = obj.stringArgument("expectedContent"),
+            )
+        }
     }
 
     private fun formatPatchError(error: PatchError): String {

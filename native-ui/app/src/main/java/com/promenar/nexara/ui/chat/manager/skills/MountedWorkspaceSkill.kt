@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.data.model.withinHunkBudget
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.*
 import com.promenar.nexara.data.storage.ExternalMountPaths
@@ -11,6 +12,10 @@ import com.promenar.nexara.domain.repository.*
 import com.promenar.nexara.domain.storage.*
 import com.promenar.nexara.infra.util.MyersDiff
 import com.promenar.nexara.infra.util.Sha256Utils
+import com.promenar.nexara.ui.chat.diff.FileChangeSummaries
+import com.promenar.nexara.ui.chat.diff.FileSnapshot
+import com.promenar.nexara.ui.chat.diff.PrivateWorkspaceReader
+import com.promenar.nexara.ui.chat.diff.WorkspaceSnapshotReader
 import com.promenar.nexara.ui.chat.manager.registry.*
 import java.io.File
 import java.util.UUID
@@ -28,6 +33,9 @@ class MountedWorkspaceSkill(
     private val workspace: IWorkspaceRepository,
     private val files: IFileOperationRepository,
     private val indexEvents: FileIndexEventSink,
+    /** 是否采集界面用的文件改动摘要；脚本网关只取结果文本，关闭以免每次写入多读一次文件。 */
+    private val captureFileChanges: Boolean = true,
+    private val privateReader: PrivateWorkspaceReader = PrivateWorkspaceReader.Default,
 ) : SkillDefinition by original {
     override val description = original.description + " 支持 /mnt/<别名>/... 挂载路径；挂载文件使用 expected_sha256（兼容 expectedHash）校验版本。"
     override val parametersSchema: String = run {
@@ -86,6 +94,16 @@ class MountedWorkspaceSkill(
                         .mapNotNull(::aliasOf)
                     if (usedAliases.any { it !in approvedMountIds }) fail("CONFLICT", "批准目标缺少挂载或工作区身份，请重新审批")
                 }
+                // 改动摘要只用于界面展示：写入前快照在执行前读取，失败不影响工具本身。
+                val capture = if (!captureFileChanges) null else FileChangeCapture.begin(
+                    toolId = original.id,
+                    args = routedArgs,
+                    reader = WorkspaceSnapshotReader(repository, workspace, mounts, context.sessionId, context.workspaceRootUuid, rooted, privateReader = privateReader),
+                    sourcePath = sourcePath,
+                    parentPath = parentPath,
+                    destinationParent = destinationParent,
+                )
+                suspend fun finish(result: ToolResult): ToolResult = capture?.finish(result) ?: result
                 if (original.id in setOf("create_file", "create_directory") && (parentPath ?: "/") == "/" && args.stringArgument("name")?.trim() == "mnt") {
                     fail("INVALID_PATH", "/mnt 为挂载保留目录，请在文件面板添加挂载")
                 }
@@ -98,12 +116,12 @@ class MountedWorkspaceSkill(
                     val bytes = args.stringArgument("content").orEmpty().toByteArray(Charsets.UTF_8)
                     WorkspaceTextContentPolicy().validate(name, null, bytes, WorkspaceTextOperation.WRITE)
                     val created = mounts.write(context.sessionId, path, bytes, null, true)
-                    return@bound ToolResult("mount_create", "已创建 $path [uuid=${created.uuid}] [sha256=${created.hash}]")
+                    return@bound finish(ToolResult("mount_create", "已创建 $path [uuid=${created.uuid}] [sha256=${created.hash}]"))
                 }
                 if (original.id == "delete_file" && sourceMounted && sourcePath != null) {
                     mounts.delete(context.sessionId, sourcePath, routedArgs.stringArgument("expectedHash"),
                         (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true)
-                    return@bound ToolResult("mount_delete", "已删除 $sourcePath；回收副本可在挂载回收区恢复（显式不可恢复删除除外）")
+                    return@bound finish(ToolResult("mount_delete", "已删除 $sourcePath；回收副本可在挂载回收区恢复（显式不可恢复删除除外）"))
                 }
                 if (original.id == "move_file") {
                     val newName = args.stringArgument("newName")?.trim()?.takeIf(String::isNotEmpty)
@@ -114,7 +132,7 @@ class MountedWorkspaceSkill(
                         if (destination == "/mnt") fail("INVALID_PATH", "不能覆盖虚拟挂载根目录")
                         if (sourceMounted || destinationMounted) {
                             if (newName == null && destinationParent == null) fail("INVALID_PATH", "需要指定新名称或目标目录")
-                            return@bound move(context, source, destination, routedArgs.stringArgument("expectedHash"), sourceMounted, destinationMounted)
+                            return@bound finish(move(context, source, destination, routedArgs.stringArgument("expectedHash"), sourceMounted, destinationMounted))
                         }
                     }
                 }
@@ -135,14 +153,14 @@ class MountedWorkspaceSkill(
                     else -> original
                 }
                 val result = delegate.execute(routedArgs, context)
-                if (sourceMounted && sourcePath != null && result.status != "error" && original.id in setOf("read_file", "write_file", "patch_file", "diff_file")) {
+                finish(if (sourceMounted && sourcePath != null && result.status != "error" && original.id in setOf("read_file", "write_file", "patch_file", "diff_file")) {
                     val hash = operations.completedHash.orEmpty()
                     val workspaceFile = aliasOf(sourcePath) == ExternalMountPaths.WORKSPACE_ALIAS
                     if (original.id in setOf("write_file", "patch_file")) ToolResult(result.id,
                         if (workspaceFile) "已保存：$sourcePath\nsha256: $hash"
                         else "外部文件已保存：$sourcePath\nsha256: $hash\n知识库快照可在文件面板重新导入。")
                     else result.copy(content = result.content + "\nsha256: $hash")
-                } else result
+                } else result)
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: ExternalFolderException) {
@@ -364,5 +382,87 @@ internal class PrivateWorkspaceTransferBackend(private val workspace: IWorkspace
         }
         created.clear()
         return indexed
+    }
+}
+
+/**
+ * 文件工具改动摘要的采集：执行前读取写入前快照，成功后读取写入后快照并计算 [ToolResult.fileChanges]。
+ * 只追加字段，不改动工具返回给模型的 `content`；读取或计算失败时原样返回结果。
+ */
+private class FileChangeCapture private constructor(
+    private val toolId: String,
+    private val reader: WorkspaceSnapshotReader,
+    private val path: String,
+    private val fromPath: String?,
+    private val before: FileSnapshot?,
+) {
+    suspend fun finish(result: ToolResult): ToolResult {
+        if (result.status != "success") return result
+        return try {
+            val summary = when (toolId) {
+                "write_file", "patch_file" -> {
+                    val after = reader.read(path).snapshot
+                    withContext(Dispatchers.Default) { FileChangeSummaries.modified(path, before ?: FileSnapshot.Unavailable, after) }
+                }
+                "create_file" -> {
+                    val after = reader.read(path).snapshot
+                    withContext(Dispatchers.Default) { FileChangeSummaries.created(path, after) }
+                }
+                "delete_file" -> withContext(Dispatchers.Default) {
+                    FileChangeSummaries.deleted(path, before ?: FileSnapshot.Unavailable)
+                }
+                "move_file" -> FileChangeSummaries.moved(fromPath ?: return result, path, reader.isDirectory(path) == true)
+                else -> return result
+            }
+            result.copy(fileChanges = listOf(summary).withinHunkBudget())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            result
+        }
+    }
+
+    companion object {
+        private val CAPTURED_TOOLS = setOf("write_file", "create_file", "patch_file", "delete_file", "move_file")
+
+        suspend fun begin(
+            toolId: String,
+            args: JsonObject,
+            reader: WorkspaceSnapshotReader,
+            sourcePath: String?,
+            parentPath: String?,
+            destinationParent: String?,
+        ): FileChangeCapture? {
+            if (toolId !in CAPTURED_TOOLS) return null
+            return try {
+                when (toolId) {
+                    "create_file" -> {
+                        val name = args.stringArgument("name")?.trim()?.takeIf(String::isNotEmpty) ?: return null
+                        FileChangeCapture(toolId, reader, (parentPath ?: "/").trimEnd('/') + "/" + name, null, null)
+                    }
+                    "move_file" -> {
+                        val source = sourcePath ?: return null
+                        val newName = args.stringArgument("newName")?.trim()?.takeIf(String::isNotEmpty)
+                        val destination = (destinationParent ?: source.substringBeforeLast('/').ifEmpty { "/" }).trimEnd('/') +
+                            "/" + (newName ?: source.substringAfterLast('/'))
+                        FileChangeCapture(toolId, reader, destination, source, null)
+                    }
+                    else -> {
+                        val source = sourcePath ?: return null
+                        val captured = reader.read(source)
+                        // 写入以 expectedHash 做乐观锁：快照哈希不一致说明读到的不是被覆盖的版本，不用于计数。
+                        val expected = args.stringArgument("expectedHash")
+                        val before = if (toolId != "delete_file" && expected != null && captured.sha256 != null && captured.sha256 != expected) {
+                            FileSnapshot.Unavailable
+                        } else captured.snapshot
+                        FileChangeCapture(toolId, reader, source, null, before)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 }
