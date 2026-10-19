@@ -739,25 +739,30 @@ fun chatTaskChecklistExpandedReleasePreview() {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TaskFloatingPanel(
-                state = requireNotNull(taskPanelUiState(tree, isGenerating = false, goal = "完成 0.2 Beta 发布")),
-                isGenerating = false,
-                onContinue = {},
-                onComplete = {},
-                initiallyExpanded = true,
-            )
-            TaskFloatingPanel(
-                state = requireNotNull(
+            // 计划区在应用中位于输入框浮岛顶部，预览套用同一底色与圆角。
+            listOf(
+                requireNotNull(taskPanelUiState(tree, isGenerating = false, goal = "完成 0.2 Beta 发布")) to true,
+                requireNotNull(
                     taskPanelUiState(
                         tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
                         isGenerating = false,
                         goal = "完成 0.2 Beta 发布",
                     ),
-                ),
-                isGenerating = false,
-                onContinue = {},
-                onComplete = {},
-            )
+                ) to false,
+            ).forEach { (state, expanded) ->
+                androidx.compose.material3.Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    TaskFloatingPanel(
+                        state = state,
+                        isGenerating = false,
+                        onContinue = {},
+                        onComplete = {},
+                        initiallyExpanded = expanded,
+                    )
+                }
+            }
         }
     }
 }

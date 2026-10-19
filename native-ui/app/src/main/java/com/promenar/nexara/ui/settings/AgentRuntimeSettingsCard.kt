@@ -23,12 +23,14 @@ internal data class SkillsSettingsVisualState(
     val approveScriptWrites: Boolean,
     val sshHostCount: Int? = null,
     val termuxAvailability: TermuxAvailability? = null,
+    val retryLimit: Int = com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
 )
 
 internal data class SkillsSettingsVisualActions(
     val onLoopLimitChange: (Int) -> Unit = {},
     val onTokenLimitChange: (Int) -> Unit = {},
     val onRepeatLimitChange: (Int) -> Unit = {},
+    val onRetryLimitChange: (Int) -> Unit = {},
     val onResetConsent: () -> Unit = {},
     val onApproveScriptWritesChange: (Boolean) -> Unit = {},
     val onSaveScriptHosts: (String) -> String? = { null },
@@ -103,6 +105,15 @@ internal fun AgentRuntimeSettingsCard(
             canIncrease = state.repeatLimit < 20,
             onDecrease = { actions.onRepeatLimitChange(state.repeatLimit - 1) },
             onIncrease = { actions.onRepeatLimitChange(state.repeatLimit + 1) },
+        )
+        NexaraStepperSetting(
+            title = stringResource(R.string.settings_stream_retry_limit),
+            description = stringResource(R.string.settings_stream_retry_limit_desc),
+            value = state.retryLimit.toString(),
+            canDecrease = state.retryLimit > 0,
+            canIncrease = state.retryLimit < com.promenar.nexara.domain.generation.MAX_STREAM_RETRY_LIMIT,
+            onDecrease = { actions.onRetryLimitChange(state.retryLimit - 1) },
+            onIncrease = { actions.onRetryLimitChange(state.retryLimit + 1) },
         )
         NexaraSettingsItem(
             title = stringResource(R.string.p0_reset_consent),

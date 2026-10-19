@@ -85,11 +85,11 @@ class ThinkingTraceTest {
             }
         }
 
-        // 验证 toggle 可见，且具有点击动作和44dp 行高
+        // 验证 toggle 可见，且具有点击动作和步骤行高度
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE)
             .assertIsDisplayed()
             .assertHasClickAction()
-            .assertHeightIsAtLeast(44.dp)
+            .assertHeightIsAtLeast(CompactStepRowHeight)
         assertExpansionState(R.string.common_state_collapsed)
 
         // 默认折叠，内容不可见
@@ -114,7 +114,7 @@ class ThinkingTraceTest {
             }
         }
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE)
-            .assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(44.dp)
+            .assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(CompactStepRowHeight)
         assertExpansionState(R.string.common_state_collapsed)
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()

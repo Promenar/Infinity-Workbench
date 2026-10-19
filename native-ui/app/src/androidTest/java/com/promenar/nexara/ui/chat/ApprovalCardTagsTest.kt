@@ -63,8 +63,8 @@ class ApprovalCardTagsTest {
             }
         }
 
-        rule.onNodeWithText("Current approval").assertIsDisplayed()
-        rule.onNodeWithText("Next waiting: 1").assertIsDisplayed()
+        rule.onNodeWithText("Current approval").assertDoesNotExist()
+        rule.onNodeWithText("Up next: 1").assertIsDisplayed()
         rule.onNodeWithText("Approve current").assertIsDisplayed()
         rule.onNodeWithText("Reject current").assertIsDisplayed()
         rule.onNodeWithText("write_file").assertIsDisplayed()

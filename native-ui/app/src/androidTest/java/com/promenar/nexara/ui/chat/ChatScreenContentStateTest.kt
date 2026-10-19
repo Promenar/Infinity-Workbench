@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -165,6 +168,28 @@ class ChatScreenContentStateTest {
         rule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).assertIsNotEnabled()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertIsNotEnabled()
+    }
+
+    @Test
+    fun planBarSharesComposerIslandAndCompletedPlanStaysHiddenOnOpen() {
+        var plan by mutableStateOf(
+            taskPanelUiState(listOf(TaskStep(id = "plan", title = "发布检查", status = "doing")), isGenerating = false),
+        )
+        render(uiState = ChatUiState(session = session), taskPanelProvider = { plan })
+
+        // 计划区位于输入框浮岛内部，与输入区共用同一底色容器。
+        val island = rule.onNodeWithTag(UiTags.CHAT_INPUT_BAR_SURFACE).fetchSemanticsNode().boundsInRoot
+        val card = rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).fetchSemanticsNode().boundsInRoot
+        assertThat(card.top).isAtLeast(island.top)
+        assertThat(card.bottom).isAtMost(island.bottom)
+        assertThat(card.width).isWithin(1f).of(island.width)
+
+        // 打开会话时已完成的计划不出现。
+        rule.runOnIdle {
+            plan = taskPanelUiState(listOf(TaskStep(id = "other", title = "旧计划", status = "done")), isGenerating = false)
+        }
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE).assertDoesNotExist()
     }
 
     @Test
@@ -401,6 +426,7 @@ class ChatScreenContentStateTest {
         modelDisplayNames: Map<String, String> = emptyMap(),
         draftDocuments: List<MessageDocumentAttachment> = emptyList(),
         taskPanel: TaskPanelUiState? = null,
+        taskPanelProvider: (() -> TaskPanelUiState?)? = null,
     ) {
         rule.setContent {
             NexaraTheme {
@@ -409,7 +435,7 @@ class ChatScreenContentStateTest {
                         uiState = uiState,
                         modelDisplayNames = modelDisplayNames,
                         draftDocuments = draftDocuments,
-                        taskPanel = taskPanel,
+                        taskPanel = taskPanelProvider?.invoke() ?: taskPanel,
                     ),
                     actions = actions,
                 )

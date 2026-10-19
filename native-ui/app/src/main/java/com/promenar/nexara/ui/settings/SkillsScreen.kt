@@ -184,6 +184,7 @@ fun SkillsScreen(
     val loopLimit by viewModel.loopLimit.collectAsState()
     val tokenLimit by viewModel.taskTokenLimit.collectAsState()
     val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
+    val retryLimit by viewModel.streamRetryLimit.collectAsState()
     val scriptHosts by viewModel.scriptLanHosts.collectAsState()
     val approveWrites by viewModel.scriptApproveFileWrites.collectAsState()
     val application = context.applicationContext as NexaraApplication
@@ -236,11 +237,13 @@ fun SkillsScreen(
                         loopLimit, tokenLimit, repeatLimit, scriptHosts, approveWrites,
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
+                        retryLimit = retryLimit,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
                         onTokenLimitChange = viewModel::updateTaskTokenLimit,
                         onRepeatLimitChange = viewModel::updateToolLoopRepeatLimit,
+                        onRetryLimitChange = viewModel::updateStreamRetryLimit,
                         onResetConsent = {
                             viewModel.resetUnlimitedAutoConsent()
                             scope.launch { snackbarHost.showSnackbar(resetMessage) }

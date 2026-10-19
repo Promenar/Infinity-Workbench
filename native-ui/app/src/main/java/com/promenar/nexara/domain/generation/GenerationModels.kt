@@ -111,8 +111,27 @@ sealed interface GenerationPreparationOutcome {
 }
 enum class GenerationTerminalStatus { SUCCESS, ERROR, CANCELLED }
 
+/** 流式请求失败后的一次自动重试；[attempt] 从 1 开始，[delayMs] 为本次重发前的等待。 */
+data class GenerationRetry(
+    val attempt: Int,
+    val maxAttempts: Int,
+    val code: GenerationFailureCode,
+    val delayMs: Long,
+)
+
+/** 未配置时网络波动等可重试失败的自动重试次数。 */
+const val DEFAULT_STREAM_RETRY_LIMIT = 10
+
+/** 用户可配置的自动重试次数上限。 */
+const val MAX_STREAM_RETRY_LIMIT = 20
+
+/** 自动重试次数的偏好键（settings 命名空间）。 */
+const val STREAM_RETRY_LIMIT_KEY = "stream_retry_limit"
+
 sealed interface GenerationEvent {
     data class ProgressChanged(val progress: GenerationProgress) : GenerationEvent
+    /** 本轮请求即将自动重发；新一轮开始输出后由展示层清除。 */
+    data class RetryScheduled(val retry: GenerationRetry) : GenerationEvent
     data class PhaseChanged(val phase: GenerationPhase) : GenerationEvent
     data class SnapshotChanged(val snapshot: GenerationSnapshot) : GenerationEvent
     data class TargetChanged(val assistantMessageId: String) : GenerationEvent

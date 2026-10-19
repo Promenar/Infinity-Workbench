@@ -428,6 +428,9 @@ class ChatViewModel(
 
     private val _postProcessTasks = MutableStateFlow<List<PostProcessTask>>(emptyList())
     val postProcessTasks: StateFlow<List<PostProcessTask>> = _postProcessTasks
+    private val _generationRetry = MutableStateFlow<com.promenar.nexara.domain.generation.GenerationRetry?>(null)
+    /** 当前正在等待的自动重试；为 null 时不显示重试提示。 */
+    val generationRetry: StateFlow<com.promenar.nexara.domain.generation.GenerationRetry?> = _generationRetry
 
     fun addPostProcessTask(type: PostProcessType, status: PostProcessStatus = PostProcessStatus.RUNNING, progress: Float = 0f, detail: String = ""): String {
         val sessionId = _currentSessionId.value ?: return ""
@@ -547,6 +550,7 @@ class ChatViewModel(
                             pendingDraftClearTaskId = null
                             _streamingContent.value = ""
                             _postProcessTasks.value = emptyList()
+                            _generationRetry.value = null
                             _ragPhases.value = emptyList()
                             if (_generationStatus.value != GenerationStatus.ERROR) {
                                 _error.value = null
@@ -584,6 +588,7 @@ class ChatViewModel(
                         _providerResolutionFailure.value = presentation.providerFailure
                         _isGenerating.value = presentation.generating
                         _postProcessTasks.value = presentation.postProcessTasks
+                        _generationRetry.value = presentation.retry
                         _generationStatus.value = when {
                             presentation.handledFailure ->
                                 if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR
@@ -1443,6 +1448,7 @@ class ChatViewModel(
         _deletionUndo.value = null
         _streamingContent.value = ""
         _postProcessTasks.value = emptyList()
+        _generationRetry.value = null
         _ragPhases.value = emptyList()
         _error.value = null
         _generationNotice.value = null

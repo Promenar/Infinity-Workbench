@@ -105,7 +105,7 @@ class RagDetailsAccessibilityTest {
                     ProgressBarRangeInfo(0.42f, 0f..1f),
                 ),
             )
-            .assertHeightIsEqualTo(44.dp)
+            .assertHeightIsEqualTo(CompactStepRowHeight)
             .performClick()
         rule.onNodeWithTag("RAG_DETAILS_ROOT").assertIsDisplayed()
     }

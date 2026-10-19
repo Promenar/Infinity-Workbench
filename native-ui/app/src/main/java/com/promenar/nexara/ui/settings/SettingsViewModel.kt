@@ -373,6 +373,7 @@ class SettingsViewModel(
 
     val taskTokenLimit = MutableStateFlow(prefs.getInt("task_token_limit", 0))
     val toolLoopRepeatLimit = MutableStateFlow(prefs.getInt("tool_loop_repeat_limit", 3))
+    val streamRetryLimit = MutableStateFlow(readStreamRetryLimit())
     private val scriptSettings = com.promenar.nexara.data.script.ScriptSettings(prefs)
     val scriptLanHosts = MutableStateFlow(scriptSettings.lanHostsText)
     val scriptApproveFileWrites = MutableStateFlow(scriptSettings.approveFileWrites)
@@ -390,6 +391,16 @@ class SettingsViewModel(
 
     fun updateTaskTokenLimit(value: Int) = updateRuntimeInt("task_token_limit", value.coerceIn(0, 10_000_000), taskTokenLimit)
     fun updateToolLoopRepeatLimit(value: Int) = updateRuntimeInt("tool_loop_repeat_limit", value.coerceIn(2, 20), toolLoopRepeatLimit)
+    fun updateStreamRetryLimit(value: Int) = updateRuntimeInt(
+        com.promenar.nexara.domain.generation.STREAM_RETRY_LIMIT_KEY,
+        value.coerceIn(0, com.promenar.nexara.domain.generation.MAX_STREAM_RETRY_LIMIT),
+        streamRetryLimit,
+    )
+
+    private fun readStreamRetryLimit(): Int = prefs.getInt(
+        com.promenar.nexara.domain.generation.STREAM_RETRY_LIMIT_KEY,
+        com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
+    ).coerceIn(0, com.promenar.nexara.domain.generation.MAX_STREAM_RETRY_LIMIT)
 
     private fun updateRuntimeInt(key: String, value: Int, state: MutableStateFlow<Int>) {
         prefs.edit().putInt(key, value).apply()
@@ -457,6 +468,7 @@ class SettingsViewModel(
         _loopLimit.value = prefs.getInt("loop_limit", 50)
         taskTokenLimit.value = prefs.getInt("task_token_limit", 0)
         toolLoopRepeatLimit.value = prefs.getInt("tool_loop_repeat_limit", 3)
+        streamRetryLimit.value = readStreamRetryLimit()
     }
 
     /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */

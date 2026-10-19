@@ -290,6 +290,10 @@ class GenericOpenAICompatProtocol(
 
                     msg.name?.let { put("name", it) }
 
+                    if (msg.role == "assistant" && protocolType in REASONING_REPLAY_PROTOCOLS) {
+                        msg.reasoning?.takeIf(String::isNotBlank)?.let { put("reasoning_content", it) }
+                    }
+
                     if (msg.role == "assistant" && msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
                         put("tool_calls", JsonArray(msg.toolCalls.map { tc ->
                             buildJsonObject {
@@ -545,4 +549,12 @@ class GenericOpenAICompatProtocol(
         val name: String,
         val arguments: String
     )
+
+    internal companion object {
+        /**
+         * 思考模式下要求回传 `reasoning_content` 的服务：DeepSeek 在带 tools 的请求中缺失该字段会返回 400，
+         * 不带 tools 时会忽略；Kimi 依赖它在多轮工具调用间延续推理。其它兼容服务不认识该字段，不发送。
+         */
+        val REASONING_REPLAY_PROTOCOLS = setOf(ProtocolType.DeepSeek, ProtocolType.Moonshot_Kimi)
+    }
 }

@@ -239,6 +239,7 @@ class DefaultGenerationCoordinator(
             )
         val next = when (event) {
             is GenerationEvent.ProgressChanged -> previous.copy(progress = event.progress)
+            is GenerationEvent.RetryScheduled -> previous
             is GenerationEvent.PhaseChanged -> previous.copy(phase = event.phase)
             is GenerationEvent.SnapshotChanged -> previous.copy(generatedChars = event.snapshot.content.length)
             is GenerationEvent.TargetChanged -> previous.copy(assistantMessageId = event.assistantMessageId)

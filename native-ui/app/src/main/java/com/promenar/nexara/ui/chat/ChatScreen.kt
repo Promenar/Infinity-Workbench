@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -143,6 +144,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.chat.components.TaskPanelSizeSpring
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSnackbarData
@@ -182,6 +184,7 @@ data class ChatScreenState(
     val ragPhases: List<com.promenar.nexara.data.model.RagPhase> = emptyList(),
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
     val postProcessTasks: List<PostProcessTask> = emptyList(),
+    val generationRetry: com.promenar.nexara.domain.generation.GenerationRetry? = null,
     val selectedImageUris: List<android.net.Uri> = emptyList(),
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     val isImportingDocument: Boolean = false,
@@ -654,29 +657,28 @@ fun ChatScreenContent(
                     .orEmpty()
                 val taskPanel = state.taskPanel
                 var hiddenPlanSignature by rememberSaveable(uiState.session?.id) { mutableStateOf<String?>(null) }
-                val planBarVisible = isTaskPlanBarVisible(taskPanel, hiddenPlanSignature)
+                var planObservedIncomplete by rememberSaveable(uiState.session?.id, taskPanel?.planId) {
+                    mutableStateOf(false)
+                }
+                val autoHideDelay = completedPlanAutoHideDelay(taskPanel, uiState.isGenerating, planObservedIncomplete)
+                // 打开会话时就已完成的计划不再出现；本次看着完成的计划停留片刻后自动收起。
+                val planBarVisible = isTaskPlanBarVisible(taskPanel, hiddenPlanSignature) && autoHideDelay != 0L
+                // 退场动画期间计划已不再可见，仍用最后一次可见的状态绘制，避免内容瞬间消失。
+                var lastVisiblePlan by remember(uiState.session?.id) { mutableStateOf<TaskPanelUiState?>(null) }
+                if (taskPanel != null && planBarVisible) lastVisiblePlan = taskPanel
+                LaunchedEffect(taskPanel?.visibilitySignature(), autoHideDelay) {
+                    if (taskPanel?.isCompleted == false) planObservedIncomplete = true
+                    val delayMs = autoHideDelay?.takeIf { it > 0 } ?: return@LaunchedEffect
+                    delay(delayMs)
+                    hiddenPlanSignature = taskPanel?.visibilitySignature()
+                }
                 ChatComposerStatusBar(
                     taskPanel = taskPanel.takeUnless { planBarVisible },
                     postProcessTasks = state.postProcessTasks,
+                    retry = state.generationRetry,
                     onRemovePostProcessTask = actions.onRemovePostProcessTask,
                     onTaskClick = { hiddenPlanSignature = null },
                 )
-                if (taskPanel != null && planBarVisible) {
-                    TaskFloatingPanel(
-                        state = taskPanel,
-                        isGenerating = uiState.isGenerating,
-                        onContinue = actions.onContinueTask,
-                        onComplete = actions.onCompleteTask,
-                        onClose = {
-                            if (taskPanel.isCompleted) {
-                                actions.onClearCompletedTask()
-                            } else {
-                                hiddenPlanSignature = taskPanel.visibilitySignature()
-                            }
-                        },
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
                             text = inputText,
@@ -718,6 +720,31 @@ fun ChatScreenContent(
                             attachmentMenuExpanded = attachmentMenuExpanded,
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
+                            topContent = {
+                                AnimatedVisibility(
+                                    visible = taskPanel != null && planBarVisible,
+                                    enter = fadeIn(tween(220, delayMillis = 60)) +
+                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+                                    exit = fadeOut(tween(160)) +
+                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+                                ) {
+                                    lastVisiblePlan?.let { plan ->
+                                        TaskFloatingPanel(
+                                            state = plan,
+                                            isGenerating = uiState.isGenerating,
+                                            onContinue = actions.onContinueTask,
+                                            onComplete = actions.onCompleteTask,
+                                            onClose = {
+                                                if (plan.isCompleted) {
+                                                    actions.onClearCompletedTask()
+                                                } else {
+                                                    hiddenPlanSignature = plan.visibilitySignature()
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            },
                             modelName = modelDisplayName,
                             modelId = uiState.session?.modelId,
                             tokenState = tokenState.copy(isGenerating = tokenState.isGenerating || uiState.isGenerating),
@@ -873,15 +900,60 @@ fun ContextCircularIndicator(
     }
 }
 
+/** 自动重试提示：与任务胶囊同为无底色文字，用强调色显示原因、倒计时与次数；倒计时结束后显示“正在重试”直到新一轮开始输出。 */
+@Composable
+internal fun GenerationRetryCapsule(retry: com.promenar.nexara.domain.generation.GenerationRetry) {
+    var remainingSeconds by remember(retry) { mutableStateOf(((retry.delayMs + 999) / 1_000).toInt()) }
+    LaunchedEffect(retry) {
+        while (remainingSeconds > 0) {
+            delay(1_000)
+            remainingSeconds--
+        }
+    }
+    val reason = stringResource(
+        when (retry.code) {
+            com.promenar.nexara.domain.generation.GenerationFailureCode.RATE_LIMIT -> R.string.chat_retry_reason_rate_limit
+            com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+            com.promenar.nexara.domain.generation.GenerationFailureCode.UNKNOWN -> R.string.chat_retry_reason_server
+            else -> R.string.chat_retry_reason_network
+        },
+    )
+    val label = if (remainingSeconds > 0) {
+        stringResource(R.string.chat_retry_countdown, reason, remainingSeconds, retry.attempt, retry.maxAttempts)
+    } else {
+        stringResource(R.string.chat_retry_in_progress, reason, retry.attempt, retry.maxAttempts)
+    }
+    Row(
+        modifier = Modifier.height(28.dp).padding(horizontal = 8.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .testTag(UiTags.CHAT_RETRY_CAPSULE),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(12.dp),
+            strokeWidth = 1.5.dp,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.tertiary,
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 internal fun ChatComposerStatusBar(
     taskPanel: TaskPanelUiState?,
     postProcessTasks: List<PostProcessTask>,
     onRemovePostProcessTask: (String) -> Unit = {},
     onTaskClick: () -> Unit = {},
+    retry: com.promenar.nexara.domain.generation.GenerationRetry? = null,
 ) {
     val panel = taskPanel?.takeUnless { it.isCompleted }
-    if (panel == null && postProcessTasks.isEmpty()) return
+    if (panel == null && postProcessTasks.isEmpty() && retry == null) return
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             .horizontalScroll(rememberScrollState()).height(28.dp)
@@ -889,6 +961,7 @@ internal fun ChatComposerStatusBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        retry?.let { GenerationRetryCapsule(it) }
         panel?.let {
             val generating = it.capsuleMode == TaskCapsuleMode.GENERATING
             val description = if (generating) stringResource(R.string.chat_task_generating)
@@ -1452,6 +1525,8 @@ fun ChatInputBar(
     onModelClick: () -> Unit = {},
     onManualSummary: () -> Unit = {},
     attachmentContent: @Composable () -> Unit = {},
+    /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
+    topContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
@@ -1487,6 +1562,8 @@ fun ChatInputBar(
     ) {
         // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
         val hasAttachments = hasImages || hasDocuments || isImportingDocument
+        Column {
+        topContent()
         Column(Modifier.padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp)) {
             attachmentContent()
             BasicTextField(
@@ -1543,6 +1620,7 @@ fun ChatInputBar(
                     isModelSelected = isModelSelected,
                 )
             }
+        }
         }
     }
 }

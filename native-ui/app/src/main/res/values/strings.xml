@@ -518,8 +518,7 @@
     <string name="chat_approval_required">Approval Required</string>
     <string name="chat_approval_executed">Executed</string>
     <string name="chat_approval_unknown_tool">Tool request</string>
-    <string name="chat_approval_current">Current approval</string>
-    <string name="chat_approval_remaining">Next waiting: %1$d</string>
+    <string name="chat_approval_remaining">Up next: %1$d</string>
     <string name="chat_approval_approve_all">Approve all (%1$d)</string>
     <string name="chat_approval_approve_current_a11y">Approve current %1$s, risk %2$s, %3$d remaining</string>
     <string name="chat_approval_decline_current_a11y">Reject current %1$s, risk %2$s, %3$d remaining</string>
@@ -1614,4 +1613,11 @@
     <string name="chat_tool_duration">%1$d ms</string>
     <string name="chat_tool_duration_seconds">%1$s s</string>
     <string name="rag_details_kg_sources">Sources: %1$s</string>
+    <string name="chat_retry_reason_network">Network hiccup</string>
+    <string name="chat_retry_reason_rate_limit">Rate limited</string>
+    <string name="chat_retry_reason_server">Server error</string>
+    <string name="chat_retry_countdown">%1$s. Retrying in %2$ds · %3$d/%4$d</string>
+    <string name="chat_retry_in_progress">%1$s. Retrying · %2$d/%3$d</string>
+    <string name="settings_stream_retry_limit">Auto-retry on network failure</string>
+    <string name="settings_stream_retry_limit_desc">Resend on drops or rate limits; 0 = off</string>
 </resources>

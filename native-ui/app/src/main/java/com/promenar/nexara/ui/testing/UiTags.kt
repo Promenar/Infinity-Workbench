@@ -63,6 +63,7 @@ object UiTags {
     fun chatModelOption(modelId: String): String = CHAT_MODEL_OPTION_PREFIX + modelId
     const val CHAT_APPROVAL_CARD = "chat_approval_card"
     const val CHAT_APPROVAL_REQUIRED = "chat_approval_required"
+    const val CHAT_RETRY_CAPSULE = "chat_retry_capsule"
     const val CHAT_APPROVAL_EXECUTED = "chat_approval_executed"
     const val CHAT_APPROVAL_APPROVE = "chat_approval_approve"
     const val CHAT_APPROVAL_APPROVE_ALL = "chat_approval_approve_all"

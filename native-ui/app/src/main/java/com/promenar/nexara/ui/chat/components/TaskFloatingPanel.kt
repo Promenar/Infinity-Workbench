@@ -1,7 +1,9 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -29,7 +31,6 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -44,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -54,6 +56,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.chat.TaskPanelStep
@@ -63,8 +66,9 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /**
- * 输入框上方的计划条：收起时只占一行（状态、当前步骤、进度、展开与关闭），
- * 展开后显示目标、完整步骤与手动操作。关闭行为由调用方决定（隐藏或清除）。
+ * 输入框浮岛顶部的计划区：与输入框共用同一底色与圆角，不另加边框。
+ * 收起时只占一行（状态、当前步骤、进度、展开与关闭），展开后向上显示目标、完整步骤与手动操作。
+ * 关闭行为由调用方决定（隐藏或清除）。
  */
 @Composable
 fun TaskFloatingPanel(
@@ -83,21 +87,26 @@ fun TaskFloatingPanel(
     val closeLabel = stringResource(
         if (state.isCompleted) R.string.chat_task_clear_completed else R.string.chat_task_hide,
     )
-    val progress = if (state.totalCount == 0) 0f else state.doneCount.toFloat() / state.totalCount
-    Surface(
+    val progress by animateFloatAsState(
+        targetValue = if (state.totalCount == 0) 0f else state.doneCount.toFloat() / state.totalCount,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "task_progress",
+    )
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "task_chevron",
+    )
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize()
             .testTag(UiTags.CHAT_TASK_CARD),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                enter = fadeIn(tween(220)) + expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+                exit = fadeOut(tween(160)) + shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
             ) {
                 TaskPlanDetails(
                     state = state,
@@ -109,7 +118,7 @@ fun TaskFloatingPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 40.dp),
+                    .heightIn(min = 44.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -153,14 +162,14 @@ fun TaskFloatingPanel(
                     )
                     Text(
                         text = "${state.doneCount}/${state.totalCount}",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                        imageVector = Icons.Rounded.ExpandLess,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(18.dp).rotate(chevronRotation),
                     )
                 }
                 IconButton(
@@ -175,14 +184,15 @@ fun TaskFloatingPanel(
                     )
                 }
             }
+            // 进度线兼作计划区与输入区的分隔，左右与输入文字对齐。
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Medium, bottom = NexaraSpacing.Small)
+                    .padding(horizontal = NexaraSpacing.Medium)
                     .height(2.dp),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 strokeCap = StrokeCap.Round,
                 gapSize = 0.dp,
                 drawStopIndicator = {},
@@ -190,6 +200,12 @@ fun TaskFloatingPanel(
         }
     }
 }
+
+/** 计划区出现、消失、展开与折叠共用的尺寸动画：无回弹、偏柔和。 */
+internal val TaskPanelSizeSpring = spring<IntSize>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMediumLow,
+)
 
 @Composable
 private fun TaskPlanDetails(
@@ -201,7 +217,11 @@ private fun TaskPlanDetails(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Medium, top = NexaraSpacing.Medium),
+            .padding(
+                start = NexaraSpacing.Medium,
+                end = NexaraSpacing.Medium,
+                top = NexaraSpacing.Medium,
+            ),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         if (state.title.isNotBlank()) {

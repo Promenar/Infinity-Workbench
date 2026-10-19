@@ -10,19 +10,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,7 +94,14 @@ private fun Modifier.stepShimmer(active: Boolean): Modifier {
     }
 }
 
-/** 44dp 整行触控，放大字号时按文字行高增高。 */
+/** 步骤行可见高度。整行可点，触控范围由 Compose 最小触控尺寸扩展到 48dp。 */
+internal val CompactStepRowHeight = 36.dp
+
+/**
+ * 正文旁的轻量步骤行：放大字号时按文字行高增高。
+ * [expanded] 为 null 表示点击打开面板（如检索结果），不显示箭头；收起时也不显示，
+ * 只有展开后才淡入向下箭头，提示可再次点击收起。
+ */
 @Composable
 internal fun CompactStepRow(
     segments: List<String>,
@@ -116,18 +127,13 @@ internal fun CompactStepRow(
     // 整步失败时（tone 为 error）整行用错误色；部分失败只把失败段标红，摘要保持中性。
     val textColor = if (tone == MaterialTheme.colorScheme.error) {
         MaterialTheme.colorScheme.error
-    } else tone.copy(alpha = 0.85f)
+    } else tone.copy(alpha = 0.72f)
     val visibleSegments = segments.filter(String::isNotBlank)
     val description = (visibleSegments + listOfNotNull(failureText?.takeIf(String::isNotBlank))).joinToString(stringResource(R.string.chat_step_summary_separator))
-    val rotation by animateFloatAsState(
-        targetValue = if (expanded == true) 90f else 0f,
-        animationSpec = tween(150),
-        label = "stepExpansion",
-    )
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
+            .heightIn(min = CompactStepRowHeight)
             .clickable(role = Role.Button, onClickLabel = clickLabel, onClick = onClick)
             .semantics(mergeDescendants = true) {
                 if (tag != null) testTag = tag
@@ -140,10 +146,11 @@ internal fun CompactStepRow(
             },
     ) {
         val summaryMaxWidth = (maxWidth - 58.dp).coerceAtLeast(0.dp)
+        val arrowVisible = expanded == true
         Row(Modifier.fillMaxWidth().align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
             val summaryText = visibleSegments.joinToString(" $NexaraMetaSeparator ")
             if (preview == null) {
-                // 摘要按内容宽度排布并先截断，失败段紧跟其后且不收缩，箭头固定在行尾。
+                // 摘要按内容宽度排布并先截断，失败段紧跟其后且不收缩，展开箭头固定在行尾。
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = summaryText,
@@ -178,13 +185,18 @@ internal fun CompactStepRow(
                 Spacer(Modifier.width(12.dp))
                 preview.invoke(this)
             }
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(16.dp).rotate(rotation).testTag("CHAT_STEP_ARROW"),
-            )
+            AnimatedVisibility(
+                visible = arrowVisible,
+                enter = fadeIn(tween(160)) + scaleIn(tween(160), initialScale = 0.6f),
+                exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.6f),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.padding(start = 6.dp).size(16.dp).testTag("CHAT_STEP_ARROW"),
+                )
+            }
         }
     }
 }

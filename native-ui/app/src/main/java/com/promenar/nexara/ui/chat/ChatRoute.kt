@@ -232,6 +232,7 @@ fun ChatRoute(
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
+    val generationRetry by chatViewModel.generationRetry.collectAsStateWithLifecycle()
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
@@ -497,6 +498,7 @@ fun ChatRoute(
             ragPhases = ragPhases,
             compressionState = compressionState,
             postProcessTasks = postProcessTasks,
+            generationRetry = generationRetry,
             selectedImageUris = selectedImageUris,
             draftDocuments = draftDocuments,
             isImportingDocument = isImportingDocument,

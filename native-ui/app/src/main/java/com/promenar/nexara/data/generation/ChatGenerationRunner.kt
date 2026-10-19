@@ -22,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.transformWhile
@@ -49,6 +50,10 @@ interface ChatGenerationRuntime {
     fun additionalTokenUsage(request: GenerationRequest): GenerationToolUsage = GenerationToolUsage()
     fun loopDetectionThreshold(request: GenerationRequest): Int = 3
     suspend fun confirmLoopContinuation(request: GenerationRequest): Boolean = false
+    /** 单轮流式请求遇到可重试失败时的自动重试次数；0 表示不重试。 */
+    fun maxStreamRetries(request: GenerationRequest): Int = 0
+    /** 重试前的退避等待；可被取消，停止生成时立即结束。 */
+    suspend fun awaitRetry(delayMs: Long) = delay(delayMs)
 
     /** 本轮对话在此次生成之前已消耗的工具轮次与调用数（例如审批前的轮次），用于跨审批续算预算。 */
     suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage = GenerationToolUsage()
@@ -240,77 +245,111 @@ class ChatGenerationRunner(
                         return
                     }
                 }
-                phase(GenerationPhase.CONNECTING)
-                val stream = runtime.stream(request, attempt)
-                phase(GenerationPhase.THINKING)
-                var streamingPhaseEmitted = false
+                // 本轮尚未执行任何工具；可重试失败时丢弃本轮半截输出，退避后原样重发。
+                val roundStart = snapshot
+                val maxRetries = runtime.maxStreamRetries(request).coerceAtLeast(0)
+                var retries = 0
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
-                var completed: GenerationChunk.Completed? = null
                 var reportedUsage: Long? = null
-                stream.transformWhile { chunk ->
-                    emit(chunk)
-                    chunk !is GenerationChunk.Completed
-                }.collect { chunk ->
-                    when (chunk) {
-                        is GenerationChunk.Text -> {
-                            if (!streamingPhaseEmitted) {
-                                streamingPhaseEmitted = true
-                                phase(GenerationPhase.STREAMING)
+                val terminal: GenerationChunk.Completed
+                while (true) {
+                    val outcome: GenerationChunk.Completed? = try {
+                        phase(GenerationPhase.CONNECTING)
+                        val stream = runtime.stream(request, attempt)
+                        phase(GenerationPhase.THINKING)
+                        var streamingPhaseEmitted = false
+                        roundTools.clear()
+                        var completed: GenerationChunk.Completed? = null
+                        reportedUsage = null
+                        stream.transformWhile { chunk ->
+                            emit(chunk)
+                            chunk !is GenerationChunk.Completed
+                        }.collect { chunk ->
+                            when (chunk) {
+                                is GenerationChunk.Text -> {
+                                    if (!streamingPhaseEmitted) {
+                                        streamingPhaseEmitted = true
+                                        phase(GenerationPhase.STREAMING)
+                                    }
+                                    snapshot = snapshot.copy(
+                                        content = snapshot.content + chunk.content,
+                                        reasoning = snapshot.reasoning + chunk.reasoning.orEmpty(),
+                                    )
+                                    snapshot = persist(request, snapshot, emit)
+                                }
+                                is GenerationChunk.Thinking -> {
+                                    snapshot = snapshot.copy(reasoning = snapshot.reasoning + chunk.content)
+                                    snapshot = persist(request, snapshot, emit)
+                                }
+                                is GenerationChunk.ToolCall -> {
+                                    val old = roundTools[chunk.id]
+                                    roundTools[chunk.id] = GenerationToolCall(
+                                        id = chunk.id,
+                                        name = chunk.name.ifBlank { old?.name.orEmpty() },
+                                        arguments = old?.arguments.orEmpty() + chunk.arguments,
+                                    )
+                                    snapshot = snapshot.copy(toolCalls = roundTools.values.toList())
+                                    snapshot = persist(request, snapshot, emit)
+                                }
+                                is GenerationChunk.Usage -> {
+                                    val inputTokens = maxOf(snapshot.inputTokens, chunk.input.coerceAtLeast(0))
+                                    val outputTokens = maxOf(snapshot.outputTokens, chunk.output.coerceAtLeast(0))
+                                    val observedUsage = maxOf(
+                                        reportedUsage ?: 0,
+                                        chunk.total.toLong().coerceAtLeast(0),
+                                        inputTokens.toLong() + outputTokens.toLong(),
+                                    )
+                                    if (observedUsage > 0) reportedUsage = observedUsage
+                                    snapshot = snapshot.copy(
+                                        inputTokens = inputTokens,
+                                        outputTokens = outputTokens,
+                                        totalTokens = (reportedUsage ?: 0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                                    )
+                                    snapshot = persist(request, snapshot, emit)
+                                    if (reportedUsage != null) progress(cumulativeTokens + requireNotNull(reportedUsage))
+                                }
+                                is GenerationChunk.Citations -> {
+                                    snapshot = snapshot.copy(citations = chunk.citations)
+                                    snapshot = persist(request, snapshot, emit)
+                                }
+                                is GenerationChunk.Failure -> {
+                                    snapshot = snapshot.copy(failure = chunk.failure)
+                                    snapshot = persist(request, snapshot, emit)
+                                    throw GenerationFailedException(chunk.failure)
+                                }
+                                is GenerationChunk.Completed -> completed = chunk
                             }
-                            snapshot = snapshot.copy(
-                                content = snapshot.content + chunk.content,
-                                reasoning = snapshot.reasoning + chunk.reasoning.orEmpty(),
-                            )
-                            snapshot = persist(request, snapshot, emit)
                         }
-                        is GenerationChunk.Thinking -> {
-                            snapshot = snapshot.copy(reasoning = snapshot.reasoning + chunk.content)
-                            snapshot = persist(request, snapshot, emit)
-                        }
-                        is GenerationChunk.ToolCall -> {
-                            val old = roundTools[chunk.id]
-                            roundTools[chunk.id] = GenerationToolCall(
-                                id = chunk.id,
-                                name = chunk.name.ifBlank { old?.name.orEmpty() },
-                                arguments = old?.arguments.orEmpty() + chunk.arguments,
-                            )
-                            snapshot = snapshot.copy(toolCalls = roundTools.values.toList())
-                            snapshot = persist(request, snapshot, emit)
-                        }
-                        is GenerationChunk.Usage -> {
-                            val inputTokens = maxOf(snapshot.inputTokens, chunk.input.coerceAtLeast(0))
-                            val outputTokens = maxOf(snapshot.outputTokens, chunk.output.coerceAtLeast(0))
-                            val observedUsage = maxOf(
-                                reportedUsage ?: 0,
-                                chunk.total.toLong().coerceAtLeast(0),
-                                inputTokens.toLong() + outputTokens.toLong(),
-                            )
-                            if (observedUsage > 0) reportedUsage = observedUsage
-                            snapshot = snapshot.copy(
-                                inputTokens = inputTokens,
-                                outputTokens = outputTokens,
-                                totalTokens = (reportedUsage ?: 0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                            )
-                            snapshot = persist(request, snapshot, emit)
-                            if (reportedUsage != null) progress(cumulativeTokens + requireNotNull(reportedUsage))
-                        }
-                        is GenerationChunk.Citations -> {
-                            snapshot = snapshot.copy(citations = chunk.citations)
-                            snapshot = persist(request, snapshot, emit)
-                        }
-                        is GenerationChunk.Failure -> {
-                            snapshot = snapshot.copy(failure = chunk.failure)
-                            snapshot = persist(request, snapshot, emit)
-                            throw GenerationFailedException(chunk.failure)
-                        }
-                        is GenerationChunk.Completed -> completed = chunk
+                        completed
+                            ?: throw GenerationFailedException(GenerationFailure(
+                                code = GenerationFailureCode.NETWORK,
+                                technical = "Provider stream ended without explicit Completed",
+                                retryable = true,
+                            ))
+                    } catch (failed: GenerationFailedException) {
+                        if (retries >= maxRetries || !isRetryableStreamFailure(failed.failure)) throw failed
+                        retries++
+                        val delayMs = streamRetryDelayMs(retries, failed.failure)
+                        snapshot = persist(request, roundStart, emit)
+                        safeEmit(GenerationEvent.RetryScheduled(
+                            com.promenar.nexara.domain.generation.GenerationRetry(retries, maxRetries, failed.failure.code, delayMs),
+                        ))
+                        NexaraLogger.diagnostic(
+                            "generation.stream_retry",
+                            mapOf(
+                                "sessionId" to request.sessionId,
+                                "attempt" to retries.toString(),
+                                "code" to failed.failure.code.name,
+                            ),
+                        )
+                        runtime.awaitRetry(delayMs)
+                        null
+                    }
+                    if (outcome != null) {
+                        terminal = outcome
+                        break
                     }
                 }
-                val terminal = completed
-                    ?: throw GenerationFailedException(GenerationFailure(
-                        code = GenerationFailureCode.NETWORK,
-                        technical = "Provider stream ended without explicit Completed",
-                    ))
                 val finalized = runtime.finalizeStream(request, snapshot)
                 if (finalized != snapshot) snapshot = persist(request, finalized, emit)
                 validateCompletedRound(terminal, snapshot.toolCalls)
@@ -576,4 +615,25 @@ class ChatGenerationRunner(
                 technical = technical,
             ),
         )
+}
+
+/** 网络、超时与限流总是重试；服务端与未知错误只在协议层明确可重试（如 5xx、流截断）时重试。 */
+internal fun isRetryableStreamFailure(failure: GenerationFailure): Boolean = when (failure.code) {
+    GenerationFailureCode.NETWORK,
+    GenerationFailureCode.TIMEOUT,
+    GenerationFailureCode.RATE_LIMIT,
+    -> true
+    GenerationFailureCode.SERVER,
+    GenerationFailureCode.UNKNOWN,
+    -> failure.retryable
+    else -> false
+}
+
+/** 指数退避 1s、2s、4s… 封顶 30s；限流给出 Retry-After 时按其等待，最长 60s。 */
+internal fun streamRetryDelayMs(attempt: Int, failure: GenerationFailure): Long {
+    failure.retryAfterSeconds?.takeIf { failure.code == GenerationFailureCode.RATE_LIMIT && it > 0 }?.let {
+        return (it * 1_000L).coerceAtMost(60_000L)
+    }
+    val exponent = (attempt - 1).coerceIn(0, 5)
+    return (1_000L shl exponent).coerceAtMost(30_000L)
 }

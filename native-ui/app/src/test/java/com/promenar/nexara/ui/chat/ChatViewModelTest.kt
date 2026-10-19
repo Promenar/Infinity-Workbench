@@ -490,6 +490,10 @@ class ChatViewModelTest {
             com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications
         forcedProviderFailure = null
         notificationPermissionState = null
+        // 假 Provider 默认不发完成信号，属于可重试失败；本类断言 Provider 启动次数与顺序，关闭自动重试。
+        app.getSharedPreferences("nexara_settings", 0).edit()
+            .putInt(com.promenar.nexara.domain.generation.STREAM_RETRY_LIMIT_KEY, 0)
+            .commit()
 
         stubAgentRepo.seed(Agent(
             id = "a1",

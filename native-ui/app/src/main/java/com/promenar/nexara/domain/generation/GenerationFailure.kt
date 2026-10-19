@@ -30,12 +30,14 @@ enum class GenerationFailureCode {
  * @param formatArgs 类型化参数（例如 [KEY_RETRY_AFTER_SECONDS]），供 UI 做占位符替换。
  * @param technical 仅供诊断（日志 / 调试）的技术信息；**禁止**作为展示 message 传播到 UI。
  * @param cause 原始异常，仅诊断用途，禁止直接展示 [Throwable.getMessage]。
+ * @param retryable 协议层判断原样重发同一请求可能成功（如 5xx、流被截断）；只用于自动重试，不持久化。
  */
 data class GenerationFailure(
     val code: GenerationFailureCode,
     val formatArgs: Map<String, String> = emptyMap(),
     val technical: String? = null,
     val cause: Throwable? = null,
+    val retryable: Boolean = false,
 ) {
     /**
      * 限流类失败建议的重试等待秒数；不存在时为 null。

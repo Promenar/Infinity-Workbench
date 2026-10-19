@@ -6,6 +6,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -78,20 +81,21 @@ class ChatStepFailureLayoutTest {
         assertThat(summary.single().layoutInput.style.color).isNotEqualTo(errorColor)
         val summaryBounds = rule.onNodeWithTag("CHAT_STEP_SUMMARY", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val failure = rule.onNodeWithTag("CHAT_STEP_FAILURE", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val arrow = rule.onNodeWithTag("CHAT_STEP_ARROW", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertThat(failure.right).isAtMost(arrow.left)
+        val row = rule.onNodeWithTag("FAILED_STEP").fetchSemanticsNode().boundsInRoot
+        assertThat(failure.right).isAtMost(row.right + 0.5f)
         assertThat(abs(failure.left - summaryBounds.right)).isAtMost(1f)
         rule.onNodeWithTag("FAILED_STEP").assertContentDescriptionEquals("Ran 22 commands, Read 18 files, 1 failed")
     }
 
     @Test
     fun shortSummaryKeepsFailureAdjacentAndArrowAtRowEndOnWideRow() {
+        var expanded by mutableStateOf(false)
         rule.setContent {
             NexaraTheme {
                 Box(Modifier.width(600.dp)) {
                     CompactStepRow(
                         segments = listOf("Read 1 file"),
-                        icon = Icons.Rounded.CheckCircle, onClick = {}, tag = "FAILED_STEP",
+                        icon = Icons.Rounded.CheckCircle, onClick = {}, tag = "FAILED_STEP", expanded = expanded,
                         failureText = "1 failed",
                     )
                 }
@@ -100,10 +104,12 @@ class ChatStepFailureLayoutTest {
         val row = rule.onNodeWithTag("FAILED_STEP").fetchSemanticsNode().boundsInRoot
         val summary = rule.onNodeWithTag("CHAT_STEP_SUMMARY", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val failure = rule.onNodeWithTag("CHAT_STEP_FAILURE", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val arrow = rule.onNodeWithTag("CHAT_STEP_ARROW", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        // 失败段紧跟摘要，不被推到行尾；箭头固定在行尾。
+        // 失败段紧跟摘要，不被推到行尾；展开后箭头固定在行尾。
         assertThat(abs(failure.left - summary.right)).isAtMost(1f)
-        assertThat(arrow.left - failure.right).isGreaterThan(row.width / 3)
+        assertThat(row.right - failure.right).isGreaterThan(row.width / 3)
+        rule.onNodeWithTag("CHAT_STEP_ARROW", useUnmergedTree = true).assertDoesNotExist()
+        rule.runOnIdle { expanded = true }
+        val arrow = rule.onNodeWithTag("CHAT_STEP_ARROW", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertThat(abs(row.right - arrow.right)).isAtMost(1f)
     }
 }

@@ -48,6 +48,9 @@ import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolUsage
 import com.promenar.nexara.domain.generation.MAX_CONFIGURABLE_TOOL_ROUNDS
+import com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT
+import com.promenar.nexara.domain.generation.MAX_STREAM_RETRY_LIMIT
+import com.promenar.nexara.domain.generation.STREAM_RETRY_LIMIT_KEY
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -761,6 +764,9 @@ internal class DefaultChatGenerationRuntime(
         }
     } ?: 0
 
+    override fun maxStreamRetries(request: GenerationRequest): Int =
+        settings.getInt(STREAM_RETRY_LIMIT_KEY, DEFAULT_STREAM_RETRY_LIMIT).coerceIn(0, MAX_STREAM_RETRY_LIMIT)
+
     override fun loopDetectionThreshold(request: GenerationRequest): Int =
         settings.getInt("tool_loop_repeat_limit", 3).coerceIn(2, 20)
 
@@ -1085,6 +1091,7 @@ internal class DefaultChatGenerationRuntime(
                     .orEmpty(),
                 technical = chunk.technical,
                 cause = chunk.cause,
+                retryable = chunk.retryable,
             ),
         )
         is StreamChunk.Completed -> GenerationChunk.Completed(chunk.reason, chunk.completedToolCallIds)

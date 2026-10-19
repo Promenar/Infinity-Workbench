@@ -80,6 +80,23 @@ fun TaskPanelUiState.visibilitySignature(): String = "$planId:$doneCount/$totalC
 fun isTaskPlanBarVisible(panel: TaskPanelUiState?, hiddenSignature: String?): Boolean =
     panel != null && panel.visibilitySignature() != hiddenSignature
 
+/** 计划刚完成时“全部完成”保留的时长，随后计划区自动收起。 */
+const val COMPLETED_PLAN_LINGER_MS = 2_500L
+
+/**
+ * 已完成计划的自动收起时机：生成仍在进行时不收起；本次会话观察到它从未完成变为完成时，
+ * 先停留 [COMPLETED_PLAN_LINGER_MS] 再收起；打开会话时就已完成的计划立即收起。返回 null 表示不收起。
+ */
+fun completedPlanAutoHideDelay(
+    panel: TaskPanelUiState?,
+    isGenerating: Boolean,
+    observedIncomplete: Boolean,
+): Long? = when {
+    panel == null || !panel.isCompleted || isGenerating -> null
+    observedIncomplete -> COMPLETED_PLAN_LINGER_MS
+    else -> 0L
+}
+
 private fun flattenPanelSteps(tree: List<TaskStep>): List<TaskPanelStep> = buildList {
     fun append(nodes: List<TaskStep>, depth: Int) {
         nodes.sortedBy(TaskStep::sortOrder).forEach { step ->

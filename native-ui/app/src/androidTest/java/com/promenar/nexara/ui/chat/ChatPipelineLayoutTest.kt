@@ -53,15 +53,23 @@ class ChatPipelineLayoutTest {
     @get:Rule val rule = createComposeRule()
 
     @Test
-    fun stepRowIs44DpAndArrowSharesTextCenter() {
+    fun stepRowIs36DpWith48DpTouchAndArrowOnlyWhenExpanded() {
+        var expanded by mutableStateOf<Boolean?>(false)
         rule.setContent {
             NexaraTheme {
                 Box(Modifier.width(371.dp)) {
-                    CompactStepRow(listOf("运行了 2 条命令"), Icons.Rounded.CheckCircle, {}, tag = "STEP")
+                    CompactStepRow(listOf("运行了 2 条命令"), Icons.Rounded.CheckCircle, {}, expanded = expanded, tag = "STEP")
                 }
             }
         }
-        rule.onNodeWithTag("STEP").assertHeightIsEqualTo(44.dp).assertHasClickAction()
+        rule.onNodeWithTag("STEP").assertHeightIsEqualTo(CompactStepRowHeight).assertHasClickAction()
+        val node = rule.onNodeWithTag("STEP").fetchSemanticsNode()
+        assertThat(node.touchBoundsInRoot.height / node.layoutInfo.density.density).isAtLeast(47.5f)
+        // 收起与面板入口（expanded = null）都不显示箭头，展开后才出现。
+        rule.onNode(hasTestTag("CHAT_STEP_ARROW"), useUnmergedTree = true).assertDoesNotExist()
+        rule.runOnIdle { expanded = null }
+        rule.onNode(hasTestTag("CHAT_STEP_ARROW"), useUnmergedTree = true).assertDoesNotExist()
+        rule.runOnIdle { expanded = true }
         val text = rule.onNode(hasTestTag("CHAT_STEP_SUMMARY") and hasAnyAncestor(hasTestTag("STEP")), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val arrow = rule.onNode(hasTestTag("CHAT_STEP_ARROW") and hasAnyAncestor(hasTestTag("STEP")), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertThat(abs(text.center.y - arrow.center.y)).isAtMost(with(rule.density) { 1.dp.toPx() })
@@ -82,13 +90,15 @@ class ChatPipelineLayoutTest {
             .fetchSemanticsNode().boundsInRoot.left
         val before = summaryLeft()
         rule.runOnIdle { active = true }
-        rule.onNodeWithTag("STEP").assertHeightIsEqualTo(44.dp)
+        rule.onNodeWithTag("STEP").assertHeightIsEqualTo(CompactStepRowHeight)
         assertThat(abs(summaryLeft() - before)).isAtMost(with(rule.density) { 0.5.dp.toPx() })
         val label = rule.onNode(hasTestTag("CHAT_STEP_SUMMARY") and hasAnyAncestor(hasTestTag(UiTags.CHAT_THINKING_TOGGLE)), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val preview = rule.onNodeWithTag("CHAT_THINKING_PREVIEW", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val arrow = rule.onNode(hasTestTag("CHAT_STEP_ARROW") and hasAnyAncestor(hasTestTag(UiTags.CHAT_THINKING_TOGGLE)), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val toggle = rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).fetchSemanticsNode().boundsInRoot
+        rule.onNode(hasTestTag("CHAT_STEP_ARROW") and hasAnyAncestor(hasTestTag(UiTags.CHAT_THINKING_TOGGLE)), useUnmergedTree = true)
+            .assertDoesNotExist()
         assertThat(abs(preview.left - label.right - with(rule.density) { 12.dp.toPx() })).isAtMost(with(rule.density) { 0.5.dp.toPx() })
-        assertThat(preview.right).isAtMost(arrow.left)
+        assertThat(preview.right).isAtMost(toggle.right + 0.5f)
     }
 
     @Test
@@ -238,7 +248,7 @@ class ChatPipelineLayoutTest {
                 }
             }
         }
-        rule.onNodeWithTag("LARGE_STEP").assertHeightIsAtLeast(44.dp)
+        rule.onNodeWithTag("LARGE_STEP").assertHeightIsAtLeast(CompactStepRowHeight)
         val row = rule.onNodeWithTag("LARGE_STEP").fetchSemanticsNode().boundsInRoot
         val text = rule.onNodeWithTag("CHAT_STEP_SUMMARY", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertThat(text.top).isAtLeast(row.top)

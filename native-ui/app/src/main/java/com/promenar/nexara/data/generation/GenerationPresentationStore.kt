@@ -8,6 +8,7 @@ import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.domain.generation.GenerationEvent
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationPhase
+import com.promenar.nexara.domain.generation.GenerationRetry
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,8 @@ data class GenerationPresentationState(
     val phase: GenerationPhase? = null,
     val promptAccepted: Boolean = false,
     val postProcessTasks: List<PostProcessTask> = emptyList(),
+    /** 正在等待自动重发的请求；新一轮开始输出或生成结束时清除。 */
+    val retry: GenerationRetry? = null,
 ) {
     override fun toString(): String =
         "GenerationPresentationState(taskId=$taskId, sessionId=$sessionId, " +
@@ -39,8 +42,16 @@ data class GenerationPresentationState(
             "errorCode=${error?.code}, providerFailureReason=${providerFailure?.reason}, " +
             "generating=$generating, handledFailure=$handledFailure, phase=$phase, " +
             "promptAccepted=$promptAccepted, " +
-            "postProcessTaskCount=${postProcessTasks.size})"
+            "postProcessTaskCount=${postProcessTasks.size}, retryAttempt=${retry?.attempt})"
 }
+
+/** 重发前仍在连接或等待首个输出的阶段；进入其它阶段即说明重试已有结果。 */
+private val RETRY_PENDING_PHASES = setOf(
+    GenerationPhase.PREPARING,
+    GenerationPhase.BUILDING_CONTEXT,
+    GenerationPhase.CONNECTING,
+    GenerationPhase.THINKING,
+)
 
 /** 应用级、按会话隔离的生成展示状态；导航不会改变正在生成任务的写入目标。 */
 class GenerationPresentationStore {
@@ -73,8 +84,10 @@ class GenerationPresentationStore {
         update(sessionId, taskId) { current ->
             when (event) {
                 is GenerationEvent.ProgressChanged -> current
+                is GenerationEvent.RetryScheduled -> current.copy(retry = event.retry)
                 is GenerationEvent.PhaseChanged -> current.copy(
                     phase = event.phase,
+                    retry = current.retry.takeIf { event.phase in RETRY_PENDING_PHASES },
                     promptAccepted = current.promptAccepted ||
                         event.phase == GenerationPhase.CONNECTING,
                     generating = event.phase !in setOf(
@@ -94,6 +107,7 @@ class GenerationPresentationStore {
                 )
                 is GenerationEvent.TargetChanged -> current
                 is GenerationEvent.Rejected -> current.copy(
+                    retry = null,
                     error = event.failure,
                     generating = false,
                     handledFailure = true,
@@ -107,6 +121,7 @@ class GenerationPresentationStore {
                     phase = GenerationPhase.PERSISTENCE_FAILED,
                 )
                 is GenerationEvent.Failed -> current.copy(
+                    retry = null,
                     error = event.failure,
                     generating = false,
                     phase = GenerationPhase.FAILED,
@@ -125,6 +140,7 @@ class GenerationPresentationStore {
             phase = phase,
             generating = false,
             error = failure ?: current.error,
+            retry = null,
         )
     }
 

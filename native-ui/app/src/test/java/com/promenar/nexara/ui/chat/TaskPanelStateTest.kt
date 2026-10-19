@@ -109,4 +109,21 @@ class TaskPanelStateTest {
         assertThat(isTaskPlanBarVisible(advanced, hidden)).isTrue()
         assertThat(isTaskPlanBarVisible(null, hiddenSignature = null)).isFalse()
     }
+
+    @Test
+    fun `completed plan hides after linger only when completion was observed and generation ended`() {
+        val running = taskPanelUiState(tree, isGenerating = false)!!
+        val completed = taskPanelUiState(
+            tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
+            isGenerating = false,
+        )!!
+
+        assertThat(completedPlanAutoHideDelay(null, isGenerating = false, observedIncomplete = true)).isNull()
+        assertThat(completedPlanAutoHideDelay(running, isGenerating = false, observedIncomplete = true)).isNull()
+        // 生成尚未结束时保留“全部完成”，避免模型收尾时计划区闪退。
+        assertThat(completedPlanAutoHideDelay(completed, isGenerating = true, observedIncomplete = true)).isNull()
+        assertThat(completedPlanAutoHideDelay(completed, isGenerating = false, observedIncomplete = true))
+            .isEqualTo(COMPLETED_PLAN_LINGER_MS)
+        assertThat(completedPlanAutoHideDelay(completed, isGenerating = false, observedIncomplete = false)).isEqualTo(0L)
+    }
 }
