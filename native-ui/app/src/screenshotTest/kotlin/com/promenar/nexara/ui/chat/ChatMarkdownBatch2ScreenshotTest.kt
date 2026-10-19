@@ -70,6 +70,26 @@ fun chatMarkdownNestedCodeRegression() {
     }
 }
 
+@PreviewTest
+@Preview(name = "宽表格 按内容列宽与行内格式", widthDp = 411, heightDp = 560, locale = "zh-rCN")
+@Composable
+fun chatMarkdownWideTableRegression() {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(20.dp)) {
+                MarkdownText(
+                    "| 序号 | 模型 | 上下文 | 说明 | 状态 |\n" +
+                        "|---|---|---:|---|:---:|\n" +
+                        "| 1 | **DeepSeek V4** | 128K | 支持 `tool_call` 与长上下文推理，适合代码与文档任务 | 可用 |\n" +
+                        "| 2 | *MiniMax M3* | 1M | 见 [发布说明](https://example.com) | ~~预览~~ |\n\n" +
+                        "| 项目 | 结果 |\n|---|---|\n| 正文 | **清晰** |\n| 间距 | 统一 |",
+                    fontSize = 15,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatMarkdownBatch2Preview(content: String? = null) {
     val markdown = content ?: if (LocalConfiguration.current.locales[0].language == "zh") MARKDOWN_BATCH2_ZH else MARKDOWN_BATCH2_EN

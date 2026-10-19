@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.renderer
 
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
@@ -29,7 +33,28 @@ class TableWidgetTest {
             listOf("DeepSeek V4", "64K", "Ready"),
             listOf("MiniMax M3", "128K", "Preview"),
         ).inOrder()
-        assertThat(table.requiredWidth).isEqualTo(360.dp)
+        assertThat(table.headerNodes).hasSize(3)
+        assertThat(table.rowNodes.map { it.size }).containsExactly(3, 3)
+    }
+
+    @Test
+    fun `column widths follow the widest cell and stay within bounds`() {
+        val table = ParsedTable(
+            headerCells = listOf("ID", "说明", "长文本"),
+            rows = listOf(
+                listOf("1", "短", "x".repeat(200)),
+                listOf("22", "稍长一些的说明", ""),
+            ),
+        )
+        // 假定每个字符 8dp，便于验证取最宽单元格、加 24dp 内边距并夹在上下限之间。
+        val widths = tableColumnWidths(table) { column, row ->
+            val text = if (row < 0) table.headerCells[column] else table.rows[row][column]
+            (text.length * 8).dp
+        }
+
+        assertThat(widths[0]).isEqualTo(TableMinColumnWidth)
+        assertThat(widths[1]).isEqualTo((7 * 8 + 24).dp)
+        assertThat(widths[2]).isEqualTo(TableMaxColumnWidth)
     }
 
     @Test
@@ -41,5 +66,20 @@ class TableWidgetTest {
             .single()
 
         assertThat(parseMarkdownTable(markdown, paragraph)).isNull()
+    }
+
+    @Test
+    fun `inline content placeholders are removed while styles stay on the remaining text`() {
+        val styled = buildAnnotatedString {
+            append("支持 ")
+            append("\uFFFD")
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("tool_call") }
+        }
+
+        val cleaned = styled.withoutInlineContentPlaceholders()
+
+        assertThat(cleaned.text).isEqualTo("支持 tool_call")
+        val bold = cleaned.spanStyles.single()
+        assertThat(cleaned.text.substring(bold.start, bold.end)).isEqualTo("tool_call")
     }
 }

@@ -144,7 +144,9 @@ import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.renderer.nexaraSyntaxTheme
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.PaddingValues
+import com.promenar.nexara.ui.renderer.TableMeasurer
 import com.promenar.nexara.ui.renderer.parseMarkdownTable
+import com.promenar.nexara.ui.renderer.rememberTableMeasurer
 import com.promenar.nexara.ui.renderer.parseGfmAlert
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
@@ -239,11 +241,14 @@ private fun nestedCodeSizingSample(content: String, root: ASTNode): Pair<String,
 private fun nestedTableMinimumWidth(
     content: String,
     root: ASTNode,
+    tableMeasurer: TableMeasurer,
     chromePerLevel: androidx.compose.ui.unit.Dp = 48.dp,
 ): androidx.compose.ui.unit.Dp? {
     fun visit(node: ASTNode, depth: Int): androidx.compose.ui.unit.Dp? {
         if (node.type == GFMElementTypes.TABLE) {
-            return parseMarkdownTable(content, node)?.requiredWidth?.plus(chromePerLevel * depth)
+            return parseMarkdownTable(content, node)
+                ?.let { tableMeasurer.layout(it).totalWidth }
+                ?.plus(chromePerLevel * depth)
         }
         return node.children.mapNotNull { child -> visit(child, depth + 1) }.maxOrNull()
     }
@@ -1200,6 +1205,7 @@ private fun MarkdownSafe(
         success = { state, resolvedComponents, successModifier ->
             Column(modifier = successModifier) {
                 val renderContent = state.content
+                val tableMeasurer = rememberTableMeasurer(fontSize)
                 val blocks = state.node.children.filter { it.type != MarkdownTokenTypes.EOL && it.type != MarkdownTokenTypes.WHITE_SPACE && it.type != MarkdownElementTypes.LINK_DEFINITION }
                 blocks.forEachIndexed { index, node ->
                     if (index > 0) Spacer(Modifier.height(markdownReadingGap(blocks[index - 1].type, node.type, compactSpacing)))
@@ -1214,15 +1220,16 @@ private fun MarkdownSafe(
                                 if (table == null) {
                                     MarkdownElement(node, resolvedComponents, renderContent)
                                 } else {
+                                    val tableLayout = remember(table, tableMeasurer) { tableMeasurer.layout(table) }
                                     WideContentHost(
                                         text = "",
                                         textStyle = LocalMarkdownTypography.current.text,
                                         horizontalChrome = 0.dp,
-                                        minimumContentWidth = table.requiredWidth,
+                                        minimumContentWidth = tableLayout.totalWidth,
                                     ) {
                                         NexaraTableWidget(
-                                            table = table,
-                                            fontSize = fontSize,
+                                            layout = tableLayout,
+                                            measurer = tableMeasurer,
                                             modifier = Modifier
                                                 .fillMaxWidth(),
                                         )
@@ -1235,8 +1242,9 @@ private fun MarkdownSafe(
                                     renderContent,
                                     node.startOffset,
                                     node.endOffset,
+                                    tableMeasurer,
                                 ) {
-                                    nestedTableMinimumWidth(renderContent, node)
+                                    nestedTableMinimumWidth(renderContent, node, tableMeasurer)
                                 }
                                 val (codeSample, codeChrome) = remember(renderContent, node) { nestedCodeSizingSample(renderContent, node) }
                                 if (minimumWidth == null && codeSample.isEmpty()) {

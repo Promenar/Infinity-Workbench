@@ -70,9 +70,9 @@ class MarkdownWideContentContractTest {
         assertThat(successSource).contains("GFMElementTypes.TABLE")
         assertThat(successSource).contains("WideContentHost(")
         assertThat(successSource).contains("NexaraTableWidget(")
-        assertThat(successSource).contains("table.requiredWidth")
+        assertThat(successSource).contains("minimumContentWidth = tableLayout.totalWidth")
         assertThat(successSource).contains("MarkdownElement(node, resolvedComponents, renderContent)")
         assertThat(tableSource).contains("BoxWithConstraints")
-        assertThat(tableSource).contains("val fixedColumns = maxWidth <= table.requiredWidth")
+        assertThat(tableSource).contains("val scale = if (total > 0.dp) maxWidth / total else 1f")
     }
 }
