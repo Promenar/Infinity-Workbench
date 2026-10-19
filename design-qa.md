@@ -212,3 +212,14 @@ final result: passed
 - `git diff --check`：通过。
 
 final result: passed
+
+# 输入框上方计划条视觉验收
+
+- 验收日期：2026-10-19
+- 覆盖基线：`ReleasePreviewScreenshotTest` 中任务待确认、真实生成、中文 2.0x 字体与展开清单四个预览；设备测试 `ChatScreenContentStateTest`、`AccessibilitySmokeTest` 在 API 31 与 API 35 模拟器通过。
+
+## 视觉结论
+
+- 任务计划不再位于消息流底部，改为输入框上方的单行计划条：状态点、当前步骤、`n/m`、展开箭头与 ×，下方 2dp 进度线；展开内容向上展开，不推动输入框。
+- 隐藏后由 composer 状态胶囊承接，计划推进后自动重新出现；已完成计划可直接清除。
+- 标题行、×、胶囊与两个人工动作均为 48dp 触控目标；已逐张查看更新后的基线。
