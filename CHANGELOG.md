@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 行内代码无障碍文本
+
+- 正文、列表与标题中的行内代码，两侧内边距占位不再以 U+FFFD 替换字符进入无障碍文本，读屏不会再念出“替换字符”。占位的替代文本改为不换行空格，断行规则与原来一致，截图基线无变化。
+- 表格单元格改为按内联内容注解剔除占位，不再删除所有 U+FFFD，用户原文中真实的该字符得以保留。新增设备测试检查无障碍文本，表格单测改用真实 `appendInlineContent` 构造占位。
+
 ### Release 版 SSH 与资源管理器搜索修复
 
 - Release 包 SSH 握手修复：R8 把 JSch 的 `Session` 等同包类移出原包，导致其反射创建包内私有的 KEX 与认证类时抛 `IllegalAccessException`，所有连接在 Release 中失败。现保留 JSch 顶层包类名与成员（仍允许裁剪未使用的类）；新增单元测试核对应用固定算法表涉及的每个反射类都有对应保留规则。

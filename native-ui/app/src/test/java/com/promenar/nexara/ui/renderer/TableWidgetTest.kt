@@ -1,11 +1,14 @@
 package com.promenar.nexara.ui.renderer
 
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.ui.common.INLINE_CODE_PADDING_ALTERNATE_TEXT
+import com.promenar.nexara.ui.common.INLINE_CODE_PADDING_ID
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
@@ -72,13 +75,15 @@ class TableWidgetTest {
     fun `inline content placeholders are removed while styles stay on the remaining text`() {
         val styled = buildAnnotatedString {
             append("支持 ")
-            append("\uFFFD")
+            appendInlineContent(INLINE_CODE_PADDING_ID, INLINE_CODE_PADDING_ALTERNATE_TEXT)
             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("tool_call") }
+            appendInlineContent("library-placeholder")
+            append(" 原文\uFFFD")
         }
 
         val cleaned = styled.withoutInlineContentPlaceholders()
 
-        assertThat(cleaned.text).isEqualTo("支持 tool_call")
+        assertThat(cleaned.text).isEqualTo("支持 tool_call 原文\uFFFD")
         val bold = cleaned.spanStyles.single()
         assertThat(cleaned.text.substring(bold.start, bold.end)).isEqualTo("tool_call")
     }

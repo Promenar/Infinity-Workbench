@@ -251,19 +251,22 @@ private fun TableCell(
 }
 
 /**
- * 渲染库为行内代码等插入 U+FFFD 内联内容占位符，单元格不提供对应的 inlineContent，
- * 保留会显示成替换字符；去掉占位符并保留其余样式与链接。
+ * 单元格不提供 inlineContent，行内代码内边距等内联内容占位保留会显示成替换字符或多余空白；
+ * 按内联内容注解剔除占位，保留其余样式、链接与用户原文中的字符。
  */
 internal fun AnnotatedString.withoutInlineContentPlaceholders(): AnnotatedString {
-    if ('\uFFFD' !in text) return this
+    val source = this
+    val placeholders = source.getStringAnnotations(INLINE_CONTENT_ANNOTATION_TAG, 0, source.length).sortedBy { it.start }
+    if (placeholders.isEmpty()) return source
     return buildAnnotatedString {
-        var start = 0
-        text.forEachIndexed { index, char ->
-            if (char == '\uFFFD') {
-                if (index > start) append(this@withoutInlineContentPlaceholders.subSequence(start, index))
-                start = index + 1
-            }
+        var cursor = 0
+        placeholders.forEach { placeholder ->
+            if (placeholder.start > cursor) append(source.subSequence(cursor, placeholder.start))
+            cursor = maxOf(cursor, placeholder.end)
         }
-        if (start < text.length) append(this@withoutInlineContentPlaceholders.subSequence(start, text.length))
+        if (cursor < source.length) append(source.subSequence(cursor, source.length))
     }
 }
+
+/** 与 Compose foundation `appendInlineContent` 写入的注解标签一致，单元测试经真实 API 校验。 */
+private const val INLINE_CONTENT_ANNOTATION_TAG = "androidx.compose.foundation.text.inlineContent"

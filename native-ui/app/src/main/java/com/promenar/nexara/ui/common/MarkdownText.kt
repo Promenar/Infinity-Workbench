@@ -445,6 +445,12 @@ fun MarkdownText(
 }
 
 internal const val INLINE_CODE_PADDING_ID = "nexara-inline-code-padding"
+
+/**
+ * 行内代码内边距占位的替代文本。默认的 U+FFFD 会进入无障碍文本被读屏念成替换字符；
+ * 不换行空格只被当作空白，且与 U+FFFD 一样不在占位与代码之间产生断行机会。
+ */
+internal const val INLINE_CODE_PADDING_ALTERNATE_TEXT = "\u00A0"
 private val revealLiteralTypes = setOf(
     MarkdownTokenTypes.TEXT, MarkdownTokenTypes.SINGLE_QUOTE, MarkdownTokenTypes.DOUBLE_QUOTE,
     MarkdownTokenTypes.LPAREN, MarkdownTokenTypes.RPAREN, MarkdownTokenTypes.LBRACKET, MarkdownTokenTypes.RBRACKET,
@@ -527,9 +533,9 @@ private fun readingMarkdownAnnotator(
     when {
         node.type == MarkdownElementTypes.CODE_SPAN -> {
             pushStyle(inlineCodeStyle)
-            appendInlineContent(INLINE_CODE_PADDING_ID)
+            appendInlineContent(INLINE_CODE_PADDING_ID, INLINE_CODE_PADDING_ALTERNATE_TEXT)
             node.children.drop(1).dropLast(1).forEach { child -> appendRevealedLeaf(source, child, ranges, sourceOffset, textColor) }
-            appendInlineContent(INLINE_CODE_PADDING_ID)
+            appendInlineContent(INLINE_CODE_PADDING_ID, INLINE_CODE_PADDING_ALTERNATE_TEXT)
             pop()
             true
         }
