@@ -36,6 +36,8 @@ object AgentMapper {
         executionMode = ExecutionModeCodec.parseOrSemi(entity.executionMode),
         skills = decodeOrderedIds(entity.skillIds),
         mcpServerIds = decodeOrderedIds(entity.mcpServerIds),
+        defaultWorkspaceId = entity.defaultWorkspaceId,
+        userRules = entity.userRules,
         createdAt = entity.createdAt
     )
 
@@ -60,6 +62,8 @@ object AgentMapper {
         executionMode = ExecutionModeCodec.serialize(agent.executionMode),
         skillIds = encodeOrderedIds(agent.skills),
         mcpServerIds = encodeOrderedIds(agent.mcpServerIds),
+        defaultWorkspaceId = agent.defaultWorkspaceId,
+        userRules = agent.userRules,
         createdAt = agent.createdAt
     )
 }

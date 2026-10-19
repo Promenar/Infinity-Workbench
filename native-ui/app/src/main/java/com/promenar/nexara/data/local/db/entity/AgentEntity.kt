@@ -42,4 +42,10 @@ data class AgentEntity(
     val skillIds: String = "[]",
     @ColumnInfo(name = "mcp_server_ids", defaultValue = "[]")
     val mcpServerIds: String = "[]",
+    /** 新建会话继承的自选工作区；为空时使用会话私有工作区。 */
+    @ColumnInfo(name = "default_workspace_id")
+    val defaultWorkspaceId: String? = null,
+    /** 只经专用单列更新写入；整行更新保留数据库中的现值。 */
+    @ColumnInfo(name = "user_rules", defaultValue = "''")
+    val userRules: String = "",
 )

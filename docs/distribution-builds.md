@@ -73,7 +73,7 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 ## 本机设备验收
 
-Google APIs ARM64 模拟器使用 `arm64-v8a`，API 31 执行 `minimum`，API 35 执行 `full`。两个范围均运行原有核心/恢复/布局合同，以及 SAF 实际授权往返、隔离 QuickJS 全部 8 例、富内容 WebView 全部 7 例。`full` 另运行侧载真实路径、v1/v2 及独立 v18→v21 迁移、旧库提升、通知/备份恢复/导入等合同。富内容用例只使用打包的 KaTeX、Mermaid 与 ECharts，读取 DOM/JS 结果，不依赖外网或像素比较。
+Google APIs ARM64 模拟器使用 `arm64-v8a`，API 31 执行 `minimum`，API 35 执行 `full`。两个范围均运行原有核心/恢复/布局合同，以及 SAF 实际授权往返、隔离 QuickJS 全部 8 例、富内容 WebView 全部 7 例。`full` 另运行侧载真实路径、v1/v2 及独立 v18→v22 迁移、旧库提升、通知/备份恢复/导入等合同。富内容用例只使用打包的 KaTeX、Mermaid 与 ECharts，读取 DOM/JS 结果，不依赖外网或像素比较。
 
 在仓库根完成静态检查与 ARM64 测试包构建：
 

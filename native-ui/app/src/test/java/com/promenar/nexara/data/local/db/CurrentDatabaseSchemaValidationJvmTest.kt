@@ -181,6 +181,7 @@ class CurrentDatabaseSchemaValidationJvmTest {
             19 -> MIGRATION_18_19
             20 -> MIGRATION_19_20
             21 -> MIGRATION_20_21
+            22 -> MIGRATION_21_22
             else -> error("数据库测试没有对应的生产迁移")
         }
         val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)

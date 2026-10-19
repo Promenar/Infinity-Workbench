@@ -28,8 +28,8 @@ abstract class GenerateCurrentRoomSchemaContracts : DefaultTask() {
         val schemas = schemaFiles.files.map { file ->
             (JsonSlurper().parseText(file.readText()) as Map<*, *>).objectMap("database")
         }.sortedBy { (it.requiredValue("version") as Number).toInt() }
-        require(schemas.map { (it.requiredValue("version") as Number).toInt() } == (18..21).toList()) {
-            "完整数据库校验必须包含 v18、v19、v20、v21 的导出合同"
+        require(schemas.map { (it.requiredValue("version") as Number).toInt() } == (18..22).toList()) {
+            "完整数据库校验必须包含 v18 至 v22 的导出合同"
         }
         val source = buildString {
             appendLine("package com.promenar.nexara.data.local.db")
@@ -181,8 +181,8 @@ val launcherIconTask = tasks.register("generateNexaraLauncherIcons") {
 }
 val currentRoomSchemaContracts = tasks.register<GenerateCurrentRoomSchemaContracts>("generateCurrentRoomSchemaContracts") {
     group = "build setup"
-    description = "依据四个导出版本生成完整数据库结构校验合同。"
-    schemaFiles.from((18..21).map { version ->
+    description = "依据 v18 至 v22 导出版本生成完整数据库结构校验合同。"
+    schemaFiles.from((18..22).map { version ->
         layout.projectDirectory.file("schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
     })
     outputDirectory.set(layout.buildDirectory.dir("generated/sources/currentRoomSchemaContracts"))

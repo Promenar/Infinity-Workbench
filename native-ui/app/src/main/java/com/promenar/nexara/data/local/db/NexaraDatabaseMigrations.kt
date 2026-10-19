@@ -186,6 +186,44 @@ val MIGRATION_20_21 = object : Migration(20, 21) {
 }
 
 /**
+ * 自选工作区登记、会话与 Agent 的工作区绑定、Agent 用户规则及其历史版本。
+ * 新列均可空或带默认值，既有会话继续使用私有工作区，既有 Agent 规则为空。
+ */
+val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS `workspaces` (
+                `id` TEXT NOT NULL,
+                `kind` TEXT NOT NULL,
+                `display_name` TEXT NOT NULL,
+                `location` TEXT NOT NULL,
+                `created_at` INTEGER NOT NULL,
+                PRIMARY KEY(`id`)
+            )""".trimIndent(),
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_workspaces_kind_location` ON `workspaces` (`kind`, `location`)")
+        db.execSQL("ALTER TABLE `agents` ADD COLUMN `default_workspace_id` TEXT")
+        db.execSQL("ALTER TABLE `agents` ADD COLUMN `user_rules` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `sessions` ADD COLUMN `workspace_id` TEXT")
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS `agent_rule_revisions` (
+                `id` TEXT NOT NULL,
+                `agent_id` TEXT NOT NULL,
+                `content` TEXT NOT NULL,
+                `content_sha256` TEXT NOT NULL,
+                `source` TEXT NOT NULL,
+                `created_at` INTEGER NOT NULL,
+                PRIMARY KEY(`id`)
+            )""".trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_agent_rule_revisions_agent_id_created_at` " +
+                "ON `agent_rule_revisions` (`agent_id`, `created_at`)",
+        )
+    }
+}
+
+/**
  * 公开 v0.1 实际发布库为 v17。该迁移保留其业务数据，并补齐当前工具链、工作区与消息树契约。
  */
 val MIGRATION_17_18 = object : Migration(17, 18) {

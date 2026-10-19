@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.promenar.nexara.data.local.db.dao.AgentDao
+import com.promenar.nexara.data.local.db.dao.AgentRuleRevisionDao
 import com.promenar.nexara.data.local.db.dao.ArtifactDao
 import com.promenar.nexara.data.local.db.dao.AttachmentDao
 import com.promenar.nexara.data.local.db.dao.AuditLogDao
@@ -29,7 +30,9 @@ import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceMutationDao
+import com.promenar.nexara.data.local.db.dao.WorkspaceDao
 import com.promenar.nexara.data.local.db.entity.AgentEntity
+import com.promenar.nexara.data.local.db.entity.AgentRuleRevisionEntity
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
 import com.promenar.nexara.data.local.db.entity.AuditLogEntity
@@ -58,6 +61,7 @@ import com.promenar.nexara.data.local.db.entity.VectorFtsEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 
 @Database(
     entities = [
@@ -90,8 +94,10 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         ExternalMountEntity::class,
         ExternalSnapshotEntity::class,
         SshHostEntity::class,
+        WorkspaceEntity::class,
+        AgentRuleRevisionEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -121,9 +127,12 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun workspaceMutationDao(): WorkspaceMutationDao
     abstract fun sshHostDao(): SshHostDao
     abstract fun externalMountDao(): ExternalMountDao
+    abstract fun workspaceDao(): WorkspaceDao
+    abstract fun agentRuleRevisionDao(): AgentRuleRevisionDao
 }
 
 internal const val NEXARA_SCHEMA_V21_IDENTITY_HASH = "b59d4265cdf25db536fb91226cd85ab3"
+internal const val NEXARA_SCHEMA_V22_IDENTITY_HASH = "44c225495bedbde35d20c36ffbddf6a4"
 
 internal fun SQLiteDatabase.hasSshHostContract(): Boolean {
     val expectedColumns = mapOf(

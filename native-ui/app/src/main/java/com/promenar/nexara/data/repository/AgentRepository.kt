@@ -21,11 +21,11 @@ class AgentRepository(
     }
 
     override suspend fun update(agent: Agent) {
-        agentDao.update(AgentMapper.toEntity(agent))
+        agentDao.updatePreservingUserRules(AgentMapper.toEntity(agent))
     }
 
     override suspend fun delete(id: String) {
-        agentDao.deleteById(id)
+        agentDao.deleteWithRuleRevisions(id)
     }
 
     override suspend fun getById(id: String): Agent? =

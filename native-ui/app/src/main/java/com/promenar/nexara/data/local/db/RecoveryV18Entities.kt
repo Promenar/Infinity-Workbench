@@ -152,3 +152,93 @@ data class RecoveryV18KgEdgeEntity(
     @ColumnInfo(name = "file_uuid")
     val fileUuid: String? = null,
 )
+
+@Entity(tableName = "agents")
+data class RecoveryV18AgentEntity(
+    @PrimaryKey
+    val id: String,
+    val name: String,
+    val description: String = "",
+    @ColumnInfo(name = "name_customized")
+    val nameCustomized: Boolean = false,
+    @ColumnInfo(name = "description_customized")
+    val descriptionCustomized: Boolean = false,
+    @ColumnInfo(name = "system_prompt")
+    val systemPrompt: String = "",
+    val model: String = "",
+    val icon: String = "✨",
+    val color: String = "#C0C1FF",
+    @ColumnInfo(name = "avatar_path")
+    val avatarPath: String? = null,
+    @ColumnInfo(name = "is_pinned")
+    val isPinned: Int = 0,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    val temperature: Double? = null,
+    val top_p: Double? = null,
+    val max_tokens: Int? = null,
+    @ColumnInfo(name = "rag_config")
+    val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig? = null,
+    @ColumnInfo(name = "retrieval_config")
+    val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
+    @ColumnInfo(name = "use_inherited_config")
+    val useInheritedConfig: Boolean = true,
+    @ColumnInfo(name = "execution_mode", defaultValue = "semi")
+    val executionMode: String = "semi",
+    @ColumnInfo(name = "skill_ids", defaultValue = "[]")
+    val skillIds: String = "[]",
+    @ColumnInfo(name = "mcp_server_ids", defaultValue = "[]")
+    val mcpServerIds: String = "[]",
+)
+
+@Entity(tableName = "sessions")
+data class RecoveryV18SessionEntity(
+    @PrimaryKey
+    val id: String,
+    @ColumnInfo(name = "agent_id")
+    val agentId: String,
+    val title: String = "New Chat",
+    @ColumnInfo(name = "last_message")
+    val lastMessage: String? = null,
+    val time: String? = null,
+    val unread: Int = 0,
+    @ColumnInfo(name = "model_id")
+    val modelId: String? = null,
+    @ColumnInfo(name = "custom_prompt")
+    val customPrompt: String? = null,
+    @ColumnInfo(name = "is_pinned")
+    val isPinned: Int = 0,
+    @ColumnInfo(name = "scroll_offset")
+    val scrollOffset: Double? = null,
+    val draft: String? = null,
+    @ColumnInfo(name = "execution_mode", defaultValue = "semi")
+    val executionMode: String = "semi",
+    @ColumnInfo(name = "loop_status", defaultValue = "idle")
+    val loopStatus: String = "idle",
+    @ColumnInfo(name = "pending_intervention")
+    val pendingIntervention: String? = null,
+    @ColumnInfo(name = "approval_request")
+    val approvalRequest: String? = null,
+    @ColumnInfo(name = "rag_options")
+    val ragOptions: String? = null,
+    @ColumnInfo(name = "inference_params")
+    val inferenceParams: String? = null,
+    @ColumnInfo(name = "active_task")
+    val activeTask: String? = null,
+    val stats: String? = null,
+    val options: String? = null,
+    @ColumnInfo(name = "active_mcp_server_ids")
+    val activeMcpServerIds: String? = null,
+    @ColumnInfo(name = "active_skill_ids")
+    val activeSkillIds: String? = null,
+    @ColumnInfo(name = "workspace_path")
+    val workspacePath: String? = null,
+    @ColumnInfo(name = "workspace_root_uuid")
+    val workspaceRootUuid: String? = null,
+    @ColumnInfo(name = "active_task_tree_id")
+    val activeTaskTreeId: String? = null,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+)

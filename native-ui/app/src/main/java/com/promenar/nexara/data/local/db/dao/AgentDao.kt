@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.promenar.nexara.data.local.db.entity.AgentEntity
 import kotlinx.coroutines.flow.Flow
@@ -31,4 +32,29 @@ interface AgentDao {
 
     @Query("SELECT * FROM agents ORDER BY created_at ASC")
     suspend fun getAll(): List<AgentEntity>
+
+    @Query("SELECT user_rules FROM agents WHERE id = :agentId")
+    suspend fun getUserRules(agentId: String): String?
+
+    @Query("UPDATE agents SET user_rules = :userRules WHERE id = :agentId")
+    suspend fun updateUserRules(agentId: String, userRules: String): Int
+
+    @Query("DELETE FROM agent_rule_revisions WHERE agent_id = :agentId")
+    suspend fun deleteRuleRevisions(agentId: String): Int
+
+    /**
+     * 编辑页等调用方从界面状态重建整个 Agent 后整行写入；用户规则由专用单列更新维护，
+     * 这里沿用数据库中的现值，避免较早加载的副本覆盖 Agent 工具刚写入的规则。
+     */
+    @Transaction
+    suspend fun updatePreservingUserRules(agent: AgentEntity) {
+        val current = getUserRules(agent.id) ?: return
+        update(agent.copy(userRules = current))
+    }
+
+    @Transaction
+    suspend fun deleteWithRuleRevisions(agentId: String) {
+        deleteRuleRevisions(agentId)
+        deleteById(agentId)
+    }
 }

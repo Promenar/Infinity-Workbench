@@ -24,6 +24,8 @@ data class Agent(
     val mcpServerIds: List<String> = emptyList(),
     val nameCustomized: Boolean = false,
     val descriptionCustomized: Boolean = false,
+    val defaultWorkspaceId: String? = null,
+    val userRules: String = "",
     val createdAt: Long = 0L
 )
 

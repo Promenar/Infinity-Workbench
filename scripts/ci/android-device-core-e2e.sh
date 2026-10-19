@@ -505,7 +505,7 @@ run_test database-migration-2-3 "${APP_RUNNER}" \
 run_test database-migration-1-current "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To5Test
 run_test database-migration-18-21 "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration18To21Test
+    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration18To22Test
 run_test legacy-database-promotion "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.LegacyDatabasePromoterInstrumentedTest
 run_ssh_device_contracts

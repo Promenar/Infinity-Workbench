@@ -358,6 +358,8 @@ class AgentEditViewModel(
             executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
             skills = initial?.skills ?: emptyList(),
             mcpServerIds = initial?.mcpServerIds ?: emptyList(),
+            defaultWorkspaceId = initial?.defaultWorkspaceId,
+            userRules = initial?.userRules.orEmpty(),
             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
         )
     }

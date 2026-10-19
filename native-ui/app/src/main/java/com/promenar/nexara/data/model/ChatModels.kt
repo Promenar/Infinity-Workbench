@@ -494,6 +494,8 @@ data class Session(
     val workspacePath: String? = null,
     val workspaceRootUuid: String? = null,
     val activeTaskTreeId: String? = null,
+    /** 自选工作区；为空时使用会话私有工作区。 */
+    val workspaceId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

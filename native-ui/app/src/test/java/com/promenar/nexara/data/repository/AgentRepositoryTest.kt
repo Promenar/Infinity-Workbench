@@ -81,7 +81,7 @@ class AgentRepositoryTest {
     }
 
     @Test
-    fun `update delegates to dao update`() = runTest {
+    fun `update preserves user rules owned by the database`() = runTest {
         val dao: AgentDao = mockk(relaxed = true)
         val repo = AgentRepository(dao)
         val agent = com.promenar.nexara.domain.model.Agent(
@@ -90,17 +90,17 @@ class AgentRepositoryTest {
 
         repo.update(agent)
 
-        coVerify { dao.update(any()) }
+        coVerify { dao.updatePreservingUserRules(match { it.id == "update-me" && it.name == "Updated" }) }
     }
 
     @Test
-    fun `delete delegates to dao deleteById`() = runTest {
+    fun `delete removes agent together with its rule revisions`() = runTest {
         val dao: AgentDao = mockk(relaxed = true)
         val repo = AgentRepository(dao)
 
         repo.delete("delete-me")
 
-        coVerify { dao.deleteById("delete-me") }
+        coVerify { dao.deleteWithRuleRevisions("delete-me") }
     }
 
     @Test

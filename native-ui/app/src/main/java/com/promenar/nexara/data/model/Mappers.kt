@@ -77,6 +77,7 @@ fun SessionEntity.toDomain(): Session = Session(
     workspacePath = workspacePath,
     workspaceRootUuid = workspaceRootUuid,
     activeTaskTreeId = activeTaskTreeId,
+    workspaceId = workspaceId,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
@@ -107,6 +108,7 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
     workspacePath = workspacePath,
     workspaceRootUuid = workspaceRootUuid,
     activeTaskTreeId = activeTaskTreeId,
+    workspaceId = workspaceId,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

@@ -7,6 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.AgentEntity
+import com.promenar.nexara.data.local.db.entity.AgentRuleRevisionEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
 import com.promenar.nexara.data.local.db.entity.ContextSummaryEntity
@@ -449,24 +451,24 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(4)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("4")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(5)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("5")
 
             listOf(
-                "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
+                "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
                 "workspace_files", "workspace_seq",
             ).forEach { assertThat(text).contains("\"$it\"") }
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
                 "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
-                "workspace_mutations", "mcp_tool_snapshots",
+                "workspace_mutations", "mcp_tool_snapshots", "agent_rule_revisions",
             ).forEach { assertThat(text).doesNotContain("\"$it\"") }
 
             db.clearAllTables()
             newDataSource().restore(validated(snapshot))
             listOf(
-                "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
+                "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
                 "workspace_files", "workspace_seq",
             ).forEach { assertThat(rowCount(it)).isGreaterThan(0) }
@@ -474,6 +476,10 @@ class RoomBackupDataSourceTest {
             assertThat(restoredAgent.executionMode).isEqualTo("manual")
             assertThat(restoredAgent.skillIds).isEqualTo("[\"read_file\",\"calculator\"]")
             assertThat(restoredAgent.mcpServerIds).isEqualTo("[\"mcp-1\"]")
+            assertThat(restoredAgent.defaultWorkspaceId).isEqualTo("ws-1")
+            assertThat(restoredAgent.userRules).isEqualTo("先读 AGENTS.md😀")
+            assertThat(db.sessionDao().getById("session-1")!!.workspaceId).isEqualTo("ws-1")
+            assertThat(db.workspaceDao().getById("ws-1")!!.location).isEqualTo("demo")
             assertThat(db.messageDao().getById("message-1")!!.vectorizationStatus).isNull()
             assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.vectorizedAt).isNull()
             assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.kgExtractedAt).isNull()
@@ -490,7 +496,7 @@ class RoomBackupDataSourceTest {
         val tables = root.getValue("tables").jsonObject
         for (version in 1..3) {
             val malformed = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(version),
-                "tables" to JsonObject(tables - "workspace_files"))).toString().toByteArray()
+                "tables" to JsonObject(historicalV4Tables(tables) - "workspace_files"))).toString().toByteArray()
             val failure = runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull()
             assertThat(failure).isInstanceOf(BackupValidationException::class.java)
             assertThat(db.agentDao().getById("sentinel")).isNotNull()
@@ -502,7 +508,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
-        val tables = root.getValue("tables").jsonObject
+        val tables = historicalV4Tables(root.getValue("tables").jsonObject)
         val oldFiles = JsonArray(tables.getValue("workspace_files").jsonArray.map { JsonObject(it.jsonObject - "kg_strategy") })
         val oldDatabase = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(3),
             "tables" to JsonObject(tables + ("workspace_files" to oldFiles)))).toString().toByteArray()
@@ -519,7 +525,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         val current = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
-        val tables = root.getValue("tables").jsonObject
+        val tables = historicalV4Tables(root.getValue("tables").jsonObject)
         val legacyAgents = JsonArray(
             tables.getValue("agents").jsonArray.map { row ->
                 JsonObject(row.jsonObject - "execution_mode" - "skill_ids" - "mcp_server_ids")
@@ -546,7 +552,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         val current = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
-        val tables = root.getValue("tables").jsonObject
+        val tables = historicalV4Tables(root.getValue("tables").jsonObject)
         val baselineV2Agents = Json.parseToJsonElement(
             checkNotNull(javaClass.getResource("/backup/agents-schema-v2.json")).readText(),
         ).jsonArray
@@ -572,7 +578,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         val current = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
-        val tables = root.getValue("tables").jsonObject
+        val tables = historicalV4Tables(root.getValue("tables").jsonObject)
         val malformedAgents = JsonArray(
             tables.getValue("agents").jsonArray.map { row ->
                 JsonObject(
@@ -621,6 +627,7 @@ class RoomBackupDataSourceTest {
             seedCompleteGraph()
             val backup = newDataSource().snapshot(CANONICAL_CONTENT)
             seedDerivedRows()
+            db.agentRuleRevisionDao().record(AgentRuleRevisionEntity("revision-1", "agent-1", "旧规则", "0".repeat(64), "user", 1))
             assertThat(rowCount("workspace_mutations")).isEqualTo(1)
 
             newDataSource().restore(validated(backup))
@@ -628,7 +635,7 @@ class RoomBackupDataSourceTest {
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
                 "vectorization_tasks", "tool_execution_ledger", "file_versions", "workspace_mutations",
-                "mcp_tool_snapshots",
+                "mcp_tool_snapshots", "agent_rule_revisions",
             ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
             assertThat(rowCount("audit_logs")).isEqualTo(1)
         }
@@ -1402,12 +1409,87 @@ class RoomBackupDataSourceTest {
         .digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
+    @Test
+    fun `恢复v4备份时工作区绑定与用户规则取空值`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val v4 = JsonObject(root + mapOf(
+            "schemaVersion" to JsonPrimitive(4),
+            "tables" to historicalV4Tables(root.getValue("tables").jsonObject),
+        )).toString().toByteArray()
+
+        db.clearAllTables()
+        newDataSource().restore(validated(current, database = v4))
+
+        val agent = db.agentDao().getById("agent-1")!!
+        assertThat(agent.userRules).isEmpty()
+        assertThat(agent.defaultWorkspaceId).isNull()
+        assertThat(agent.executionMode).isEqualTo("manual")
+        assertThat(db.sessionDao().getById("session-1")!!.workspaceId).isNull()
+        assertThat(rowCount("workspaces")).isEqualTo(0)
+    }
+
+    @Test
+    fun `v4备份携带工作区表时拒绝且保留当前数据`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val v4 = JsonObject(root + mapOf(
+            "schemaVersion" to JsonPrimitive(4),
+            "tables" to JsonObject(historicalV4Tables(tables) + ("workspaces" to tables.getValue("workspaces"))),
+        )).toString().toByteArray()
+
+        assertFails { newDataSource().restore(validated(current, database = v4)) }
+        assertThat(db.agentDao().getById("agent-1")!!.userRules).isEqualTo("先读 AGENTS.md😀")
+    }
+
+    @Test
+    fun `v5备份的工作区引用与位置不合法时拒绝`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        fun withTable(name: String, transform: (JsonObject) -> JsonObject): ByteArray = JsonObject(root + (
+            "tables" to JsonObject(tables + (name to JsonArray(tables.getValue(name).jsonArray.map { transform(it.jsonObject) })))
+        )).toString().toByteArray()
+        val workspaceRows = tables.getValue("workspaces").jsonArray
+        val duplicate = JsonObject(root + ("tables" to JsonObject(tables + ("workspaces" to JsonArray(
+            workspaceRows + JsonObject(workspaceRows.single().jsonObject + ("id" to JsonPrimitive("ws-2")))
+        ))))).toString().toByteArray()
+        listOf(
+            withTable("sessions") { JsonObject(it + ("workspace_id" to JsonPrimitive("missing"))) },
+            withTable("agents") { JsonObject(it + ("default_workspace_id" to JsonPrimitive("missing"))) },
+            withTable("workspaces") { JsonObject(it + ("location" to JsonPrimitive("../escape"))) },
+            withTable("workspaces") { JsonObject(it + ("kind" to JsonPrimitive("saf"))) },
+            withTable("workspaces") { JsonObject(it + mapOf(
+                "kind" to JsonPrimitive("shared"), "location" to JsonPrimitive("/storage/emulated/0/a/../b"),
+            )) },
+            duplicate,
+        ).forEach { malformed ->
+            assertFails { newDataSource().restore(validated(current, database = malformed)) }
+        }
+        assertThat(db.sessionDao().getById("session-1")!!.workspaceId).isEqualTo("ws-1")
+    }
+
+    /** 真实 v1–v4 备份没有 v5 的工作区表和工作区绑定、用户规则列。 */
+    private fun historicalV4Tables(tables: JsonObject): JsonObject = JsonObject(
+        (tables - "workspaces") + mapOf(
+            "agents" to JsonArray(tables.getValue("agents").jsonArray.map {
+                JsonObject(it.jsonObject - "default_workspace_id" - "user_rules")
+            }),
+            "sessions" to JsonArray(tables.getValue("sessions").jsonArray.map { JsonObject(it.jsonObject - "workspace_id") }),
+        ),
+    )
+
     private suspend fun seedCompleteGraph(): SeededGraph {
         val now = 100L
         val bytes = "complete-graph".toByteArray()
         val filePath = sourceRoot.resolve("docs/a.txt")
         Files.createDirectories(filePath.parent)
         Files.write(filePath, bytes)
+        val workspace = WorkspaceEntity("ws-1", WorkspaceEntity.KIND_PROJECT, "演示项目", "demo", now)
         val agent = AgentEntity(
             "agent-1",
             "Agent",
@@ -1415,10 +1497,12 @@ class RoomBackupDataSourceTest {
             executionMode = "manual",
             skillIds = "[\"read_file\",\"calculator\"]",
             mcpServerIds = "[\"mcp-1\"]",
+            defaultWorkspaceId = workspace.id,
+            userRules = "先读 AGENTS.md😀",
         )
         val session = SessionEntity(
             id = "session-1", agentId = agent.id, workspacePath = sourceRoot.toString(),
-            workspaceRootUuid = "root-1", createdAt = now, updatedAt = now,
+            workspaceRootUuid = "root-1", workspaceId = workspace.id, createdAt = now, updatedAt = now,
         )
         val message = MessageEntity(
             "message-1", session.id, "user", "hello",
@@ -1435,6 +1519,7 @@ class RoomBackupDataSourceTest {
             materializedPath = "/docs/a.txt", vectorizedAt = now, kgExtractedAt = now,
             createdAt = now, updatedAt = now,
         )
+        db.workspaceDao().insert(workspace)
         db.agentDao().insert(agent)
         db.sessionDao().insert(session)
         db.messageDao().insert(message)

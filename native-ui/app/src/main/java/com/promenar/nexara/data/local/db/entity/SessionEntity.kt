@@ -52,6 +52,9 @@ data class SessionEntity(
     val workspaceRootUuid: String? = null,
     @ColumnInfo(name = "active_task_tree_id")
     val activeTaskTreeId: String? = null,
+    /** 自选工作区；为空时使用 [workspaceRootUuid] 指向的会话私有工作区。 */
+    @ColumnInfo(name = "workspace_id")
+    val workspaceId: String? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")
