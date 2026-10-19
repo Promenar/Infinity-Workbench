@@ -295,21 +295,16 @@ class ToolExecutor internal constructor(
         val safeResultData = sanitizeResultData(result.data, failed)
 
         // 解析并合并 active search 的 citations 注入消息体，高保真呈现在 UI 上
-        val latestSession = store.getSession(sessionId)
-        val latestMsg = latestSession?.messages?.find { it.id == targetMsgId }
-        if (latestMsg != null) {
-            var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
-            if (!safeResultData.isNullOrBlank() && !safeResultData.startsWith("data:image/")) {
-                try {
-                    skillCitations = kotlinx.serialization.json.Json.decodeFromString<List<com.promenar.nexara.data.model.Citation>>(safeResultData)
-                } catch (_: Exception) {}
-            }
-            if (!skillCitations.isNullOrEmpty()) {
-                val mergedCitations = ((latestMsg.citations ?: emptyList()) + skillCitations).distinctBy { it.url }
-                messageManager.updateMessageContent(
-                    sessionId, targetMsgId, latestMsg.content,
-                    UpdateMessageOptions(citations = mergedCitations)
-                )
+        var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
+        if (!safeResultData.isNullOrBlank() && !safeResultData.startsWith("data:image/")) {
+            try {
+                skillCitations = kotlinx.serialization.json.Json.decodeFromString<List<com.promenar.nexara.data.model.Citation>>(safeResultData)
+            } catch (_: Exception) {}
+        }
+        if (!skillCitations.isNullOrEmpty()) {
+            // 与执行步骤相同，引用合并须基于最新视图，避免覆盖同批次前序调用尚未刷新的引用。
+            messageManager.updateFromLatest(sessionId, targetMsgId) { latest ->
+                UpdateMessageOptions(citations = (latest.citations.orEmpty() + skillCitations).distinctBy { it.url })
             }
         }
 
@@ -548,25 +543,24 @@ class ToolExecutor internal constructor(
         .digest(raw.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
-    private suspend fun appendStep(sessionId: String, targetMsgId: String, newStep: ExecutionStep) {
-        val currentSession = store.getSession(sessionId) ?: return
-        val currentMsg = currentSession.messages.find { it.id == targetMsgId } ?: return
-        val currentSteps = currentMsg.executionSteps ?: emptyList()
-
-        val index = currentSteps.indexOfFirst { s ->
-            s.id == newStep.id || (newStep.toolCallId != null && s.toolCallId == newStep.toolCallId && s.type == newStep.type)
-        }
-
-        val updatedSteps = if (index > -1) {
-            currentSteps.toMutableList().apply { set(index, newStep) }
-        } else {
-            currentSteps + newStep
-        }
-
-        messageManager.updateMessageContent(
-            sessionId, targetMsgId, currentMsg.content,
+    /**
+     * 追加或按 id / (toolCallId, type) 替换执行步骤。
+     * 读-改-写必须经 [MessageManager.updateFromLatest] 基于最新视图完成：
+     * 若从 store 读取已提交步骤再整体写回，同批次后续调用会用旧列表覆盖节流窗口内尚未刷新的步骤。
+     */
+    private fun appendStep(sessionId: String, targetMsgId: String, newStep: ExecutionStep) {
+        messageManager.updateFromLatest(sessionId, targetMsgId) { latest ->
+            val currentSteps = latest.executionSteps.orEmpty()
+            val index = currentSteps.indexOfFirst { s ->
+                s.id == newStep.id || (newStep.toolCallId != null && s.toolCallId == newStep.toolCallId && s.type == newStep.type)
+            }
+            val updatedSteps = if (index > -1) {
+                currentSteps.toMutableList().apply { set(index, newStep) }
+            } else {
+                currentSteps + newStep
+            }
             UpdateMessageOptions(executionSteps = updatedSteps)
-        )
+        }
     }
 
     private fun sanitizeResultData(data: String?, failed: Boolean): String? {

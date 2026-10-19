@@ -578,6 +578,63 @@ class MessageManagerTest {
     }
 
     @Test
+    fun `updateFromLatest在节流窗口内基于未刷新步骤追加而不覆盖`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage("s1", Message(id = "m1", role = MessageRole.ASSISTANT, content = "答复"))
+        advanceUntilIdle()
+        val append = { id: String ->
+            messageManager.updateFromLatest("s1", "m1") { latest ->
+                UpdateMessageOptions(executionSteps = latest.executionSteps.orEmpty() + ExecutionStep(id = id, type = "tool_call"))
+            }
+        }
+
+        append("a")
+        append("b")
+        // 两次追加都在同一节流窗口内，store 尚未看到任何步骤。
+        assertThat(store.getSession("s1")!!.messages.single().executionSteps).isNull()
+        advanceUntilIdle()
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.executionSteps!!.map { it.id }).containsExactly("a", "b").inOrder()
+        assertThat(stored.content).isEqualTo("答复")
+    }
+
+    @Test
+    fun `updateFromLatest读取正在刷入的缓冲并沿用其最新正文`() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        messageManager = MessageManager(
+            store,
+            stubMessageRepo,
+            stubSessionRepo,
+            testScope,
+            MessageManagerHooks(beforeUiApply = { entered.complete(Unit); release.await() }),
+        )
+        seedSession()
+        messageManager.addMessage("s1", Message(id = "m1", role = MessageRole.ASSISTANT, content = "旧正文"))
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "新正文",
+            UpdateMessageOptions(executionSteps = listOf(ExecutionStep(id = "inflight", type = "tool_call"))),
+        )
+        advanceTimeBy(100)
+        runCurrent()
+        entered.await()
+
+        // 缓冲已转入刷新流程但尚未写入 store。
+        messageManager.updateFromLatest("s1", "m1") { latest ->
+            UpdateMessageOptions(executionSteps = latest.executionSteps.orEmpty() + ExecutionStep(id = "next", type = "tool_result"))
+        }
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.executionSteps!!.map { it.id }).containsExactly("inflight", "next").inOrder()
+        assertThat(stored.content).isEqualTo("新正文")
+    }
+
+    @Test
     fun updateMessageContentBuffersAndFlushes() = testScope.runTest {
         seedSession()
         messageManager.addMessage("s1", Message(id = "m1", role = MessageRole.ASSISTANT, content = "", createdAt = 1000L))

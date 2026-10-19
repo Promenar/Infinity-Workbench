@@ -1774,10 +1774,12 @@ class ToolExecutorTest {
         val registry = skillsRegistry(success, failure)
         val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
 
-        // 两次调用分开执行，避免同批并行写步骤时相互覆盖，专注验证字段复制。
-        executor.executeTools("s1", "m1", listOf(ToolCall("ok", "safe_tool", "{}")), preparedTools = preparedFor(registry, "safe_tool"))
-        advanceUntilIdle()
-        executor.executeTools("s1", "m1", listOf(ToolCall("bad", "fail_tool", "{}")), preparedTools = preparedFor(registry, "fail_tool"))
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("ok", "safe_tool", "{}"), ToolCall("bad", "fail_tool", "{}")),
+            preparedTools = preparedFor(registry, "safe_tool", "fail_tool"),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -1794,6 +1796,71 @@ class ToolExecutorTest {
         val toolMessages = session.messages.filter { it.role == MessageRole.TOOL }.associateBy { it.toolCallId }
         assertThat(toolMessages.getValue("ok").content).isEqualTo("saved")
         assertThat(toolMessages.values.joinToString { it.content }).doesNotContain("/src/a.kt")
+    }
+
+    @Test
+    fun `同一批次多个工具调用的tool_call与tool_result步骤全部保存`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val read = testSkill("file_read") { ToolResult("r", "read-ok") }
+        val write = testSkill("file_write") { ToolResult("w", "write-ok") }
+        val failure = testSkill("fail_tool") { ToolResult("f", "failed", status = "error") }
+        val registry = skillsRegistry(read, write, failure)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+
+        // 同一批次内连续执行，期间不推进虚拟时间，节流缓冲中的步骤尚未刷入 store。
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(
+                ToolCall("c1", "file_read", "{}"),
+                ToolCall("c2", "file_write", "{}"),
+                ToolCall("c3", "fail_tool", "{}"),
+            ),
+            preparedTools = preparedFor(registry, "file_read", "file_write", "fail_tool"),
+        )
+        advanceUntilIdle()
+
+        val steps = store.getSession("s1")!!.messages.single { it.id == "m1" }.executionSteps.orEmpty()
+        listOf("c1", "c2", "c3").forEach { id ->
+            assertThat(steps.count { it.toolCallId == id && it.type == "tool_call" }).isEqualTo(1)
+        }
+        assertThat(steps.single { it.toolCallId == "c1" && it.type == "tool_result" }.content).isEqualTo("read-ok")
+        assertThat(steps.single { it.toolCallId == "c2" && it.type == "tool_result" }.content).isEqualTo("write-ok")
+        assertThat(steps.single { it.toolCallId == "c3" && it.type == "error" }.content).contains("failed")
+        // 步骤顺序与调用顺序一致：每个调用先 tool_call 后结果。
+        assertThat(steps.map { it.toolCallId to it.type }).containsExactly(
+            "c1" to "tool_call", "c1" to "tool_result",
+            "c2" to "tool_call", "c2" to "tool_result",
+            "c3" to "tool_call", "c3" to "error",
+        ).inOrder()
+    }
+
+    @Test
+    fun `同一批次多个搜索调用的引用全部合并`() = testScope.runTest {
+        seedSessionWithAssistant()
+        fun citationsJson(vararg urls: String) = kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(Citation.serializer()),
+            urls.map { Citation(title = it.substringAfterLast('/'), url = it) },
+        )
+        val first = testSkill("safe_tool") { ToolResult("a", "ok", data = citationsJson("https://a.example.com/one")) }
+        val second = testSkill("file_read") { ToolResult("b", "ok", data = citationsJson("https://b.example.com/two")) }
+        // 第三个调用只返回与第一个重复的引用：合并须去重且不能丢失第二个调用的引用。
+        val third = testSkill("file_write") { ToolResult("c", "ok", data = citationsJson("https://a.example.com/one")) }
+        val registry = skillsRegistry(first, second, third)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("c1", "safe_tool", "{}"), ToolCall("c2", "file_read", "{}"), ToolCall("c3", "file_write", "{}")),
+            preparedTools = preparedFor(registry, "safe_tool", "file_read", "file_write"),
+        )
+        advanceUntilIdle()
+
+        val message = store.getSession("s1")!!.messages.single { it.id == "m1" }
+        assertThat(message.citations!!.map { it.url })
+            .containsExactly("https://a.example.com/one", "https://b.example.com/two").inOrder()
+        assertThat(message.content).isEqualTo("I'll use a tool")
     }
 
     private fun testSkill(

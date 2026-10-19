@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 同批次工具调用的执行步骤与引用丢失
+
+- 修复同一批次执行多个工具调用时，前序调用的 `tool_call`/`tool_result` 步骤与搜索引用被后续调用覆盖的问题。根因是消息更新先进入 100ms 节流缓冲，而追加步骤与合并引用时从 store 读取尚未刷新的旧列表再整体写回。`MessageManager` 新增 `updateFromLatest`，在缓冲锁内基于“已提交消息 + 正在刷新的缓冲 + 待刷新缓冲”计算增量；工具步骤、引用合并与流式规范化补充的合成步骤均改走该入口。
+
 ### Git 变更面板与工作区切换提示
 
 - 会话工作区是 git 仓库时，会话资源面板显示分支与改动数。点开后面板分组列出已暂存、未暂存、未跟踪文件，单文件可分别查看 HEAD 对索引、索引对工作区的差异，另有最近提交列表及单个提交相对父提交的差异。面板只读，数据由打包 Python 直接运行 `nexara_git --nexara-inspect`（status/read/log/commit）获取，不经过 `shell_exec` 与执行审批。结果以单个 JSON 写入应用私有临时文件，限额为每组最多 2000 条、单文件 512 KiB、提交列表 50 条、单次 60 秒。
