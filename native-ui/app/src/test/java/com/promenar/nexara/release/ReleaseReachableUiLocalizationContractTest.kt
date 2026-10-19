@@ -10,6 +10,8 @@ class ReleaseReachableUiLocalizationContractTest {
     private val sourcePaths = listOf(
         "ui/chat/ResourceExplorerSheet.kt",
         "ui/chat/components/FilesPanel.kt",
+        "ui/chat/components/WorkspaceFolderBrowser.kt",
+        "ui/common/FolderBreadcrumbs.kt",
         "ui/chat/components/RagDetailsSheet.kt",
         "ui/chat/components/RecycleBinPanel.kt",
         "ui/chat/SessionSettingsSheet.kt",
@@ -27,6 +29,7 @@ class ReleaseReachableUiLocalizationContractTest {
         "resource_explorer_title",
         "resource_explorer_search_placeholder",
         "resource_explorer_import_files",
+        "resource_explorer_workspace_root",
         "resource_explorer_import_status",
         "resource_explorer_recycle_bin_count",
         "files_selected_count",

@@ -63,7 +63,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
 import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.ui.chat.components.FilesPanel
+import com.promenar.nexara.ui.chat.components.WorkspaceFolderBrowser
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
 import com.promenar.nexara.share.core.ShareImportItem
@@ -138,7 +138,7 @@ fun ResourceExplorerSheet(
                 onRetryLoad = viewModel::retryLoadSession,
             ),
             filesContent = {
-                FilesPanel(
+                WorkspaceFolderBrowser(
                     workspaceRootUuid = workspaceRootUuid,
                     workspaceRepo = viewModel.workspaceRepo,
                     sessionId = sessionId,
@@ -148,6 +148,7 @@ fun ResourceExplorerSheet(
                     isLoading = isLoading,
                     hasLoadError = loadError != null,
                     onRetryLoad = viewModel::retryLoadSession,
+                    onClearSearch = { viewModel.updateSearchQuery("") },
                 )
             },
             recycleBinContent = {
@@ -258,7 +259,8 @@ internal fun ResourceExplorerSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
-            height = NexaraSpacing.MinimumTouchTarget,
+            // 胶囊容器内边距 4dp，单个页签需保留完整 48dp 触控高度。
+            height = NexaraSpacing.MinimumTouchTarget + 8.dp,
         )
 
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))

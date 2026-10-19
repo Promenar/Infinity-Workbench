@@ -14,6 +14,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -359,6 +362,7 @@ class AccessibilitySmokeTest {
                         isGenerating = false,
                         onContinue = {},
                         onComplete = {},
+                        initiallyExpanded = true,
                     )
                 }
             }
@@ -368,12 +372,21 @@ class AccessibilitySmokeTest {
 
         composeRule.onNodeWithText(postProcessLabel).assertIsDisplayed()
 
-        composeRule.onNodeWithText("分析文档结构", substring = true).assertIsDisplayed()
+        // 展开时当前步骤同时出现在计划条标题与步骤列表中，这里校验列表内的步骤。
+        composeRule.onNode(
+            hasText("分析文档结构", substring = true) and hasAnyAncestor(hasTestTag(UiTags.CHAT_TASK_STEP_LIST)),
+        ).assertIsDisplayed()
         composeRule.onNodeWithText("1/2", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("生成脑图", substring = true).assertIsDisplayed()
+        composeRule.onNode(
+            hasText("生成脑图", substring = true) and hasAnyAncestor(hasTestTag(UiTags.CHAT_TASK_STEP_LIST)),
+        ).assertIsDisplayed()
 
-        val headerRow = composeRule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER)
-        headerRow.assertExists()
+        composeRule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE)
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)

@@ -71,6 +71,15 @@ fun taskPanelUiState(
     )
 }
 
+/**
+ * 计划条被隐藏时记住的版本：计划、进度或当前步骤变化后签名不同，计划条重新出现。
+ */
+fun TaskPanelUiState.visibilitySignature(): String = "$planId:$doneCount/$totalCount:$currentStepId"
+
+/** 计划条是否显示：没有计划不显示；用户隐藏的正是当前版本时不显示。 */
+fun isTaskPlanBarVisible(panel: TaskPanelUiState?, hiddenSignature: String?): Boolean =
+    panel != null && panel.visibilitySignature() != hiddenSignature
+
 private fun flattenPanelSteps(tree: List<TaskStep>): List<TaskPanelStep> = buildList {
     fun append(nodes: List<TaskStep>, depth: Int) {
         nodes.sortedBy(TaskStep::sortOrder).forEach { step ->

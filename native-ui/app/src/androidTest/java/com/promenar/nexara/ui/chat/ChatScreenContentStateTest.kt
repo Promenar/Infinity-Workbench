@@ -118,12 +118,22 @@ class ChatScreenContentStateTest {
             ),
         )
 
+        // 计划条默认显示在输入框上方；关闭后只留状态栏入口，点入口重新打开。
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE).assertDoesNotExist()
+        assertMinimumTouchTarget(UiTags.CHAT_TASK_CLOSE)
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE)
+            .assertContentDescriptionEquals(resource(R.string.chat_task_hide))
+            .performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertDoesNotExist()
         assertMinimumTouchTarget(UiTags.CHAT_TASK_CAPSULE)
         rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
             .assertContentDescriptionEquals(resource(R.string.chat_task_pending_accessibility, 1))
             .assertHeightIsAtLeast(28.dp)
             .performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
+        assertMinimumTouchTarget(UiTags.CHAT_TASK_PANEL_HEADER)
+        rule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).performClick()
         rule.runOnIdle {
@@ -148,9 +158,11 @@ class ChatScreenContentStateTest {
             taskPanel = taskPanel,
         )
 
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
             .assertContentDescriptionEquals(resource(R.string.chat_task_generating))
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).performScrollTo()
+            .performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).assertIsNotEnabled()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertIsNotEnabled()
     }

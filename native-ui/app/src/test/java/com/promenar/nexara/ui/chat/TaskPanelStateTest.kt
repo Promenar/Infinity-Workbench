@@ -91,4 +91,22 @@ class TaskPanelStateTest {
 
         assertThat(ids.map { it.id }).containsExactly("current")
     }
+
+    @Test
+    fun `hidden plan bar stays hidden until plan progress changes`() {
+        val state = taskPanelUiState(tree, isGenerating = false)!!
+        val hidden = state.visibilitySignature()
+
+        assertThat(isTaskPlanBarVisible(state, hiddenSignature = null)).isTrue()
+        assertThat(isTaskPlanBarVisible(state, hidden)).isFalse()
+        // 重新生成相同内容（如重组或生成状态变化）不应让隐藏的计划条重新出现。
+        assertThat(isTaskPlanBarVisible(taskPanelUiState(tree, isGenerating = true), hidden)).isFalse()
+
+        val advanced = taskPanelUiState(
+            tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
+            isGenerating = false,
+        )
+        assertThat(isTaskPlanBarVisible(advanced, hidden)).isTrue()
+        assertThat(isTaskPlanBarVisible(null, hiddenSignature = null)).isFalse()
+    }
 }

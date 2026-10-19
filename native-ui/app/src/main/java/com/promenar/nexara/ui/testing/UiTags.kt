@@ -25,7 +25,7 @@ object UiTags {
     const val CHAT_TASK_CAPSULE = "chat_task_capsule"
     const val CHAT_TASK_CONTINUE = "chat_task_continue"
     const val CHAT_TASK_COMPLETE = "chat_task_complete"
-    const val CHAT_TASK_CLEAR = "chat_task_clear"
+    const val CHAT_TASK_CLOSE = "chat_task_close"
     const val CHAT_TASK_STEP_LIST = "chat_task_step_list"
     const val CHAT_THINKING_TRACE = "chat_thinking_trace"
     const val CHAT_THINKING_TOGGLE = "chat_thinking_toggle"
@@ -317,6 +317,9 @@ object UiTags {
     // ============ Resource Explorer ==========
     const val RESOURCE_EXPLORER_ROOT = "resource_explorer_root"
     const val RESOURCE_EXPLORER_SEARCH = "resource_explorer_search"
+    const val RESOURCE_EXPLORER_SEARCH_RESULTS = "resource_explorer_search_results"
+    const val RESOURCE_EXPLORER_BREADCRUMBS = "resource_explorer_breadcrumbs"
+    const val RESOURCE_EXPLORER_FOLDER_BACK = "resource_explorer_folder_back"
     const val RESOURCE_EXPLORER_IMPORT = "resource_explorer_import"
     const val RESOURCE_EXPLORER_IMPORT_RESULTS = "resource_explorer_import_results"
     const val RESOURCE_EXPLORER_CLEAR_RESULTS = "resource_explorer_clear_results"

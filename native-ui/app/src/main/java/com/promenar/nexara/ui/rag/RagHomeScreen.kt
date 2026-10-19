@@ -137,81 +137,13 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
+import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
+import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
 import java.text.SimpleDateFormat
-
-data class RagFolderCrumb(
-    val id: String,
-    val name: String,
-) : java.io.Serializable
-
-@Composable
-private fun RagFolderBreadcrumbsBar(
-    folderStack: List<RagFolderCrumb>,
-    rootTitle: String,
-    onNavigateBack: () -> Unit,
-    onNavigateToCrumb: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = NexaraSpacing.XSmall),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (folderStack.isNotEmpty()) {
-            IconButton(
-                onClick = onNavigateBack,
-                modifier = Modifier
-                    .size(36.dp)
-                    .testTag("rag_folder_back_btn"),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.rag_back_to_parent),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-        val allCrumbs = remember(folderStack, rootTitle) {
-            listOf(RagFolderCrumb(id = "", name = rootTitle)) + folderStack
-        }
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            allCrumbs.forEachIndexed { index, crumb ->
-                val isLast = index == allCrumbs.lastIndex
-                Text(
-                    text = crumb.name,
-                    style = if (isLast) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isLast) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isLast) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable(enabled = !isLast) {
-                            onNavigateToCrumb(index)
-                        }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                )
-                if (!isLast) {
-                    Text(
-                        text = "›",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                    )
-                }
-            }
-        }
-    }
-}
 
 internal enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
 
@@ -421,7 +353,7 @@ fun RagHomeScreen(
     }
 
     var folderStack by rememberSaveable(workspaceRootUuid) {
-        mutableStateOf(listOf<RagFolderCrumb>())
+        mutableStateOf(listOf<FolderCrumb>())
     }
     val activeFolderId = folderStack.lastOrNull()?.id ?: workspaceRootUuid
 
@@ -500,7 +432,7 @@ fun RagHomeScreen(
 
             Column(modifier = modifier) {
                 if (searchQuery.isBlank()) {
-                    RagFolderBreadcrumbsBar(
+                    FolderBreadcrumbsBar(
                         folderStack = folderStack,
                         rootTitle = stringResource(R.string.rag_root_all_files),
                         onNavigateBack = { folderStack = folderStack.dropLast(1) },
@@ -535,7 +467,7 @@ fun RagHomeScreen(
                                 allowTreeExpansion = false,
                                 onFolderClick = { folderId, folderName ->
                                     // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
-                                    folderStack = folderStack + RagFolderCrumb(folderId, folderName)
+                                    folderStack = folderStack + FolderCrumb(folderId, folderName)
                                 },
                                 onFileClick = { docId ->
                                     workspaceRootUuid?.let { root ->

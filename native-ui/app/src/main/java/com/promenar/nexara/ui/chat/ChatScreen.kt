@@ -100,6 +100,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -369,7 +370,7 @@ fun ChatScreenContent(
     val approvalIdentity = uiState.approvalRequest?.let { it.identityHash ?: it.hashCode().toString() }
     val showCompressionFeedback = compressionState.isCompressing ||
         compressionState.result != null || compressionState.detail.isNotBlank()
-    val compressionItemIndex = pipelineGroups.size + (if (state.taskPanel != null) 1 else 0)
+    val compressionItemIndex = pipelineGroups.size
     val approvalItemIndex = compressionItemIndex + (if (showCompressionFeedback) 1 else 0)
     LaunchedEffect(showCompressionFeedback, compressionState.isCompressing, compressionState.result) {
         if (!showCompressionFeedback) return@LaunchedEffect
@@ -569,21 +570,6 @@ fun ChatScreenContent(
                     )
                 }
 
-                state.taskPanel?.let { taskPanel ->
-                    item(
-                        key = "task_panel:${taskPanel.planId}",
-                        contentType = "task_panel",
-                    ) {
-                        TaskFloatingPanel(
-                            state = taskPanel,
-                            isGenerating = uiState.isGenerating,
-                            onContinue = actions.onContinueTask,
-                            onComplete = actions.onCompleteTask,
-                            onClearCompleted = actions.onClearCompletedTask,
-                        )
-                    }
-                }
-
                 if (showCompressionFeedback) {
                     item(key = "summary_card") {
                         ContextCompactionFeedback(
@@ -666,15 +652,31 @@ fun ChatScreenContent(
                 val modelDisplayName = uiState.session?.modelId
                     ?.let(state.modelDisplayNames::get)
                     .orEmpty()
+                val taskPanel = state.taskPanel
+                var hiddenPlanSignature by rememberSaveable(uiState.session?.id) { mutableStateOf<String?>(null) }
+                val planBarVisible = isTaskPlanBarVisible(taskPanel, hiddenPlanSignature)
                 ChatComposerStatusBar(
-                    taskPanel = state.taskPanel,
+                    taskPanel = taskPanel.takeUnless { planBarVisible },
                     postProcessTasks = state.postProcessTasks,
                     onRemovePostProcessTask = actions.onRemovePostProcessTask,
-                    onTaskClick = {
-                        autoFollowEnabled = false
-                        scope.launch { listState.animateScrollToItem(pipelineGroups.size) }
-                    },
+                    onTaskClick = { hiddenPlanSignature = null },
                 )
+                if (taskPanel != null && planBarVisible) {
+                    TaskFloatingPanel(
+                        state = taskPanel,
+                        isGenerating = uiState.isGenerating,
+                        onContinue = actions.onContinueTask,
+                        onComplete = actions.onCompleteTask,
+                        onClose = {
+                            if (taskPanel.isCompleted) {
+                                actions.onClearCompletedTask()
+                            } else {
+                                hiddenPlanSignature = taskPanel.visibilitySignature()
+                            }
+                        },
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
                             text = inputText,
