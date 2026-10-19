@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import os
 from pathlib import Path
 import re
@@ -88,6 +89,15 @@ PACKAGED_PYTHON_SITE_PATTERN = re.compile(r"lib/[^/]+/libpysite\.so\Z")
 SITE_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
     "URL 内嵌明文口令": re.compile(rb"https?://username:password@"),
 }
+
+# 打包 Python 须带构建期预编译的哈希 pyc：缺少时每次启动解释器都重新编译，内置 git 与 Git 面板在真机上慢约十倍。
+PYTHON_BYTECODE_MODULES: dict[str, tuple[str, ...]] = {
+    "libpystdlib.so": ("os.pyc", "encodings/__init__.pyc", "sitecustomize.pyc"),
+    "libpysite.so": ("nexara_git.pyc", "dulwich/__init__.pyc", "dulwich/repo.pyc"),
+}
+PYTHON_BYTECODE_ENTRY_PATTERN = re.compile(r"lib/([^/]+)/(libpystdlib\.so|libpysite\.so)\Z")
+# PEP 552 标志位：bit0 为哈希 pyc、bit1 为需要核对源码；打包 zip 只读安装，使用不核对源码的哈希 pyc。
+UNCHECKED_HASH_PYC_FLAGS = 0b01
 
 LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
     r"(?:libnexara_llama|libllama.*|libggml.*)\.so\Z",
@@ -210,6 +220,44 @@ def verify_no_local_inference_artifacts(apk: Path) -> None:
                 findings.append(normalized_name)
     if findings:
         raise VerificationError(f"APK 包含禁用的本地推理制品：{', '.join(sorted(findings))}")
+
+
+def verify_packaged_python_bytecode(apk: Path) -> None:
+    """确认每个 ABI 的打包 Python zip 带有关键模块的不核对源码哈希 pyc，且同一 ABI 内 magic 一致。"""
+    abis: dict[str, dict[str, bytes]] = {}
+    libraries: dict[str, set[str]] = {}
+    problems: list[str] = []
+    with zipfile.ZipFile(apk) as archive:
+        for info in archive.infolist():
+            match = PYTHON_BYTECODE_ENTRY_PATTERN.fullmatch(info.filename.replace("\\", "/"))
+            if match is None:
+                continue
+            abi, library = match.groups()
+            libraries.setdefault(abi, set()).add(library)
+            try:
+                with zipfile.ZipFile(io.BytesIO(archive.read(info))) as packaged:
+                    names = set(packaged.namelist())
+                    for module in PYTHON_BYTECODE_MODULES[library]:
+                        if module not in names:
+                            problems.append(f"{abi}/{library} 缺少 {module}")
+                            continue
+                        header = packaged.read(module)[:8]
+                        if len(header) < 8 or int.from_bytes(header[4:8], "little") != UNCHECKED_HASH_PYC_FLAGS:
+                            problems.append(f"{abi}/{library} 的 {module} 不是不核对源码的哈希 pyc")
+                            continue
+                        abis.setdefault(abi, {})[f"{library}:{module}"] = header[:4]
+            except zipfile.BadZipFile:
+                problems.append(f"{abi}/{library} 不是有效 zip")
+    if not libraries:
+        problems.append("APK 未包含打包 Python")
+    for abi, present in sorted(libraries.items()):
+        for library in sorted(set(PYTHON_BYTECODE_MODULES) - present):
+            problems.append(f"{abi} 缺少 {library}")
+    for abi, headers in sorted(abis.items()):
+        if len(set(headers.values())) > 1:
+            problems.append(f"{abi} 打包 Python 的 pyc magic 不一致")
+    if problems:
+        raise VerificationError("打包 Python 字节码校验失败：" + "；".join(sorted(problems)))
 
 
 def parse_badging(output: str) -> dict[str, str]:
@@ -356,6 +404,7 @@ def main() -> int:
 
     verify_zip(apk)
     verify_no_local_inference_artifacts(apk)
+    verify_packaged_python_bytecode(apk)
     verify_badging(apk, args.expected_package, args.expected_version_code, args.expected_version_name)
     verify_signature(apk, args.expected_cert_sha256)
     scan_sensitive_content(apk)

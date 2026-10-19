@@ -35,6 +35,7 @@ import java.util.stream.Stream;
  * 把官方 CPython Android 嵌入包整理成可放进 jniLibs 的打包库：
  * libpython 与依赖库原样保留，标准库纯 Python 部分存为不压缩 zip（libpystdlib.so），
  * 原生扩展改名为 libpyext_<模块>.so，并用 NDK clang 编译可执行启动器 libnxpython.so。
+ * 启用预编译时标准库 zip 只放哈希 pyc（无法编译的文件保留源码），见 {@link PythonBytecode}。
  * 安装后全部位于 nativeLibraryDir，运行时不解压、不从数据目录加载代码。
  */
 public abstract class PreparePackagedPython extends DefaultTask {
@@ -61,6 +62,21 @@ public abstract class PreparePackagedPython extends DefaultTask {
 
     @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getSiteCustomize();
+
+    /** 是否预编译标准库字节码。 */
+    @Input
+    public abstract Property<Boolean> getCompileBytecode();
+
+    /** 官方包的 PYC_MAGIC_NUMBER；与包内头文件不一致时构建失败。 */
+    @Input
+    public abstract Property<Integer> getBytecodeMagic();
+
+    /** 宿主解释器（命令名或路径）；产物只取决于 magic，路径不参与增量判断。 */
+    @Internal
+    public abstract Property<String> getHostPython();
+
+    @InputFile @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getBytecodeCompiler();
 
     /** NDK 目录随机器不同，只以版本号参与增量判断。 */
     @Internal
@@ -109,6 +125,16 @@ public abstract class PreparePackagedPython extends DefaultTask {
         if (!Files.isDirectory(stdlib.resolve("encodings"))) {
             throw new GradleException("Python 包结构不符：缺少 lib/" + stdlibName + "/encodings");
         }
+        PythonBytecode.verifyArchiveMagic(prefix, version, getBytecodeMagic().get());
+        if (Files.exists(stdlib.resolve("sitecustomize.py"))) {
+            throw new GradleException("官方标准库已包含 sitecustomize.py，需评估后再覆盖");
+        }
+        Files.copy(getSiteCustomize().get().getAsFile().toPath(), stdlib.resolve("sitecustomize.py"));
+        boolean compiled = getCompileBytecode().get();
+        if (compiled) {
+            getLogger().info(PythonBytecode.compileTree(getExecOperations(), getHostPython().get(),
+                    getBytecodeCompiler().get().getAsFile(), getBytecodeMagic().get(), stdlib));
+        }
 
         File output = getOutputDirectory().get().getAsFile();
         getFileSystemOperations().delete(spec -> spec.delete(output));
@@ -121,7 +147,7 @@ public abstract class PreparePackagedPython extends DefaultTask {
             }
         }
         copyExtensions(stdlib.resolve("lib-dynload"), abiDir);
-        writeStdlibZip(stdlib, getSiteCustomize().get().getAsFile().toPath(), abiDir.resolve("libpystdlib.so"));
+        writeStdlibZip(stdlib, compiled, abiDir.resolve("libpystdlib.so"));
         compileLauncher(prefix, abiDir);
         getFileSystemOperations().delete(spec -> spec.delete(work));
     }
@@ -140,8 +166,11 @@ public abstract class PreparePackagedPython extends DefaultTask {
         if (modules.isEmpty()) throw new GradleException("Python 包结构不符：lib-dynload 中没有扩展模块");
     }
 
-    /** 标准库存为 STORED zip（见 {@link StoredZip}）；条目按路径排序，目录条目保留，供命名空间包识别。 */
-    private static void writeStdlibZip(Path stdlib, Path siteCustomize, Path target) throws IOException {
+    /**
+     * 标准库存为 STORED zip（见 {@link StoredZip}）；条目按路径排序，目录条目保留，供命名空间包识别。
+     * [sourceless] 时已有同目录 pyc 的 .py 不入 zip。
+     */
+    private static void writeStdlibZip(Path stdlib, boolean sourceless, Path target) throws IOException {
         List<Path> entries = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(stdlib)) {
             walk.filter(path -> !path.equals(stdlib))
@@ -149,12 +178,11 @@ public abstract class PreparePackagedPython extends DefaultTask {
                         String top = stdlib.relativize(path).getName(0).toString();
                         return !top.equals("lib-dynload") && !top.equals("site-packages");
                     })
+                    .filter(path -> !sourceless || !path.toString().endsWith(".py")
+                            || !Files.isRegularFile(path.resolveSibling(path.getFileName() + "c")))
                     .forEach(entries::add);
         }
         entries.sort((left, right) -> entryName(stdlib, left).compareTo(entryName(stdlib, right)));
-        if (Files.exists(stdlib.resolve("sitecustomize.py"))) {
-            throw new GradleException("官方标准库已包含 sitecustomize.py，需评估后再覆盖");
-        }
         try (StoredZip zip = new StoredZip(target)) {
             for (Path path : entries) {
                 if (Files.isDirectory(path)) {
@@ -163,7 +191,6 @@ public abstract class PreparePackagedPython extends DefaultTask {
                     zip.put(entryName(stdlib, path), Files.readAllBytes(path));
                 }
             }
-            zip.put("sitecustomize.py", Files.readAllBytes(siteCustomize));
         }
     }
 

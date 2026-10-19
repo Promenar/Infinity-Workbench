@@ -38,6 +38,15 @@ public final class PackagedPythonRelease {
         return parts[0] + "." + parts[1];
     }
 
+    /** 官方包 include/python<主次>/internal/pycore_magic_number.h 中的 PYC_MAGIC_NUMBER，预编译字节码按它核对宿主解释器。 */
+    public int getPycMagic() {
+        try {
+            return Integer.parseInt(required("pycMagic"));
+        } catch (NumberFormatException error) {
+            throw new GradleException("python-android.properties 的 pycMagic 不是整数", error);
+        }
+    }
+
     public String archiveName(String arch) {
         return "python-" + getVersion() + "-" + arch + "-linux-android.tar.gz";
     }

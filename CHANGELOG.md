@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 打包 Python 预编译字节码
+
+- 标准库与内置 git 依赖的 zip 在构建期预编译为不核对源码的哈希 pyc：标准库只放 pyc，dulwich 与 Nexara 模块保留源码。真机实测一次 Git 状态检查从约 2 秒降到约 0.2 秒，`shell_exec` 中每条 `git` 命令与 `python_exec`、`python_sandbox` 的启动同步变快。
+- 构建需要与打包 CPython 的 pyc magic 一致的宿主 Python 3.14（默认 PATH 中的 `python3.14`，可用 `-Pnexara.hostPython` 指定）。magic 登记为 `python-android.properties` 的 `pycMagic`，构建时与官方包头文件核对，不一致时失败；`-Pnexara.pythonBytecode=false` 可跳过。CI 的 Gradle 作业改为先安装 Python 3.14。
+- 发行校验新增打包 Python 字节码检查：关键模块缺少哈希 pyc、magic 不一致，或某个 ABI 缺少任一 zip 时，拒绝该 APK。
+
 ### Git 变更面板与工作区切换提示
 
 - 会话工作区是 git 仓库时，会话资源面板显示分支与改动数。点开后面板分组列出已暂存、未暂存、未跟踪文件，单文件可分别查看 HEAD 对索引、索引对工作区的差异，另有最近提交列表及单个提交相对父提交的差异。面板只读，数据由打包 Python 直接运行 `nexara_git --nexara-inspect`（status/read/log/commit）获取，不经过 `shell_exec` 与执行审批。结果以单个 JSON 写入应用私有临时文件，限额为每组最多 2000 条、单文件 512 KiB、提交列表 50 条、单次 60 秒。

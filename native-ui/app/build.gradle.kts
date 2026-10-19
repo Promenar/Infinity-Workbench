@@ -193,6 +193,11 @@ val packagedPythonVersion: String = packagedPython.version
 val packagedPythonDistDir = providers.gradleProperty("nexara.pythonDistDir")
     .map { File(it) }
     .orElse(provider { File(gradle.gradleUserHomeDir, "caches/nexara-python-android") })
+// 标准库与 site zip 预编译哈希 pyc，需 magic 与打包 CPython 一致的宿主解释器（默认 PATH 中的 python<主次版本>）；
+// -Pnexara.hostPython 指定解释器，-Pnexara.pythonBytecode=false 跳过（发行校验会拒绝缺少字节码的 APK）。
+val packagedPythonBytecode = providers.gradleProperty("nexara.pythonBytecode").map { it.toBoolean() }.orElse(true)
+val packagedPythonHost = providers.gradleProperty("nexara.hostPython").orElse("python${packagedPython.majorMinor}")
+val packagedPythonBytecodeCompiler = layout.projectDirectory.file("python/compile-bytecode.py")
 /** 官方只提供这两个 ABI；其它 ABI 的设备运行时报告 Python 不可用。 */
 val packagedPythonAbis = mapOf("arm64-v8a" to "aarch64", "x86_64" to "x86_64")
 val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
@@ -212,6 +217,10 @@ val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
         excludedStdlibDirectories.set(listOf("test", "idlelib", "tkinter", "turtledemo", "pydoc_data"))
         launcherSource.set(layout.projectDirectory.file("python/pylauncher.c"))
         siteCustomize.set(layout.projectDirectory.file("python/sitecustomize.py"))
+        compileBytecode.set(packagedPythonBytecode)
+        bytecodeMagic.set(packagedPython.pycMagic)
+        hostPython.set(packagedPythonHost)
+        bytecodeCompiler.set(packagedPythonBytecodeCompiler)
         ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
         outputDirectory.set(layout.buildDirectory.dir("generated/packagedPython/$abi"))
     }
@@ -233,6 +242,10 @@ val preparePackagedSite = packagedPythonAbis.keys.associateWith { abi ->
         wheels.from(fetchPackagedPythonWheels.map { fetch -> fetch.flatMap { it.outputFile } })
         moduleDirectory.set(layout.projectDirectory.dir("python/site"))
         excludedPrefixes.set(listOf("dulwich/tests/"))
+        compileBytecode.set(packagedPythonBytecode)
+        bytecodeMagic.set(packagedPython.pycMagic)
+        hostPython.set(packagedPythonHost)
+        bytecodeCompiler.set(packagedPythonBytecodeCompiler)
         this.abi.set(abi)
         outputDirectory.set(layout.buildDirectory.dir("generated/packagedPythonSite/$abi"))
     }

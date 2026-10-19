@@ -43,19 +43,21 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 构建任务 `fetchPackagedPython<ABI>` 下载到 Gradle 用户目录的 `caches/nexara-python-android/`，摘要不符时失败且不落盘；缓存命中时不联网。离线构建可用 `-Pnexara.pythonDistDir=<目录>` 指向已放好官方压缩包的目录，文件仍按 SHA-256 校验。`preparePackagedPython<ABI>` 把压缩包整理到 `app/build/generated/packagedPython/<ABI>/` 并作为生成的 jniLibs 目录接入，不入库：
 
 - `libpython3.14.so` 与 `lib*_python.so`（OpenSSL、SQLite）原样保留；
-- 标准库纯 Python 部分存为不压缩 zip `libpystdlib.so`（解释器启动早期 zlib 尚不可用），裁剪 `test/`、`idlelib/`、`tkinter/`、`turtledemo/`、`pydoc_data/`，根目录附 `python/sitecustomize.py`；
+- 标准库纯 Python 部分存为不压缩 zip `libpystdlib.so`（解释器启动早期 zlib 尚不可用），裁剪 `test/`、`idlelib/`、`tkinter/`、`turtledemo/`、`pydoc_data/`，根目录附 `python/sitecustomize.py`；预编译后只放 `.pyc`（无法编译的文件保留源码），标准库回溯不显示源码行；
 - `lib-dynload` 中的扩展改名为 `libpyext_<模块>.so`，由 `sitecustomize.py` 的 meta_path finder 从 `NEXARA_PYEXT_DIR` 加载；
 - 启动器 `python/pylauncher.c` 用 AGP 所选 NDK 的 clang 编译为 `libnxpython.so`（`-Wl,-rpath,$ORIGIN`，16 KB 页对齐）。
 
-内置 git 的纯 Python 依赖单独打包：`fetchPackagedPythonWheel<名称>` 按 `native-ui/app/python/python-site.properties` 中的 PyPI 地址与 SHA-256 下载 dulwich、urllib3 的 `py3-none-any` wheel（缓存在同一目录的 `wheels/` 下，`-Pnexara.pythonDistDir` 同样适用）；`preparePackagedSite<ABI>` 把 wheel 内容（去掉 `*.data/`、`__pycache__` 与 `dulwich/tests/`）与 `python/site/` 中的 `nexara_git.py`、`nexara_pip.py` 合成不压缩 zip `libpysite.so`，含原生库、路径越界或模块重名时构建失败。两个 zip 都不是 ELF，`keepDebugSymbols` 跳过符号剥离。
+内置 git 的纯 Python 依赖单独打包：`fetchPackagedPythonWheel<名称>` 按 `native-ui/app/python/python-site.properties` 中的 PyPI 地址与 SHA-256 下载 dulwich、urllib3 的 `py3-none-any` wheel（缓存在同一目录的 `wheels/` 下，`-Pnexara.pythonDistDir` 同样适用）；`preparePackagedSite<ABI>` 把 wheel 内容（去掉 `*.data/`、`__pycache__` 与 `dulwich/tests/`）与 `python/site/` 中的 `nexara_git.py`、`nexara_pip.py` 合成不压缩 zip `libpysite.so`，含原生库、路径越界或模块重名时构建失败；预编译后每个 `.py` 旁另有 `.pyc`，源码保留，内置 git 出错时回溯仍有源码行。两个 zip 都不是 ELF，`keepDebugSymbols` 跳过符号剥离。
 
-同一输入生成的 zip 与启动器字节一致。`packaging.jniLibs.useLegacyPackaging = true` 让安装器把全部原生库解压到 `nativeLibraryDir`，启动器才能被 execve；代价是 APK 内原生库改为压缩存放、安装后多占约 33 MB（单 ABI）。运行时由 `data/exec/PackagedPython` 定位启动器、标准库并给出解释器环境变量。
+两个 zip 都在构建期预编译字节码：zipimport 只认 `.py` 旁的同名 `.pyc`，且官方包不带 pyc；不预编译时每次启动解释器都要重新编译导入的模块，真机（OPPO PKH110）上导入 dulwich 约 1.1 秒、一次 `--nexara-inspect status` 约 2 秒，预编译后分别约 0.15 秒与 0.2 秒，`shell_exec` 中的每条 `git` 命令同样提速约十倍。`python/compile-bytecode.py` 生成不核对源码的哈希 pyc（PEP 552，zip 随 APK 只读安装），`co_filename` 取 zip 内相对路径，不写入构建机路径。宿主解释器须与打包 CPython 的 pyc magic 一致：默认使用 PATH 中的 `python3.14`，可用 `-Pnexara.hostPython=<路径>` 指定；magic 登记在 `python-android.properties` 的 `pycMagic`，构建时与官方包 `include/python3.14/internal/pycore_magic_number.h` 核对，宿主不一致或找不到解释器时构建失败。`-Pnexara.pythonBytecode=false` 跳过预编译，只用于没有 Python 3.14 的临时环境，发行校验会拒绝这样的 APK。不在首次运行时把 pyc 写入数据目录：数据目录可被命令工具改写，免审批运行的 Git 检查会加载被篡改的字节码。CI 的 Gradle 作业用 `actions/setup-python` 安装 3.14。
+
+同一输入与同一宿主 Python 版本生成的 zip 与启动器字节一致。`packaging.jniLibs.useLegacyPackaging = true` 让安装器把全部原生库解压到 `nativeLibraryDir`，启动器才能被 execve；代价是 APK 内原生库改为压缩存放、安装后多占约 38 MB（单 ABI，其中预编译字节码约 5.4 MB）。运行时由 `data/exec/PackagedPython` 定位启动器、标准库并给出解释器环境变量。
 
 设备回归类为 `com.promenar.nexara.data.exec.PackagedPythonDeviceTest`，已纳入 `android-device-core-e2e.sh`：检查原生库已解压、版本与 `BuildConfig.PACKAGED_PYTHON_VERSION` 一致、ssl/sqlite3/hashlib/zlib/ctypes/decimal/socket 可用且扩展来自 `nativeLibraryDir`、`test` 包已裁剪，以及退出码与 stderr 原样返回。
 
-发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例；`libpysite.so` 只放行 urllib3 文档中的占位地址 `https://username:password@`。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 30.6 MB（其中内置 git 依赖约 0.8 MB），校验上限 50 MB。
+发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例；`libpysite.so` 只放行 urllib3 文档中的占位地址 `https://username:password@`。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。校验还要求每个 ABI 同时带 `libpystdlib.so` 与 `libpysite.so`，`os`、`encodings`、`sitecustomize`、`nexara_git`、`dulwich`、`dulwich.repo` 有不核对源码的哈希 pyc，且同一 ABI 内 magic 一致。Release 通用 APK 实测约 34.7 MB（其中内置 git 依赖约 2.5 MB，预编译字节码合计约 3.6 MB），校验上限 50 MB。
 
-升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）。
+升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，按新包的 `pycore_magic_number.h` 更新 `pycMagic`，准备同主次版本的宿主解释器（本机与 CI 的 `python-version`），再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）。
 
 ## 富内容 WebView
 

@@ -154,6 +154,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: 配置 Python 3.14（预编译打包 Python 字节码）
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
       - name: 配置 Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
         with:
@@ -229,6 +234,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: 配置 Python 3.14（预编译打包 Python 字节码）
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
       - name: 配置 Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
         with:
@@ -299,6 +309,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: 配置 Python 3.14（预编译打包 Python 字节码）
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
 
       - name: 配置 Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
@@ -480,6 +495,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: 配置 Python 3.14（预编译打包 Python 字节码）
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
 
       - name: 配置 Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4

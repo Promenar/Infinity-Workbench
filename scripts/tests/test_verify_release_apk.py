@@ -357,6 +357,62 @@ class PackagedPythonUpstreamContentTest(ApkFixtureTestCase):
             verify_release_apk.scan_sensitive_content(self.make_apk(entries))
 
 
+def packaged_zip(entries: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+        for name, content in entries.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def pyc(magic: bytes = b"\x2b\x0e\r\n", flags: int = 0b01) -> bytes:
+    return magic + flags.to_bytes(4, "little") + b"\x00" * 8 + b"code"
+
+
+class PackagedPythonBytecodeTest(ApkFixtureTestCase):
+    def python_entries(self, abi: str = "arm64-v8a", **overrides: bytes) -> dict[str, bytes]:
+        stdlib = {name: pyc() for name in verify_release_apk.PYTHON_BYTECODE_MODULES["libpystdlib.so"]}
+        site = {name: pyc() for name in verify_release_apk.PYTHON_BYTECODE_MODULES["libpysite.so"]}
+        site["dulwich/repo.py"] = b"source"
+        for name, content in overrides.items():
+            target = site if name.startswith("site:") else stdlib
+            target[name.split(":", 1)[1]] = content
+        return {
+            f"lib/{abi}/libpystdlib.so": packaged_zip(stdlib),
+            f"lib/{abi}/libpysite.so": packaged_zip(site),
+        }
+
+    def test_accepts_unchecked_hash_bytecode_for_key_modules(self) -> None:
+        verify_release_apk.verify_packaged_python_bytecode(self.make_apk(self.python_entries()))
+
+    def test_rejects_python_zips_without_bytecode(self) -> None:
+        entries = {
+            "lib/arm64-v8a/libpystdlib.so": packaged_zip({"os.py": b"source"}),
+            "lib/arm64-v8a/libpysite.so": packaged_zip({"nexara_git.py": b"source"}),
+        }
+        with self.assertRaisesRegex(verify_release_apk.VerificationError, "缺少 os.pyc"):
+            verify_release_apk.verify_packaged_python_bytecode(self.make_apk(entries))
+
+    def test_rejects_checked_or_timestamp_pyc_and_mixed_magic(self) -> None:
+        cases = {
+            "不核对源码": self.python_entries(**{"std:os.pyc": pyc(flags=0b11)}),
+            "不核对源码 ": self.python_entries(**{"site:nexara_git.pyc": pyc(flags=0)}),
+            "magic 不一致": self.python_entries(**{"site:dulwich/repo.pyc": pyc(magic=b"\x00\x0e\r\n")}),
+        }
+        for message, entries in cases.items():
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(verify_release_apk.VerificationError, message.strip()):
+                    verify_release_apk.verify_packaged_python_bytecode(self.make_apk(entries))
+
+    def test_rejects_missing_python_or_half_packaged_abi(self) -> None:
+        with self.assertRaisesRegex(verify_release_apk.VerificationError, "未包含打包 Python"):
+            verify_release_apk.verify_packaged_python_bytecode(self.make_apk(["AndroidManifest.xml"]))
+        entries = self.python_entries()
+        del entries["lib/arm64-v8a/libpysite.so"]
+        with self.assertRaisesRegex(verify_release_apk.VerificationError, "arm64-v8a 缺少 libpysite.so"):
+            verify_release_apk.verify_packaged_python_bytecode(self.make_apk(entries))
+
+
 class ChecksumVerificationTest(ApkFixtureTestCase):
     def test_writes_standard_checksum_with_apk_basename(self) -> None:
         apk = self.make_apk({"AndroidManifest.xml": b"manifest"})
