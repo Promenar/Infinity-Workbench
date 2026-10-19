@@ -176,7 +176,10 @@ class SecureSecretUiContractTest {
         assertThat(field).contains("revealTimeoutJob")
         assertThat(field).contains("delay(revealTimeoutMillis)")
         assertThat(field).contains("Lifecycle.Event.ON_STOP")
-        assertThat(field).contains("KeyboardType.Password")
+        // 任何密码变体都会被输入法与 ColorOS 强制切到禁用剪贴板的安全键盘，密钥无法粘贴。
+        assertThat(field).contains("keyboardOptions = SecretKeyboardOptions")
+        assertThat(field).doesNotContain("InputType.TYPE_TEXT_VARIATION_")
+        assertThat(field).contains("IME_FLAG_NO_PERSONALIZED_LEARNING")
         assertThat(field).contains("autoCorrectEnabled = false")
         assertThat(field).contains("readOnly = hasStoredSecret && value.isEmpty()")
         assertThat(field).doesNotContain(".focusable()")

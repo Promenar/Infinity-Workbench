@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -23,8 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.promenar.nexara.ui.common.SecretKeyboardOptions
+import com.promenar.nexara.ui.common.SecretTextInput
 import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.data.ssh.SshUserPrompt
@@ -56,15 +56,17 @@ internal fun SshPasswordPromptDialog(prompt: SshUserPrompt.Password) {
                     stringResource(R.string.ssh_agent_password_message, "${prompt.username}@${prompt.hostname}:${prompt.port}"),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.ssh_password)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                    modifier = Modifier.fillMaxWidth().testTag(SSH_PROMPT_PASSWORD_FIELD),
-                )
+                SecretTextInput {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(stringResource(R.string.ssh_password)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = SecretKeyboardOptions,
+                        modifier = Modifier.fillMaxWidth().testTag(SSH_PROMPT_PASSWORD_FIELD),
+                    )
+                }
             }
         },
         confirmButton = {

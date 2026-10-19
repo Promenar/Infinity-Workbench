@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 密钥输入框支持普通键盘与粘贴
+
+- API 密钥、备份口令、MCP Bearer、SSH 口令与私钥口令等输入框不再声明密码键盘类型。系统与输入法原先会对密码类型（含可见密码变体）强制切换安全键盘并禁用剪贴板，长随机密钥无法粘贴。现以普通文本类型请求输入法，同时关闭候选词并要求输入法不学习输入内容，屏幕上仍显示掩码。
+- 统一由 `SecretKeyboardOptions` 与 `SecretTextInput` 提供。新增单测扫描界面源码，禁止再使用密码键盘类型；新增设备测试，从真实 Compose 文本会话读取 EditorInfo 进行校验。
+
 ### 行内代码无障碍文本
 
 - 正文、列表与标题中的行内代码，两侧内边距占位不再以 U+FFFD 替换字符进入无障碍文本，读屏不会再念出“替换字符”。占位的替代文本改为不换行空格，断行规则与原来一致，截图基线无变化。

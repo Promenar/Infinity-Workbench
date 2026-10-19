@@ -444,7 +444,7 @@ fun SkillsScreen(
                         onCheckedChange = viewModel::setAllowLoopbackMcp,
                     )
                 }
-                if (isLoopback) {
+                if (isLoopback) com.promenar.nexara.ui.common.SecretTextInput {
                     OutlinedTextField(
                         textStyle = LocalTextStyle.current.forInput(),
                         value = mcpBearer,
@@ -453,10 +453,7 @@ fun SkillsScreen(
                         label = { Text(stringResource(R.string.mcp_bearer_token)) },
                         supportingText = { Text(stringResource(R.string.mcp_bearer_token_storage)) },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
-                            autoCorrectEnabled = false,
-                        ),
+                        keyboardOptions = com.promenar.nexara.ui.common.SecretKeyboardOptions,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )

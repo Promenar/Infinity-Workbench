@@ -73,6 +73,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.promenar.nexara.ui.common.SecretKeyboardOptions
+import com.promenar.nexara.ui.common.SecretTextInput
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -816,18 +818,21 @@ private fun SshEditorField(
     keyboardType: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(stringResource(label)) },
-        enabled = enabled,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        textStyle = MaterialTheme.typography.bodyLarge.forInput(),
-        shape = MaterialTheme.shapes.medium,
-        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboardType, autoCorrectEnabled = false),
-    )
+    val field = @Composable {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(stringResource(label)) },
+            enabled = enabled,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyLarge.forInput(),
+            shape = MaterialTheme.shapes.medium,
+            visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            keyboardOptions = if (secret) SecretKeyboardOptions else KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
+        )
+    }
+    if (secret) SecretTextInput(field) else field()
 }
 
 private fun copySshPublicKey(context: Context, publicKey: String) {
