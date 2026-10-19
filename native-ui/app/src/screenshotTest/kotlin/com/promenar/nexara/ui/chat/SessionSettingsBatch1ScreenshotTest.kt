@@ -51,7 +51,7 @@ private fun SessionFrame(index: Int, content: @Composable () -> Unit) {
                 Text(stringResource(R.string.sheet_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
                 NexaraCapsuleTabRow(tabs = listOf(R.string.sheet_tab_model, R.string.sheet_tab_thinking,
                     R.string.sheet_tab_tools, R.string.sheet_tab_settings).map { NexaraTabItem(stringResource(it)) },
-                    selectedIndex = index, onTabSelected = {}, height = 40.dp, modifier = Modifier.padding(horizontal = 16.dp))
+                    selectedIndex = index, onTabSelected = {}, modifier = Modifier.padding(horizontal = 16.dp))
                 Box(Modifier.weight(1f)) { content() }
             }
         }

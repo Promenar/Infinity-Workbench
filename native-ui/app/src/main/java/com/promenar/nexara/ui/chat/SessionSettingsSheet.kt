@@ -231,7 +231,6 @@ fun SessionSettingsSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
-                height = 40.dp,
             )
 
             Spacer(modifier = Modifier.height(NexaraSpacing.Small))

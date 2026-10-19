@@ -271,7 +271,6 @@ fun RagDetailsSheetContent(
                 selectedIndex = selectedTabIndex,
                 onTabSelected = { selectedTabIndex = it },
                 modifier = Modifier.fillMaxWidth(),
-                height = 46.dp,
             )
             Spacer(Modifier.height(8.dp))
             when (tabs[selectedTabIndex]) {

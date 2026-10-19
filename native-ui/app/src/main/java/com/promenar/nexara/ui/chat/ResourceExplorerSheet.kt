@@ -259,8 +259,6 @@ internal fun ResourceExplorerSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
-            // 胶囊容器内边距 4dp，单个页签需保留完整 48dp 触控高度。
-            height = NexaraSpacing.MinimumTouchTarget + 8.dp,
         )
 
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))

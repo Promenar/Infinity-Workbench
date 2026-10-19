@@ -261,7 +261,6 @@ fun SkillsScreen(
                     selectedIndex = selectedTab,
                     onTabSelected = { selectedTab = it },
                     modifier = Modifier.fillMaxWidth(),
-                    height = 46.dp,
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))

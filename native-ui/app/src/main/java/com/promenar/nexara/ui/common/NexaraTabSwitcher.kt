@@ -40,8 +40,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /**
  * 单项页签描述模型
@@ -53,6 +53,12 @@ data class NexaraTabItem(
     val testTag: String? = null,
 )
 
+/** 滑动底座与胶囊容器四边之间的视觉内缩。 */
+private val NexaraTabSwitcherInset = 4.dp
+
+/** 容器总高度 56dp：滑动底座上下内缩后仍为 48dp，页签触控区则占满整个容器高度。 */
+private val NexaraTabSwitcherHeight = NexaraSpacing.MinimumTouchTarget + NexaraTabSwitcherInset * 2
+
 /**
  * 全站统一全圆胶囊 Tab 切换组件 (移植自 Homebar 与知识库设计语言)
  *
@@ -60,7 +66,9 @@ data class NexaraTabItem(
  * 1. 外层全胶囊容器 (CircleShape) + surfaceContainer 底色 + outlineVariant 0.5f 微描边；
  * 2. 同心全圆胶囊滑动底座 (secondaryContainer) + 物理弹簧动画 (Spring, dampingRatio=0.85f)；
  * 3. 切换触发原生 SEGMENT_TICK 触觉反馈震动；
- * 4. 选中项加粗并应用 onSecondaryContainer，未选中态为 onSurfaceVariant。
+ * 4. 选中项加粗并应用 onSecondaryContainer，未选中态为 onSurfaceVariant；
+ * 5. 容器高度由组件统一为 56dp，调用方不可压低；上下 4dp 内缩只作用于滑动底座，
+ *    页签触控区占满容器高度，避免内边距按像素取整后触控高度低于 48dp。
  */
 @Composable
 fun NexaraTabSwitcher(
@@ -68,7 +76,6 @@ fun NexaraTabSwitcher(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = 48.dp,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     indicatorColor: Color = MaterialTheme.colorScheme.secondaryContainer,
     tabModifier: (index: Int) -> Modifier = { Modifier },
@@ -82,7 +89,7 @@ fun NexaraTabSwitcher(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(height)
+            .height(NexaraTabSwitcherHeight)
             .clip(CircleShape)
             .background(containerColor)
             .border(
@@ -90,7 +97,7 @@ fun NexaraTabSwitcher(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 shape = CircleShape,
             )
-            .padding(4.dp),
+            .padding(horizontal = NexaraTabSwitcherInset),
     ) {
         val tabWidth = maxWidth / itemCount
         val indicatorOffset by animateDpAsState(
@@ -108,6 +115,7 @@ fun NexaraTabSwitcher(
                 .offset(x = indicatorOffset)
                 .width(tabWidth)
                 .fillMaxHeight()
+                .padding(vertical = NexaraTabSwitcherInset)
                 .clip(CircleShape)
                 .background(indicatorColor),
         )
@@ -172,7 +180,6 @@ fun NexaraCapsuleTabRow(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = 48.dp,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     indicatorColor: Color = MaterialTheme.colorScheme.secondaryContainer,
 ) {
@@ -181,7 +188,6 @@ fun NexaraCapsuleTabRow(
         selectedIndex = selectedIndex,
         onTabSelected = onTabSelected,
         modifier = modifier,
-        height = height,
         containerColor = containerColor,
         indicatorColor = indicatorColor,
         tabModifier = { index ->

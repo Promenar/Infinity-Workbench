@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -31,7 +30,6 @@ fun ExecutionModeSelector(
         selectedIndex = selectedIndex,
         onTabSelected = { index -> onSelect(modes[index]) },
         modifier = modifier,
-        height = 44.dp,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) { index, isSelected, contentColor ->
         val mode = modes[index]
