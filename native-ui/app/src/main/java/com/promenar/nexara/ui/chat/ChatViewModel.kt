@@ -367,6 +367,11 @@ class ChatViewModel(
     val draftDocuments: StateFlow<List<MessageDocumentAttachment>> = _draftDocuments
     private val _draftConsumptionEpoch = MutableStateFlow(0L)
     val draftConsumptionEpoch: StateFlow<Long> = _draftConsumptionEpoch
+    /** 发送时已从输入框移走、尚未被生成接受的草稿；用户消息被回滚时还原。 */
+    private var submittedDraft: SubmittedDraft? = null
+    private val _restoredDraftImages = MutableStateFlow<List<String>?>(null)
+    /** 待还原到输入框的图片 URI；界面取用后调用 [consumeRestoredDraftImages]。 */
+    val restoredDraftImages: StateFlow<List<String>?> = _restoredDraftImages
     private val _isImportingDocument = MutableStateFlow(false)
     val isImportingDocument: StateFlow<Boolean> = _isImportingDocument
 
@@ -572,6 +577,19 @@ class ChatViewModel(
                         ) {
                             pendingDraftClearTaskId = null
                             consumeAcceptedDraft(sessionId)
+                        } else if (
+                            pendingDraftClearTaskId != null &&
+                            presentation.taskId == pendingDraftClearTaskId &&
+                            !presentation.promptAccepted &&
+                            presentation.phase in DRAFT_SETTLING_PHASES
+                        ) {
+                            // 准备阶段就结束：用户消息被回滚（如全文文档超出预算）才还原草稿，否则消息已在历史中可重试。
+                            pendingDraftClearTaskId = null
+                            if (submittedUserMessageRolledBack(sessionId)) {
+                                restoreSubmittedDraft(sessionId)
+                            } else {
+                                consumeAcceptedDraft(sessionId)
+                            }
                         }
                         val failureAcknowledged = presentation.taskId == acknowledgedFailureTaskId
                         if (
@@ -797,6 +815,7 @@ class ChatViewModel(
         if (store.getSession(sessionId) == null) return
 
         cancelPendingPreparation()
+        takeDraftForSending(sessionId, text, imageUris)
         generationJob = viewModelScope.launch {
             sendPreparationMutex.withLock {
                 closePendingApprovalBeforeNewTurn(sessionId)
@@ -814,6 +833,7 @@ class ChatViewModel(
                         imageUris.map { uri -> uriToDataUrl(uri) }
                     }
                     if (converted.any { it == null }) {
+                        restoreSubmittedDraft(sessionId)
                         _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
                         _generationStatus.update { GenerationStatus.ERROR }
                         _isGenerating.update { false }
@@ -1027,6 +1047,7 @@ class ChatViewModel(
     ) {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
+        submittedDraft = submittedDraft?.takeIf { it.sessionId == sessionId }?.copy(userMessageId = userMsgId)
 
         try {
             val userMessage = Message(
@@ -1081,9 +1102,8 @@ class ChatViewModel(
                         sessionId,
                         listOf(assistantMsgId, userMsgId),
                     )
-                    _inputText.value = text
                     pendingDraftClearTaskId = null
-                    sessionManager.updateSessionDraft(sessionId, text)
+                    restoreSubmittedDraft(sessionId, fallbackText = text)
                     _isGenerating.value = false
                     _generationStatus.value = GenerationStatus.ERROR
                     _generationNotice.value = when (start) {
@@ -1110,9 +1130,7 @@ class ChatViewModel(
                     )
                 }
                     .exceptionOrNull()?.let(failure::addSuppressed)
-                val draftToPreserve = _inputText.value.ifBlank { text }
-                _inputText.value = draftToPreserve
-                runCatching { sessionManager.updateSessionDraft(sessionId, draftToPreserve) }
+                runCatching { restoreSubmittedDraft(sessionId, fallbackText = text) }
                     .exceptionOrNull()?.let(failure::addSuppressed)
                 _isGenerating.value = false
             }
@@ -1273,6 +1291,18 @@ class ChatViewModel(
                 ) {
                     pendingDraftClearTaskId = null
                     consumeAcceptedDraft(sessionId)
+                } else if (
+                    presentation != null &&
+                    presentation.taskId == pendingDraftClearTaskId &&
+                    presentation.phase in DRAFT_SETTLING_PHASES
+                ) {
+                    // 任务在 start 返回前就已在准备阶段结束，订阅方当时还无法匹配任务。
+                    pendingDraftClearTaskId = null
+                    if (submittedUserMessageRolledBack(sessionId)) {
+                        restoreSubmittedDraft(sessionId)
+                    } else {
+                        consumeAcceptedDraft(sessionId)
+                    }
                 }
             }
             when (result) {
@@ -1443,6 +1473,8 @@ class ChatViewModel(
     }
 
     private fun resetSessionTransientState() {
+        submittedDraft = null
+        _restoredDraftImages.value = null
         replacingTaskId = null
         _replacingMessageIds.value = emptySet()
         _deletionUndo.value = null
@@ -2101,14 +2133,72 @@ class ChatViewModel(
         return useCase.branch(sessionId, messageId)
     }
 
+    /** 点击发送即清空输入框与附件，保留副本直到生成接受或回滚；持久化草稿在接受后才清除。 */
+    private fun takeDraftForSending(sessionId: String, text: String, imageUris: List<Uri>) {
+        submittedDraft = SubmittedDraft(
+            sessionId = sessionId,
+            text = _inputText.value.ifBlank { text },
+            documents = _draftDocuments.value,
+            imageUris = imageUris.map(Uri::toString),
+        )
+        _inputText.value = ""
+        _draftDocuments.value = emptyList()
+        _restoredDraftImages.value = null
+        _draftConsumptionEpoch.value += 1
+    }
+
+    private fun submittedUserMessageRolledBack(sessionId: String): Boolean {
+        val messageId = submittedDraft?.takeIf { it.sessionId == sessionId }?.userMessageId ?: return true
+        return store.getSession(sessionId)?.messages?.none { it.id == messageId } ?: true
+    }
+
+    /** 只填回仍为空的部分，不覆盖用户在此期间新输入的内容。 */
+    private suspend fun restoreSubmittedDraft(sessionId: String, fallbackText: String = "") {
+        val draft = submittedDraft?.takeIf { it.sessionId == sessionId }
+        submittedDraft = null
+        val text = draft?.text?.ifBlank { null } ?: fallbackText
+        if (_inputText.value.isBlank() && text.isNotBlank()) _inputText.value = text
+        if (draft != null && _draftDocuments.value.isEmpty()) _draftDocuments.value = draft.documents
+        if (draft != null && draft.imageUris.isNotEmpty()) _restoredDraftImages.value = draft.imageUris
+        sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
+    }
+
+    fun consumeRestoredDraftImages() {
+        _restoredDraftImages.value = null
+    }
+
+    /**
+     * 生成已接受：发送时已清空过输入框的，只把此后新输入的内容落为会话草稿，不再清空，
+     * 以免吞掉生成期间新输入的文字与附件；没有发送副本的路径仍按原样清空。
+     */
     private suspend fun consumeAcceptedDraft(sessionId: String) {
+        val clearedOnSend = submittedDraft?.sessionId == sessionId
+        submittedDraft = null
+        if (clearedOnSend) {
+            sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
+            return
+        }
         _inputText.value = ""
         _draftDocuments.value = emptyList()
         _draftConsumptionEpoch.value += 1
         sessionManager.updateSessionDraft(sessionId, null)
     }
 
+    private data class SubmittedDraft(
+        val sessionId: String,
+        val text: String,
+        val documents: List<MessageDocumentAttachment>,
+        val imageUris: List<String>,
+        val userMessageId: String? = null,
+    )
+
     companion object {
+        private val DRAFT_SETTLING_PHASES = setOf(
+            com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+        )
+
         /** 审计缺陷 A：<1K 显示原始 token 数，避免整数截断把数百 token 吞成 0K。 */
         fun formatTokenCount(tokens: Int): String {
             if (tokens < 0) return "0"

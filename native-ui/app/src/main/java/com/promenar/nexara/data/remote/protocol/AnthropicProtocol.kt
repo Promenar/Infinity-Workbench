@@ -18,6 +18,20 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import com.promenar.nexara.domain.generation.CompletionReason
 
+/** 流式思考块：thinking_delta 累积正文，signature_delta 给出签名；redacted_thinking 在开始事件中给出 data。 */
+private data class ThinkingAccumulator(
+    val type: String,
+    val thinking: StringBuilder = StringBuilder(),
+    var signature: String = "",
+    val data: String = "",
+) {
+    fun toBlock(): AnthropicThinkingBlock = if (type == AnthropicThinkingBlock.REDACTED) {
+        AnthropicThinkingBlock(type = type, data = data)
+    } else {
+        AnthropicThinkingBlock(type = type, thinking = thinking.toString(), signature = signature)
+    }
+}
+
 private data class ToolUseAccumulator(
     val id: String,
     val name: String,
@@ -51,122 +65,142 @@ class AnthropicProtocol(
     private val toolUseAccumulator = mutableMapOf<Int, ToolUseAccumulator>()
     private val completedToolUses = mutableMapOf<Int, ProtocolToolCall>()
     private var pendingStopReason: CompletionReason? = null
+    private val thinkingAccumulators = mutableMapOf<Int, ThinkingAccumulator>()
+    private val completedThinking = sortedMapOf<Int, AnthropicThinkingBlock>()
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
         toolUseAccumulator.clear()
         completedToolUses.clear()
+        thinkingAccumulators.clear()
+        completedThinking.clear()
         pendingStopReason = null
 
         try {
-            httpClient.preparePost(inferenceUrl()) {
-                contentType(ContentType.Application.Json)
-                header("x-api-key", apiKey)
-                header("anthropic-version", anthropicVersion)
-                header("Accept", "text/event-stream")
-                header("Accept-Encoding", "identity")
-                header("Cache-Control", "no-cache")
-                header("Connection", "keep-alive")
-                setBody(buildRequestBody(request, stream = true))
-            }.execute { response ->
-                if (!response.status.isSuccess()) {
-                    val errorBody = try {
-                        response.bodyAsText()
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        ""
-                    }
-                    send(classifyProtocolError(
-                        statusCode = response.status.value,
-                        responseBody = errorBody,
-                        retryAfterHeader = response.headers[HttpHeaders.RetryAfter],
-                    ))
-                    return@execute
-                }
-
-                response.contentType()?.let { ct ->
-                    if (ct.match(ContentType.Text.Html)) {
-                        send(StreamChunk.Error(
-                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
-                            retryable = true,
-                            technical = "Received HTML response instead of JSON stream.",
+            // 回传的思考块被拒绝（签名失效、跨账号或兼容网关不支持）时，去掉全部思考块重发一次；官方允许整体省略。
+            var outgoing = request
+            while (true) {
+                var retryWithoutThinking = false
+                httpClient.preparePost(inferenceUrl()) {
+                    contentType(ContentType.Application.Json)
+                    header("x-api-key", apiKey)
+                    header("anthropic-version", anthropicVersion)
+                    header("Accept", "text/event-stream")
+                    header("Accept-Encoding", "identity")
+                    header("Cache-Control", "no-cache")
+                    header("Connection", "keep-alive")
+                    setBody(buildRequestBody(outgoing, stream = true))
+                }.execute { response ->
+                    if (!response.status.isSuccess()) {
+                        val errorBody = try {
+                            response.bodyAsText()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        if (shouldRetryWithoutThinking(response.status.value, errorBody, outgoing)) {
+                            retryWithoutThinking = true
+                            return@execute
+                        }
+                        send(classifyProtocolError(
+                            statusCode = response.status.value,
+                            responseBody = errorBody,
+                            retryAfterHeader = response.headers[HttpHeaders.RetryAfter],
                         ))
                         return@execute
                     }
-                }
 
-                val channel = response.body<ByteReadChannel>()
-                activeChannel = channel
-                val sb = StringBuilder()
-                val timeoutMs = request.streamTimeout ?: 120000L
-                var currentEvent = ""
-                var currentData = ""
-                var sawTerminal = false
-
-                while (!channel.isClosedForRead) {
-                    sb.clear()
-                    val readSuccess = withTimeoutOrNull(timeoutMs) {
-                        channel.readUTF8LineTo(sb, 1_048_576)
-                    }
-
-                    if (readSuccess == null) {
-                        send(StreamChunk.Error(
-                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
-                            retryable = true,
-                            technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
-                        ))
-                        sawTerminal = true
-                        break
-                    }
-                    if (!readSuccess) break
-
-                    val line = sb.toString()
-                    if (line.isEmpty()) {
-                        if (currentData.isNotEmpty()) {
-                            sawTerminal = processSseEvent(currentEvent, currentData)
-                            currentEvent = ""
-                            currentData = ""
-                            if (sawTerminal) break
+                    response.contentType()?.let { ct ->
+                        if (ct.match(ContentType.Text.Html)) {
+                            send(StreamChunk.Error(
+                                code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                                retryable = true,
+                                technical = "Received HTML response instead of JSON stream.",
+                            ))
+                            return@execute
                         }
-                        continue
                     }
 
-                    if (line.trimStart().startsWith('<')) {
-                        send(StreamChunk.Error(
-                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
-                            retryable = true,
-                            technical = "Received HTML response instead of JSON stream.",
-                        ))
-                        sawTerminal = true
-                        break
-                    }
+                    val channel = response.body<ByteReadChannel>()
+                    activeChannel = channel
+                    val sb = StringBuilder()
+                    val timeoutMs = request.streamTimeout ?: 120000L
+                    var currentEvent = ""
+                    var currentData = ""
+                    var sawTerminal = false
 
-                    when {
-                        line.startsWith("event: ") -> {
-                            currentEvent = line.substring(7).trim()
+                    while (!channel.isClosedForRead) {
+                        sb.clear()
+                        val readSuccess = withTimeoutOrNull(timeoutMs) {
+                            channel.readUTF8LineTo(sb, 1_048_576)
                         }
-                        line.startsWith("data: ") -> {
-                            currentData = line.substring(6).trim()
-                            if (currentEvent.isEmpty()) {
-                                currentEvent = "message"
+
+                        if (readSuccess == null) {
+                            send(StreamChunk.Error(
+                                code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                                retryable = true,
+                                technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
+                            ))
+                            sawTerminal = true
+                            break
+                        }
+                        if (!readSuccess) break
+
+                        val line = sb.toString()
+                        if (line.isEmpty()) {
+                            if (currentData.isNotEmpty()) {
+                                sawTerminal = processSseEvent(currentEvent, currentData)
+                                currentEvent = ""
+                                currentData = ""
+                                if (sawTerminal) break
+                            }
+                            continue
+                        }
+
+                        if (line.trimStart().startsWith('<')) {
+                            send(StreamChunk.Error(
+                                code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                                retryable = true,
+                                technical = "Received HTML response instead of JSON stream.",
+                            ))
+                            sawTerminal = true
+                            break
+                        }
+
+                        when {
+                            line.startsWith("event: ") -> {
+                                currentEvent = line.substring(7).trim()
+                            }
+                            line.startsWith("data: ") -> {
+                                currentData = line.substring(6).trim()
+                                if (currentEvent.isEmpty()) {
+                                    currentEvent = "message"
+                                }
+                            }
+                            line.startsWith("data:") -> {
+                                currentData = line.substring(5).trim()
+                                if (currentEvent.isEmpty()) {
+                                    currentEvent = "message"
+                                }
                             }
                         }
-                        line.startsWith("data:") -> {
-                            currentData = line.substring(5).trim()
-                            if (currentEvent.isEmpty()) {
-                                currentEvent = "message"
-                            }
-                        }
+                    }
+
+                    if (currentData.isNotEmpty()) {
+                        sawTerminal = processSseEvent(currentEvent, currentData)
+                    }
+                    if (!sawTerminal) {
+                        send(truncatedStreamError("Anthropic stream ended before message_stop"))
                     }
                 }
-
-                if (currentData.isNotEmpty()) {
-                    sawTerminal = processSseEvent(currentEvent, currentData)
-                }
-                if (!sawTerminal) {
-                    send(truncatedStreamError("Anthropic stream ended before message_stop"))
-                }
+                if (!retryWithoutThinking) break
+                outgoing = outgoing.withoutThinkingReplay()
+                toolUseAccumulator.clear()
+                completedToolUses.clear()
+                thinkingAccumulators.clear()
+                completedThinking.clear()
+                pendingStopReason = null
             }
         } catch (e: CancellationException) {
             throw e
@@ -252,7 +286,7 @@ class AnthropicProtocol(
         val body = buildJsonObject {
             put("model", request.model.ifEmpty { this@AnthropicProtocol.model })
             put("stream", stream)
-            put("max_tokens", request.maxTokens ?: 4096)
+            put("max_tokens", request.maxTokens ?: DEFAULT_MAX_TOKENS)
 
             val systemMessage = request.messages.find { it.role == "system" }
             if (systemMessage != null) {
@@ -265,6 +299,13 @@ class AnthropicProtocol(
                     put("role", if (msg.role == "tool") "user" else msg.role)
                     
                     val contentParts = mutableListOf<JsonObject>()
+
+                    // 0. 同一模型当前回合的思考块必须原样、按原顺序放在助手内容最前面。
+                    if (msg.role == "assistant") {
+                        (msg.reasoningReplay as? ReasoningReplay.AnthropicBlocks)?.blocks?.forEach { block ->
+                            contentParts.add(block.toJson())
+                        }
+                    }
                     
                     // 1. Handle Text Content
                     if (msg.content.isNotEmpty() && msg.role != "tool") {
@@ -335,16 +376,15 @@ class AnthropicProtocol(
                 }
             }))
 
-            ProtocolParamAdapter.mapCommonParams(this, request)
-            ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
-            ProtocolParamAdapter.mapSamplingParams(this, request)
-
-            if (request.reasoning == true) {
-                put("thinking", buildJsonObject {
-                    put("type", "enabled")
-                    put("budget_tokens", 10000)
-                })
+            val modelId = request.model.ifEmpty { this@AnthropicProtocol.model }
+            val thinking = anthropicThinkingConfig(modelId, request.reasoning, request.maxTokens ?: DEFAULT_MAX_TOKENS)
+            // 新模型对非默认采样参数一律返回 400；旧模型开启思考时也不接受 temperature / top_k。
+            if (!rejectsSamplingParams(modelId) && thinking == null) {
+                ProtocolParamAdapter.mapCommonParams(this, request)
+                ProtocolParamAdapter.mapSamplingParams(this, request)
             }
+            ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
+            thinking?.let { put("thinking", it) }
 
             if (request.tools != null && request.tools.isNotEmpty()) {
                 put("tools", JsonArray(request.tools.map { tool ->
@@ -400,10 +440,14 @@ class AnthropicProtocol(
                     send(streamContractError("Anthropic message_stop has incomplete tool blocks"))
                     return true
                 }
-                send(validatedCompletion(
+                val completion = validatedCompletion(
                     reason,
                     completedToolUses.toSortedMap().values.toList(),
-                ))
+                )
+                if (completion is StreamChunk.Completed && completedThinking.isNotEmpty()) {
+                    send(StreamChunk.ReasoningState(ReasoningReplay.AnthropicBlocks(completedThinking.values.toList())))
+                }
+                send(completion)
                 return true
             }
             "ping" -> { }
@@ -433,9 +477,16 @@ class AnthropicProtocol(
             }
             "thinking_delta" -> {
                 val thinking = delta["thinking"]?.jsonPrimitive?.contentOrNull ?: return
+                val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
+                thinkingAccumulators[index]?.thinking?.append(thinking)
                 if (thinking.isNotEmpty()) {
                     send(StreamChunk.Thinking(content = thinking))
                 }
+            }
+            "signature_delta" -> {
+                val signature = delta["signature"]?.jsonPrimitive?.contentOrNull ?: return
+                val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
+                thinkingAccumulators[index]?.let { it.signature += signature }
             }
             "input_json_delta" -> {
                 val partialJson = delta["partial_json"]?.jsonPrimitive?.contentOrNull ?: return
@@ -487,6 +538,16 @@ class AnthropicProtocol(
     private suspend fun SendChannel<StreamChunk>.processContentBlockStart(eventData: JsonObject) {
         val contentBlock = eventData["content_block"]?.jsonObject ?: return
         val blockType = contentBlock["type"]?.jsonPrimitive?.contentOrNull ?: return
+        if (blockType == AnthropicThinkingBlock.THINKING || blockType == AnthropicThinkingBlock.REDACTED) {
+            val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
+            thinkingAccumulators[index] = ThinkingAccumulator(
+                type = blockType,
+                thinking = StringBuilder(contentBlock.stringField("thinking")),
+                signature = contentBlock.stringField("signature"),
+                data = contentBlock.stringField("data"),
+            )
+            return
+        }
         if (blockType != "tool_use") return
 
         val id = contentBlock["id"]?.jsonPrimitive?.contentOrNull ?: return
@@ -509,6 +570,12 @@ class AnthropicProtocol(
 
     private suspend fun SendChannel<StreamChunk>.processContentBlockStop(eventData: JsonObject) {
         val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: return
+        thinkingAccumulators.remove(index)?.let { thinking ->
+            val block = thinking.toBlock()
+            // 缺签名的块无法回传（官方要求原样回传），整块放弃比回传残缺块安全。
+            if (!block.signature.isNullOrEmpty() || !block.data.isNullOrEmpty()) completedThinking[index] = block
+            return
+        }
         val acc = toolUseAccumulator.remove(index) ?: return
 
         val streamedArguments = acc.arguments.toString()
@@ -597,6 +664,9 @@ class AnthropicProtocol(
         return normalized.toStreamChunkError()
     }
 
+    private fun shouldRetryWithoutThinking(statusCode: Int, errorBody: String, outgoing: PromptRequest): Boolean =
+        statusCode == 400 && outgoing.hasThinkingReplay() && isThinkingReplayRejection(errorBody)
+
     private fun classifyProtocolError(
         statusCode: Int,
         responseBody: String,
@@ -617,5 +687,69 @@ class AnthropicProtocol(
     private fun JsonObject.stringField(key: String): String {
         val el = this[key] ?: return ""
         return if (el is JsonNull) "" else el.jsonPrimitive.contentOrNull ?: ""
+    }
+
+    internal companion object {
+        const val DEFAULT_MAX_TOKENS = 4096
+    }
+}
+
+private fun AnthropicThinkingBlock.toJson(): JsonObject = buildJsonObject {
+    put("type", type)
+    if (type == AnthropicThinkingBlock.REDACTED) {
+        put("data", data.orEmpty())
+    } else {
+        put("thinking", thinking.orEmpty())
+        put("signature", signature.orEmpty())
+    }
+}
+
+internal fun PromptRequest.hasThinkingReplay(): Boolean =
+    messages.any { it.reasoningReplay is ReasoningReplay.AnthropicBlocks }
+
+internal fun PromptRequest.withoutThinkingReplay(): PromptRequest = copy(
+    messages = messages.map { message ->
+        if (message.reasoningReplay is ReasoningReplay.AnthropicBlocks) message.copy(reasoningReplay = null) else message
+    },
+)
+
+/** 官方对思考块签名失效、被改动或结构不合法的 400 都会在错误信息中提到 thinking 块与 signature。 */
+internal fun isThinkingReplayRejection(errorBody: String): Boolean {
+    val text = errorBody.lowercase()
+    return "thinking" in text && ("signature" in text || "block" in text)
+}
+
+/** 思考默认开启且默认隐藏思考文本的 Claude 5 系列；对它们请求摘要显示，计费不变。 */
+private val CLAUDE_ALWAYS_THINKING = Regex("""(^|[/.:])claude-(opus|sonnet|haiku|fable|mythos)-5(\b|[-.@])""")
+
+/** 只接受自适应思考、不再接受 budget_tokens 的模型（4.6 起支持自适应，4.7 起拒绝 enabled）。 */
+private val CLAUDE_ADAPTIVE_ONLY = Regex("""(^|[/.:])claude-(opus|sonnet)-4-([7-9])(\b|[-.@])""")
+private val CLAUDE_ADAPTIVE_CAPABLE = Regex("""(^|[/.:])claude-(opus|sonnet)-4-6(\b|[-.@])""")
+
+/** Claude 4.7 起非默认 temperature / top_p / top_k 都返回 400。 */
+internal fun rejectsSamplingParams(model: String): Boolean {
+    val id = model.lowercase()
+    return CLAUDE_ALWAYS_THINKING.containsMatchIn(id) || CLAUDE_ADAPTIVE_ONLY.containsMatchIn(id)
+}
+
+/**
+ * thinking 字段：Claude 5 系列始终请求摘要显示；其它模型只在显式要求思考时开启，
+ * 4.6 及以后用自适应思考，更早的模型用 budget_tokens（须不少于 1024 且小于 max_tokens）。
+ */
+internal fun anthropicThinkingConfig(model: String, reasoningRequested: Boolean?, maxTokens: Int): JsonObject? {
+    val id = model.lowercase()
+    fun adaptive() = buildJsonObject {
+        put("type", "adaptive")
+        put("display", "summarized")
+    }
+    return when {
+        CLAUDE_ALWAYS_THINKING.containsMatchIn(id) -> adaptive()
+        reasoningRequested != true -> null
+        CLAUDE_ADAPTIVE_ONLY.containsMatchIn(id) || CLAUDE_ADAPTIVE_CAPABLE.containsMatchIn(id) -> adaptive()
+        maxTokens <= 1024 -> null
+        else -> buildJsonObject {
+            put("type", "enabled")
+            put("budget_tokens", minOf(10_000, maxTokens - 1))
+        }
     }
 }

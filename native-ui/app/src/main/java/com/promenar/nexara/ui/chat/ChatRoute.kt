@@ -293,6 +293,14 @@ fun ChatRoute(
     LaunchedEffect(draftConsumptionEpoch) {
         if (draftConsumptionEpoch > 0L) selectedImageUriStrings = emptyList()
     }
+    val restoredDraftImages by chatViewModel.restoredDraftImages.collectAsStateWithLifecycle()
+    LaunchedEffect(restoredDraftImages) {
+        // 发送被回滚时把图片放回输入框；用户已重新选择图片则保留新的选择。
+        restoredDraftImages?.let { uris ->
+            if (selectedImageUriStrings.isEmpty()) selectedImageUriStrings = uris
+            chatViewModel.consumeRestoredDraftImages()
+        }
+    }
     val requestOverlay: (ChatOverlay) -> Unit = { requested ->
         val next = enqueueChatOverlay(
             state = ChatOverlayQueueState(

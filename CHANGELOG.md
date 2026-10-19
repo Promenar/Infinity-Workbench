@@ -22,7 +22,17 @@ All notable changes to this project will be documented in this file.
 
 ### 思考内容回传
 
-- DeepSeek 与 Kimi 协议在历史 assistant 消息中回传 `reasoning_content`。两家官方文档要求带工具调用时必须回传思考内容，否则 DeepSeek 返回 400；无工具时服务端会忽略。其它协议不发送该字段。
+- OpenAI Chat Completions 兼容协议族（OpenAI 预设、通用兼容及 DeepSeek、Kimi、Qwen、GLM 等厂商预设）统一按来源字段回传思考：流中记录思考正文来自 `reasoning_content` 还是 `reasoning`，随助手消息保存，后续请求在同一字段原样回传。DeepSeek 与 Kimi 带工具调用时官方要求回传，否则 DeepSeek 返回 400；把 DeepSeek 端点配置为通用协议同样生效。没有保存来源字段的旧消息，仅 DeepSeek 与 Kimi 预设沿用固定的 `reasoning_content`。
+- Anthropic 协议收集流中的 `thinking`（含 `signature_delta` 签名）与 `redacted_thinking` 块，在同一用户回合的工具循环内按原顺序、原样放在助手内容最前回传；跨回合不回传，避免系统提示或工具列表变化导致签名失效。服务端仍以思考块签名无效返回 400 时，自动去掉全部思考块重发一次。
+- 思考状态以带版本与来源模型的信封保存在消息的 `thought_signature` 列，只回传给产生它的同一模型；旧版原始签名、损坏数据与未知字段名一律忽略。
+
+### Anthropic 新一代模型请求参数
+
+- Claude 5 系列与 Opus/Sonnet 4.7 及以上不再发送 `temperature`、`top_p`、`top_k`（官方对非默认采样参数返回 400）。Claude 5 系列固定请求 `thinking: {type: adaptive, display: summarized}` 以显示思考摘要；4.6–4.9 在开启思考时使用 adaptive；更早模型沿用 `enabled` 加 `budget_tokens`，开启思考时同样不发送采样参数。
+
+### 发送后输入框立即清空
+
+- 点击发送立即清空输入框、文档与图片附件，发送按钮随之恢复，不再等长文本或附件准备完成后才清空。生成被回滚（如完整文档超出上下文预算、准备失败）时，原内容填回仍为空的输入框与附件区；会话持久化草稿在生成被接受后才清除。生成期间新输入的文字与附件不会在请求被接受时被清掉。
 
 ### 流式请求自动重试
 

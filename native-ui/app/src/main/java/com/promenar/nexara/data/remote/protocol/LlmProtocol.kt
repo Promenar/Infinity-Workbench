@@ -46,7 +46,9 @@ data class ProtocolMessage(
     val files: List<ProtocolFileAttachment>? = null,
     val imageUrls: List<ImageInput>? = null,
     val audioData: List<AudioInput>? = null,
-    val documentData: List<DocumentInput>? = null
+    val documentData: List<DocumentInput>? = null,
+    /** 仅当该消息由当前路由的同一模型产生时才填入；协议按原生格式回传。 */
+    val reasoningReplay: ReasoningReplay? = null,
 )
 
 @Serializable
@@ -153,6 +155,11 @@ sealed class StreamChunk {
 
     data class Citations(
         val citations: List<ProtocolCitation>
+    ) : StreamChunk()
+
+    /** 本次响应的协议原生思考状态，在显式成功终态之前发出一次。 */
+    data class ReasoningState(
+        val replay: ReasoningReplay
     ) : StreamChunk()
 
     /**

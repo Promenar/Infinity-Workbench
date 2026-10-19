@@ -23,6 +23,7 @@ import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.remote.StreamConfig
 import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.ReasoningReplayCodec
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolChoice
 import com.promenar.nexara.data.remote.protocol.StreamChunk
@@ -192,7 +193,9 @@ internal class DefaultChatGenerationRuntime(
                     val updatedSystem = replaceHistorySummary(systemPrompt, updated.summary, preparedContextSummary)
                     prompt.copy(messages = offloadToolResults(
                         request.sessionId,
-                        contentStrategy.buildProtocolMessages(updated, updatedSystem, currentTurnId, request.messageIdsToReplace),
+                        contentStrategy.buildProtocolMessages(
+                            updated, updatedSystem, currentTurnId, request.messageIdsToReplace, preparedRoute?.modelId,
+                        ),
                     ))
                 },
                 summarizeTool = { text -> summarizeToolResult(request, prompt, text) },
@@ -466,6 +469,7 @@ internal class DefaultChatGenerationRuntime(
                 systemPrompt,
                 request.userMessageId,
                 request.messageIdsToReplace,
+                route.modelId,
             ),
             model = requireNotNull(route.remoteModelId),
             temperature = inference.temperature,
@@ -592,6 +596,7 @@ internal class DefaultChatGenerationRuntime(
             snapshot.content,
             UpdateMessageOptions(
                 reasoning = snapshot.reasoning.ifBlank { null },
+                thoughtSignature = snapshot.reasoningReplay,
                 tokens = mainAndSummaryUsage(request, snapshot),
                 toolCalls = calls.takeIf { it.isNotEmpty() },
                 clearToolCalls = calls.isEmpty(),
@@ -1096,6 +1101,9 @@ internal class DefaultChatGenerationRuntime(
         )
         is StreamChunk.Completed -> GenerationChunk.Completed(chunk.reason, chunk.completedToolCallIds)
         is StreamChunk.ToolCallLifecycle -> null
+        is StreamChunk.ReasoningState -> preparedRoute?.modelId?.takeIf(String::isNotBlank)?.let { source ->
+            GenerationChunk.ReasoningState(ReasoningReplayCodec.encode(source, chunk.replay))
+        }
     }
 
     private fun defaultRagPhases() = listOf(

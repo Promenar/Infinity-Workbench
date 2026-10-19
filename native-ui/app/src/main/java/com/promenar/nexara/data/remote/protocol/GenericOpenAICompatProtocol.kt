@@ -50,6 +50,7 @@ class GenericOpenAICompatProtocol(
         activeChannel = null
         val thinkingDetector = ThinkingDetector()
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
+        val reasoningField = ReasoningFieldTracker()
 
         try {
             httpClient.preparePost(inferenceUrl()) {
@@ -137,7 +138,7 @@ class GenericOpenAICompatProtocol(
 
                     try {
                         val chunkJson = json.parseToJsonElement(data).jsonObject
-                        val parsedReason = processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                        val parsedReason = processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator, reasoningField)
                         if (parsedReason != null) {
                             if (completionReason != null) {
                                 throw IllegalStateException("Duplicate compatible finish_reason")
@@ -158,12 +159,18 @@ class GenericOpenAICompatProtocol(
                     when {
                         !sawDone -> send(truncatedStreamError("OpenAI-compatible stream ended before [DONE]"))
                         reason == null -> send(streamContractError("OpenAI-compatible stream missing finish_reason"))
-                        else -> send(validatedCompletion(
-                            reason,
-                            toolCallAccumulator.toSortedMap().values.map {
-                                ProtocolToolCall(it.id, it.name, it.arguments)
-                            },
-                        ))
+                        else -> {
+                            val completion = validatedCompletion(
+                                reason,
+                                toolCallAccumulator.toSortedMap().values.map {
+                                    ProtocolToolCall(it.id, it.name, it.arguments)
+                                },
+                            )
+                            if (completion is StreamChunk.Completed) {
+                                reasoningField.replay()?.let { send(StreamChunk.ReasoningState(it)) }
+                            }
+                            send(completion)
+                        }
                     }
                 }
             }
@@ -290,9 +297,10 @@ class GenericOpenAICompatProtocol(
 
                     msg.name?.let { put("name", it) }
 
-                    if (msg.role == "assistant" && protocolType in REASONING_REPLAY_PROTOCOLS) {
-                        msg.reasoning?.takeIf(String::isNotBlank)?.let { put("reasoning_content", it) }
-                    }
+                    putChatReasoningReplay(
+                        msg,
+                        legacyField = "reasoning_content".takeIf { protocolType in REASONING_REPLAY_PROTOCOLS },
+                    )
 
                     if (msg.role == "assistant" && msg.toolCalls != null && msg.toolCalls.isNotEmpty()) {
                         put("tool_calls", JsonArray(msg.toolCalls.map { tc ->
@@ -357,7 +365,8 @@ class GenericOpenAICompatProtocol(
     private suspend fun SendChannel<StreamChunk>.processStreamChunk(
         chunk: JsonObject,
         thinkingDetector: ThinkingDetector,
-        toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
+        toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>,
+        reasoningField: ReasoningFieldTracker,
     ): CompletionReason? {
         check(chunk["error"] == null || chunk["error"] is JsonNull) { "上游流返回错误事件" }
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
@@ -371,6 +380,7 @@ class GenericOpenAICompatProtocol(
             return null
         }
         val delta = choice["delta"] as? JsonObject ?: JsonObject(emptyMap())
+        reasoningField.observe(delta)
 
         var content = delta.stringField("content")
         // 部分 OpenAI 兼容服务使用 `delta.reasoning`；标准字段仍保持优先。
@@ -552,8 +562,8 @@ class GenericOpenAICompatProtocol(
 
     internal companion object {
         /**
-         * 思考模式下要求回传 `reasoning_content` 的服务：DeepSeek 在带 tools 的请求中缺失该字段会返回 400，
-         * 不带 tools 时会忽略；Kimi 依赖它在多轮工具调用间延续推理。其它兼容服务不认识该字段，不发送。
+         * 消息没有保存来源字段（旧版本消息或换过模型）时仍固定回传 `reasoning_content` 的服务：
+         * DeepSeek 在带 tools 的请求中缺失该字段会返回 400；Kimi 依赖它在多轮工具调用间延续推理。
          */
         val REASONING_REPLAY_PROTOCOLS = setOf(ProtocolType.DeepSeek, ProtocolType.Moonshot_Kimi)
     }

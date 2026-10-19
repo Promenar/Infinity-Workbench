@@ -281,6 +281,10 @@ class ChatGenerationRunner(
                                     snapshot = snapshot.copy(reasoning = snapshot.reasoning + chunk.content)
                                     snapshot = persist(request, snapshot, emit)
                                 }
+                                is GenerationChunk.ReasoningState -> {
+                                    snapshot = snapshot.copy(reasoningReplay = chunk.encoded)
+                                    snapshot = persist(request, snapshot, emit)
+                                }
                                 is GenerationChunk.ToolCall -> {
                                     val old = roundTools[chunk.id]
                                     roundTools[chunk.id] = GenerationToolCall(

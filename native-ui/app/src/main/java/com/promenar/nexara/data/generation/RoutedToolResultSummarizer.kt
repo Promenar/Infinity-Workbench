@@ -117,6 +117,7 @@ internal class RoutedToolResultSummarizer(
                         -> rejected = true
                         is StreamChunk.Thinking,
                         is StreamChunk.Citations,
+                        is StreamChunk.ReasoningState,
                         -> Unit
                     }
                 }

@@ -38,6 +38,27 @@ class ChatGenerationRunnerRetryTest {
         flowOf(GenerationChunk.Text(text), GenerationChunk.Completed(CompletionReason.END_TURN))
 
     @Test
+    fun `思考回传状态写入快照且重试时随半截输出一起丢弃`() = runTest {
+        val runtime = RetryRuntime(
+            maxRetries = 1,
+            attempts = listOf(
+                flowOf(GenerationChunk.ReasoningState("stale"), GenerationChunk.Failure(failure(GenerationFailureCode.NETWORK))),
+                flowOf(
+                    GenerationChunk.Text("答"),
+                    GenerationChunk.ReasoningState("fresh"),
+                    GenerationChunk.Completed(CompletionReason.END_TURN),
+                ),
+            ),
+        )
+
+        ChatGenerationRunner(runtime).run(request()) {}
+
+        assertThat(runtime.persisted.map { it.reasoningReplay }).contains("stale")
+        assertThat(runtime.persisted.last().reasoningReplay).isEqualTo("fresh")
+        assertThat(runtime.persisted.dropLastWhile { it.reasoningReplay == "fresh" }.last().reasoningReplay).isNull()
+    }
+
+    @Test
     fun `网络中断后重试成功且丢弃失败轮次的半截输出`() = runTest {
         val runtime = RetryRuntime(
             maxRetries = 10,

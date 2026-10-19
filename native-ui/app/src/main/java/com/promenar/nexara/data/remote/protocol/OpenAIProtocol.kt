@@ -45,6 +45,7 @@ class OpenAIProtocol(
         activeChannel = null
         val thinkingDetector = ThinkingDetector()
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
+        val reasoningField = ReasoningFieldTracker()
 
         try {
             httpClient.preparePost(inferenceUrl()) {
@@ -128,7 +129,7 @@ class OpenAIProtocol(
 
                     try {
                         val chunkJson = json.parseToJsonElement(data).jsonObject
-                        val parsedReason = processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                        val parsedReason = processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator, reasoningField)
                         if (parsedReason != null) {
                             if (completionReason != null) {
                                 throw IllegalStateException("Duplicate OpenAI finish_reason")
@@ -149,12 +150,18 @@ class OpenAIProtocol(
                     when {
                         !sawDone -> send(truncatedStreamError("OpenAI stream ended before [DONE]"))
                         reason == null -> send(streamContractError("OpenAI stream missing finish_reason"))
-                        else -> send(validatedCompletion(
-                            reason,
-                            toolCallAccumulator.toSortedMap().values.map {
-                                ProtocolToolCall(it.id, it.name, it.arguments)
-                            },
-                        ))
+                        else -> {
+                            val completion = validatedCompletion(
+                                reason,
+                                toolCallAccumulator.toSortedMap().values.map {
+                                    ProtocolToolCall(it.id, it.name, it.arguments)
+                                },
+                            )
+                            if (completion is StreamChunk.Completed) {
+                                reasoningField.replay()?.let { send(StreamChunk.ReasoningState(it)) }
+                            }
+                            send(completion)
+                        }
                     }
                 }
             }
@@ -277,6 +284,8 @@ class OpenAIProtocol(
 
                     msg.name?.let { put("name", it) }
 
+                    putChatReasoningReplay(msg)
+
                     if (msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty()) {
                         put("tool_calls", JsonArray(msg.toolCalls.map { tc ->
                             buildJsonObject {
@@ -336,7 +345,8 @@ class OpenAIProtocol(
     private suspend fun SendChannel<StreamChunk>.processStreamChunk(
         chunk: JsonObject,
         thinkingDetector: ThinkingDetector,
-        toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
+        toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>,
+        reasoningField: ReasoningFieldTracker,
     ): CompletionReason? {
         check(chunk["error"] == null || chunk["error"] is JsonNull) { "上游流返回错误事件" }
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
@@ -346,6 +356,7 @@ class OpenAIProtocol(
             return null
         }
         val delta = choice["delta"] as? JsonObject ?: JsonObject(emptyMap())
+        reasoningField.observe(delta)
 
         var content = delta.stringField("content")
         var reasoning = delta.stringField("reasoning_content")

@@ -960,10 +960,33 @@ class ChatViewModelTest {
         assertThat(viewModel.uiState.value.generationNotice?.code)
             .isEqualTo("generation.failure.context_limit")
         assertThat(viewModel.draftDocuments.value).containsExactly(document)
-        assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(0L)
+        assertThat(viewModel.inputText.value).isEqualTo("请分析")
+        assertThat(savedSessions.single { it.id == "s1" }.draft).isEqualTo("请分析")
 
         viewModel.clearError()
         assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
+    }
+
+    @Test
+    fun `点击发送立即清空输入框且生成期间的新输入不被接受后清掉`() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("ok"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
+
+        viewModel.updateInputText("很长的一段文字")
+        viewModel.sendMessage("很长的一段文字")
+        assertThat(viewModel.inputText.value).isEmpty()
+        assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(1L)
+
+        viewModel.updateInputText("下一条")
+        advanceUntilIdle()
+
+        assertThat(savedMessages.map { it.first.content }).contains("很长的一段文字")
+        assertThat(viewModel.inputText.value).isEqualTo("下一条")
+        assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(1L)
     }
 
     @Test
@@ -1591,7 +1614,7 @@ class ChatViewModelTest {
         fakeStreamChunks = listOf(StreamChunk.TextDelta("second-response"))
         viewModel.sendMessage("second")
         secondPreparationEntered.await()
-        assertThat(viewModel.inputText.value).isEqualTo("second")
+        assertThat(viewModel.inputText.value).isEmpty()
         assertThat(savedSessions.single { it.id == "A" }.draft).isEqualTo("second")
         releaseSecondPreparation.complete(Unit)
         advanceUntilIdle()

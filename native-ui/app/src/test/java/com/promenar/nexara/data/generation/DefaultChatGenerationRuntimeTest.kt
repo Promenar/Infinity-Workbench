@@ -186,7 +186,7 @@ class DefaultChatGenerationRuntimeTest {
         val sessionManager = mockk<SessionManager>(relaxed = true)
         val contentStrategy = mockk<ChatGenerationContentStrategy>()
         every { contentStrategy.buildTools(any()) } returns emptyList()
-        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any()) } returns listOf(
+        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any(), any()) } returns listOf(
             com.promenar.nexara.data.remote.protocol.ProtocolMessage(
                 role = "user",
                 content = "中".repeat(100),
@@ -514,7 +514,7 @@ class DefaultChatGenerationRuntimeTest {
         every { ui.addPostProcessTask(any(), any()) } returns "task"
         val sessionManager = mockk<SessionManager>(relaxed = true)
         val contentStrategy = mockk<ChatGenerationContentStrategy>()
-        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any()) } answers {
+        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any(), any()) } answers {
             listOf(com.promenar.nexara.data.remote.protocol.ProtocolMessage("system", secondArg())) +
                 firstArg<Session>().messages.filterNot { it.isArchived }.map {
                     com.promenar.nexara.data.remote.protocol.ProtocolMessage(it.role.name.lowercase(), it.content)

@@ -87,6 +87,8 @@ data class GenerationSnapshot(
     val citations: List<GenerationCitation> = emptyList(),
     val failure: GenerationFailure? = null,
     val tokensEstimated: Boolean = false,
+    /** 协议原生思考状态的持久化信封（不透明字符串），用于向同一模型回传。 */
+    val reasoningReplay: String? = null,
 )
 
 data class GenerationCitation(val title: String, val url: String, val source: String? = null)
@@ -94,6 +96,8 @@ data class GenerationCitation(val title: String, val url: String, val source: St
 sealed interface GenerationChunk {
     data class Text(val content: String, val reasoning: String? = null) : GenerationChunk
     data class Thinking(val content: String) : GenerationChunk
+    /** [encoded] 为已带来源模型的持久化信封。 */
+    data class ReasoningState(val encoded: String) : GenerationChunk
     data class ToolCall(val id: String, val name: String, val arguments: String) : GenerationChunk
     data class Usage(val input: Int, val output: Int, val total: Int) : GenerationChunk
     data class Citations(val citations: List<GenerationCitation>) : GenerationChunk

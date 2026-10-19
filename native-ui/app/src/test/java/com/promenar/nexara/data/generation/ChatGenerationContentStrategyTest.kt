@@ -8,7 +8,10 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.MessageDocumentAttachment
+import com.promenar.nexara.data.remote.protocol.AnthropicThinkingBlock
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ReasoningReplay
+import com.promenar.nexara.data.remote.protocol.ReasoningReplayCodec
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
@@ -288,6 +291,35 @@ class ChatGenerationContentStrategyTest {
         assertThat(prompt[3].toolCallId).isEqualTo("call-1")
         assertThat(prompt[4].toolCalls!!.single().id).isEqualTo("call-2")
         assertThat(prompt[5].toolCallId).isEqualTo("call-2")
+    }
+
+    @Test
+    fun `思考状态只回传给同一模型且 Anthropic 思考块只保留当前回合`() {
+        val call1 = ToolCall("call-1", "search", "{}")
+        val call2 = ToolCall("call-2", "search", "{}")
+        val blocks = ReasoningReplay.AnthropicBlocks(listOf(AnthropicThinkingBlock("thinking", "想", "sig")))
+        val field = ReasoningReplay.ChatField("reasoning_content")
+        fun state(source: String, replay: ReasoningReplay) = ReasoningReplayCodec.encode(source, replay)
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            messages = listOf(
+                Message("u1", MessageRole.USER, "第一问"),
+                Message("a1", MessageRole.ASSISTANT, "", toolCalls = listOf(call1), thoughtSignature = state("p::m", blocks)),
+                Message("t1", MessageRole.TOOL, "r1", toolCallId = "call-1", name = "search"),
+                Message("a1b", MessageRole.ASSISTANT, "答一", reasoning = "想", thoughtSignature = state("p::m", field)),
+                Message("u2", MessageRole.USER, "第二问"),
+                Message("a2", MessageRole.ASSISTANT, "", toolCalls = listOf(call2), thoughtSignature = state("p::m", blocks)),
+                Message("t2", MessageRole.TOOL, "r2", toolCallId = "call-2", name = "search"),
+                Message("a3", MessageRole.ASSISTANT, "答二", thoughtSignature = state("other::m", field)),
+            ),
+        )
+
+        val prompt = strategy().buildProtocolMessages(session, "system", replaySource = "p::m")
+        val assistants = prompt.filter { it.role == "assistant" }
+
+        assertThat(assistants.map { it.reasoningReplay }).containsExactly(null, field, blocks, null).inOrder()
+        assertThat(strategy().buildProtocolMessages(session, "system").all { it.reasoningReplay == null }).isTrue()
     }
 
     @Test

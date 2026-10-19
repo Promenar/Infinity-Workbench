@@ -12,6 +12,8 @@ import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
+import com.promenar.nexara.data.remote.protocol.ReasoningReplay
+import com.promenar.nexara.data.remote.protocol.ReasoningReplayCodec
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
@@ -37,6 +39,17 @@ internal const val MISSING_TOOL_RESULT_CONTENT = "工具未执行：该调用在
  * - 工具结果只保留紧随其调用方助手消息、且尚未出现过的那一条，其余孤立或重复结果丢弃；
  * - 助手消息中没有结果的工具调用补一条“未执行”结果，避免历史损坏后每次请求都被拒绝。
  */
+/**
+ * 助手消息保存的协议原生思考状态：来源模型与当前路由不同则不回传；
+ * 仅限当前回合的状态（Anthropic 思考块）在更早的回合中省略，官方允许省略之前回合的思考块。
+ */
+internal fun replayableReasoning(message: Message, replaySource: String?, inCurrentTurn: Boolean): ReasoningReplay? {
+    if (replaySource.isNullOrBlank()) return null
+    val envelope = ReasoningReplayCodec.decode(message.thoughtSignature) ?: return null
+    if (envelope.source != replaySource) return null
+    return envelope.replay.takeIf { !it.currentTurnOnly || inCurrentTurn }
+}
+
 internal fun sanitizeProtocolHistory(messages: List<Message>): List<Message> {
     val result = mutableListOf<Message>()
     var openCalls: Map<String, ToolCall> = emptyMap()
@@ -86,6 +99,8 @@ interface ChatGenerationContentStrategy {
         systemPrompt: String,
         pinnedUserMessageId: String? = null,
         excludedMessageIds: Set<String> = emptySet(),
+        /** 当前路由的应用模型 ID；只有同一模型产生的思考状态才会回传。 */
+        replaySource: String? = null,
     ): List<ProtocolMessage>
     fun buildTools(session: Session): List<ProtocolTool>
     fun normalize(content: String, toolCalls: List<ToolCall>): GenerationContentNormalization
@@ -112,6 +127,7 @@ class DefaultChatGenerationContentStrategy(
         systemPrompt: String,
         pinnedUserMessageId: String?,
         excludedMessageIds: Set<String>,
+        replaySource: String?,
     ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
         val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
@@ -126,7 +142,9 @@ class DefaultChatGenerationContentStrategy(
         val protocolMessages = visibleMessages.filterIndexed { index, message ->
             !message.isArchived || (currentStart >= 0 && index in currentStart until currentEnd)
         }
-        sanitizeProtocolHistory(protocolMessages).forEach { message ->
+        val history = sanitizeProtocolHistory(protocolMessages)
+        val currentTurnStart = history.indexOfLast { it.role == MessageRole.USER }
+        history.forEachIndexed { index, message ->
             add(
                 when (message.role) {
                     MessageRole.USER -> ProtocolMessage(
@@ -152,6 +170,7 @@ class DefaultChatGenerationContentStrategy(
                         toolCalls = message.toolCalls?.map {
                             ProtocolToolCall(id = it.id, name = it.name, arguments = it.arguments)
                         },
+                        reasoningReplay = replayableReasoning(message, replaySource, index > currentTurnStart),
                     )
                     MessageRole.SYSTEM -> ProtocolMessage(role = "system", content = message.content)
                     MessageRole.TOOL -> ProtocolMessage(
