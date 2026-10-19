@@ -81,11 +81,13 @@ class SupervisedScriptRuntime(private val createProcess: suspend (String) -> Scr
     private var process: ScriptProcess? = null
 
     override suspend fun execute(sessionId: String, request: ScriptRequest, capabilities: ScriptCapabilities): ScriptResult = mutex.withLock {
-        if (request.timeoutSeconds !in 1..ScriptLimits.MAX_TIMEOUT_SECONDS || request.code.length > ScriptLimits.MAX_CODE_CHARS) {
-            return@withLock ScriptResult(errorCode = "INVALID_ARGUMENT", error = "代码或超时参数超过允许范围")
+        if (request.timeoutSeconds !in 1..ScriptLimits.MAX_TIMEOUT_SECONDS || request.code.length > ScriptLimits.MAX_CODE_CHARS ||
+            request.language !in ScriptLanguages.all || request.stdin.length > ScriptLimits.MAX_STDIN_CHARS
+        ) {
+            return@withLock ScriptResult(errorCode = "INVALID_ARGUMENT", error = "代码、标准输入、语言或超时参数超过允许范围")
         }
         try {
-            withTimeoutOrNull(request.timeoutSeconds * 1000L) {
+            withTimeoutOrNull(ScriptLimits.hostTimeoutMillis(request)) {
                 if (session != sessionId || process?.alive != true) {
                     discard()
                     process = createProcess(sessionId)

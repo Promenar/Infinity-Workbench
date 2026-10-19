@@ -55,7 +55,7 @@ object ApprovalPreview {
             "create_directory" -> Preview(Action.CREATE_DIRECTORY, newChild, null)
             "delete_file" -> Preview(Action.DELETE, target,
                 if ((args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) IRREVERSIBLE_WARNING else null)
-            "exec_js", "run_script" -> Preview(Action.SCRIPT, if (toolName == "run_script") target else "", buildString {
+            "exec_js", "run_script", "python_sandbox" -> Preview(Action.SCRIPT, if (toolName == "run_script") target else "", buildString {
                 if ((args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true) appendLine(NETWORK_ALLOWED)
                 args.string("code")?.let { append(excerpt(it, "")) }
             }.trimEnd().ifEmpty { null },

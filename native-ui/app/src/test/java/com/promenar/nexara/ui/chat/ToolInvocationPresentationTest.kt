@@ -50,7 +50,7 @@ class ToolInvocationPresentationTest {
     @Test
     fun `工具摘要严格按规格映射所有工具且保留检索与实用子类别`() {
         val cases = listOf(
-            listOf("termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read", "ssh_session_close", "run_script", "exec_js") to ToolSummaryAction.COMMAND,
+            listOf("termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read", "ssh_session_close", "run_script", "exec_js", "python_sandbox") to ToolSummaryAction.COMMAND,
             listOf("web_search", "search_tavily", "search_searxng") to ToolSummaryAction.WEB_SEARCH,
             listOf("web_fetch") to ToolSummaryAction.WEB_READ,
             listOf("read_file", "list_files", "search_files", "read_tool_output", "read_skill_file") to ToolSummaryAction.FILE_READ,

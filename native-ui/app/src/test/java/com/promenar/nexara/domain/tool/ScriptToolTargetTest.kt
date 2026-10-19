@@ -23,10 +23,13 @@ class ScriptToolTargetTest {
     @Test fun `内联脚本目标保持工具名兼容`() {
         assertThat(target("exec_js", """{"code":"1 + 2","allow_network":true}"""))
             .isEqualTo("""["tool","exec_js"]""")
+        assertThat(target("python_sandbox", """{"code":"print(1)","allow_network":true}"""))
+            .isEqualTo("""["tool","python_sandbox"]""")
+        assertThat(target("python_sandbox", "{}")).isNull()
     }
 
     @Test fun `两种联网脚本审批均显式提示可联网`() {
-        listOf("exec_js", "run_script").forEach { name ->
+        listOf("exec_js", "run_script", "python_sandbox").forEach { name ->
             val args = Json.parseToJsonElement("""{"code":"1","path":"/a.js","allow_network":true}""").jsonObject
             assertThat(ApprovalPreview.format(name, args)?.detail).contains("可联网")
         }

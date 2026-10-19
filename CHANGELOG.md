@@ -35,6 +35,11 @@ All notable changes to this project will be documented in this file.
 - 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 29.8 MB，安装后原生库目录约 33 MB（单 ABI）。
 - 发行 APK 敏感信息扫描对打包的官方 Python 条目放行上游构建机 `runner` 路径，并对标准库 zip 放行保留地址常量与 venv 示例路径；凭据类模式、其它用户路径及自编译启动器照常检查。
 
+### Python 沙箱
+
+- 新增 `python_sandbox` 工具：在隔离 UID 服务（与 `exec_js` 同一进程）中运行打包 Python，看不到应用私有数据与工作区物理目录、没有可写目录、不能直接联网。工作区读写与受限 fetch 经 `import nexara` 交给主进程，复用脚本的文件审批、挂载校验、网络策略与 128 次能力调用上限；风险等级与 `run_script` 相同。
+- 用户代码的 fd 0/1/2 换成管道，C 扩展或 `os.write` 的输出同样转发，不会混入控制通道；结果为 `exit_code`、`stdout`、`stderr` 与 `result`，超时终止子进程并保留已有输出。设备测试验证读不到私有文件、无法建立套接字、能力往返与超时后无残留 Python 进程。
+
 ### 内置 git 与 pip
 
 - `shell_exec` 新增 `git`：基于随 APK 打包的 dulwich 1.2.17（纯 Python，与 urllib3 一起合成 `libpysite.so`，构建时按 SHA-256 校验 PyPI wheel），开放 clone、status、add、commit、log、diff、branch、checkout、fetch、pull、push、remote、stash、tag 等常用子命令与 `-C <目录>`；`add -A`、`commit -F`、`log -<N>`、`branch -a`/`-r`、`remote -v`/`get-url`/`set-url`/`remove` 由包装补齐；克隆、拉取等以回车刷新的进度只保留最终状态，不再挤占输出尾部。`clone` 与 `fetch` 像 git 一样只取 HEAD、分支与标签，不再下载 GitHub 为每个 PR 通告的 `refs/pull/*`（`--depth 1` 克隆 octocat/Spoon-Knife 由约 636 MiB 降到约 60 KB）。不支持的子命令、全局选项与 SSH 远端返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引；未配置提交身份时返回 `GIT_IDENTITY_MISSING`，不再以 `u0_aNNN@localhost` 提交。`python_exec` 可直接 `import dulwich.porcelain`。

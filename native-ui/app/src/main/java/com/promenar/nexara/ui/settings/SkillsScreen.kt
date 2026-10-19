@@ -177,6 +177,7 @@ fun SkillsScreen(
             "delete_file" to Icons.Rounded.Delete,
             "shell_exec" to Icons.Rounded.Code,
             "python_exec" to Icons.Rounded.Code,
+            "python_sandbox" to Icons.Rounded.Code,
         )
     }
     val presetSkills by viewModel.skills.collectAsState()

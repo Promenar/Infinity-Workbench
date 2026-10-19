@@ -13,7 +13,17 @@ data class ScriptRequest(
     val args: JsonArray = JsonArray(emptyList()),
     val allowNetwork: Boolean = false,
     val timeoutSeconds: Int = 30,
+    /** 隔离进程按此选择引擎：[ScriptLanguages.JAVASCRIPT] 或 [ScriptLanguages.PYTHON]。 */
+    val language: String = ScriptLanguages.JAVASCRIPT,
+    /** 仅 Python 使用的标准输入。 */
+    val stdin: String = "",
 )
+
+object ScriptLanguages {
+    const val JAVASCRIPT = "javascript"
+    const val PYTHON = "python"
+    val all = setOf(JAVASCRIPT, PYTHON)
+}
 
 @Serializable
 data class ScriptLog(val level: String, val text: String)
@@ -64,4 +74,10 @@ object ScriptLimits {
     const val NETWORK_REQUESTS = 20
     const val CAPABILITY_CALLS = 128
     const val IPC_BYTES = 256 * 1024
+    const val MAX_STDIN_CHARS = 32_000
+    /** Python 子进程启动与输出收尾的余量：沙箱先按 timeoutSeconds 自行终止并带回已有输出，主进程再兜底。 */
+    const val PYTHON_HOST_GRACE_MILLIS = 3_000L
+
+    fun hostTimeoutMillis(request: ScriptRequest): Long =
+        request.timeoutSeconds * 1000L + if (request.language == ScriptLanguages.PYTHON) PYTHON_HOST_GRACE_MILLIS else 0L
 }

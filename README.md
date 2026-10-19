@@ -72,7 +72,9 @@ SSH 路线复用 SSH 主机管理：在 Termux 安装 `openssh`、配置密码�
 
 超时为 1–300 秒，默认 30 秒；QuickJS 堆上限 64 MiB、栈 512 KiB。代码最多 50,000 字符，单文件和单次网络正文最多 64 KiB；每次执行最多 20 次网络请求（含重定向）、1 MiB 累计响应和 128 次能力调用。总结果限 64 KiB，日志限 16 KiB 并按顺序截断。超时、资源超限、生成取消会终止执行进程，失联后下次重建；主进程的阻塞能力调用最多占用 4 个共享槽，迟到回调不再交给脚本。已批准且已进入文件后端的操作沿用其提交与回滚语义，不能保证随取消原子撤销。真实 UID 权限、进程死亡与 JNI 行为需通过设备测试验收。
 
-例如，读取后按版本保存：`var f = await fs.read('/notes.txt'); result = await fs.writeFile('/notes.txt', f.content + '\n完成', {expected_sha256: f.sha256});`。两个发行渠道提供相同脚本能力；脚本运行时只支持 JavaScript，Python 代码请使用 `python_exec`。
+例如，读取后按版本保存：`var f = await fs.read('/notes.txt'); result = await fs.writeFile('/notes.txt', f.content + '\n完成', {expected_sha256: f.sha256});`。两个发行渠道提供相同脚本能力。
+
+`python_sandbox(code, stdin="", allow_network=false, timeout_seconds=30)` 在同一个隔离 UID 服务中启动随 APK 打包的 Python 3.14（仅 arm64-v8a 设备）：看不到 Nexara 私有数据与工作区物理目录，没有可写目录，不能直接建立网络连接，只有标准库与 dulwich（侧载版 pip 装的包不可见）。代码用 `import nexara` 经同一套主进程代理访问工作区：`nexara.read(path)` 返回 `{content, sha256, path}`，另有 `read_text`、`stat`（不存在为 `None`）、`list`、`create`、`mkdir`、`delete`、`write(path, text, expected_sha256)`，以及“不存在则新建、存在则按当前哈希覆盖”的 `save(path, text)`；失败抛出 `nexara.NexaraError`（带 `code`）。`allow_network=true` 时 `nexara.fetch(url, method, headers, body)` 走与 `fetch` 相同的网络策略。文件、审批、网络与能力调用上限与 JavaScript 相同。结果沿用命令工具格式：`exit_code`、`stdout`（尾部 32 KiB）、`stderr`（尾部 12 KiB）与各流原始长度，`result` 变量（可 JSON 序列化，16 KiB 以内）另行返回；超时终止 Python 子进程并带回终止前的输出。需要直接读写大文件、子进程、git 仓库或 pip 包时使用 `python_exec`。
 
 ## 外部文件夹使用
 

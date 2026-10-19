@@ -73,7 +73,7 @@ object ToolExecutionTargets {
                 ?.let { tuple("path", it) }
             "search_files" -> args.string("query")?.takeIf(String::isNotBlank)?.let { tuple("path", "/") }
             "web_fetch" -> webHost(args)?.let { tuple("host", it) }
-            "exec_js" -> args.string("code")?.let { tuple("tool", tool.function.name) }
+            "exec_js", "python_sandbox" -> args.string("code")?.let { tuple("tool", tool.function.name) }
             else -> null
         }
         return if (target != null && tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) {

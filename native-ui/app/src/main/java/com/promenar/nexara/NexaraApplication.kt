@@ -734,6 +734,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(mounted(DeleteFileSkill(workspaceRepository)))
             register(ExecJsSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.RunScriptSkill(scriptToolRunner))
+            register(com.promenar.nexara.ui.chat.manager.skills.PythonSandboxSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService))
             register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService))
             register(InitializePlanSkill(taskRepository))

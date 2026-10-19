@@ -22,7 +22,7 @@ class ScriptRuntimeService : Service() {
     private val nextCall = AtomicInteger()
     private var invocation = ""
     private var job: Job? = null
-    private var engine: ScriptEngine? = null
+    @Volatile private var engine: ScriptEngine? = null
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { handle(it); true })
 
     override fun onBind(intent: Intent): IBinder = messenger.binder
@@ -44,13 +44,19 @@ class ScriptRuntimeService : Service() {
                 invocation = id
                 nextCall.set(0)
                 job = scope.launch {
-                    val currentEngine = QuickJsScriptEngine()
-                    engine = currentEngine
                     try {
                         val request = Json.decodeFromString<ScriptRequest>(payload)
-                        if (request.timeoutSeconds !in 1..ScriptLimits.MAX_TIMEOUT_SECONDS || request.code.length > ScriptLimits.MAX_CODE_CHARS) {
+                        if (request.timeoutSeconds !in 1..ScriptLimits.MAX_TIMEOUT_SECONDS || request.code.length > ScriptLimits.MAX_CODE_CHARS ||
+                            request.language !in ScriptLanguages.all || request.stdin.length > ScriptLimits.MAX_STDIN_CHARS
+                        ) {
                             throw ScriptFailure("INVALID_ARGUMENT", "脚本请求超出范围")
                         }
+                        val currentEngine = if (request.language == ScriptLanguages.PYTHON) {
+                            PythonSandboxEngine.packaged(applicationInfo.nativeLibraryDir)
+                        } else {
+                            QuickJsScriptEngine()
+                        }
+                        engine = currentEngine
                         val result = currentEngine.execute(request, ScriptCapabilities { operation, arguments ->
                             val call = nextCall.incrementAndGet()
                             if (call > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
@@ -86,11 +92,14 @@ class ScriptRuntimeService : Service() {
     }
 
     private fun terminate() {
-        // Binder 控制线程直接退出，不依赖引擎中断回调或锁的可用性。
+        // 先结束沙箱 Python 子进程（Process.destroyForcibly 即 SIGKILL），再由 Binder 控制线程直接退出，
+        // 不依赖引擎中断回调或锁的可用性。
+        runCatching { engine?.cancel() }
         Process.killProcess(Process.myPid())
     }
 
     override fun onDestroy() {
+        runCatching { engine?.cancel() }
         scope.cancel()
         super.onDestroy()
         Process.killProcess(Process.myPid())

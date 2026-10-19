@@ -678,6 +678,7 @@ class SettingsViewModel(
             Triple("delete_file", R.string.skill_delete_file, R.string.skill_delete_file_desc),
             Triple("shell_exec", R.string.skill_shell_exec, R.string.skill_shell_exec_desc),
             Triple("python_exec", R.string.skill_python_exec, R.string.skill_python_exec_desc),
+            Triple("python_sandbox", R.string.skill_python_sandbox, R.string.skill_python_sandbox_desc),
         ).map { (id, nameRes, descRes) ->
             SkillInfo(id, app.getString(nameRes), app.getString(descRes), BuiltinToolPreferences.isEnabled(prefs, id))
         }

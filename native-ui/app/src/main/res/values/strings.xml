@@ -1586,6 +1586,8 @@
     <string name="skill_shell_exec_desc">Run system sh commands directly in the session workspace without Termux; approval follows the execution mode</string>
     <string name="skill_python_exec">Python</string>
     <string name="skill_python_exec_desc">Run code with the built-in Python 3.14 in the session workspace (arm64 devices); approval follows the execution mode</string>
+    <string name="skill_python_sandbox">Python sandbox</string>
+    <string name="skill_python_sandbox_desc">Run the built-in Python in an isolated process (arm64 devices): no private data access, no network by default; workspace writes follow script approval settings</string>
     <string name="agent_skills_intro">Skill packs are reusable task instructions (SKILL.md). When enabled, the assistant loads a skill\'s instructions and reference files only when a task matches it. Skill packs never run code.</string>
     <string name="agent_skills_empty">No skill packs yet. Import a .zip or SKILL.md, or create one.</string>
     <string name="agent_skills_import">Import</string>

@@ -52,12 +52,12 @@ ToolExecutor
   └─ 命令类工具（shell_exec、python_exec、termux_exec、ssh_exec）
         └─ 共用结果契约 CommandToolResult（第 3.1 节）
               ├─ BuiltinExecService   主进程子进程（独立进程组），打包 Python，工作区物理目录
-              ├─ SandboxExecBackend   isolatedProcess，仅打包 Python，无文件系统、无网络（第 5 步）
+              ├─ python_sandbox       isolatedProcess（与 exec_js 同一隔离服务），打包 Python，经主进程能力代理访问工作区
               ├─ TermuxExecSkill      现有 TermuxRuntime（RUN_COMMAND）
               └─ SshSkills            现有 SshRuntime
 ```
 
-状态：内置后端已实施（`data/exec/BuiltinExecService.kt`、`BuiltinCommandRunner.kt`、`BuiltinExecEnvironment.kt`，工具 `ui/chat/manager/skills/BuiltinExecSkills.kt`）。三个后端的请求参数与生命周期差异较大（Termux 经 Intent 回调、SSH 经会话池、内置经子进程与工作区锁），共享的是结果格式而非调用接口，因此不另设 `ExecBackend` 接口；沙箱模式落地时再评估是否与内置后端合并请求模型。
+状态：内置后端已实施（`data/exec/BuiltinExecService.kt`、`BuiltinCommandRunner.kt`、`BuiltinExecEnvironment.kt`，工具 `ui/chat/manager/skills/BuiltinExecSkills.kt`）。三个后端的请求参数与生命周期差异较大（Termux 经 Intent 回调、SSH 经会话池、内置经子进程与工作区锁），共享的是结果格式而非调用接口，因此不另设 `ExecBackend` 接口。沙箱模式复用脚本运行时的请求模型（`ScriptRequest`），不与内置后端合并，见第 4.3 节。
 
 ### 3.1 统一结果格式
 
@@ -127,7 +127,15 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 ### 4.3 沙箱后端
 
-`python_exec` 增加 `sandbox: true` 模式，在 isolatedProcess 中运行打包 Python：无网络、看不到应用数据。输入只能经 stdin 与参数中声明的工作区文件（主进程读出内容后通过 Binder 传入，进入 Python 的 `nexara.inputs` 映射）；输出为 stdout、stderr 与通过 `nexara.write(path, data)` 提交的文件，由主进程经现有工作区写入路径落盘（版本哈希、写入审批照常）。沙箱模式风险等级与 `run_script` 相同。
+状态：已实施（`data/script/PythonSandboxEngine.kt`、`app/python/site/nexara_sandbox.py`，工具 `ui/chat/manager/skills/PythonSandboxSkill.kt`）。
+
+独立工具 `python_sandbox(code, stdin, allow_network, timeout_seconds)`，风险等级 `SCRIPT`（与 `run_script` 相同；工具风险是静态属性，因此不做成 `python_exec` 的参数）。审批目标为 `["tool","python_sandbox"]`。
+
+- 进程：复用 `exec_js` 的隔离服务 `ScriptRuntimeService`（`:script_runtime`，`isolatedProcess`），`ScriptRequest.language = "python"` 时由 `PythonSandboxEngine` 启动打包 Python 子进程（`-c` 只导入 `nexara_sandbox`，用户代码经控制通道传入，不受 execve 参数上限约束）。子进程继承隔离 UID：读不到应用数据（含 Room 数据库），无可写目录，套接字被拒绝；`PYTHONNOUSERSITE` 开启，侧载 pip 安装的包不可见。
+- 控制通道：子进程原始 stdin/stdout，每行一个 JSON 帧（start、out、cap、cap_result、done），单帧上限 260 KiB。`nexara_sandbox` 在执行用户代码前把 fd 0/1/2 换成管道并转发为 out 帧，C 扩展与 `os.write` 的输出不会混入控制帧。
+- 能力：`import nexara` 的 read、read_text、stat、list、write、create、save、mkdir、delete、fetch 经隔离服务的 Binder 会话交给主进程 `ScriptWorkspaceGateway` 与 `ScriptHttpClient`，与 JavaScript 共用文件审批（含“脚本写入审批”设置）、挂载身份校验、64 KiB 文本文件上限、联网开关与局域网白名单、128 次能力调用上限；`module` 能力对 Python 不开放。以 `_LIMIT` 结尾的失败终止整次执行，其它失败以 `nexara.NexaraError(code)` 交给用户代码。
+- 结果：沿用第 3.1 节命令结果格式，`backend` 为 `sandbox`；stdout 保留尾部 32 KiB、stderr 尾部 12 KiB（按 UTF-8 字节，整体结果不超过脚本服务的 64 KiB 上限），`result` 变量 JSON 化后不超过 16 KiB，超出时以 `result_error` 说明。
+- 超时与取消：引擎按 `timeout_seconds` 自行终止子进程并带回已有输出（`error_code = TIMEOUT`），主进程另加 3 秒余量兜底；服务终止前先 SIGKILL 子进程。设备测试确认超时后没有残留的 Python 进程。
 
 ### 4.4 工作区一致性
 
@@ -159,7 +167,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 | 能力 | 侧载 | Play |
 | --- | --- | --- |
-| shell_exec、python_exec、沙箱模式 | 有 | 有（全部代码随 APK 分发） |
+| shell_exec、python_exec、python_sandbox | 有 | 有（全部代码随 APK 分发） |
 | pip 安装 | 有，仅纯 Python 包，安装到 `filesDir/python-user` | 不提供（`PIP_UNSUPPORTED`），待政策评审 |
 | git（dulwich） | 有 | 有（代码随 APK 分发） |
 | 前台服务类型 | `specialUse`（已声明） | 不声明，只持有唤醒锁；待评审 |
@@ -194,7 +202,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 2. 统一结果格式（第 3.1 节）；`termux_exec`、`ssh_exec` 结果对齐。（已完成）`ExecBackend` 接口随第 4 步内置后端一起引入，避免只有现有两个实现时的空抽象。
 3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。（已完成）标准库未预编译 `.pyc`（需要同版本的宿主 Python），冷启动沿用第 2 节实测值。
 4. `shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。（已完成）不设 `:exec` 进程，原因见第 4.2 节；前台服务与唤醒锁属于第 7 步。
-5. 沙箱模式。
+5. 沙箱模式。（已完成）复用 `exec_js` 的隔离服务与能力代理，工作区文件按需读写而不是预先声明输入；见第 4.3 节。
 6. dulwich 与 `git` 包装、pip（侧载）。（已完成）不改动 `ensurepip` 与标准库 zip；dulwich 依赖单独打包为 `libpysite.so`，便于独立升级与发行扫描。
 7. 前台服务、唤醒锁与冻结检测文案。（已完成）停止按钮返回结构化结果 `EXEC_STOPPED` 而非取消整轮生成；冻结检测以轮询间隔判断并把暂停时间排除在超时之外，没有采用子进程 CPU 时间心跳。
 
@@ -211,7 +219,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | shell 函数在子 `sh` 脚本与 `subprocess` 中不可见 | 已知限制；工具说明给出 `python3 -m nexara_git` 等替代写法（真机实测模型会先尝试 `subprocess.run(['git', ...])`，失败后改用 `dulwich.porcelain`） |
 | dulwich 没有单分支克隆：`--depth 1` 仍取回全部分支与标签的头；`log` 不支持 `--all`、`--format` 等选项 | 已知限制 |
 | 用户 pip 安装的包排在打包依赖之后（如更新的 urllib3 被打包版本遮蔽） | 已知限制；保证内置 git 行为稳定 |
-| 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
+| 沙箱模式单个文件只支持不超过 64 KiB 的 UTF-8 文本（与 JavaScript 脚本相同，受 Binder 消息上限约束） | 已知限制；大文件与二进制改用 `python_exec` |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
 | 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒（被系统暂停的时间另计） | 已知限制；侧载渠道可从通知停止，Play 渠道只能在界面停止生成 |

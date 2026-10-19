@@ -32,7 +32,7 @@ class AndroidScriptToolRunner(
 ) : ScriptToolRunner {
     override suspend fun execute(request: ScriptRequest, context: SkillExecutionContext): ScriptResult = withContext(Dispatchers.IO) {
         try {
-            withTimeoutOrNull(request.timeoutSeconds * 1000L) {
+            withTimeoutOrNull(ScriptLimits.hostTimeoutMillis(request)) {
                 val (gateway, loaded) = ScriptCapabilityDispatcher.Shared.call {
                     val access = ScriptWorkspaceGateway.open(context, workspace, mounts, files, indexEvents, approvals, grants, { settings.approveFileWrites }, request.entryPath)
                     val source = if (request.entryPath == null) request else {
