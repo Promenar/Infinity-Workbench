@@ -66,15 +66,13 @@ class BuiltInSkillCancellationTest {
     }
 
     @Test
-    fun `WebFetch DNS与三种搜索 Skill 都传播取消`() = runTest {
+    fun `WebFetch DNS与搜索 Skill 都传播取消`() = runTest {
         val cancellation = CancellationException("network cancelled")
         val cancellingClient = HttpClient(MockEngine { throw cancellation })
         val cases = listOf(
             WebFetchSkill(cancellingClient) { throw cancellation } to
                 skillArgs("url" to "https://example.com"),
             WebSearchSkill(appContext, cancellingClient, testSecrets) to skillArgs("query" to "query"),
-            WebSearchSearXNGSkill(appContext, cancellingClient) to skillArgs("query" to "query"),
-            WebSearchTavilySkill(appContext, cancellingClient, testSecrets) to skillArgs("query" to "query"),
         )
 
         cases.forEach { (skill, args) ->

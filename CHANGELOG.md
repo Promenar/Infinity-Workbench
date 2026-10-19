@@ -35,6 +35,11 @@ All notable changes to this project will be documented in this file.
 - 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 29.8 MB，安装后原生库目录约 33 MB（单 ABI）。
 - 发行 APK 敏感信息扫描对打包的官方 Python 条目放行上游构建机 `runner` 路径，并对标准库 zip 放行保留地址常量与 venv 示例路径；凭据类模式、其它用户路径及自编译启动器照常检查。
 
+### 网络搜索工具合并
+
+- 只保留 `web_search` 一个搜索工具，按“设置 → 工具 → 联网搜索”中选择的引擎（DuckDuckGo、Keenable、Tavily、SearXNG）执行；移除与其共用配置的独立工具 `search_tavily`、`search_searxng`，设置页的工具列表与搜索配置页随之合并。开关以 `web_search` 为准，引擎、结果数与域名过滤沿用原设置；历史会话中旧工具的调用记录照常显示。
+- 删除未接入的 `ToolOrchestrationPlugin`（按关键词临时注入搜索工具的旧插件）。
+
 ### Python 沙箱
 
 - 新增 `python_sandbox` 工具：在隔离 UID 服务（与 `exec_js` 同一进程）中运行打包 Python，看不到应用私有数据与工作区物理目录、没有可写目录、不能直接联网。工作区读写与受限 fetch 经 `import nexara` 交给主进程，复用脚本的文件审批、挂载校验、网络策略与 128 次能力调用上限；风险等级与 `run_script` 相同。

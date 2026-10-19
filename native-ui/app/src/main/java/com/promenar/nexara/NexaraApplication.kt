@@ -84,8 +84,6 @@ import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.ChatRouteDependencies
 import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
-import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
-import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
 import com.promenar.nexara.ui.chat.manager.skills.WebFetchSkill
 import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileReadSkill
@@ -718,8 +716,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             })
             com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
-            register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
-            register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(WebFetchSkill(httpClient))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
             register(mounted(FileReadSkill(fileOperationRepository, workspaceRepository)))

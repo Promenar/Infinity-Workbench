@@ -909,10 +909,6 @@
     <string name="skill_web_search_desc">基于配置的默认搜索引擎进行搜索</string>
     <string name="skill_web_fetch">网页抓取</string>
     <string name="skill_web_fetch_desc">基于游标分页抓取并提取网页正文的纯文本内容</string>
-    <string name="skill_tavily">Tavily 搜索</string>
-    <string name="skill_tavily_desc">深度 AI 搜索 (Tavily)</string>
-    <string name="skill_searxng">SearXNG 搜索</string>
-    <string name="skill_searxng_desc">隐私元搜索 (SearXNG 实例)</string>
     <string name="skill_calculator">计算器</string>
     <string name="skill_calculator_desc">执行数学计算</string>
     <string name="skill_current_time">当前时间</string>
@@ -1338,9 +1334,6 @@
     <string name="search_config_engine_searxng">SearXNG (元搜索/公共节点)</string>
     <string name="search_config_engine_tavily">Tavily (AI 优化/API Key)</string>
     <string name="search_sheet_web_title">Web 搜索全局配置</string>
-    <string name="search_sheet_tavily_title">Tavily 搜索配置</string>
-    <string name="search_sheet_searxng_title">SearXNG 搜索配置</string>
-    <string name="search_sheet_title">搜索配置</string>
     <string name="search_secret_loading">正在安全读取已保存密钥…</string>
     <string name="search_secret_saving">正在安全保存…</string>
     <string name="search_secret_saved">密钥设置已保存</string>

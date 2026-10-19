@@ -69,8 +69,6 @@ class BackupPreferenceInventoryTest {
             "util/LocaleHelper.kt#prefs" to "nexara_settings",
             "ui/chat/manager/WebSearchContextProvider.kt#prefs" to "nexara_search",
             "ui/chat/manager/skills/WebSearchSkill.kt#prefs" to "nexara_search",
-            "ui/chat/manager/skills/WebSearchTavilySkill.kt#prefs" to "nexara_search",
-            "ui/chat/manager/skills/WebSearchSearXNGSkill.kt#prefs" to "nexara_search",
             "NexaraApplication.kt#prefs" to "nexara_provider",
             "data/manager/ProviderManager.kt#providerPrefs" to "nexara_provider",
             "data/manager/ProviderManager.kt#settingsPrefs" to "nexara_settings",

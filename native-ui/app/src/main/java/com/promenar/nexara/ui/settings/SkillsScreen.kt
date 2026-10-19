@@ -155,8 +155,6 @@ fun SkillsScreen(
         mapOf(
             "web_search" to Icons.Rounded.Search,
             "web_fetch" to Icons.Rounded.Description,
-            "search_tavily" to Icons.Rounded.Search,
-            "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,
             "image_generation" to Icons.Rounded.Image,
             "file_read" to Icons.Rounded.Description,
@@ -217,7 +215,7 @@ fun SkillsScreen(
 
     var showAddMcp by remember { mutableStateOf(false) }
     var showCreateSkill by remember { mutableStateOf(false) }
-    var showSearchConfig by remember { mutableStateOf<String?>(null) }
+    var showSearchConfig by remember { mutableStateOf(false) }
     var selectedSkillForEdit by remember { mutableStateOf<String?>(null) }
     var expandedServerId by remember { mutableStateOf<String?>(null) }
 
@@ -278,8 +276,8 @@ fun SkillsScreen(
                                 skill = skill,
                                 icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
                                 onToggle = { viewModel.toggleSkill(skill.id) },
-                                onConfig = if (skill.id in listOf("web_search", "search_tavily", "search_searxng")) {
-                                    { showSearchConfig = skill.id }
+                                onConfig = if (skill.id == "web_search") {
+                                    { showSearchConfig = true }
                                 } else null
                             )
                             }
@@ -617,11 +615,8 @@ fun SkillsScreen(
         null -> Unit
     }
 
-    if (showSearchConfig != null) {
-        SearchConfigBottomSheet(
-            skillId = showSearchConfig!!,
-            onDismiss = { showSearchConfig = null }
-        )
+    if (showSearchConfig) {
+        SearchConfigBottomSheet(onDismiss = { showSearchConfig = false })
     }
 }
 
@@ -824,7 +819,6 @@ private fun McpServerItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SearchConfigBottomSheet(
-    skillId: String,
     onDismiss: () -> Unit
 ) {
     val application = LocalContext.current.applicationContext as android.app.Application
@@ -853,7 +847,6 @@ internal fun SearchConfigBottomSheet(
         }
     ) {
         SearchConfigContent(
-            skillId = skillId,
             searchState = searchState,
             onSearchEngineChange = searchViewModel::updateSearchEngine,
             onResultCountChange = searchViewModel::updateResultCount,
@@ -867,7 +860,6 @@ internal fun SearchConfigBottomSheet(
 
 @Composable
 internal fun SearchConfigContent(
-    skillId: String = "web_search",
     searchState: SearchConfigState = SearchConfigState(),
     onSearchEngineChange: (String) -> Unit = {},
     onResultCountChange: (Int) -> Unit = {},
@@ -876,7 +868,7 @@ internal fun SearchConfigContent(
     keenableSecretEditor: @Composable () -> Unit = {},
     tavilySecretEditor: @Composable () -> Unit = {},
 ) {
-    var showDepthPicker by remember(skillId, searchState.searchEngine) { mutableStateOf(false) }
+    var showDepthPicker by remember(searchState.searchEngine) { mutableStateOf(false) }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -886,53 +878,46 @@ internal fun SearchConfigContent(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             Text(
-                text = when (skillId) {
-                    "web_search" -> stringResource(R.string.search_sheet_web_title)
-                    "search_tavily" -> stringResource(R.string.search_sheet_tavily_title)
-                    "search_searxng" -> stringResource(R.string.search_sheet_searxng_title)
-                    else -> stringResource(R.string.search_sheet_title)
-                },
+                text = stringResource(R.string.search_sheet_web_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = 16.dp),
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            if (skillId == "web_search") {
-                NexaraSettingsSection(title = stringResource(R.string.search_engine_select)) {
-                    EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchState.searchEngine == "duckduckgo") {
-                        onSearchEngineChange("duckduckgo")
-                    }
-                    EngineOption("keenable", stringResource(R.string.search_engine_keenable), searchState.searchEngine == "keenable") {
-                        onSearchEngineChange("keenable")
-                    }
-                    EngineOption("tavily", stringResource(R.string.search_engine_tavily), searchState.searchEngine == "tavily") {
-                        onSearchEngineChange("tavily")
-                    }
-                    EngineOption("searxng", stringResource(R.string.search_engine_searxng), searchState.searchEngine == "searxng") {
-                        onSearchEngineChange("searxng")
-                    }
+            NexaraSettingsSection(title = stringResource(R.string.search_engine_select)) {
+                EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchState.searchEngine == "duckduckgo") {
+                    onSearchEngineChange("duckduckgo")
                 }
-
-                NexaraSettingsSection(title = stringResource(R.string.settings_batch1_search_results)) {
-                NexaraStepperSetting(
-                    title = stringResource(R.string.search_count_label),
-                    value = searchState.resultCount.toString(),
-                    canDecrease = searchState.resultCount > 1,
-                    canIncrease = searchState.resultCount < 20,
-                    onDecrease = { onResultCountChange(searchState.resultCount - 1) },
-                    onIncrease = { onResultCountChange(searchState.resultCount + 1) },
-                )
+                EngineOption("keenable", stringResource(R.string.search_engine_keenable), searchState.searchEngine == "keenable") {
+                    onSearchEngineChange("keenable")
+                }
+                EngineOption("tavily", stringResource(R.string.search_engine_tavily), searchState.searchEngine == "tavily") {
+                    onSearchEngineChange("tavily")
+                }
+                EngineOption("searxng", stringResource(R.string.search_engine_searxng), searchState.searchEngine == "searxng") {
+                    onSearchEngineChange("searxng")
                 }
             }
 
-            if (skillId == "web_search" && searchState.searchEngine == "keenable") {
+            NexaraSettingsSection(title = stringResource(R.string.settings_batch1_search_results)) {
+            NexaraStepperSetting(
+                title = stringResource(R.string.search_count_label),
+                value = searchState.resultCount.toString(),
+                canDecrease = searchState.resultCount > 1,
+                canIncrease = searchState.resultCount < 20,
+                onDecrease = { onResultCountChange(searchState.resultCount - 1) },
+                onIncrease = { onResultCountChange(searchState.resultCount + 1) },
+            )
+            }
+
+            if (searchState.searchEngine == "keenable") {
                 NexaraSettingsSection(
                     title = stringResource(R.string.search_api_key_optional),
                     footer = stringResource(R.string.search_keenable_keyless_hint),
                 ) { Column(Modifier.padding(16.dp)) { keenableSecretEditor() } }
             }
 
-            if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {
+            if (searchState.searchEngine == "tavily") {
                 NexaraSettingsSection(title = stringResource(R.string.search_api_key)) {
                     Column(Modifier.padding(16.dp)) { tavilySecretEditor() }
                 }
@@ -951,7 +936,7 @@ internal fun SearchConfigContent(
                 }
             }
 
-            if (skillId == "search_searxng" || (skillId == "web_search" && searchState.searchEngine == "searxng")) {
+            if (searchState.searchEngine == "searxng") {
                 OutlinedTextField(
                     label = { Text(stringResource(R.string.search_instance_url)) },
                     value = searchState.searXngUrl,

@@ -904,10 +904,6 @@
     <string name="skill_web_search_desc">Search using the default search engine</string>
     <string name="skill_web_fetch">Web Fetch</string>
     <string name="skill_web_fetch_desc">Fetch and extract clean main text from a web page using pagination</string>
-    <string name="skill_tavily">Tavily Search</string>
-    <string name="skill_tavily_desc">Deep AI search (Tavily)</string>
-    <string name="skill_searxng">SearXNG Search</string>
-    <string name="skill_searxng_desc">Private meta-search (SearXNG instance)</string>
     <string name="skill_calculator">Calculator</string>
     <string name="skill_calculator_desc">Perform mathematical calculations</string>
     <string name="skill_current_time">Current Time</string>
@@ -1332,9 +1328,6 @@
     <string name="search_config_engine_searxng">SearXNG (Meta-Search / Public Node)</string>
     <string name="search_config_engine_tavily">Tavily (AI Optimized / API Key)</string>
     <string name="search_sheet_web_title">Web Search Configuration</string>
-    <string name="search_sheet_tavily_title">Tavily Search Configuration</string>
-    <string name="search_sheet_searxng_title">SearXNG Search Configuration</string>
-    <string name="search_sheet_title">Search Configuration</string>
     <string name="search_secret_loading">Securely loading the saved key…</string>
     <string name="search_secret_saving">Securely saving…</string>
     <string name="search_secret_saved">Key setting saved</string>

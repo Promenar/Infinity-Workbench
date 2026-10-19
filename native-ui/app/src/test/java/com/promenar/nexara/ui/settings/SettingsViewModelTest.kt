@@ -151,7 +151,9 @@ class SettingsViewModelTest {
         val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
         val skills = vm.skills.value
         val toolIds = skills.map { it.id }
-        assertThat(toolIds).containsAtLeast("file_read", "file_list", "file_search", "exec_js")
+        assertThat(toolIds).containsAtLeast("file_read", "file_list", "file_search", "exec_js", "python_sandbox", "web_search")
+        // Tavily 与 SearXNG 已并入 web_search，由搜索设置选择引擎，不再单独列出。
+        assertThat(toolIds).containsNoneOf("search_tavily", "search_searxng")
     }
 
     @Test

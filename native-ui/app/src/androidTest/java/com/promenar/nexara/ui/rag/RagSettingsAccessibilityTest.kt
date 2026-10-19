@@ -296,7 +296,7 @@ class RagSettingsAccessibilityTest {
                         DeviceConfigurationOverride.FontScale(2f),
                 ) {
                     NexaraTheme(dynamicColor = false) {
-                        SearchConfigBottomSheet(skillId = "web_search", onDismiss = {})
+                        SearchConfigBottomSheet(onDismiss = {})
                     }
                 }
             }

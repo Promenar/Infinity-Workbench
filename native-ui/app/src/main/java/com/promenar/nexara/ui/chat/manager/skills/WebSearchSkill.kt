@@ -21,7 +21,7 @@ class WebSearchSkill(
 ) : SkillDefinition {
     override val id = "web_search"
     override val name = "web_search"
-    override val description = "Search the web for real-time information, news, or specific topics. Use this when your internal knowledge is outdated or when you need up-to-date facts."
+    override val description = "联网搜索实时信息、新闻或具体主题，返回结果摘要与引用链接。内部知识可能过时或需要最新事实时使用；搜索引擎（DuckDuckGo、Keenable、Tavily 或 SearXNG）、结果数量与域名过滤由用户在设置中配置。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
     

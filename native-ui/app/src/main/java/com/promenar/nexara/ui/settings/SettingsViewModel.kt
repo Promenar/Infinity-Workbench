@@ -639,7 +639,7 @@ class SettingsViewModel(
 
     private fun loadSkills() {
         val allPresetSkills = setOf(
-            "web_search", "web_fetch", "search_tavily", "search_searxng",
+            "web_search", "web_fetch",
             "calculator", "image_generation",
             "file_read", "file_write", "file_list", "file_search", "file_diff", "file_patch",
             "exec_js", "run_script", "initialize_plan", "update_plan", "get_plan", "drop_plan"
@@ -655,8 +655,6 @@ class SettingsViewModel(
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
             SkillInfo("web_fetch", app.getString(R.string.skill_web_fetch), app.getString(R.string.skill_web_fetch_desc), enabledSet?.contains("web_fetch") ?: true),
-            SkillInfo("search_tavily", app.getString(R.string.skill_tavily), app.getString(R.string.skill_tavily_desc), enabledSet?.contains("search_tavily") ?: true),
-            SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
             SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true),
             SkillInfo("file_read", app.getString(R.string.skill_file_read), app.getString(R.string.skill_file_read_desc), enabledSet?.contains("file_read") ?: true),
