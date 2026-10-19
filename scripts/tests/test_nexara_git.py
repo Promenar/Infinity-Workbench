@@ -458,5 +458,384 @@ class HttpCloneFetchScopeTest(CloneFetchScopeTest):
             self.assertEqual([len(ids) for ids in tag_packs], [2], packs)
 
 
+class InspectUsageTest(unittest.TestCase):
+    """检查入口是 App 内部接口，不出现在给模型看的用法与支持列表中。"""
+
+    def test_inspect_entry_is_hidden_from_model(self) -> None:
+        self.assertNotIn("inspect", nexara_git._usage())
+        self.assertNotIn("--nexara-inspect", nexara_git.SUPPORTED)
+
+    def test_argument_errors_exit_2_without_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "out.json"
+            for argv in (
+                ["status"],
+                ["bogus", "--output", str(output)],
+                ["read", "--output", str(output)],
+                ["commit", "--output", str(output)],
+                ["log", "--limit", "0", "--output", str(output)],
+            ):
+                stderr = io.StringIO()
+                original = sys.stderr
+                sys.stderr = stderr
+                try:
+                    code = nexara_git.main(["--nexara-inspect", *argv])
+                finally:
+                    sys.stderr = original
+                self.assertEqual(code, 2, argv)
+                self.assertIn("--nexara-inspect", stderr.getvalue())
+                self.assertFalse(output.exists(), argv)
+
+    def test_tree_path_rejects_escape(self) -> None:
+        for path in ("", "/etc/passwd", "../x", "a/../b", "a//b", "a/./b", "a\\b", "a\0b", "a/"):
+            with self.assertRaises(nexara_git._InspectError, msg=path):
+                nexara_git._tree_path(path)
+        self.assertEqual(nexara_git._tree_path("src/中文.txt"), "src/中文.txt".encode())
+
+
+class InspectTest(unittest.TestCase):
+    """经 python -m nexara_git --nexara-inspect 读取状态、内容与历史，断言 JSON 结构且不改动仓库。"""
+
+    def setUp(self) -> None:
+        try:
+            self.dulwich_root = _load_dulwich()
+        except ImportError:
+            self.skipTest("未找到 dulwich：设置 NEXARA_DULWICH_PATH 指向解压后的 dulwich 与 urllib3 wheel 目录")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / "home").mkdir()
+        self.work = self.root / "work"
+        self.work.mkdir()
+        self.clock = 1_700_000_000
+        self.outputs = 0
+
+    # —— 构造仓库 ——
+    def init(self) -> None:
+        from dulwich import porcelain
+
+        porcelain.init(str(self.work)).close()
+
+    def write(self, name: str, data: bytes | str) -> Path:
+        target = self.work / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data.encode() if isinstance(data, str) else data)
+        return target
+
+    def add(self, *names: str) -> None:
+        from dulwich import porcelain
+
+        porcelain.add(str(self.work), paths=[str(self.work / name) for name in names])
+
+    def commit(self, message: str) -> str:
+        from dulwich import porcelain
+
+        self.clock += 60
+        sha = porcelain.commit(
+            str(self.work), message=message.encode(), author=SIGNATURE, committer=SIGNATURE,
+            author_timezone=0, commit_timezone=0, commit_timestamp=self.clock, author_timestamp=self.clock,
+        )
+        return sha.decode()
+
+    def rm(self, *names: str) -> None:
+        from dulwich import porcelain
+
+        porcelain.remove(str(self.work), paths=[str(self.work / name) for name in names], cached=True)
+
+    # —— 调用检查入口 ——
+    def inspect(self, operation: str, *args: str, kind: str = "project", repo: Path | None = None) -> dict:
+        import json
+
+        self.outputs += 1
+        output = self.root / ("out-%d.json" % self.outputs)
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(self.root / "home"),
+            "LANG": "C.UTF-8",
+            "PYTHONPATH": os.pathsep.join([str(SITE_DIR), self.dulwich_root]),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NEXARA_WORKSPACE_KIND": kind,
+        }
+        result = subprocess.run(
+            [sys.executable, "-m", "nexara_git", "--nexara-inspect", operation, "--output", str(output), *args],
+            cwd=str(repo or self.work), env=env, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(Path(str(output) + ".tmp").exists())
+        data = json.loads(output.read_text(encoding="utf-8"))
+        output.unlink()
+        self.assertEqual(data["version"], 1)
+        return data
+
+    def paths(self, status: dict, group: str) -> dict:
+        return {item["path"]: item["change"] for item in status[group]}
+
+    def blob(self, rev: str, path: str) -> dict:
+        data = self.inspect("read", "--blob", "%s:%s" % (rev, path))
+        self.assertTrue(data["repository"], data)
+        self.assertNotIn("error", data)
+        (item,) = data["blobs"]
+        self.assertEqual((item["rev"], item["path"]), (rev, path))
+        return item
+
+    # —— 用例 ——
+    def test_non_repository_directory(self) -> None:
+        self.assertEqual(self.inspect("status"), {"version": 1, "repository": False})
+        self.assertFalse(self.inspect("log")["repository"])
+
+    def test_subdirectory_of_repository_is_not_discovered_upwards(self) -> None:
+        self.init()
+        (self.work / "sub").mkdir()
+        self.assertEqual(self.inspect("status", repo=self.work / "sub"), {"version": 1, "repository": False})
+
+    def test_bare_repository_is_not_a_workspace_repository(self) -> None:
+        from dulwich.repo import Repo
+
+        Repo.init_bare(str(self.work / "bare.git"), mkdir=True).close()
+        self.assertFalse(self.inspect("status", repo=self.work / "bare.git")["repository"])
+
+    def test_empty_repository(self) -> None:
+        self.init()
+        status = self.inspect("status")
+        self.assertTrue(status["repository"])
+        self.assertTrue(status["unborn"])
+        self.assertIsNone(status["head"])
+        self.assertFalse(status["detached"])
+        self.assertIn(status["branch"], ("master", "main"))
+        for group in ("staged", "unstaged", "untracked"):
+            self.assertEqual(status[group], [], group)
+            self.assertFalse(status[group + "_truncated"])
+        self.assertEqual(self.inspect("log"), {"version": 1, "repository": True, "commits": [], "truncated": False})
+        self.assertFalse(self.blob("HEAD", "a.txt")["exists"])
+        self.assertFalse(self.blob("INDEX", "a.txt")["exists"])
+
+    def test_empty_repository_with_staged_and_untracked_files(self) -> None:
+        self.init()
+        self.write("a.txt", "a\n")
+        self.write("b.txt", "b\n")
+        self.add("a.txt")
+        status = self.inspect("status")
+        self.assertEqual(self.paths(status, "staged"), {"a.txt": "added"})
+        self.assertEqual(self.paths(status, "untracked"), {"b.txt": "added"})
+        self.assertEqual(status["unstaged"], [])
+        self.assertEqual(self.blob("INDEX", "a.txt")["text"], "a\n")
+
+    def test_staged_unstaged_and_untracked_groups(self) -> None:
+        self.init()
+        self.write("a.txt", "one\n")
+        self.write("b.txt", "keep\n")
+        self.write("c.txt", "remove me\n")
+        self.write(".gitignore", "*.log\nbuild/\n")
+        self.add("a.txt", "b.txt", "c.txt", ".gitignore")
+        head = self.commit("init")
+        index_file = self.work / ".git" / "index"
+        config_file = self.work / ".git" / "config"
+
+        self.write("a.txt", "one\ntwo\n")
+        self.add("a.txt")
+        self.write("a.txt", "one\ntwo\nthree\n")  # 同一文件既有已暂存也有未暂存改动
+        (self.work / "b.txt").unlink()  # 工作区删除、未暂存
+        self.rm("c.txt")  # 已暂存删除，工作区文件保留为未跟踪
+        (self.work / "c.txt").unlink()
+        self.write("new.txt", "fresh\n")
+        self.write("docs/guide.md", "# 指南\n")
+        self.write("debug.log", "ignored\n")
+        self.write("build/out.bin", b"\0ignored")
+        # 内容不变但 stat 漂移：只读检查不得回写索引的 stat 缓存。
+        os.utime(self.work / ".gitignore", (self.clock + 10_000, self.clock + 10_000))
+        before_index = index_file.read_bytes()
+        before_config = config_file.read_bytes()
+
+        status = self.inspect("status")
+        self.assertEqual(status["head"], head)
+        self.assertFalse(status["unborn"])
+        self.assertEqual(self.paths(status, "staged"), {"a.txt": "modified", "c.txt": "deleted"})
+        self.assertEqual(self.paths(status, "unstaged"), {"a.txt": "modified", "b.txt": "deleted"})
+        self.assertEqual(self.paths(status, "untracked"), {"new.txt": "added", "docs/guide.md": "added"})
+        self.assertEqual([item["path"] for item in status["untracked"]], ["docs/guide.md", "new.txt"])
+        self.assertEqual(index_file.read_bytes(), before_index)
+        self.assertEqual(config_file.read_bytes(), before_config)
+
+        self.assertEqual(self.blob("HEAD", "a.txt")["text"], "one\n")
+        self.assertEqual(self.blob("INDEX", "a.txt")["text"], "one\ntwo\n")
+        self.assertFalse(self.blob("INDEX", "c.txt")["exists"])
+        self.assertEqual(self.blob("HEAD", "c.txt")["text"], "remove me\n")
+        both = self.inspect("read", "--blob", "HEAD:a.txt", "--blob", "INDEX:a.txt")["blobs"]
+        self.assertEqual([item["text"] for item in both], ["one\n", "one\ntwo\n"])
+        item = self.blob("HEAD", "a.txt")
+        self.assertEqual((item["mode"], item["size"], item["binary"], item["truncated"]), ("100644", 4, False, False))
+
+    def test_detached_head(self) -> None:
+        self.init()
+        self.write("a.txt", "a\n")
+        self.add("a.txt")
+        sha = self.commit("init")
+        from dulwich.repo import Repo
+
+        with Repo(str(self.work)) as repo:
+            repo.refs.remove_if_equals(b"HEAD", None)
+            repo.refs[b"HEAD"] = sha.encode()
+        status = self.inspect("status")
+        self.assertTrue(status["detached"])
+        self.assertIsNone(status["branch"])
+        self.assertEqual(status["head"], sha)
+
+    def test_binary_and_oversized_files(self) -> None:
+        self.init()
+        self.write("image.png", b"\x89PNG\r\n\x1a\n\0\0\0data")
+        large = ("x" * 1023 + "\n") * 600  # 600 KiB，超过 512 KiB 上限
+        self.write("large.txt", large)
+        self.write("edge.txt", "y" * (512 * 1024))  # 恰好等于上限
+        self.write("latin.txt", b"caf\xe9\n")
+        self.add("image.png", "large.txt", "edge.txt", "latin.txt")
+        self.commit("assets")
+        image = self.blob("HEAD", "image.png")
+        self.assertEqual((image["exists"], image["binary"], image["text"], image["size"]), (True, True, None, 15))
+        oversized = self.blob("INDEX", "large.txt")
+        self.assertEqual((oversized["truncated"], oversized["text"], oversized["size"]), (True, None, len(large)))
+        edge = self.blob("HEAD", "edge.txt")
+        self.assertFalse(edge["truncated"])
+        self.assertEqual(len(edge["text"]), 512 * 1024)
+        self.assertEqual(self.blob("HEAD", "latin.txt")["text"], "caf�\n")
+
+    def test_symlink_and_directory_entries(self) -> None:
+        self.init()
+        self.write("README", "hello\n")
+        os.symlink("README", self.work / "link")
+        self.write("dir/file.txt", "f\n")
+        self.add("README", "link", "dir/file.txt")
+        self.commit("links")
+        link = self.blob("HEAD", "link")
+        self.assertEqual((link["symlink"], link["text"], link["mode"]), (True, "README", "120000"))
+        self.assertFalse(self.blob("HEAD", "dir")["exists"])
+        self.assertFalse(self.blob("HEAD", "README/x")["exists"])
+
+    def test_entry_limit_truncates_each_group(self) -> None:
+        self.init()
+        for number in range(3):
+            self.write("u%d.txt" % number, "u\n")
+        status = self.inspect("status", "--limit", "2")
+        self.assertEqual(len(status["untracked"]), 2)
+        self.assertTrue(status["untracked_truncated"])
+        self.assertFalse(status["staged_truncated"])
+        self.assertFalse(self.inspect("status", "--limit", "3")["untracked_truncated"])
+
+    def test_log_lists_newest_first_with_limit(self) -> None:
+        self.init()
+        shas = []
+        for number in range(3):
+            self.write("a.txt", "v%d\n" % number)
+            self.add("a.txt")
+            shas.append(self.commit("提交 %d\n\n正文 %d" % (number, number)))
+        log = self.inspect("log", "--limit", "2")
+        self.assertTrue(log["truncated"])
+        self.assertEqual([entry["sha"] for entry in log["commits"]], [shas[2], shas[1]])
+        first = log["commits"][0]
+        self.assertEqual(first["short_sha"], shas[2][:7])
+        self.assertEqual((first["author_name"], first["author_email"]), ("Test", "test@example.com"))
+        self.assertEqual(first["title"], "提交 2")
+        self.assertEqual(first["parents"], [shas[1]])
+        self.assertEqual(first["author_time"], self.clock)
+        self.assertEqual(first["author_tz"], 0)
+        full = self.inspect("log")
+        self.assertFalse(full["truncated"])
+        self.assertEqual(len(full["commits"]), 3)
+        self.assertEqual(full["commits"][-1]["parents"], [])
+
+    def test_commit_changes_and_both_sides(self) -> None:
+        self.init()
+        body = "".join("line %d of the moved file\n" % number for number in range(40))
+        self.write("keep.txt", "one\n")
+        self.write("gone.txt", "bye\n")
+        self.write("old/name.txt", body)
+        self.add("keep.txt", "gone.txt", "old/name.txt")
+        root = self.commit("root")
+        self.write("keep.txt", "one\ntwo\n")
+        self.write("added.bin", b"\0\1\2")
+        os.rename(self.work / "old/name.txt", self.work / "new-name.txt")
+        self.add("keep.txt", "added.bin", "new-name.txt")
+        self.rm("gone.txt", "old/name.txt")
+        second = self.commit("second")
+
+        root_commit = self.inspect("commit", "--commit", root)
+        self.assertEqual(
+            {item["path"]: item["change"] for item in root_commit["files"]},
+            {"keep.txt": "added", "gone.txt": "added", "old/name.txt": "added"},
+        )
+        self.assertEqual(root_commit["commit"]["parents"], [])
+        self.assertFalse(self.blob(root + "^", "keep.txt")["exists"])
+
+        detail = self.inspect("commit", "--commit", second)
+        self.assertEqual(detail["commit"]["sha"], second)
+        self.assertEqual(detail["commit"]["message"], "second")
+        self.assertFalse(detail["files_truncated"])
+        files = {item["path"]: item for item in detail["files"]}
+        self.assertEqual(files["keep.txt"]["change"], "modified")
+        self.assertEqual(files["added.bin"]["change"], "added")
+        self.assertEqual(files["gone.txt"]["change"], "deleted")
+        self.assertEqual(files["new-name.txt"]["change"], "renamed")
+        self.assertEqual(files["new-name.txt"]["old_path"], "old/name.txt")
+        sides = self.inspect("read", "--blob", second + "^:keep.txt", "--blob", second + ":keep.txt")["blobs"]
+        self.assertEqual([item["text"] for item in sides], ["one\n", "one\ntwo\n"])
+        self.assertEqual(self.blob(second + "^", "old/name.txt")["text"], body)
+        self.assertEqual(self.blob(second, "new-name.txt")["text"], body)
+        self.assertTrue(self.blob(second, "added.bin")["binary"])
+        limited = self.inspect("commit", "--commit", second, "--limit", "1")
+        self.assertEqual(len(limited["files"]), 1)
+        self.assertTrue(limited["files_truncated"])
+
+    def test_invalid_arguments_are_reported_as_json_errors(self) -> None:
+        self.init()
+        self.write("a.txt", "a\n")
+        self.add("a.txt")
+        self.commit("init")
+        cases = [
+            (("read", "--blob", "HEAD:../escape"), "INVALID_ARGUMENT"),
+            (("read", "--blob", "nocolon"), "INVALID_ARGUMENT"),
+            (("read", "--blob", "main:a.txt"), "INVALID_ARGUMENT"),
+            (("read", "--blob", "0" * 40 + ":a.txt"), "NOT_FOUND"),
+            (("commit", "--commit", "abc"), "INVALID_ARGUMENT"),
+            (("commit", "--commit", "0" * 40), "NOT_FOUND"),
+        ]
+        for args, code in cases:
+            data = self.inspect(*args)
+            self.assertTrue(data["repository"], args)
+            self.assertEqual(data["error"]["code"], code, args)
+            self.assertTrue(data["error"]["message"], args)
+
+    def test_shared_storage_honours_ignorecase_and_symlinks_in_memory(self) -> None:
+        self.init()
+        self.write("Readme.txt", "hello\n")
+        self.write("target.txt", "t\n")
+        os.symlink("target.txt", self.work / "link")
+        self.add("Readme.txt", "target.txt", "link")
+        self.commit("init")
+        # 模拟共享存储检出：符号链接是内容为目标的普通文件，文件名大小写与索引不同。
+        (self.work / "link").unlink()
+        self.write("link", "target.txt")
+        os.rename(self.work / "Readme.txt", self.work / "readme-tmp")
+        os.rename(self.work / "readme-tmp", self.work / "README.TXT")
+        config_file = self.work / ".git" / "config"
+        before_config = config_file.read_bytes()
+
+        shared = self.inspect("status", kind="shared")
+        self.assertNotIn("README.TXT", self.paths(shared, "untracked"))
+        self.assertNotIn("link", self.paths(shared, "unstaged"))
+        self.assertEqual(config_file.read_bytes(), before_config)  # 兼容配置不写回
+
+        project = self.inspect("status", kind="project")
+        self.assertIn("README.TXT", self.paths(project, "untracked"))
+
+        # 仓库显式设置的值优先于共享存储默认值。
+        from dulwich.repo import Repo
+
+        with Repo(str(self.work)) as repo:
+            config = repo.get_config()
+            config.set((b"core",), b"ignorecase", b"false")
+            config.write_to_path()
+        explicit = self.inspect("status", kind="shared")
+        self.assertIn("README.TXT", self.paths(explicit, "untracked"))
+
+
 if __name__ == "__main__":
     unittest.main()

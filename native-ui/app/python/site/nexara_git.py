@@ -2,6 +2,33 @@
 
 不支持的子命令、全局选项与 SSH 远端返回 GIT_UNSUPPORTED 与指引，退出码 2；
 其它失败输出单行 fatal 信息，退出码 128，与 git 一致。
+
+App 内部只读检查入口（不在用法说明与 SUPPORTED 中，供 Git 变更面板使用，不经过 shell_exec）：
+
+    python -m nexara_git --nexara-inspect <操作> --output <文件> [--repo <目录>] [参数]
+
+只读取仓库，不写索引、配置与工作区；结果是写入 --output 的单个 UTF-8 JSON 对象（先写 <文件>.tmp 再改名），
+写出后退出码 0。参数错误时不写文件，向 stderr 输出原因，退出码 2。
+--repo 默认为当前目录，必须是仓库根（含 .git），不向上查找，避免读取工作区之外的仓库；
+不是仓库或是裸仓库时输出 {"version": 1, "repository": false}。
+NEXARA_WORKSPACE_KIND=shared 时，仓库配置未设置的 core.symlinks、core.filemode、core.ignorecase
+只在内存中按共享存储取值（false、false、true），不写回配置。
+
+操作与输出（除 repository 外均带 "version": 1、"repository": true）：
+  status [--limit N]：{"branch": 分支名或 null, "detached": 游离 HEAD, "head": 提交 sha 或 null, "unborn": 尚无提交,
+      "staged" | "unstaged" | "untracked": [{"path", "change"}], "<组>_truncated": 布尔}
+      change 取 added、modified、deleted；已暂存为 HEAD 对索引，未暂存为索引对工作区，未跟踪逐个列出文件（不含忽略项）。
+      每组最多 N 条（默认 2000，上限 10000），超出时截断标志为 true。
+  read --blob <版本>:<路径> [--blob ...]：{"blobs": [{"rev", "path", "exists", "mode", "symlink", "submodule",
+      "binary", "size", "truncated", "text"}]}。版本取 HEAD、INDEX、完整提交 sha 或 <sha>^（第一个父提交）。
+      text 为 UTF-8 文本（无法解码的字节替换为 U+FFFD）；二进制（前 8000 字节含 NUL）或超过 512 KiB 时 text 为 null，
+      超限时 truncated 为 true。子模块返回 "Subproject commit <sha>" 文本，符号链接返回链接目标文本。
+  log [--limit N]：{"commits": [{"sha", "short_sha", "author_name", "author_email", "author_time", "author_tz",
+      "title", "parents"}], "truncated": 布尔}。默认 50 条，上限 500。
+  commit --commit <sha> [--limit N]：{"commit": {同 log 条目, "message"}, "files": [{"path", "change", "old_path"}],
+      "files_truncated": 布尔}。与第一个父提交比较（根提交与空树比较），change 另含 renamed（old_path 为原路径）。
+  失败时输出 {"version": 1, "repository": true, "error": {"code", "message"}}，code 取 INVALID_ARGUMENT、
+  NOT_FOUND、INSPECT_FAILED。
 """
 
 import io
@@ -704,8 +731,403 @@ def _remote(args):
     return _unsupported("remote 只支持：remote [-v]、add、get-url、set-url、remove。" + FALLBACK)
 
 
+INSPECT_FLAG = "--nexara-inspect"
+INSPECT_VERSION = 1
+INSPECT_USAGE_EXIT = 2
+INSPECT_DEFAULT_ENTRIES = 2000
+INSPECT_MAX_ENTRIES = 10000
+INSPECT_DEFAULT_COMMITS = 50
+INSPECT_MAX_COMMITS = 500
+INSPECT_MAX_BLOB_BYTES = 512 * 1024
+INSPECT_MAX_MESSAGE_BYTES = 64 * 1024
+INSPECT_BINARY_SNIFF = 8000
+INSPECT_OPERATIONS = ("status", "read", "log", "commit")
+_HEX_SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_GITLINK_MODE = 0o160000
+
+
+class _InspectError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class _InspectUsage(Exception):
+    pass
+
+
+def _inspect_args(argv):
+    """解析检查入口参数；格式错误抛出 _InspectUsage。"""
+    import argparse
+
+    class Parser(argparse.ArgumentParser):
+        def error(self, message):
+            raise _InspectUsage(message)
+
+    parser = Parser(prog="nexara_git " + INSPECT_FLAG, add_help=False)
+    parser.add_argument("operation", choices=INSPECT_OPERATIONS)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--repo", default=".")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--blob", action="append", default=[])
+    parser.add_argument("--commit")
+    options = parser.parse_args(argv)
+    if options.limit is not None and options.limit < 1:
+        raise _InspectUsage("--limit 必须为正整数")
+    if options.operation == "read" and not options.blob:
+        raise _InspectUsage("read 需要至少一个 --blob <版本>:<路径>")
+    if options.operation == "commit" and not options.commit:
+        raise _InspectUsage("commit 需要 --commit <sha>")
+    return options
+
+
+def _inspect(argv):
+    try:
+        options = _inspect_args(argv)
+    except _InspectUsage as error:
+        print("nexara_git: %s: %s" % (INSPECT_FLAG, error), file=sys.stderr)
+        return INSPECT_USAGE_EXIT
+    try:
+        result = _inspect_run(options)
+    except _InspectError as error:
+        result = _inspect_failure(error.code, error.message)
+    except Exception as error:  # 损坏的仓库等：仍以 JSON 报告，调用方据 error 显示
+        detail = (str(error).strip() or type(error).__name__).splitlines()[0]
+        result = _inspect_failure("INSPECT_FAILED", "%s: %s" % (type(error).__name__, detail))
+    import json
+
+    temporary = options.output + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(result, handle, ensure_ascii=False, separators=(",", ":"))
+    os.replace(temporary, options.output)
+    return 0
+
+
+def _inspect_failure(code, message):
+    return {"version": INSPECT_VERSION, "repository": True, "error": {"code": code, "message": message}}
+
+
+def _inspect_open(path):
+    """只打开 path 本身的仓库：不向上查找，裸仓库视为不是仓库。"""
+    from dulwich.errors import NotGitRepository
+    from dulwich.repo import Repo
+
+    if not os.path.lexists(os.path.join(path, ".git")):
+        return None
+    try:
+        repo = Repo(path)
+    except NotGitRepository:
+        return None
+    if repo.bare:
+        repo.close()
+        return None
+    if _workspace_kind() == "shared":
+        _inspect_shared_config(repo)
+    return repo
+
+
+def _inspect_shared_config(repo):
+    """共享存储兼容配置只在内存中补齐：仓库未显式设置的项按共享存储取值，优先于全局配置。"""
+    from dulwich.config import ConfigDict
+
+    local = repo.get_config()
+    defaults = ConfigDict()
+    for name, value in SHARED_CORE_CONFIG:
+        try:
+            local.get((b"core",), name)
+        except KeyError:
+            defaults.set((b"core",), name, value)
+    original = repo.get_config_stack
+
+    def stacked():
+        stack = original()
+        stack.backends.insert(1, defaults)
+        return stack
+
+    repo.get_config_stack = stacked
+
+
+def _inspect_run(options):
+    repo = _inspect_open(options.repo)
+    if repo is None:
+        return {"version": INSPECT_VERSION, "repository": False}
+    try:
+        if options.operation == "status":
+            body = _inspect_status(repo, _clamp(options.limit, INSPECT_DEFAULT_ENTRIES, INSPECT_MAX_ENTRIES))
+        elif options.operation == "read":
+            body = {"blobs": [_inspect_blob(repo, *_split_blob_spec(spec)) for spec in options.blob]}
+        elif options.operation == "log":
+            body = _inspect_log(repo, _clamp(options.limit, INSPECT_DEFAULT_COMMITS, INSPECT_MAX_COMMITS))
+        else:
+            body = _inspect_commit(repo, options.commit, _clamp(options.limit, INSPECT_DEFAULT_ENTRIES, INSPECT_MAX_ENTRIES))
+    finally:
+        repo.close()
+    result = {"version": INSPECT_VERSION, "repository": True}
+    result.update(body)
+    return result
+
+
+def _clamp(value, default, maximum):
+    return default if value is None else min(value, maximum)
+
+
+def _text(data):
+    return data.decode("utf-8", "replace")
+
+
+def _split_blob_spec(spec):
+    rev, separator, path = spec.partition(":")
+    if not separator or not rev:
+        raise _InspectError("INVALID_ARGUMENT", "--blob 格式应为 <版本>:<路径>：%s" % spec)
+    return rev, path
+
+
+def _tree_path(path):
+    """把调用方给出的仓库相对路径转为树路径；拒绝绝对路径、空片段与 . / .. 片段。"""
+    if not path or "\0" in path or "\\" in path or path.startswith("/"):
+        raise _InspectError("INVALID_ARGUMENT", "路径无效：%s" % path)
+    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise _InspectError("INVALID_ARGUMENT", "路径无效：%s" % path)
+    return path.encode("utf-8")
+
+
+def _peel_commit(repo, sha):
+    from dulwich.objects import Commit, Tag
+
+    item = repo[sha]
+    while isinstance(item, Tag):
+        item = repo[item.object[1]]
+    if not isinstance(item, Commit):
+        raise _InspectError("INVALID_ARGUMENT", "不是提交：%s" % _text(sha))
+    return item
+
+
+def _head_commit(repo):
+    try:
+        sha = repo.refs[HEAD_REF]
+    except KeyError:
+        return None
+    return _peel_commit(repo, sha)
+
+
+def _head_state(repo):
+    try:
+        raw = repo.refs.read_ref(HEAD_REF) or b""
+    except KeyError:
+        raw = b""
+    branch, detached = None, False
+    if raw.startswith(b"ref: "):
+        target = raw[len(b"ref: "):].strip()
+        if target.startswith(HEADS_PREFIX):
+            branch = _text(target[len(HEADS_PREFIX):])
+        else:
+            branch = _text(target)
+    elif raw:
+        detached = True
+    commit = _head_commit(repo)
+    return {
+        "branch": branch,
+        "detached": detached,
+        "head": _text(commit.id) if commit is not None else None,
+        "unborn": commit is None,
+    }
+
+
+def _limited(iterable, limit):
+    """取前 limit 项并报告是否还有更多。"""
+    items = []
+    for item in iterable:
+        if len(items) >= limit:
+            return items, True
+        items.append(item)
+    return items, False
+
+
+def _inspect_status(repo, limit):
+    from dulwich.index import ConflictedIndexEntry, get_unstaged_changes
+    from dulwich.porcelain import get_untracked_paths
+
+    config = repo.get_config_stack()
+    index = repo.open_index(config=config)
+    head = _head_commit(repo)
+    result = _head_state(repo)
+
+    def staged():
+        for (old_path, new_path), _modes, _shas in index.changes_from_tree(
+            repo.object_store, head.tree if head is not None else None
+        ):
+            if old_path is None:
+                yield {"path": _text(new_path), "change": "added"}
+            elif new_path is None:
+                yield {"path": _text(old_path), "change": "deleted"}
+            else:
+                yield {"path": _text(new_path), "change": "modified"}
+
+    normalizer = repo.get_blob_normalizer(config=config)
+    trust_ctime = config.get_boolean(b"core", b"trustctime", True)
+    root = os.fsencode(repo.path)
+
+    def unstaged():
+        # refresh_stat 为 None：不回写索引的 stat 缓存，保持只读。
+        for tree_path in get_unstaged_changes(
+            index, root, normalizer.checkin_normalize if normalizer is not None else None,
+            False, trust_ctime, None, None,
+        ):
+            entry = index[tree_path]
+            on_disk = os.path.lexists(os.path.join(root, tree_path.replace(b"/", os.fsencode(os.sep))))
+            change = "modified" if on_disk or isinstance(entry, ConflictedIndexEntry) else "deleted"
+            yield {"path": _text(tree_path), "change": change}
+
+    def untracked():
+        precompose = config.get_boolean(b"core", b"precomposeunicode", False)
+        for path in get_untracked_paths(
+            repo.path, repo.path, index, exclude_ignored=True, untracked_files="all",
+            precompose_unicode=precompose, repo=repo,
+        ):
+            yield {"path": path.replace(os.sep, "/"), "change": "added"}
+
+    for name, entries in (("staged", staged()), ("unstaged", unstaged()), ("untracked", untracked())):
+        items, truncated = _limited(entries, limit)
+        result[name] = sorted(items, key=lambda item: item["path"])
+        result[name + "_truncated"] = truncated
+    return result
+
+
+def _resolve_tree(repo, rev):
+    """返回版本对应的树 sha；版本合法但对象不存在（未提交、根提交的父提交）时返回 None。"""
+    if rev == "HEAD":
+        commit = _head_commit(repo)
+        return commit.tree if commit is not None else None
+    parent = rev.endswith("^")
+    sha = rev[:-1] if parent else rev
+    if not _HEX_SHA.match(sha):
+        raise _InspectError("INVALID_ARGUMENT", "版本应为 HEAD、INDEX、完整提交 sha 或 <sha>^：%s" % rev)
+    try:
+        commit = _peel_commit(repo, sha.encode("ascii"))
+    except KeyError:
+        raise _InspectError("NOT_FOUND", "提交不存在：%s" % sha)
+    if not parent:
+        return commit.tree
+    if not commit.parents:
+        return None
+    return _peel_commit(repo, commit.parents[0]).tree
+
+
+def _inspect_blob(repo, rev, path):
+    import stat as stat_module
+
+    from dulwich.errors import NotTreeError
+    from dulwich.index import ConflictedIndexEntry
+    from dulwich.objects import Blob, SubmoduleEncountered
+
+    tree_path = _tree_path(path)
+    result = {
+        "rev": rev, "path": path, "exists": False, "mode": None, "symlink": False, "submodule": False,
+        "binary": False, "size": 0, "truncated": False, "text": None,
+    }
+    if rev == "INDEX":
+        index = repo.open_index(config=repo.get_config_stack())
+        try:
+            entry = index[tree_path]
+        except KeyError:
+            return result
+        if isinstance(entry, ConflictedIndexEntry):
+            entry = entry.this or entry.other or entry.ancestor
+            if entry is None:
+                return result
+        mode, sha = entry.mode, entry.sha
+    else:
+        tree = _resolve_tree(repo, rev)
+        if tree is None:
+            return result
+        try:
+            mode, sha = repo[tree].lookup_path(repo.__getitem__, tree_path)
+        except (KeyError, NotTreeError, SubmoduleEncountered):
+            return result
+    result["mode"] = "%06o" % mode
+    if mode == _GITLINK_MODE:
+        text = "Subproject commit %s\n" % _text(sha)
+        result.update(exists=True, submodule=True, size=len(text), text=text)
+        return result
+    item = repo.object_store[sha]
+    if not isinstance(item, Blob):
+        return result  # 目录不是文件
+    data = item.as_raw_string()
+    binary = b"\0" in data[:INSPECT_BINARY_SNIFF]
+    truncated = len(data) > INSPECT_MAX_BLOB_BYTES
+    result.update(
+        exists=True, symlink=stat_module.S_ISLNK(mode), binary=binary, size=len(data), truncated=truncated,
+        text=None if binary or truncated else _text(data),
+    )
+    return result
+
+
+def _identity(raw):
+    name, _, email = _text(raw).partition("<")
+    return name.strip(), email.rstrip(">").strip()
+
+
+def _commit_summary(commit):
+    message = commit.message or b""
+    name, email = _identity(commit.author)
+    return {
+        "sha": _text(commit.id),
+        "short_sha": _text(commit.id[:7]),
+        "author_name": name,
+        "author_email": email,
+        "author_time": commit.author_time,
+        "author_tz": commit.author_timezone,
+        "title": _text(message.strip().split(b"\n", 1)[0]) if message.strip() else "",
+        "parents": [_text(parent) for parent in commit.parents],
+    }
+
+
+def _inspect_log(repo, limit):
+    head = _head_commit(repo)
+    if head is None:
+        return {"commits": [], "truncated": False}
+    walker = repo.get_walker(include=[head.id], max_entries=limit + 1)
+    commits, truncated = _limited((_commit_summary(entry.commit) for entry in walker), limit)
+    return {"commits": commits, "truncated": truncated}
+
+
+def _inspect_commit(repo, sha, limit):
+    from dulwich.diff_tree import (
+        CHANGE_ADD, CHANGE_COPY, CHANGE_DELETE, CHANGE_RENAME, RenameDetector, tree_changes,
+    )
+
+    if not _HEX_SHA.match(sha):
+        raise _InspectError("INVALID_ARGUMENT", "--commit 应为完整提交 sha：%s" % sha)
+    try:
+        commit = _peel_commit(repo, sha.encode("ascii"))
+    except KeyError:
+        raise _InspectError("NOT_FOUND", "提交不存在：%s" % sha)
+    parent_tree = _peel_commit(repo, commit.parents[0]).tree if commit.parents else None
+    store = repo.object_store
+    names = {CHANGE_ADD: "added", CHANGE_DELETE: "deleted", CHANGE_RENAME: "renamed", CHANGE_COPY: "added"}
+
+    def files():
+        for change in tree_changes(store, parent_tree, commit.tree, rename_detector=RenameDetector(store)):
+            kind = names.get(change.type, "modified")
+            new_path = change.new.path if change.new is not None and change.new.path is not None else None
+            old_path = change.old.path if change.old is not None and change.old.path is not None else None
+            item = {"path": _text(new_path if new_path is not None else old_path), "change": kind}
+            if kind == "renamed":
+                item["old_path"] = _text(old_path)
+            yield item
+
+    items, truncated = _limited(files(), limit)
+    summary = _commit_summary(commit)
+    summary["message"] = _text((commit.message or b"")[:INSPECT_MAX_MESSAGE_BYTES])
+    return {"commit": summary, "files": items, "files_truncated": truncated}
+
+
 def main(argv):
     args = list(argv)
+    if args and args[0] == INSPECT_FLAG:
+        return _inspect(args[1:])
     while args and args[0].startswith("-"):
         option = args.pop(0)
         if option in ("--version", "-v"):

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import com.google.common.truth.Truth.assertThat
@@ -637,6 +638,7 @@ class ChatViewModelTest {
                 com.promenar.nexara.data.generation.ContextUsageEstimate(100, 0, 0, 0, 0, 128000)
             },
             workspaceLookupOverride = { id -> workspaceRecords[id] },
+            workspaceSwitchNoticeTextOverride = { from, to -> "切换：$from → $to" },
         )
         this.documentReader = documentReader
     }
@@ -662,6 +664,9 @@ class ChatViewModelTest {
         )
         assertThat(app.chatStore.getSession("s1")?.workspaceId).isEqualTo("ws-demo")
         assertThat(viewModel.workspaceSwitchNotice.value).isEqualTo(switched)
+        val notices = app.chatStore.getSession("s1")?.messages.orEmpty().filter { it.isWorkspaceSwitchNotice }
+        assertThat(notices).hasSize(1)
+        assertThat(notices.single().content).contains("演示项目")
 
         holdStreamOpen = true
         viewModel.sendMessage("生成一段回复")

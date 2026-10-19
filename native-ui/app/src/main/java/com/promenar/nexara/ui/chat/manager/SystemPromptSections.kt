@@ -27,6 +27,8 @@ object SystemPromptSections {
         toolNames: Set<String>,
         generic: Boolean,
         workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
+        /** 会话中途切换过工作区：历史消息里的路径与哈希可能属于之前的工作区。 */
+        workspaceChanged: Boolean = false,
     ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
@@ -49,9 +51,18 @@ object SystemPromptSections {
             appendLine("- Prefer `patch_file` for local edits and `write_file` for full rewrites of existing files. Create new files with `create_file` and folders with `create_directory`.")
             appendLine("- `move_file` moves or renames; `delete_file` moves items to the recycle bin, which the user can restore.")
         }
-        if (toolNames.any { it in WORKSPACE_TOOLS || it in WORKSPACE_PROCESS_TOOLS }) currentWorkspace(workspace)?.let {
-            appendLine()
-            append(it)
+        if (toolNames.any { it in WORKSPACE_TOOLS || it in WORKSPACE_PROCESS_TOOLS }) {
+            currentWorkspace(workspace)?.let {
+                appendLine()
+                append(it)
+            }
+            if (workspaceChanged) {
+                if (currentWorkspace(workspace) == null) {
+                    appendLine()
+                    appendLine("### Current Workspace")
+                }
+                appendLine("- The user switched this conversation's workspace earlier. Paths, uuids and hashes in earlier messages may belong to a previous workspace; list or read files again before reusing them.")
+            }
         }
         if (toolNames.any(PLAN_TOOLS::contains)) {
             appendLine()

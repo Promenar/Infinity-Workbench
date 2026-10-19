@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="git_panel_title">Git 变更</string>
+    <string name="git_panel_entry_cd">打开 Git 变更面板</string>
+    <string name="git_panel_refresh">刷新</string>
+    <string name="git_panel_tab_changes">变更</string>
+    <string name="git_panel_tab_commits">最近提交</string>
+    <string name="git_panel_readonly_hint">只读视图。暂存、提交、推送与冲突处理请在对话中交给 Agent。</string>
+    <string name="git_panel_branch_detached">游离 HEAD %1$s</string>
+    <string name="git_panel_branch_unknown">未知分支</string>
+    <string name="git_panel_branch_unborn">%1$s · 尚无提交</string>
+    <string name="git_panel_no_changes">无改动</string>
+    <plurals name="git_panel_change_count">
+        <item quantity="other">%d 项改动</item>
+    </plurals>
+    <plurals name="git_panel_change_count_truncated">
+        <item quantity="other">%d+ 项改动</item>
+    </plurals>
+    <string name="git_panel_entry_python_unavailable">当前设备没有内置 Python</string>
+    <string name="git_panel_entry_failed">无法读取 Git 状态</string>
+    <string name="git_panel_group_staged">已暂存</string>
+    <string name="git_panel_group_unstaged">未暂存</string>
+    <string name="git_panel_group_untracked">未跟踪</string>
+    <string name="git_panel_group_header">%1$s · %2$d</string>
+    <plurals name="git_panel_group_truncated">
+        <item quantity="other">仅显示前 %1$d 项</item>
+    </plurals>
+    <string name="git_panel_clean">工作区没有改动</string>
+    <string name="git_panel_empty_repository">空仓库：尚无提交</string>
+    <string name="git_panel_no_commits">尚无提交</string>
+    <plurals name="git_panel_commits_truncated">
+        <item quantity="other">仅显示最近 %1$d 个提交</item>
+    </plurals>
+    <string name="git_panel_change_added">新增</string>
+    <string name="git_panel_change_modified">修改</string>
+    <string name="git_panel_change_deleted">删除</string>
+    <string name="git_panel_change_renamed">重命名</string>
+    <string name="git_panel_renamed_from">由 %1$s 重命名</string>
+    <plurals name="git_panel_commit_files">
+        <item quantity="other">%d 个文件有改动</item>
+    </plurals>
+    <plurals name="git_panel_commit_files_truncated">
+        <item quantity="other">仅显示前 %1$d 个文件</item>
+    </plurals>
+    <string name="git_panel_commit_no_files">该提交没有改动文件</string>
+    <string name="git_panel_diff_staged">已暂存 · HEAD → 索引</string>
+    <string name="git_panel_diff_unstaged">未暂存 · 索引 → 工作区</string>
+    <string name="git_panel_diff_untracked">未跟踪 · 新文件</string>
+    <string name="git_panel_diff_commit">%1$s · 相对父提交</string>
+    <string name="git_panel_error_python">当前设备架构没有内置 Python，无法在这里读取 Git 信息。可让 Agent 通过 Termux 或 SSH 执行 git。</string>
+    <string name="git_panel_error_not_repository">当前工作区不是 Git 仓库</string>
+    <string name="git_panel_error_workspace">会话工作区不可用</string>
+    <string name="git_panel_error_timeout">读取 Git 信息超时</string>
+    <string name="git_panel_error_unsafe_path">该路径无法安全显示</string>
+    <string name="git_panel_error_failed">无法读取 Git 信息</string>
+</resources>

@@ -1,0 +1,192 @@
+package com.promenar.nexara.ui.git
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.git.FakeInspectRunner
+import com.promenar.nexara.data.git.FakePythonRuntime
+import com.promenar.nexara.data.git.GitChangeGroup
+import com.promenar.nexara.data.git.GitChangeKind
+import com.promenar.nexara.data.git.GitChangesService
+import com.promenar.nexara.data.git.GitDiffSides
+import com.promenar.nexara.data.git.GitFileChange
+import com.promenar.nexara.data.git.GitFileContent
+import com.promenar.nexara.data.git.GitInspectError
+import com.promenar.nexara.data.git.GitInspectResult
+import com.promenar.nexara.data.git.GitInspector
+import com.promenar.nexara.data.git.GitWorkspaceResolution
+import com.promenar.nexara.data.git.GitWorkspaceTarget
+import com.promenar.nexara.data.git.InspectFixtures
+import com.promenar.nexara.data.git.NioGitWorkTreeReader
+import com.promenar.nexara.ui.common.diff.FileChangeKind
+import com.promenar.nexara.ui.common.diff.FileDiffContent
+import com.promenar.nexara.ui.common.diff.FileDiffSummaryReason
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import java.io.File
+import java.nio.file.Files
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class GitPanelViewModelTest {
+    private val work: File = Files.createTempDirectory("git-panel-vm").toFile().canonicalFile
+    private val root = File(work, "repo").apply { mkdirs(); File(this, ".git").mkdirs() }
+    private val runner = FakeInspectRunner(respond = { operation, args ->
+        when (operation) {
+            "status" -> InspectFixtures.status
+            "log" -> InspectFixtures.log
+            "commit" -> InspectFixtures.commit
+            "read" -> InspectFixtures.echoRead(args)
+            else -> null
+        }
+    })
+    private val service = GitChangesService(
+        locate = { GitWorkspaceResolution.Ready(GitWorkspaceTarget(root, "project")) },
+        inspector = GitInspector(FakePythonRuntime(), runner, { File(work, "out") }),
+        workTree = NioGitWorkTreeReader(pathFallback = true),
+    )
+
+    @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+
+    @After fun tearDown() {
+        Dispatchers.resetMain()
+        work.deleteRecursively()
+    }
+
+    private fun awaitState(viewModel: GitPanelViewModel, predicate: (GitPanelUiState) -> Boolean): GitPanelUiState =
+        runBlocking { withTimeout(10_000) { viewModel.state.first(predicate) } }
+
+    @Test fun `打开面板读取状态，切换到最近提交时才读取提交列表`() {
+        val viewModel = GitPanelViewModel("s", service)
+        viewModel.open()
+        val loaded = awaitState(viewModel) { it.status is GitLoad.Ready }
+        assertThat((loaded.status as GitLoad.Ready).value.branch).isEqualTo("main")
+        assertThat(loaded.log).isNull()
+        assertThat(runner.operations()).containsExactly("status")
+
+        viewModel.selectTab(GitPanelTab.COMMITS)
+        val commits = awaitState(viewModel) { it.log is GitLoad.Ready }
+        assertThat((commits.log as GitLoad.Ready).value.commits).hasSize(2)
+
+        viewModel.refresh()
+        awaitState(viewModel) { !it.refreshing && runner.operations().size == 4 }
+        // 刷新时状态与提交列表并行读取，顺序不定。
+        assertThat(runner.operations().take(2)).containsExactly("status", "log").inOrder()
+        assertThat(runner.operations().drop(2)).containsExactly("status", "log")
+    }
+
+    @Test fun `未跟踪文件差异在后台构建为新建文件，返回后回到列表`() {
+        File(root, "notes.txt").writeText("第一行\n第二行\n")
+        val viewModel = GitPanelViewModel("s", service)
+        viewModel.open()
+        awaitState(viewModel) { it.status is GitLoad.Ready }
+        viewModel.openChange(GitChangeGroup.UNTRACKED, GitFileChange("notes.txt", GitChangeKind.ADDED))
+        val state = awaitState(viewModel) { (it.detail as? GitPanelDetail.Change)?.diff is GitLoad.Ready }
+        val model = ((state.detail as GitPanelDetail.Change).diff as GitLoad.Ready).value
+        assertThat(model.changeKind).isEqualTo(FileChangeKind.CREATED)
+        assertThat(model.headerAdded).isEqualTo(2)
+        assertThat(model.fileName).isEqualTo("notes.txt")
+
+        assertThat(viewModel.back()).isTrue()
+        assertThat(viewModel.state.value.detail).isNull()
+        assertThat(viewModel.back()).isFalse()
+    }
+
+    @Test fun `提交详情与提交内文件差异分两级返回`() {
+        val viewModel = GitPanelViewModel("s", service)
+        viewModel.open()
+        viewModel.selectTab(GitPanelTab.COMMITS)
+        val log = awaitState(viewModel) { it.log is GitLoad.Ready }.log as GitLoad.Ready
+        viewModel.openCommit(log.value.commits.first())
+        val detail = awaitState(viewModel) { (it.detail as? GitPanelDetail.Commit)?.detail is GitLoad.Ready }
+        val files = ((detail.detail as GitPanelDetail.Commit).detail as GitLoad.Ready).value.files.entries
+        viewModel.openCommitFile(files[1])
+        val fileState = awaitState(viewModel) { (it.detail as? GitPanelDetail.Commit)?.file?.diff is GitLoad.Ready }
+        val commit = fileState.detail as GitPanelDetail.Commit
+        assertThat(commit.detail).isInstanceOf(GitLoad.Ready::class.java)
+        assertThat(commit.file!!.change.oldPath).isEqualTo("src/Old.kt")
+        assertThat(runner.values(runner.commands.lastIndex, "--blob")).containsExactly(
+            "${InspectFixtures.SHA_B}^:src/Old.kt",
+            "${InspectFixtures.SHA_B}:src/New.kt",
+        ).inOrder()
+
+        assertThat(viewModel.back()).isTrue()
+        val back = viewModel.state.value.detail as GitPanelDetail.Commit
+        assertThat(back.file).isNull()
+        assertThat(back.detail).isInstanceOf(GitLoad.Ready::class.java)
+        assertThat(viewModel.back()).isTrue()
+        assertThat(viewModel.state.value.detail).isNull()
+    }
+
+    @Test fun `刷新详情页时提交详情与文件差异都重新加载`() {
+        val viewModel = GitPanelViewModel("s", service)
+        viewModel.open()
+        viewModel.selectTab(GitPanelTab.COMMITS)
+        val log = awaitState(viewModel) { it.log is GitLoad.Ready }.log as GitLoad.Ready
+        viewModel.openCommit(log.value.commits.first())
+        awaitState(viewModel) { (it.detail as? GitPanelDetail.Commit)?.detail is GitLoad.Ready }
+        viewModel.openCommitFile(GitFileChange("src/App.kt", GitChangeKind.MODIFIED))
+        awaitState(viewModel) { (it.detail as? GitPanelDetail.Commit)?.file?.diff is GitLoad.Ready }
+        viewModel.refresh()
+        val refreshed = awaitState(viewModel) {
+            val commit = it.detail as? GitPanelDetail.Commit
+            commit?.detail is GitLoad.Ready && commit.file?.diff is GitLoad.Ready && !it.refreshing
+        }
+        assertThat((refreshed.detail as GitPanelDetail.Commit).file!!.change.path).isEqualTo("src/App.kt")
+    }
+
+    @Test fun `读取失败显示对应问题类别`() {
+        val failing = GitChangesService(
+            locate = { GitWorkspaceResolution.Unavailable("目录不可用") },
+            inspector = GitInspector(FakePythonRuntime(), runner, { File(work, "out") }),
+        )
+        val viewModel = GitPanelViewModel("s", failing)
+        viewModel.open()
+        val state = awaitState(viewModel) { it.status is GitLoad.Failed }
+        assertThat((state.status as GitLoad.Failed).problem).isEqualTo(GitPanelProblem(GitProblemKind.WORKSPACE_UNAVAILABLE, "目录不可用"))
+    }
+}
+
+class GitPanelModelsTest {
+    @Test fun `入口摘要：不是仓库与工作区不可用时隐藏`() {
+        assertThat(GitEntrySummary.from(GitInspectResult.Failure(GitInspectError.NotRepository))).isEqualTo(GitEntrySummary.Hidden)
+        assertThat(GitEntrySummary.from(GitInspectResult.Failure(GitInspectError.WorkspaceUnavailable("x")))).isEqualTo(GitEntrySummary.Hidden)
+        assertThat(GitEntrySummary.from(GitInspectResult.Failure(GitInspectError.PythonUnavailable))).isEqualTo(GitEntrySummary.PythonUnavailable)
+        assertThat(GitEntrySummary.from(GitInspectResult.Failure(GitInspectError.TimedOut))).isEqualTo(GitEntrySummary.Failed)
+    }
+
+    @Test fun `错误映射到问题类别`() {
+        assertThat(GitInspectError.TimedOut.toProblem().kind).isEqualTo(GitProblemKind.TIMED_OUT)
+        assertThat(GitInspectError.UnsafePath("x").toProblem().kind).isEqualTo(GitProblemKind.UNSAFE_PATH)
+        assertThat(GitInspectError.ParseFailed("x").toProblem().kind).isEqualTo(GitProblemKind.FAILED)
+        assertThat(GitInspectError.InspectFailed("NOT_FOUND", "x").toProblem()).isEqualTo(GitPanelProblem(GitProblemKind.FAILED))
+    }
+
+    @Test fun `差异模型：二进制、超限、删除与修改`() {
+        val text = GitFileContent(exists = true, size = 2, text = "a\n")
+        val binary = GitDiffModels.build(GitDiffSides("img.png", "img.png", text, GitFileContent(exists = true, binary = true, size = 3)))
+        assertThat(binary.content).isEqualTo(FileDiffContent.Binary)
+        val large = GitDiffModels.build(GitDiffSides("big.log", "big.log", GitFileContent(exists = true, truncated = true, size = 900_000), text))
+        assertThat(large.content).isEqualTo(FileDiffContent.Summary(FileDiffSummaryReason.LARGE_FILE))
+        val deleted = GitDiffModels.build(GitDiffSides("a.txt", "a.txt", text, GitFileContent.Absent))
+        assertThat(deleted.changeKind).isEqualTo(FileChangeKind.DELETED)
+        val modified = GitDiffModels.build(GitDiffSides("a.txt", "a.txt", text, GitFileContent(exists = true, size = 4, text = "a\nb\n")))
+        assertThat(modified.changeKind).isEqualTo(FileChangeKind.MODIFIED)
+        assertThat(modified.headerAdded).isEqualTo(1)
+    }
+
+    @Test fun `提交时间按提交时区格式化`() {
+        val summary = com.promenar.nexara.data.git.GitCommitSummary(
+            sha = InspectFixtures.SHA_A, shortSha = "1111111", authorName = "t", authorEmail = "t@e",
+            authorTimeSeconds = 1_700_000_000L, authorTimezoneSeconds = 8 * 3600, title = "x", parents = emptyList(),
+        )
+        assertThat(formatCommitTime(summary)).isEqualTo("2023-11-15 06:13")
+        assertThat(formatCommitTime(summary.copy(authorTimezoneSeconds = 0))).isEqualTo("2023-11-14 22:13")
+    }
+}

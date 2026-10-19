@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import androidx.compose.animation.*
 import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.animation.core.*
@@ -39,6 +40,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -79,7 +81,9 @@ import org.json.JSONObject
  */
 data class PipelineGroup(
     val messages: List<Message>,
-    val isUser: Boolean
+    val isUser: Boolean,
+    /** 工作区切换提示：独立成组，居中显示为一行说明。 */
+    val isNotice: Boolean = false,
 ) {
     /** 组内所有 ASSISTANT 消息 */
     val assistantMessages: List<Message>
@@ -91,14 +95,17 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
     var i = 0
     while (i < messages.size) {
         val msg = messages[i]
-        if (msg.role == MessageRole.USER) {
+        if (msg.isWorkspaceSwitchNotice) {
+            groups.add(PipelineGroup(listOf(msg), isUser = false, isNotice = true))
+            i++
+        } else if (msg.role == MessageRole.USER) {
             // USER 消息：每个独立成组（与后续 AI 回复分离以保持锚定语义）
             groups.add(PipelineGroup(listOf(msg), isUser = true))
             i++
         } else {
             // ASSISTANT / TOOL：视作同一轮 AI 响应，全部合并到一组
             val groupMsgs = mutableListOf<Message>()
-            while (i < messages.size && messages[i].role != MessageRole.USER) {
+            while (i < messages.size && messages[i].role != MessageRole.USER && !messages[i].isWorkspaceSwitchNotice) {
                 val candidate = messages[i]
                 val candidateIsError = candidate.isError || candidate.errorMessage != null
                 if (candidateIsError && groupMsgs.isNotEmpty()) break
@@ -157,6 +164,10 @@ fun PipelineBubble(
     onMessageContentChange: ((String, String) -> Unit)? = null,
     ragContent: @Composable () -> Unit = {},
 ) {
+    if (group.isNotice) {
+        WorkspaceSwitchNoticeRow(text = group.messages.first().content, modifier = modifier)
+        return
+    }
     if (group.isUser) {
         val msg = group.messages.first()
         UserMessageBubble(
@@ -1301,4 +1312,19 @@ fun copyToClipboard(context: android.content.Context, text: String) {
     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     val clip = android.content.ClipData.newPlainText("NexaraMessage", text)
     clipboard.setPrimaryClip(clip)
+}
+
+/** 工作区切换提示：居中的一行次要文字，不带操作菜单。 */
+@Composable
+internal fun WorkspaceSwitchNoticeRow(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small)
+            .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+    )
 }

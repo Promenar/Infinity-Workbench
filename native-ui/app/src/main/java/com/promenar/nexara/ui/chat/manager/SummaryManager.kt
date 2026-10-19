@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager
 
+import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import com.promenar.nexara.data.generation.ApproximateTokenEstimator
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.TokenUsage
@@ -26,7 +27,7 @@ class SummaryManager(
     ): String? = withContext(Dispatchers.IO) {
         if (overflowMessages.isEmpty()) return@withContext oldSummary.orEmpty()
         if (currentModelId.isBlank()) return@withContext null
-        val historyText = overflowMessages.joinToString("\n") { msg ->
+        val historyText = overflowMessages.filterNot { it.isWorkspaceSwitchNotice }.joinToString("\n") { msg ->
             "${msg.role.name}: ${msg.content.take(MAX_MESSAGE_CHARS)}"
         }
         val prompt = if (oldSummary.isNullOrBlank()) {

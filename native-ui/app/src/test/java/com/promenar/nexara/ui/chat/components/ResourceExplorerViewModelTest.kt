@@ -4,6 +4,13 @@ import android.app.Application
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.git.GitChangeKind
+import com.promenar.nexara.data.git.GitChangeList
+import com.promenar.nexara.data.git.GitChangesService
+import com.promenar.nexara.data.git.GitFileChange
+import com.promenar.nexara.data.git.GitInspectError
+import com.promenar.nexara.data.git.GitInspectResult
+import com.promenar.nexara.data.git.GitStatus
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.share.core.ShareImportBatchResult
@@ -13,6 +20,7 @@ import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.chat.shouldOfferImportRetry
 import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.git.GitEntrySummary
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -759,6 +767,59 @@ class ResourceExplorerViewModelTest {
             coVerify(exactly = 1) { repo.permanentDelete("root", failed.uuid) }
             verify(exactly = 2) { repo.observeRecycleBin("root") }
         }
+
+    @Test
+    fun `git entry shows branch and change count for repository sessions only`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        coEvery { repo.ensureSessionRoot(any()) } answers { root("root-${firstArg<String>()}") }
+        every { repo.observeChildren(any(), any()) } returns flowOf(emptyList())
+        every { repo.observeRecycleBin(any()) } returns flowOf(emptyList())
+        val git = mockk<GitChangesService>()
+        val status = GitStatus(
+            branch = "main", detached = false, head = "a".repeat(40), unborn = false,
+            staged = GitChangeList(listOf(GitFileChange("a.txt", GitChangeKind.MODIFIED))),
+            unstaged = GitChangeList.Empty,
+            untracked = GitChangeList(listOf(GitFileChange("b.txt", GitChangeKind.ADDED)), truncated = true),
+        )
+        coEvery { git.status("repo") } returns GitInspectResult.Success(status)
+        coEvery { git.status("plain") } returns GitInspectResult.Failure(GitInspectError.NotRepository)
+        val viewModel = ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            repo,
+            injectedGitChanges = git,
+        )
+
+        viewModel.loadSession("repo")
+        advanceUntilIdle()
+        assertThat(viewModel.gitEntry.value).isEqualTo(
+            GitEntrySummary.Repository(
+                branch = "main", detached = false, headShortSha = "aaaaaaa", unborn = false, changeCount = 2, truncated = true,
+            ),
+        )
+
+        viewModel.loadSession("plain")
+        assertThat(viewModel.gitEntry.value).isEqualTo(GitEntrySummary.Hidden)
+        advanceUntilIdle()
+        assertThat(viewModel.gitEntry.value).isEqualTo(GitEntrySummary.Hidden)
+
+        coEvery { git.status("plain") } returns GitInspectResult.Failure(GitInspectError.PythonUnavailable)
+        viewModel.refreshGitEntry()
+        advanceUntilIdle()
+        assertThat(viewModel.gitEntry.value).isEqualTo(GitEntrySummary.PythonUnavailable)
+        coVerify(exactly = 1) { git.status("repo") }
+    }
+
+    @Test
+    fun `git entry stays hidden without an injected git service in tests`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        coEvery { repo.ensureSessionRoot("a") } returns root("root-a")
+        every { repo.observeChildren(any(), any()) } returns flowOf(emptyList())
+        every { repo.observeRecycleBin(any()) } returns flowOf(emptyList())
+        val viewModel = ResourceExplorerViewModel(ApplicationProvider.getApplicationContext<Application>(), repo)
+        viewModel.loadSession("a")
+        advanceUntilIdle()
+        assertThat(viewModel.gitEntry.value).isEqualTo(GitEntrySummary.Hidden)
+    }
 
     private fun root(uuid: String) = FileEntry(
         uuid = uuid,

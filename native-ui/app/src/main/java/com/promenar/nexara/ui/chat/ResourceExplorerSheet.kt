@@ -74,6 +74,9 @@ import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.git.GitChangesSheet
+import com.promenar.nexara.ui.git.GitEntrySummary
+import com.promenar.nexara.ui.git.GitWorkspaceEntry
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -104,7 +107,9 @@ fun ResourceExplorerSheet(
     val loadError by viewModel.loadError.collectAsStateWithLifecycle()
     val importItems by viewModel.importItems.collectAsStateWithLifecycle()
     val isImporting by viewModel.isImporting.collectAsStateWithLifecycle()
+    val gitEntry by viewModel.gitEntry.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
+    var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -127,8 +132,10 @@ fun ResourceExplorerSheet(
                 isImporting = isImporting,
                 isLoading = isLoading,
                 hasLoadError = loadError != null,
+                gitEntry = gitEntry,
             ),
             actions = ResourceExplorerSheetActions(
+                onOpenGitPanel = { showGitPanel = true },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onImportFiles = {
                     filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray())
@@ -165,6 +172,15 @@ fun ResourceExplorerSheet(
             },
         )
     }
+    if (showGitPanel) {
+        GitChangesSheet(
+            sessionId = sessionId,
+            onDismiss = {
+                showGitPanel = false
+                viewModel.refreshGitEntry()
+            },
+        )
+    }
 }
 
 internal enum class ResourceExplorerTab(val page: Int) {
@@ -187,6 +203,8 @@ internal data class ResourceExplorerSheetState(
     val isImporting: Boolean = false,
     val isLoading: Boolean = false,
     val hasLoadError: Boolean = false,
+    /** 会话工作区是 Git 仓库时显示分支与改动数入口。 */
+    val gitEntry: GitEntrySummary = GitEntrySummary.Hidden,
 )
 
 internal data class ResourceExplorerSheetActions(
@@ -196,6 +214,7 @@ internal data class ResourceExplorerSheetActions(
     val onClearImportResults: () -> Unit = {},
     val onTabSelected: (ResourceExplorerTab) -> Unit = {},
     val onRetryLoad: () -> Unit = {},
+    val onOpenGitPanel: () -> Unit = {},
 )
 
 @Composable
@@ -334,6 +353,11 @@ private fun ResourceExplorerFilesPage(
                 onRetry = actions.onRetryImport,
                 onClear = actions.onClearImportResults,
             )
+        }
+
+        if (state.gitEntry != GitEntrySummary.Hidden) {
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+            GitWorkspaceEntry(summary = state.gitEntry, onClick = actions.onOpenGitPanel)
         }
 
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager
 
+import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagRetrievalTrace
@@ -406,7 +407,12 @@ class ContextBuilder(
         // 3. 工具与工作区运行时契约
         val toolGuidance = when (val names = params.availableToolNames) {
             null -> if (session.options.toolsEnabled) SystemPromptSections.toolGuidance(emptySet(), generic = true) else ""
-            else -> if (names.isEmpty()) "" else SystemPromptSections.toolGuidance(names, generic = false, workspace = params.workspace)
+            else -> if (names.isEmpty()) "" else SystemPromptSections.toolGuidance(
+                names,
+                generic = false,
+                workspace = params.workspace,
+                workspaceChanged = session.messages.any { it.isWorkspaceSwitchNotice },
+            )
         }
         if (toolGuidance.isNotEmpty()) {
             sb.appendLine()

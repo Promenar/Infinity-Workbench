@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="git_panel_title">Git changes</string>
+    <string name="git_panel_entry_cd">Open Git changes</string>
+    <string name="git_panel_refresh">Refresh</string>
+    <string name="git_panel_tab_changes">Changes</string>
+    <string name="git_panel_tab_commits">Recent commits</string>
+    <string name="git_panel_readonly_hint">Read-only. To stage, commit, push or resolve conflicts, ask the agent in chat.</string>
+    <string name="git_panel_branch_detached">Detached HEAD %1$s</string>
+    <string name="git_panel_branch_unknown">Unknown branch</string>
+    <string name="git_panel_branch_unborn">%1$s · no commits yet</string>
+    <string name="git_panel_no_changes">No changes</string>
+    <plurals name="git_panel_change_count">
+        <item quantity="one">%d change</item>
+        <item quantity="other">%d changes</item>
+    </plurals>
+    <plurals name="git_panel_change_count_truncated">
+        <item quantity="one">%d+ change</item>
+        <item quantity="other">%d+ changes</item>
+    </plurals>
+    <string name="git_panel_entry_python_unavailable">Built-in Python is unavailable on this device</string>
+    <string name="git_panel_entry_failed">Couldn\'t read Git status</string>
+    <string name="git_panel_group_staged">Staged</string>
+    <string name="git_panel_group_unstaged">Unstaged</string>
+    <string name="git_panel_group_untracked">Untracked</string>
+    <string name="git_panel_group_header">%1$s · %2$d</string>
+    <plurals name="git_panel_group_truncated">
+        <item quantity="one">Only the first %1$d entry is shown</item>
+        <item quantity="other">Only the first %1$d entries are shown</item>
+    </plurals>
+    <string name="git_panel_clean">Working tree clean</string>
+    <string name="git_panel_empty_repository">Empty repository: no commits yet</string>
+    <string name="git_panel_no_commits">No commits yet</string>
+    <plurals name="git_panel_commits_truncated">
+        <item quantity="one">Showing the latest commit</item>
+        <item quantity="other">Showing the latest %1$d commits</item>
+    </plurals>
+    <string name="git_panel_change_added">Added</string>
+    <string name="git_panel_change_modified">Modified</string>
+    <string name="git_panel_change_deleted">Deleted</string>
+    <string name="git_panel_change_renamed">Renamed</string>
+    <string name="git_panel_renamed_from">Renamed from %1$s</string>
+    <plurals name="git_panel_commit_files">
+        <item quantity="one">%d file changed</item>
+        <item quantity="other">%d files changed</item>
+    </plurals>
+    <plurals name="git_panel_commit_files_truncated">
+        <item quantity="one">Only the first %1$d file is shown</item>
+        <item quantity="other">Only the first %1$d files are shown</item>
+    </plurals>
+    <string name="git_panel_commit_no_files">This commit changes no files</string>
+    <string name="git_panel_diff_staged">Staged · HEAD → index</string>
+    <string name="git_panel_diff_unstaged">Unstaged · index → working tree</string>
+    <string name="git_panel_diff_untracked">Untracked · new file</string>
+    <string name="git_panel_diff_commit">%1$s · compared with parent</string>
+    <string name="git_panel_error_python">This device\'s architecture has no built-in Python, so Git data can\'t be read here. Ask the agent to run git through Termux or SSH.</string>
+    <string name="git_panel_error_not_repository">The current workspace is not a Git repository</string>
+    <string name="git_panel_error_workspace">The session workspace is unavailable</string>
+    <string name="git_panel_error_timeout">Reading Git data timed out</string>
+    <string name="git_panel_error_unsafe_path">This path can\'t be shown safely</string>
+    <string name="git_panel_error_failed">Couldn\'t read Git data</string>
+</resources>

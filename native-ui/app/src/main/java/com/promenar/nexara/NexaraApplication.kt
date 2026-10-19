@@ -683,6 +683,33 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** Git 变更面板的只读数据：打包 Python 直接运行 `nexara_git --nexara-inspect`，不经过 shell_exec 与执行审批。 */
+    val gitChangesService: com.promenar.nexara.data.git.GitChangesService by lazy {
+        val locator = com.promenar.nexara.data.git.SessionGitWorkspaceLocator(
+            resolveWorkspace = sessionWorkspaceResolver::resolve,
+            privateRoot = { sessionId -> workspaceRepository.ensureSessionRoot(sessionId).physicalRootPath },
+        )
+        com.promenar.nexara.data.git.GitChangesService(
+            locate = locator::locate,
+            inspector = com.promenar.nexara.data.git.GitInspector(
+                // 只读检查不需要 pip 与用户站点目录，保持 PYTHONNOUSERSITE，确保加载打包的 dulwich。
+                runtime = com.promenar.nexara.data.git.BuiltinGitPythonRuntime(
+                    com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = false),
+                ),
+                runner = com.promenar.nexara.data.git.BuiltinGitInspectCommandRunner(
+                    com.promenar.nexara.data.exec.BuiltinCommandRunner(
+                        groupLauncher = listOf("/system/bin/setsid"),
+                        shell = "/system/bin/sh",
+                        signaller = com.promenar.nexara.data.exec.AndroidProcessGroupSignaller,
+                        scratchDirectory = { File(cacheDir, "git-inspect-run") },
+                        clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
+                    ),
+                ),
+                outputDirectory = { File(cacheDir, "git-inspect") },
+            ),
+        )
+    }
+
     override val execRunRegistry: com.promenar.nexara.data.exec.ExecRunRegistry by lazy {
         com.promenar.nexara.data.exec.ExecRunRegistry()
     }

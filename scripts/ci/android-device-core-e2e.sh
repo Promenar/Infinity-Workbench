@@ -451,6 +451,10 @@ run_test builtin-exec "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.exec.BuiltinExecDeviceTest
 run_test directory-workspace "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.workspace.DirectoryWorkspaceDeviceTest
+run_test workspace-picker "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.workspace.WorkspacePickerDeviceTest
+run_test git-inspector "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.git.GitInspectorDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then

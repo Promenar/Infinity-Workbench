@@ -287,6 +287,11 @@ class ChatViewModel(
     /** 工作区登记查询；为 null 时读取应用数据库。 */
     private val workspaceLookupOverride:
         (suspend (String) -> com.promenar.nexara.data.local.db.entity.WorkspaceEntity?)? = null,
+    /** 切换提示文案；为 null 时按应用资源本地化。 */
+    private val workspaceSwitchNoticeTextOverride: ((
+        com.promenar.nexara.data.workspace.WorkspaceLabel,
+        com.promenar.nexara.data.workspace.WorkspaceLabel,
+    ) -> String)? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -1911,9 +1916,29 @@ class ChatViewModel(
             )
             if (result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched) {
                 _workspaceSwitchNotice.value = result
+                // 聊天流里留下可见记录；该消息不进入模型上下文。
+                runCatching {
+                    messageManager.addMessage(
+                        sessionId,
+                        com.promenar.nexara.data.workspace.WorkspaceSwitchNotice.create(
+                            (workspaceSwitchNoticeTextOverride ?: ::workspaceSwitchNoticeText)(result.from, result.to),
+                        ),
+                    )
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
             }
             onResult(result)
         }
+    }
+
+    private fun workspaceSwitchNoticeText(
+        from: com.promenar.nexara.data.workspace.WorkspaceLabel,
+        to: com.promenar.nexara.data.workspace.WorkspaceLabel,
+    ): String = application.getString(R.string.workspace_switch_notice, workspaceLabelText(from), workspaceLabelText(to))
+
+    private fun workspaceLabelText(label: com.promenar.nexara.data.workspace.WorkspaceLabel): String = when (label) {
+        com.promenar.nexara.data.workspace.WorkspaceLabel.Private -> application.getString(R.string.workspace_kind_private)
+        is com.promenar.nexara.data.workspace.WorkspaceLabel.Registered -> label.name
+        is com.promenar.nexara.data.workspace.WorkspaceLabel.Missing -> application.getString(R.string.workspace_missing_name)
     }
 
     fun updateCustomPrompt(prompt: String) {

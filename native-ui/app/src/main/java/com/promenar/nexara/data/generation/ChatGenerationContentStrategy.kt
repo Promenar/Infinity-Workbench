@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.generation
 
+import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import android.content.SharedPreferences
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.FullContextDocumentFormatter
@@ -130,7 +131,8 @@ class DefaultChatGenerationContentStrategy(
         replaySource: String?,
     ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
-        val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
+        // 工作区切换提示只供界面展示；当前工作区由系统提示词说明。
+        val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds || it.isWorkspaceSwitchNotice }
         val currentStart = visibleMessages.indexOfFirst {
             it.id == pinnedUserMessageId && it.role == MessageRole.USER
         }

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ShareRequest
+import com.promenar.nexara.data.git.GitChangesService
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.share.core.AndroidSafContentSource
@@ -17,6 +18,7 @@ import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.git.GitEntrySummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -61,6 +63,7 @@ class ResourceExplorerViewModel(
     application: Application,
     injectedWorkspaceRepository: IWorkspaceRepository? = null,
     injectedImporter: SharedFileImporter? = null,
+    injectedGitChanges: GitChangesService? = null,
 ) : ViewModel() {
 
     val workspaceRepo: IWorkspaceRepository = injectedWorkspaceRepository
@@ -71,6 +74,14 @@ class ResourceExplorerViewModel(
             source = AndroidSafContentSource(application.contentResolver),
             workspace = workspaceRepo,
         )
+    }
+    /** 注入了工作区仓库（测试）而未注入 Git 服务时不读取 Git 状态，入口保持隐藏。 */
+    private val gitChanges: GitChangesService? by lazy {
+        injectedGitChanges ?: if (injectedWorkspaceRepository == null) {
+            (application as? NexaraApplication)?.gitChangesService
+        } else {
+            null
+        }
     }
     private val contentResolver = application.contentResolver
     private val requestFactory = AndroidSafImportRequestFactory(contentResolver)
@@ -109,6 +120,11 @@ class ResourceExplorerViewModel(
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting.asStateFlow()
 
+    /** 会话工作区是 Git 仓库时的入口摘要（分支与改动数）；不是仓库或工作区不可用时为 [GitEntrySummary.Hidden]。 */
+    private val _gitEntry = MutableStateFlow<GitEntrySummary>(GitEntrySummary.Hidden)
+    val gitEntry: StateFlow<GitEntrySummary> = _gitEntry.asStateFlow()
+    private var gitJob: Job? = null
+
     private var currentSessionId: String? = null
     private var loadGeneration = 0L
     private var sessionObserverEpoch = 0L
@@ -129,9 +145,11 @@ class ResourceExplorerViewModel(
             _loadError.value = null
             _isLoading.value = false
             startSessionObservers(existingRootUuid, generation)
+            refreshGitEntry()
             return
         }
 
+        if (sessionId != currentSessionId) _gitEntry.value = GitEntrySummary.Hidden
         currentSessionId = sessionId
         val generation = ++loadGeneration
         invalidateSessionObservers()
@@ -140,6 +158,18 @@ class ResourceExplorerViewModel(
         clearSessionState()
         _isLoading.value = true
         startSessionRootLoad(sessionId, generation)
+        refreshGitEntry()
+    }
+
+    /** 重新读取 Git 入口摘要；打开资源管理器与关闭 Git 变更面板时调用。 */
+    fun refreshGitEntry() {
+        val sessionId = currentSessionId ?: return
+        val service = gitChanges ?: return
+        gitJob?.cancel()
+        gitJob = viewModelScope.launch {
+            val summary = GitEntrySummary.from(service.status(sessionId))
+            if (sessionId == currentSessionId) _gitEntry.value = summary
+        }
     }
 
     fun retryLoadSession() {
