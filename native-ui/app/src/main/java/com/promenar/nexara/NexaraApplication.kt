@@ -562,6 +562,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sshRuntime = sshRuntime,
             compactionPipeline = contextCompactionPipeline,
             compactionService = contextCompactionService,
+            sessionWorkspace = sessionWorkspaceResolver::resolve,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -648,6 +649,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 // 命令前台服务（specialUse）只在侧载渠道声明；Play 渠道待政策评审，只持有唤醒锁。
                 foregroundServiceAvailable = BuildConfig.DISTRIBUTION == "sideload",
             ),
+            sessionWorkspace = sessionWorkspaceResolver::resolve,
+        )
+    }
+
+    /** 会话工作区解析：自选目录（项目文件夹位于 `filesDir/projects`，共享存储仅侧载渠道）优先，否则为私有工作区。 */
+    val sessionWorkspaceResolver: com.promenar.nexara.data.workspace.SessionWorkspaceResolver by lazy {
+        com.promenar.nexara.data.workspace.SessionWorkspaceResolver(
+            sessionDao = database.sessionDao(),
+            workspaceDao = database.workspaceDao(),
+            projectsRoot = File(filesDir, "projects"),
+            sharedAccess = com.promenar.nexara.data.workspace.AndroidSharedWorkspaceAccess(this),
         )
     }
 
@@ -664,7 +676,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val externalFolderManager: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess by lazy {
-        com.promenar.nexara.data.storage.ExternalFolderManager(this, database.externalMountDao(), workspaceRepository, pendingDocumentIndexCoordinator)
+        com.promenar.nexara.data.storage.ExternalFolderManager(
+            this, database.externalMountDao(), workspaceRepository, pendingDocumentIndexCoordinator,
+            workspaces = sessionWorkspaceResolver,
+        )
     }
 
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {

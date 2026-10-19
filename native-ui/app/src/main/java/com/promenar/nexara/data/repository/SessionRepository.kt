@@ -123,6 +123,8 @@ open class SessionRepository(
                 "activeSkillIds" -> result.copy(activeSkillIds = value?.let { encode(it as List<String>) })
                 "workspacePath" -> result.copy(workspacePath = value as? String)
                 "workspaceRootUuid" -> result.copy(workspaceRootUuid = value as? String)
+                // null 表示改回会话私有工作区。
+                "workspaceId" -> result.copy(workspaceId = value as? String)
                 "activeTaskTreeId" -> result.copy(activeTaskTreeId = value as? String)
                 else -> result
             }

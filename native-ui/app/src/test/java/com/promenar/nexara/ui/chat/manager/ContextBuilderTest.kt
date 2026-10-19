@@ -282,6 +282,37 @@ class ContextBuilderTest {
     }
 
     @Test
+    fun toolGuidanceDescribesSelectedWorkspaceAndUnavailableState() = testScope.runTest {
+        val session = Session(id = "s1", agentId = "a1")
+        fun prompt(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?, tools: Set<String> = setOf("read_file", "shell_exec")) =
+            kotlinx.coroutines.runBlocking {
+                ContextBuilder().buildContext(
+                    ContextBuilderParams("s1", "hi", assistantMsgId = "m1", session = session, availableToolNames = tools, workspace = workspace),
+                ).finalSystemPrompt
+            }
+        val shared = com.promenar.nexara.data.local.db.entity.WorkspaceEntity("ws", "shared", "仓库", "/storage/emulated/0/Code/repo", 1)
+        val directory = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Directory(shared, java.io.File(shared.location)))
+        assertThat(directory).contains("### Current Workspace")
+        assertThat(directory).contains("\"仓库\"")
+        assertThat(directory).contains("/storage/emulated/0/Code/repo")
+        assertThat(directory).contains("git status")
+        assertThat(directory).contains("case-insensitive")
+        assertThat(directory).doesNotContain("This conversation has a private workspace")
+        val project = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Directory(shared.copy(kind = "project", location = "repo"), java.io.File("/data/user/0/app/files/projects/repo")))
+        assertThat(project).contains("Nexara project folder")
+        assertThat(project).doesNotContain("/data/user/0")
+        assertThat(project).doesNotContain("case-insensitive")
+        val unavailable = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("ws", shared, "目录不存在"), setOf("shell_exec"))
+        assertThat(unavailable).contains("currently unavailable (目录不存在)")
+        assertThat(unavailable).contains("never fall back")
+        val private = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Private)
+        assertThat(private).contains("This conversation has a private workspace")
+        assertThat(private).doesNotContain("### Current Workspace")
+        assertThat(prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Directory(shared, java.io.File(shared.location)), setOf("calculator")))
+            .doesNotContain("### Current Workspace")
+    }
+
+    @Test
     fun skillCatalogAppearsAfterToolGuidance() = testScope.runTest {
         val prompt = ContextBuilder().buildContext(
             ContextBuilderParams(

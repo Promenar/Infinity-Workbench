@@ -47,6 +47,8 @@ internal class DefaultChatGenerationRunnerFactory(
     private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
     private val compactionPipeline: ContextCompactionPipeline = ContextCompactionPipeline(),
     private val compactionService: ContextCompactionService? = null,
+    /** 会话当前工作区，用于系统提示词的工作区说明；null 时按私有工作区说明。 */
+    private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -81,6 +83,7 @@ internal class DefaultChatGenerationRunnerFactory(
             sshRuntime = sshRuntime,
             compactionPipeline = compactionPipeline,
             compactionService = compactionService,
+            sessionWorkspace = sessionWorkspace,
         )
     }
 }

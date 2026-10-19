@@ -1528,6 +1528,8 @@ class ChatViewModel(
                     ?: "semi",
                 activeSkillIds = agent?.skills.orEmpty(),
                 activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
+                // 新会话复制 Agent 当前默认工作区；之后修改 Agent 默认值只影响新会话。
+                workspaceId = agent?.defaultWorkspaceId,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 ragOptions = defaultOptions

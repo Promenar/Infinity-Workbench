@@ -64,6 +64,8 @@ data class ContextBuilderParams(
     val availableSkills: List<com.promenar.nexara.data.skills.AgentSkillMetadata> = emptyList(),
     /** 同一次生成中首轮的检索结果；非空时跳过联网搜索、RAG 与 KG 检索，只重建系统提示。 */
     val cachedRetrieval: ContextRetrieval? = null,
+    /** 会话当前工作区；null 表示调用方未解析，按私有工作区说明。 */
+    val workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
 )
 
 interface WebSearchProvider {
@@ -404,7 +406,7 @@ class ContextBuilder(
         // 3. 工具与工作区运行时契约
         val toolGuidance = when (val names = params.availableToolNames) {
             null -> if (session.options.toolsEnabled) SystemPromptSections.toolGuidance(emptySet(), generic = true) else ""
-            else -> if (names.isEmpty()) "" else SystemPromptSections.toolGuidance(names, generic = false)
+            else -> if (names.isEmpty()) "" else SystemPromptSections.toolGuidance(names, generic = false, workspace = params.workspace)
         }
         if (toolGuidance.isNotEmpty()) {
             sb.appendLine()

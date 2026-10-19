@@ -4,6 +4,7 @@ import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
+import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
 
@@ -25,7 +26,8 @@ class BuiltinExecEnvironment(
     /** 侧载渠道开放 pip；Play 渠道 `pip` 返回 PIP_UNSUPPORTED。 */
     val pipAvailable: Boolean get() = userPackages != null
 
-    fun forWorkspace(workspace: File): Map<String, String> {
+    /** [kind] 写入 `NEXARA_WORKSPACE_KIND`（private、project、shared），供内置 git 判断提示与兼容配置。 */
+    fun forWorkspace(workspace: File, kind: String = SessionWorkspaceResolver.KIND_PRIVATE): Map<String, String> {
         homeDirectory.mkdirs()
         tempDirectory.mkdirs()
         val environment = linkedMapOf<String, String>()
@@ -34,6 +36,7 @@ class BuiltinExecEnvironment(
         environment["HOME"] = homeDirectory.path
         environment["TMPDIR"] = tempDirectory.path
         environment["NEXARA_WORKSPACE"] = workspace.path
+        environment["NEXARA_WORKSPACE_KIND"] = kind
         environment["NEXARA_BACKEND"] = "builtin"
         environment["LANG"] = "C.UTF-8"
         if (python.isAvailable) {
@@ -56,8 +59,8 @@ class BuiltinExecEnvironment(
     }
 
     /** 直接运行解释器时补上库搜索路径。 */
-    fun forPython(workspace: File): Map<String, String> =
-        forWorkspace(workspace) + python.environment().filterKeys { it == "LD_LIBRARY_PATH" }
+    fun forPython(workspace: File, kind: String = SessionWorkspaceResolver.KIND_PRIVATE): Map<String, String> =
+        forWorkspace(workspace, kind) + python.environment().filterKeys { it == "LD_LIBRARY_PATH" }
 
     val pythonLauncher: File get() = python.launcher
 

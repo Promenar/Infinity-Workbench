@@ -148,6 +148,8 @@ internal class DefaultChatGenerationRuntime(
     private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
     private val compactionPipeline: ContextCompactionPipeline = ContextCompactionPipeline(),
     private val compactionService: ContextCompactionService? = null,
+    /** 会话当前工作区，用于系统提示词的工作区说明；null 时按私有工作区说明。 */
+    private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -303,6 +305,7 @@ internal class DefaultChatGenerationRuntime(
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
             availableSkills = if (tools.any { it.function.name == ACTIVATE_SKILL_TOOL }) skillCatalog() else emptyList(),
             cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
+            workspace = sessionWorkspace?.invoke(sessionId),
         ))
         preparedContext = context
         preparedContextSummary = session.summary
@@ -403,6 +406,7 @@ internal class DefaultChatGenerationRuntime(
                 ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = agentConfig.retrievalConfig,
+            workspace = sessionWorkspace?.invoke(request.sessionId),
         )
         var routeTools: List<ProtocolTool> = emptyList()
         val preparation = try {

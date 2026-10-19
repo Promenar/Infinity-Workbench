@@ -16,6 +16,7 @@ class SessionToolTargetIntegrationTest {
     private val session = Session(id = "session", agentId = "agent")
     private var mountId = "mount-1"
     private val mounts = mockk<ExternalWorkspaceAccess> {
+        coEvery { workspaceMount(any()) } returns null
         coEvery { visible("session") } answers {
             listOf(ExternalMount(mountId, "docs", "saf_tree", "content://test/tree/docs", "session", false, 1))
         }

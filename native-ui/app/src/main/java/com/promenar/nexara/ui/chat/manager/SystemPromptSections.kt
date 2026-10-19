@@ -20,8 +20,14 @@ object SystemPromptSections {
         "create_file", "create_directory", "move_file", "delete_file",
     )
     private val PLAN_TOOLS = setOf("initialize_plan", "update_plan", "get_plan", "drop_plan")
+    private val WORKSPACE_PROCESS_TOOLS = setOf("shell_exec", "python_exec", "run_script", "exec_js", "python_sandbox")
 
-    fun toolGuidance(toolNames: Set<String>, generic: Boolean): String = buildString {
+    /** [workspace] 为 null 或私有工作区时沿用私有工作区契约；自选目录与不可用状态另起一节说明。 */
+    fun toolGuidance(
+        toolNames: Set<String>,
+        generic: Boolean,
+        workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
+    ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
         appendLine("- Use a tool when it gives you facts, computation, or file access you do not already have. Do not call tools for things you can answer directly.")
@@ -32,18 +38,44 @@ object SystemPromptSections {
         if (toolNames.any(WORKSPACE_TOOLS::contains)) {
             appendLine()
             appendLine("### Workspace Files")
-            appendLine("- This conversation has a private workspace. Paths are relative to its root and start with `/` (for example `/notes/plan.md`); file tools accept either `path` or `uuid`.")
+            if (workspace == null || workspace == com.promenar.nexara.data.workspace.SessionWorkspace.Private) {
+                appendLine("- This conversation has a private workspace. Paths are relative to its root and start with `/` (for example `/notes/plan.md`); file tools accept either `path` or `uuid`.")
+            } else {
+                appendLine("- Paths are relative to the current workspace root and start with `/` (for example `/src/main.py`); file tools accept either `path` or `uuid`.")
+            }
             appendLine("- Explore with `list_files` (use `depth` for subfolders) and `search_files` (`mode=content` greps file text). Do not invent paths or uuids.")
             appendLine("- Read before you edit. `read_file` prefixes each line with `N| `; that prefix is not file content, and `patch_file` line numbers refer to it.")
             appendLine("- `write_file` and `patch_file` require `expectedHash`, the latest hash from `read_file`, `list_files`, or your previous write. On a hash conflict, re-read the file and redo the change.")
             appendLine("- Prefer `patch_file` for local edits and `write_file` for full rewrites of existing files. Create new files with `create_file` and folders with `create_directory`.")
             appendLine("- `move_file` moves or renames; `delete_file` moves items to the recycle bin, which the user can restore.")
         }
+        if (toolNames.any { it in WORKSPACE_TOOLS || it in WORKSPACE_PROCESS_TOOLS }) currentWorkspace(workspace)?.let {
+            appendLine()
+            append(it)
+        }
         if (toolNames.any(PLAN_TOOLS::contains)) {
             appendLine()
             appendLine("### Multi-step Tasks")
             appendLine("- For work that needs several steps or many tool calls, create a plan with `initialize_plan` first, keep it current with `update_plan` as steps finish, and finish with a short summary of results.")
             appendLine("- If the conversation is resumed, check the active plan and continue from the first unfinished step.")
+        }
+    }
+
+    private fun currentWorkspace(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?): String? = when (workspace) {
+        null, com.promenar.nexara.data.workspace.SessionWorkspace.Private -> null
+        is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> buildString {
+            val shared = workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED
+            val place = if (shared) "a shared device-storage folder at `${workspace.workspace.location}`" else "a Nexara project folder"
+            appendLine("### Current Workspace")
+            appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `/` is its root; `/mnt/<alias>` mounts stay available.")
+            appendLine("- Nexara does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")
+            if (shared) appendLine("- Shared storage is case-insensitive and does not support symbolic links or executable permissions.")
+        }
+        is com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable -> buildString {
+            val name = workspace.workspace?.displayName?.take(64) ?: "unknown"
+            appendLine("### Current Workspace")
+            appendLine("- This conversation is bound to the user-selected workspace \"$name\", which is currently unavailable (${workspace.reason.take(120)}).")
+            appendLine("- File tools, `shell_exec` and `python_exec` will fail and never fall back to the private workspace. Tell the user to check the folder or choose another workspace instead of retrying.")
         }
     }
 

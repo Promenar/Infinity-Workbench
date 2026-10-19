@@ -24,6 +24,7 @@ class MountedWorkspaceVersionTest {
         val uuid = "external:id:L2EudHh0"
         val newer = FileEntry(uuid, "root", null, "a.txt", Sha256Utils.hash("newer"), physicalRootPath = "", materializedPath = path, createdAt = 1, updatedAt = 2)
         val mounts = mockk<ExternalWorkspaceAccess> {
+            coEvery { workspaceMount(any()) } returns null
             coEvery { visible("session") } returns emptyList()
             coEvery { entry("session", path) } returns newer
             coEvery { resolveUuid("session", uuid) } returns path

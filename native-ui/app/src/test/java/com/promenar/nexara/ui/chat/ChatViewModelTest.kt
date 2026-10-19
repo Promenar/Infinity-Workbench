@@ -388,6 +388,16 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun createNewSessionCopiesAgentDefaultWorkspace() = runTest {
+        stubAgentRepo.create(Agent(id = "workspace-agent", name = "Workspace Agent", defaultWorkspaceId = "ws-1"))
+
+        viewModel.createNewSession("workspace-agent")
+        advanceUntilIdle()
+
+        assertThat(savedSessions.single { it.agentId == "workspace-agent" }.workspaceId).isEqualTo("ws-1")
+    }
+
+    @Test
     fun createNewSessionWithoutAgentFallsBackToSemiAndEmptyToolSelections() = runTest {
         viewModel.createNewSession("missing-approval-agent")
         advanceUntilIdle()
@@ -396,6 +406,7 @@ class ChatViewModelTest {
         assertThat(created.executionMode).isEqualTo("semi")
         assertThat(created.activeSkillIds).isEmpty()
         assertThat(created.activeMcpServerIds).isEmpty()
+        assertThat(created.workspaceId).isNull()
     }
 
     private val fakeProtocol = object : LlmProtocol {

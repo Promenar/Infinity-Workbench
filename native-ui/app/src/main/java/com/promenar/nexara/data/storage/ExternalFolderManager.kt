@@ -10,6 +10,8 @@ import com.promenar.nexara.data.local.db.entity.ExternalSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
+import com.promenar.nexara.data.workspace.SessionWorkspace
+import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.*
 import java.io.File
@@ -29,7 +31,10 @@ class ExternalFolderManager(
     private val dao: ExternalMountDao,
     private val workspace: IWorkspaceRepository,
     private val indexEvents: FileIndexEventSink,
-    private val backendOverride: ((ExternalMount) -> ExternalFolderBackend)? = null,
+    /** 为 null 时不支持自选目录工作区，所有会话都使用私有工作区。 */
+    private val workspaces: SessionWorkspaceResolver? = null,
+    /** 测试替身；返回 null 时使用真实来源。 */
+    private val backendOverride: ((ExternalMount) -> ExternalFolderBackend?)? = null,
 ) : ExternalWorkspaceAccess {
     private val mutex = Mutex()
     private val recycle = ExternalRecycleStore(File(context.noBackupFilesDir, "external-recycle"))
@@ -40,7 +45,25 @@ class ExternalFolderManager(
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound == null) models else models.filter { bound[it.alias] == it.id }
     }
-    override suspend fun resolveUuid(sessionId: String, uuid: String) = ExternalMountPaths.uuidPath(uuid, visible(sessionId))
+    override suspend fun resolveUuid(sessionId: String, uuid: String) = ExternalMountPaths.uuidPath(uuid, namespace(sessionId))
+
+    override suspend fun workspaceMount(sessionId: String): ExternalMount? = withContext(Dispatchers.IO) {
+        val mount = currentWorkspaceMount(sessionId) ?: return@withContext null
+        val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
+        mount.takeIf { bound == null || bound[it.alias] == it.id }
+    }
+    private suspend fun currentWorkspaceMount(sessionId: String): ExternalMount? =
+        when (val current = workspaces?.resolve(sessionId) ?: return null) {
+            SessionWorkspace.Private -> null
+            is SessionWorkspace.Directory -> workspaceMount(current.workspace.id, sessionId, current.workspace.createdAt, null)
+            is SessionWorkspace.Unavailable -> workspaceMount(current.workspaceId, sessionId, current.workspace?.createdAt ?: 0, current.reason)
+        }
+    private fun workspaceMount(workspaceId: String, sessionId: String, createdAt: Long, unavailable: String?) = ExternalMount(
+        ExternalMountPaths.workspaceMountId(workspaceId), ExternalMountPaths.WORKSPACE_ALIAS, ExternalMountPaths.WORKSPACE_SOURCE,
+        workspaceId, sessionId, readOnly = false, createdAt = createdAt, unavailableReason = unavailable,
+    )
+    /** 可见挂载加当前工作区挂载，用于 uuid 解析与回收区归属。 */
+    private suspend fun namespace(sessionId: String) = visible(sessionId) + listOfNotNull(workspaceMount(sessionId))
 
     override suspend fun addSaf(alias: String, sessionId: String?, treeUri: String, grantFlags: Int, readOnly: Boolean) =
         withContext(Dispatchers.IO) { mutex.withLock {
@@ -104,9 +127,7 @@ class ExternalFolderManager(
         if (virtualPath == "/mnt") return@withContext visible(sessionId).map {
             ExternalFolderEntry("/mnt/${it.alias}", it.alias, true, 0, it.createdAt)
         }
-        access(sessionId, virtualPath) { mount, backend, relative -> backend.list(relative).map {
-            it.copy(path = "/mnt/${mount.alias}" + it.path.takeIf { path -> path != "/" }.orEmpty())
-        } }
+        access(sessionId, virtualPath) { mount, backend, relative -> visibleChildren(mount, relative, backend.list(relative)) }
     }
 
     override suspend fun read(sessionId: String, virtualPath: String, maxBytes: Long): ByteArray = withContext(Dispatchers.IO) {
@@ -124,8 +145,11 @@ class ExternalFolderManager(
                 try { externalSha256(backend.read(relative, 1024L * 1024).also { remember(mount.id, relative, it) }) }
                 catch (failure: ExternalFolderException) { if (failure.code == "TOO_LARGE") "" else throw failure }
             } else ""
-            val parent = if (relative == "/") ExternalMountPaths.ROOT_UUID else
-                ExternalMountPaths.uuid(mount, relative.substringBeforeLast('/').ifEmpty { "/" })
+            val parent = when {
+                relative != "/" -> ExternalMountPaths.uuid(mount, relative.substringBeforeLast('/').ifEmpty { "/" })
+                mount.isWorkspaceRoot -> null
+                else -> ExternalMountPaths.ROOT_UUID
+            }
             FileEntry(
                 uuid = ExternalMountPaths.uuid(mount, relative), parentUuid = parent,
                 name = if (relative == "/") mount.alias else stat.name, hash = hash,
@@ -202,7 +226,7 @@ class ExternalFolderManager(
     } }
 
     override suspend fun recycleItems(sessionId: String) = withContext(Dispatchers.IO) {
-        val ids = visible(sessionId).map { it.id }.toSet()
+        val ids = namespace(sessionId).map { it.id }.toSet()
         mutex.withLock { recycle.items().filter { it.mountId in ids } }
     }
     override suspend fun restore(sessionId: String, recycleId: String) = withContext(Dispatchers.IO) { mutex.withLock {
@@ -213,7 +237,7 @@ class ExternalFolderManager(
         }
     } }
     private suspend fun recycleItemsUnlocked(sessionId: String): List<ExternalRecycleItem> {
-        val ids = visible(sessionId).map { it.id }.toSet()
+        val ids = namespace(sessionId).map { it.id }.toSet()
         return recycle.items().filter { it.mountId in ids }
     }
 
@@ -228,7 +252,7 @@ class ExternalFolderManager(
             val after = entry(sessionId, virtualPath) ?: fail("UNAVAILABLE", "读取后来源不可用")
             if (after.uuid != original.uuid || after.updatedAt != original.updatedAt || after.sizeBytes != original.sizeBytes || after.hash.isNotEmpty() && after.hash != externalSha256(bytes)) fail("CONFLICT", "读取期间源文件发生变化，请重试")
             val uuid = UUID.randomUUID().toString()
-            val safeName = "${mount.alias}-${uuid.take(8)}-${original.name}"
+            val safeName = "${mount.alias.ifEmpty { "workspace" }}-${uuid.take(8)}-${original.name}"
             val created = workspace.createFileInWorkspaceStreaming(
                 workspaceRootUuid, uuid, safeName, mime,
                 workspaceRootUuid, "/$safeName", 8L * 1024 * 1024,
@@ -258,7 +282,7 @@ class ExternalFolderManager(
             access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.stat(relative)?.copy(path = path) }
         }
         override suspend fun list(path: String) = withContext(Dispatchers.IO) {
-            access(sessionId, path, bindings = bindings) { mount, backend, relative -> backend.list(relative).map { it.copy(path = "/mnt/${mount.alias}" + it.path.takeIf { path -> path != "/" }.orEmpty()) } }
+            access(sessionId, path, bindings = bindings) { mount, backend, relative -> visibleChildren(mount, relative, backend.list(relative)) }
         }
         override suspend fun read(path: String, maxBytes: Long) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { mount, backend, relative -> backend.read(relative, maxBytes).also { remember(mount.id, relative, it) } }
@@ -296,8 +320,22 @@ class ExternalFolderManager(
         }
     }
 
+    /** 列表路径改写为虚拟路径；工作区根下的 `mnt` 被虚拟挂载目录遮蔽，不对文件工具列出。 */
+    private fun visibleChildren(mount: ExternalMount, relative: String, children: List<ExternalFolderEntry>) = children
+        .filterNot { mount.isWorkspaceRoot && relative == "/" && it.name == "mnt" }
+        .map { it.copy(path = ExternalMountPaths.virtualPath(mount, it.path)) }
+
     private suspend fun resolve(sessionId: String, path: String): Pair<ExternalMount, String> {
-        val (alias, relative) = ExternalMountPaths.parse(path) ?: fail("INVALID_PATH", "不是挂载路径")
+        val parsed = ExternalMountPaths.parse(path)
+        if (parsed == null) {
+            val normalized = ExternalFolderPaths.normalize(path)
+            val root = currentWorkspaceMount(sessionId) ?: fail("INVALID_PATH", "不是挂载路径")
+            if (normalized == "/mnt") fail("INVALID_PATH", "/mnt 为挂载保留目录")
+            val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
+            if (bound != null && bound[root.alias] != root.id) fail("CONFLICT", "操作期间会话工作区发生变化，请重新读取目标")
+            return root to normalized
+        }
+        val (alias, relative) = parsed
         val mount = dao.visible(sessionId).singleOrNull { it.alias == alias }?.model() ?: fail("NOT_FOUND", "挂载点不属于当前会话或已被移除")
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound != null && bound[alias] != mount.id) fail("CONFLICT", "操作期间挂载身份发生变化，请重新读取目标")
@@ -312,19 +350,32 @@ class ExternalFolderManager(
         if (write && mount.readOnly) fail("READ_ONLY", "挂载点为只读，拒绝写入")
         try {
             val result = block(mount, sourceBackend(mount), relative)
-            if (mount.unavailableReason != null) dao.update(mount.copy(unavailableReason = null).entity())
+            if (mount.unavailableReason != null && !mount.isWorkspaceRoot) dao.update(mount.copy(unavailableReason = null).entity())
             return result
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            if (failure is SecurityException || failure is ExternalFolderException && failure.code == "UNAVAILABLE") {
+            val unavailable = failure is SecurityException || failure is ExternalFolderException && failure.code == "UNAVAILABLE"
+            if (unavailable && mount.isWorkspaceRoot) {
+                val reason = (failure as? ExternalFolderException)?.message ?: "目录访问被拒绝"
+                fail("UNAVAILABLE", "当前工作区不可用（$reason），不会改用会话私有工作区；请检查目录与授权，或在会话设置中更换工作区")
+            }
+            if (unavailable) {
                 dao.update(mount.copy(unavailableReason = "授权已失效、提供商不可用或存储已卸载，请重新授权").entity())
                 fail("UNAVAILABLE", "挂载不可用，请重新授权或检查存储连接")
             }
             throw failure
         }
     }
-    private fun sourceBackend(mount: ExternalMount): ExternalFolderBackend {
-        backendOverride?.let { return it(mount) }
+    private suspend fun sourceBackend(mount: ExternalMount): ExternalFolderBackend {
+        if (mount.sourceType == ExternalMountPaths.WORKSPACE_SOURCE) {
+            val resolver = workspaces ?: fail("UNAVAILABLE", "工作区不可用")
+            return when (val current = resolver.resolveWorkspace(mount.sourceId)) {
+                is SessionWorkspace.Directory -> backendOverride?.invoke(mount) ?: resolver.backend(current)
+                is SessionWorkspace.Unavailable -> fail("UNAVAILABLE", current.reason)
+                SessionWorkspace.Private -> fail("UNAVAILABLE", "工作区不可用")
+            }
+        }
+        backendOverride?.invoke(mount)?.let { return it }
         return when (mount.sourceType) {
             "saf_tree" -> {
                 val uri = Uri.parse(mount.sourceId)

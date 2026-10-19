@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 自选工作区目录后端与命令执行
+
+- 会话绑定自选工作区（Nexara 项目文件夹 `filesDir/projects/<位置>`，侧载渠道另有共享存储文件夹）后，文件工具、脚本网关与审批目标解析把 `/` 指向该目录，经不跟随符号链接的真实路径目录后端读写，保留 `expected_sha256` 并发校验、删除回收与差异；`/mnt/<别名>` 挂载照常可用，私有工作区的 UUID 与路径在此模式下不可达。目录后端移入 `main` 源集，共享存储根仍只在侧载渠道开放。
+- 记住的审批目标带上当前工作区身份，切换工作区后需重新审批；操作期间工作区变化时拒绝执行。目录缺失、登记被删或授权丢失时一律拒绝，不回退到会话私有工作区。
+- `shell_exec`/`python_exec` 在自选目录直接运行：不持工作区锁、不做 Room 对账，结果以 `workspace_kind` 与 `workspace_tracking: "none"` 代替 `workspace_changes`；命令环境新增 `NEXARA_WORKSPACE_KIND`。系统提示词在启用文件或进程工具时写明当前工作区与不可用原因。
+- 新建会话复制 Agent 默认工作区，分支会话保留绑定，会话局部更新可切回私有工作区；删除会话只解除自选工作区引用。
+- 内置 git 抓取范围对齐 git：`--depth` 隐含 `--single-branch` 并自动跟随标签，支持 `--single-branch`/`--no-single-branch`/`--no-tags`，单分支克隆后 fetch 仍只取该分支，省略远端时取上游远端或 origin；私有工作区 clone 提示改用自选工作区；共享存储仓库在首次检出前写入 `core.symlinks=false`、`core.filemode=false`、`core.ignorecase=true`，并列出检出为普通文件的符号链接与仅大小写不同的路径。
+
 ### 自选工作区与 Agent 用户规则数据层（数据库 v22、备份载荷 v5）
 
 - 数据库前进迁移 21→22：新增 `workspaces` 自选工作区登记表（`project`/`shared` 两类，同类同位置唯一）、会话 `workspace_id`、Agent `default_workspace_id` 与 `user_rules`，以及按 Agent 保留最近 20 版的 `agent_rule_revisions` 规则历史。旧数据迁移后绑定为空、用户规则为空，行为不变；界面与工具接入在后续阶段完成。

@@ -22,4 +22,10 @@ interface ExternalWorkspaceAccess : IExternalFolderManager {
     suspend fun deleteSessionMounts(sessionId: String)
     fun backend(sessionId: String, mountIds: Map<String, String> = emptyMap()): ExternalFolderBackend
     suspend fun version(sessionId: String, path: String, hash: String): ByteArray?
+
+    /**
+     * 会话当前为自选目录工作区时返回以 `/` 为根的工作区挂载（别名为空串），`/mnt/<别名>` 挂载照旧；
+     * 私有工作区返回 null。工作区不可用时仍返回挂载并带 [ExternalMount.unavailableReason]，访问时拒绝而不回退。
+     */
+    suspend fun workspaceMount(sessionId: String): ExternalMount? = null
 }

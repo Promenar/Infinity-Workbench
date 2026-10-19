@@ -31,7 +31,7 @@ class ScriptToolRunnerTest {
     @Test fun `实际工具入口读取阻塞也会按请求超时且不进入引擎`() = runBlocking {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val mounts = mockk<ExternalWorkspaceAccess>()
+        val mounts = mockk<ExternalWorkspaceAccess> { coEvery { workspaceMount(any()) } returns null }
         coEvery { mounts.visible(context.sessionId) } returns listOf(ExternalMount("mount", "demo", "saf_tree", "content://synthetic/tree/root", context.sessionId, false, 1))
         coEvery { mounts.read(context.sessionId, "/mnt/demo/main.js", any()) } answers {
             entered.countDown(); release.await(5, TimeUnit.SECONDS); "result=42".toByteArray()
@@ -46,7 +46,7 @@ class ScriptToolRunnerTest {
     }
 
     @Test fun `未声明联网时真实主进程能力代理拒绝fetch`() = runBlocking {
-        val mounts = mockk<ExternalWorkspaceAccess>()
+        val mounts = mockk<ExternalWorkspaceAccess> { coEvery { workspaceMount(any()) } returns null }
         coEvery { mounts.visible(context.sessionId) } returns emptyList()
         val directory = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".nexara-workspace-script-runner").toFile()
         try {

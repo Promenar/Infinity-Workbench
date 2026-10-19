@@ -1,7 +1,9 @@
 package com.promenar.nexara.data.exec
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.repository.WorkspaceChangeReport
+import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.repository.WorkspaceCommandHost
 import com.promenar.nexara.data.repository.WorkspaceCommandOutcome
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -65,6 +67,7 @@ class BuiltinExecServiceTest {
         pythonDir: File = File(work, "no-python"),
         keepAlive: ExecKeepAlive = NoExecKeepAlive,
         clockNanos: () -> Long = System::nanoTime,
+        sessionWorkspace: suspend (String?) -> SessionWorkspace = { SessionWorkspace.Private },
     ) = BuiltinExecService(
         workspace = host,
         runner = BuiltinCommandRunner(
@@ -85,6 +88,7 @@ class BuiltinExecServiceTest {
         shell = "/bin/sh",
         unavailablePythonAbi = { "x86" },
         keepAlive = keepAlive,
+        sessionWorkspace = sessionWorkspace,
     )
 
     /** 记录保活请求；[stopOnStart] 模拟用户立即点击通知的停止按钮。 */
@@ -130,6 +134,48 @@ class BuiltinExecServiceTest {
         val workspaceChanges = value.getValue("workspace_changes").jsonObject
         assertThat(workspaceChanges.getValue("added").jsonArray.map { it.jsonPrimitive.content }).containsExactly("/out.txt")
         assertThat(sessions).containsExactly("session")
+    }
+
+    @Test
+    fun `自选工作区直接在目录运行，不经工作区锁与对账`() = runBlocking<Unit> {
+        val project = File(work, "project").apply { mkdirs() }
+        val directory = SessionWorkspace.Directory(WorkspaceEntity("ws", WorkspaceEntity.KIND_PROJECT, "项目", "project", 1), project)
+        val requested = mutableListOf<String?>()
+        val value = json(ShellExecSkill(service(sessionWorkspace = { requested += it; directory })).execute(
+            args("command" to "pwd; echo \"\$NEXARA_WORKSPACE_KIND\"; echo hi > made.txt"), context,
+        ).content)
+        assertThat(value.getValue("stdout").jsonPrimitive.content.lines().take(2)).containsExactly("\$NEXARA_WORKSPACE", "project").inOrder()
+        assertThat(File(project, "made.txt").readText()).isEqualTo("hi\n")
+        assertThat(File(workspace, "made.txt").exists()).isFalse()
+        assertThat(value).doesNotContainKey("workspace_changes")
+        assertThat(value.getValue("workspace_kind").jsonPrimitive.content).isEqualTo("project")
+        assertThat(value.getValue("workspace_tracking").jsonPrimitive.content).isEqualTo("none")
+        assertThat(requested).containsExactly("session")
+        assertThat(sessions).isEmpty()
+    }
+
+    @Test
+    fun `私有工作区的命令环境标明工作区类型`() = runBlocking<Unit> {
+        val value = json(ShellExecSkill(service()).execute(args("command" to "echo \"\$NEXARA_WORKSPACE_KIND\""), context).content)
+        assertThat(value.getValue("stdout").jsonPrimitive.content).isEqualTo("private\n")
+    }
+
+    @Test
+    fun `自选工作区不可用时拒绝执行且不回退到私有工作区`() = runBlocking<Unit> {
+        val unavailable = SessionWorkspace.Unavailable("ws", null, "项目文件夹不存在")
+        for (result in listOf(
+            ShellExecSkill(service(sessionWorkspace = { unavailable })).execute(args("command" to "touch leaked.txt"), context),
+            PythonExecSkill(service(sessionWorkspace = { unavailable })).execute(args("code" to "print(1)"), context),
+        )) {
+            val value = json(result.content)
+            assertThat(result.status).isEqualTo("error")
+            assertThat(value.getValue("error_code").jsonPrimitive.content).isIn(listOf("EXEC_WORKSPACE_UNAVAILABLE", "EXEC_PYTHON_UNAVAILABLE"))
+        }
+        val shell = json(ShellExecSkill(service(sessionWorkspace = { unavailable })).execute(args("command" to "touch leaked.txt"), context).content)
+        assertThat(shell.getValue("error_code").jsonPrimitive.content).isEqualTo("EXEC_WORKSPACE_UNAVAILABLE")
+        assertThat(shell.getValue("guidance").jsonPrimitive.content).contains("项目文件夹不存在")
+        assertThat(File(workspace, "leaked.txt").exists()).isFalse()
+        assertThat(sessions).isEmpty()
     }
 
     @Test

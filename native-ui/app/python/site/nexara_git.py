@@ -47,6 +47,13 @@ def _usage():
     return "\n".join([
         "用法：git [-C <目录>] <子命令> [参数]（Nexara 内置，基于 dulwich）",
         "支持的子命令：" + " ".join(SUPPORTED),
+        "clone [--depth <N>] [-b <分支>] [--single-branch | --no-single-branch] [--no-tags] [--bare] <地址> [<目录>]",
+        "  --depth 隐含 --single-branch：只取远端默认分支（或 -b 指定的分支），标签只跟随指向已抓取提交的标签；",
+        "  --no-single-branch 取全部分支与标签；--no-tags 不取标签。单分支克隆后 fetch 仍只取该分支。",
+        "fetch [<远端>] [--depth <N>] [--tags | --no-tags]：省略远端时取当前分支的上游远端或 origin。",
+        "工作区：私有工作区计入应用备份上限且卸载即删除，clone 前会提示改用项目文件夹或共享文件夹；",
+        "  共享文件夹的仓库自动设置 core.symlinks=false、core.filemode=false、core.ignorecase=true，",
+        "  符号链接检出为普通文件，仅大小写不同的路径只保留一个。",
         "远端只支持 HTTPS；推送私有仓库需在 URL 中提供令牌。" + FALLBACK,
     ])
 
@@ -136,25 +143,465 @@ def _collapse_progress():
 
 
 _COUNT_SHORTHAND = re.compile(r"^-([0-9]+)$")
+HEAD_REF = b"HEAD"
+HEADS_PREFIX = b"refs/heads/"
+TAGS_PREFIX = b"refs/tags/"
+PEELED_SUFFIX = b"^{}"
 # git 默认只取分支与标签；dulwich 的 clone/fetch 默认要远端通告的全部引用，
 # GitHub 会通告每个 PR 的 refs/pull/*，--depth 1 克隆热门仓库也会下载数百 MB。
-DEFAULT_FETCH_REFS = (b"HEAD", b"refs/heads/", b"refs/tags/")
+DEFAULT_FETCH_REFS = (HEAD_REF, HEADS_PREFIX, TAGS_PREFIX)
+# dulwich.cli clone 不认识的 git 选项，由包装层消化后剔除。
+CLONE_WRAPPER_FLAGS = ("--single-branch", "--no-single-branch", "--no-tags")
+
+
+class _FetchPolicy:
+    """一次 clone/fetch 的抓取范围，由包装层按 git 语义算出，供 dulwich fetch 钩子使用。
+
+    single_branch 为真时只抓 branches 列出的分支；branches 为 None 表示远端 HEAD 指向的默认分支。
+    tags 取 "all"（全部标签）、"follow"（只跟随指向已抓取对象的标签）或 "none"。
+    """
+
+    def __init__(self, single_branch=False, branches=None, tags="all", clone=False, shared=False):
+        self.single_branch = single_branch
+        self.branches = branches
+        self.tags = tags
+        self.clone = clone
+        self.shared = shared
+        self.clone_path = None
+        self.bare = False
+
+
+_POLICY = None
+
+
+class _RemoteRefMissing(Exception):
+    pass
+
+
+def _clone_policy(args, shared=False):
+    """按 git clone 语义解析抓取范围：--depth 隐含 --single-branch，single-branch 时标签改为自动跟随。"""
+    depth = branch = single = None
+    no_tags = bare = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        name, has_value, value = arg.partition("=")
+        if arg in ("--depth", "-b", "--branch") and index + 1 < len(args):
+            name, value, has_value = arg, args[index + 1], True
+            index += 1
+        if has_value and name == "--depth":
+            depth = value
+        elif has_value and name in ("-b", "--branch"):
+            branch = value
+        elif arg == "--single-branch":
+            single = True
+        elif arg == "--no-single-branch":
+            single = False
+        elif arg == "--no-tags":
+            no_tags = True
+        elif arg == "--bare":
+            bare = True
+        index += 1
+    if single is None:
+        try:
+            single = depth is not None and int(depth) > 0
+        except ValueError:
+            single = False
+    policy = _FetchPolicy(
+        single_branch=single,
+        branches=[branch.encode()] if single and branch else None,
+        tags="none" if no_tags else ("follow" if single else "all"),
+        clone=True,
+        shared=shared,
+    )
+    policy.bare = bare
+    return policy
+
+
+def _fetch_location(args):
+    """返回 fetch 参数中的远端位置（第一个位置参数），没有时返回 None。"""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("--depth", "--shallow-since", "--shallow-exclude"):
+            index += 2
+            continue
+        if not arg.startswith("-"):
+            return arg
+        index += 1
+    return None
+
+
+def _default_remote():
+    """像 git 一样取当前分支的上游远端，没有时用 origin。"""
+    from dulwich.repo import Repo
+
+    try:
+        repo = Repo.discover(".")
+    except Exception:
+        return "origin"
+    try:
+        head = repo.refs.read_ref(HEAD_REF) or b""
+        if head.startswith(b"ref: " + HEADS_PREFIX):
+            branch = head[len(b"ref: " + HEADS_PREFIX):].strip()
+            return repo.get_config().get((b"branch", branch), b"remote").decode()
+    except (KeyError, ValueError):
+        pass
+    finally:
+        repo.close()
+    return "origin"
+
+
+def _fetch_policy(args, shared=False):
+    """按远端配置的 fetch refspec 与 tagOpt 决定 fetch 范围：单分支克隆后的 fetch 仍只取该分支。"""
+    from dulwich.repo import Repo
+
+    policy = _FetchPolicy(shared=shared)
+    location = _fetch_location(args)
+    tag_option = None
+    refspecs = []
+    if location is not None and "--all" not in args:
+        try:
+            repo = Repo.discover(".")
+        except Exception:
+            repo = None
+        if repo is not None:
+            try:
+                config = repo.get_config()
+                section = (b"remote", location.encode())
+                if config.has_section(section):  # URL 或未配置的远端：保持全部分支与标签
+                    try:
+                        refspecs = list(config.get_multivar(section, b"fetch"))
+                    except KeyError:
+                        pass
+                    try:
+                        tag_option = config.get(section, b"tagOpt")
+                    except KeyError:
+                        pass
+            finally:
+                repo.close()
+    branches = []
+    for refspec in refspecs:
+        source = refspec.lstrip(b"+").split(b":", 1)[0]
+        if not source.startswith(HEADS_PREFIX):
+            continue
+        if b"*" in source:
+            branches = []
+            break
+        branches.append(source[len(HEADS_PREFIX):])
+    if branches:
+        policy.single_branch = True
+        policy.branches = branches
+        policy.tags = "follow"
+    if "--tags" in args or (tag_option == b"--tags" and "--no-tags" not in args):
+        policy.tags = "all"
+    elif "--no-tags" in args or tag_option == b"--no-tags":
+        policy.tags = "none"
+    return policy
+
+
+def _wanted_refs(policy, refs):
+    """从远端通告的引用中挑出本次要抓取的引用。"""
+    wanted = {}
+    for name, sha in refs.items():
+        if sha is None or name.endswith(PEELED_SUFFIX):
+            continue
+        if name.startswith(TAGS_PREFIX):
+            if policy.tags == "all":
+                wanted[name] = sha
+        elif not policy.single_branch and (name == HEAD_REF or name.startswith(HEADS_PREFIX)):
+            wanted[name] = sha
+    if not policy.single_branch:
+        return wanted
+    if policy.branches is None:
+        if refs.get(HEAD_REF) is not None:
+            wanted[HEAD_REF] = refs[HEAD_REF]
+        return wanted
+    for branch in policy.branches:
+        candidates = [HEADS_PREFIX + branch]
+        if policy.clone:
+            candidates.append(TAGS_PREFIX + branch)  # git clone -b 也接受标签
+        for name in candidates:
+            if refs.get(name) is not None:
+                wanted[name] = refs[name]
+                break
+        else:
+            if policy.clone:
+                raise _RemoteRefMissing("Remote branch %s not found in upstream origin" % branch.decode())
+    return wanted
+
+
+def _fetch_ref_prefix(policy):
+    if not policy.single_branch:
+        return [prefix for prefix in DEFAULT_FETCH_REFS if policy.tags == "all" or prefix != TAGS_PREFIX]
+    prefixes = [HEAD_REF]
+    if policy.branches is None:
+        # 默认分支名要等 symref 才知道；通告里必须带上它，dulwich 才会建立远端跟踪引用与本地分支。
+        prefixes.append(HEADS_PREFIX)
+    for branch in policy.branches or ():
+        prefixes += [HEADS_PREFIX + branch, TAGS_PREFIX + branch]
+    if policy.tags == "all":
+        prefixes.append(TAGS_PREFIX)
+    return prefixes
+
+
+def _remote_tags(client, path, protocol_version):
+    """返回远端标签及其剥离后指向的对象；本地远端的通告不含剥离值，直接打开仓库剥离。"""
+    from dulwich.client import LocalGitClient
+
+    listing = client.get_refs(path, protocol_version=protocol_version, ref_prefix=[TAGS_PREFIX])
+    tags, peeled = {}, {}
+    for name, sha in listing.refs.items():
+        if sha is None or not name.startswith(TAGS_PREFIX):
+            continue
+        if name.endswith(PEELED_SUFFIX):
+            peeled[name[:-len(PEELED_SUFFIX)]] = sha
+        else:
+            tags[name] = sha
+    if isinstance(client, LocalGitClient):
+        with client._open_repo(path) as repo:
+            for name in tags:
+                try:
+                    peeled[name] = repo.get_peeled(name)
+                except KeyError:
+                    pass
+    return tags, peeled
+
+
+def _follow_tags(original, client, path, target, kwargs, fetched):
+    """git 的标签自动跟随：只取指向本地已有对象（已抓取历史）的标签。
+
+    附注标签对象不在第一次抓取的包里，需要第二次抓取；此时 graph walker 以已抓到的提交为 have，
+    服务端只发送标签对象本身，不会重新发送它指向的快照。
+    """
+    from dulwich.client import LocalGitClient
+    from dulwich.objects import Tag
+
+    store = target.object_store
+    tags, peeled = _remote_tags(client, path, kwargs.get("protocol_version"))
+    followed, pending = {}, {}
+    for name, sha in tags.items():
+        if sha in store:
+            followed[name] = sha
+        elif peeled.get(name) is not None and peeled[name] in store:
+            pending[name] = sha
+    if not pending:
+        return followed
+    if isinstance(client, LocalGitClient):
+        # dulwich 的本地服务端遇到浅仓库会丢弃 have（repo.find_missing_objects），第二次抓取会重发整份快照；
+        # 本地远端直接复制标签对象链即可。
+        with client._open_repo(path) as source:
+            for sha in set(pending.values()):
+                while sha not in store:
+                    item = source.object_store[sha]
+                    store.add_object(item)
+                    if not isinstance(item, Tag):
+                        break
+                    sha = item.object[1]
+        followed.update(pending)
+        return followed
+    heads = [sha for sha in fetched if sha in store]
+    heads += [sha for sha in target.refs.as_dict(HEADS_PREFIX.rstrip(b"/")).values() if sha in store]
+    walker = type(target).get_graph_walker
+    target.get_graph_walker = lambda heads_arg=None: walker(target, heads=heads_arg or heads)
+    try:
+        original(
+            client, path, target,
+            determine_wants=lambda refs, depth=None: sorted(set(pending.values())),
+            progress=kwargs.get("progress"),
+            ref_prefix=[TAGS_PREFIX],
+            protocol_version=kwargs.get("protocol_version"),
+        )
+    finally:
+        del target.get_graph_walker
+    followed.update({name: sha for name, sha in pending.items() if sha in store})
+    return followed
+
+
+def _policy_fetch(original, client, path, target, policy, kwargs):
+    if policy.clone:
+        policy.clone_path = getattr(target, "path", None)
+        if policy.shared:
+            # clone 在 fetch 之后才检出并重新读取仓库配置，这里写入才能让 core.symlinks=false 对首次检出生效。
+            _write_shared_config(target, force=True)
+    selected = {}
+
+    def determine_wants(refs, depth=None):
+        selected.clear()
+        selected.update(_wanted_refs(policy, refs))
+        return target.object_store.determine_wants_all(selected, depth=depth)
+
+    kwargs["ref_prefix"] = _fetch_ref_prefix(policy)
+    if policy.tags == "follow" and hasattr(client, "_fetch_capabilities"):
+        # 协议 v0/v1 下让服务端随包附上指向所发对象的附注标签（git 自动跟随的主路径）；
+        # dulwich 在协议 v2 不发送 include-tag，由 _follow_tags 的第二次抓取补齐。
+        from dulwich.protocol import CAPABILITY_INCLUDE_TAG
+
+        client._fetch_capabilities.add(CAPABILITY_INCLUDE_TAG)
+    result = original(client, path, target, determine_wants=determine_wants, **kwargs)
+    store = target.object_store
+    if policy.single_branch and policy.branches is None and HEAD_REF in selected:
+        head_target = result.symrefs.get(HEAD_REF)
+        if head_target and head_target.startswith(HEADS_PREFIX):
+            selected[head_target] = selected[HEAD_REF]  # 抓取的正是 HEAD 指向的提交
+    # 只交回本次选中且对象已在本地的引用：dulwich 会把交回的分支与标签全部导入为远端跟踪引用和本地标签。
+    refs = {name: sha for name, sha in selected.items() if sha in store}
+    if policy.tags == "follow":
+        try:
+            refs.update(_follow_tags(original, client, path, target, kwargs, list(refs.values())))
+        except Exception as error:  # 标签跟随失败不影响分支本身
+            print("warning: 跳过标签自动跟随：%s" % (str(error).strip() or type(error).__name__), file=sys.stderr)
+    result.refs = refs
+    if policy.clone and policy.single_branch:
+        _record_single_branch(target, policy, refs)
+    return result
+
+
+def _record_single_branch(target, policy, refs):
+    """像 git clone --single-branch 一样把 fetch refspec 收窄为该分支，--no-tags 记为 tagOpt。"""
+    branches = [name[len(HEADS_PREFIX):] for name in refs if name.startswith(HEADS_PREFIX)]
+    config = target.get_config()
+    section = (b"remote", b"origin")
+    if not config.has_section(section):
+        return
+    if len(branches) == 1:
+        branch = branches[0]
+        config.set(section, b"fetch", b"+refs/heads/" + branch + b":refs/remotes/origin/" + branch)
+    if policy.tags == "none":
+        config.set(section, b"tagOpt", b"--no-tags")
+    config.write_to_path()
 
 
 def _limit_fetched_refs():
-    from dulwich.client import GitClient
+    from dulwich.client import GitClient, LocalGitClient
 
-    original = GitClient.fetch
-    if getattr(original, "_nexara_limited", False):
-        return
+    # LocalGitClient 覆盖了 fetch 且忽略 ref_prefix，两处都要接管。
+    for cls in (GitClient, LocalGitClient):
+        original = cls.__dict__["fetch"]
+        if not getattr(original, "_nexara_limited", False):
+            cls.fetch = _wrap_fetch(original)
 
+
+def _wrap_fetch(original):
     def fetch(self, path, target, *args, **kwargs):
-        if not args and kwargs.get("ref_prefix") is None:
-            kwargs["ref_prefix"] = list(DEFAULT_FETCH_REFS)
-        return original(self, path, target, *args, **kwargs)
+        policy = _POLICY
+        if args or kwargs.get("determine_wants") is not None or policy is None:
+            # pull 等自带 determine_wants 的调用只限制通告范围。
+            if not args and kwargs.get("ref_prefix") is None:
+                kwargs["ref_prefix"] = list(DEFAULT_FETCH_REFS)
+            return original(self, path, target, *args, **kwargs)
+        kwargs.pop("determine_wants", None)
+        return _policy_fetch(original, self, path, target, policy, kwargs)
 
     fetch._nexara_limited = True
-    GitClient.fetch = fetch
+    return fetch
+
+
+WORKSPACE_KINDS = ("private", "project", "shared")
+SHARED_CORE_CONFIG = ((b"symlinks", b"false"), (b"filemode", b"false"), (b"ignorecase", b"true"))
+PRIVATE_CLONE_HINT = (
+    "提示：当前是会话私有工作区，内容计入应用备份上限（16 MiB / 10 000 项），"
+    "克隆产生的 .git 对象会使备份超限失败，且卸载应用即删除。"
+    "建议改用自选工作区（项目文件夹或共享文件夹）后再克隆。"
+)
+
+
+def _workspace_kind():
+    kind = os.environ.get("NEXARA_WORKSPACE_KIND", "").strip().lower()
+    return kind if kind in WORKSPACE_KINDS else "private"
+
+
+def _write_shared_config(repo, force):
+    """共享存储大小写不敏感、不支持符号链接、chmod 无效；force 为假时只补写缺失项。"""
+    config = repo.get_config()
+    changed = False
+    for name, value in SHARED_CORE_CONFIG:
+        if not force:
+            try:
+                config.get((b"core",), name)
+                continue
+            except KeyError:
+                pass
+        config.set((b"core",), name, value)
+        changed = True
+    if changed:
+        config.write_to_path()
+
+
+def _open_repo(path, discover):
+    from dulwich.repo import Repo
+
+    try:
+        return Repo.discover(path) if discover else Repo(path)
+    except Exception:
+        return None
+
+
+def _apply_shared_config(path, discover, force):
+    repo = _open_repo(path, discover)
+    if repo is None:
+        return
+    try:
+        _write_shared_config(repo, force=force)
+    finally:
+        repo.close()
+
+
+def _init_path(args):
+    for arg in args:
+        if not arg.startswith("-"):
+            return arg
+    return "."
+
+
+def _shared_checkout_notes(path, discover=True):
+    """共享存储上符号链接检出为普通文件、仅大小写不同的路径互相覆盖，检出后说明受影响的路径。"""
+    import stat as stat_module
+
+    from dulwich.object_store import iter_tree_contents
+    from dulwich.objects import Commit
+
+    repo = _open_repo(path, discover)
+    if repo is None:
+        return
+    try:
+        if repo.bare:
+            return
+        try:
+            head = repo[HEAD_REF]
+            while not isinstance(head, Commit):
+                head = repo[head.object[1]]
+        except (KeyError, AttributeError):
+            return
+        links, names = [], {}
+        for entry in iter_tree_contents(repo.object_store, head.tree):
+            if stat_module.S_ISLNK(entry.mode):
+                links.append(entry.path.decode("utf-8", "replace"))
+            parts = entry.path.split(b"/")
+            for depth in range(1, len(parts) + 1):
+                prefix = b"/".join(parts[:depth])
+                names.setdefault(prefix.lower(), set()).add(prefix)
+    finally:
+        repo.close()
+    collisions = sorted(sorted(group) for group in names.values() if len(group) > 1)
+    if links:
+        print(
+            "提示：共享存储不支持符号链接，%d 个符号链接已检出为内容是链接目标的普通文件：%s"
+            % (len(links), _sample(links)),
+            file=sys.stderr,
+        )
+    if collisions:
+        shown = [" 与 ".join(name.decode("utf-8", "replace") for name in group) for group in collisions]
+        print(
+            "提示：共享存储大小写不敏感，%d 组路径仅大小写不同，工作区中每组只会保留一个：%s"
+            % (len(collisions), _sample(shown, separator="；")),
+            file=sys.stderr,
+        )
+
+
+def _sample(items, limit=5, separator="、"):
+    shown = separator.join(items[:limit])
+    return shown + (" 等 %d 项" % len(items) if len(items) > limit else "")
 
 
 def _rewrite(command, args):
@@ -172,8 +619,9 @@ def _rewrite(command, args):
     if command == "add":
         return [("." if arg in ("-A", "--all") else arg) for arg in args], None
     if command == "clone":
+        # 抓取范围选项由包装层的 fetch 钩子实现，dulwich.cli 不认识，原样传入会报错。
+        rewritten = [arg for arg in args if arg not in CLONE_WRAPPER_FLAGS]
         # 本地源像 git 一样记为绝对路径，否则在克隆目录中 pull/fetch 会按错误的相对位置查找。
-        rewritten = list(args)
         for index, arg in enumerate(rewritten):
             if arg.startswith("-"):
                 continue
@@ -183,6 +631,15 @@ def _rewrite(command, args):
                 rewritten[index] = os.path.abspath(arg)
             break
         return rewritten, None
+    if command == "fetch":
+        # dulwich 的 fetch 必须给出远端；git 默认取当前分支的上游远端或 origin。
+        if "--all" in args or _fetch_location(args) is not None:
+            return list(args), None
+        try:
+            remote = _default_remote()
+        except ImportError:
+            remote = "origin"
+        return list(args) + [remote], None
     if command == "commit":
         rewritten = []
         index = 0
@@ -277,6 +734,10 @@ def main(argv):
         return _unsupported("子命令 %s 不在内置 git 支持范围内。支持：%s。%s" % (command, " ".join(SUPPORTED), FALLBACK))
     if command in NETWORK and any(_ssh_url(arg) for arg in rest):
         return _unsupported("内置 git 不支持 SSH 远端，请改用 HTTPS 地址。" + FALLBACK)
+    if command in ("clone", "fetch") and any(arg in ("-h", "--help") for arg in rest):
+        print(_usage())
+        return 0
+    original_rest = rest
     try:
         rest, problem = _rewrite(command, rest)
     except OSError as error:
@@ -301,28 +762,58 @@ def main(argv):
         if handled is not None:
             return handled
 
+    kind = _workspace_kind()
+    shared = kind == "shared"
+    if command == "clone" and kind == "private":
+        print(PRIVATE_CLONE_HINT, file=sys.stderr)
+    if shared and command not in ("clone", "init"):
+        _apply_shared_config(".", discover=True, force=False)
+    policy = None
+    if command == "clone":
+        policy = _clone_policy(original_rest, shared=shared)
+    elif command == "fetch":
+        policy = _fetch_policy(rest, shared=shared)
+
     # 没有终端与编辑器：需要编辑器的路径立即失败，而不是等待超时。
     os.environ.setdefault("GIT_EDITOR", "false")
     os.environ.setdefault("GIT_TERMINAL_PROMPT", "0")
     finish = _collapse_progress()
     try:
-        return _run_dulwich(command, rest)
+        result = _run_dulwich(command, rest, policy)
+        if result == 0 and shared:
+            _after_shared_command(command, rest, policy)
+        return result
     finally:
         finish()
 
 
-def _run_dulwich(command, rest):
+def _after_shared_command(command, rest, policy):
+    if command == "init":
+        _apply_shared_config(_init_path(rest), discover=False, force=True)
+    elif command == "clone" and policy.clone_path:
+        _apply_shared_config(policy.clone_path, discover=False, force=True)
+        if not policy.bare:
+            _shared_checkout_notes(policy.clone_path, discover=False)
+    elif command in ("checkout", "switch"):
+        _shared_checkout_notes(".")
+
+
+def _run_dulwich(command, rest, policy=None):
+    global _POLICY
     from dulwich import cli
 
     if command in ("clone", "fetch"):
         _limit_fetched_refs()
 
+    _POLICY = policy
     try:
         result = cli.main(["--no-pager", command, *rest])
     except KeyboardInterrupt:
         return 130
     except SystemExit:
         raise
+    except _RemoteRefMissing as error:
+        return _fatal(str(error))
     except FileNotFoundError as error:
         if "ssh" in str(error):
             return _unsupported("内置 git 不支持 SSH 远端，请把 remote 改为 HTTPS 地址。" + FALLBACK)
@@ -330,6 +821,8 @@ def _run_dulwich(command, rest):
     except Exception as error:  # dulwich 以异常报告大多数失败
         detail = str(error).strip() or type(error).__name__
         return _fatal("%s: %s" % (type(error).__name__, detail.splitlines()[0]))
+    finally:
+        _POLICY = None
     return result or 0
 
 

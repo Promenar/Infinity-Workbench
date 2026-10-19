@@ -90,9 +90,9 @@ ToolExecutor
 
 ### 3.2 统一路径与环境
 
-- 命令的工作目录是会话工作区物理根目录，文件工具与 `workspace_changes` 仍以 `/` 表示工作区根。内置后端把 stdout、stderr 中的工作区物理路径替换为 `$NEXARA_WORKSPACE` 而不是 `/`：替换后既不暴露应用目录，又能原样用于下一条命令；以 `/` 开头的虚拟路径在命令里会指向设备根目录。
+- 命令的工作目录是会话当前工作区的物理根目录，文件工具与 `workspace_changes` 仍以 `/` 表示工作区根。会话绑定自选工作区（项目文件夹或侧载共享文件夹）时，命令直接在该目录运行：不持工作区锁、不做 Room 对账，结果不含 `workspace_changes`，改以 `workspace_kind` 与 `workspace_tracking: "none"` 标明，改动用 `git status` 查看；目录不可用时返回 `EXEC_WORKSPACE_UNAVAILABLE`，不回退到私有工作区。内置后端把 stdout、stderr 中的工作区物理路径替换为 `$NEXARA_WORKSPACE` 而不是 `/`：替换后既不暴露应用目录，又能原样用于下一条命令；以 `/` 开头的虚拟路径在命令里会指向设备根目录。
 - `/mnt/<别名>` 是 SAF 挂载，只对文件工具可见，命令不可见。内置后端在 `guidance` 中说明需要先用文件工具复制到工作区。
-- 环境变量统一：`HOME`（后端各自的家目录）、`TMPDIR`、`NEXARA_WORKSPACE`（工作区物理根）、`NEXARA_BACKEND`（`builtin` / `sandbox` / `termux` / `ssh`）、`LANG=C.UTF-8`。内置后端额外设置 `PYTHONHOME`、`PYTHONPATH`、`NEXARA_PYEXT_DIR`、`NEXARA_PYTHON`、`SSL_CERT_FILE`、`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`、`PYTHONUTF8=1`，并从主进程只继承 `PATH` 与 `ANDROID_ROOT` 等系统路径变量。`LD_LIBRARY_PATH` 只在启动解释器时设置（`python_exec` 与 shell 函数 `python3`），不影响 shell 中的系统命令。
+- 环境变量统一：`HOME`（后端各自的家目录）、`TMPDIR`、`NEXARA_WORKSPACE`（工作区物理根）、`NEXARA_BACKEND`（`builtin` / `sandbox` / `termux` / `ssh`）、`NEXARA_WORKSPACE_KIND`（`private` / `project` / `shared`，内置 git 据此给出私有工作区 clone 提示与共享存储兼容配置）、`LANG=C.UTF-8`。内置后端额外设置 `PYTHONHOME`、`PYTHONPATH`、`NEXARA_PYEXT_DIR`、`NEXARA_PYTHON`、`SSL_CERT_FILE`、`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`、`PYTHONUTF8=1`，并从主进程只继承 `PATH` 与 `ANDROID_ROOT` 等系统路径变量。`LD_LIBRARY_PATH` 只在启动解释器时设置（`python_exec` 与 shell 函数 `python3`），不影响 shell 中的系统命令。
 
 ## 4. 内置后端（B）
 
@@ -217,7 +217,8 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | Play 政策对解释器加载 pip 包的适用性 | 未评审 |
 | dulwich 经 HTTPS 推送与认证（已实测：HTTPS 浅克隆公开仓库；本地裸仓库的 push、pull；init、add、commit、log、diff、status、branch、remote） | HTTPS push 未测；私有仓库只能把令牌写进远端 URL（会存入工作区的 `.git/config`），未接入凭据存储 |
 | shell 函数在子 `sh` 脚本与 `subprocess` 中不可见 | 已知限制；工具说明给出 `python3 -m nexara_git` 等替代写法（真机实测模型会先尝试 `subprocess.run(['git', ...])`，失败后改用 `dulwich.porcelain`） |
-| dulwich 没有单分支克隆：`--depth 1` 仍取回全部分支与标签的头；`log` 不支持 `--all`、`--format` 等选项 | 已知限制 |
+| dulwich 没有单分支克隆 | 已由 `nexara_git` 包装层补齐：`--depth` 隐含 `--single-branch`，支持 `--single-branch`/`--no-single-branch`/`--no-tags`，单分支克隆收窄远端 fetch refspec，标签自动跟随（Mac 上对 GitHub 实测协议 v2 下浅克隆、`-b <标签>` 与后续 fetch 范围正确） |
+| `log` 不支持 `--all`、`--format` 等选项；`tag` 不支持无参数列出标签 | 已知限制 |
 | 用户 pip 安装的包排在打包依赖之后（如更新的 urllib3 被打包版本遮蔽） | 已知限制；保证内置 git 行为稳定 |
 | 沙箱模式单个文件只支持不超过 64 KiB 的 UTF-8 文本（与 JavaScript 脚本相同，受 Binder 消息上限约束） | 已知限制；大文件与二进制改用 `python_exec` |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |

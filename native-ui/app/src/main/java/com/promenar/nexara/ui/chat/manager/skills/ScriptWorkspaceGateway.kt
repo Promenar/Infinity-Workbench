@@ -8,6 +8,7 @@ import com.promenar.nexara.data.repository.WorkspaceTextOperation
 import com.promenar.nexara.data.repository.WorkspaceFileTooLargeException
 import com.promenar.nexara.data.script.ScriptFileApprovalBroker
 import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.data.storage.namespaceBindings
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.script.*
@@ -40,15 +41,18 @@ class ScriptWorkspaceGateway private constructor(
     private val moduleRoot: String?,
 ) : ScriptCapabilities {
     private val mutex = Mutex()
-    private val repository = MountedWorkspaceRepository(workspace, mounts, context.sessionId)
+    /** 打开时会话为自选目录工作区：`/` 下的路径都经工作区挂载读写，私有工作区不可达。 */
+    private val rooted = ExternalMountPaths.WORKSPACE_ALIAS in mountIds
+    private val repository = MountedWorkspaceRepository(workspace, mounts, context.sessionId, rooted)
     private val privateBackend by lazy { PrivateWorkspaceTransferBackend(workspace, context.workspaceRootUuid, indexEvents) }
 
     override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement = withContext(Dispatchers.IO) {
         mutex.withLock {
             val raw = arguments.stringArgument("path") ?: throw ScriptFailure("INVALID_PATH", "缺少虚拟路径")
             val path = ExternalFolderPaths.normalize(raw)
-            val alias = ExternalMountPaths.parse(path)?.first
-            val currentMounts = mounts.visible(context.sessionId).associateBy { it.alias }
+            val alias = ExternalMountPaths.aliasOf(path, rooted)
+            val currentMounts = (mounts.visible(context.sessionId) + listOfNotNull(mounts.workspaceMount(context.sessionId))).associateBy { it.alias }
+            if (!rooted && currentMounts.containsKey(ExternalMountPaths.WORKSPACE_ALIAS)) throw ScriptFailure("MOUNT_CHANGED", "会话工作区已改变，请重新执行脚本")
             if (alias != null && (alias !in mountIds || currentMounts[alias]?.id != mountIds[alias])) throw ScriptFailure("MOUNT_CHANGED", "挂载身份已失效，请重新执行脚本")
             if (operation == "module") {
                 val root = moduleRoot ?: throw ScriptFailure("IMPORT_DENIED", "内联脚本不允许模块导入")
@@ -61,6 +65,7 @@ class ScriptWorkspaceGateway private constructor(
                     "read", "module" -> {
                         val bytes = try {
                             if (alias != null) mounts.read(context.sessionId, path, ScriptLimits.FILE_BYTES.toLong())
+                            else if (rooted) throw ScriptFailure("NOT_FOUND", "/mnt 是挂载目录，不是文件")
                             else privateBackend.read(path, ScriptLimits.FILE_BYTES.toLong())
                         } catch (failure: ExternalFolderException) {
                             if (failure.code == "TOO_LARGE") throw ScriptFailure("FILE_LIMIT", "文件超过脚本读取上限")
@@ -75,7 +80,7 @@ class ScriptWorkspaceGateway private constructor(
                     "stat" -> entry(path)?.asJson() ?: JsonNull
                     "list" -> {
                         val entry = entry(path) ?: throw ScriptFailure("NOT_FOUND", "目录不存在")
-                        val children = repository.observeChildren(context.workspaceRootUuid, entry.uuid).first()
+                        val children = repository.observeChildren(rootUuid(), entry.uuid).first()
                         if (children.size > 256) throw ScriptFailure("FILE_LIMIT", "目录条目超过 256 个，请使用文件工具分页")
                         JsonArray(children.filterNot { it.isSystemEntry() }.map { it.asJson() })
                     }
@@ -89,7 +94,9 @@ class ScriptWorkspaceGateway private constructor(
         }
     }
 
-    private suspend fun entry(path: String) = repository.getByMaterializedPath(context.workspaceRootUuid, path)
+    private suspend fun entry(path: String) = repository.getByMaterializedPath(rootUuid(), path)
+    private suspend fun rootUuid() = if (!rooted) context.workspaceRootUuid
+        else mounts.workspaceMount(context.sessionId)?.let { ExternalMountPaths.uuid(it, "/") } ?: throw ScriptFailure("MOUNT_CHANGED", "会话工作区已改变，请重新执行脚本")
 
     private suspend fun mutate(operation: String, path: String, arguments: JsonObject): JsonElement {
         currentCoroutineContext().ensureActive()
@@ -112,7 +119,7 @@ class ScriptWorkspaceGateway private constructor(
             expected?.let { put("expected_sha256", it.lowercase()) }
         }
         val targetParts = Json.parseToJsonElement(ToolExecutionTargets.extract(skill.toProtocolTool(), args.toString()) ?: throw ScriptFailure("INVALID_PATH", "无法确定文件审批目标")).jsonArray
-        val alias = ExternalMountPaths.parse(path)?.first
+        val alias = ExternalMountPaths.aliasOf(path, rooted)
         val bindings = if (alias == null) emptyMap() else mapOf(alias to JsonPrimitive(mountIds.getValue(alias)))
         val target = if (bindings.isEmpty()) targetParts.toString() else JsonArray(targetParts + buildJsonObject { put("mountIds", JsonObject(bindings)) }).toString()
         if (operation == "delete" || approveWrites()) {
@@ -125,7 +132,7 @@ class ScriptWorkspaceGateway private constructor(
         // 审批可能等待很久，执行前重新核验身份和读写权限；挂载工具会再做后端校验。
         currentCoroutineContext().ensureActive()
         if (alias != null) {
-            val current = mounts.visible(context.sessionId).singleOrNull { it.alias == alias }
+            val current = (mounts.visible(context.sessionId) + listOfNotNull(mounts.workspaceMount(context.sessionId))).singleOrNull { it.alias == alias }
             if (current?.id != mountIds[alias] || current?.readOnly != false) throw ScriptFailure("MOUNT_CHANGED", "审批后挂载身份或写入权限已改变")
         }
         val boundContext = object : SkillExecutionContext by context {
@@ -144,13 +151,13 @@ class ScriptWorkspaceGateway private constructor(
 
     companion object {
         suspend fun open(context: SkillExecutionContext, workspace: IWorkspaceRepository, mounts: ExternalWorkspaceAccess, files: IFileOperationRepository, indexEvents: FileIndexEventSink, approvals: ScriptFileApprovalBroker, grants: SessionToolGrantStore, approveWrites: () -> Boolean, entryPath: String?): ScriptWorkspaceGateway {
-            val ids = mounts.visible(context.sessionId).associate { it.alias to it.id }
+            val ids = mounts.namespaceBindings(context.sessionId)
             val approved = context.approvedExecutionTarget?.let { runCatching { Json.parseToJsonElement(it).jsonArray.lastOrNull() as? JsonObject }.getOrNull() }
                 ?.get("mountIds")?.jsonObject.orEmpty()
             if (approved.any { (alias, id) -> ids[alias] != id.jsonPrimitive.content }) throw ScriptFailure("MOUNT_CHANGED", "脚本审批的挂载身份已失效")
             if (entryPath != null && context.isApprovalBoundExecution) {
-                val alias = ExternalMountPaths.parse(entryPath)?.first
-                if (alias != null && alias !in approved) throw ScriptFailure("MOUNT_CHANGED", "脚本审批缺少挂载身份")
+                val alias = ExternalMountPaths.aliasOf(entryPath, ExternalMountPaths.WORKSPACE_ALIAS in ids)
+                if (alias != null && alias !in approved) throw ScriptFailure("MOUNT_CHANGED", "脚本审批缺少挂载或工作区身份")
             }
             return ScriptWorkspaceGateway(context, workspace, mounts, files, indexEvents, approvals, grants, approveWrites, ids, entryPath?.let(ScriptModules::root))
         }

@@ -23,17 +23,20 @@ suspend fun resolveSessionToolTarget(
     val paths = mutableMapOf<String, String>()
     try {
         val visibleMounts = mounts?.visible(session.id).orEmpty()
+        // 自选目录工作区以空别名挂载承载 `/`：路径授权绑定工作区身份，切换工作区后旧授权不再适用。
+        val workspaceMount = mounts?.workspaceMount(session.id)
+        val namespaceMounts = visibleMounts + listOfNotNull(workspaceMount)
         if (tool.function.name == "ssh_session_send") {
             val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
             sshSessionHost?.invoke("agent:${session.id}", id)?.let { paths["ssh_session:$id"] = it }
         }
         val rootUuid = session.workspaceRootUuid
-        if (rootUuid != null && repository != null) {
+        if (rootUuid != null && repository != null || workspaceMount != null) {
             listOf("uuid", "parentUuid", "newParentUuid").forEach { key ->
                 val uuid = (args[key] as? JsonPrimitive)?.content
                 if (!uuid.isNullOrBlank()) {
-                    if (uuid.startsWith("external:")) com.promenar.nexara.data.storage.ExternalMountPaths.uuidPath(uuid, visibleMounts)?.let { paths[uuid] = it }
-                    else repository.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
+                    if (uuid.startsWith("external:")) com.promenar.nexara.data.storage.ExternalMountPaths.uuidPath(uuid, namespaceMounts)?.let { paths[uuid] = it }
+                    else if (workspaceMount == null && rootUuid != null) repository?.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
                 }
             }
         }
@@ -57,7 +60,10 @@ suspend fun resolveSessionToolTarget(
         if (strings.firstOrNull() !in setOf("path", "move")) return target
         val legacyPaths = paths.filter { (uuid, path) -> !uuid.startsWith("external:") && (path == "/mnt" || path.startsWith("/mnt/")) }
         val mountIds = strings.drop(1).mapNotNull { path ->
-            com.promenar.nexara.data.storage.ExternalMountPaths.parse(path)?.let { (alias, _) ->
+            val parsed = com.promenar.nexara.data.storage.ExternalMountPaths.parse(path)
+            if (parsed == null) {
+                workspaceMount?.takeIf { com.promenar.nexara.domain.storage.ExternalFolderPaths.normalize(path) != "/mnt" }?.let { it.alias to it.id }
+            } else parsed.let { (alias, _) ->
                 val mountId = visibleMounts.singleOrNull { it.alias == alias }?.id
                 if (mountId == null && path !in legacyPaths.values) return null
                 mountId?.let { alias to it }

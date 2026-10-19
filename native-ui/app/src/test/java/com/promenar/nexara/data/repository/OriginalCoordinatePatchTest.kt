@@ -159,6 +159,7 @@ class OriginalCoordinatePatchTest {
             createdAt = 1, updatedAt = 1,
         )
         val mounts = mockk<ExternalWorkspaceAccess> {
+            coEvery { workspaceMount(any()) } returns null
             coEvery { visible("session") } returns emptyList()
             coEvery { entry("session", path) } answers { mountedEntry.copy(hash = Sha256Utils.hash(bytes)) }
             coEvery { resolveUuid("session", uuid) } returns path

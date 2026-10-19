@@ -2,7 +2,10 @@ package com.promenar.nexara.data.exec
 
 import com.promenar.nexara.data.repository.WorkspaceChangeReport
 import com.promenar.nexara.data.repository.WorkspaceCommandHost
+import com.promenar.nexara.data.repository.WorkspaceCommandOutcome
 import com.promenar.nexara.data.repository.isGitInternalWorkspacePath
+import com.promenar.nexara.data.workspace.SessionWorkspace
+import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.domain.tool.CommandToolResult
 import com.promenar.nexara.domain.tool.CommandTruncation
 import kotlinx.coroutines.CancellationException
@@ -18,7 +21,8 @@ import java.io.IOException
 import java.util.UUID
 
 /**
- * 内置执行后端：命令以 Nexara uid 直接在会话工作区物理根内运行，期间持有工作区写锁，结束后对账索引。
+ * 内置执行后端：命令以 Nexara uid 直接在会话工作区物理根内运行。私有工作区期间持有工作区写锁，结束后对账索引；
+ * 自选目录工作区不进 Room，直接在该目录运行，不持锁、不对账，结果不含 `workspace_changes`。
  * 命令可读写应用私有目录并访问网络，不构成隔离；调用方按执行模式审批。
  * 运行期间经 [keepAlive] 持有唤醒锁与前台服务通知，通知的停止按钮结束整个进程组并返回 `EXEC_STOPPED`。
  */
@@ -30,6 +34,8 @@ class BuiltinExecService(
     private val unavailablePythonAbi: () -> String = { "unknown" },
     private val keepAlive: ExecKeepAlive = NoExecKeepAlive,
     private val wallClockMillis: () -> Long = System::currentTimeMillis,
+    /** 会话当前工作区；默认一律为私有工作区。 */
+    private val sessionWorkspace: suspend (sessionId: String?) -> SessionWorkspace = { SessionWorkspace.Private },
 ) {
     val pipAvailable: Boolean get() = environment.pipAvailable
 
@@ -39,11 +45,11 @@ class BuiltinExecService(
         command: String,
         stdin: String?,
         timeoutSeconds: Int,
-    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command) { root ->
+    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command) { root, kind ->
         BuiltinCommandRequest(
             argv = listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", command),
             workingDirectory = root,
-            environment = environment.forWorkspace(root),
+            environment = environment.forWorkspace(root, kind),
             stdin = stdin,
             timeoutSeconds = timeoutSeconds,
         )
@@ -63,11 +69,11 @@ class BuiltinExecService(
                     "请改用 termux_exec 或 ssh_exec。shell_exec 仍可使用系统命令。",
             )
         }
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code) { root ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code) { root, kind ->
             BuiltinCommandRequest(
                 argv = listOf(environment.pythonLauncher.path, "-c", code),
                 workingDirectory = root,
-                environment = environment.forPython(root),
+                environment = environment.forPython(root, kind),
                 stdin = stdin,
                 timeoutSeconds = timeoutSeconds,
             )
@@ -80,17 +86,30 @@ class BuiltinExecService(
         timeoutSeconds: Int,
         kind: ExecRunKind,
         source: String,
-        request: (File) -> BuiltinCommandRequest,
+        request: (File, String) -> BuiltinCommandRequest,
     ): CommandToolResult {
+        val target = sessionWorkspace(sessionId)
+        if (target is SessionWorkspace.Unavailable) {
+            return CommandToolResult(
+                errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
+                guidance = "会话的自选工作区不可用（${target.reason}），命令不会改在会话私有工作区运行；请检查目录与授权，或在会话设置中更换工作区。",
+            )
+        }
+        val directory = target as? SessionWorkspace.Directory
+        val workspaceKind = SessionWorkspaceResolver.kindOf(target)
         var physicalRoot: File? = null
         val control = BuiltinCommandControl()
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
         val held = try {
             keepAlive.hold(run, control::requestStop) {
-                workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
+                if (directory != null) {
+                    physicalRoot = directory.root
+                    val output = try { runner.run(request(directory.root, workspaceKind), control) } catch (_: IOException) { null }
+                    WorkspaceCommandOutcome(output, changes = null)
+                } else workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
                     physicalRoot = root
                     try {
-                        runner.run(request(root), control)
+                        runner.run(request(root, workspaceKind), control)
                     } catch (failure: IOException) {
                         null
                     }
@@ -110,19 +129,21 @@ class BuiltinExecService(
             )
         }
         val outcome = held.value
+        val fields = if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)
         val output = outcome.value ?: return CommandToolResult(
             errorCode = "EXEC_START_FAILED",
             guidance = "无法启动命令进程；请确认设备上的 /system/bin/sh 与 setsid 可用，或改用 termux_exec。",
-            backendFields = workspaceFields(outcome.changes),
+            backendFields = fields,
         )
         val root = checkNotNull(physicalRoot)
+        val settled = if (directory != null) "自选工作区不做对账，可用 git status 查看改动。" else "工作区已按当前磁盘状态对账。"
         val (errorCode, guidance) = when {
             output.stoppedByUser -> "EXEC_STOPPED" to
-                "用户在通知栏停止了命令，已结束整个进程组；工作区已按当前磁盘状态对账。不要自动重试，先询问用户。"
+                "用户在通知栏停止了命令，已结束整个进程组；${settled}不要自动重试，先询问用户。"
             output.timedOut -> "EXEC_TIMEOUT" to
-                "命令在 $timeoutSeconds 秒内未结束，已结束整个进程组；工作区已按当前磁盘状态对账。可增大 timeout_seconds（最多 600）或拆分任务。"
+                "命令在 $timeoutSeconds 秒内未结束，已结束整个进程组；${settled}可增大 timeout_seconds（最多 600）或拆分任务。"
             output.killedExternally -> "EXEC_PROCESS_KILLED" to
-                "命令进程被系统结束（SIGKILL），可能是内存不足或后台被冻结；工作区已按当前磁盘状态对账。"
+                "命令进程被系统结束（SIGKILL），可能是内存不足或后台被冻结；$settled"
             outcome.reconcileError != null -> "WORKSPACE_RECONCILE_FAILED" to
                 "命令已执行，但工作区索引未能更新（${outcome.reconcileError}）；文件工具可能看到旧状态，可再运行一次 shell_exec（如 true）重新对账。"
             else -> null to warningGuidance(outcome.changes)
@@ -140,7 +161,7 @@ class BuiltinExecService(
             stderrTruncated = output.stderrTruncated,
             removedWhenTruncated = CommandTruncation.HEAD_REMOVED,
             backendFields = JsonObject(
-                workspaceFields(outcome.changes) +
+                fields +
                     (if (output.pausedMillis >= PAUSE_REPORT_MILLIS) mapOf("paused_ms" to JsonPrimitive(output.pausedMillis)) else emptyMap()),
             ),
         )
@@ -180,6 +201,12 @@ class BuiltinExecService(
                 .sortedByDescending { it.length }
                 .forEach { path -> if (path.length > 1) result = result.replace(path, "\$NEXARA_WORKSPACE") }
             return result
+        }
+
+        /** 自选目录工作区不逐次统计改动，只说明工作区类型。 */
+        internal fun directoryFields(kind: String): JsonObject = buildJsonObject {
+            put("workspace_kind", kind)
+            put("workspace_tracking", "none")
         }
 
         internal fun workspaceFields(changes: WorkspaceChangeReport?): JsonObject = buildJsonObject {

@@ -25,11 +25,30 @@ object ExternalMountPaths {
         if (parts.size != 3 || parts[0] != "external") return null
         val mount = mounts.singleOrNull { it.id == parts[1] } ?: return null
         return try {
-            val relative = ExternalFolderPaths.normalize(String(Base64.getUrlDecoder().decode(parts[2]), Charsets.UTF_8))
-            "/mnt/${mount.alias}" + relative.takeIf { it != "/" }.orEmpty()
+            virtualPath(mount, ExternalFolderPaths.normalize(String(Base64.getUrlDecoder().decode(parts[2]), Charsets.UTF_8)))
         } catch (_: IllegalArgumentException) { null }
+    }
+
+    /** 工作区挂载的别名；它的虚拟路径就是相对路径本身，`/mnt` 仍保留给挂载。 */
+    const val WORKSPACE_ALIAS = ""
+    const val WORKSPACE_SOURCE = "workspace"
+    fun workspaceMountId(workspaceId: String) = "ws_$workspaceId"
+
+    fun virtualPath(mount: ExternalMount, relative: String): String =
+        if (mount.alias == WORKSPACE_ALIAS) relative else "/mnt/${mount.alias}" + relative.takeIf { it != "/" }.orEmpty()
+
+    /** 路径所属挂载的别名：`/mnt/<别名>` 为挂载；[rooted] 时其余路径（`/mnt` 本身除外）属于工作区挂载。 */
+    fun aliasOf(path: String, rooted: Boolean): String? {
+        parse(path)?.let { return it.first }
+        return if (rooted && ExternalFolderPaths.normalize(path) != "/mnt") WORKSPACE_ALIAS else null
     }
     fun conflicts(first: ExternalMount, second: ExternalMount): Boolean =
         first.id != second.id && first.alias == second.alias &&
             (first.sessionId == null || second.sessionId == null || first.sessionId == second.sessionId)
 }
+
+val ExternalMount.isWorkspaceRoot: Boolean get() = alias == ExternalMountPaths.WORKSPACE_ALIAS
+
+/** 一次工具调用要固定的全部挂载身份：可见挂载加当前工作区挂载。 */
+suspend fun com.promenar.nexara.domain.storage.ExternalWorkspaceAccess.namespaceBindings(sessionId: String): Map<String, String> =
+    visible(sessionId).associate { it.alias to it.id } + listOfNotNull(workspaceMount(sessionId)).associate { it.alias to it.id }

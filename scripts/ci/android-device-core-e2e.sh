@@ -449,6 +449,8 @@ run_test packaged-python "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.exec.PackagedPythonDeviceTest
 run_test builtin-exec "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.exec.BuiltinExecDeviceTest
+run_test directory-workspace "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.workspace.DirectoryWorkspaceDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then
@@ -504,7 +506,7 @@ run_test database-migration-2-3 "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration2To3Test
 run_test database-migration-1-current "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To5Test
-run_test database-migration-18-21 "${APP_RUNNER}" \
+run_test database-migration-18-22 "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration18To22Test
 run_test legacy-database-promotion "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.LegacyDatabasePromoterInstrumentedTest

@@ -194,6 +194,8 @@ class SessionManager(
                 "activeSkillIds" -> result.copy(activeSkillIds = value as? List<String> ?: result.activeSkillIds)
                 "workspacePath" -> result.copy(workspacePath = value as? String)
                 "workspaceRootUuid" -> result.copy(workspaceRootUuid = value as? String)
+                // null 表示改回会话私有工作区。
+                "workspaceId" -> result.copy(workspaceId = value as? String)
                 else -> result
             }
         }
