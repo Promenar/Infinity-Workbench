@@ -151,6 +151,7 @@ class SshHostManagementSkillsTest {
         assertThat(status).isEqualTo("error")
         assertThat(body["error_code"]!!.jsonPrimitive.content).isEqualTo("SSH_KEY_LOGIN_FAILED")
         assertThat(store.find("web")!!.authType).isEqualTo(SshAuthType.PASSWORD)
+        assertThat(store.find("web")!!.trustedFingerprint).isEqualTo(presented.fingerprint)
         assertThat(store.password("web")).isEqualTo("synthetic-password")
     }
 
@@ -203,15 +204,21 @@ class SshHostManagementSkillsTest {
 
         override fun observeHosts() = hosts
         override suspend fun find(alias: String) = hosts.value.firstOrNull { it.alias == alias }
+        // 与 RoomSshHostStore 契约一致：save 不接受传入的信任字段，连接身份或认证方式变化即清除信任。
         override suspend fun save(host: SshHost, credential: SshCredential?) {
             val previous = find(host.alias)
-            put(host, credential)
+            val sameIdentity = previous != null && previous.hostname == host.hostname && previous.port == host.port &&
+                previous.username == host.username && previous.authType == host.authType
+            put(host.copy(
+                trustedKeyType = if (sameIdentity) previous?.trustedKeyType else null,
+                trustedFingerprint = if (sameIdentity) previous?.trustedFingerprint else null,
+            ), credential)
             if (credential == null && previous != null && previous.authType != host.authType) secrets.remove(host.alias)
         }
         override suspend fun delete(alias: String) { hosts.value = hosts.value.filterNot { it.alias == alias }; secrets.remove(alias) }
         override suspend fun trust(alias: String, expectedOld: String?, key: SshHostKey, expectedHost: SshHost): Boolean {
             val current = find(alias) ?: return false
-            if (current != expectedHost) return false
+            if (current != expectedHost || current.trustedFingerprint != expectedOld) return false
             hosts.value = hosts.value.map { if (it.alias == alias) it.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint) else it }
             return true
         }

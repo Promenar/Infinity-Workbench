@@ -25,6 +25,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -32,6 +33,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -415,6 +417,34 @@ class ResourceExplorerInteractionTest {
                 .assertHeightIsAtLeast(48.dp)
         }
     }
+
+    /** 键盘弹出会压缩面板可用高度；布局形态不得随之切换，否则搜索框被重建、焦点与键盘立刻丢失。 */
+    @Test
+    fun searchKeepsFocusWhenKeyboardShrinksAvailableHeight() {
+        var height by mutableStateOf(800.dp)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                Box(Modifier.requiredSize(width = 360.dp, height = height)) {
+                    ResourceExplorerSheetContent(
+                        state = state(),
+                        actions = ResourceExplorerSheetActions(),
+                        filesContent = {},
+                        recycleBinContent = {},
+                    )
+                }
+            }
+        }
+        val search = SemanticsMatcher.keyIsDefined(SemanticsProperties.Focused) and hasAncestorTag(UiTags.RESOURCE_EXPLORER_SEARCH)
+        rule.onNode(search).performSemanticsAction(SemanticsActions.RequestFocus)
+        rule.onNode(search).assertIsFocused()
+
+        height = 300.dp
+        rule.waitForIdle()
+
+        rule.onNode(search).assertIsFocused()
+    }
+
+    private fun hasAncestorTag(tag: String) = androidx.compose.ui.test.hasAnyAncestor(hasTestTag(tag))
 
     private fun state(
         selectedTab: ResourceExplorerTab = ResourceExplorerTab.Files,

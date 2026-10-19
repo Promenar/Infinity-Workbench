@@ -205,6 +205,7 @@ private class SshHostInstallKeySkill(
             return buildJsonObject { put("alias", alias); put("auth_type", "key"); put("changed", false) }
         }
         host = ensureTrustedHostKey(host)
+        val pinned = SshHostKey(requireNotNull(host.trustedKeyType), requireNotNull(host.trustedFingerprint))
         val stored = withContext(Dispatchers.IO) { store.credential(host) }
         val previous = stored ?: prompts.requestPassword(host)?.let { SshCredential(password = it) }
             ?: throw SshFailure("CREDENTIAL_MISSING")
@@ -216,10 +217,10 @@ private class SshHostInstallKeySkill(
                 val installed = runtime.run(owner, alias, authorizedKeyInstallCommand(publicKey))
                 if (installed != 0) throw SshFailure("KEY_INSTALL_FAILED")
                 val keyHost = host.copy(authType = SshAuthType.KEY)
-                SshCredential(privateKey = privateKey.copyOf()).use { withContext(Dispatchers.IO + NonCancellable) { store.save(keyHost, it) } }
+                SshCredential(privateKey = privateKey.copyOf()).use { saveRepinned(keyHost, it, pinned) }
                 val verified = try { runtime.run(owner, alias, "true") == 0 } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
                 if (!verified) {
-                    withContext(Dispatchers.IO + NonCancellable) { store.save(host, password.copyPassword()) }
+                    password.copyPassword().use { saveRepinned(host, it, pinned) }
                     throw SshFailure("KEY_LOGIN_FAILED")
                 }
                 return buildJsonObject {
@@ -232,6 +233,18 @@ private class SshHostInstallKeySkill(
             } finally { privateKey.fill(0) }
         }
     }
+
+    /**
+     * 存储在认证方式变化时按安全约定清除已信任指纹；此处切换的是同一端点的认证方式，
+     * 把本次调用中刚核对过的同一主机密钥重新固定，不接受任何新密钥。
+     */
+    private suspend fun saveRepinned(target: SshHost, credential: SshCredential, pinned: SshHostKey) =
+        withContext(Dispatchers.IO + NonCancellable) {
+            store.save(target, credential)
+            val saved = store.find(target.alias) ?: throw SshFailure("HOST_NOT_FOUND")
+            if (saved.trustedFingerprint == pinned.fingerprint && saved.trustedKeyType == pinned.type) return@withContext
+            if (!store.trust(target.alias, saved.trustedFingerprint, pinned, saved)) throw SshFailure("HOST_CONFIGURATION_CHANGED")
+        }
 
     private suspend fun ensureTrustedHostKey(host: SshHost): SshHost {
         val presented = runtime.probe(host.alias)

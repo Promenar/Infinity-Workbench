@@ -50,6 +50,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -295,9 +296,11 @@ private fun ResourceExplorerFilesPage(
     actions: ResourceExplorerSheetActions,
     filesContent: @Composable () -> Unit,
 ) {
+    // 按窗口高度而非面板剩余高度判断：键盘弹出会压缩面板高度，若随之切换布局，
+    // 搜索框会被重建而丢失焦点，键盘随即收起。
+    val compactLandscape = LocalConfiguration.current.screenHeightDp < 480 && LocalDensity.current.fontScale < 1.5f
     Column(modifier = Modifier.fillMaxSize()) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compactLandscape = maxHeight < 480.dp && LocalDensity.current.fontScale < 1.5f
+        Box(modifier = Modifier.fillMaxWidth()) {
             if (compactLandscape) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

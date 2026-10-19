@@ -181,5 +181,10 @@
 -keep class com.jcraft.jsch.UserAuthPublicKey { *; }
 -keep class com.jcraft.jsch.UserAuthPassword { *; }
 
+# 上列 KEX 与认证类多为包内私有，由 Session 等同包类反射实例化。R8 会把可改名的同包类
+# 搬到其它包（实测 Session 被移出），跨包反射抛 IllegalAccessException，Release 握手必然失败。
+# 顶层包（不含 jce/bc 子包）保留类名与成员、不做优化，未使用的类仍可裁剪。
+-keep,allowshrinking class com.jcraft.jsch.* { *; }
+
 
 -keep class com.jcraft.jsch.bc.ChaCha20Poly1305 { *; }
