@@ -26,6 +26,13 @@ All notable changes to this project will be documented in this file.
 - Anthropic 协议收集流中的 `thinking`（含 `signature_delta` 签名）与 `redacted_thinking` 块，在同一用户回合的工具循环内按原顺序、原样放在助手内容最前回传；跨回合不回传，避免系统提示或工具列表变化导致签名失效。服务端仍以思考块签名无效返回 400 时，自动去掉全部思考块重发一次。
 - 思考状态以带版本与来源模型的信封保存在消息的 `thought_signature` 列，只回传给产生它的同一模型；旧版原始签名、损坏数据与未知字段名一律忽略。
 
+### Gemini API 协议与 thought signature 回传
+
+- 新增 Google Gemini API 协议（`generativelanguage.googleapis.com`，API Key 认证）：服务商预设“Gemini”改用该协议，原 Vertex AI 预设单列为“Vertex AI”；自定义服务商也可选择 Gemini 协议以接入兼容网关。API Key 只经 `x-goog-api-key` 请求头发送，不进入 URL；地址保留配置的版本段（`v1`、`v1beta` 等），默认 `/v1beta`；支持拉取模型列表与连接测试。
+- Gemini API 与 Vertex AI 共用同一套 generateContent 编解码：解析流中的 `functionCall` 并按 `thoughtSignature` 保存正文与每个调用的签名，后续请求把签名原样附回对应 part；同一模型的整段历史均回传。当前回合缺签名的函数调用（如中途换模型）只在首个调用补官方占位签名 `skip_thought_signature_validator`，避免 Gemini 3 返回 400。服务端未返回调用 ID 时本地生成，回传时不作为 `functionCall.id` 发送。
+- 签名回传就绪后，Vertex AI 与 Gemini API 均开放工具调用。工具参数以 `parametersJsonSchema` 声明，完整 JSON Schema 不再被 OpenAPI 子集拒绝；Agent 模式不再叠加内置 Google 搜索（与函数调用组合时需回传内置工具 part），普通对话仍按开关使用 `googleSearch`。
+- 生成参数改为 camelCase 且只发送显式设置的项：不再默认发送 `temperature: 0.7`（Gemini 3 官方建议保持默认温度），不再发送 Gemini 不支持的 `repetition_penalty`。`STOP` 以外的终止原因（如 `MAX_TOKENS`、`SAFETY`）在流式中显示为失败，而非未知错误。
+
 ### Anthropic 新一代模型请求参数
 
 - Claude 5 系列与 Opus/Sonnet 4.7 及以上不再发送 `temperature`、`top_p`、`top_k`（官方对非默认采样参数返回 400）。Claude 5 系列固定请求 `thinking: {type: adaptive, display: summarized}` 以显示思考摘要；4.6–4.9 在开启思考时使用 adaptive；更早模型沿用 `enabled` 加 `budget_tokens`，开启思考时同样不发送采样参数。

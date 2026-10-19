@@ -215,6 +215,9 @@ sealed class ProtocolType(
     data object Google_VertexAI : ProtocolType(
         "Google_VertexAI", "Google Vertex AI", "https://us-central1-aiplatform.googleapis.com", "", R.drawable.ic_provider_gemini
     )
+    data object Google_Gemini : ProtocolType(
+        "Google_Gemini", "Google Gemini API", "https://generativelanguage.googleapis.com", "/v1beta", R.drawable.ic_provider_gemini
+    )
     data object Cohere_Chat : ProtocolType(
         "Cohere_Chat", "Cohere Chat", "https://api.cohere.ai", "/v2/chat", R.drawable.ic_provider_cohere
     )
@@ -338,7 +341,7 @@ sealed class ProtocolType(
 
         val entries: List<ProtocolType> get() = listOfNotNull(
             OpenAI_ChatCompletions, OpenAI_Responses, Anthropic_Messages,
-            Google_VertexAI, Cohere_Chat, Mistral_Chat, DeepSeek,
+            Google_VertexAI, Google_Gemini, Cohere_Chat, Mistral_Chat, DeepSeek,
             Moonshot_Kimi, Qwen_DashScope, Zhipu_GLM, Doubao_ByteDance,
             Yi_ZeroOne, Baichuan,
             Generic_OpenAI_Compat, Local

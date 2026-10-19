@@ -601,7 +601,9 @@ class SettingsViewModel(
     private fun getFallbackModelIds(protocolType: com.promenar.nexara.data.remote.protocol.ProtocolType): List<String> {
         val keywords = when (protocolType) {
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Anthropic_Messages -> listOf("claude")
-            is com.promenar.nexara.data.remote.protocol.ProtocolType.Google_VertexAI -> listOf("gemini")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Google_VertexAI,
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Google_Gemini,
+            -> listOf("gemini")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.DeepSeek -> listOf("deepseek")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Mistral_Chat -> listOf("mistral")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Cohere_Chat,

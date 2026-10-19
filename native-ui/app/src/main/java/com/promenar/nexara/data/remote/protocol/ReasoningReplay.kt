@@ -34,6 +34,22 @@ sealed interface ReasoningReplay {
     data class AnthropicBlocks(val blocks: List<AnthropicThinkingBlock>) : ReasoningReplay {
         override val currentTurnOnly: Boolean get() = true
     }
+
+    /**
+     * Gemini generateContent：[text] 为非函数调用部分（正文或思考摘要）末尾携带的签名，
+     * [calls] 为工具调用 ID 到其 functionCall part 签名的映射。官方建议整段历史原样回传，
+     * Gemini 3 对当前回合的函数调用签名强制校验。
+     */
+    @Serializable
+    @SerialName("gemini_signatures")
+    data class GeminiSignatures(
+        val text: String? = null,
+        val calls: Map<String, String> = emptyMap(),
+    ) : ReasoningReplay {
+        override val currentTurnOnly: Boolean get() = false
+
+        override fun toString(): String = "GeminiSignatures(text=${text != null}, calls=${calls.size})"
+    }
 }
 
 /** [type] 为 thinking 时使用 [thinking] 与 [signature]；为 redacted_thinking 时使用 [data]。 */
@@ -82,6 +98,10 @@ object ReasoningReplayCodec {
         return when (val replay = envelope.replay) {
             is ReasoningReplay.ChatField -> envelope.takeIf { replay.field in CHAT_FIELDS }
             is ReasoningReplay.AnthropicBlocks -> envelope.takeIf { replay.blocks.isNotEmpty() && replay.blocks.all(::isValid) }
+            is ReasoningReplay.GeminiSignatures -> envelope.takeIf {
+                (!replay.text.isNullOrEmpty() || replay.calls.isNotEmpty()) &&
+                    replay.calls.all { (id, signature) -> id.isNotBlank() && signature.isNotEmpty() }
+            }
         }
     }
 

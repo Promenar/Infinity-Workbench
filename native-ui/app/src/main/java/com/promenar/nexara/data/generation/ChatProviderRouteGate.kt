@@ -39,7 +39,6 @@ internal class ChatProviderRouteGate(
                 failure = null,
                 useLocalProvider = local,
                 modelId = resolved.modelId,
-                supportsToolCalls = resolved.config.protocolType !is ProtocolType.Google_VertexAI,
             )
         }
     }

@@ -13,13 +13,15 @@ class ReasoningReplayCodecTest {
                 AnthropicThinkingBlock("redacted_thinking", data = "enc"),
             ),
         )
-        listOf(blocks, ReasoningReplay.ChatField("reasoning")).forEach { replay ->
+        val gemini = ReasoningReplay.GeminiSignatures(text = "sig-text", calls = mapOf("call-1" to "sig-call"))
+        listOf(blocks, ReasoningReplay.ChatField("reasoning"), gemini).forEach { replay ->
             val decoded = ReasoningReplayCodec.decode(ReasoningReplayCodec.encode("deepseek::deepseek-v4", replay))!!
             assertThat(decoded.source).isEqualTo("deepseek::deepseek-v4")
             assertThat(decoded.replay).isEqualTo(replay)
         }
         assertThat(blocks.currentTurnOnly).isTrue()
         assertThat(ReasoningReplay.ChatField("reasoning_content").currentTurnOnly).isFalse()
+        assertThat(gemini.currentTurnOnly).isFalse()
     }
 
     @Test
@@ -35,6 +37,8 @@ class ReasoningReplayCodecTest {
             ReasoningReplayCodec.encode("p::m", ReasoningReplay.AnthropicBlocks(listOf(AnthropicThinkingBlock("thinking", "想")))),
             ReasoningReplayCodec.encode("p::m", ReasoningReplay.AnthropicBlocks(listOf(AnthropicThinkingBlock("text", "x", "sig")))),
             ReasoningReplayCodec.encode("p::m", ReasoningReplay.ChatField("reasoning_content")).replace("\"v\":1", "\"v\":9"),
+            ReasoningReplayCodec.encode("p::m", ReasoningReplay.GeminiSignatures()),
+            ReasoningReplayCodec.encode("p::m", ReasoningReplay.GeminiSignatures(calls = mapOf("call" to ""))),
         ).forEach { raw -> assertThat(ReasoningReplayCodec.decode(raw)).isNull() }
     }
 
@@ -42,5 +46,7 @@ class ReasoningReplayCodecTest {
     fun `思考块日志不暴露正文与签名`() {
         assertThat(AnthropicThinkingBlock("thinking", "秘密推理", "sig-secret").toString()).doesNotContain("秘密")
         assertThat(AnthropicThinkingBlock("thinking", "秘密推理", "sig-secret").toString()).doesNotContain("sig-secret")
+        assertThat(ReasoningReplay.GeminiSignatures("sig-secret", mapOf("c" to "sig-secret")).toString())
+            .doesNotContain("sig-secret")
     }
 }

@@ -29,7 +29,7 @@ class ChatProviderRouteGateContractTest {
     }
 
     @Test
-    fun `Vertex 路由在 thought signature 闭环前关闭工具能力`() {
+    fun `Gemini 系路由在签名回传可用后开放工具能力`() {
         val resolved = ResolvedProviderModel(
             modelId = "vertex::gemini",
             remoteModelId = "gemini",
@@ -48,6 +48,6 @@ class ChatProviderRouteGateContractTest {
 
         val route = ChatProviderRouteGate(router).resolve("vertex::gemini")
 
-        assertThat(route.supportsToolCalls).isFalse()
+        assertThat(route.supportsToolCalls).isTrue()
     }
 }

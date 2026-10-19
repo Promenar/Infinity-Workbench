@@ -209,7 +209,7 @@ class P0RuntimeIntegrationTest {
 
     @Test
     fun `用量估算复用路由能力和工具技能组装且等于实际准备请求`() = runTest {
-        for (type in listOf(ProtocolType.Local, ProtocolType.Google_VertexAI)) {
+        for (type in listOf(ProtocolType.Local, ProtocolType.Google_VertexAI, ProtocolType.Google_Gemini)) {
             val fixture = fixture()
             fixture.providerProtocolType = type
             fixture.skillCatalog = { error("没有activate_skill时不得加载技能目录") }
@@ -223,10 +223,8 @@ class P0RuntimeIntegrationTest {
 
             assertThat(estimate.totalTokens).isEqualTo(ApproximateTokenEstimator.estimate(actual))
             assertThat(fixture.builtContexts.last().availableSkills).isEmpty()
-            if (type == ProtocolType.Google_VertexAI) {
-                assertThat(actual.tools.orEmpty()).isEmpty()
-                assertThat(fixture.builtContexts.last().availableToolNames).isEmpty()
-            } else assertThat(actual.tools.orEmpty()).hasSize(1)
+            assertThat(actual.tools.orEmpty()).hasSize(1)
+            assertThat(fixture.builtContexts.last().availableToolNames).isNotEmpty()
         }
     }
 

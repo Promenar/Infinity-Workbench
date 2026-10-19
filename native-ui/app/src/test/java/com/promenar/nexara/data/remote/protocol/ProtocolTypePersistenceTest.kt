@@ -10,7 +10,7 @@ class ProtocolTypePersistenceTest {
     @Test
     fun `稳定标识非空唯一等于原始类名常量并支持往返解析`() {
         val expected = setOf(
-            "OpenAI_ChatCompletions", "OpenAI_Responses", "Anthropic_Messages", "Google_VertexAI",
+            "OpenAI_ChatCompletions", "OpenAI_Responses", "Anthropic_Messages", "Google_VertexAI", "Google_Gemini",
             "Cohere_Chat", "Mistral_Chat", "DeepSeek", "Generic_OpenAI_Compat", "Moonshot_Kimi",
             "Qwen_DashScope", "Zhipu_GLM", "Doubao_ByteDance", "Yi_ZeroOne", "Baichuan", "Local",
         )

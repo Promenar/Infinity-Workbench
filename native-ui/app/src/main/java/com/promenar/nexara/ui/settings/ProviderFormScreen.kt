@@ -170,7 +170,8 @@ val PROVIDER_PRESETS = listOf(
     ProviderPreset("OpenAI", ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", R.drawable.ic_provider_openai),
     ProviderPreset("DeepSeek", ProtocolType.DeepSeek, "https://api.deepseek.com", R.drawable.ic_provider_deepseek),
     ProviderPreset("Anthropic", ProtocolType.Anthropic_Messages, "https://api.anthropic.com", R.drawable.ic_provider_anthropic),
-    ProviderPreset("Gemini", ProtocolType.Google_VertexAI, "https://us-central1-aiplatform.googleapis.com", R.drawable.ic_provider_gemini),
+    ProviderPreset("Gemini", ProtocolType.Google_Gemini, "https://generativelanguage.googleapis.com", R.drawable.ic_provider_gemini),
+    ProviderPreset("Vertex AI", ProtocolType.Google_VertexAI, "https://us-central1-aiplatform.googleapis.com", R.drawable.ic_provider_gemini),
     ProviderPreset("Kimi", ProtocolType.Moonshot_Kimi, "https://api.moonshot.cn", R.drawable.ic_provider_kimi),
     ProviderPreset("通义千问", ProtocolType.Qwen_DashScope, "https://dashscope.aliyuncs.com/compatible-mode", R.drawable.ic_provider_qwen),
     ProviderPreset("智谱", ProtocolType.Zhipu_GLM, "https://open.bigmodel.cn/api/paas", R.drawable.ic_provider_zhipu),
@@ -185,6 +186,7 @@ private val CUSTOM_PROTOCOL_OPTIONS = listOf(
     ProtocolType.Generic_OpenAI_Compat,
     ProtocolType.Anthropic_Messages,
     ProtocolType.OpenAI_Responses,
+    ProtocolType.Google_Gemini,
 )
 
 internal const val PROVIDER_FORM_LIST_TAG = "provider_form_list"

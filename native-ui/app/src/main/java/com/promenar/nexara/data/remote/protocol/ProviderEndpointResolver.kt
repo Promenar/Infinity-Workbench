@@ -21,6 +21,12 @@ sealed interface ProviderEndpointTarget {
     ) : ProviderEndpointTarget
 
     data object VertexOAuthToken : ProviderEndpointTarget
+
+    /** Gemini API：`{base}/{version}/models/{model}:generateContent`，流式追加 `alt=sse`。 */
+    data class GeminiInference(
+        val model: String,
+        val streaming: Boolean,
+    ) : ProviderEndpointTarget
 }
 
 class UnsupportedProviderProtocolException(
@@ -55,6 +61,7 @@ object ProviderEndpointResolver {
         ProtocolType.DeepSeek,
         ProtocolType.Mistral_Chat,
         ProtocolType.Generic_OpenAI_Compat,
+        ProtocolType.Google_Gemini,
     )
 
     fun resolve(
@@ -83,6 +90,14 @@ object ProviderEndpointResolver {
                 configuredBaseUrl = configuredBaseUrl,
                 target = target,
             )
+            is ProviderEndpointTarget.GeminiInference -> {
+                require(protocol == ProtocolType.Google_Gemini) {
+                    "Gemini inference target requires the Gemini protocol"
+                }
+                val model = requireSafeVertexSegment("model", target.model.trim().removePrefix("models/"))
+                val operation = if (target.streaming) "streamGenerateContent" else "generateContent"
+                geminiUrl(configuredBaseUrl, "/models/$model:$operation", if (target.streaming) "alt=sse" else null)
+            }
             ProviderEndpointTarget.VertexOAuthToken -> {
                 require(protocol == ProtocolType.Google_VertexAI) {
                     "Vertex OAuth target requires the Vertex protocol"
@@ -99,6 +114,14 @@ object ProviderEndpointResolver {
     ): String {
         if (protocol == ProtocolType.Google_VertexAI) {
             throw UnsupportedProviderOperationException(protocol, operation)
+        }
+
+        if (protocol == ProtocolType.Google_Gemini) {
+            return when (operation) {
+                ProviderEndpointOperation.INFERENCE -> geminiUrl(configuredBaseUrl, "/models", null)
+                ProviderEndpointOperation.MODELS -> geminiUrl(configuredBaseUrl, "/models", "pageSize=1000")
+                ProviderEndpointOperation.CONNECTION_PROBE -> geminiUrl(configuredBaseUrl, "/models", "pageSize=1")
+            }
         }
 
         val raw = configuredBaseUrl.trim().ifEmpty { protocol.defaultBaseUrl }
@@ -178,6 +201,32 @@ object ProviderEndpointResolver {
             if (target.streaming) append("?alt=sse")
         }
     }
+
+    /**
+     * Gemini API 地址：保留用户配置中的版本段（v1、v1beta、v1alpha 等），没有版本段时使用 `/v1beta`；
+     * 用户粘贴的 `/models` 或完整 `:generateContent` 路径会被还原到版本段。API Key 只经请求头发送，不进入查询串。
+     */
+    private fun geminiUrl(configuredBaseUrl: String, resourcePath: String, query: String?): String {
+        val uri = validatedHttpUri(configuredBaseUrl.trim().ifEmpty { ProtocolType.Google_Gemini.defaultBaseUrl })
+        require(uri.rawQuery == null) { "Gemini endpoint 不支持查询参数" }
+        val segments = normalizePath(uri.rawPath.orEmpty()).split('/').filter(String::isNotEmpty)
+        val versionIndex = segments.indexOfLast { it.matches(GEMINI_VERSION) }
+        val basePath = if (versionIndex >= 0) {
+            "/" + segments.take(versionIndex + 1).joinToString("/")
+        } else {
+            normalizePath((segments + "v1beta").joinToString("/"))
+        }
+        return buildString {
+            append(uri.scheme.lowercase())
+            append("://")
+            append(uri.rawAuthority)
+            append(basePath)
+            append(resourcePath)
+            query?.let { append('?').append(it) }
+        }
+    }
+
+    private val GEMINI_VERSION = Regex("v\\d+(?:alpha|beta)?\\d*")
 
     private fun validatedHttpUri(raw: String): URI {
         require(raw.isNotEmpty()) { "Provider base URL 不能为空" }

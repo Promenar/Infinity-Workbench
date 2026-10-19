@@ -5,6 +5,7 @@ import com.promenar.nexara.data.remote.protocol.ProviderEndpointOperation
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointResolver
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.GeminiProtocol
 import com.promenar.nexara.data.remote.protocol.GenericModelsEnvelopeParser
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderOperationException
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
@@ -144,6 +145,7 @@ class ProviderConnectionProbe(
                     header("x-api-key", config.apiKey)
                     header("anthropic-version", "2023-06-01")
                 }
+                ProtocolType.Google_Gemini -> header(GeminiProtocol.API_KEY_HEADER, config.apiKey)
                 else -> header(HttpHeaders.Authorization, "Bearer ${config.apiKey}")
             }
         }
@@ -154,7 +156,10 @@ class ProviderConnectionProbe(
                 detail = response.status.description,
             )
         }
-        val hasModelsEnvelope = if (config.protocolType == ProtocolType.Generic_OpenAI_Compat) {
+        val hasModelsEnvelope = if (
+            config.protocolType == ProtocolType.Generic_OpenAI_Compat ||
+            config.protocolType == ProtocolType.Google_Gemini
+        ) {
             GenericModelsEnvelopeParser.parse(response.bodyAsText()) != null
         } else {
             hasCanonicalModelsEnvelope(response.bodyAsText())

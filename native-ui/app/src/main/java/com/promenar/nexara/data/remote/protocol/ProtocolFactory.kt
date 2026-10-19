@@ -50,6 +50,8 @@ object ProtocolFactory {
                 model = model
             )
             
+            ProtocolType.Google_Gemini -> GeminiProtocol(baseUrl, apiKey, model)
+
             ProtocolType.Cohere_Chat,
             ProtocolType.Yi_ZeroOne,
             -> throw UnsupportedProviderProtocolException(type)
