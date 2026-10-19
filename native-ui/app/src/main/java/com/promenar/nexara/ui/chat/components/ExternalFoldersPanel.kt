@@ -996,14 +996,20 @@ private fun MountNotice(resourceId: Int, error: Boolean = true) {
     )
 }
 
-/** 外部应用只获得私有快照的临时读权限，不暴露来源路径或写权限。 */
 private suspend fun prepareExternalFolderOpen(
     context: Context,
     manager: IExternalFolderManager,
     sessionId: String,
     entry: ExternalFolderEntry,
+): Intent = prepareExternalFileOpen(context, entry.name) { maxBytes -> manager.read(sessionId, entry.path, maxBytes) }
+
+/** 外部应用只获得私有快照的临时读权限，不暴露来源路径或写权限；[read] 由调用方经目录后端读取。 */
+internal suspend fun prepareExternalFileOpen(
+    context: Context,
+    name: String,
+    read: suspend (maxBytes: Long) -> ByteArray,
 ): Intent = withContext(Dispatchers.IO) {
-    val bytes = manager.read(sessionId, entry.path, EXTERNAL_OPEN_BYTES)
+    val bytes = read(EXTERNAL_OPEN_BYTES)
     check(bytes.size.toLong() <= EXTERNAL_OPEN_BYTES)
     val previewsRoot = File(context.filesDir, "external-folder-previews")
     check(previewsRoot.isDirectory || previewsRoot.mkdirs())
@@ -1015,18 +1021,18 @@ private suspend fun prepareExternalFolderOpen(
     }
     val directory = File(previewsRoot, UUID.randomUUID().toString())
     check(directory.mkdir())
-    val snapshot = File(directory, externalPreviewFileName(entry.name))
+    val snapshot = File(directory, externalPreviewFileName(name))
     snapshot.writeBytes(bytes)
     val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", snapshot)
     val extension = snapshot.extension.lowercase()
     val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
     Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(uri, mimeType)
-        clipData = ClipData.newRawUri(entry.name, uri)
+        clipData = ClipData.newRawUri(name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 }
 
 private const val EXTERNAL_TEXT_PREVIEW_BYTES = 256 * 1024
-private const val EXTERNAL_OPEN_BYTES = 8L * 1024 * 1024
+internal const val EXTERNAL_OPEN_BYTES = 8L * 1024 * 1024
 private const val EXTERNAL_PREVIEW_RETENTION_MS = 24L * 60 * 60 * 1000
