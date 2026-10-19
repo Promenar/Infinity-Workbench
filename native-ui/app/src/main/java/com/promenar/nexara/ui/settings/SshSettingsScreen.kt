@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -79,6 +80,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.security.SshCredential
 import com.promenar.nexara.data.ssh.SshAuthType
+import com.promenar.nexara.data.ssh.SshAgentPreferences
 import com.promenar.nexara.data.ssh.SshHost
 import com.promenar.nexara.data.ssh.SshHostKey
 import com.promenar.nexara.data.ssh.SshKeyGenerator
@@ -122,6 +124,8 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var statusIsError by remember { mutableStateOf(false) }
+    val settingsPrefs = remember(context) { context.getSharedPreferences("nexara_settings", Context.MODE_PRIVATE) }
+    var agentManagement by remember(settingsPrefs) { mutableStateOf(SshAgentPreferences.isHostManagementEnabled(settingsPrefs)) }
     val copiedMessage = stringResource(R.string.ssh_public_key_copied)
     val verifiedMessage = stringResource(R.string.ssh_fingerprint_matches)
 
@@ -171,8 +175,13 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 cleanupWarning = cleanupWarnings.isNotEmpty(),
                 status = status,
                 statusIsError = statusIsError,
+                agentManagementEnabled = agentManagement,
             ),
             actions = SshSettingsVisualActions(
+                onAgentManagementChange = { value ->
+                    settingsPrefs.edit().putBoolean(SshAgentPreferences.HOST_MANAGEMENT_KEY, value).apply()
+                    agentManagement = value
+                },
                 onBack = onBack,
                 onAddHost = { editing = null; showEditor = true },
                 onTerminal = { verify(it, SshPendingAction.TERMINAL) },
@@ -318,6 +327,7 @@ internal data class SshSettingsVisualState(
     val cleanupWarning: Boolean = false,
     val status: String? = null,
     val statusIsError: Boolean = false,
+    val agentManagementEnabled: Boolean = false,
 )
 
 internal data class SshSettingsVisualActions(
@@ -329,6 +339,7 @@ internal data class SshSettingsVisualActions(
     val onDelete: (SshHost) -> Unit = {},
     val onCopyPublicKey: (SshHost) -> Unit = {},
     val onToggleForward: (SshHost) -> Unit = {},
+    val onAgentManagementChange: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -366,6 +377,21 @@ internal fun SshSettingsContent(
                             onClick = actions.onAddHost,
                         )
                     }
+                }
+            }
+            item("agent") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.ssh_agent_section),
+                    footer = stringResource(R.string.ssh_agent_manage_description),
+                ) {
+                    SettingsToggle(
+                        title = stringResource(R.string.ssh_agent_manage_title),
+                        description = stringResource(R.string.ssh_agent_manage_summary),
+                        checked = state.agentManagementEnabled,
+                        onCheckedChange = actions.onAgentManagementChange,
+                        icon = Icons.Rounded.SmartToy,
+                        enabled = !state.busy,
+                    )
                 }
             }
             if (state.busy || state.cleanupWarning || state.status != null) {
@@ -643,6 +669,7 @@ private fun SshHostEditorSheet(
         show = true,
         onDismiss = { if (!busy) onDismiss() },
         dismissEnabled = !busy,
+        dragGesturesEnabled = false,
         title = stringResource(if (existing == null) R.string.ssh_add_host else R.string.ssh_edit_host),
         modifier = Modifier.fillMaxHeight(0.95f).imePadding(),
     ) {

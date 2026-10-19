@@ -39,6 +39,11 @@ fun NexaraBottomSheet(
     modifier: Modifier = Modifier.fillMaxHeight(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION),
     dismissEnabled: Boolean = true,
     scrollContent: Boolean = false,
+    /**
+     * 是否允许拖动面板（含内容滚动到边界后接力拖动面板）。内部自带滚动的表单面板应关闭：
+     * 内容滚动与面板拖动在边界交接时会来回争抢位移，表现为上下抖动；关闭后仍可点外部、返回或按钮关闭。
+     */
+    dragGesturesEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     if (!show) return
@@ -51,7 +56,7 @@ fun NexaraBottomSheet(
             skipPartiallyExpanded = true,
             confirmValueChange = { currentDismissEnabled || it != SheetValue.Hidden },
         ),
-        sheetGesturesEnabled = dismissEnabled,
+        sheetGesturesEnabled = dismissEnabled && dragGesturesEnabled,
         properties = ModalBottomSheetProperties(
             shouldDismissOnBackPress = dismissEnabled,
             shouldDismissOnClickOutside = dismissEnabled,

@@ -48,6 +48,13 @@
     <string name="ssh_edit">编辑</string>
     <string name="ssh_delete">删除</string>
     <string name="ssh_save">保存</string>
+    <string name="ssh_agent_password_title">输入 %1$s 的 SSH 密码</string>
+    <string name="ssh_agent_password_message">Agent 正在配置 %1$s。密码只保存在本机安全存储，不会发送给 AI。</string>
+    <string name="ssh_agent_host_key_message">Agent 请求连接 %1$s（%2$s）。</string>
+    <string name="ssh_agent_section">Agent 协助</string>
+    <string name="ssh_agent_manage_title">允许 Agent 管理 SSH 主机</string>
+    <string name="ssh_agent_manage_summary">默认关闭</string>
+    <string name="ssh_agent_manage_description">开启后，Agent 可新增、修改、删除主机，并为密码主机配置免密登录；每次变更都需你逐次审批，密码与主机指纹始终由你亲自输入和确认。</string>
     <string name="ssh_cancel">取消</string>
     <string name="ssh_forward_configure">本地端口转发</string>
     <string name="ssh_forward_loopback_only">仅绑定当前设备的 127.0.0.1，目标地址由 SSH 主机解析。</string>

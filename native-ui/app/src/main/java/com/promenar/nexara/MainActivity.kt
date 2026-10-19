@@ -217,6 +217,7 @@ open class MainActivity : ComponentActivity() {
                             onClose = { shareImportViewModel.postpone() },
                             onCancel = shareImportViewModel::cancelConfirmed,
                         )
+                        com.promenar.nexara.ui.ssh.SshUserPromptHost(app.sshUserPrompts)
                         SharePendingBanner(
                             pendingCount = importState.pendingCount,
                             visible = !importState.visible && importState.pendingCount > 0,

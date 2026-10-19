@@ -43,6 +43,11 @@ object ToolExecutionTargets {
             // 远端相对路径和符号链接的语义由服务器决定，授权键保留原始路径。
             return sshTarget("remote_path", host, path, sshIdentities)
         }
+        if (tool.function.name in setOf("ssh_host_save", "ssh_host_delete", "ssh_host_install_key")) {
+            // 主机管理按别名逐次授权（不可记住，避免同一别名被静默改指向）；安装公钥属于 PROCESS 风险，必须先于通用命令分支处理。
+            val alias = args.string("alias")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
+            return JsonArray(listOf(JsonPrimitive("ssh_host"), JsonPrimitive(alias), JsonObject(mapOf("oneShot" to JsonPrimitive(true))))).toString()
+        }
         if (tool.risk == ToolRisk.PROCESS && tool.function.name == "python_exec" && tool.sourceId == "builtin") {
             val code = args.string("code")?.takeIf(String::isNotBlank) ?: return null
             return tuple("process", "python", code)
@@ -105,7 +110,7 @@ object ToolExecutionTargets {
             ?.filterNotNull()
             .orEmpty()
         val readable = when (parts.firstOrNull()) {
-            "path", "host", "tool" -> parts.getOrNull(1)?.takeIf { parts.size == 2 }
+            "path", "host", "tool", "ssh_host" -> parts.getOrNull(1)?.takeIf { parts.size == 2 }
             "move" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} → ${it[2]}" }
             "mcp" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} / ${it[2]}" }
             "process", "remote_path" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} · ${it[2]}" }

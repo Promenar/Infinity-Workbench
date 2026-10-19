@@ -158,6 +158,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val sshHostStore: com.promenar.nexara.data.ssh.SshHostStore by lazy {
         com.promenar.nexara.data.ssh.RoomSshHostStore(database.sshHostDao(), secretStore)
     }
+    /** 工具执行中需要用户亲自输入密码或核对主机指纹时的应用内弹窗队列。 */
+    val sshUserPrompts = com.promenar.nexara.data.ssh.SshUserPromptBroker()
     val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime by lazy {
         com.promenar.nexara.data.ssh.SshRuntime(sshHostStore, onPersistentActivity = { active ->
             com.promenar.nexara.background.ssh.SshConnectionService.update(this, active)
@@ -715,6 +717,20 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
             })
             com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
+            com.promenar.nexara.ui.chat.manager.skills.sshHostManagementTools(
+                store = sshHostStore,
+                runtime = object : com.promenar.nexara.ui.chat.manager.skills.SshHostManagementRuntime {
+                    override suspend fun probe(alias: String) = sshRuntime.probe(alias)
+                    override suspend fun run(owner: String, alias: String, command: String): Int? =
+                        sshRuntime.exec(owner, alias, command, timeoutSeconds = 30, maxOutputChars = 4_000).let { if (it.timedOut) null else it.exitCode }
+                    override suspend fun stopForward(alias: String) = sshRuntime.stopForward(alias)
+                    override fun generateKey(): Pair<ByteArray, String> =
+                        com.promenar.nexara.data.ssh.SshKeyGenerator.generate().use { it.privateKey.copyOf() to it.publicKey }
+                },
+                prompts = sshUserPrompts,
+            ) {
+                com.promenar.nexara.data.ssh.SshAgentPreferences.isHostManagementEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
+            }.forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebFetchSkill(httpClient))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
