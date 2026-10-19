@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_diff_binary">Binary file; the diff cannot be shown.</string>
+    <string name="file_diff_large_summary">Large file: %1$s</string>
+    <string name="file_diff_complex_summary">Too many changes to show line by line: %1$s</string>
+    <string name="file_diff_approximate_counts">about %1$s</string>
+    <string name="file_diff_no_changes">No content changes.</string>
+    <plurals name="file_diff_expand_unchanged">
+        <item quantity="one">Expand %1$d unchanged line</item>
+        <item quantity="other">Expand %1$d unchanged lines</item>
+    </plurals>
+    <string name="file_diff_expand_action">Expand</string>
+    <string name="file_diff_switch_to_side_by_side">Switch to side-by-side view</string>
+    <string name="file_diff_switch_to_unified">Switch to unified view</string>
+    <string name="file_diff_no_newline_marker">\\ No newline at end of file</string>
+    <plurals name="file_diff_added_lines_a11y">
+        <item quantity="one">%1$d line added</item>
+        <item quantity="other">%1$d lines added</item>
+    </plurals>
+    <plurals name="file_diff_removed_lines_a11y">
+        <item quantity="one">%1$d line removed</item>
+        <item quantity="other">%1$d lines removed</item>
+    </plurals>
+    <string name="file_diff_counts_a11y">%1$s, %2$s</string>
+    <string name="file_diff_line_added_a11y">Added line %1$d: %2$s</string>
+    <string name="file_diff_line_removed_a11y">Removed line %1$d: %2$s</string>
+    <string name="file_diff_line_context_a11y">Unchanged line %1$d: %2$s</string>
+    <string name="file_diff_line_blank_a11y">blank line</string>
+    <string name="file_diff_line_no_newline_a11y">%1$s, no newline at end of file</string>
+    <string name="file_diff_pair_a11y">%1$s; %2$s</string>
+</resources>

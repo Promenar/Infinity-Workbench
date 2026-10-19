@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_diff_binary">二进制文件，无法显示差异</string>
+    <string name="file_diff_large_summary">大文件：%1$s</string>
+    <string name="file_diff_complex_summary">变更过多，无法逐行显示：%1$s</string>
+    <string name="file_diff_approximate_counts">约 %1$s</string>
+    <string name="file_diff_no_changes">内容无变化</string>
+    <plurals name="file_diff_expand_unchanged">
+        <item quantity="other">展开 %1$d 行未变更内容</item>
+    </plurals>
+    <string name="file_diff_expand_action">展开</string>
+    <string name="file_diff_switch_to_side_by_side">切换为并排视图</string>
+    <string name="file_diff_switch_to_unified">切换为统一视图</string>
+    <string name="file_diff_no_newline_marker">\\ 文件末尾无换行</string>
+    <plurals name="file_diff_added_lines_a11y">
+        <item quantity="other">新增 %1$d 行</item>
+    </plurals>
+    <plurals name="file_diff_removed_lines_a11y">
+        <item quantity="other">删除 %1$d 行</item>
+    </plurals>
+    <string name="file_diff_counts_a11y">%1$s，%2$s</string>
+    <string name="file_diff_line_added_a11y">新增第 %1$d 行：%2$s</string>
+    <string name="file_diff_line_removed_a11y">删除第 %1$d 行：%2$s</string>
+    <string name="file_diff_line_context_a11y">未变更第 %1$d 行：%2$s</string>
+    <string name="file_diff_line_blank_a11y">空行</string>
+    <string name="file_diff_line_no_newline_a11y">%1$s，文件末尾无换行</string>
+    <string name="file_diff_pair_a11y">%1$s；%2$s</string>
+</resources>
