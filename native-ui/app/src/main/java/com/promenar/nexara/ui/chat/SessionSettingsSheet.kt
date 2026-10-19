@@ -638,6 +638,9 @@ private fun SettingsPanel(
         onRagOptionsChange = { update -> chatViewModel.updateRagOptions(update(chatViewModel.currentRagOptions.value)) },
         onFontSizeChange = { chatViewModel.updateFontSizeLocally(it); chatViewModel.updateFontSize(it) },
         onCompactNow = onCompactNow,
+        workspaceSection = {
+            com.promenar.nexara.ui.workspace.SessionWorkspaceSettings(session, chatViewModel, isGenerating)
+        },
     )
 }
 
@@ -653,10 +656,13 @@ internal fun SessionContextPanelContent(
     onRagOptionsChange: ((com.promenar.nexara.data.model.RagOptions) -> com.promenar.nexara.data.model.RagOptions) -> Unit = {},
     onFontSizeChange: (Int) -> Unit = {},
     onCompactNow: () -> Unit = {},
+    /** 会话工作区项，位于上下文设置之前；为空时不显示。 */
+    workspaceSection: (@Composable () -> Unit)? = null,
 ) {
     val retainedTurns = resolveKeepRecentTurns(params.keepRecentTurns, params.activeContextWindow)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp)) {
+        workspaceSection?.invoke()
         SessionContextSettingsSection(params.autoSummaryThreshold, retainedTurns, isGenerating, isCompressing,
             onThresholdChange = { onParamsChange(params.copy(autoSummaryThreshold = it)) },
             onKeepRecentTurnsChange = { onParamsChange(params.copy(keepRecentTurns = it)) }, onCompactNow = onCompactNow)

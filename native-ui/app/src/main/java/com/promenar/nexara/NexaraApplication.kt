@@ -663,6 +663,26 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** 自选工作区的目录浏览与登记：项目文件夹与 [sessionWorkspaceResolver] 共用同一项目根。 */
+    val workspaceDirectoryBrowser: com.promenar.nexara.data.workspace.WorkspaceDirectoryBrowser by lazy {
+        com.promenar.nexara.data.workspace.WorkspaceDirectoryBrowser(
+            projectsRoot = sessionWorkspaceResolver.projectsRoot,
+            shared = com.promenar.nexara.data.workspace.AndroidSharedStorageVolumes(this),
+            workspaceDao = database.workspaceDao(),
+        )
+    }
+
+    /** 知识库“工作区”分组：只读浏览已登记目录，单个文件复制进知识库后经索引协调器入队。 */
+    val workspaceLibrary: com.promenar.nexara.data.workspace.WorkspaceLibrary by lazy {
+        com.promenar.nexara.data.workspace.WorkspaceLibrary(
+            workspaceDao = database.workspaceDao(),
+            resolveWorkspace = sessionWorkspaceResolver::resolveWorkspace,
+            backendFor = sessionWorkspaceResolver::backend,
+            knowledge = workspaceRepository,
+            indexEvents = pendingDocumentIndexCoordinator,
+        )
+    }
+
     override val execRunRegistry: com.promenar.nexara.data.exec.ExecRunRegistry by lazy {
         com.promenar.nexara.data.exec.ExecRunRegistry()
     }

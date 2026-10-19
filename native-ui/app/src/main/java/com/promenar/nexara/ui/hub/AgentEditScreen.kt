@@ -80,6 +80,8 @@ fun AgentEditScreen(
     val selectedModel by viewModel.selectedModel.collectAsState()
     val saveError by viewModel.saveError.collectAsState()
     val avatarPath by viewModel.avatarPath.collectAsState()
+    val defaultWorkspaceId by viewModel.defaultWorkspaceId.collectAsState()
+    val defaultWorkspace by viewModel.defaultWorkspace.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
     val resolver = ModelCatalogRuntime.resolver
@@ -107,6 +109,7 @@ fun AgentEditScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
+    var showWorkspacePicker by remember { mutableStateOf(false) }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
     val parsedColor = remember(selectedColor, defaultPrimary) {
@@ -167,6 +170,16 @@ fun AgentEditScreen(
             }
         )
     }
+
+    com.promenar.nexara.ui.workspace.WorkspacePickerSheet(
+        show = showWorkspacePicker,
+        onDismiss = { showWorkspacePicker = false },
+        currentWorkspaceId = defaultWorkspaceId,
+        onPicked = { picked ->
+            showWorkspacePicker = false
+            viewModel.setDefaultWorkspace(picked.id)
+        },
+    )
 
     NexaraBottomSheet(
         show = showIconPicker,
@@ -410,6 +423,15 @@ fun AgentEditScreen(
                         showChevron = true,
                     )
                 }
+            }
+
+            item {
+                com.promenar.nexara.ui.workspace.AgentDefaultWorkspaceSection(
+                    workspaceId = defaultWorkspaceId,
+                    workspace = defaultWorkspace,
+                    onChoose = { showWorkspacePicker = true },
+                    onClear = { viewModel.setDefaultWorkspace(null) },
+                )
             }
 
             // ─── 6. 知识库与检索配置 ───

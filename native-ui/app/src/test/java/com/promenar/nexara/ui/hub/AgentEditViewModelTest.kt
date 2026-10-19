@@ -512,4 +512,47 @@ class AgentEditViewModelTest {
             })
         }
     }
+
+    @Test
+    fun `编辑保存保留默认工作区与用户规则`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", defaultWorkspaceId = "ws-1", userRules = "只用中文回答")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+        assertThat(vm.defaultWorkspaceId.value).isEqualTo("ws-1")
+
+        vm.setName("Renamed")
+        advanceTimeBy(1_001)
+        runCurrent()
+        coVerify(exactly = 1) {
+            repo.update(match { it.name == "Renamed" && it.defaultWorkspaceId == "ws-1" && it.userRules == "只用中文回答" })
+        }
+        assertThat(vm.saveSystemPrompt("新提示词").isSuccess).isTrue()
+        coVerify {
+            repo.update(match { it.systemPrompt == "新提示词" && it.defaultWorkspaceId == "ws-1" && it.userRules == "只用中文回答" })
+        }
+    }
+
+    @Test
+    fun `设置与清除默认工作区立即持久化并显示登记`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", userRules = "规则")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val workspace = com.promenar.nexara.data.local.db.entity.WorkspaceEntity(
+            "ws-2", com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED, "仓库", "/storage/emulated/0/repo", 1,
+        )
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), workspaces = flowOf(listOf(workspace)))
+        vm.loadAgent("a1")
+        vm.defaultWorkspace.test {
+            assertThat(awaitItem()).isNull()
+            vm.setDefaultWorkspace("ws-2")
+            runCurrent()
+            assertThat(awaitItem()).isEqualTo(workspace)
+            coVerify(exactly = 1) { repo.update(match { it.defaultWorkspaceId == "ws-2" && it.userRules == "规则" }) }
+
+            vm.setDefaultWorkspace(null)
+            runCurrent()
+            assertThat(awaitItem()).isNull()
+            coVerify(exactly = 1) { repo.update(match { it.defaultWorkspaceId == null && it.userRules == "规则" }) }
+        }
+    }
 }

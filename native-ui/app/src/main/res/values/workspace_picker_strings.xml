@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workspace_picker_title">Choose workspace</string>
+    <string name="workspace_picker_registered">Registered workspaces</string>
+    <string name="workspace_picker_locations">Browse</string>
+    <string name="workspace_picker_root">Locations</string>
+    <string name="workspace_picker_projects">Nexara project folders</string>
+    <string name="workspace_picker_projects_desc">Projects in app-private storage. Pick one or create a new one.</string>
+    <string name="workspace_picker_shared_volume">Shared storage</string>
+    <string name="workspace_picker_shared_volume_named">Shared storage · %1$s</string>
+    <string name="workspace_picker_shared_permission_title">All files access required</string>
+    <string name="workspace_picker_shared_permission_desc">Grant access to browse and choose folders in shared storage, then return here to continue.</string>
+    <string name="workspace_picker_grant">Grant access</string>
+    <string name="workspace_picker_use_folder">Use this folder</string>
+    <string name="workspace_picker_new_project">New project</string>
+    <string name="workspace_picker_new_folder">New folder</string>
+    <string name="workspace_picker_project_name">Project name</string>
+    <string name="workspace_picker_folder_name">Folder name</string>
+    <string name="workspace_picker_project_name_hint">Letters, digits, “.”, “_” and “-” only, up to 128 characters.</string>
+    <string name="workspace_picker_create">Create</string>
+    <string name="workspace_picker_name_empty">Enter a name</string>
+    <string name="workspace_picker_name_invalid_project">Use only letters, digits, “.”, “_” and “-”, up to 128 characters</string>
+    <string name="workspace_picker_name_invalid_folder">The name contains characters or a reserved name that is not allowed</string>
+    <string name="workspace_picker_name_reserved">This name is reserved. Choose another one</string>
+    <string name="workspace_picker_name_exists">A folder with this name already exists</string>
+    <string name="workspace_picker_projects_empty">No projects yet. Create one to get started.</string>
+    <string name="workspace_picker_folder_empty">No subfolders here. Use the current folder or create one.</string>
+    <string name="workspace_picker_load_failed">Cannot read this folder: %1$s</string>
+    <string name="workspace_picker_register_failed">Cannot use this folder: %1$s</string>
+    <string name="workspace_picker_select_project">Select a project first</string>
+    <string name="workspace_picker_target">Will use: %1$s</string>
+
+    <string name="workspace_kind_private">Session private workspace</string>
+    <string name="workspace_kind_project">Project folder</string>
+    <string name="workspace_kind_shared">Shared storage</string>
+    <string name="workspace_location_project">Project folders / %1$s</string>
+    <string name="workspace_missing_name">Deleted workspace</string>
+    <string name="workspace_unavailable_reason">Workspace unavailable: %1$s</string>
+
+    <string name="workspace_section_title">Workspace</string>
+    <string name="workspace_session_current">Current workspace</string>
+    <string name="workspace_session_private_desc">Visible only to this session and managed by Nexara</string>
+    <string name="workspace_session_choose">Choose workspace</string>
+    <string name="workspace_session_use_private">Use the session private workspace</string>
+    <string name="workspace_session_reselect">Choose again</string>
+    <string name="workspace_session_busy">A reply or approval is in progress. The workspace cannot be switched now.</string>
+    <string name="workspace_session_footer">File tools and commands run in the current workspace. Switching never moves or deletes files.</string>
+    <string name="workspace_switch_notice">Switched from “%1$s” to “%2$s”</string>
+    <string name="workspace_switch_failed">Switching failed. Try again</string>
+
+    <string name="workspace_agent_default">Default workspace</string>
+    <string name="workspace_agent_default_none">Session private workspace (default)</string>
+    <string name="workspace_agent_clear">Clear default workspace</string>
+    <string name="workspace_agent_footer">New sessions use this workspace. Existing sessions are not changed.</string>
+
+    <string name="workspace_kb_entry">Workspaces</string>
+    <plurals name="workspace_kb_count">
+        <item quantity="one">%1$d registered folder</item>
+        <item quantity="other">%1$d registered folders</item>
+    </plurals>
+    <string name="workspace_kb_entry_empty">No registered folders</string>
+    <string name="workspace_kb_desc">Browse registered folders read-only and add single files to the knowledge base. Folders are never indexed automatically.</string>
+    <string name="workspace_kb_empty">No registered workspaces yet. Choose one in session settings or on the agent edit page.</string>
+    <string name="workspace_kb_more">More actions: %1$s</string>
+    <string name="workspace_kb_rename">Rename</string>
+    <string name="workspace_kb_display_name">Display name</string>
+    <string name="workspace_kb_delete">Remove registration</string>
+    <string name="workspace_kb_delete_title">Remove workspace registration?</string>
+    <string name="workspace_kb_delete_message">Only the registration of “%1$s” is removed. Files in the folder are not deleted or changed.</string>
+    <string name="workspace_kb_delete_referenced">Still in use (sessions: %1$d, agents: %2$d), so the registration cannot be removed.</string>
+    <string name="workspace_kb_operation_failed">The operation failed. Try again</string>
+    <string name="workspace_kb_folder_empty">This folder is empty</string>
+    <string name="workspace_kb_import">Add to knowledge base</string>
+    <string name="workspace_kb_imported">Added to the knowledge base; indexing</string>
+    <string name="workspace_kb_import_failed">Could not add to the knowledge base: %1$s</string>
+    <string name="workspace_kb_import_info">Adding copies the current content. Later changes in the folder are not synced automatically.</string>
+    <string name="workspace_kb_preview_binary">This file type cannot be previewed as text.</string>
+    <string name="workspace_kb_preview_too_large">Text preview is limited to 256 KB.</string>
+    <string name="workspace_kb_preview_failed">Cannot preview the file: %1$s</string>
+    <string name="workspace_kb_back">Back</string>
+</resources>

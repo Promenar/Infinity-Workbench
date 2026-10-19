@@ -284,6 +284,9 @@ class ChatViewModel(
         (application as NexaraApplication).contextCompactionService,
     private val contextUsageEstimator: suspend (String) -> com.promenar.nexara.data.generation.ContextUsageEstimate =
         { sessionId -> (application as NexaraApplication).estimateContextUsage(sessionId) },
+    /** 工作区登记查询；为 null 时读取应用数据库。 */
+    private val workspaceLookupOverride:
+        (suspend (String) -> com.promenar.nexara.data.local.db.entity.WorkspaceEntity?)? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -1868,6 +1871,48 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
             sessionManager.updateSessionModel(sessionId, modelId)
+        }
+    }
+
+    private val _workspaceSwitchNotice = MutableStateFlow<com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched?>(null)
+    /** 最近一次成功切换的前后工作区；只属于当前会话，切换会话时界面按 sessionId 过滤。 */
+    val workspaceSwitchNotice: StateFlow<com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched?> =
+        _workspaceSwitchNotice
+
+    /** 生成进行中或有待审批的工具调用时禁止切换工作区：本轮执行目标已按原工作区解析。 */
+    fun isWorkspaceSwitchBlocked(): Boolean {
+        val sessionId = _currentSessionId.value ?: return true
+        val phase = generationCoordinator.observe(sessionId).value?.phase
+        val running = phase != null && phase !in setOf(
+            com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
+            com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+        )
+        return _isGenerating.value || running || store.getSession(sessionId)?.approvalRequest != null
+    }
+
+    /** 切换当前会话的工作区；[workspaceId] 为 null 时改回会话私有工作区。不改动任何目录内容。 */
+    fun switchSessionWorkspace(
+        workspaceId: String?,
+        onResult: (com.promenar.nexara.data.workspace.WorkspaceSwitchResult) -> Unit = {},
+    ) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val lookup = workspaceLookupOverride
+                ?: { id: String -> (application as NexaraApplication).database.workspaceDao().getById(id) }
+            val result = com.promenar.nexara.data.workspace.switchSessionWorkspace(
+                sessionId = sessionId,
+                currentWorkspaceId = store.getSession(sessionId)?.workspaceId,
+                targetWorkspaceId = workspaceId,
+                busy = isWorkspaceSwitchBlocked(),
+                persist = { target -> sessionManager.updateSession(sessionId, mapOf("workspaceId" to target)) },
+                lookup = lookup,
+            )
+            if (result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched) {
+                _workspaceSwitchNotice.value = result
+            }
+            onResult(result)
         }
     }
 

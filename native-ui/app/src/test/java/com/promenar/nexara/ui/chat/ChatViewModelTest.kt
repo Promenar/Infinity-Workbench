@@ -636,8 +636,63 @@ class ChatViewModelTest {
                 if (contextEstimateFails) throw java.io.IOException("估算不可用")
                 com.promenar.nexara.data.generation.ContextUsageEstimate(100, 0, 0, 0, 0, 128000)
             },
+            workspaceLookupOverride = { id -> workspaceRecords[id] },
         )
         this.documentReader = documentReader
+    }
+
+    private val workspaceRecords = mutableMapOf<String, com.promenar.nexara.data.local.db.entity.WorkspaceEntity>()
+
+    @Test
+    fun `切换工作区写入会话并给出前后提示，生成中拒绝切换`() = runTest {
+        workspaceRecords["ws-demo"] = com.promenar.nexara.data.local.db.entity.WorkspaceEntity(
+            "ws-demo", com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_PROJECT, "演示项目", "demo", 1,
+        )
+        seedSession()
+        advanceUntilIdle()
+        val results = mutableListOf<com.promenar.nexara.data.workspace.WorkspaceSwitchResult>()
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+
+        viewModel.switchSessionWorkspace("ws-demo") { results += it }
+        advanceUntilIdle()
+        val switched = results.last() as com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched
+        assertThat(switched.from).isEqualTo(com.promenar.nexara.data.workspace.WorkspaceLabel.Private)
+        assertThat(switched.to).isEqualTo(
+            com.promenar.nexara.data.workspace.WorkspaceLabel.Registered("演示项目", "project", "demo"),
+        )
+        assertThat(app.chatStore.getSession("s1")?.workspaceId).isEqualTo("ws-demo")
+        assertThat(viewModel.workspaceSwitchNotice.value).isEqualTo(switched)
+
+        holdStreamOpen = true
+        viewModel.sendMessage("生成一段回复")
+        advanceUntilIdle()
+        assertThat(viewModel.isWorkspaceSwitchBlocked()).isTrue()
+        viewModel.switchSessionWorkspace(null) { results += it }
+        advanceUntilIdle()
+        assertThat(results.last()).isEqualTo(com.promenar.nexara.data.workspace.WorkspaceSwitchResult.RejectedBusy)
+        assertThat(app.chatStore.getSession("s1")?.workspaceId).isEqualTo("ws-demo")
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+        viewModel.switchSessionWorkspace(null) { results += it }
+        advanceUntilIdle()
+        val back = results.last() as com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched
+        assertThat(back.to).isEqualTo(com.promenar.nexara.data.workspace.WorkspaceLabel.Private)
+        assertThat(app.chatStore.getSession("s1")?.workspaceId).isNull()
+    }
+
+    @Test
+    fun `待审批的工具调用期间拒绝切换工作区`() = runTest {
+        workspaceRecords["ws-demo"] = com.promenar.nexara.data.local.db.entity.WorkspaceEntity(
+            "ws-demo", com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_PROJECT, "演示项目", "demo", 1,
+        )
+        seedSession(approvalRequest = ApprovalRequest(toolName = "write_file", args = "{}", reason = "需要审批"))
+        advanceUntilIdle()
+        var result: com.promenar.nexara.data.workspace.WorkspaceSwitchResult? = null
+        viewModel.switchSessionWorkspace("ws-demo") { result = it }
+        advanceUntilIdle()
+        assertThat(result).isEqualTo(com.promenar.nexara.data.workspace.WorkspaceSwitchResult.RejectedBusy)
+        assertThat(ApplicationProvider.getApplicationContext<NexaraApplication>().chatStore.getSession("s1")?.workspaceId).isNull()
     }
 
     private lateinit var documentReader: FullContextDocumentReader

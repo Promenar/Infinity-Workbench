@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workspace_picker_title">选择工作区</string>
+    <string name="workspace_picker_registered">已登记的工作区</string>
+    <string name="workspace_picker_locations">浏览位置</string>
+    <string name="workspace_picker_root">位置</string>
+    <string name="workspace_picker_projects">Nexara 项目文件夹</string>
+    <string name="workspace_picker_projects_desc">App 私有存储中的项目，选择其中一个或新建</string>
+    <string name="workspace_picker_shared_volume">共享存储</string>
+    <string name="workspace_picker_shared_volume_named">共享存储 · %1$s</string>
+    <string name="workspace_picker_shared_permission_title">需要“所有文件访问”授权</string>
+    <string name="workspace_picker_shared_permission_desc">授权后才能浏览并选择共享存储中的文件夹。授权完成后返回此处即可继续。</string>
+    <string name="workspace_picker_grant">前往授权</string>
+    <string name="workspace_picker_use_folder">使用此文件夹</string>
+    <string name="workspace_picker_new_project">新建项目</string>
+    <string name="workspace_picker_new_folder">新建文件夹</string>
+    <string name="workspace_picker_project_name">项目名称</string>
+    <string name="workspace_picker_folder_name">文件夹名称</string>
+    <string name="workspace_picker_project_name_hint">只能使用英文字母、数字、“.”、“_”和“-”，最长 128 个字符。</string>
+    <string name="workspace_picker_create">创建</string>
+    <string name="workspace_picker_name_empty">请输入名称</string>
+    <string name="workspace_picker_name_invalid_project">名称只能包含英文字母、数字、“.”、“_”和“-”，最长 128 个字符</string>
+    <string name="workspace_picker_name_invalid_folder">名称包含不允许的字符或保留名</string>
+    <string name="workspace_picker_name_reserved">这是保留名称，请换一个</string>
+    <string name="workspace_picker_name_exists">同名文件夹已存在</string>
+    <string name="workspace_picker_projects_empty">还没有项目，可以新建一个。</string>
+    <string name="workspace_picker_folder_empty">此处没有子文件夹，可以使用当前文件夹或新建一个。</string>
+    <string name="workspace_picker_load_failed">无法读取此目录：%1$s</string>
+    <string name="workspace_picker_register_failed">无法使用此文件夹：%1$s</string>
+    <string name="workspace_picker_select_project">请先选择一个项目</string>
+    <string name="workspace_picker_target">将使用：%1$s</string>
+
+    <string name="workspace_kind_private">会话私有工作区</string>
+    <string name="workspace_kind_project">项目文件夹</string>
+    <string name="workspace_kind_shared">共享存储</string>
+    <string name="workspace_location_project">项目文件夹 / %1$s</string>
+    <string name="workspace_missing_name">已删除的工作区</string>
+    <string name="workspace_unavailable_reason">工作区不可用：%1$s</string>
+
+    <string name="workspace_section_title">工作区</string>
+    <string name="workspace_session_current">当前工作区</string>
+    <string name="workspace_session_private_desc">仅本会话可见，由 Nexara 管理</string>
+    <string name="workspace_session_choose">选择工作区</string>
+    <string name="workspace_session_use_private">改用会话私有工作区</string>
+    <string name="workspace_session_reselect">重新选择</string>
+    <string name="workspace_session_busy">生成进行中或有待审批的操作，暂不能切换工作区。</string>
+    <string name="workspace_session_footer">文件工具与命令在当前工作区中执行；切换不会移动或删除任何文件。</string>
+    <string name="workspace_switch_notice">已从“%1$s”切换到“%2$s”</string>
+    <string name="workspace_switch_failed">切换失败，请重试</string>
+
+    <string name="workspace_agent_default">默认工作区</string>
+    <string name="workspace_agent_default_none">会话私有工作区（默认）</string>
+    <string name="workspace_agent_clear">清除默认工作区</string>
+    <string name="workspace_agent_footer">新建会话时使用此工作区；修改不影响已有会话。</string>
+
+    <string name="workspace_kb_entry">工作区</string>
+    <plurals name="workspace_kb_count">
+        <item quantity="other">%1$d 个已登记的自选目录</item>
+    </plurals>
+    <string name="workspace_kb_entry_empty">尚未登记自选目录</string>
+    <string name="workspace_kb_desc">只读浏览已登记的自选目录，可把单个文件加入知识库；不会自动索引整个目录。</string>
+    <string name="workspace_kb_empty">还没有登记的工作区。可在会话设置或 Agent 编辑页选择工作区。</string>
+    <string name="workspace_kb_more">更多操作：%1$s</string>
+    <string name="workspace_kb_rename">重命名</string>
+    <string name="workspace_kb_display_name">显示名称</string>
+    <string name="workspace_kb_delete">删除登记</string>
+    <string name="workspace_kb_delete_title">删除工作区登记？</string>
+    <string name="workspace_kb_delete_message">只删除“%1$s”的登记记录，不会删除或改动目录中的任何文件。</string>
+    <string name="workspace_kb_delete_referenced">仍有 %1$d 个会话、%2$d 个 Agent 使用此工作区，无法删除登记。</string>
+    <string name="workspace_kb_operation_failed">操作失败，请重试</string>
+    <string name="workspace_kb_folder_empty">这个文件夹是空的</string>
+    <string name="workspace_kb_import">加入知识库</string>
+    <string name="workspace_kb_imported">已加入知识库，正在索引</string>
+    <string name="workspace_kb_import_failed">加入知识库失败：%1$s</string>
+    <string name="workspace_kb_import_info">加入知识库会复制文件当前内容；之后目录中的修改不会自动同步。</string>
+    <string name="workspace_kb_preview_binary">此类型无法进行文本预览。</string>
+    <string name="workspace_kb_preview_too_large">文本预览上限为 256 KB。</string>
+    <string name="workspace_kb_preview_failed">无法预览文件：%1$s</string>
+    <string name="workspace_kb_back">返回</string>
+</resources>

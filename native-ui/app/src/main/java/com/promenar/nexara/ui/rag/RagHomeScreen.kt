@@ -441,7 +441,16 @@ fun RagHomeScreen(
                         },
                     )
 
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    // 自选工作区不进 Room 树：根目录额外列出“工作区”分组，只读浏览并按文件加入知识库。
+                    if (folderStack.isEmpty()) {
+                        com.promenar.nexara.ui.workspace.KnowledgeWorkspacesGroup(
+                            knowledgeRootUuid = workspaceRootUuid,
+                            onImported = { actions.onReindexFile(it) },
+                            modifier = Modifier.padding(bottom = NexaraSpacing.Small),
+                        )
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                         key(workspaceRootUuid, activeFolderId) {
                             FilesPanel(
                                 workspaceRootUuid = workspaceRootUuid,

@@ -47,6 +47,10 @@ object RealPathMountSupport {
         return RealPathExternalFolderBackend(File(normalized), forbidden, { hasPermission(application) }, AndroidRealPathFileSystem)
     }
 
+    /** 可浏览的共享存储卷根目录（已规范化、去重）；是否已授权由 [hasPermission] 另行判断。 */
+    fun sharedVolumeRoots(context: Context): List<File> =
+        if (DistributionCapabilities.allFilesAccessAvailable) sharedVolumes(context).map(Path::toFile) else emptyList()
+
     private fun sharedVolumes(context: Context): List<Path> {
         val volumes = try {
             context.getSystemService(StorageManager::class.java)?.storageVolumes.orEmpty().mapNotNull { it.directory }

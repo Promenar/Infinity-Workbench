@@ -16,12 +16,15 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -34,6 +37,8 @@ class AgentEditViewModel(
     private val ragConfigPersistence: RagConfigPersistence,
     private val avatarImporter: suspend (Uri, String) -> String? = { _, _ -> null },
     private val avatarCleaner: (Uri) -> Unit = {},
+    /** 已登记的自选工作区，用于显示默认工作区的名称与路径。 */
+    workspaces: Flow<List<WorkspaceEntity>> = flowOf(emptyList()),
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -53,6 +58,7 @@ class AgentEditViewModel(
     private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
     private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
     private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
+    private val _defaultWorkspaceId = MutableStateFlow<String?>(null)
 
     val name: StateFlow<String> = _name.asStateFlow()
     val description: StateFlow<String> = _description.asStateFlow()
@@ -68,6 +74,11 @@ class AgentEditViewModel(
     val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
     val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
     val saveError: StateFlow<AgentEditErrorCode?> = _saveError.asStateFlow()
+    val defaultWorkspaceId: StateFlow<String?> = _defaultWorkspaceId.asStateFlow()
+    /** 默认工作区的登记记录；id 已设置但登记被删除时为 null，界面显示“已删除的工作区”。 */
+    val defaultWorkspace: StateFlow<WorkspaceEntity?> = combine(_defaultWorkspaceId, workspaces) { id, all ->
+        id?.let { wanted -> all.firstOrNull { it.id == wanted } }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val hasChanges: StateFlow<Boolean> = combine(
         combine(
@@ -82,10 +93,11 @@ class AgentEditViewModel(
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
         combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) },
-        combine(_useInheritedConfig, _ragConfig, _retrievalConfig) { u, r, ret -> Triple(u, r, ret) }
-    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr) ->
+        combine(_useInheritedConfig, _ragConfig, _retrievalConfig, _defaultWorkspaceId) { u, r, ret, ws -> InheritanceEditState(u, r, ret, ws) }
+    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr, workspace) ->
         val initial = text.initial
         initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
+        initial.defaultWorkspaceId != workspace ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
         initial.useInheritedConfig != useIn ||
@@ -125,6 +137,7 @@ class AgentEditViewModel(
                 _temperature.value = agent.temperature?.toFloat() ?: 0.7f
                 _topP.value = agent.topP?.toFloat() ?: 0.9f
                 _useInheritedConfig.value = agent.useInheritedConfig
+                _defaultWorkspaceId.value = agent.defaultWorkspaceId
 
                 if (agent.useInheritedConfig) {
                     _ragConfig.value = getGlobalRagConfig()
@@ -275,6 +288,18 @@ class AgentEditViewModel(
         scheduleSave()
     }
 
+    /** 设置或清除（null）默认工作区：明确提交，立即持久化，离开页面也不取消。只影响之后新建的会话。 */
+    fun setDefaultWorkspace(workspaceId: String?) {
+        _defaultWorkspaceId.value = workspaceId
+        val agentId = _initialAgent.value?.id ?: return
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            withContext(NonCancellable) {
+                persistCurrentAgent(agentId)
+            }
+        }
+    }
+
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
         viewModelScope.launch {
             try {
@@ -358,7 +383,7 @@ class AgentEditViewModel(
             executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
             skills = initial?.skills ?: emptyList(),
             mcpServerIds = initial?.mcpServerIds ?: emptyList(),
-            defaultWorkspaceId = initial?.defaultWorkspaceId,
+            defaultWorkspaceId = _defaultWorkspaceId.value,
             userRules = initial?.userRules.orEmpty(),
             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
         )
@@ -395,6 +420,13 @@ class AgentEditViewModel(
             }
         }
     }
+
+    private data class InheritanceEditState(
+        val useInherited: Boolean,
+        val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig,
+        val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig,
+        val defaultWorkspaceId: String?,
+    )
 
     private data class TextEditState(
         val initial: Agent?,
@@ -433,6 +465,7 @@ class AgentEditViewModel(
                                 uri,
                             )
                         },
+                        workspaces = app.database.workspaceDao().observeAll(),
                     ) as T
                 }
             }
