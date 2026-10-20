@@ -2,11 +2,9 @@ package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.domain.media.MediaKind
@@ -25,7 +23,8 @@ internal fun isPreviewableMediaName(name: String): Boolean = mediaKindForFileNam
  */
 @Composable
 internal fun rememberWorkspaceMediaOpener(sessionId: String?, stateKey: String?): ((String) -> Unit)? {
-    var openedPath by rememberSaveable(sessionId, stateKey) { mutableStateOf<String?>(null) }
+    // 键变化时会得到新的状态对象；打开函数以它为键重建，始终写入当前状态。
+    val openedPath = rememberSaveable(sessionId, stateKey) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val environment = LocalWorkspaceMedia.current
         ?: remember(sessionId, context) {
@@ -33,12 +32,12 @@ internal fun rememberWorkspaceMediaOpener(sessionId: String?, stateKey: String?)
             if (sessionId == null || application == null) null
             else WorkspaceMediaEnvironment(sessionId, application.workspaceMediaResolver)
         }
-    openedPath?.let { path ->
+    openedPath.value?.let { path ->
         if (environment != null) {
             CompositionLocalProvider(LocalWorkspaceMedia provides environment) {
-                WorkspaceMediaViewer(path = path, onDismiss = { openedPath = null })
+                WorkspaceMediaViewer(path = path, onDismiss = { openedPath.value = null })
             }
         }
     }
-    return environment?.let { remember(it) { { path: String -> openedPath = path } } }
+    return environment?.let { remember(it, openedPath) { { path: String -> openedPath.value = path } } }
 }
