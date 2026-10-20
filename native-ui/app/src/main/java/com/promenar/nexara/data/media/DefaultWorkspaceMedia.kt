@@ -3,6 +3,7 @@ package com.promenar.nexara.data.media
 import android.content.Context
 import androidx.core.net.toUri
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.rag.DocumentReferenceExtractor
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -274,7 +275,10 @@ internal class DefaultWorkspaceMedia(
                         }
                     }
                 }
-                indexEvents.publish(FileIndexEvent.Changed(root.uuid, created.uuid, created.hash, created.updatedAt.coerceAtLeast(1)))
+                // 与其它写入路径一致只为可索引文档发布事件；向量化队列会直接拒绝图片、音视频 MIME。
+                if (DocumentReferenceExtractor.supports(created)) {
+                    indexEvents.publish(FileIndexEvent.Changed(root.uuid, created.uuid, created.hash, created.updatedAt.coerceAtLeast(1)))
+                }
                 workspace.confirmCreatedEntry(root.uuid, created.uuid)
             }
         } catch (failure: Exception) {

@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - 新增 `view_media` 工具：当前模型支持视觉、音频输入或视频理解中的任意一种时可用，按模型能力决定发送哪些模态，不支持的模态返回明确说明。只支持图片的模型查看视频时抽取关键帧，Agent 可用 `frames` 或 `interval_seconds` 调整密度，用 `start_seconds`/`end_seconds` 指定时间段（默认均匀 8 帧，单次至多 32 帧，每帧标注时间戳）。Anthropic、OpenAI Responses、Gemini 3 使用原生“工具结果含图片”格式，其它协议在工具结果之后附带一条用户消息携带媒体。媒体只在查看的那一轮发送，之后的历史只保留“已查看 <路径>”。
 - 新增 `media_fetch` 工具：把 https 地址的图片、音频、视频下载到工作区，tailnet 主机的 https 经内置 Tailscale 代理访问；校验类型、单个上限 100 MiB、逐跳检查重定向，审批与写文件一致。tailnet 上的明文 http（如局域网 ComfyUI 的 `:8188`）暂不支持，模型会改用 `python_exec`/`shell_exec` 下载到工作区。
 - 系统提示新增媒体使用说明；设置 → 工具新增“媒体”分组（生成图片、查看媒体、下载媒体）；工具步骤摘要按实际图片张数与媒体个数计数。
+- 修复设备上媒体写入工作区总是失败（“媒体读写失败”）：写入后会为图片、音视频发布向量化事件，而向量化队列拒绝这类类型，导致保存被回滚。影响 `media_fetch`、生图与 MCP 媒体落地；现在只为可索引文档发布事件。设备回归类 `com.promenar.nexara.data.media.WorkspaceMediaDeviceTest`（字节写入与公网视频下载，后者需要设备能访问公网）。
 - `media_fetch` 使用与 `web_fetch` 一致的浏览器式 User-Agent，部分按爬虫拒绝的站点不再返回 403。视频播完后进入全屏会回到开头显示首帧，不再黑屏。资源管理器中的图片、音视频不再显示永远“等待中”的索引与图谱状态（媒体文件不参与向量化）。
 
 ### 流式回复中方括号文本导致闪退

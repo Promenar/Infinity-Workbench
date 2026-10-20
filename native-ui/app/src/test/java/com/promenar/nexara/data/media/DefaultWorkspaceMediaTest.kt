@@ -257,7 +257,8 @@ class DefaultWorkspaceMediaTest {
         assertThat(one.sizeBytes).isEqualTo(png.size.toLong())
         val entry = repo.getByMaterializedPath(root.uuid, one.path)!!
         assertThat(entry.hash).isEqualTo(one.sha256)
-        assertThat(events.filterIsInstance<FileIndexEvent.Changed>().map { it.fileUuid }).contains(entry.uuid)
+        // 图片不在向量化支持范围内，不发布索引事件。
+        assertThat(events.filterIsInstance<FileIndexEvent.Changed>().map { it.fileUuid }).doesNotContain(entry.uuid)
         assertThat(File(privateRoot, one.path.trimStart('/')).readBytes()).isEqualTo(png)
     }
 
@@ -371,11 +372,24 @@ class DefaultWorkspaceMediaTest {
         } finally { unmockkConstructor(MediaMetadataRetriever::class) }
     }
 
-    @Test fun `索引发布失败回滚私有文件且不残留数据库条目`() = runBlocking {
+    @Test fun `可索引资源发布索引事件且发布失败回滚私有文件`() = runBlocking {
+        val text = "MCP 文本资源".toByteArray()
+        val saved = service.save("session", MediaPayload.Bytes(text), MediaOrigin.MCP, "text/plain", "note.txt", "/note.txt")
+        val entry = repo.getByMaterializedPath(root.uuid, saved.path)!!
+        assertThat(events.filterIsInstance<FileIndexEvent.Changed>().map { it.fileUuid }).contains(entry.uuid)
+
         service = newService(index = FileIndexEventSink { throw java.io.IOException("测试索引失败") })
-        code("IO") { service.save("session", MediaPayload.Bytes(png), MediaOrigin.MCP, targetPath = "/a.png") }
-        assertThat(repo.getByMaterializedPath(root.uuid, "/a.png")).isNull()
-        assertThat(File(privateRoot, "a.png").exists()).isFalse()
+        code("IO") { service.save("session", MediaPayload.Bytes(text), MediaOrigin.MCP, "text/plain", "a.txt", "/a.txt") }
+        assertThat(repo.getByMaterializedPath(root.uuid, "/a.txt")).isNull()
+        assertThat(File(privateRoot, "a.txt").exists()).isFalse()
+    }
+
+    @Test fun `媒体不进入索引队列且索引接收端拒绝不影响保存`() = runBlocking {
+        // 设备上的向量化队列对图片、音视频 MIME 直接拒绝；媒体写入不能因此失败。
+        service = newService(index = FileIndexEventSink { throw IllegalArgumentException("不支持索引 MIME") })
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.DOWNLOAD, targetPath = "/media/test/a.png")
+        assertThat(saved.path).isEqualTo("/media/test/a.png")
+        assertThat(File(privateRoot, "media/test/a.png").readBytes()).isEqualTo(png)
     }
 
     @Test fun `取消必须传播且流和缓存都会清理`() = runBlocking {
