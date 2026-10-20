@@ -251,6 +251,20 @@ class MarkdownTextTest {
         }
 
         @Test
+        fun `整行加粗的编号标题保持原文`() {
+            val inputs = listOf(
+                "**3. 克隆示例仓库** ✅",
+                "**3.克隆示例仓库**",
+                "- **1. 准备环境**",
+                "> __2. 注意事项__",
+                "步骤：\n**1. 安装**\n**2. 配置**",
+            )
+            for (input in inputs) {
+                assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+            }
+        }
+
+        @Test
         fun `加粗小数保持标记和数字`() {
             val input = "**3.7%** 年化收益"
 
