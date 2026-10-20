@@ -782,10 +782,10 @@ internal fun InlineToolRow(
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
     var openedChange by remember { mutableStateOf<com.promenar.nexara.data.model.FileChangeSummary?>(null) }
     val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
-    val segments = buildList {
+    val segments = buildList<CharSequence> {
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
         if (!showFileTitle || !summary.isFileEditOnly) add(toolGroupSummaryText(summary))
-        if (showFileTitle) add(com.promenar.nexara.ui.chat.diff.fileChangesTitle(fileChanges))
+        if (showFileTitle) add(com.promenar.nexara.ui.chat.diff.fileChangesStyledTitle(fileChanges))
         if (summary.failedCount == 0 && summary.runningAction == null) summary.durationMs?.let { add(stepDurationText(it)) }
     }
     openedChange?.let { change ->

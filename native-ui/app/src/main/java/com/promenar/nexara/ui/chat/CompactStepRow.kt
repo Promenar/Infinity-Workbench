@@ -28,6 +28,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
@@ -104,7 +106,8 @@ internal val CompactStepRowHeight = 36.dp
  */
 @Composable
 internal fun CompactStepRow(
-    segments: List<String>,
+    /** 摘要段；可传带样式的 [AnnotatedString]（如文件改动的红绿行数）。 */
+    segments: List<CharSequence>,
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -128,8 +131,9 @@ internal fun CompactStepRow(
     val textColor = if (tone == MaterialTheme.colorScheme.error) {
         MaterialTheme.colorScheme.error
     } else tone.copy(alpha = 0.72f)
-    val visibleSegments = segments.filter(String::isNotBlank)
-    val description = (visibleSegments + listOfNotNull(failureText?.takeIf(String::isNotBlank))).joinToString(stringResource(R.string.chat_step_summary_separator))
+    val visibleSegments = segments.filter { it.isNotBlank() }
+    val description = (visibleSegments.map(CharSequence::toString) + listOfNotNull(failureText?.takeIf(String::isNotBlank)))
+        .joinToString(stringResource(R.string.chat_step_summary_separator))
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -148,7 +152,12 @@ internal fun CompactStepRow(
         val summaryMaxWidth = (maxWidth - 58.dp).coerceAtLeast(0.dp)
         val arrowVisible = expanded == true
         Row(Modifier.fillMaxWidth().align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
-            val summaryText = visibleSegments.joinToString(" $NexaraMetaSeparator ")
+            val summaryText = buildAnnotatedString {
+                visibleSegments.forEachIndexed { index, segment ->
+                    if (index > 0) append(" $NexaraMetaSeparator ")
+                    if (segment is AnnotatedString) append(segment) else append(segment.toString())
+                }
+            }
             if (preview == null) {
                 // 摘要按内容宽度排布并先截断，失败段紧跟其后且不收缩，展开箭头固定在行尾。
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {

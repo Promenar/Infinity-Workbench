@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,24 @@ internal fun fileChangesTitle(changes: List<FileChangeSummary>): String {
     val (added, removed) = changes.totalCounts()
     val counts = countsLabel(added, removed) ?: return subject
     return stringResource(R.string.file_change_title_with_counts, subject, counts)
+}
+
+/** [fileChangesTitle] 的着色版：`+N` 用成功色、`−M` 用错误色，与文件行和差异头部一致。 */
+@Composable
+internal fun fileChangesStyledTitle(changes: List<FileChangeSummary>): AnnotatedString {
+    val title = fileChangesTitle(changes)
+    val (added, removed) = changes.totalCounts()
+    val counts = countsLabel(added, removed)
+    // 标题格式把计数放在末尾；格式不符时保持纯文本。
+    if (counts == null || !title.endsWith(counts)) return AnnotatedString(title)
+    val addedColor = MaterialTheme.nexaraDomainColors.success
+    val removedColor = MaterialTheme.colorScheme.error
+    val start = title.length - counts.length
+    return buildAnnotatedString {
+        append(title)
+        added?.let { addStyle(SpanStyle(color = addedColor), start, start + "+$it".length) }
+        removed?.let { addStyle(SpanStyle(color = removedColor), title.length - "−$it".length, title.length) }
+    }
 }
 
 /** 逐个文件列出路径与 `+N −M`；整行可点，打开该文件的差异面板。 */
