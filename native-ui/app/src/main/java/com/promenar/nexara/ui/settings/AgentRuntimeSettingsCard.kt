@@ -3,10 +3,14 @@ package com.promenar.nexara.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.DataUsage
+import androidx.compose.material.icons.rounded.Loop
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.WifiProtectedSetup
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -112,12 +116,10 @@ internal fun AgentRuntimeSettingsCard(
     state: SkillsSettingsVisualState,
     actions: SkillsSettingsVisualActions,
 ) {
-    NexaraSettingsSection(
-        title = stringResource(R.string.settings_execution_budget),
-        footer = stringResource(R.string.settings_batch1_runtime_footer),
-    ) {
-        LoopLimitCard(state.loopLimit, actions.onLoopLimitChange)
+    NexaraSettingsSection(title = stringResource(R.string.settings_execution_budget)) {
+        LoopLimitCard(state.loopLimit, actions.onLoopLimitChange, icon = Icons.Rounded.Loop)
         NexaraNumericSetting(
+            icon = Icons.Rounded.DataUsage,
             title = stringResource(R.string.p0_token_limit),
             value = state.tokenLimit,
             spec = ToolTokenLimitSpec,
@@ -125,7 +127,9 @@ internal fun AgentRuntimeSettingsCard(
             onValueChange = { actions.onTokenLimitChange(it.toInt()) },
         )
         NexaraStepperSetting(
+            icon = Icons.Rounded.Repeat,
             title = stringResource(R.string.p0_repeat_limit),
+            description = stringResource(R.string.tools_repeat_limit_desc),
             value = state.repeatLimit.toString(),
             canDecrease = state.repeatLimit > 2,
             canIncrease = state.repeatLimit < 20,
@@ -133,6 +137,7 @@ internal fun AgentRuntimeSettingsCard(
             onIncrease = { actions.onRepeatLimitChange(state.repeatLimit + 1) },
         )
         NexaraStepperSetting(
+            icon = Icons.Rounded.WifiProtectedSetup,
             title = stringResource(R.string.settings_stream_retry_limit),
             description = stringResource(R.string.settings_stream_retry_limit_desc),
             value = state.retryLimit.toString(),
@@ -142,8 +147,9 @@ internal fun AgentRuntimeSettingsCard(
             onIncrease = { actions.onRetryLimitChange(state.retryLimit + 1) },
         )
         NexaraSettingsItem(
+            icon = Icons.Rounded.RestartAlt,
             title = stringResource(R.string.p0_reset_consent),
-            titleColor = MaterialTheme.colorScheme.error,
+            subtitle = stringResource(R.string.tools_reset_consent_desc),
             onClick = actions.onResetConsent,
         )
     }

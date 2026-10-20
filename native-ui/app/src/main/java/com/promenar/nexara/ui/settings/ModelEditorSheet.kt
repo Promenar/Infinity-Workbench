@@ -228,21 +228,18 @@ internal fun ModelEditorSheet(
                     editedFieldLabels = editedFieldLabels,
                 )
             }
+            // 模型 ID 与显示名称同为表单字段，统一不套卡片，说明写在字段下方。
             item("remote-model-id") {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.settings_batch1_model_request),
-                    footer = stringResource(R.string.provider_models_remote_id_supporting_text),
-                ) {
                 OutlinedTextField(
                     textStyle = LocalTextStyle.current.forInput(),
                     value = editRemoteModelId,
                     onValueChange = { editRemoteModelId = it },
                     label = { Text(stringResource(R.string.provider_models_field_model_id)) },
                     placeholder = { Text(stringResource(R.string.provider_models_placeholder_model_id)) },
+                    supportingText = { Text(stringResource(R.string.provider_models_remote_id_supporting_text)) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
                 )
-            }
             }
             item("name") {
                 OutlinedTextField(

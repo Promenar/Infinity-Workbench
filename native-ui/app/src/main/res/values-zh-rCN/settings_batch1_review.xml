@@ -11,7 +11,6 @@
     <string name="settings_batch1_memory_generation">记忆生成</string>
     <string name="settings_batch1_network_forwarding">网络转发</string>
     <string name="settings_batch1_backup_options">归档选项</string>
-    <string name="settings_batch1_runtime_footer">相同工具和参数连续重复达到上限时暂停。下次开启不限轮次全自动执行时需要确认。</string>
     <string name="settings_batch1_context_footer">压缩时折叠较早的工具结果并总结历史，保留最近 %1$d 轮；完整记录保留在会话中。</string>
     <string name="settings_batch1_termux_intro_footer">SSH 与目录挂载可独立配置；命令需在 Termux 中粘贴执行，并遵循会话审批。诊断验证权限与结果回传。</string>
     <string name="settings_batch1_termux_permission_footer">允许“在 Termux 环境中运行命令”权限；未弹出申请时，到应用详情的“权限 → 其它权限”查找。返回此页会刷新状态。</string>
@@ -23,6 +22,5 @@
     <string name="settings_batch1_backup_local_footer">数据默认保存在本机；WebDAV 仅供手动备份与恢复。可设置密码加密，包含密钥时必须加密。</string>
     <string name="settings_batch1_local_models_footer">启用引擎后可在设备上运行已导入的 GGUF 模型，保护隐私并降低延迟。</string>
     <string name="settings_batch1_agent_skills_footer">任务匹配时加载 SKILL.md 指令与参考资料；技能包本身不执行代码。</string>
-    <string name="settings_batch1_model_request">请求配置</string>
     <string name="settings_batch1_termux_enable_diagnostic_summary">开启后可运行诊断</string>
 </resources>

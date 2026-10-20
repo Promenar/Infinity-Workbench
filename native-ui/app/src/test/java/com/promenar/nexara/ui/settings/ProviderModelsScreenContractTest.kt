@@ -129,7 +129,7 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("key = { _, model -> model.id }")
         assertThat(content).contains("ProviderModelsModelRow(")
         val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "private fun capabilityLabelResource(")
-        assertThat(row).contains("BettboxListGroup {")
+        assertThat(row).contains("bettboxListGroupItem(groupIndex, groupSize)")
     }
 
     @Test

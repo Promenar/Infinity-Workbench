@@ -41,3 +41,21 @@ fun Modifier.bettboxListGroup(): Modifier {
         .clip(shape)
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
 }
+
+/**
+ * 惰性列表里逐项拼成一个连续分组：首项保留上圆角，末项保留下圆角，中间项为直角。
+ * 用于条目较多、需要 LazyColumn 复用的分组（如模型列表），避免退化为每行一张卡片。
+ */
+@Composable
+fun Modifier.bettboxListGroupItem(index: Int, count: Int): Modifier {
+    val radius = 20.dp
+    val shape = RoundedCornerShape(
+        topStart = if (index == 0) radius else 0.dp,
+        topEnd = if (index == 0) radius else 0.dp,
+        bottomStart = if (index == count - 1) radius else 0.dp,
+        bottomEnd = if (index == count - 1) radius else 0.dp,
+    )
+    return this
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+}

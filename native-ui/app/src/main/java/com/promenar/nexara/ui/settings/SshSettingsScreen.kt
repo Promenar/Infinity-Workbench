@@ -27,6 +27,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.testTag
+import com.promenar.nexara.ui.common.NexaraSettingsGroup
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -350,36 +356,47 @@ internal fun SshSettingsContent(
     state: SshSettingsVisualState,
     actions: SshSettingsVisualActions,
     modifier: Modifier = Modifier,
+    initialActionHostId: String? = null,
 ) {
     NexaraSettingsPageLayout(
         title = stringResource(R.string.ssh_settings_title),
         onBack = actions.onBack,
         modifier = modifier,
     ) { contentPadding ->
+        var actionHostId by remember { mutableStateOf(initialActionHostId) }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
             item("manage") {
+                // 主机列表：每台主机一行，常用的“打开终端”在行尾，其余操作收进主机操作面板。
                 NexaraSettingsSection(
                     title = stringResource(R.string.ssh_visual_manage_section),
                     footer = stringResource(R.string.ssh_settings_description),
                 ) {
-                    SshActionItem(
-                        icon = Icons.Rounded.AddCircleOutline,
-                        title = stringResource(R.string.ssh_add_host),
-                        subtitle = stringResource(R.string.settings_batch1_ssh_summary),
-                        enabled = !state.busy,
-                        onClick = actions.onAddHost,
-                        showChevron = true,
-                    )
                     if (state.hosts.isEmpty()) {
-                        NexaraSettingsItem(
-                            icon = Icons.Rounded.Terminal,
+                        NexaraSettingsRowLayout(
                             title = stringResource(R.string.ssh_no_hosts),
-                            onClick = actions.onAddHost,
+                            icon = Icons.Rounded.Terminal,
                         )
                     }
+                    state.hosts.forEach { host ->
+                        SshHostRow(
+                            host = host,
+                            forwardPort = state.forwards[host.alias],
+                            enabled = !state.busy,
+                            onOpen = { actionHostId = host.id },
+                            onTerminal = { actions.onTerminal(host) },
+                        )
+                    }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Add,
+                        title = stringResource(R.string.ssh_add_host),
+                        titleColor = MaterialTheme.colorScheme.primary,
+                        enabled = !state.busy,
+                        onClick = actions.onAddHost,
+                        modifier = Modifier.testTag("ssh_add_host"),
+                    )
                 }
             }
             item("agent") {
@@ -427,19 +444,6 @@ internal fun SshSettingsContent(
                     }
                 }
             }
-            items(state.hosts, key = { it.id }) { host ->
-                SshHostCard(
-                    host = host,
-                    forwardPort = state.forwards[host.alias],
-                    enabled = !state.busy,
-                    onTerminal = { actions.onTerminal(host) },
-                    onVerify = { actions.onVerify(host) },
-                    onEdit = { actions.onEdit(host) },
-                    onDelete = { actions.onDelete(host) },
-                    onCopyPublicKey = { actions.onCopyPublicKey(host) },
-                    onToggleForward = { actions.onToggleForward(host) },
-                )
-            }
             item("notes") {
                 NexaraSettingsSection(
                     title = stringResource(R.string.ssh_visual_notes_section),
@@ -447,65 +451,135 @@ internal fun SshSettingsContent(
                 ) {}
             }
         }
+        state.hosts.firstOrNull { it.id == actionHostId }?.let { host ->
+            SshHostActionsSheet(
+                host = host,
+                forwardPort = state.forwards[host.alias],
+                enabled = !state.busy,
+                actions = actions,
+                onDismiss = { actionHostId = null },
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** 主机行：别名、地址与认证方式、主机指纹状态；行尾直接打开终端。 */
 @Composable
-private fun SshHostCard(
+private fun SshHostRow(
+    host: SshHost,
+    forwardPort: Int?,
+    enabled: Boolean,
+    onOpen: () -> Unit,
+    onTerminal: () -> Unit,
+) {
+    val auth = stringResource(if (host.authType == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password)
+    val address = stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port)
+    val trust = stringResource(if (host.trustedFingerprint == null) R.string.settings_batch1_ssh_untrusted_summary else R.string.ssh_trusted)
+    val forward = forwardPort?.let { stringResource(R.string.settings_batch1_ssh_forward_running_summary, it) }
+    NexaraSettingsItem(
+        title = host.alias,
+        subtitle = "$address · $auth\n" + listOfNotNull(trust, forward).joinToString(" · "),
+        subtitleMaxLines = 2,
+        onClick = onOpen,
+        enabled = enabled,
+        onClickLabel = stringResource(R.string.ssh_host_actions),
+        modifier = Modifier.testTag("ssh_host:${host.alias}"),
+        leadingContent = {
+            Icon(
+                if (host.trustedFingerprint == null) Icons.Rounded.WarningAmber else Icons.Rounded.Dns,
+                contentDescription = null,
+                tint = if (host.trustedFingerprint == null) MaterialTheme.nexaraDomainColors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(NexaraSpacing.RowIconSize),
+            )
+        },
+        trailingContent = {
+            IconButton(onClick = onTerminal, enabled = enabled) {
+                Icon(Icons.Rounded.Terminal, contentDescription = stringResource(R.string.ssh_open_terminal))
+            }
+        },
+    )
+}
+
+/** 主机操作面板：连接信息在顶部，下方为核验、复制公钥、编辑、端口转发与删除。 */
+@Composable
+private fun SshHostActionsSheet(
+    host: SshHost,
+    forwardPort: Int?,
+    enabled: Boolean,
+    actions: SshSettingsVisualActions,
+    onDismiss: () -> Unit,
+) {
+    // 打开新界面或弹窗的操作先收起面板；端口转发开关就地切换。
+    fun then(action: (SshHost) -> Unit): () -> Unit = {
+        onDismiss()
+        action(host)
+    }
+    NexaraBottomSheet(
+        show = true,
+        onDismiss = onDismiss,
+        title = host.alias,
+        height = NexaraSheetHeight.Content,
+    ) {
+        SshHostActionsContent(
+            host = host,
+            forwardPort = forwardPort,
+            enabled = enabled,
+            onTerminal = then(actions.onTerminal),
+            onVerify = then(actions.onVerify),
+            onCopyPublicKey = then(actions.onCopyPublicKey),
+            onEdit = then(actions.onEdit),
+            onToggleForward = { actions.onToggleForward(host) },
+            onDelete = then(actions.onDelete),
+        )
+    }
+}
+
+/** 主机操作面板的内容；无状态，便于截图预览。 */
+@Composable
+internal fun SshHostActionsContent(
     host: SshHost,
     forwardPort: Int?,
     enabled: Boolean,
     onTerminal: () -> Unit,
     onVerify: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
     onCopyPublicKey: () -> Unit,
+    onEdit: () -> Unit,
     onToggleForward: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    NexaraSettingsSection(
-        title = host.alias,
-        footer = listOfNotNull(
-            stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port) + ", " +
-                stringResource(R.string.settings_batch1_ssh_auth_footer,
-                stringResource(if (host.authType == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password)),
-            stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
-            if (host.localForwardPort != null) stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0) else null,
-        ).joinToString("\n"),
-    ) {
-        NexaraSettingsItem(
-            icon = Icons.Rounded.Terminal,
-            title = stringResource(R.string.ssh_open_terminal),
-            subtitle = stringResource(if (host.trustedFingerprint == null) R.string.settings_batch1_ssh_untrusted_summary else R.string.ssh_trusted),
-            enabled = enabled,
-            onClick = onTerminal,
-            showChevron = true,
-            onClickLabel = stringResource(R.string.ssh_open_terminal),
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            text = listOfNotNull(
+                stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port) + " · " +
+                    stringResource(if (host.authType == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password),
+                stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
+                if (host.localForwardPort != null) stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0) else null,
+            ).joinToString("\n"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = NexaraSpacing.Medium),
         )
-        SshActionItem(icon = Icons.Rounded.Security, title = stringResource(R.string.ssh_verify), enabled = enabled, onClick = onVerify)
-        if (host.authType == SshAuthType.KEY) {
-            SshActionItem(icon = Icons.Rounded.ContentCopy, title = stringResource(R.string.ssh_copy_public_key), enabled = enabled, onClick = onCopyPublicKey)
+        NexaraSettingsGroup {
+            SshActionItem(Icons.Rounded.Terminal, stringResource(R.string.ssh_open_terminal), enabled, onTerminal,
+                subtitle = stringResource(if (host.trustedFingerprint == null) R.string.settings_batch1_ssh_untrusted_summary else R.string.ssh_trusted))
+            SshActionItem(Icons.Rounded.Security, stringResource(R.string.ssh_verify), enabled, onVerify)
+            if (host.authType == SshAuthType.KEY) {
+                SshActionItem(Icons.Rounded.ContentCopy, stringResource(R.string.ssh_copy_public_key), enabled, onCopyPublicKey)
+            }
+            SshActionItem(Icons.Rounded.Edit, stringResource(R.string.ssh_edit_host), enabled, onEdit)
+            if (host.localForwardPort != null) {
+                SettingsToggle(
+                    title = stringResource(R.string.ssh_forward_configure),
+                    description = if (forwardPort == null) stringResource(R.string.ssh_forward_stopped)
+                    else stringResource(R.string.settings_batch1_ssh_forward_running_summary, forwardPort),
+                    checked = forwardPort != null,
+                    icon = Icons.Rounded.SwapHoriz,
+                    onCheckedChange = { onToggleForward() },
+                    enabled = enabled,
+                )
+            }
+            SshActionItem(Icons.Rounded.DeleteOutline, stringResource(R.string.ssh_delete), enabled, onDelete, destructive = true)
         }
-        SshActionItem(icon = Icons.Rounded.Edit, title = stringResource(R.string.ssh_edit_host), enabled = enabled, onClick = onEdit, showChevron = true)
-        if (host.localForwardPort != null) {
-            SettingsToggle(
-                title = stringResource(R.string.ssh_forward_configure),
-                description = if (forwardPort == null) stringResource(R.string.ssh_forward_stopped)
-                else stringResource(R.string.settings_batch1_ssh_forward_running_summary, forwardPort),
-                checked = forwardPort != null,
-                icon = Icons.Rounded.SwapHoriz,
-                onCheckedChange = { onToggleForward() },
-                enabled = enabled,
-            )
-
-        }
-        SshActionItem(
-            icon = Icons.Rounded.DeleteOutline,
-            title = stringResource(R.string.ssh_delete),
-            enabled = enabled,
-            onClick = onDelete,
-            destructive = true,
-        )
     }
 }
 

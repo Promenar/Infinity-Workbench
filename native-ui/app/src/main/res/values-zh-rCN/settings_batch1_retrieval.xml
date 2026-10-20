@@ -24,7 +24,6 @@
     <string name="settings_retrieval_kg_budget_footer">调用与输出上限按每个文档版本计算；预计调用超过确认阈值时，需要先确认。</string>
     <string name="settings_retrieval_agent_rag_short">分块与记忆配置</string>
     <string name="settings_retrieval_agent_advanced_short">重排、改写与混合检索</string>
-    <string name="settings_retrieval_agent_model_selected">已选专属模型</string>
     <string name="settings_retrieval_agent_actions_section">助手管理</string>
     <string name="settings_retrieval_icon_sparkles">星光</string>
     <string name="settings_retrieval_icon_code">代码</string>

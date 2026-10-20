@@ -44,6 +44,7 @@ fun NexaraSettingsItem(
     role: Role = Role.Button,
     selected: Boolean? = null,
     horizontalPadding: Dp = NexaraSpacing.RowHorizontal,
+    subtitleMaxLines: Int = 1,
 ) {
     NexaraSettingsRowLayout(
         title = title,
@@ -59,6 +60,7 @@ fun NexaraSettingsItem(
         leadingContent = leadingContent,
         subtitleModifier = subtitleModifier,
         horizontalPadding = horizontalPadding,
+        subtitleMaxLines = subtitleMaxLines,
         trailingContent = when {
             trailingContent != null -> trailingContent
             showChevron -> ({ Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant) })
@@ -83,6 +85,8 @@ internal fun NexaraSettingsRowLayout(
     trailingMaxWidthFraction: Float = 1f,
     subtitleModifier: Modifier = Modifier,
     horizontalPadding: Dp = NexaraSpacing.RowHorizontal,
+    // 副标题默认单行；列表项需要完整说明时可放宽到两行。
+    subtitleMaxLines: Int = 1,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f)) {
@@ -113,7 +117,7 @@ internal fun NexaraSettingsRowLayout(
                     Text(if (subtitleIsIdentifier) subtitle.breakableIdentifier() else subtitle,
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = subtitleModifier,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = subtitleMaxLines, overflow = TextOverflow.Ellipsis)
                 }
             }
             if (trailingContent != null) {

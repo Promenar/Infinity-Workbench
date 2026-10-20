@@ -1,0 +1,80 @@
+package com.promenar.nexara.ui.settings
+
+import androidx.annotation.StringRes
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
+import androidx.compose.material.icons.automirrored.rounded.NoteAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Difference
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.FindInPage
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Javascript
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.PlayCircleOutline
+import androidx.compose.material.icons.rounded.PlaylistRemove
+import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.promenar.nexara.R
+
+/** 内置工具在设置页的分组；枚举顺序即页面上的分组顺序。 */
+internal enum class BuiltinToolCategory(@StringRes val titleRes: Int) {
+    WEB(R.string.tools_category_web),
+    FILES(R.string.tools_category_files),
+    EXECUTION(R.string.tools_category_execution),
+    PLANNING(R.string.tools_category_planning),
+    OTHER(R.string.tools_category_other),
+}
+
+internal fun builtinToolCategory(id: String): BuiltinToolCategory = when (id) {
+    "web_search", "web_fetch" -> BuiltinToolCategory.WEB
+    "file_read", "file_list", "file_search", "file_diff", "file_write", "file_patch",
+    "create_file", "create_directory", "move_file", "delete_file" -> BuiltinToolCategory.FILES
+    "exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox" -> BuiltinToolCategory.EXECUTION
+    "initialize_plan", "update_plan", "get_plan", "drop_plan" -> BuiltinToolCategory.PLANNING
+    else -> BuiltinToolCategory.OTHER
+}
+
+/** 按分组顺序归类；空分组不出现，组内保持原有顺序。 */
+internal fun List<SkillInfo>.groupedByToolCategory(): List<Pair<BuiltinToolCategory, List<SkillInfo>>> {
+    val groups = groupBy { builtinToolCategory(it.id) }
+    return BuiltinToolCategory.entries.mapNotNull { category -> groups[category]?.let { category to it } }
+}
+
+internal fun builtinToolIcon(id: String): ImageVector = when (id) {
+    "web_search" -> Icons.Rounded.Search
+    "web_fetch" -> Icons.Rounded.Language
+    "calculator" -> Icons.Rounded.Calculate
+    "image_generation" -> Icons.Rounded.Image
+    "file_read" -> Icons.Rounded.Description
+    "file_write" -> Icons.Rounded.EditNote
+    "file_list" -> Icons.Rounded.FolderOpen
+    "file_search" -> Icons.Rounded.FindInPage
+    "file_diff" -> Icons.Rounded.Difference
+    "file_patch" -> Icons.Rounded.AutoFixHigh
+    "create_file" -> Icons.AutoMirrored.Rounded.NoteAdd
+    "create_directory" -> Icons.Rounded.CreateNewFolder
+    "move_file" -> Icons.AutoMirrored.Rounded.DriveFileMove
+    "delete_file" -> Icons.Rounded.DeleteOutline
+    "exec_js" -> Icons.Rounded.Javascript
+    "run_script" -> Icons.Rounded.PlayCircleOutline
+    "shell_exec" -> Icons.Rounded.Terminal
+    "python_exec" -> Icons.Rounded.Code
+    "python_sandbox" -> Icons.Rounded.Science
+    "initialize_plan" -> Icons.AutoMirrored.Rounded.PlaylistAdd
+    "update_plan" -> Icons.Rounded.Checklist
+    "get_plan" -> Icons.AutoMirrored.Rounded.ListAlt
+    "drop_plan" -> Icons.Rounded.PlaylistRemove
+    else -> Icons.Rounded.Code
+}

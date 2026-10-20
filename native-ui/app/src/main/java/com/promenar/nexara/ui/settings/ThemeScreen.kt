@@ -220,9 +220,11 @@ private fun ColorPaletteRow(
     onColorSelect: (Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 8 个色块排成两行各 4 个并均分宽度，避免窄屏上第二行只剩一个孤立色块。
     androidx.compose.foundation.layout.FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        maxItemsInEachRow = 4,
     ) {
         ColorChoice(
             color = MaterialTheme.colorScheme.primary,

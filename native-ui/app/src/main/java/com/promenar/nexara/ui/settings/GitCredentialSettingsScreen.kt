@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Terminal
@@ -27,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -37,7 +41,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.git.remote.GitCredential
+import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.SecretKeyboardOptions
@@ -75,18 +82,28 @@ internal fun GitCredentialSettingsContent(
     state: GitCredentialUiState,
     actions: GitCredentialSettingsActions,
     modifier: Modifier = Modifier,
+    initialEditor: String? = null,
 ) {
     var host by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<GitCredential?>(null) }
+    // null 表示面板关闭；空字符串表示新增，非空为要更换令牌的主机。
+    var editingHost by remember { mutableStateOf(initialEditor) }
     val operation = state.operation
     LaunchedEffect(operation) {
         if (operation is GitCredentialOperation.Saved) {
             host = ""
             username = ""
             token = ""
+            editingHost = null
         }
+    }
+    fun openEditor(credential: GitCredential?) {
+        host = credential?.host.orEmpty()
+        username = credential?.username.orEmpty()
+        token = ""
+        editingHost = credential?.host.orEmpty()
     }
     NexaraSettingsPageLayout(
         title = stringResource(R.string.git_credentials_title),
@@ -101,11 +118,10 @@ internal fun GitCredentialSettingsContent(
                 ) {
                     val credentials = state.credentials
                     if (credentials.isNullOrEmpty()) {
-                        NexaraSettingsItem(
+                        NexaraSettingsRowLayout(
                             icon = Icons.Rounded.Key,
                             title = stringResource(if (credentials == null) R.string.settings_status_loading else R.string.git_credentials_empty),
-                            onClick = {},
-                            enabled = false,
+                            titleColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     credentials.orEmpty().forEach { credential ->
@@ -113,11 +129,7 @@ internal fun GitCredentialSettingsContent(
                             icon = Icons.Rounded.Key,
                             title = credential.host,
                             subtitle = stringResource(R.string.git_credentials_saved_subtitle, credential.username),
-                            onClick = {
-                                host = credential.host
-                                username = credential.username
-                                token = ""
-                            },
+                            onClick = { openEditor(credential) },
                             onClickLabel = stringResource(R.string.git_credentials_update_token),
                             subtitleIsIdentifier = true,
                             modifier = Modifier.testTag("git_credential_${credential.host}"),
@@ -134,33 +146,19 @@ internal fun GitCredentialSettingsContent(
                             },
                         )
                     }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Add,
+                        title = stringResource(R.string.git_credentials_add),
+                        titleColor = MaterialTheme.colorScheme.primary,
+                        onClick = { openEditor(null) },
+                        enabled = credentials != null,
+                        modifier = Modifier.testTag("git_credential_add"),
+                    )
                 }
             }
-            item("editor") {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.git_credentials_editor_section),
-                    footer = stringResource(R.string.git_credentials_token_hint),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
-                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-                    ) {
-                        GitCredentialField(host, { host = it }, R.string.git_credentials_host_label, "git_credential_host",
-                            placeholder = "github.com", keyboardType = KeyboardType.Uri)
-                        GitCredentialField(username, { username = it }, R.string.git_credentials_username_label, "git_credential_username")
-                        GitCredentialField(token, { token = it }, R.string.git_credentials_token_label, "git_credential_token", secret = true)
-                        Button(
-                            onClick = {
-                                val secret = token.toCharArray()
-                                token = ""
-                                actions.onSave(host, username, secret)
-                            },
-                            enabled = host.isNotBlank() && username.isNotBlank() && token.isNotEmpty() &&
-                                operation != GitCredentialOperation.Saving,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("git_credential_save"),
-                        ) {
-                            Text(stringResource(R.string.shared_btn_save))
-                        }
+            if (operation !is GitCredentialOperation.Idle && editingHost == null) {
+                item("status") {
+                    Column(Modifier.padding(horizontal = NexaraSpacing.RowHorizontal, vertical = NexaraSpacing.Small)) {
                         GitCredentialStatus(operation)
                     }
                 }
@@ -178,6 +176,32 @@ internal fun GitCredentialSettingsContent(
                     )
                 }
             }
+        }
+    }
+    editingHost?.let { target ->
+        NexaraBottomSheet(
+            show = true,
+            onDismiss = { token = ""; editingHost = null },
+            title = stringResource(if (target.isEmpty()) R.string.git_credentials_add else R.string.git_credentials_update_token),
+            height = NexaraSheetHeight.Content,
+            modifier = Modifier.imePadding(),
+        ) {
+            GitCredentialEditor(
+                host = host,
+                onHostChange = { host = it },
+                username = username,
+                onUsernameChange = { username = it },
+                token = token,
+                onTokenChange = { token = it },
+                hostLocked = target.isNotEmpty(),
+                operation = operation,
+                onCancel = { token = ""; editingHost = null },
+                onSave = {
+                    val secret = token.toCharArray()
+                    token = ""
+                    actions.onSave(host, username, secret)
+                },
+            )
         }
     }
     deleting?.let { credential ->
@@ -200,6 +224,49 @@ internal fun GitCredentialSettingsContent(
                 }
             },
         )
+    }
+}
+
+/** 凭据编辑面板：主机、用户名与始终遮蔽的令牌；更换令牌时主机不可改。 */
+@Composable
+internal fun GitCredentialEditor(
+    host: String,
+    onHostChange: (String) -> Unit,
+    username: String,
+    onUsernameChange: (String) -> Unit,
+    token: String,
+    onTokenChange: (String) -> Unit,
+    hostLocked: Boolean,
+    operation: GitCredentialOperation,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
+        GitCredentialField(host, onHostChange, R.string.git_credentials_host_label, "git_credential_host",
+            placeholder = "github.com", keyboardType = KeyboardType.Uri, enabled = !hostLocked)
+        GitCredentialField(username, onUsernameChange, R.string.git_credentials_username_label, "git_credential_username")
+        GitCredentialField(token, onTokenChange, R.string.git_credentials_token_label, "git_credential_token", secret = true)
+        Text(
+            stringResource(R.string.git_credentials_token_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        GitCredentialStatus(operation)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
+                Text(stringResource(R.string.common_cancel))
+            }
+            Button(
+                onClick = onSave,
+                enabled = host.isNotBlank() && username.isNotBlank() && token.isNotEmpty() &&
+                    operation != GitCredentialOperation.Saving,
+                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("git_credential_save"),
+            ) { Text(stringResource(R.string.shared_btn_save)) }
+        }
     }
 }
 
@@ -238,6 +305,7 @@ private fun GitCredentialField(
     placeholder: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val field = @Composable {
         OutlinedTextField(
@@ -246,6 +314,7 @@ private fun GitCredentialField(
             label = { Text(stringResource(label)) },
             placeholder = placeholder?.let { { Text(it) } },
             singleLine = true,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth().testTag(tag),
             textStyle = MaterialTheme.typography.bodyLarge.forInput(),
             shape = MaterialTheme.shapes.medium,

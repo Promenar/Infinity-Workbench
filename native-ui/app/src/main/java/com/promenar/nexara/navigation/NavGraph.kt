@@ -380,7 +380,7 @@ fun NexaraNavGraph(
             val agentId = backStackEntry.arguments?.getString("agentId") ?: ""
             AgentRagConfigScreen(
                 agentId = agentId,
-                scopeLabel = "Agent",
+                scopeLabel = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.agent_scope_label),
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -392,7 +392,7 @@ fun NexaraNavGraph(
             val agentId = backStackEntry.arguments?.getString("agentId") ?: ""
             AgentAdvancedRetrievalScreen(
                 agentId = agentId,
-                scopeLabel = "Agent",
+                scopeLabel = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.agent_scope_label),
                 onNavigateBack = { navController.popBackStack() }
             )
         }

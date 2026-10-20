@@ -269,16 +269,13 @@
     <string name="agent_edit_prompt_label">系统提示词</string>
     <string name="agent_edit_prompt_placeholder">定义助手行为…</string>
     <string name="agent_edit_prompt_hint">点击编辑系统提示词…</string>
-    <string name="agent_edit_prompt_configured">已配置</string>
     <string name="agent_edit_prompt_not_set">未设置</string>
     <string name="agent_edit_section_model">模型配置</string>
     <string name="agent_edit_current_model">当前模型</string>
     <string name="agent_edit_label_presets">推理预设</string>
     <string name="agent_edit_section_knowledge">知识</string>
     <string name="agent_edit_rag_config">记忆设置</string>
-    <string name="agent_edit_rag_desc">分块、记忆、向量化、知识图谱</string>
     <string name="agent_edit_advanced_retrieval">检索设置</string>
-    <string name="agent_edit_retrieval_desc">重排序、查询改写、混合搜索</string>
     <string name="agent_edit_section_danger">危险区</string>
     <string name="agent_edit_delete_btn">删除助手</string>
     <string name="agent_edit_delete_title">删除助手</string>
@@ -889,7 +886,7 @@
     <string name="skills_loop_limit">执行循环限制</string>
     <string name="skills_loop_limit_desc">每次请求的最大工具调用轮次（1–100）。达到后助手停止调用工具并总结进度。</string>
     <string name="skills_warning_unlimited">无限循环模式已启用，可能导致过高的 API 费用。</string>
-    <string name="skills_tab_preset">预设</string>
+    <string name="skills_tab_preset">内置工具</string>
     <string name="skills_tab_user">技能包</string>
     <string name="skills_tab_mcp">MCP</string>
     <string name="skills_add_custom">添加自定义技能</string>
@@ -936,7 +933,7 @@
     <string name="skill_run_script_desc">执行工作区 .js/.mjs 文件，支持相对模块导入</string>
     <string name="script_runtime_title">脚本运行时</string>
     <string name="script_approve_writes">脚本写入审批</string>
-    <string name="script_approve_writes_desc">默认开启。关闭后写入继承脚本审批；删除始终单独审批。</string>
+    <string name="script_approve_writes_desc">脚本写入审批默认开启；关闭后写入沿用脚本本身的审批，删除始终单独审批。</string>
     <string name="script_lan_hosts">局域网主机白名单</string>
     <string name="script_lan_hosts_desc">默认为空。每行填写精确主机名或 IP，不含协议、端口和路径；脚本仍须显式启用 allow_network。</string>
     <string name="script_save_hosts">保存白名单</string>

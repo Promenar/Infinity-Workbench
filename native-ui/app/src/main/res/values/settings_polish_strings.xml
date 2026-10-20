@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tools_category_web">Web</string>
+    <string name="tools_category_files">Files</string>
+    <string name="tools_category_execution">Code execution</string>
+    <string name="tools_category_planning">Planning</string>
+    <string name="tools_category_other">Other</string>
+    <string name="tools_repeat_limit_desc">Pause when the same call repeats</string>
+    <string name="tools_reset_consent_desc">Ask again before unlimited auto-run</string>
+    <string name="tools_section_mcp_servers">MCP servers</string>
+    <string name="tools_skill_import_row">Import skill pack</string>
+    <string name="agent_scope_label">This assistant</string>
+    <string name="ssh_host_actions">Host actions</string>
+    <string name="token_by_model">By model</string>
+</resources>

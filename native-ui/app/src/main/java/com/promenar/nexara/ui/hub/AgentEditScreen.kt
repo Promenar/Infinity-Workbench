@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -367,12 +368,21 @@ fun AgentEditScreen(
             // 图标选择在弹层中完成，颜色选择盘保留独立编辑区。
             item {
                 NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_appearance)) {
+                    // 行首直接展示当前图标，与下方其它设置行的图标列对齐。
                     NexaraSettingsItem(
                         title = stringResource(R.string.agent_edit_label_icon),
                         subtitle = if (avatarPath != null) stringResource(R.string.agent_edit_icon_custom)
                         else stringResource(presetIcons.find { it.id == selectedIcon }?.labelRes ?: R.string.settings_retrieval_icon_sparkles),
                         onClick = { showIconPicker = true },
                         showChevron = true,
+                        leadingContent = {
+                            Icon(
+                                imageVector = if (avatarPath != null) Icons.Rounded.Image else currentIconVector,
+                                contentDescription = null,
+                                tint = parsedColor,
+                                modifier = Modifier.size(NexaraSpacing.RowIconSize),
+                            )
+                        },
                     )
                     Column(modifier = Modifier.padding(16.dp)) {
                         ColorPickerPanel(
@@ -388,36 +398,28 @@ fun AgentEditScreen(
 
             // ─── 4. 模型配置：助手专属默认模型 ───
             item {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_model),
-                    footer = currentModelDisplayName.ifBlank { null },
-                ) {
+                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_model)) {
                     NexaraSettingsItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.agent_edit_current_model),
-                        subtitle = stringResource(
-                            if (currentModelDisplayName.isNotBlank()) R.string.settings_retrieval_agent_model_selected
-                            else R.string.settings_not_set,
-                        ),
+                        subtitle = currentModelDisplayName.ifBlank { stringResource(R.string.settings_not_set) },
                         onClick = { showModelPicker = true },
-                        showChevron = true
+                        showChevron = true,
+                        modifier = Modifier.testTag("agent_edit_model"),
                     )
                 }
             }
 
             // 系统提示词以短状态呈现，完整内容由编辑器承载。
             item {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_personality),
-                    footer = stringResource(R.string.agent_edit_prompt_hint),
-                ) {
+                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_personality)) {
+                    // 副标题预览提示词开头两行，完整内容在编辑器中查看。
                     NexaraSettingsItem(
                         icon = Icons.Rounded.Psychology,
                         title = stringResource(R.string.agent_edit_prompt_label),
-                        subtitle = stringResource(
-                            if (systemPrompt.isNotBlank()) R.string.agent_edit_prompt_configured
-                            else R.string.agent_edit_prompt_not_set,
-                        ),
+                        subtitle = systemPromptPreview(systemPrompt) ?: stringResource(R.string.agent_edit_prompt_not_set),
+                        subtitleMaxLines = 2,
+                        modifier = Modifier.testTag("agent_edit_prompt"),
                         onClick = { showSystemPromptEditor = true },
                         showChevron = true,
                     )
@@ -435,10 +437,7 @@ fun AgentEditScreen(
 
             // ─── 6. 知识库与检索配置 ───
             item {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_knowledge),
-                    footer = stringResource(R.string.agent_edit_rag_desc) + "\n" + stringResource(R.string.agent_edit_retrieval_desc),
-                ) {
+                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_knowledge)) {
                     NexaraSettingsItem(
                         icon = Icons.Rounded.Storage,
                         title = stringResource(R.string.agent_edit_rag_config),
@@ -553,3 +552,12 @@ private fun RowScope.IconSelectionItem(
         )
     }
 }
+
+/** 系统提示词预览：去掉空行并合并多余空白，最多取 120 个字符；空白提示词返回 null。 */
+internal fun systemPromptPreview(prompt: String): String? {
+    val lines = prompt.lineSequence().map { it.trim().replace(Regex("\\s+"), " ") }.filter { it.isNotEmpty() }
+    val text = lines.joinToString(" ").takeIf { it.isNotEmpty() } ?: return null
+    return if (text.length > PROMPT_PREVIEW_LENGTH) text.take(PROMPT_PREVIEW_LENGTH).trimEnd() + "…" else text
+}
+
+private const val PROMPT_PREVIEW_LENGTH = 120

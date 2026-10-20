@@ -24,7 +24,6 @@
     <string name="settings_retrieval_kg_budget_footer">Call and output limits apply to each document version. Confirmation is required when estimated calls exceed the threshold.</string>
     <string name="settings_retrieval_agent_rag_short">Chunking and memory settings</string>
     <string name="settings_retrieval_agent_advanced_short">Rerank, rewrite and hybrid search</string>
-    <string name="settings_retrieval_agent_model_selected">Agent model selected</string>
     <string name="settings_retrieval_agent_actions_section">Agent management</string>
     <string name="settings_retrieval_icon_sparkles">Sparkles</string>
     <string name="settings_retrieval_icon_code">Code</string>

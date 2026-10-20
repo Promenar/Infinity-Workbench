@@ -19,7 +19,7 @@ fun NexaraStepperSetting(
     enabled: Boolean = true,
     leadingSpacer: Boolean = false,
 ) {
-    NexaraSettingsRowLayout(title = title, subtitle = description, icon = icon, enabled = enabled,
+    NexaraSettingsRowLayout(title = title, subtitle = description, subtitleMaxLines = 2, icon = icon, enabled = enabled,
         leadingSpacer = leadingSpacer, modifier = modifier) {
         NexaraInlineStepper(title, value, onDecrease, onIncrease, canDecrease = canDecrease,
             canIncrease = canIncrease, enabled = enabled)

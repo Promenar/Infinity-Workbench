@@ -153,33 +153,6 @@ fun SkillsScreen(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { agentSkillsViewModel.import(it) } }
 
-    val skillIcons = remember {
-        mapOf(
-            "web_search" to Icons.Rounded.Search,
-            "web_fetch" to Icons.Rounded.Description,
-            "calculator" to Icons.Rounded.Build,
-            "image_generation" to Icons.Rounded.Image,
-            "file_read" to Icons.Rounded.Description,
-            "file_write" to Icons.Rounded.Edit,
-            "file_list" to Icons.Rounded.Folder,
-            "file_search" to Icons.Rounded.Search,
-            "file_diff" to Icons.Rounded.Sync,
-            "file_patch" to Icons.Rounded.Build,
-            "exec_js" to Icons.Rounded.Code,
-            "run_script" to Icons.Rounded.Code,
-            "initialize_plan" to Icons.Rounded.AccountTree,
-            "update_plan" to Icons.Rounded.Edit,
-            "get_plan" to Icons.Rounded.Visibility,
-            "drop_plan" to Icons.Rounded.Cancel,
-            "create_file" to Icons.Rounded.Add,
-            "create_directory" to Icons.Rounded.Folder,
-            "move_file" to Icons.Rounded.Sync,
-            "delete_file" to Icons.Rounded.Delete,
-            "shell_exec" to Icons.Rounded.Code,
-            "python_exec" to Icons.Rounded.Code,
-            "python_sandbox" to Icons.Rounded.Code,
-        )
-    }
     val presetSkills by viewModel.skills.collectAsState()
     val userSkills by viewModel.userSkills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
@@ -280,23 +253,12 @@ fun SkillsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 when (selectedTab) {
-                    0 -> Column {
-                        SettingsSectionHeader(title = tabs[0], titleStyle = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
-                        presetSkills.forEach { skill ->
-                            NexaraSettingsGroup(footer = "${skill.id}: ${skill.description}") {
-                            SkillItem(
-                                skill = skill,
-                                icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
-                                onToggle = { viewModel.toggleSkill(skill.id) },
-                                onConfig = if (skill.id == "web_search") {
-                                    { showSearchConfig = true }
-                                } else null
-                            )
-                            }
-                        }
-                    }
-                    1 -> {
+                    0 -> BuiltinToolsSections(
+                        tools = presetSkills,
+                        onToggle = viewModel::toggleSkill,
+                        onConfigureSearch = { showSearchConfig = true },
+                    )
+                    1 -> Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
                         AgentSkillsSection(
                             skills = agentSkills,
                             onToggle = { name, enabled -> agentSkillsViewModel.setEnabled(name, enabled) },
@@ -319,75 +281,27 @@ fun SkillsScreen(
                             },
                             onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
                         )
-
                         if (userSkills.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(24.dp))
-                            NexaraSettingsSection(
-                                title = stringResource(R.string.agent_skills_legacy_header),
-                                footer = stringResource(R.string.sheet_tool_custom_unsandboxed),
-                            ) {}
-                            userSkills.forEach { skill ->
-                                NexaraSettingsGroup(footer = "${skill.id}: ${skill.description}") {
-                                    UserSkillItem(
-                                        id = skill.id,
-                                        name = skill.name,
-                                        description = skill.description,
-                                        enabled = skill.enabled,
-                                        icon = Icons.Rounded.Code,
-                                        onToggle = { viewModel.toggleSkill(skill.id) },
-                                        onEdit = {
-                                            selectedSkillForEdit = skill.id
-                                            showCreateSkill = true
-                                        },
-                                        onDelete = { viewModel.deleteCustomSkill(skill.id) }
-                                    )
-                                }
-                            }
+                            LegacyUserToolsSection(
+                                tools = userSkills.map { SkillInfo(it.id, it.name, it.description, it.enabled) },
+                                onToggle = viewModel::toggleSkill,
+                                onEdit = { id ->
+                                    selectedSkillForEdit = id
+                                    showCreateSkill = true
+                                },
+                                onDelete = viewModel::deleteCustomSkill,
+                            )
                         }
                     }
-                    2 -> {
-                        Button(
-                            onClick = { showAddMcp = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.skills_add_mcp))
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Column {
-                            SettingsSectionHeader(title = tabs[2], titleStyle = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
-                            if (mcpServers.isEmpty()) {
-                                SkillsEmptyState(
-                                    icon = Icons.Rounded.Hub,
-                                    message = stringResource(R.string.skills_mcp_empty),
-                                )
-                            }
-                            mcpServers.forEach { server ->
-                                NexaraSettingsGroup(footer = listOfNotNull(
-                                    server.url,
-                                    when {
-                                        !server.isSupported && McpEndpointPolicy.kind(server.url) == McpEndpointPolicy.Kind.LOOPBACK_HTTP -> stringResource(R.string.mcp_loopback_unavailable)
-                                        !server.isSupported -> stringResource(R.string.skills_mcp_legacy_unsupported)
-                                        server.syncError != null -> stringResource(R.string.skills_mcp_sync_error, server.syncError)
-                                        else -> stringResource(R.string.skills_mcp_modern_transport)
-                                    },
-                                ).joinToString("\n")) {
-                                McpServerItem(
-                                    server = server,
-                                    isExpanded = expandedServerId == server.id,
-                                    onToggleExpand = { expandedServerId = if (expandedServerId == server.id) null else server.id },
-                                    onToggleEnabled = { enabled -> viewModel.toggleMcpServer(server.id, enabled) },
-                                    onDelete = { viewModel.deleteMcpServer(server.id) },
-                                    onSync = { viewModel.syncMcpServer(server.id) },
-                                )
-                                }
-                            }
-                        }
-                    }
+                    2 -> McpServersSection(
+                        servers = mcpServers,
+                        expandedServerId = expandedServerId,
+                        onToggleExpand = { id -> expandedServerId = if (expandedServerId == id) null else id },
+                        onToggleEnabled = viewModel::toggleMcpServer,
+                        onDelete = viewModel::deleteMcpServer,
+                        onSync = viewModel::syncMcpServer,
+                        onAdd = { showAddMcp = true },
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -627,8 +541,10 @@ fun SkillsScreen(
 internal fun LoopLimitCard(
     loopLimit: Int,
     onChange: (Int) -> Unit,
+    icon: ImageVector? = null,
 ) {
     NexaraNumericSetting(
+        icon = icon,
         title = stringResource(R.string.skills_loop_limit),
         value = loopLimit,
         spec = ToolLoopLimitSpec,
@@ -703,120 +619,6 @@ internal fun SkillIconTile(icon: ImageVector) {
 /** 正文与公共设置行的图标列对齐。 */
 private val SkillIconSize = 20.dp
 internal val SkillTextStart = 52.dp
-
-/** 工具开关与配置入口共处设置行，详细描述由分组脚注承载。 */
-@Composable
-private fun SkillItem(
-    skill: SkillInfo,
-    icon: ImageVector,
-    onToggle: () -> Unit,
-    onConfig: (() -> Unit)? = null,
-) {
-    var enabled by remember(skill.id, skill.enabled) { mutableStateOf(skill.enabled) }
-    NexaraSettingsItem(
-        icon = icon,
-        title = skill.name,
-        onClick = { enabled = !enabled; onToggle() },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onConfig != null) {
-                    IconButton(onClick = onConfig) {
-                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.common_cd_config), modifier = Modifier.size(20.dp))
-                    }
-                }
-                Switch(checked = enabled, onCheckedChange = { enabled = it; onToggle() })
-            }
-        },
-    )
-}
-
-@Composable
-private fun UserSkillItem(
-    id: String,
-    name: String,
-    description: String,
-    enabled: Boolean,
-    icon: ImageVector,
-    onToggle: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    var isEnabled by remember(id, enabled) { mutableStateOf(enabled) }
-    NexaraSettingsItem(
-        icon = icon,
-        title = name,
-        onClick = { isEnabled = !isEnabled; onToggle() },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.skills_configure), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.shared_btn_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                }
-                Switch(checked = isEnabled, onCheckedChange = { isEnabled = it; onToggle() })
-            }
-        },
-    )
-}
-
-/** MCP 服务器：状态点、名称、地址与连接状态；开关在右侧，同步与删除在下方操作行。 */
-@Composable
-private fun McpServerItem(
-    server: McpServerUiModel,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit,
-    onToggleEnabled: (Boolean) -> Unit,
-    onDelete: () -> Unit,
-    onSync: () -> Unit,
-) {
-    val enabledLabel = stringResource(R.string.skills_mcp_enabled)
-    Column(modifier = Modifier.fillMaxWidth()) {
-        NexaraSettingsItem(
-            icon = Icons.Rounded.Hub,
-            title = server.name,
-            subtitle = stringResource(if (server.isConnected) R.string.settings_batch1_mcp_connected else R.string.settings_batch1_mcp_disconnected),
-            onClick = onToggleExpand,
-            trailingContent = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onSync, enabled = server.isSupported && server.isEnabled) {
-                        Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync), modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                    }
-                    Switch(
-                        checked = server.isEnabled,
-                        onCheckedChange = onToggleEnabled,
-                        modifier = Modifier.semantics { contentDescription = "${server.name}: $enabledLabel" },
-                    )
-                }
-            },
-        )
-        if (server.tools.isNotEmpty()) {
-            AnimatedVisibility(visible = isExpanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = SkillTextStart, end = 16.dp, bottom = 12.dp)
-                ) {
-                    server.tools.forEach { tool ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Code, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                            Text(tool, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

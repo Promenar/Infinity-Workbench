@@ -189,18 +189,18 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).contains("style = MaterialTheme.typography.bodyMedium")
         assertThat(providerListSource).doesNotContain("useLargeTextLayout")
         assertThat(providerListSource).doesNotContain("leadingContent = leadingContent")
-        assertThat(providerListSource).contains("subtitle = localizedTypeName")
+        assertThat(providerListSource).contains("subtitle = listOfNotNull(localizedTypeName")
         assertThat(providerListSource).doesNotContain("NexaraGlassCard")
     }
 
     @Test
-    fun `提供商说明紧邻所属分组且状态信息完整`() {
+    fun `提供商同处一个分组且地址与状态写在行内`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
-        assertThat(providerListSource).contains("NexaraSettingsGroup(")
-        assertThat(providerListSource).contains("SettingsSectionHeader(")
-        assertThat(providerListSource).contains("footer = provider.baseUrl")
+        assertThat(providerListSource).contains("title = stringResource(R.string.settings_section_ai_models),\n                        modifier = Modifier.padding(horizontal = 16.dp),")
+        assertThat(providerListSource).doesNotContain("footer = provider.baseUrl")
+        assertThat(providerListSource).contains(".joinToString(\" · \") + \"\\n\" + provider.baseUrl")
         assertThat(providerListSource).contains("R.string.settings_provider_status_summary")
-        assertThat(providerListSource).contains("footer = provider.rawProtocolId")
+        assertThat(providerListSource).contains("unsupportedDescription + \"\\n\" + provider.rawProtocolId")
         assertThat(providerListSource).doesNotContain("state.providers.map")
     }
 

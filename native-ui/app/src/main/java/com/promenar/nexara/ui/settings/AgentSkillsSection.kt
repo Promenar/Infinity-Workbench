@@ -67,39 +67,37 @@ fun AgentSkillsSection(
     onCreate: () -> Unit,
 ) {
     var pendingDelete by remember { mutableStateOf<String?>(null) }
-    Column {
-        NexaraSettingsSection(
-            title = stringResource(R.string.skills_tab_user),
-            footer = stringResource(R.string.settings_batch1_agent_skills_footer),
-        ) {
-            skills.forEachIndexed { index, skill ->
-                AgentSkillItem(
-                    skill = skill,
-                    onToggle = { onToggle(skill.metadata.name, it) },
-                    onOpen = { onOpen(skill.metadata.name) },
-                    onDelete = { pendingDelete = skill.metadata.name },
-                )
-                if (index < skills.lastIndex) SkillRowDivider()
-            }
-            if (skills.isEmpty()) {
-                SkillsEmptyState(
-                    icon = Icons.Rounded.AutoAwesome,
-                    message = stringResource(R.string.agent_skills_empty),
-                )
-            }
+    NexaraSettingsSection(
+        title = stringResource(R.string.skills_tab_user),
+        footer = stringResource(R.string.settings_batch1_agent_skills_footer),
+    ) {
+        if (skills.isEmpty()) {
+            SkillsEmptyState(
+                icon = Icons.Rounded.AutoAwesome,
+                message = stringResource(R.string.agent_skills_empty),
+            )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onImport, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Rounded.FileOpen, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.agent_skills_import))
-            }
-            Button(onClick = onCreate, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.agent_skills_create))
-            }
+        skills.forEach { skill ->
+            AgentSkillItem(
+                skill = skill,
+                onToggle = { onToggle(skill.metadata.name, it) },
+                onOpen = { onOpen(skill.metadata.name) },
+                onDelete = { pendingDelete = skill.metadata.name },
+            )
         }
+        // 导入与新建作为分组末尾的操作行，和 MCP 的“添加服务器”保持同一形态。
+        NexaraSettingsItem(
+            icon = Icons.Rounded.FileOpen,
+            title = stringResource(R.string.tools_skill_import_row),
+            titleColor = MaterialTheme.colorScheme.primary,
+            onClick = onImport,
+        )
+        NexaraSettingsItem(
+            icon = Icons.Rounded.Add,
+            title = stringResource(R.string.agent_skills_create),
+            titleColor = MaterialTheme.colorScheme.primary,
+            onClick = onCreate,
+        )
     }
 
     pendingDelete?.let { name ->

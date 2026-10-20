@@ -63,8 +63,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsItem
-import com.promenar.nexara.ui.common.NexaraSettingsGroup
-import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
@@ -176,40 +175,29 @@ internal fun ProviderListScreenContent(
                 }
             } else {
                 item("provider-group") {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        SettingsSectionHeader(
-                            title = stringResource(R.string.settings_section_ai_models),
-                            titleStyle = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                        )
+                    // 所有提供商放在同一分组内，协议、凭据状态与地址写在行内。
+                    NexaraSettingsSection(
+                        title = stringResource(R.string.settings_section_ai_models),
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    ) {
                         state.providers.forEach { provider ->
-                            NexaraSettingsGroup(
-                                footer = provider.baseUrl + "\n" + stringResource(
-                                    R.string.settings_provider_status_summary,
-                                    stringResource(if (provider.enabled) R.string.settings_provider_state_enabled else R.string.settings_provider_state_disabled),
-                                    providerCredentialStatus(provider),
-                                ),
-                            ) {
-                                ProviderCard(
-                                    provider = provider,
-                                    onClick = { actions.onProviderModels(provider.id) },
-                                    onEdit = { actions.onEditProvider(provider.id) },
-                                    onDelete = if (provider.id == "default") null else {
-                                        { actions.onRequestDeleteProvider(provider.id) }
-                                    },
-                                )
-                            }
+                            ProviderCard(
+                                provider = provider,
+                                onClick = { actions.onProviderModels(provider.id) },
+                                onEdit = { actions.onEditProvider(provider.id) },
+                                onDelete = if (provider.id == "default") null else {
+                                    { actions.onRequestDeleteProvider(provider.id) }
+                                },
+                            )
                         }
                         state.unsupportedProviders.forEach { provider ->
-                            NexaraSettingsGroup(footer = provider.rawProtocolId) {
-                                UnsupportedProviderCard(
-                                    provider = provider,
-                                    onEdit = { actions.onEditProvider(provider.id) },
-                                    onDelete = if (provider.id == "default") null else {
-                                        { actions.onRequestDeleteProvider(provider.id) }
-                                    },
-                                )
-                            }
+                            UnsupportedProviderCard(
+                                provider = provider,
+                                onEdit = { actions.onEditProvider(provider.id) },
+                                onDelete = if (provider.id == "default") null else {
+                                    { actions.onRequestDeleteProvider(provider.id) }
+                                },
+                            )
                         }
                     }
                 }
@@ -229,7 +217,8 @@ private fun UnsupportedProviderCard(
     val deleteDescription = stringResource(R.string.shared_btn_delete)
     NexaraSettingsItem(
         title = provider.name,
-        subtitle = unsupportedDescription,
+        subtitle = unsupportedDescription + "\n" + provider.rawProtocolId,
+        subtitleMaxLines = 2,
         titleColor = MaterialTheme.colorScheme.onSurfaceVariant,
         leadingContent = { ProviderAvatar(provider.name, baseUrl = null) },
         onClick = onEdit,
@@ -396,7 +385,10 @@ private fun ProviderCard(
     }
     NexaraSettingsItem(
         title = provider.name,
-        subtitle = localizedTypeName,
+        subtitle = listOfNotNull(localizedTypeName, if (provider.enabled) null else enabledStatus, credentialStatus)
+            .joinToString(" · ") + "\n" + provider.baseUrl,
+        // 窄屏上状态行可能折成两行，留第三行给地址。
+        subtitleMaxLines = 3,
         titleColor = if (provider.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         leadingContent = { ProviderAvatar(provider.name, provider.baseUrl) },
         onClick = onClick,

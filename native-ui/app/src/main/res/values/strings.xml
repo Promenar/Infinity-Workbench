@@ -269,16 +269,13 @@
     <string name="agent_edit_prompt_label">System Prompt</string>
     <string name="agent_edit_prompt_placeholder">Define agent behavior…</string>
     <string name="agent_edit_prompt_hint">Tap to edit system prompt…</string>
-    <string name="agent_edit_prompt_configured">Configured</string>
     <string name="agent_edit_prompt_not_set">Not Set</string>
     <string name="agent_edit_section_model">Model Configuration</string>
     <string name="agent_edit_current_model">Current Model</string>
     <string name="agent_edit_label_presets">Inference Presets</string>
     <string name="agent_edit_section_knowledge">Knowledge</string>
     <string name="agent_edit_rag_config">RAG Configuration</string>
-    <string name="agent_edit_rag_desc">Chunking, memory, vectorization</string>
     <string name="agent_edit_advanced_retrieval">Advanced Retrieval</string>
-    <string name="agent_edit_retrieval_desc">Reranking, query rewriting, hybrid search</string>
     <string name="agent_edit_section_danger">Danger Zone</string>
     <string name="agent_edit_delete_btn">Delete Agent</string>
     <string name="agent_edit_delete_title">Delete Agent</string>
@@ -884,7 +881,7 @@
     <string name="skills_loop_limit">Execution Loop Limit</string>
     <string name="skills_loop_limit_desc">Maximum tool-calling rounds per request (1–100). When reached, the assistant stops calling tools and summarizes its progress.</string>
     <string name="skills_warning_unlimited">Infinite loop mode enabled. May cause excessive API costs.</string>
-    <string name="skills_tab_preset">Preset</string>
+    <string name="skills_tab_preset">Built-in</string>
     <string name="skills_tab_user">Skill Packs</string>
     <string name="skills_tab_mcp">MCP</string>
     <string name="skills_add_custom">Add Custom Skill</string>
@@ -931,7 +928,7 @@
     <string name="skill_run_script_desc">Run workspace .js/.mjs files with relative modules</string>
     <string name="script_runtime_title">Script runtime</string>
     <string name="script_approve_writes">Approve script writes</string>
-    <string name="script_approve_writes_desc">Enabled by default. Disabling inherits script approval for writes. Deletion always requires file approval.</string>
+    <string name="script_approve_writes_desc">Write approval is on by default. When off, writes follow the script approval; deletion always needs its own approval.</string>
     <string name="script_lan_hosts">Allowed LAN hosts</string>
     <string name="script_lan_hosts_desc">Empty by default. One exact hostname or IP per line, without protocol, port, or path. Scripts still require allow_network.</string>
     <string name="script_save_hosts">Save allowed hosts</string>

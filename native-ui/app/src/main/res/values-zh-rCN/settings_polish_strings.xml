@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tools_category_web">联网</string>
+    <string name="tools_category_files">文件</string>
+    <string name="tools_category_execution">代码执行</string>
+    <string name="tools_category_planning">任务计划</string>
+    <string name="tools_category_other">其它</string>
+    <string name="tools_repeat_limit_desc">相同工具与参数连续重复时暂停</string>
+    <string name="tools_reset_consent_desc">不限轮次全自动执行前重新确认</string>
+    <string name="tools_section_mcp_servers">MCP 服务器</string>
+    <string name="tools_skill_import_row">导入技能包</string>
+    <string name="agent_scope_label">本助手</string>
+    <string name="ssh_host_actions">主机操作</string>
+    <string name="token_by_model">按模型</string>
+</resources>

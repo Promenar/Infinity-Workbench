@@ -22,7 +22,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -48,13 +47,13 @@ import com.promenar.nexara.R
 import com.promenar.nexara.domain.repository.DailyTokenStats
 import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.ui.common.ConfirmDialog
-import com.promenar.nexara.ui.common.NexaraCollapsibleSection
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.bettboxListGroup
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteOutline
 
 @Composable
 fun TokenUsageScreen(
@@ -171,14 +170,8 @@ internal fun TokenUsageScreenContent(
             if (state.categoryBreakdown.isEmpty()) Spacer(modifier = Modifier.height(24.dp))
 
             if (state.topSessions.isNotEmpty()) {
-                SettingsSectionHeader(stringResource(R.string.token_top_sessions))
-                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
-                    state.topSessions.forEachIndexed { index, session ->
-                        SessionRankingRow(index + 1, session)
-                        if (index < state.topSessions.lastIndex) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        }
-                    }
+                NexaraSettingsSection(title = stringResource(R.string.token_top_sessions)) {
+                    state.topSessions.forEachIndexed { index, session -> SessionRankingRow(index + 1, session) }
                 }
                 Spacer(modifier = Modifier.height(20.dp))
             }
@@ -190,23 +183,11 @@ internal fun TokenUsageScreenContent(
             }
 
             if (state.modelBreakdown.isNotEmpty()) {
-                state.modelBreakdown.forEach { model ->
-                    NexaraCollapsibleSection(
-                        title = buildString {
-                            append(if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) {
-                                stringResource(R.string.kg_usage_other_models)
-                            } else model.name)
-                            append(" \u2014 ")
-                            append(formatTokenCount(model.inputTokens + model.outputTokens))
-                            append(" ")
-                            append(stringResource(R.string.token_tokens))
-                        },
-                        initiallyExpanded = state.modelBreakdown.size <= 3
-                    ) {
-                        ModelBreakdownRow(model)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+                // 按模型汇总：一行一个模型，费用或“无定价”写在副标题。
+                NexaraSettingsSection(title = stringResource(R.string.token_by_model)) {
+                    state.modelBreakdown.forEach { model -> ModelBreakdownRow(model) }
                 }
+                Spacer(modifier = Modifier.height(20.dp))
             }
 
             if (state.globalInput == 0L && state.globalOutput == 0L) {
@@ -230,12 +211,15 @@ internal fun TokenUsageScreenContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (state.operation != TokenStatsOperation.LOADING) {
-            NexaraSettingsItem(
-                title = stringResource(R.string.token_clear_history),
-                titleColor = MaterialTheme.colorScheme.error,
-                onClick = onClear,
-                enabled = state.operation == TokenStatsOperation.READY,
-            )
+            NexaraSettingsSection(title = stringResource(R.string.settings_retrieval_data_section)) {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.DeleteOutline,
+                    title = stringResource(R.string.token_clear_history),
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = onClear,
+                    enabled = state.operation == TokenStatsOperation.READY,
+                )
+            }
         }
         }
     }
@@ -480,26 +464,25 @@ private fun TrendChart(dailyTrend: List<DailyTokenStats>) {
 
 @Composable
 private fun ModelBreakdownRow(model: ModelCostInfo) {
-    NexaraSettingsSection(
-        title = if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) stringResource(R.string.kg_usage_other_models) else model.name,
-        footer = when {
-            model.pricingAvailable && model.costUSD > 0.0 -> "$%.4f".format(model.costUSD)
-            !model.pricingAvailable -> stringResource(R.string.token_pricing_unavailable)
-            else -> null
-        },
-    ) {
-        NexaraSettingsRowLayout(
-            title = stringResource(R.string.token_total_usage),
-            subtitle = stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
-                        trailingContent = {
-                Text(
-                    text = formatTokenCount(model.inputTokens + model.outputTokens),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-        )
+    val cost = when {
+        model.pricingAvailable && model.costUSD > 0.0 -> "$%.4f".format(model.costUSD)
+        !model.pricingAvailable -> stringResource(R.string.token_pricing_unavailable)
+        else -> null
     }
+    NexaraSettingsRowLayout(
+        title = if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) stringResource(R.string.kg_usage_other_models) else model.name,
+        subtitle = listOfNotNull(
+            stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
+            cost,
+        ).joinToString(" · "),
+        trailingContent = {
+            Text(
+                text = formatTokenCount(model.inputTokens + model.outputTokens),
+                style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    )
 }
 
 private fun formatTokenCount(count: Long): String {

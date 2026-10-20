@@ -91,6 +91,8 @@ import com.promenar.nexara.ui.common.ModelBrandTile
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.bettboxListGroupItem
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
@@ -346,9 +348,11 @@ internal fun ProviderModelsScreenContent(
                 ProviderModelsListState.Content -> itemsIndexed(
                     filteredModels,
                     key = { _, model -> model.id },
-                ) { _, model ->
+                ) { index, model ->
                         ProviderModelsModelRow(
                             model = model,
+                            groupIndex = index,
+                            groupSize = filteredModels.size,
                             onRowClick = {
                                 focusManager.clearFocus()
                                 keyboardController?.hide()
@@ -637,6 +641,8 @@ internal fun ProviderModelsModelRow(
     onRowClick: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    groupIndex: Int = 0,
+    groupSize: Int = 1,
 ) {
     val remoteModelId = remember(model.id, model.remoteModelId) {
         model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
@@ -653,31 +659,34 @@ internal fun ProviderModelsModelRow(
         localizedCapabilities += if (labelResource != null) stringResource(labelResource) else capability
     }
 
-    Column(modifier = modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        BettboxListGroup {
-            NexaraSettingsItem(
-                title = model.name,
-                subtitle = remoteModelId,
-                subtitleIsIdentifier = true,
-                leadingContent = { ModelBrandTile(modelId = remoteModelId, size = 20.dp, contentDescription = model.name) },
-                onClick = onRowClick,
-                modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
-                subtitleModifier = Modifier.testTag(UiTags.providerModelsRemoteId(model.id))
-                    .semantics { contentDescription = remoteModelId },
-                trailingContent = {
-                    Switch(
-                        checked = model.enabled,
-                        onCheckedChange = { onToggle() },
-                        modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),
-                    )
-                },
-            )
-        }
+    // 全部模型拼成一个连续分组；能力摘要在卡片内、对齐正文起点。
+    Column(modifier = modifier.fillMaxWidth().bettboxListGroupItem(groupIndex, groupSize)) {
+        NexaraSettingsItem(
+            title = model.name,
+            subtitle = remoteModelId,
+            subtitleIsIdentifier = true,
+            leadingContent = { ModelBrandTile(modelId = remoteModelId, size = 20.dp, contentDescription = model.name) },
+            onClick = onRowClick,
+            modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
+            subtitleModifier = Modifier.testTag(UiTags.providerModelsRemoteId(model.id))
+                .semantics { contentDescription = remoteModelId },
+            trailingContent = {
+                Switch(
+                    checked = model.enabled,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),
+                )
+            },
+        )
         NexaraMetaLine(
             segments = localizedCapabilities,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            modifier = Modifier.padding(
+                start = NexaraSpacing.RowHorizontal + NexaraSpacing.RowIconSize + NexaraSpacing.RowIconGap,
+                end = NexaraSpacing.RowHorizontal,
+                bottom = NexaraSpacing.Medium,
+            ),
         )
     }
 }
