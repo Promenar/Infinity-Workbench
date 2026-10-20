@@ -34,6 +34,7 @@ data class BackupSnapshot(
     val databaseSchemaVersion: Int,
     val appVersion: String,
     val createdAt: Long = System.currentTimeMillis(),
+    val skills: SkillBackupPartition? = null,
 )
 
 class ValidatedBackup(
@@ -42,6 +43,7 @@ class ValidatedBackup(
     val preferences: ByteArray = ByteArray(0),
     val files: Map<String, ByteArray> = emptyMap(),
     val secrets: Map<SecretId, ByteArray> = emptyMap(),
+    val skills: SkillBackupPartition? = null,
 ) : AutoCloseable {
     private val consumed = java.util.concurrent.atomic.AtomicBoolean(false)
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -56,6 +58,7 @@ class ValidatedBackup(
         preferences.fill(0)
         files.values.forEach { it.fill(0) }
         secrets.values.forEach { it.fill(0) }
+        skills?.wipe()
     }
 }
 
@@ -69,7 +72,42 @@ data class BackupManifest(
     val encrypted: Boolean,
     val containsSecrets: Boolean,
     val kdf: BackupKdfMetadata? = null,
+    val skills: SkillBackupMetadata? = null,
 )
+
+data class SkillBackupPartition(
+    val files: Map<String, ByteArray>,
+    val metadata: SkillBackupMetadata,
+) {
+    internal fun wipe() = files.values.forEach { it.fill(0) }
+}
+
+@Serializable
+data class SkillBackupMetadata(
+    val directories: List<String> = emptyList(),
+    val summary: SkillBackupSummary = SkillBackupSummary(),
+)
+
+@Serializable
+data class SkillBackupSummary(
+    val skillCount: Int = 0,
+    val skippedSymbolicLinks: Int = 0,
+    val skippedGitRepositories: List<SkippedSkillGitRepository> = emptyList(),
+)
+
+@Serializable
+data class SkippedSkillGitRepository(
+    val relativePath: String,
+    val remotes: List<SkillGitRemote> = emptyList(),
+    val branch: String? = null,
+    val commit: String? = null,
+)
+
+@Serializable
+data class SkillGitRemote(val name: String, val url: String, val push: Boolean = false)
+
+data class BackupExportResult(val packageBytes: ByteArray, val skills: SkillBackupSummary?)
+data class BackupRestoreResult(val skills: SkillBackupSummary?)
 
 @Serializable
 data class BackupManifestEntry(
@@ -109,6 +147,11 @@ interface BackupDataSource {
     suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot
     suspend fun restore(validated: ValidatedBackup)
     suspend fun restore(validated: ValidatedBackup, operationId: String) = restore(validated)
+    suspend fun restoreWithResult(validated: ValidatedBackup, operationId: String): BackupRestoreResult {
+        val result = BackupRestoreResult(validated.skills?.metadata?.summary)
+        restore(validated, operationId)
+        return result
+    }
     suspend fun hasCompletedRestore(operationId: String): Boolean = false
     suspend fun recoverInterruptedRestore()
 }
@@ -118,6 +161,7 @@ internal fun BackupSnapshot.wipe() {
     preferences.fill(0)
     files.values.forEach { it.fill(0) }
     secrets.values.forEach { it.fill(0) }
+    skills?.wipe()
 }
 
 @Serializable

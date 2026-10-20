@@ -17,7 +17,4 @@
     <string name="p0_continue">继续</string>
     <string name="p0_progress">第 %1$d 轮，已调用 %2$d 次，共 %3$d Token%4$s</string>
     <string name="p0_estimated">（估算）</string>
-    <string name="p0_grants_title">本会话已允许的目标</string>
-    <string name="p0_grants_empty">暂无目标授权</string>
-    <string name="p0_revoke_target">撤销%1$s的授权</string>
 </resources>

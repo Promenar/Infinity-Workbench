@@ -50,6 +50,7 @@ private val Batch1ToolsState = SkillsSettingsVisualState(
     sshHostCount = 0,
     termuxAvailability = TermuxAvailability(false, null, false),
     gitCredentialCount = 0,
+    allowlistCount = 3,
 )
 
 @Composable

@@ -4,7 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.security.SshCredential
 import com.promenar.nexara.data.ssh.SshHost
 import com.promenar.nexara.data.ssh.SshHostKey
@@ -31,25 +31,25 @@ class SshAuthorizationTargetTest {
         "sftp_write" to """{"host":"lab","path":"/tmp/x","content":"x"}""",
     )
 
-    @Test fun `改地址后旧会话授权不命中`() = changedIdentity { it.copy(hostname = "192.0.2.2") }
-    @Test fun `改端口后旧会话授权不命中`() = changedIdentity { it.copy(port = 2222) }
-    @Test fun `改用户名后旧会话授权不命中`() = changedIdentity { it.copy(username = "other") }
-    @Test fun `删除后同名重建旧会话授权不命中`() = changedIdentity(deleteFirst = true) { it.copy(id = "host-2") }
-    @Test fun `重新信任指纹后旧会话授权不命中`() = changedIdentity { it.copy(trustedFingerprint = "SHA256:synthetic-two") }
+    @Test fun `改地址后旧白名单不命中`() = changedIdentity { it.copy(hostname = "192.0.2.2") }
+    @Test fun `改端口后旧白名单不命中`() = changedIdentity { it.copy(port = 2222) }
+    @Test fun `改用户名后旧白名单不命中`() = changedIdentity { it.copy(username = "other") }
+    @Test fun `删除后同名重建旧白名单不命中`() = changedIdentity(deleteFirst = true) { it.copy(id = "host-2") }
+    @Test fun `重新信任指纹后旧白名单不命中`() = changedIdentity { it.copy(trustedFingerprint = "SHA256:synthetic-two") }
 
     @Test fun `身份不变时授权正常命中且显示保留别名`() = runTest {
-        val grants = SessionToolGrantStore(temporary.newFolder())
+        val grants = ToolAllowlistStore(temporary.newFolder())
         operations.forEach { (name, args) ->
             val target = requireNotNull(resolve(name, args))
-            grants.grant("chat", name, target)
+            grants.add(name, target, null, "chat")
             hosts.current = original.copy(keepTerminal = true)
-            assertThat(grants.contains("chat", name, requireNotNull(resolve(name, args)))).isTrue()
+            assertThat(grants.contains(name, requireNotNull(resolve(name, args)), null)).isTrue()
             assertThat(ToolExecutionTargets.display(target)).startsWith("lab · ")
         }
     }
 
     @Test fun `旧格式别名授权不匹配任何SSH操作`() = runTest {
-        val grants = SessionToolGrantStore(temporary.newFolder())
+        val grants = ToolAllowlistStore(temporary.newFolder())
         operations.forEach { (name, args) ->
             val legacy = when (name) {
                 "ssh_exec" -> """["process","lab","rm -f /tmp/x"]"""
@@ -57,8 +57,8 @@ class SshAuthorizationTargetTest {
                 "ssh_session_send" -> """["process","lab","rm -f /tmp/x\n"]"""
                 else -> """["remote_path","lab","/tmp/x"]"""
             }
-            grants.grant("chat", name, legacy)
-            assertThat(grants.contains("chat", name, requireNotNull(resolve(name, args)))).isFalse()
+            grants.add(name, legacy, null, "chat")
+            assertThat(grants.contains(name, requireNotNull(resolve(name, args)), null)).isFalse()
         }
     }
 
@@ -68,11 +68,11 @@ class SshAuthorizationTargetTest {
     }
 
     private fun changedIdentity(deleteFirst: Boolean = false, change: (SshHost) -> SshHost) = runTest {
-        val grants = SessionToolGrantStore(temporary.newFolder())
+        val grants = ToolAllowlistStore(temporary.newFolder())
         operations.forEach { (name, args) ->
             hosts.current = original
             val target = requireNotNull(resolve(name, args))
-            grants.grant("chat", name, target)
+            grants.add(name, target, null, "chat")
             if (deleteFirst) {
                 hosts.delete("lab")
                 assertThat(resolve(name, args)).isNull()
@@ -80,7 +80,7 @@ class SshAuthorizationTargetTest {
             hosts.save(change(original))
             val changed = requireNotNull(resolve(name, args))
             assertThat(changed).isNotEqualTo(target)
-            assertThat(grants.contains("chat", name, changed)).isFalse()
+            assertThat(grants.contains(name, changed, null)).isFalse()
         }
     }
 

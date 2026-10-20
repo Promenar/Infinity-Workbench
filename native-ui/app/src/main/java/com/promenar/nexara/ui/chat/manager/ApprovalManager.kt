@@ -15,7 +15,9 @@ import com.promenar.nexara.data.repository.ApprovalTransition
 import com.promenar.nexara.data.repository.ExactToolApprovalCompletion
 import com.promenar.nexara.data.repository.ExactToolApprovalDecision
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
+import com.promenar.nexara.data.repository.ToolAllowlistScope
+import com.promenar.nexara.data.repository.ToolAllowlistScopes
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
@@ -32,8 +34,11 @@ class ApprovalManager(
     private val messageManager: MessageManager,
     private val sessionRepository: ISessionRepository,
     private val executionGate: SessionExecutionGate? = null,
-    private val toolGrantStore: SessionToolGrantStore? = null,
+    private val toolAllowlistStore: ToolAllowlistStore? = null,
     private val resolveExecutionTarget: (suspend (Session, String, ApprovalCallIdentity) -> String?)? = null,
+    private val resolveAllowlistScope: suspend (String, String) -> ToolAllowlistScope? = { id, target ->
+        ToolAllowlistScopes.resolveForSession(id, target)
+    },
 ) {
     private val approvalLocks = ConcurrentHashMap<String, Mutex>()
     private var onGenerateMessage: (suspend (sessionId: String, content: String, isResumption: Boolean) -> Unit)? = null
@@ -186,8 +191,10 @@ class ApprovalManager(
                 if (rememberTarget) {
                     val current = request.calls.first()
                     current.executionTarget?.takeIf(String::isNotBlank)?.let { target ->
-                        val grants = checkNotNull(toolGrantStore) { "会话授权存储不可用" }
-                        grants.grant(sessionId, current.toolName, target)
+                        resolveAllowlistScope(sessionId, target)?.let { scope ->
+                            val allowlist = checkNotNull(toolAllowlistStore) { "全局审批白名单不可用" }
+                            allowlist.add(current.toolName, target, scope.scopeKey, sessionId)
+                        }
                     }
                 }
                 onExecuteTools?.invoke(

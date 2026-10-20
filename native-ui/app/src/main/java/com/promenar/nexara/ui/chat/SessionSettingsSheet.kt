@@ -470,9 +470,10 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
     LaunchedEffect(session?.id) { skillsViewModel.bind(session?.id) }
     val skillsState by skillsViewModel.state.collectAsStateWithLifecycle()
     val skillsError by skillsViewModel.error.collectAsStateWithLifecycle()
+    val resources = androidx.compose.ui.platform.LocalResources.current
     LaunchedEffect(skillsError) {
         skillsError?.let { message ->
-            android.widget.Toast.makeText(context, context.getString(R.string.skills_runtime_error, message), android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, resources.getString(R.string.skills_runtime_error, message), android.widget.Toast.LENGTH_SHORT).show()
             skillsViewModel.consumeError()
         }
     }

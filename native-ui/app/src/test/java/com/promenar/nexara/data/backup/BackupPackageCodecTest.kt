@@ -102,7 +102,7 @@ class BackupPackageCodecTest {
         val encoded = codec.encode(fixture(), BackupOptions(setOf(BackupContent.DATABASE)))
         val tampered = rewriteZip(encoded) { name, bytes ->
             if (name == "manifest.json") {
-                bytes.toString(Charsets.UTF_8).replace("\"formatVersion\":1", "\"formatVersion\":999").toByteArray()
+                bytes.toString(Charsets.UTF_8).replace("\"formatVersion\":${DefaultBackupPackageCodec.FORMAT_VERSION}", "\"formatVersion\":999").toByteArray()
             } else bytes
         }
 

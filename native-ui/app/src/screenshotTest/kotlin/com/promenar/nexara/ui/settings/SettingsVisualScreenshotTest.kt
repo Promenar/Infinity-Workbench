@@ -163,6 +163,7 @@ private fun ToolsHeaderPreview(dark: Boolean) = SettingsVisualTheme(dark) {
                     sshHostCount = 2,
                     termuxAvailability = TermuxAvailability(true, "0.119.1", true),
                     gitCredentialCount = 2,
+                    allowlistCount = if (dark) 3 else 0,
                 ),
                 actions = SkillsSettingsVisualActions(),
             )

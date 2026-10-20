@@ -293,8 +293,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         SessionRepository(database.sessionDao(), database.messageDao())
     }
 
-    val sessionToolGrantStore by lazy {
-        com.promenar.nexara.data.repository.SessionToolGrantStore(java.io.File(noBackupFilesDir, "tool-grants"))
+    val toolAllowlistStore by lazy {
+        com.promenar.nexara.data.repository.ToolAllowlistStore(java.io.File(noBackupFilesDir, "tool-allowlist"))
     }
     val toolOutputStore by lazy {
         com.promenar.nexara.data.repository.ToolOutputStore(java.io.File(noBackupFilesDir, "tool-outputs"))
@@ -341,9 +341,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
     private val scriptToolRunner by lazy {
         com.promenar.nexara.data.script.AndroidScriptToolRunner(scriptRuntime, workspaceRepository, externalFolderManager,
-            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, sessionToolGrantStore, scriptSettings)
+            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, toolAllowlistStore, scriptSettings,
+            sessionWorkspaceResolver::resolve)
     }
     val generationInteractions by lazy { com.promenar.nexara.data.generation.GenerationInteractionStore() }
+
+    suspend fun resolveToolAllowlistScope(sessionId: String, target: String) =
+        com.promenar.nexara.data.repository.ToolAllowlistScopes.resolveForSession(
+            sessionId, target, sessionWorkspaceResolver::resolve, externalFolderManager,
+        )
 
     suspend fun verifyTargetGrant(
         session: com.promenar.nexara.data.model.Session,
@@ -355,8 +361,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
             risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
         )
+        val scope = resolveToolAllowlistScope(session.id, target) ?: return false
         return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost) == target &&
-            sessionToolGrantStore.contains(session.id, skill.name, target)
+            toolAllowlistStore.contains(skill.name, target, scope.scopeKey)
     }
 
     val messageRepository: IMessageRepository by lazy {
@@ -466,7 +473,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             },
             cleanupSessionData = { sessionId ->
                 com.promenar.nexara.data.session.cleanupSessionRuntimeData(
-                    { sessionToolGrantStore.deleteSession(sessionId) },
+                    // 会话私有工作区只属于该会话，删除会话时一并撤销绑定到它的白名单条目。
+                    { toolAllowlistStore.removeScope("session:$sessionId") },
                     { toolOutputStore.deleteSession(sessionId) },
                     deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
                     deleteFolds = { contextFoldStore.deleteSession(sessionId) },
@@ -574,7 +582,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             toolResolver = sessionToolResolver,
             presentationStore = generationPresentationStore,
             skillCatalog = { agentSkillStore.enabledSkills() },
-            toolGrantStore = sessionToolGrantStore,
+            toolAllowlistStore = toolAllowlistStore,
             workspaceRepository = workspaceRepository,
             outputStore = toolOutputStore,
             externalFolders = externalFolderManager,
@@ -863,6 +871,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** 用户级与工作区项目级技能的文件目录入口。 */
+    val skillCatalog: com.promenar.nexara.data.skills.SkillCatalog by lazy {
+        com.promenar.nexara.data.skills.FileSkillCatalog(
+            File(filesDir, "agent_skills"),
+            getSharedPreferences("nexara_settings", MODE_PRIVATE),
+            File(noBackupFilesDir, "skill_state"),
+        )
+    }
+
     val skillRegistry: SkillRegistry by lazy {
         ModularSkillRegistry(
             listOf(
@@ -945,6 +962,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         ModelCatalogRuntime.initialize(this)
 
         PDFBoxResourceLoader.init(applicationContext)
+        startupScope.launch(Dispatchers.IO) {
+            runCatching {
+                val legacy = File(noBackupFilesDir, "tool-grants")
+                check(!legacy.exists() || legacy.deleteRecursively()) { "旧会话授权目录清理失败" }
+            }.onFailure { NexaraLogger.log("[ToolAllowlist] 旧会话授权清理失败：${it::class.java.simpleName}") }
+        }
         startBackupRecovery()
         // 内置 Tailscale 启用时随 App 启动拉起子进程；App 进程结束时子进程随 stdin 关闭退出。
         startupScope.launch(Dispatchers.IO) { tailnetManager.start() }

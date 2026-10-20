@@ -24,6 +24,15 @@ data class RestoreJournalRecord(
     val newRootIdentity: String,
     val newRootFileKey: String?,
     val phase: RestoreJournalPhase,
+    val skills: SkillRestoreJournalRecord? = null,
+)
+
+@Serializable
+data class SkillRestoreJournalRecord(
+    val rootName: String,
+    val oldRootFileKey: String?,
+    val newRootFileKey: String? = null,
+    val stagingFileKey: String? = null,
 )
 
 interface RestoreJournalAuthenticator {
@@ -145,6 +154,11 @@ internal class FileRestoreJournal(
             record.oldRootIdentity.split(',').filter(String::isNotBlank).any { !OLD_ROOT_ID.matches(it) } ||
             record.newRootFileKey?.length.orZero() > 512
         ) throw BackupValidationException("恢复 journal 元数据无效")
+        record.skills?.let { skills ->
+            if (!Regex("[A-Za-z0-9_-]{1,128}").matches(skills.rootName) ||
+                listOf(skills.oldRootFileKey, skills.newRootFileKey, skills.stagingFileKey).any { it != null && (it.isBlank() || it.length > 512) }
+            ) throw BackupValidationException("技能恢复 journal 元数据无效")
+        }
     }
 
     private fun readBoundedNoFollow(path: Path, limit: Long, label: String): ByteArray {

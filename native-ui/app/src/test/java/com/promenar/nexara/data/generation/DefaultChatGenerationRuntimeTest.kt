@@ -71,6 +71,84 @@ import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
     @Test
+    fun `全局白名单让其它会话的host完整process及MCP调用免审批`() = runTest {
+        val cases = listOf(
+            Triple(ProtocolTool(function = ProtocolToolFunction("web_fetch", "", "{}"), risk = ToolRisk.SAFE_READ, runtimeToolId = "web_fetch", sourceId = "builtin"),
+                """{"url":"https://example.com/a"}""", """["host","example.com"]"""),
+            Triple(ProtocolTool(function = ProtocolToolFunction("shell_exec", "", "{}"), risk = ToolRisk.PROCESS, runtimeToolId = "shell_exec", sourceId = "builtin"),
+                """{"command":"git status"}""", """["process","builtin","git status"]"""),
+            Triple(ProtocolTool(function = ProtocolToolFunction("mcp_call", "", "{}"), risk = ToolRisk.UNKNOWN, runtimeToolId = "mcp:server:tool", sourceId = "mcp", mcpServerId = "server"),
+                "{}", """["mcp","server","tool"]"""),
+        )
+        for ((tool, args, target) in cases) {
+            assertAllowlistDecision(tool, args, target, null, testDirectory("other-workspace"), true)
+        }
+        assertAllowlistDecision(cases[1].first, """{"command":"git status && rm x"}""", cases[1].third,
+            null, testDirectory("other-workspace"), false)
+    }
+
+    @Test
+    fun `runtime按目录和私有工作区身份筛选全局白名单`() = runTest {
+        val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
+        val args = """{"path":"/a.md"}"""
+        val target = """["path","/a.md"]"""
+        assertAllowlistDecision(tool, args, target, "workspace:project", testDirectory("project"), true)
+        assertAllowlistDecision(tool, args, target, "workspace:project", testDirectory("other"), false)
+        assertAllowlistDecision(tool, args, target, "session:other-session", com.promenar.nexara.data.workspace.SessionWorkspace.Private, false)
+        assertAllowlistDecision(tool, args, target, "session:current-session", com.promenar.nexara.data.workspace.SessionWorkspace.Private, true)
+        assertAllowlistDecision(tool, args, target, "workspace:project", com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("project", null, "离线"), false)
+    }
+
+    private fun testDirectory(id: String) = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
+        com.promenar.nexara.data.local.db.entity.WorkspaceEntity(id, "project", id, id, 1), java.io.File("/project/$id"),
+    )
+
+    private suspend fun kotlinx.coroutines.test.TestScope.assertAllowlistDecision(
+        tool: ProtocolTool,
+        arguments: String,
+        rememberedTarget: String,
+        rememberedScope: String?,
+        workspace: com.promenar.nexara.data.workspace.SessionWorkspace,
+        bypass: Boolean,
+    ) {
+        val root = java.nio.file.Files.createTempDirectory("runtime-allowlist").toFile()
+        try {
+            val allowlist = com.promenar.nexara.data.repository.ToolAllowlistStore(root)
+            allowlist.add(tool.function.name, rememberedTarget, rememberedScope, "other-session")
+            val settings = mockk<SharedPreferences> { every { getInt(any(), any()) } answers { secondArg() } }
+            val store = ChatStore().apply {
+                update { ChatState(sessions = listOf(Session(id = "current-session", agentId = "agent", executionMode = "semi"))) }
+            }
+            val strategy = mockk<ChatGenerationContentStrategy> {
+                every { pendingApprovalIds(any(), any()) } returns listOf("call")
+            }
+            val executor = mockk<ToolExecutor>(relaxed = true)
+            val ledger = mockk<ToolExecutionLedger>(relaxed = true)
+            coEvery { ledger.createToolApproval(any(), any(), any(), any(), any()) } returns com.promenar.nexara.data.repository.ToolApprovalCreation.CREATED
+            val runtime = DefaultChatGenerationRuntime(
+                settings, this, store, mockk(), mockk(), mockk(), mockk(), mockk(relaxed = true),
+                { mockk() }, mockk(), ledger, executor, mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true),
+                toolAllowlistStore = allowlist, sessionWorkspace = { workspace },
+            )
+            DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedTools").apply {
+                isAccessible = true
+                set(runtime, listOf(tool))
+            }
+            val request = GenerationRequest("current-session", "assistant", "user", "", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED)
+            val result = runtime.handleTools(request, listOf(GenerationToolCall("call", tool.function.name, arguments)))
+            assertThat(result).isEqualTo(if (bypass) GenerationToolDecision.CONTINUE else GenerationToolDecision.WAIT_FOR_APPROVAL)
+            assertThat(store.getSession("current-session")?.approvalRequest != null).isEqualTo(!bypass)
+            coVerify(exactly = 1) {
+                executor.executeTools("current-session", "assistant", any(),
+                    if (bypass) setOf("call") else emptySet(), listOf(tool),
+                    if (bypass) mapOf("call" to rememberedTarget) else emptyMap())
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `准备恢复SSH所有者且审批暂停与终态关闭使用同一会话所有者`() = runTest {
         val sshRuntime = mockk<com.promenar.nexara.data.ssh.SshRuntime>(relaxed = true)
         val fixture = postProcessFixture(sshRuntime = sshRuntime)

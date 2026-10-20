@@ -339,7 +339,7 @@ class ChatViewModel(
         messageManager,
         sessionRepository,
         (application as NexaraApplication).sessionExecutionGate,
-        (application as NexaraApplication).sessionToolGrantStore,
+        (application as NexaraApplication).toolAllowlistStore,
         resolveExecutionTarget = { session, assistantMessageId, identity ->
             resolveChatApprovalExecutionTarget(
                 session, assistantMessageId, identity,
@@ -350,24 +350,8 @@ class ChatViewModel(
                 sshHostStore = (application as NexaraApplication).sshHostStore,
             )
         },
+        resolveAllowlistScope = (application as NexaraApplication)::resolveToolAllowlistScope,
     )
-    val currentSessionGrants = MutableStateFlow<List<com.promenar.nexara.data.repository.SessionToolGrant>>(emptyList())
-
-    fun refreshSessionGrants() {
-        val id = _currentSessionId.value ?: return
-        viewModelScope.launch {
-            val grants = (application as NexaraApplication).sessionToolGrantStore.list(id)
-            if (_currentSessionId.value == id) currentSessionGrants.value = grants
-        }
-    }
-
-    fun revokeSessionGrant(grant: com.promenar.nexara.data.repository.SessionToolGrant) {
-        val id = _currentSessionId.value ?: return
-        viewModelScope.launch {
-            (application as NexaraApplication).sessionToolGrantStore.revoke(id, grant.toolName, grant.target)
-            refreshSessionGrants()
-        }
-    }
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText

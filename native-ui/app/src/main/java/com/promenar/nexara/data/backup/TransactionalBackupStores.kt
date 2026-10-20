@@ -35,6 +35,9 @@ interface TransactionalBackupSecretStore {
 enum class RestoreCrashPoint {
     JOURNAL_PREPARED,
     FILES_MOVED,
+    SKILLS_STAGED,
+    SKILLS_OLD_MOVED,
+    SKILLS_COMMITTED,
     EXTERNAL_COMMITTED,
     ROOM_COMMITTED,
     JOURNAL_COMMITTED,

@@ -5,7 +5,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.dao.ExternalMountDao
 import com.promenar.nexara.data.local.db.entity.ExternalMountEntity
 import com.promenar.nexara.data.rag.FileIndexEventSink
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.script.ScriptFileApprovalBroker
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -27,7 +27,7 @@ class ScriptWorkspaceGatewayTest {
     private val context = mockk<Context> { every { noBackupFilesDir } returns directory }
     private var row = ExternalMountEntity("mount", "demo", "saf_tree", "content://test/tree/root", "session", false, 1)
     private val dao = mockk<ExternalMountDao> {
-        coEvery { visible("session") } answers { listOf(row) }
+        coEvery { visible(any()) } answers { listOf(row) }
         coEvery { update(any()) } answers { row = firstArg() }
     }
     private val workspace = mockk<IWorkspaceRepository>()
@@ -45,7 +45,7 @@ class ScriptWorkspaceGatewayTest {
     }
     private val mounts = ExternalFolderManager(context, dao, workspace, FileIndexEventSink.None) { backend }
     private val broker = ScriptFileApprovalBroker()
-    private val grants = SessionToolGrantStore(directory.resolve("grants"))
+    private val grants = ToolAllowlistStore(directory.resolve("grants"))
     private var approveWrites = true
     private val execution = object : SkillExecutionContext {
         override val sessionId = "session"
@@ -53,7 +53,10 @@ class ScriptWorkspaceGatewayTest {
         override val workspaceRootUuid = "root"
         override val workspacePath: String? = null
     }
-    private suspend fun open() = ScriptWorkspaceGateway.open(execution, workspace, mounts, operations, FileIndexEventSink.None, broker, grants, { approveWrites }, "/mnt/demo/main.mjs")
+    private suspend fun open(sessionId: String = "session") = ScriptWorkspaceGateway.open(
+        object : SkillExecutionContext by execution { override val sessionId = sessionId },
+        workspace, mounts, operations, FileIndexEventSink.None, broker, grants, { approveWrites }, "/mnt/demo/main.mjs",
+    )
     private fun args(path: String, content: String? = null, hash: String? = null) = buildJsonObject {
         put("path", path); content?.let { put("content", it) }; hash?.let { put("expected_sha256", it) }
     }
@@ -117,5 +120,33 @@ class ScriptWorkspaceGatewayTest {
         memory.write("/helper.mjs", "export const value = 42".toByteArray())
         assertThat(open().invoke("module", args("/mnt/demo/helper.mjs")).jsonPrimitive.content)
             .isEqualTo("export const value = 42")
+    }
+
+    @Test fun `脚本批准并记住挂载写入后另一会话直接命中全局白名单且撤销后重询`() = runBlocking {
+        memory.write("/a.txt", "old".toByteArray())
+        val first = async { open().invoke("write", args("/mnt/demo/a.txt", "one", Sha256Utils.hash("old"))) }
+        val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }
+        broker.resolve(approval.id, true, true)
+        first.await()
+        assertThat(grants.entries.value.single().scopeKey).isEqualTo("mount:mount")
+        assertThat(grants.entries.value.single().sourceSessionId).isEqualTo("session")
+        withTimeout(3000) { open("another").invoke("write", args("/mnt/demo/a.txt", "two", Sha256Utils.hash("one"))) }
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
+        assertThat(broker.pending.value).isEmpty()
+        grants.remove(grants.entries.value.single().id)
+        val next = async { open("another").invoke("write", args("/mnt/demo/a.txt", "three", Sha256Utils.hash("two"))) }
+        withTimeout(3000) { broker.pending.first { it.isNotEmpty() } }
+        next.cancelAndJoin()
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
+    }
+
+    @Test fun `审批期间挂载换源不把原目标记忆到新挂载`() = runBlocking {
+        memory.write("/a.txt", "old".toByteArray())
+        val pending = async { runCatching { open().invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old"))) } }
+        val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }
+        row = row.copy(id = "replacement")
+        broker.resolve(approval.id, true, true)
+        assertThat((pending.await().exceptionOrNull() as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
+        assertThat(grants.entries.value).isEmpty()
     }
 }
