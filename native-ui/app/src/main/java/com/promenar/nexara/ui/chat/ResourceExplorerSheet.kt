@@ -67,6 +67,9 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ui.chat.components.WorkspaceFolderBrowser
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
+import com.promenar.nexara.ui.chat.components.ResourceExplorerWorkspaceMode
+import com.promenar.nexara.ui.chat.components.DirectoryWorkspaceBrowser
+import com.promenar.nexara.ui.chat.components.ExternalFoldersPanel
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
@@ -78,6 +81,7 @@ import com.promenar.nexara.ui.git.GitChangesSheet
 import com.promenar.nexara.ui.git.GitEntrySummary
 import com.promenar.nexara.ui.git.GitWorkspaceEntry
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.workspace.workspaceKindLabel
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -108,6 +112,8 @@ fun ResourceExplorerSheet(
     val importItems by viewModel.importItems.collectAsStateWithLifecycle()
     val isImporting by viewModel.isImporting.collectAsStateWithLifecycle()
     val gitEntry by viewModel.gitEntry.collectAsStateWithLifecycle()
+    val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
+    val directory by viewModel.directory.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
     var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
     val filePicker = rememberLauncherForActivityResult(
@@ -133,6 +139,7 @@ fun ResourceExplorerSheet(
                 isLoading = isLoading,
                 hasLoadError = loadError != null,
                 gitEntry = gitEntry,
+                workspaceMode = workspaceMode,
             ),
             actions = ResourceExplorerSheetActions(
                 onOpenGitPanel = { showGitPanel = true },
@@ -146,7 +153,29 @@ fun ResourceExplorerSheet(
                 onRetryLoad = viewModel::retryLoadSession,
             ),
             filesContent = {
-                WorkspaceFolderBrowser(
+                val directoryMode = workspaceMode as? ResourceExplorerWorkspaceMode.Directory
+                if (directoryMode != null) {
+                    DirectoryWorkspaceBrowser(
+                        rootTitle = directoryMode.displayName,
+                        state = directory,
+                        onNavigate = viewModel::openDirectory,
+                        onOpenFile = viewModel::openDirectoryFile,
+                        onCloseFile = viewModel::closeDirectoryFile,
+                        onRefresh = viewModel::refreshDirectory,
+                        readFile = viewModel::readDirectoryFile,
+                        rootHeader = {
+                            // 目录工作区下 /mnt 挂载仍对 Agent 生效，其回收区也承接目录内被删除文件的备份。
+                            externalFolderManager?.let { manager ->
+                                ExternalFoldersPanel(
+                                    sessionId = sessionId,
+                                    workspaceRootUuid = null,
+                                    manager = manager,
+                                    onReindex = null,
+                                )
+                            }
+                        },
+                    )
+                } else WorkspaceFolderBrowser(
                     workspaceRootUuid = workspaceRootUuid,
                     workspaceRepo = viewModel.workspaceRepo,
                     sessionId = sessionId,
@@ -205,6 +234,8 @@ internal data class ResourceExplorerSheetState(
     val hasLoadError: Boolean = false,
     /** 会话工作区是 Git 仓库时显示分支与改动数入口。 */
     val gitEntry: GitEntrySummary = GitEntrySummary.Hidden,
+    /** 文件区展示的工作区；目录与不可用状态下停用搜索、导入与会话回收站。 */
+    val workspaceMode: ResourceExplorerWorkspaceMode = ResourceExplorerWorkspaceMode.Private,
 )
 
 internal data class ResourceExplorerSheetActions(
@@ -297,6 +328,8 @@ internal fun ResourceExplorerSheetContent(
                     filesContent = filesContent,
                 )
                 ResourceExplorerTab.RecycleBin -> when {
+                    state.workspaceMode is ResourceExplorerWorkspaceMode.Directory ||
+                        state.workspaceMode is ResourceExplorerWorkspaceMode.Unavailable -> DirectoryRecycleInfo()
                     state.isLoading -> ResourceExplorerSessionState(isLoading = true)
                     state.hasLoadError -> ResourceExplorerSessionState(
                         isLoading = false,
@@ -311,6 +344,122 @@ internal fun ResourceExplorerSheetContent(
 
 @Composable
 private fun ResourceExplorerFilesPage(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+    filesContent: @Composable () -> Unit,
+) {
+    when (val mode = state.workspaceMode) {
+        ResourceExplorerWorkspaceMode.Resolving -> ResourceExplorerSessionState(
+            isLoading = state.isLoading,
+            onRetry = actions.onRetryLoad.takeIf { state.hasLoadError },
+        )
+        ResourceExplorerWorkspaceMode.Private -> ResourceExplorerPrivateFilesPage(state, actions, filesContent)
+        is ResourceExplorerWorkspaceMode.Directory -> Column(modifier = Modifier.fillMaxSize()) {
+            DirectoryWorkspaceHeader(mode)
+            ResourceExplorerGitEntry(state, actions)
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                filesContent()
+            }
+        }
+        is ResourceExplorerWorkspaceMode.Unavailable -> Column(modifier = Modifier.fillMaxSize()) {
+            WorkspaceUnavailableState(mode, onRetry = actions.onRetryLoad)
+            ResourceExplorerGitEntry(state, actions)
+        }
+    }
+}
+
+@Composable
+private fun ResourceExplorerGitEntry(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+) {
+    if (state.gitEntry != GitEntrySummary.Hidden) {
+        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+        GitWorkspaceEntry(summary = state.gitEntry, onClick = actions.onOpenGitPanel)
+    }
+}
+
+@Composable
+private fun DirectoryWorkspaceHeader(mode: ResourceExplorerWorkspaceMode.Directory) {
+    BettboxListGroup(modifier = Modifier.fillMaxWidth().testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_HEADER)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+        ) {
+            NexaraIdentifierText(
+                text = stringResource(R.string.resource_explorer_directory_badge, mode.displayName, workspaceKindLabel(mode.kind)),
+                style = NexaraTypography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.resource_explorer_directory_notice),
+                style = NexaraTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceUnavailableState(
+    mode: ResourceExplorerWorkspaceMode.Unavailable,
+    onRetry: () -> Unit,
+) {
+    val reason = stringResource(R.string.workspace_unavailable_reason, mode.reason)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.RESOURCE_EXPLORER_WORKSPACE_UNAVAILABLE)
+            .semantics {
+                liveRegion = LiveRegionMode.Assertive
+                stateDescription = reason
+            }
+            .padding(NexaraSpacing.XLarge),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        Text(
+            text = mode.displayName?.let { stringResource(R.string.resource_explorer_directory_badge, stringResource(R.string.resource_explorer_unavailable_title), it) }
+                ?: stringResource(R.string.resource_explorer_unavailable_title),
+            style = NexaraTypography.titleMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Text(text = reason, style = NexaraTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            text = stringResource(R.string.resource_explorer_unavailable_help),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier
+                .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
+                .testTag(UiTags.RESOURCE_EXPLORER_RETRY_LOAD),
+        ) {
+            Text(stringResource(R.string.shared_btn_retry))
+        }
+    }
+}
+
+@Composable
+private fun DirectoryRecycleInfo() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_RECYCLE_INFO)
+            .padding(NexaraSpacing.XXLarge),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Text(
+            text = stringResource(R.string.resource_explorer_directory_recycle_info),
+            style = NexaraTypography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ResourceExplorerPrivateFilesPage(
     state: ResourceExplorerSheetState,
     actions: ResourceExplorerSheetActions,
     filesContent: @Composable () -> Unit,
@@ -355,10 +504,7 @@ private fun ResourceExplorerFilesPage(
             )
         }
 
-        if (state.gitEntry != GitEntrySummary.Hidden) {
-            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-            GitWorkspaceEntry(summary = state.gitEntry, onClick = actions.onOpenGitPanel)
-        }
+        ResourceExplorerGitEntry(state, actions)
 
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

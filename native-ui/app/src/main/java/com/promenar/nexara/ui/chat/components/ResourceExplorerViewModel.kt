@@ -9,7 +9,11 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.git.GitChangesService
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.storage.ExternalFolderBackend
+import com.promenar.nexara.domain.storage.ExternalFolderEntry
+import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.share.core.AndroidSafContentSource
 import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.ShareImportItem
@@ -20,6 +24,8 @@ import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.git.GitEntrySummary
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class RecycleOperation {
     Restore,
@@ -64,6 +71,8 @@ class ResourceExplorerViewModel(
     injectedWorkspaceRepository: IWorkspaceRepository? = null,
     injectedImporter: SharedFileImporter? = null,
     injectedGitChanges: GitChangesService? = null,
+    injectedWorkspaceAccess: ResourceExplorerWorkspaceAccess? = null,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     val workspaceRepo: IWorkspaceRepository = injectedWorkspaceRepository
@@ -79,6 +88,14 @@ class ResourceExplorerViewModel(
     private val gitChanges: GitChangesService? by lazy {
         injectedGitChanges ?: if (injectedWorkspaceRepository == null) {
             (application as? NexaraApplication)?.gitChangesService
+        } else {
+            null
+        }
+    }
+    /** 注入了工作区仓库（测试）而未注入解析能力时始终按会话私有工作区加载。 */
+    private val workspaceAccess: ResourceExplorerWorkspaceAccess? by lazy {
+        injectedWorkspaceAccess ?: if (injectedWorkspaceRepository == null) {
+            (application as? NexaraApplication)?.sessionWorkspaceResolver?.let(::ResolverWorkspaceAccess)
         } else {
             null
         }
@@ -125,6 +142,17 @@ class ResourceExplorerViewModel(
     val gitEntry: StateFlow<GitEntrySummary> = _gitEntry.asStateFlow()
     private var gitJob: Job? = null
 
+    private val _workspaceMode = MutableStateFlow<ResourceExplorerWorkspaceMode>(ResourceExplorerWorkspaceMode.Resolving)
+    val workspaceMode: StateFlow<ResourceExplorerWorkspaceMode> = _workspaceMode.asStateFlow()
+
+    private val _directory = MutableStateFlow(DirectoryBrowserState())
+    internal val directory: StateFlow<DirectoryBrowserState> = _directory.asStateFlow()
+
+    private var workspaceEpoch = 0L
+    private var resolveJob: Job? = null
+    private var directoryJob: Job? = null
+    private var previewJob: Job? = null
+
     private var currentSessionId: String? = null
     private var loadGeneration = 0L
     private var sessionObserverEpoch = 0L
@@ -138,14 +166,97 @@ class ResourceExplorerViewModel(
         _searchQuery.value = query
     }
 
+    /**
+     * 每次打开资源管理器都重新解析会话工作区：私有工作区沿用 Room 观察，目录工作区直接列目录，
+     * 不可用时只展示原因，不回退到会话私有工作区。
+     */
     fun loadSession(sessionId: String) {
+        val access = workspaceAccess
+        if (access == null) {
+            _workspaceMode.value = ResourceExplorerWorkspaceMode.Private
+            loadPrivateSession(sessionId)
+            refreshGitEntry()
+            return
+        }
+        if (sessionId != currentSessionId) {
+            _gitEntry.value = GitEntrySummary.Hidden
+            currentSessionId = sessionId
+            leavePrivateWorkspace()
+            resetDirectoryState()
+            _workspaceMode.value = ResourceExplorerWorkspaceMode.Resolving
+        }
+        if (_workspaceMode.value == ResourceExplorerWorkspaceMode.Resolving) {
+            _loadError.value = null
+            _isLoading.value = true
+        }
+        val epoch = ++workspaceEpoch
+        resolveJob?.cancel()
+        resolveJob = viewModelScope.launch {
+            val resolved = try {
+                access.resolve(sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (epoch == workspaceEpoch) {
+                    // 无法确认绑定关系时不展示任何一侧的旧内容。
+                    leavePrivateWorkspace()
+                    resetDirectoryState()
+                    _workspaceMode.value = ResourceExplorerWorkspaceMode.Resolving
+                    _loadError.value = ResourceExplorerNotice.workspaceLoadFailed(failure.message)
+                    _isLoading.value = false
+                }
+                return@launch
+            }
+            if (epoch == workspaceEpoch && sessionId == currentSessionId) applyWorkspace(sessionId, resolved)
+        }
+        refreshGitEntry()
+    }
+
+    private fun applyWorkspace(sessionId: String, resolved: SessionWorkspace) {
+        when (resolved) {
+            SessionWorkspace.Private -> {
+                if (_workspaceMode.value != ResourceExplorerWorkspaceMode.Private) resetDirectoryState()
+                _workspaceMode.value = ResourceExplorerWorkspaceMode.Private
+                loadPrivateSession(sessionId)
+            }
+
+            is SessionWorkspace.Directory -> {
+                val mode = ResourceExplorerWorkspaceMode.Directory(
+                    workspaceId = resolved.workspace.id,
+                    displayName = resolved.workspace.displayName,
+                    kind = resolved.kind,
+                )
+                val previous = _workspaceMode.value
+                leavePrivateWorkspace()
+                _loadError.value = null
+                _isLoading.value = false
+                if (previous != mode) resetDirectoryState()
+                _workspaceMode.value = mode
+                loadDirectory(_directory.value.path)
+                _directory.value.selectedFile?.let(::openDirectoryFile)
+            }
+
+            is SessionWorkspace.Unavailable -> {
+                leavePrivateWorkspace()
+                resetDirectoryState()
+                _loadError.value = null
+                _isLoading.value = false
+                _workspaceMode.value = ResourceExplorerWorkspaceMode.Unavailable(
+                    workspaceId = resolved.workspaceId,
+                    displayName = resolved.workspace?.displayName,
+                    reason = resolved.reason,
+                )
+            }
+        }
+    }
+
+    private fun loadPrivateSession(sessionId: String) {
         val existingRootUuid = _workspaceRootUuid.value
         if (sessionId == currentSessionId && existingRootUuid != null) {
             val generation = loadGeneration
             _loadError.value = null
             _isLoading.value = false
             startSessionObservers(existingRootUuid, generation)
-            refreshGitEntry()
             return
         }
 
@@ -158,7 +269,135 @@ class ResourceExplorerViewModel(
         clearSessionState()
         _isLoading.value = true
         startSessionRootLoad(sessionId, generation)
-        refreshGitEntry()
+    }
+
+    /** 离开私有工作区：停止 Room 观察并作废进行中的导入与回收操作结果。 */
+    private fun leavePrivateWorkspace() {
+        ++loadGeneration
+        invalidateSessionObservers()
+        importJob?.cancel()
+        recycleOperationJob?.cancel()
+        clearSessionState()
+    }
+
+    private fun resetDirectoryState() {
+        directoryJob?.cancel()
+        previewJob?.cancel()
+        _directory.value = DirectoryBrowserState()
+    }
+
+    /** 进入目录工作区内的 [path]；路径由目录后端规范化与校验。 */
+    fun openDirectory(path: String) {
+        if (_workspaceMode.value !is ResourceExplorerWorkspaceMode.Directory) return
+        closeDirectoryFile()
+        loadDirectory(path)
+    }
+
+    fun refreshDirectory() {
+        if (_workspaceMode.value !is ResourceExplorerWorkspaceMode.Directory) return
+        loadDirectory(_directory.value.path)
+    }
+
+    /** 选择文件后读取有界文本预览；目录项等同于进入该目录。 */
+    fun openDirectoryFile(entry: ExternalFolderEntry) {
+        if (entry.isDirectory) {
+            openDirectory(entry.path)
+            return
+        }
+        val mode = _workspaceMode.value as? ResourceExplorerWorkspaceMode.Directory ?: return
+        previewJob?.cancel()
+        if (entry.size > DIRECTORY_TEXT_PREVIEW_BYTES) {
+            _directory.value = _directory.value.copy(
+                selectedFile = entry,
+                preview = ExternalTextPreview.TooLarge,
+                previewError = null,
+            )
+            return
+        }
+        _directory.value = _directory.value.copy(
+            selectedFile = entry,
+            preview = ExternalTextPreview.Loading,
+            previewError = null,
+        )
+        previewJob = viewModelScope.launch {
+            val (preview, error) = try {
+                val bytes = readDirectoryFile(entry.path, DIRECTORY_TEXT_PREVIEW_BYTES.toLong())
+                withContext(io) { decodeExternalTextPreview(bytes, DIRECTORY_TEXT_PREVIEW_BYTES) } to null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                ExternalTextPreview.Failed to failure.directoryReason()
+            }
+            val current = _directory.value
+            if (_workspaceMode.value == mode && current.selectedFile?.path == entry.path) {
+                _directory.value = current.copy(preview = preview, previewError = error)
+            }
+        }
+    }
+
+    fun closeDirectoryFile() {
+        previewJob?.cancel()
+        _directory.value = _directory.value.copy(selectedFile = null, preview = null, previewError = null)
+    }
+
+    /**
+     * 读取目录工作区内的文件，供预览与“使用其它应用打开”。每次读取前重新解析会话工作区，
+     * 绑定已变化或目录不可用时抛出 [ExternalFolderException]。
+     */
+    suspend fun readDirectoryFile(path: String, maxBytes: Long): ByteArray {
+        val backend = currentDirectoryBackend()
+            ?: throw ExternalFolderException("UNAVAILABLE", "会话工作区已变化，请重新打开")
+        return withContext(io) { backend.read(path, maxBytes) }
+    }
+
+    private fun loadDirectory(path: String) {
+        val mode = _workspaceMode.value as? ResourceExplorerWorkspaceMode.Directory ?: return
+        val epoch = workspaceEpoch
+        directoryJob?.cancel()
+        val current = _directory.value
+        _directory.value = current.copy(
+            path = path,
+            entries = if (current.path == path) current.entries else emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        directoryJob = viewModelScope.launch {
+            val result = try {
+                val backend = currentDirectoryBackend() ?: return@launch
+                Result.success(withContext(io) { backend.list(path) })
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+            if (epoch != workspaceEpoch || _workspaceMode.value != mode || _directory.value.path != path) return@launch
+            _directory.value = _directory.value.copy(
+                entries = result.getOrDefault(emptyList()),
+                isLoading = false,
+                error = result.exceptionOrNull()?.let { DirectoryLoadError((it as? Exception)?.directoryReason()) },
+            )
+        }
+    }
+
+    /** 重新解析会话工作区；仍是同一目录工作区时返回其目录后端，否则切换到新状态并返回 null。 */
+    private suspend fun currentDirectoryBackend(): ExternalFolderBackend? {
+        val sessionId = currentSessionId ?: return null
+        val access = workspaceAccess ?: return null
+        val mode = _workspaceMode.value as? ResourceExplorerWorkspaceMode.Directory ?: return null
+        val epoch = workspaceEpoch
+        val resolved = access.resolve(sessionId)
+        if (epoch != workspaceEpoch || sessionId != currentSessionId) return null
+        if (resolved is SessionWorkspace.Directory && resolved.workspace.id == mode.workspaceId) {
+            return access.backend(resolved)
+        }
+        applyWorkspace(sessionId, resolved)
+        return null
+    }
+
+    private fun Exception.directoryReason(): String? = when (this) {
+        is ExternalFolderException -> message
+        is SecurityException -> "目录访问被拒绝"
+        else -> null
     }
 
     /** 重新读取 Git 入口摘要；打开资源管理器与关闭 Git 变更面板时调用。 */
@@ -179,6 +418,7 @@ class ResourceExplorerViewModel(
     /** 资源管理器离开组合树时停止会话数据库观察，已发起的导入/回收操作不因此中断。 */
     fun deactivateSession() {
         invalidateSessionObservers()
+        resolveJob?.cancel()
     }
 
     private fun startSessionRootLoad(sessionId: String, generation: Long) {
@@ -517,6 +757,9 @@ class ResourceExplorerViewModel(
     )
 
     companion object {
+        /** 目录工作区文本预览上限，与外部文件夹预览一致。 */
+        internal const val DIRECTORY_TEXT_PREVIEW_BYTES = 256 * 1024
+
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
