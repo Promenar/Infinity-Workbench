@@ -80,6 +80,7 @@ object NavDestinations {
     const val SSH_CONFIG = "ssh_config"
     const val TERMUX_CONFIG = "termux_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
+    const val GIT_CREDENTIALS = "git_credentials"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
@@ -593,6 +594,7 @@ fun NexaraNavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
                 onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
+                onOpenGitCredentials = { navController.navigate(NavDestinations.GIT_CREDENTIALS) },
             )
         }
 
@@ -612,6 +614,12 @@ fun NexaraNavGraph(
         composable(NavDestinations.SSH_TERMINAL) { entry ->
             val alias = entry.arguments?.getString("alias").orEmpty()
             com.promenar.nexara.ui.ssh.SshTerminalScreen(alias, onBack = { navController.popBackStack() })
+        }
+        composable(NavDestinations.GIT_CREDENTIALS) {
+            com.promenar.nexara.ui.settings.GitCredentialSettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+            )
         }
 
         composable(NavDestinations.THEME_CONFIG) {

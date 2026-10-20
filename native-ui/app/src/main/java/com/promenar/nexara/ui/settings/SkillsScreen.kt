@@ -138,6 +138,7 @@ fun SkillsScreen(
     onNavigateBack: () -> Unit,
     onOpenSsh: () -> Unit = {},
     onOpenTermux: () -> Unit = {},
+    onOpenGitCredentials: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -192,6 +193,10 @@ fun SkillsScreen(
         application.sshHostStore.observeHosts().flowOn(Dispatchers.IO)
     }.collectAsState(initial = emptyList())
     var termuxAvailability by remember { mutableStateOf<TermuxAvailability?>(null) }
+    // 凭据存储首次取用时解密 Keystore 中的主机列表，放到 IO 线程。
+    val gitCredentialCount by androidx.compose.runtime.produceState<Int?>(null, application) {
+        withContext(Dispatchers.IO) { application.gitCredentialStore }.credentials.collect { value = it.size }
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
@@ -238,6 +243,7 @@ fun SkillsScreen(
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
                         retryLimit = retryLimit,
+                        gitCredentialCount = gitCredentialCount,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -253,6 +259,7 @@ fun SkillsScreen(
                         onScriptHostsSaved = { scope.launch { snackbarHost.showSnackbar(hostsSavedMessage) } },
                         onOpenSsh = onOpenSsh,
                         onOpenTermux = onOpenTermux,
+                        onOpenGitCredentials = onOpenGitCredentials,
                     ),
                 )
 

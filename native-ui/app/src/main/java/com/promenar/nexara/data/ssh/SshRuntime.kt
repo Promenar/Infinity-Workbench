@@ -201,6 +201,57 @@ class SshRuntime(
         }
     }
 
+    /**
+     * 流式执行：远端 stdout 原样写入 [stdout]（可为二进制，例如 git 的 pack），[stdin] 读到结尾时向远端发送 EOF。
+     * stderr 先在内存中收集（上限 64 KiB），按连接的凭据遮蔽后在命令结束时一次写入 [stderr]。
+     * 远端 channel 建立后调用 [onStarted]；返回远端退出码（远端未报告时为 -1）。
+     * 不设整体超时，由调用方取消协程结束；取消时断开 channel，连接仍留在池中按空闲回收。
+     */
+    suspend fun execStreaming(
+        owner: String,
+        alias: String,
+        command: String,
+        stdin: java.io.InputStream,
+        stdout: OutputStream,
+        stderr: OutputStream,
+        environment: Map<String, String> = emptyMap(),
+        onStarted: () -> Unit = {},
+    ): Int {
+        if (command.isBlank() || command.length > 65_536 || '\u0000' in command) throw SshFailure("INVALID_COMMAND")
+        val ref = AtomicReference<ChannelExec?>()
+        val errors = ByteCapture(65_536)
+        try {
+            val connection = connection(owner, alias)
+            val exit = connection.lock.withLock {
+                verifyCurrentConnection(connection)
+                io({ ref.get()?.disconnect() }) {
+                    val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
+                    try {
+                        channel.setCommand(command)
+                        environment.forEach { (name, value) -> channel.setEnv(name, value) }
+                        channel.setInputStream(stdin, true)
+                        channel.setOutputStream(stdout, true)
+                        channel.setErrStream(errors, true)
+                        channel.connect(CONNECT_TIMEOUT)
+                        onStarted()
+                        while (!channel.isClosed) { if (stopped.get()) throw SshFailure("RUNTIME_CLOSED"); Thread.sleep(10) }
+                        connection.used = now()
+                        channel.exitStatus
+                    } finally { channel.disconnect() }
+                }
+            }
+            val text = errors.text()
+            if (text.isNotEmpty()) {
+                val bytes = connection.filter.whole(text).toByteArray(Charsets.UTF_8)
+                try { withContext(Dispatchers.IO) { stderr.write(bytes); stderr.flush() } } finally { bytes.fill(0) }
+            }
+            return exit
+        } finally {
+            errors.wipe()
+            withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
+        }
+    }
+
     suspend fun list(owner: String, alias: String, path: String): SshDirectoryPage = sftp(owner, alias, path) { channel, connection ->
         val entries = mutableListOf<SshRemoteEntry>()
         var truncated = false

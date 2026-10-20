@@ -1,7 +1,16 @@
 """Nexara 内置 git：把常用 git 子命令转交 dulwich 命令行。
 
-不支持的子命令、全局选项与 SSH 远端返回 GIT_UNSUPPORTED 与指引，退出码 2；
+不支持的子命令与全局选项返回 GIT_UNSUPPORTED 与指引，退出码 2；
 其它失败输出单行 fatal 信息，退出码 128，与 git 一致。
+
+远端认证（由 Nexara 内置执行后端按命令注入环境变量，令牌与私钥始终留在 App 进程内）：
+  NEXARA_GIT_NONCE：本条命令的一次性 nonce，命令结束即失效；
+  NEXARA_GIT_PROXY 与 NEXARA_GIT_CREDENTIAL_HOSTS：HTTPS 凭据注入代理地址（127.0.0.1:<端口>）与已配置凭据的主机键
+      （逗号分隔，非 443 端口写作 主机:端口）。对这些主机的 HTTPS 请求改发到
+      http://127.0.0.1:<端口>/<主机键>/<路径>，带 X-Nexara-Git-Nonce 请求头，由代理加 Authorization 后转发；
+      其它主机保持直连。
+  NEXARA_GIT_SSH_BRIDGE：SSH 桥地址（127.0.0.1:<端口>）。SSH 远端（git@主机:路径、ssh://）改由自定义 dulwich
+      SSH vendor 连接 SSH 桥，协议见 _BridgeConnection；没有该变量时 SSH 远端返回 GIT_UNSUPPORTED。
 
 App 内部只读检查入口（不在用法说明与 SUPPORTED 中，供 Git 变更面板使用，不经过 shell_exec）：
 
@@ -81,12 +90,341 @@ def _usage():
         "工作区：私有工作区计入应用备份上限且卸载即删除，clone 前会提示改用项目文件夹或共享文件夹；",
         "  共享文件夹的仓库自动设置 core.symlinks=false、core.filemode=false、core.ignorecase=true，",
         "  符号链接检出为普通文件，仅大小写不同的路径只保留一个。",
-        "远端只支持 HTTPS；推送私有仓库需在 URL 中提供令牌。" + FALLBACK,
+        "远端：HTTPS 与 SSH（git@<主机>:<路径>、ssh://）。",
+        "  私有仓库的 HTTPS 凭据请在 Nexara 设置 → 工具 → Git 凭据 中按主机保存（用户名 + 令牌），内置 git 自动使用；",
+        "  不要把令牌写进 URL、命令或文件（URL 中自带的凭据仍可用但不推荐，会写入仓库配置）。",
+        "  SSH 远端使用 设置 → 工具 → SSH 主机 中已固定主机密钥的主机（例如主机 github.com、用户 git），私钥不离开 App。",
+        FALLBACK,
     ])
 
 
 def _ssh_url(value):
     return value.startswith("ssh://") or value.startswith("git+ssh://") or bool(_SCP_LIKE.match(value))
+
+
+ENV_NONCE = "NEXARA_GIT_NONCE"
+ENV_PROXY = "NEXARA_GIT_PROXY"
+ENV_CREDENTIAL_HOSTS = "NEXARA_GIT_CREDENTIAL_HOSTS"
+ENV_SSH_BRIDGE = "NEXARA_GIT_SSH_BRIDGE"
+NONCE_HEADER = "X-Nexara-Git-Nonce"
+PROXY_ERROR_HEADER = "X-Nexara-Git-Error"
+CREDENTIAL_SETTINGS = "设置 → 工具 → Git 凭据"
+SSH_UNAVAILABLE = "当前环境没有 SSH 桥（只在 Nexara 的 shell_exec / python_exec 中可用），请改用 HTTPS 地址。"
+
+
+class _RemoteAuthError(Exception):
+    """远端认证相关的失败：消息是给用户看的完整说明，不含令牌、nonce 或私钥。
+
+    不继承 dulwich 的 GitProtocolError：dulwich 的 clone 会吞掉 GitProtocolError 并以 0 退出。
+    """
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _loopback_address(value):
+    """解析 127.0.0.1:<端口>；其它地址一律不用，避免环境变量把流量引到别处。"""
+    host, _, port = (value or "").strip().rpartition(":")
+    if host != "127.0.0.1" or not port.isdigit() or not 0 < int(port) < 65536:
+        return None
+    return host, int(port)
+
+
+def _nonce():
+    value = os.environ.get(ENV_NONCE, "").strip()
+    return value if re.fullmatch(r"[A-Za-z0-9_-]{16,128}", value) else None
+
+
+def _https_host_key(url):
+    """https URL 的凭据主机键（小写主机名，非 443 端口为 主机:端口）；不是 https 时返回 None。"""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        return None
+    host = parts.hostname.lower()
+    return host if port in (None, 443) else "%s:%d" % (host, port)
+
+
+class _CredentialProxy:
+    """把已配置凭据主机的 HTTPS 地址改写到本机凭据注入代理，并能把代理地址还原为原地址。"""
+
+    def __init__(self, port, nonce, hosts):
+        self.origin = "http://127.0.0.1:%d" % port
+        self.prefix = self.origin + "/"
+        self.nonce = nonce
+        self.hosts = hosts
+
+    @classmethod
+    def from_environment(cls):
+        address = _loopback_address(os.environ.get(ENV_PROXY))
+        nonce = _nonce()
+        hosts = {item.strip().lower() for item in os.environ.get(ENV_CREDENTIAL_HOSTS, "").split(",") if item.strip()}
+        if address is None or nonce is None or not hosts:
+            return None
+        return cls(address[1], nonce, hosts)
+
+    def outbound(self, url):
+        """已配置主机的 https URL 改写为代理 URL（不带 URL 中的用户信息）；其它 URL 返回 None。"""
+        from urllib.parse import urlsplit
+
+        key = _https_host_key(url)
+        if key is None or key not in self.hosts:
+            return None
+        parts = urlsplit(url)
+        return self.prefix + key + (parts.path or "/") + ("?" + parts.query if parts.query else "")
+
+    def inbound(self, url):
+        """代理 URL 还原为原 https URL；urllib3 未重定向时只给出路径，按代理地址补全。"""
+        if url and url.startswith("/"):
+            url = self.origin + url
+        if url and url.startswith(self.prefix):
+            return "https://" + url[len(self.prefix):]
+        return url
+
+
+def _proxy_failure(resp, url, key):
+    """把代理或远端的失败状态转成说明；返回 None 表示按 dulwich 原有方式处理。"""
+    code = resp.headers.get(PROXY_ERROR_HEADER)
+    if code:
+        try:
+            detail = resp.read(4096).decode("utf-8", "replace").strip()
+        except Exception:
+            detail = ""
+        return _RemoteAuthError(code, "Git 凭据代理拒绝请求：%s" % (detail or "无说明"))
+    if resp.status == 401:
+        return _RemoteAuthError(
+            "CREDENTIAL_REJECTED",
+            "%s 拒绝了已保存的 Git 凭据（HTTP 401）。请在 %s 中检查该主机的用户名与令牌是否有效。" % (key, CREDENTIAL_SETTINGS),
+        )
+    if resp.status == 403:
+        return _RemoteAuthError(
+            "ACCESS_DENIED",
+            "%s 拒绝访问 %s（HTTP 403）：令牌可能缺少该仓库的读写权限或已过期，请在 %s 中更新。" % (key, url, CREDENTIAL_SETTINGS),
+        )
+    return None
+
+
+def _install_credential_proxy(proxy):
+    """接管 dulwich HTTP 客户端的请求：只改写已配置凭据主机，其它请求原样直连。"""
+    from dulwich.client import Urllib3HttpGitClient
+    from dulwich.errors import GitProtocolError, NotGitRepository
+
+    original = Urllib3HttpGitClient.__dict__["_http_request"]
+    original = getattr(original, "_nexara_original", original)
+
+    def _http_request(self, url, headers=None, data=None, raise_for_status=True):
+        target = proxy.outbound(url)
+        if target is None:
+            return original(self, url, headers, data, raise_for_status)
+        merged = dict(headers or {})
+        merged[NONCE_HEADER] = proxy.nonce
+        resp, read = original(self, target, merged, data, False)
+        if raise_for_status and resp.status != 200:
+            failure = _proxy_failure(resp, url, _https_host_key(url))
+            if failure is not None:
+                raise failure
+            if resp.status == 404:
+                raise NotGitRepository
+            raise GitProtocolError("unexpected http resp %d for %s" % (resp.status, url))
+        # 重定向后的地址还原成原主机，dulwich 据此更新后续请求的基址，再次经过这里改写。
+        final = proxy.inbound(resp.geturl() or target)
+        resp.redirect_location = final if final != url else ""
+        return resp, read
+
+    _http_request._nexara_original = original
+    Urllib3HttpGitClient._http_request = _http_request
+
+
+class _BridgeStderr:
+    """SSH 远端 stderr：dulwich 只在远端挂断后 readlines()，这时等待桥送完全部 stderr。"""
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    def readlines(self):
+        self._connection.wait(10)
+        return [line + b"\n" for line in bytes(self._connection.stderr_data).splitlines()]
+
+    def read(self, size=-1):
+        self._connection.wait(10)
+        data = bytes(self._connection.stderr_data)
+        return data if size is None or size < 0 else data[:size]
+
+    def close(self):
+        pass
+
+
+class _BridgeConnection:
+    """经 Nexara SSH 桥执行一条远端 git 命令，提供 dulwich SSH vendor 需要的 read/write/close/can_read/stderr。
+
+    协议：先发送一行 JSON {"nonce", "host", "port", "user", "command", "protocol"}，
+    收到一行 JSON {"ok": true} 或 {"ok": false, "code", "message"}；之后双方交换帧
+    （1 字节类型 + 4 字节大端长度 + 载荷，单帧最多 64 KiB）：
+    客户端发送 0 = stdin 数据、4 = stdin 结束；服务端发送 1 = stdout、2 = stderr、3 = 退出码（4 字节有符号大端）。
+    """
+
+    MAX_FRAME = 65536
+
+    def __init__(self, address, nonce, host, port, username, command, protocol_version):
+        import json
+        import socket
+        import threading
+
+        try:
+            text = command.decode("utf-8") if isinstance(command, bytes) else command
+        except UnicodeDecodeError:
+            raise _RemoteAuthError("COMMAND_REJECTED", "远端仓库路径不是有效的 UTF-8。")
+        try:
+            self._sock = socket.create_connection(address, timeout=30)
+        except OSError as error:
+            raise _RemoteAuthError("SSH_BRIDGE_UNAVAILABLE", "无法连接 Nexara SSH 桥（%s）。" % type(error).__name__)
+        try:
+            request = {"nonce": nonce, "host": host, "port": port, "user": username, "command": text,
+                       "protocol": protocol_version or 0}
+            self._sock.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"))
+            self._input = self._sock.makefile("rb")
+            # 远端握手与认证可能较慢，等待回复期间不设超时，由命令超时兜底。
+            self._sock.settimeout(None)
+            line = self._input.readline(8193)
+            try:
+                reply = json.loads(line.decode("utf-8")) if line else {}
+            except ValueError:
+                reply = {}
+            if not isinstance(reply, dict) or reply.get("ok") is not True:
+                reply = reply if isinstance(reply, dict) else {}
+                raise _RemoteAuthError(
+                    str(reply.get("code") or "SSH_BRIDGE_FAILED"),
+                    str(reply.get("message") or "Nexara SSH 桥没有建立远端连接。"),
+                )
+        except BaseException:
+            self._sock.close()
+            raise
+        read_end, self._pipe = os.pipe()
+        self._stdout = os.fdopen(read_end, "rb")
+        self.read = self._stdout.read
+        self.stderr_data = bytearray()
+        self.exit_code = None
+        self._done = threading.Event()
+        self._write_lock = threading.Lock()
+        self._closed = False
+        self._thread = threading.Thread(target=self._pump, name="nexara-git-ssh", daemon=True)
+        self._thread.start()
+
+    @property
+    def stderr(self):
+        return _BridgeStderr(self)
+
+    def _pump(self):
+        try:
+            while True:
+                head = self._input.read(5)
+                if len(head) < 5:
+                    break
+                kind, size = head[0], int.from_bytes(head[1:], "big")
+                if size > self.MAX_FRAME:
+                    break
+                payload = self._input.read(size) if size else b""
+                if len(payload) < size:
+                    break
+                if kind == 1:
+                    view = memoryview(payload)
+                    while view:
+                        view = view[os.write(self._pipe, view):]
+                elif kind == 2:
+                    self.stderr_data += payload
+                elif kind == 3 and size == 4:
+                    self.exit_code = int.from_bytes(payload, "big", signed=True)
+                    break
+                else:
+                    break
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                os.close(self._pipe)
+            except OSError:
+                pass
+            self._done.set()
+
+    def wait(self, timeout):
+        return self._done.wait(timeout)
+
+    def _frame(self, kind, data=b""):
+        with self._write_lock:
+            self._sock.sendall(bytes([kind]) + len(data).to_bytes(4, "big") + data)
+
+    def write(self, data):
+        data = bytes(data)
+        for start in range(0, len(data), self.MAX_FRAME):
+            self._frame(0, data[start:start + self.MAX_FRAME])
+        return len(data)
+
+    def can_read(self):
+        import select
+
+        return len(select.select([self._stdout.fileno()], [], [], 0)[0]) > 0
+
+    def close(self, timeout=10):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._frame(4)
+        except OSError:
+            pass
+        self._done.wait(timeout)
+        try:
+            self._sock.close()
+        finally:
+            self._stdout.close()
+            self._thread.join(1)
+
+
+class _BridgeVendor:
+    """dulwich SSH vendor：远端命令经 Nexara SSH 桥执行，认证使用 App 中已保存的 SSH 主机。"""
+
+    def __init__(self, address, nonce):
+        self.address = address
+        self.nonce = nonce
+
+    def run_command(self, host, command, username=None, port=None, password=None, key_filename=None,
+                    ssh_command=None, protocol_version=None):
+        if password is not None or key_filename is not None:
+            raise _RemoteAuthError(
+                "SSH_OPTION_REJECTED", "内置 git 的 SSH 远端只使用 设置 → 工具 → SSH 主机 中保存的认证，不接受密码或密钥文件。"
+            )
+        if protocol_version is None:
+            from dulwich.protocol import DEFAULT_GIT_PROTOCOL_VERSION_FETCH
+
+            protocol_version = DEFAULT_GIT_PROTOCOL_VERSION_FETCH
+        return _BridgeConnection(self.address, self.nonce, host, port, username, command, protocol_version)
+
+    @classmethod
+    def from_environment(cls):
+        address = _loopback_address(os.environ.get(ENV_SSH_BRIDGE))
+        nonce = _nonce()
+        if address is None or nonce is None:
+            return None
+        return cls(address, nonce)
+
+
+def _install_remote_auth():
+    """按环境变量接上 HTTPS 凭据代理与 SSH 桥。"""
+    import dulwich.client
+
+    proxy = _CredentialProxy.from_environment()
+    if proxy is not None:
+        _install_credential_proxy(proxy)
+    vendor = _BridgeVendor.from_environment()
+    if vendor is not None:
+        dulwich.client.get_ssh_vendor = lambda: vendor
 
 
 def _has_identity():
@@ -717,8 +1055,8 @@ def _remote(args):
     if action == "set-url" and len(rest) == 2:
         if url(rest[0]) is None:
             return _fatal("No such remote '%s'" % rest[0])
-        if _ssh_url(rest[1]):
-            return _unsupported("内置 git 不支持 SSH 远端，请改用 HTTPS 地址。" + FALLBACK)
+        if _ssh_url(rest[1]) and _BridgeVendor.from_environment() is None:
+            return _unsupported(SSH_UNAVAILABLE + FALLBACK)
         config.set((b"remote", rest[0].encode()), b"url", rest[1].encode())
         config.write_to_path()
         return 0
@@ -1154,8 +1492,8 @@ def main(argv):
         return 0
     if command not in SUPPORTED:
         return _unsupported("子命令 %s 不在内置 git 支持范围内。支持：%s。%s" % (command, " ".join(SUPPORTED), FALLBACK))
-    if command in NETWORK and any(_ssh_url(arg) for arg in rest):
-        return _unsupported("内置 git 不支持 SSH 远端，请改用 HTTPS 地址。" + FALLBACK)
+    if command in NETWORK and any(_ssh_url(arg) for arg in rest) and _BridgeVendor.from_environment() is None:
+        return _unsupported(SSH_UNAVAILABLE + FALLBACK)
     if command in ("clone", "fetch") and any(arg in ("-h", "--help") for arg in rest):
         print(_usage())
         return 0
@@ -1226,6 +1564,8 @@ def _run_dulwich(command, rest, policy=None):
 
     if command in ("clone", "fetch"):
         _limit_fetched_refs()
+    if command in NETWORK:
+        _install_remote_auth()
 
     _POLICY = policy
     try:
@@ -1236,9 +1576,11 @@ def _run_dulwich(command, rest, policy=None):
         raise
     except _RemoteRefMissing as error:
         return _fatal(str(error))
+    except _RemoteAuthError as error:
+        return _fatal("%s: %s" % (error.code, error.message))
     except FileNotFoundError as error:
         if "ssh" in str(error):
-            return _unsupported("内置 git 不支持 SSH 远端，请把 remote 改为 HTTPS 地址。" + FALLBACK)
+            return _unsupported(SSH_UNAVAILABLE + FALLBACK)
         return _fatal(str(error))
     except Exception as error:  # dulwich 以异常报告大多数失败
         detail = str(error).strip() or type(error).__name__

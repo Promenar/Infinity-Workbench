@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="git_credentials_entry">Git credentials</string>
+    <plurals name="git_credentials_entry_count">
+        <item quantity="one">%1$d host saved</item>
+        <item quantity="other">%1$d hosts saved</item>
+    </plurals>
+    <string name="git_credentials_entry_empty">HTTPS tokens for the built-in git</string>
+    <string name="git_credentials_title">Git credentials</string>
+    <string name="git_credentials_saved_section">Saved credentials</string>
+    <string name="git_credentials_description">The built-in git uses these when it clones, pulls or pushes HTTPS repositories on these hosts. Tokens are encrypted on this device, never included in backups, and never appear in commands, environment variables or the model context.</string>
+    <string name="git_credentials_empty">No Git credentials saved</string>
+    <string name="git_credentials_saved_subtitle">User %1$s · token saved</string>
+    <string name="git_credentials_update_token">Replace token</string>
+    <string name="git_credentials_delete_action">Delete credentials for %1$s</string>
+    <string name="git_credentials_editor_section">Add or replace</string>
+    <string name="git_credentials_token_hint">Saving a host that already exists replaces its user name and token. On GitHub use a fine-grained token with read and write access to Contents; GitLab and Gitea tokens work the same way.</string>
+    <string name="git_credentials_host_label">Host</string>
+    <string name="git_credentials_username_label">User name</string>
+    <string name="git_credentials_token_label">Access token</string>
+    <string name="git_credentials_saving">Saving…</string>
+    <string name="git_credentials_saved">Saved credentials for %1$s</string>
+    <string name="git_credentials_deleted">Deleted credentials for %1$s</string>
+    <string name="git_credentials_invalid_host">Enter a host name such as github.com, optionally with a port (git.example.com:8443).</string>
+    <string name="git_credentials_invalid_username">The user name must not be empty or contain spaces or colons.</string>
+    <string name="git_credentials_invalid_token">The token must be printable ASCII without spaces.</string>
+    <string name="git_credentials_load_failed">Could not read the saved credentials.</string>
+    <string name="git_credentials_save_failed">Could not save the credentials. Try again.</string>
+    <string name="git_credentials_delete_failed">Could not delete the credentials. Try again.</string>
+    <string name="git_credentials_delete_title">Delete Git credentials?</string>
+    <string name="git_credentials_delete_message">The built-in git will no longer authenticate to %1$s over HTTPS.</string>
+    <string name="git_credentials_delete_confirm">Delete</string>
+    <string name="git_credentials_ssh_section">SSH remotes</string>
+    <string name="git_credentials_ssh_description">git@host:path and ssh:// remotes use an SSH host whose host key is pinned, for example host github.com with user git. The private key stays in the app.</string>
+</resources>

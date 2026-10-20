@@ -162,6 +162,7 @@ private fun ToolsHeaderPreview(dark: Boolean) = SettingsVisualTheme(dark) {
                     approveScriptWrites = true,
                     sshHostCount = 2,
                     termuxAvailability = TermuxAvailability(true, "0.119.1", true),
+                    gitCredentialCount = 2,
                 ),
                 actions = SkillsSettingsVisualActions(),
             )
