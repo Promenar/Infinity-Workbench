@@ -1768,8 +1768,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.data.git.remote.SecretGitCredentialStore(secretStore)
     }
 
-    /** 凭据注入代理向远端转发所用的 OkHttp 客户端；接入 tailnet 时在此挂 ProxySelector。 */
-    val gitRemoteHttpClient: okhttp3.OkHttpClient by lazy { okhttp3.OkHttpClient() }
+    /** 凭据注入代理向远端转发所用的 OkHttp 客户端：tailnet 上的 git 主机经内置 Tailscale 本机代理，其它主机按系统默认选择器。 */
+    val gitRemoteHttpClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .proxySelector(tailnetManager.proxySelector)
+            .proxyAuthenticator(tailnetManager.proxyAuthenticator)
+            .build()
+    }
 
     /**
      * 内置 git 的远端认证代理（HTTPS 凭据注入 + SSH 桥），由内置执行后端按命令签发 nonce。

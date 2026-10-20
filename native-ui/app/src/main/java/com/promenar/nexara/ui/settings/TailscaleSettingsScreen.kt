@@ -399,7 +399,7 @@ private fun TailscaleAllowlistEditor(state: TailscaleSettingsUiState, actions: T
             },
             modifier = Modifier.fillMaxWidth().testTag("tailscale_allowlist"),
             label = { Text(stringResource(R.string.tailscale_allowlist_label)) },
-            placeholder = { Text("nas, laptop, 100.64.0.2") },
+            placeholder = { Text("nas, laptop") },
             supportingText = state.peersProblem?.let { problem ->
                 {
                     Text(

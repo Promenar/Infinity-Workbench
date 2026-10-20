@@ -142,7 +142,11 @@ class SshRuntime(
         val host = host(alias)
         val verifier = PinnedSshHostKeys(host, probe = true)
         val client = SshKeyGenerator.configuredClient().apply { setHostKeyRepository(verifier) }
-        val session = client.getSession(host.username, host.hostname, host.port).apply { setConfig("StrictHostKeyChecking", "yes") }
+        val session = client.getSession(host.username, host.hostname, host.port).apply {
+            setConfig("StrictHostKeyChecking", "yes")
+            // 与 connection() 一致：获取 tailnet 主机指纹也经内置 Tailscale 的本机 SOCKS5 代理。
+            com.promenar.nexara.data.tailnet.InstalledTailnetRouting.routing.jschProxy(host.hostname)?.let { setProxy(it) }
+        }
         return try {
             io({ session.disconnect() }) {
                 try { session.connect(CONNECT_TIMEOUT) } catch (_: Exception) { }
