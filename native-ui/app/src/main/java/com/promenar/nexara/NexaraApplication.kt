@@ -650,6 +650,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 foregroundServiceAvailable = BuildConfig.DISTRIBUTION == "sideload",
             ),
             sessionWorkspace = sessionWorkspaceResolver::resolve,
+            gitRemote = gitRemoteBroker,
         )
     }
 
@@ -1733,4 +1734,27 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     // ProviderConfig 已迁移至 data/model/ProviderModels.kt
+
+    /** 内置 git 的 HTTPS 凭据：主机与用户名、令牌都在 SecretStore，不进应用备份。 */
+    val gitCredentialStore: com.promenar.nexara.data.git.remote.GitCredentialStore by lazy {
+        com.promenar.nexara.data.git.remote.SecretGitCredentialStore(secretStore)
+    }
+
+    /** 凭据注入代理向远端转发所用的 OkHttp 客户端；接入 tailnet 时在此挂 ProxySelector。 */
+    val gitRemoteHttpClient: okhttp3.OkHttpClient by lazy { okhttp3.OkHttpClient() }
+
+    /** 内置 git 的远端认证代理（HTTPS 凭据注入 + SSH 桥），由内置执行后端按命令签发 nonce。 */
+    val gitRemoteBroker: com.promenar.nexara.data.git.remote.GitRemoteBroker by lazy {
+        val nonces = com.promenar.nexara.data.git.remote.GitNonceRegistry()
+        com.promenar.nexara.data.git.remote.GitRemoteBroker(
+            credentials = gitCredentialStore,
+            nonces = nonces,
+            proxy = com.promenar.nexara.data.git.remote.GitCredentialProxy(gitCredentialStore, nonces, gitRemoteHttpClient),
+            sshBridge = com.promenar.nexara.data.git.remote.GitSshBridge(
+                nonces = nonces,
+                hosts = { com.promenar.nexara.data.git.remote.currentSshHosts(sshHostStore) },
+                executor = com.promenar.nexara.data.git.remote.sshRuntimeGitExecutor(sshRuntime),
+            ),
+        )
+    }
 }

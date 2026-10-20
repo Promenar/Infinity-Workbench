@@ -1,7 +1,15 @@
 package com.promenar.nexara.data.exec
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.git.remote.GitCredentialProxy
+import com.promenar.nexara.data.git.remote.GitNonceRegistry
+import com.promenar.nexara.data.git.remote.GitRemoteBroker
+import com.promenar.nexara.data.git.remote.GitRemoteLease
+import com.promenar.nexara.data.git.remote.GitRemoteSessions
+import com.promenar.nexara.data.git.remote.SecretGitCredentialStore
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.WorkspaceChangeReport
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.repository.WorkspaceCommandHost
@@ -9,7 +17,11 @@ import com.promenar.nexara.data.repository.WorkspaceCommandOutcome
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill
 import com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -68,6 +80,7 @@ class BuiltinExecServiceTest {
         keepAlive: ExecKeepAlive = NoExecKeepAlive,
         clockNanos: () -> Long = System::nanoTime,
         sessionWorkspace: suspend (String?) -> SessionWorkspace = { SessionWorkspace.Private },
+        gitRemote: GitRemoteSessions = GitRemoteSessions.None,
     ) = BuiltinExecService(
         workspace = host,
         runner = BuiltinCommandRunner(
@@ -89,6 +102,7 @@ class BuiltinExecServiceTest {
         unavailablePythonAbi = { "x86" },
         keepAlive = keepAlive,
         sessionWorkspace = sessionWorkspace,
+        gitRemote = gitRemote,
     )
 
     /** 记录保活请求；[stopOnStart] 模拟用户立即点击通知的停止按钮。 */
@@ -321,5 +335,93 @@ class BuiltinExecServiceTest {
         val value = json(result.toJson().toString())
         assertThat(value.containsKey("paused_ms")).isFalse()
         assertThat(value["guidance"]?.toString()).isEqualTo("null")
+    }
+
+    /** 记录每条命令签发与关闭的远端认证作用域。 */
+    private class RecordingRemote(private val failOpen: Boolean = false) : GitRemoteSessions {
+        val opened = mutableListOf<String>()
+        val closed = mutableListOf<String>()
+        val firstOpened = CompletableDeferred<Unit>()
+        override suspend fun open(): GitRemoteLease {
+            if (failOpen) error("代理启动失败")
+            val nonce = "nonce-${opened.size}"
+            opened += nonce
+            firstOpened.complete(Unit)
+            return object : GitRemoteLease {
+                override val environment = mapOf(GitRemoteBroker.ENV_NONCE to nonce)
+                override fun close() { closed += nonce }
+            }
+        }
+    }
+
+    @Test
+    fun `每条命令签发独立的远端作用域并在结束时关闭`() = runBlocking<Unit> {
+        val remote = RecordingRemote()
+        val first = service(gitRemote = remote).runShell("root", "s", "echo \$NEXARA_GIT_NONCE", null, 10)
+        val second = service(gitRemote = remote).runShell("root", "s", "echo \$NEXARA_GIT_NONCE; exit 3", null, 10)
+        assertThat(first.stdout).isEqualTo("nonce-0\n")
+        assertThat(second.stdout).isEqualTo("nonce-1\n")
+        assertThat(remote.closed).containsExactly("nonce-0", "nonce-1").inOrder()
+
+        val python = File(work, "python-missing")
+        service(pythonDir = python, gitRemote = remote).runPython("root", "s", "print(1)", null, 5)
+        assertThat(remote.closed).hasSize(remote.opened.size)
+    }
+
+    @Test
+    fun `超时与停止时也关闭远端作用域`() = runBlocking<Unit> {
+        val remote = RecordingRemote()
+        val timedOut = service(gitRemote = remote).runShell("root", "s", "sleep 30", null, 1)
+        assertThat(timedOut.timedOut).isTrue()
+        assertThat(remote.closed).containsExactly("nonce-0")
+
+        val stopped = service(keepAlive = RecordingKeepAlive(ExecForegroundState.STARTED, stopOnStart = true), gitRemote = remote)
+            .runShell("root", "s", "sleep 30", null, 60)
+        assertThat(stopped.exitCode).isNull()
+        assertThat(remote.closed).containsExactly("nonce-0", "nonce-1").inOrder()
+    }
+
+    @Test
+    fun `协程取消时关闭远端作用域`() = runBlocking<Unit> {
+        val remote = RecordingRemote()
+        val job = async { service(gitRemote = remote).runShell("root", "s", "sleep 30", null, 60) }
+        withTimeout(10_000) { remote.firstOpened.await() }
+        delay(300)
+        job.cancel()
+        runCatching { job.await() }
+        assertThat(remote.closed).containsExactly("nonce-0")
+    }
+
+    @Test
+    fun `作用域签发失败时命令照常执行且不带远端变量`() = runBlocking<Unit> {
+        val result = service(gitRemote = RecordingRemote(failOpen = true)).runShell("root", "s", "echo \"[\${NEXARA_GIT_NONCE:-}]\"", null, 10)
+        assertThat(result.stdout).isEqualTo("[]\n")
+    }
+
+    @Test
+    fun `真实代理只把nonce与代理地址交给子进程，令牌不进入环境且命令结束后nonce失效`() = runBlocking<Unit> {
+        val token = "nxt_ShouldNeverReachTheChildProcess42"
+        val secrets = object : SecretStore {
+            val values = mutableMapOf<String, ByteArray>()
+            override fun put(id: SecretId, value: ByteArray) { values[id.value] = value.copyOf() }
+            override fun get(id: SecretId): ByteArray? = values[id.value]?.copyOf()
+            override fun contains(id: SecretId): Boolean = id.value in values
+            override fun remove(id: SecretId) { values.remove(id.value) }
+        }
+        val credentials = SecretGitCredentialStore(secrets).apply { save("github.com", "octocat", token.toByteArray()) }
+        val nonces = GitNonceRegistry()
+        val proxy = GitCredentialProxy(credentials, nonces, okhttp3.OkHttpClient())
+        GitRemoteBroker(credentials, nonces, proxy, sshBridge = null).use { broker ->
+            val result = service(gitRemote = broker).runShell("root", "s", "env", null, 10)
+            val env = result.stdout.lines().filter { it.startsWith("NEXARA_GIT_") }.associate { it.substringBefore('=') to it.substringAfter('=') }
+            assertThat(env.keys).containsExactly(GitRemoteBroker.ENV_NONCE, GitRemoteBroker.ENV_HTTP_PROXY, GitRemoteBroker.ENV_CREDENTIAL_HOSTS)
+            assertThat(env.getValue(GitRemoteBroker.ENV_HTTP_PROXY)).isEqualTo("127.0.0.1:${proxy.port}")
+            assertThat(env.getValue(GitRemoteBroker.ENV_CREDENTIAL_HOSTS)).isEqualTo("github.com")
+            assertThat(result.stdout).doesNotContain(token)
+            assertThat(result.stderr).doesNotContain(token)
+            assertThat(result.toJson().toString()).doesNotContain(token)
+            assertThat(nonces.resolve(env.getValue(GitRemoteBroker.ENV_NONCE))).isNull()
+            assertThat(nonces.activeCount).isEqualTo(0)
+        }
     }
 }

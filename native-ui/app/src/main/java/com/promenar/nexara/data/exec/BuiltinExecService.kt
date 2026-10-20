@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.exec
 
+import com.promenar.nexara.data.git.remote.GitRemoteSessions
 import com.promenar.nexara.data.repository.WorkspaceChangeReport
 import com.promenar.nexara.data.repository.WorkspaceCommandHost
 import com.promenar.nexara.data.repository.WorkspaceCommandOutcome
@@ -36,6 +37,8 @@ class BuiltinExecService(
     private val wallClockMillis: () -> Long = System::currentTimeMillis,
     /** 会话当前工作区；默认一律为私有工作区。 */
     private val sessionWorkspace: suspend (sessionId: String?) -> SessionWorkspace = { SessionWorkspace.Private },
+    /** 内置 git 的远端认证作用域：每条命令签发一次性 nonce，命令结束（含超时、取消、异常）即吊销。 */
+    private val gitRemote: GitRemoteSessions = GitRemoteSessions.None,
 ) {
     val pipAvailable: Boolean get() = environment.pipAvailable
 
@@ -100,16 +103,21 @@ class BuiltinExecService(
         var physicalRoot: File? = null
         val control = BuiltinCommandControl()
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
+        // 代理不可用时命令照常执行，内置 git 退回直连。
+        val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
+        val withRemote: (File, String) -> BuiltinCommandRequest = { root, workspaceKind ->
+            request(root, workspaceKind).let { it.copy(environment = it.environment + lease.environment) }
+        }
         val held = try {
             keepAlive.hold(run, control::requestStop) {
                 if (directory != null) {
                     physicalRoot = directory.root
-                    val output = try { runner.run(request(directory.root, workspaceKind), control) } catch (_: IOException) { null }
+                    val output = try { runner.run(withRemote(directory.root, workspaceKind), control) } catch (_: IOException) { null }
                     WorkspaceCommandOutcome(output, changes = null)
                 } else workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
                     physicalRoot = root
                     try {
-                        runner.run(request(root, workspaceKind), control)
+                        runner.run(withRemote(root, workspaceKind), control)
                     } catch (failure: IOException) {
                         null
                     }
@@ -127,6 +135,8 @@ class BuiltinExecService(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话工作区当前不可修改（可能有尚未恢复的文件操作）；稍后重试，或先用文件工具确认工作区状态。",
             )
+        } finally {
+            lease.close()
         }
         val outcome = held.value
         val fields = if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)

@@ -2,7 +2,8 @@
 
 改写与输出整理逻辑不依赖 dulwich；clone/fetch 抓取范围与工作区类型的端到端测试需要 dulwich，
 通过环境变量 NEXARA_DULWICH_PATH（解压后的 dulwich 与 urllib3 wheel 所在目录，可用 os.pathsep 分隔多个）
-或已安装的 dulwich 导入，导入失败时跳过。远端为临时目录中构造的本地仓库，不访问网络。
+或已安装的 dulwich 导入，导入失败时跳过。远端为临时目录中构造的本地仓库，不访问网络；
+HTTPS 凭据代理与 SSH 桥用本机模拟服务代替 App 侧实现。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 SITE_DIR = Path(__file__).resolve().parents[2] / "native-ui/app/python/site"
 MODULE_PATH = SITE_DIR / "nexara_git.py"
@@ -835,6 +837,494 @@ class InspectTest(unittest.TestCase):
             config.write_to_path()
         explicit = self.inspect("status", kind="shared")
         self.assertIn("README.TXT", self.paths(explicit, "untracked"))
+
+
+TOKEN = "nxt_SyntheticTokenForNexaraTests0123456789"
+NONCE = "N" * 43
+
+
+class RemoteAuthRewriteTest(unittest.TestCase):
+    """凭据代理的地址改写、环境变量解析与用法说明，不依赖 dulwich。"""
+
+    def proxy(self) -> object:
+        return nexara_git._CredentialProxy(4321, NONCE, {"github.com", "git.example.com:8443"})
+
+    def test_configured_host_is_rewritten_to_proxy_without_userinfo(self) -> None:
+        proxy = self.proxy()
+        self.assertEqual(
+            proxy.outbound("https://github.com/owner/repo.git/info/refs?service=git-upload-pack"),
+            "http://127.0.0.1:4321/github.com/owner/repo.git/info/refs?service=git-upload-pack",
+        )
+        self.assertEqual(
+            proxy.outbound("https://user:secret@GitHub.com:443/owner/repo.git/git-receive-pack"),
+            "http://127.0.0.1:4321/github.com/owner/repo.git/git-receive-pack",
+        )
+        self.assertEqual(
+            proxy.outbound("https://git.example.com:8443/team/r.git/git-upload-pack"),
+            "http://127.0.0.1:4321/git.example.com:8443/team/r.git/git-upload-pack",
+        )
+
+    def test_unconfigured_hosts_and_plain_http_stay_direct(self) -> None:
+        proxy = self.proxy()
+        for url in (
+            "https://gitlab.com/owner/repo.git/info/refs",
+            "https://git.example.com/team/r.git/info/refs",  # 443 端口未配置
+            "http://github.com/owner/repo.git/info/refs",
+            "/local/path",
+        ):
+            self.assertIsNone(proxy.outbound(url), url)
+
+    def test_proxy_url_maps_back_to_original_host(self) -> None:
+        proxy = self.proxy()
+        self.assertEqual(
+            proxy.inbound("http://127.0.0.1:4321/github.com/moved/repo.git/info/refs?service=git-upload-pack"),
+            "https://github.com/moved/repo.git/info/refs?service=git-upload-pack",
+        )
+        self.assertEqual(proxy.inbound("https://elsewhere/x"), "https://elsewhere/x")
+        # urllib3 未发生重定向时 geturl() 只给出请求路径。
+        self.assertEqual(
+            proxy.inbound("/github.com/owner/repo.git/info/refs?service=git-upload-pack"),
+            "https://github.com/owner/repo.git/info/refs?service=git-upload-pack",
+        )
+
+    def test_environment_requires_loopback_address_nonce_and_hosts(self) -> None:
+        base = {"NEXARA_GIT_PROXY": "127.0.0.1:4321", "NEXARA_GIT_NONCE": NONCE, "NEXARA_GIT_CREDENTIAL_HOSTS": "github.com"}
+        with unittest.mock.patch.dict(os.environ, base, clear=True):
+            proxy = nexara_git._CredentialProxy.from_environment()
+            self.assertEqual((proxy.prefix, proxy.hosts), ("http://127.0.0.1:4321/", {"github.com"}))
+        for key, value in (
+            ("NEXARA_GIT_PROXY", "10.0.0.5:4321"),
+            ("NEXARA_GIT_PROXY", "localhost:4321"),
+            ("NEXARA_GIT_PROXY", "127.0.0.1:0"),
+            ("NEXARA_GIT_NONCE", "short"),
+            ("NEXARA_GIT_NONCE", "bad nonce with spaces and more characters"),
+            ("NEXARA_GIT_CREDENTIAL_HOSTS", ""),
+        ):
+            with unittest.mock.patch.dict(os.environ, {**base, key: value}, clear=True):
+                self.assertIsNone(nexara_git._CredentialProxy.from_environment(), (key, value))
+        with unittest.mock.patch.dict(os.environ, {"NEXARA_GIT_SSH_BRIDGE": "127.0.0.1:5555", "NEXARA_GIT_NONCE": NONCE}, clear=True):
+            self.assertEqual(nexara_git._BridgeVendor.from_environment().address, ("127.0.0.1", 5555))
+        with unittest.mock.patch.dict(os.environ, {"NEXARA_GIT_SSH_BRIDGE": "192.168.1.2:5555", "NEXARA_GIT_NONCE": NONCE}, clear=True):
+            self.assertIsNone(nexara_git._BridgeVendor.from_environment())
+
+    def test_usage_points_to_credential_settings_instead_of_token_urls(self) -> None:
+        usage = nexara_git._usage()
+        self.assertIn("Git 凭据", usage)
+        self.assertIn("SSH 主机", usage)
+        self.assertNotIn("URL 中提供令牌", usage)
+
+    def run_main(self, *argv: str, env: dict | None = None) -> tuple[int, str]:
+        stderr = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, env or {}, clear=True), unittest.mock.patch.object(sys, "stderr", stderr):
+            code = nexara_git.main(list(argv))
+        return code, stderr.getvalue()
+
+    def test_ssh_remote_without_bridge_is_unsupported(self) -> None:
+        code, stderr = self.run_main("clone", "git@github.com:owner/repo.git")
+        self.assertEqual(code, nexara_git.UNSUPPORTED_EXIT)
+        self.assertIn("GIT_UNSUPPORTED", stderr)
+        self.assertIn("SSH 桥", stderr)
+
+    def test_bridge_vendor_rejects_password_and_key_file(self) -> None:
+        vendor = nexara_git._BridgeVendor(("127.0.0.1", 1), NONCE)
+        for kwargs in ({"password": "x"}, {"key_filename": "/tmp/id"}):
+            with self.assertRaises(nexara_git._RemoteAuthError):
+                vendor.run_command("github.com", b"git-upload-pack 'a/b.git'", **kwargs)
+
+
+class _FakeCredentialProxy:
+    """模拟 Kotlin 凭据注入代理：校验 nonce 与智能协议路径，加 Authorization 后转发到本机 dulwich 服务。"""
+
+    SMART = ("/info/refs", "/git-upload-pack", "/git-receive-pack")
+
+    def __init__(self, upstream_port: int, host_key: str = "git.test") -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        self.requests: list[dict] = []
+        self.mode = "forward"
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args) -> None:
+                pass
+
+            def body(self) -> bytes:
+                if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+                    data = b""
+                    while True:
+                        size = int(self.rfile.readline().split(b";")[0].strip(), 16)
+                        if size == 0:
+                            while self.rfile.readline() not in (b"\r\n", b"\n", b""):
+                                pass
+                            return data
+                        data += self.rfile.read(size)
+                        self.rfile.readline()
+                return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+
+            def reply(self, status: int, headers: dict, data: bytes) -> None:
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(data)
+
+            def handle_any(self) -> None:
+                import http.client
+
+                data = self.body() if self.command == "POST" else None
+                fake.requests.append({
+                    "path": self.path, "nonce": self.headers.get("X-Nexara-Git-Nonce"),
+                    "authorization": self.headers.get("Authorization"),
+                })
+                prefix = "/" + host_key + "/"
+                path = self.path.split("?", 1)[0]
+                if self.headers.get("X-Nexara-Git-Nonce") != NONCE:
+                    return self.reply(403, {"X-Nexara-Git-Error": "NONCE_REJECTED", "Content-Type": "text/plain; charset=utf-8"},
+                                      "nonce 缺失、无效或所属命令已结束。".encode())
+                if not self.path.startswith(prefix) or not path.endswith(fake.SMART):
+                    return self.reply(403, {"X-Nexara-Git-Error": "PATH_REJECTED"}, "只允许 git 智能协议路径。".encode())
+                if fake.mode == "unauthorized":
+                    return self.reply(401, {"WWW-Authenticate": 'Basic realm="x"'}, b"")
+                if fake.mode == "redirect" and "/old.git/" in self.path:
+                    return self.reply(301, {"Location": "http://127.0.0.1:%d%s" % (fake.port, self.path.replace("/old.git/", "/"))}, b"")
+                upstream = http.client.HTTPConnection("127.0.0.1", upstream_port, timeout=60)
+                headers = {name: value for name, value in self.headers.items()
+                           if name.lower() in ("accept", "content-type", "git-protocol", "content-encoding")}
+                headers["Authorization"] = "Basic " + __import__("base64").b64encode(("user:" + TOKEN).encode()).decode()
+                upstream.request(self.command, self.path[len(prefix) - 1:], body=data, headers=headers)
+                response = upstream.getresponse()
+                payload = response.read()
+                forwarded = {name: value for name, value in response.getheaders() if name.lower() == "content-type"}
+                self.reply(response.status, forwarded, payload)
+                upstream.close()
+
+            do_GET = handle_any
+            do_POST = handle_any
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_port
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class CredentialProxyCloneTest(unittest.TestCase):
+    """经模拟凭据代理对本机 dulwich 智能 HTTP 服务 clone/push，断言令牌只出现在代理转发侧。"""
+
+    def setUp(self) -> None:
+        try:
+            self.dulwich_root = _load_dulwich()
+        except ImportError:
+            self.skipTest("未找到 dulwich：设置 NEXARA_DULWICH_PATH 指向解压后的 dulwich 与 urllib3 wheel 目录")
+        import threading
+        from wsgiref.simple_server import WSGIRequestHandler, make_server
+
+        from dulwich.repo import Repo
+        from dulwich.server import DictBackend
+        from dulwich.web import make_wsgi_chain
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / "home").mkdir()
+        remote = _RemoteBuilder(self.root / "remote.git")
+        first = remote.commit(b"main 1\n", [])
+        remote.repo.refs[b"refs/heads/main"] = first
+        remote.repo.refs.set_symbolic_ref(b"HEAD", b"refs/heads/main")
+        self.remote_repo = remote.repo
+        self.addCleanup(remote.repo.close)
+        self.upstream_auth: list = []
+        application = make_wsgi_chain(DictBackend({"/repo.git": remote.repo}))
+        seen = self.upstream_auth
+
+        def recording(environ, start_response):
+            seen.append(environ.get("HTTP_AUTHORIZATION"))
+            return application(environ, start_response)
+
+        class QuietHandler(WSGIRequestHandler):
+            def log_message(self, *args) -> None:
+                pass
+
+        upstream = make_server("127.0.0.1", 0, recording, handler_class=QuietHandler)
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+        self.addCleanup(upstream.server_close)
+        self.addCleanup(upstream.shutdown)
+        self.upstream_port = upstream.server_port
+        self.proxy = _FakeCredentialProxy(self.upstream_port)
+        self.addCleanup(self.proxy.close)
+
+    def git(self, *args: str, cwd: Path | None = None, nonce: str = NONCE) -> subprocess.CompletedProcess:
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(self.root / "home"),
+            "LANG": "C.UTF-8",
+            "PYTHONPATH": os.pathsep.join([str(SITE_DIR), self.dulwich_root]),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NEXARA_WORKSPACE_KIND": "project",
+            "NEXARA_GIT_NONCE": nonce,
+            "NEXARA_GIT_PROXY": "127.0.0.1:%d" % self.proxy.port,
+            "NEXARA_GIT_CREDENTIAL_HOSTS": "git.test",
+            "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@example.com",
+        }
+        result = subprocess.run(
+            [sys.executable, "-m", "nexara_git", *args],
+            cwd=str(cwd or self.root), env=env, capture_output=True, text=True, timeout=120,
+        )
+        self.assertNotIn(TOKEN, result.stdout + result.stderr)
+        return result
+
+    def test_clone_and_push_through_proxy(self) -> None:
+        result = self.git("clone", "https://git.test/repo.git", "work")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        work = self.root / "work"
+        self.assertEqual((work / "README").read_text(), "main 1\n")
+        self.assertTrue(self.proxy.requests)
+        self.assertTrue(all(item["nonce"] == NONCE and item["authorization"] is None for item in self.proxy.requests))
+        self.assertTrue(all(item["path"].startswith("/git.test/repo.git/") for item in self.proxy.requests))
+        self.assertTrue(self.upstream_auth and all(value and value.startswith("Basic ") for value in self.upstream_auth))
+        with Path(work / ".git" / "config").open() as handle:
+            self.assertIn("https://git.test/repo.git", handle.read())  # 远端仍记为原地址
+
+        (work / "new.txt").write_text("pushed\n")
+        self.assertEqual(self.git("add", "new.txt", cwd=work).returncode, 0)
+        self.assertEqual(self.git("commit", "-m", "add", cwd=work).returncode, 0)
+        pushed = self.git("push", "origin", "main", cwd=work)
+        self.assertEqual(pushed.returncode, 0, pushed.stderr + repr(self.proxy.requests))
+        from dulwich.repo import Repo
+
+        with Repo(str(work)) as local:
+            head = local.refs[b"refs/heads/main"]
+        self.assertEqual(self.remote_repo.refs[b"refs/heads/main"], head)
+        self.assertTrue(any(item["path"].endswith("/git-receive-pack") for item in self.proxy.requests))
+
+    def test_unconfigured_host_connects_directly(self) -> None:
+        result = self.git("clone", "http://127.0.0.1:%d/repo.git" % self.upstream_port, "direct")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.proxy.requests, [])
+        self.assertEqual(self.upstream_auth[0], None)
+
+    def test_proxy_rejection_is_reported_without_secrets(self) -> None:
+        result = self.git("clone", "https://git.test/repo.git", "work", nonce="Z" * 43)
+        self.assertEqual(result.returncode, nexara_git.FATAL_EXIT)
+        self.assertIn("NONCE_REJECTED", result.stderr)
+        self.assertIn("Git 凭据代理拒绝请求", result.stderr)
+        self.assertNotIn("Z" * 43, result.stderr)
+        self.assertEqual(self.upstream_auth, [])
+
+    def test_rejected_credentials_point_to_settings(self) -> None:
+        self.proxy.mode = "unauthorized"
+        result = self.git("ls-remote", "https://git.test/repo.git")
+        self.assertEqual(result.returncode, nexara_git.FATAL_EXIT)
+        self.assertIn("CREDENTIAL_REJECTED", result.stderr)
+        self.assertIn("设置 → 工具 → Git 凭据", result.stderr)
+
+    def test_redirect_to_proxy_keeps_original_host(self) -> None:
+        self.proxy.mode = "redirect"
+        result = self.git("clone", "https://git.test/old.git/repo.git", "moved")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "moved" / "README").read_text(), "main 1\n")
+        posts = [item["path"] for item in self.proxy.requests if item["path"].endswith("/git-upload-pack")]
+        self.assertTrue(posts and all("/old.git/" not in path for path in posts), self.proxy.requests)
+
+
+class _FakeSshBridge:
+    """模拟 Kotlin SSH 桥：校验 nonce 与命令格式，把 git-upload-pack/receive-pack 交给本机 dulwich 子进程执行。"""
+
+    COMMAND = __import__("re").compile(r"^(git-upload-pack|git-receive-pack) '([^']*)'$")
+    # dulwich.cli 的 receive-pack 用缓冲 read 读 pack，从管道读会一直等到 EOF；按 TCP 服务端的方式给出 recv。
+    SERVE = (
+        "import os, sys\n"
+        "from dulwich.protocol import ReceivableProtocol\n"
+        "from dulwich.server import FileSystemBackend, ReceivePackHandler, UploadPackHandler\n"
+        "def write(data):\n"
+        "    view = memoryview(data)\n"
+        "    while view:\n"
+        "        view = view[os.write(1, view):]\n"
+        "service, path = sys.argv[1], sys.argv[2]\n"
+        "handler = ReceivePackHandler if service == 'git-receive-pack' else UploadPackHandler\n"
+        "handler(FileSystemBackend(path), [path], ReceivableProtocol(lambda size: os.read(0, size), write)).handle()\n"
+    )
+
+    def __init__(self, repositories: Path, dulwich_root: str) -> None:
+        import socket
+        import threading
+
+        self.repositories = repositories
+        self.dulwich_root = dulwich_root
+        self.requests: list[dict] = []
+        self.refusal: dict | None = None
+        self.server = socket.create_server(("127.0.0.1", 0))
+        self.port = self.server.getsockname()[1]
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self) -> None:
+        import threading
+
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.handle, args=(client,), daemon=True).start()
+
+    def handle(self, client) -> None:
+        import json
+        import threading
+
+        reader = client.makefile("rb")
+        request = json.loads(reader.readline().decode())
+        self.requests.append(request)
+
+        def refuse(code: str, message: str) -> None:
+            client.sendall((json.dumps({"ok": False, "code": code, "message": message}) + "\n").encode())
+            client.close()
+
+        if request.get("nonce") != NONCE:
+            return refuse("NONCE_REJECTED", "nonce 无效")
+        if self.refusal:
+            return refuse(self.refusal["code"], self.refusal["message"])
+        match = self.COMMAND.match(request.get("command", ""))
+        if not match:
+            return refuse("COMMAND_REJECTED", "命令不在白名单")
+        service, path = match.groups()
+        process = subprocess.Popen(
+            [sys.executable, "-c", self.SERVE, service, str(self.repositories / path.lstrip("/~"))],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={"PATH": os.environ.get("PATH", ""), "PYTHONPATH": self.dulwich_root},
+        )
+        client.sendall(b'{"ok": true}\n')
+        lock = threading.Lock()
+
+        def frame(kind: int, data: bytes) -> None:
+            with lock:
+                client.sendall(bytes([kind]) + len(data).to_bytes(4, "big") + data)
+
+        def pump(stream, kind: int) -> None:
+            while True:
+                data = stream.read1(65536)
+                if not data:
+                    return
+                frame(kind, data)
+
+        def feed() -> None:
+            try:
+                while True:
+                    head = reader.read(5)
+                    if len(head) < 5:
+                        break
+                    size = int.from_bytes(head[1:], "big")
+                    payload = reader.read(size)
+                    if head[0] == 4:
+                        break
+                    process.stdin.write(payload)
+                    process.stdin.flush()
+            except OSError:
+                pass
+            finally:
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+
+        threading.Thread(target=feed, daemon=True).start()
+        errors = threading.Thread(target=pump, args=(process.stderr, 2), daemon=True)
+        errors.start()
+        try:
+            pump(process.stdout, 1)
+            errors.join(10)
+            frame(3, process.wait(30).to_bytes(4, "big", signed=True))
+        except OSError:
+            process.kill()
+        finally:
+            client.close()
+
+    def close(self) -> None:
+        self.server.close()
+
+
+class SshBridgeCloneTest(unittest.TestCase):
+    """经模拟 SSH 桥 clone/push git@主机:路径 远端，覆盖 SSH vendor 的握手、帧协议与错误信息。"""
+
+    def setUp(self) -> None:
+        try:
+            self.dulwich_root = _load_dulwich()
+        except ImportError:
+            self.skipTest("未找到 dulwich：设置 NEXARA_DULWICH_PATH 指向解压后的 dulwich 与 urllib3 wheel 目录")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / "home").mkdir()
+        (self.root / "srv").mkdir()
+        remote = _RemoteBuilder(self.root / "srv" / "repo.git")
+        first = remote.commit(b"ssh 1\n", [])
+        remote.repo.refs[b"refs/heads/main"] = first
+        remote.repo.refs.set_symbolic_ref(b"HEAD", b"refs/heads/main")
+        remote.repo.close()
+        self.bridge = _FakeSshBridge(self.root / "srv", self.dulwich_root)
+        self.addCleanup(self.bridge.close)
+
+    def git(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(self.root / "home"),
+            "LANG": "C.UTF-8",
+            "PYTHONPATH": os.pathsep.join([str(SITE_DIR), self.dulwich_root]),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "NEXARA_WORKSPACE_KIND": "project",
+            "NEXARA_GIT_NONCE": NONCE,
+            "NEXARA_GIT_SSH_BRIDGE": "127.0.0.1:%d" % self.bridge.port,
+            "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@example.com",
+        }
+        return subprocess.run(
+            [sys.executable, "-m", "nexara_git", *args],
+            cwd=str(cwd or self.root), env=env, capture_output=True, text=True, timeout=120,
+        )
+
+    def test_scp_like_clone_and_push(self) -> None:
+        result = self.git("clone", "git@fake.host:repo.git", "work")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        work = self.root / "work"
+        self.assertEqual((work / "README").read_text(), "ssh 1\n")
+        request = self.bridge.requests[0]
+        self.assertEqual((request["host"], request["user"], request["port"]), ("fake.host", "git", None))
+        self.assertEqual(request["command"], "git-upload-pack 'repo.git'")
+        self.assertIn(request["protocol"], (0, 1, 2))
+
+        (work / "more.txt").write_text("over ssh\n")
+        self.assertEqual(self.git("add", "more.txt", cwd=work).returncode, 0)
+        self.assertEqual(self.git("commit", "-m", "ssh push", cwd=work).returncode, 0)
+        pushed = self.git("push", "origin", "main", cwd=work)
+        self.assertEqual(pushed.returncode, 0, pushed.stderr)
+        self.assertEqual(self.bridge.requests[-1]["command"], "git-receive-pack 'repo.git'")
+        from dulwich.repo import Repo
+
+        with Repo(str(work)) as local, Repo(str(self.root / "srv" / "repo.git")) as served:
+            self.assertEqual(served.refs[b"refs/heads/main"], local.refs[b"refs/heads/main"])
+
+    def test_ssh_url_with_port_passes_port_and_absolute_path(self) -> None:
+        result = self.git("ls-remote", "ssh://deploy@fake.host:2222/repo.git")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        request = self.bridge.requests[0]
+        self.assertEqual((request["user"], request["port"], request["command"]), ("deploy", 2222, "git-upload-pack '/repo.git'"))
+        self.assertIn("refs/heads/main", result.stdout)
+
+    def test_refusal_message_is_shown(self) -> None:
+        self.bridge.refusal = {"code": "SSH_HOST_NOT_CONFIGURED", "message": "没有与 git@fake.host 匹配的 SSH 主机。"}
+        result = self.git("clone", "git@fake.host:repo.git", "work")
+        self.assertEqual(result.returncode, nexara_git.FATAL_EXIT)
+        self.assertIn("SSH_HOST_NOT_CONFIGURED", result.stderr)
+        self.assertIn("没有与 git@fake.host 匹配的 SSH 主机", result.stderr)
+        self.assertNotIn(NONCE, result.stderr)
 
 
 if __name__ == "__main__":
