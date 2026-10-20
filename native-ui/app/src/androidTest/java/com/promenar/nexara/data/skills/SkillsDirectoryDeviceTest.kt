@@ -12,10 +12,12 @@ import com.promenar.nexara.data.exec.BuiltinExecEnvironment
 import com.promenar.nexara.data.exec.BuiltinExecService
 import com.promenar.nexara.data.exec.PackagedPython
 import com.promenar.nexara.data.exec.SystemCaBundle
+import com.promenar.nexara.data.generation.resolveSessionToolTarget
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.FileOperationRepository
 import com.promenar.nexara.data.repository.WorkspaceDeletionTransaction
@@ -25,6 +27,7 @@ import com.promenar.nexara.data.workspace.AndroidSharedWorkspaceAccess
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
 import com.promenar.nexara.ui.chat.manager.skills.CreateDirectorySkill
 import com.promenar.nexara.ui.chat.manager.skills.CreateFileSkill
 import com.promenar.nexara.ui.chat.manager.skills.DeleteFileSkill
@@ -90,9 +93,22 @@ class SkillsDirectoryDeviceTest {
         skillsRoot.deleteRecursively()
     }
 
-    private fun skill(original: SkillDefinition) =
-        MountedWorkspaceSkill(original, manager, repository, FileOperationRepository(db.fileEntryDao(), db.fileVersionDao()), FileIndexEventSink.None)
-    private fun args(json: String) = Json.parseToJsonElement(json).jsonObject
+    private fun skill(original: SkillDefinition) = Mounted(original)
+    private fun args(json: String) = json
+
+    /** 技能目录变更逐次审批：按生成运行时相同的方式解析审批目标，再以审批绑定的上下文执行。 */
+    private inner class Mounted(private val original: SkillDefinition) {
+        suspend fun execute(raw: String, context: SkillExecutionContext): com.promenar.nexara.data.model.ToolResult {
+            val session = Session("s", "agent", workspaceRootUuid = privateRoot.uuid)
+            val target = resolveSessionToolTarget(session, original.toProtocolTool(), raw, repository, manager)
+            val approved = object : SkillExecutionContext by context {
+                override val approvedExecutionTarget = target
+                override val isApprovalBoundExecution = true
+            }
+            return MountedWorkspaceSkill(original, manager, repository, FileOperationRepository(db.fileEntryDao(), db.fileVersionDao()), FileIndexEventSink.None)
+                .execute(Json.parseToJsonElement(raw).jsonObject, approved)
+        }
+    }
 
     @Test
     fun fileToolsAndCatalogUseSkillsDirectoryUnderFilesDir() = runBlocking<Unit> {
