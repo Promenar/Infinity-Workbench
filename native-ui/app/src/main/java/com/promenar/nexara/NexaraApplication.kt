@@ -202,6 +202,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private val _startupState = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val startupState: StateFlow<BackupStartupState> = _startupState.asStateFlow()
 
+    /** 启动时完成的备份恢复中需要用户处理的技能事项；界面展示后清除。 */
+    private val _skillRestoreNotice = MutableStateFlow<com.promenar.nexara.data.backup.SkillBackupSummary?>(null)
+    val skillRestoreNotice: StateFlow<com.promenar.nexara.data.backup.SkillBackupSummary?> = _skillRestoreNotice.asStateFlow()
+
+    fun consumeSkillRestoreNotice() {
+        _skillRestoreNotice.value = null
+    }
+
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val modelCatalogUpdater by lazy {
         com.promenar.nexara.data.model.catalog.ModelCatalogUpdater.create(this) { catalog ->
@@ -1065,6 +1073,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                             }
                         },
                     ).runOrThrow()
+                    runtime.restoreResult.value?.skills
+                        ?.takeIf { it.skippedGitRepositories.isNotEmpty() || it.skippedSymbolicLinks > 0 }
+                        ?.let { _skillRestoreNotice.value = it }
                     _startupState.value = BackupStartupState.Ready
                     startModelCatalogUpdates()
                 } else {

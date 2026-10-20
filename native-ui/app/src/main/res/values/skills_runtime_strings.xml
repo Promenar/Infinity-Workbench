@@ -30,4 +30,15 @@
     <string name="sheet_tool_tools_enabled_desc">When off, this session offers no tools to the model.</string>
     <string name="sheet_tool_time_injection_desc">Each request includes the current date and time.</string>
     <string name="skills_runtime_edit">Edit</string>
+    <string name="skills_restore_notice_title">Skills restored</string>
+    <string name="skills_restore_notice_git">Git history for these skill repositories exceeded the backup limit and was not restored. The files are back; to keep syncing, clone them again into the same folder.</string>
+    <string name="skills_restore_notice_remote">Remote: %1$s</string>
+    <string name="skills_restore_notice_branch">Branch %1$s</string>
+    <string name="skills_restore_notice_commit">Commit %1$s</string>
+    <string name="skills_restore_notice_no_remote">No remote recorded</string>
+    <plurals name="skills_restore_notice_links">
+        <item quantity="one">%d symbolic link was skipped during backup.</item>
+        <item quantity="other">%d symbolic links were skipped during backup.</item>
+    </plurals>
+    <string name="skills_restore_notice_dismiss">Got it</string>
 </resources>

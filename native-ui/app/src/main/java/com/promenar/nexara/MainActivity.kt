@@ -209,6 +209,10 @@ open class MainActivity : ComponentActivity() {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
                         }
+                        val skillRestoreNotice by app.skillRestoreNotice.collectAsStateWithLifecycle()
+                        skillRestoreNotice?.let { summary ->
+                            com.promenar.nexara.ui.skills.SkillRestoreNoticeDialog(summary, app::consumeSkillRestoreNotice)
+                        }
                         ShareImportSheet(
                             state = importState,
                             onSelectTarget = shareImportViewModel::selectTarget,

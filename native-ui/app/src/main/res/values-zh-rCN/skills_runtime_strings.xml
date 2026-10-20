@@ -30,4 +30,14 @@
     <string name="sheet_tool_tools_enabled_desc">关闭后，本会话不向模型提供任何工具。</string>
     <string name="sheet_tool_time_injection_desc">每次请求都附带当前日期时间。</string>
     <string name="skills_runtime_edit">编辑</string>
+    <string name="skills_restore_notice_title">技能已恢复</string>
+    <string name="skills_restore_notice_git">以下技能仓库的 Git 历史超出备份上限，没有随备份恢复。文件已经恢复；如需继续同步，请重新 clone 到同一目录。</string>
+    <string name="skills_restore_notice_remote">远端：%1$s</string>
+    <string name="skills_restore_notice_branch">分支 %1$s</string>
+    <string name="skills_restore_notice_commit">提交 %1$s</string>
+    <string name="skills_restore_notice_no_remote">未记录远端地址</string>
+    <plurals name="skills_restore_notice_links">
+        <item quantity="other">备份时跳过了 %d 个符号链接。</item>
+    </plurals>
+    <string name="skills_restore_notice_dismiss">知道了</string>
 </resources>
