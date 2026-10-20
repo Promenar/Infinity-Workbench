@@ -623,6 +623,12 @@ internal class DefaultChatGenerationRuntime(
             output = add(snapshot.outputTokens, existing.summaryOutput),
             total = add(snapshot.totalTokens, existing.summaryTotal),
             estimated = snapshot.tokensEstimated || existing.summaryEstimated,
+            cacheReadInput = snapshot.cacheReadInputTokens,
+            cacheWriteInput = snapshot.cacheWriteInputTokens,
+            reasoningOutput = snapshot.reasoningOutputTokens,
+            timing = snapshot.timing?.let {
+                com.promenar.nexara.data.model.GenerationTimingRecord(it.requestStartedAt, it.firstOutputAt, it.endedAt)
+            } ?: existing.timing,
         )
     }
 
@@ -1079,7 +1085,14 @@ internal class DefaultChatGenerationRuntime(
         is StreamChunk.TextDelta -> GenerationChunk.Text(chunk.content, chunk.reasoning)
         is StreamChunk.Thinking -> GenerationChunk.Thinking(chunk.content)
         is StreamChunk.ToolCallDelta -> GenerationChunk.ToolCall(chunk.id, chunk.name, chunk.arguments)
-        is StreamChunk.Usage -> GenerationChunk.Usage(chunk.usage.input, chunk.usage.output, chunk.usage.total)
+        is StreamChunk.Usage -> GenerationChunk.Usage(
+            input = chunk.usage.input,
+            output = chunk.usage.output,
+            total = chunk.usage.total,
+            cacheReadInput = chunk.usage.cacheReadInput,
+            cacheWriteInput = chunk.usage.cacheWriteInput,
+            reasoningOutput = chunk.usage.reasoningOutput,
+        )
         is StreamChunk.Citations -> GenerationChunk.Citations(
             chunk.citations.map { com.promenar.nexara.domain.generation.GenerationCitation(it.title, it.url, it.source) },
         )

@@ -246,6 +246,10 @@ fun ChatRoute(
             providerModels = providerModels,
         )
     }
+    val providers by ProviderManager.getInstance().providers.collectAsStateWithLifecycle()
+    val providerDisplayNames = remember(providers) {
+        providers.filter { it.name.isNotBlank() }.associate { it.id to it.name }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
@@ -511,6 +515,7 @@ fun ChatRoute(
             draftDocuments = draftDocuments,
             isImportingDocument = isImportingDocument,
             modelDisplayNames = modelDisplayNames,
+            providerDisplayNames = providerDisplayNames,
             taskPanel = taskPanel,
             generationProgress = generationProgress?.progress,
         ),

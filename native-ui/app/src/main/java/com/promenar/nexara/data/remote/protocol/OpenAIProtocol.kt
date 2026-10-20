@@ -413,12 +413,7 @@ class OpenAIProtocol(
 
         val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         if (usageRaw != null) {
-            val usage = ProtocolUsage(
-                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            )
-            send(StreamChunk.Usage(usage))
+            send(StreamChunk.Usage(ProtocolUsageParsers.openAiChat(usageRaw)))
         }
 
         return when (val finishReason = choice.stringField("finish_reason")) {
@@ -440,11 +435,7 @@ class OpenAIProtocol(
         // 成功 terminal 由调用方在 [DONE] 与 finish_reason 双重确认后发出。
     }
 
-    private fun JsonObject.toOpenAIUsage(): ProtocolUsage = ProtocolUsage(
-        input = this["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-        output = this["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-        total = this["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-    )
+    private fun JsonObject.toOpenAIUsage(): ProtocolUsage = ProtocolUsageParsers.openAiChat(this)
 
     private fun parseSyncResponse(responseText: String): PromptResponse {
         val parsed = json.parseToJsonElement(responseText).jsonObject
@@ -495,13 +486,7 @@ class OpenAIProtocol(
         requireValidSyncCompletion(completionReason, toolCalls)
 
         val usageRaw = parsed["usage"]?.takeUnless { it is JsonNull }?.jsonObject
-        val usage = if (usageRaw != null) {
-            ProtocolUsage(
-                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            )
-        } else null
+        val usage = usageRaw?.let(ProtocolUsageParsers::openAiChat)
 
         return PromptResponse(
             content = content,

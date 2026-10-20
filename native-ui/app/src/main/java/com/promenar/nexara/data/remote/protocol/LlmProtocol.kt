@@ -84,9 +84,17 @@ data class ProtocolToolFunction(
 
 @Serializable
 data class ProtocolUsage(
+    /** 本轮全部输入 Token，含缓存读取与缓存写入部分。 */
     val input: Int = 0,
+    /** 本轮全部输出 Token，含推理部分。 */
     val output: Int = 0,
-    val total: Int = 0
+    val total: Int = 0,
+    /** [input] 中命中缓存读取的部分；null 表示服务商未报告。 */
+    val cacheReadInput: Int? = null,
+    /** [input] 中写入缓存的部分；null 表示服务商未报告。 */
+    val cacheWriteInput: Int? = null,
+    /** [output] 中的推理 Token；null 表示服务商未报告。 */
+    val reasoningOutput: Int? = null,
 )
 
 /** 是否允许模型在本次回复中调用已声明的工具；NONE 时仍声明工具以保持历史中的调用可被解析。 */

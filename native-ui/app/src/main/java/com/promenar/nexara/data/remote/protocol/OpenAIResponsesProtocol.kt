@@ -454,12 +454,7 @@ class OpenAIResponsesProtocol(
         )
     }
 
-    private fun JsonObject.toResponsesUsage(): ProtocolUsage {
-        val input = this["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val output = this["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val total = this["total_tokens"]?.jsonPrimitive?.intOrNull ?: (input + output)
-        return ProtocolUsage(input = input, output = output, total = total)
-    }
+    private fun JsonObject.toResponsesUsage(): ProtocolUsage = ProtocolUsageParsers.openAiResponses(this)
 
     private fun extractSseData(line: String): String? {
         if (line.startsWith("data: ")) return line.substring(6)

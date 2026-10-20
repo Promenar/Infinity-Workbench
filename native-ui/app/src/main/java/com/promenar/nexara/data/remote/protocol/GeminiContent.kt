@@ -275,11 +275,7 @@ internal object GeminiContentCodec {
     fun promptBlockReason(chunk: JsonObject): String? =
         chunk["promptFeedback"]?.jsonObject?.get("blockReason")?.jsonPrimitive?.contentOrNull
 
-    fun usage(metadata: JsonObject): ProtocolUsage = ProtocolUsage(
-        input = metadata.int("promptTokenCount"),
-        output = metadata.int("candidatesTokenCount") + metadata.int("thoughtsTokenCount"),
-        total = metadata.int("totalTokenCount"),
-    )
+    fun usage(metadata: JsonObject): ProtocolUsage = ProtocolUsageParsers.gemini(metadata)
 
     fun citations(candidate: JsonObject): List<ProtocolCitation>? =
         candidate["groundingMetadata"]?.jsonObject?.get("groundingChunks")?.jsonArray?.mapNotNull { chunk ->
@@ -290,8 +286,6 @@ internal object GeminiContentCodec {
                 source = "Google",
             )
         }
-
-    private fun JsonObject.int(key: String): Int = (this[key] as? JsonPrimitive)?.intOrNull ?: 0
 }
 
 private fun JsonObject.string(key: String): String {

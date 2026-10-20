@@ -154,6 +154,8 @@ fun PipelineBubble(
     streamingContent: String,
     fontSize: Int,
     modelDisplayNames: Map<String, String> = emptyMap(),
+    /** 服务商 ID → 显示名，用于生成统计浮卡。 */
+    providerDisplayNames: Map<String, String> = emptyMap(),
     onContentChange: ((String) -> Unit)? = null,
     onCopy: ((String) -> Unit)? = null,
     onRegenerate: ((String) -> Unit)? = null,
@@ -251,10 +253,26 @@ fun PipelineBubble(
                     modelDisplayNames[lastMsg.modelId]?.takeIf(String::isNotBlank)
                         ?: lastMsg.modelId.substringAfter("::", lastMsg.modelId)
                 }
+                val generatedAt = remember(lastMsg.createdAt) {
+                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date(lastMsg.createdAt))
+                }
+                val providerName = lastMsg.modelId?.substringBefore("::", "")
+                    ?.takeIf(String::isNotBlank)
+                    ?.let(providerDisplayNames::get)
+                val statsModel = remember(group.messages, modelDisplayName, providerName, generatedAt) {
+                    GenerationStatsCardModel(
+                        modelName = modelDisplayName,
+                        providerName = providerName,
+                        generatedAt = generatedAt,
+                        summary = summarizeGenerationStats(group.messages),
+                    )
+                }
                 AssistantActionRow(
                     modelDisplayName = modelDisplayName,
                     timestamp = timestamp,
                     isGenerating = isGenerating,
+                    stats = statsModel,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
                     onRegenerate = onRegenerate?.let { handler -> { handler(lastMsg.id) } },
                     onBranch = onBranch?.let { handler -> { handler(lastMsg.id) } },
@@ -621,9 +639,12 @@ internal fun AssistantActionRow(
     onBranch: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    /** 生成统计；为 null 时模型名与时间不可点击。生成进行中整行不显示，因此不会弹出。 */
+    stats: GenerationStatsCardModel? = null,
 ) {
     if (isGenerating) return
     var showMore by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
     val metaStyle = NexaraTypography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     Box(modifier = modifier.fillMaxWidth().height(36.dp).testTag("CHAT_ASSISTANT_ACTIONS")) {
         Row(
@@ -669,17 +690,35 @@ internal fun AssistantActionRow(
                 }
             }
             Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                if (modelDisplayName.isNotBlank()) {
-                    Text(
-                        text = modelDisplayName,
-                        style = metaStyle,
-                        modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
+                val statsLabel = stringResource(R.string.generation_stats_open_action)
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .then(
+                                if (stats != null) {
+                                    Modifier.clickable(onClickLabel = statsLabel, role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
+                                        .testTag(UiTags.CHAT_ASSISTANT_STATS_TRIGGER)
+                                } else Modifier,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (modelDisplayName.isNotBlank()) {
+                            Text(
+                                text = modelDisplayName,
+                                style = metaStyle,
+                                modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
+                        }
+                        Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
+                    }
+                    if (showStats && stats != null) {
+                        GenerationStatsPopup(model = stats, onDismissRequest = { showStats = false })
+                    }
                 }
-                Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
             }
         }
     }

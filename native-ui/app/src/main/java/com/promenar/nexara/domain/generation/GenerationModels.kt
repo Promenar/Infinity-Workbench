@@ -89,6 +89,24 @@ data class GenerationSnapshot(
     val tokensEstimated: Boolean = false,
     /** 协议原生思考状态的持久化信封（不透明字符串），用于向同一模型回传。 */
     val reasoningReplay: String? = null,
+    /** [inputTokens] 中的缓存读取部分；null 表示服务商未报告。 */
+    val cacheReadInputTokens: Int? = null,
+    /** [inputTokens] 中的缓存写入部分；null 表示服务商未报告。 */
+    val cacheWriteInputTokens: Int? = null,
+    /** [outputTokens] 中的推理部分；null 表示服务商未报告。 */
+    val reasoningOutputTokens: Int? = null,
+    /** 本轮模型请求的时间点；尚未发出请求时为 null。 */
+    val timing: GenerationTiming? = null,
+)
+
+/** 单轮模型请求的时间点（epoch 毫秒）；未知时间点为 null。 */
+data class GenerationTiming(
+    /** 发出本轮请求（含其后的自动重试）的时间。 */
+    val requestStartedAt: Long,
+    /** 首个正文、思考或工具调用增量到达的时间。 */
+    val firstOutputAt: Long? = null,
+    /** 本轮流结束、失败或被取消的时间。 */
+    val endedAt: Long? = null,
 )
 
 data class GenerationCitation(val title: String, val url: String, val source: String? = null)
@@ -99,7 +117,14 @@ sealed interface GenerationChunk {
     /** [encoded] 为已带来源模型的持久化信封。 */
     data class ReasoningState(val encoded: String) : GenerationChunk
     data class ToolCall(val id: String, val name: String, val arguments: String) : GenerationChunk
-    data class Usage(val input: Int, val output: Int, val total: Int) : GenerationChunk
+    data class Usage(
+        val input: Int,
+        val output: Int,
+        val total: Int,
+        val cacheReadInput: Int? = null,
+        val cacheWriteInput: Int? = null,
+        val reasoningOutput: Int? = null,
+    ) : GenerationChunk
     data class Citations(val citations: List<GenerationCitation>) : GenerationChunk
     data class Failure(val failure: GenerationFailure) : GenerationChunk
     data class Completed(

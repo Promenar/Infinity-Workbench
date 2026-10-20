@@ -42,6 +42,12 @@ data class Agent(
     val createdAt: Long = 0L
 )
 
+/**
+ * 单条助手消息的 Token 用量。`input` 为本轮全部输入（含缓存读写部分），`output` 含推理部分；
+ * 缓存与推理字段是对应总量的子集，null 表示服务商未报告（旧数据同样为 null），0 表示报告为 0。
+ * 可空字段为默认值时不写入 JSON，保持旧记录格式与 `json_extract` 汇总键不变。
+ */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class TokenUsage(
     val input: Int = 0,
@@ -52,6 +58,30 @@ data class TokenUsage(
     val summaryOutput: Int = 0,
     val summaryTotal: Int = 0,
     val summaryEstimated: Boolean = false,
+    /** [input] 中的缓存读取部分。 */
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val cacheReadInput: Int? = null,
+    /** [input] 中的缓存写入部分。 */
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val cacheWriteInput: Int? = null,
+    /** [output] 中的推理部分。 */
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val reasoningOutput: Int? = null,
+    /** 本条消息对应模型轮次的时间点；旧消息与未发出请求的消息为 null。 */
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val timing: GenerationTimingRecord? = null,
+)
+
+/** 一轮模型生成的时间点（epoch 毫秒），未知时间点为 null 且不写入 JSON。 */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@Serializable
+data class GenerationTimingRecord(
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val requestStartedAt: Long? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val firstOutputAt: Long? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val endedAt: Long? = null,
 )
 
 @Serializable
