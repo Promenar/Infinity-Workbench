@@ -120,15 +120,18 @@ class ChatApprovalLayoutTest {
             )
         }
 
-        val text = rule.onNodeWithText(arguments, useUnmergedTree = true)
-        val collapsed = layout(text)
+        // 收起态只排版前几行；展开后由独立的限高滚动节点承载完整原文。
+        val collapsed = layout(rule.onNodeWithText(ApprovalTextBlockLayout.collapsedText(arguments), useUnmergedTree = true))
         assertThat(collapsed.lineCount).isEqualTo(6)
         assertThat(collapsed.layoutInput.style.fontSize).isEqualTo(12.sp)
         assertThat(collapsed.layoutInput.style.lineHeight).isEqualTo(18.sp)
         assertThat(collapsed.layoutInput.style.fontFamily).isEqualTo(FontFamily.Monospace)
         rule.onNodeWithText(resources().getString(R.string.chat_inline_expand_all))
             .assertIsDisplayed().performClick()
-        assertThat(layout(text).lineCount).isEqualTo(12)
+        val expanded = layout(rule.onNodeWithText(arguments, useUnmergedTree = true))
+        assertThat(expanded.lineCount).isEqualTo(12)
+        assertThat(expanded.layoutInput.text.text).isEqualTo(arguments)
+        rule.onNodeWithText(resources().getString(R.string.chat_inline_collapse)).assertIsDisplayed()
     }
 
     @Test
