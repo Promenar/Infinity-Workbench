@@ -11,6 +11,8 @@ import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 
 data class ContextBuilderResult(
@@ -61,12 +63,14 @@ data class ContextBuilderParams(
     val agentRetrievalConfig: AgentRetrievalConfig? = null,
     /** 本轮实际广告给模型的工具名；null 表示调用方未提供，按会话开关输出通用工具说明。 */
     val availableToolNames: Set<String>? = null,
-    /** 已启用且可通过 activate_skill 加载的技能（ADR-022）。 */
-    val availableSkills: List<com.promenar.nexara.data.skills.AgentSkillMetadata> = emptyList(),
+    /** 当前会话两级技能扫描结果；提示段落按状态、隐式策略和用户点名筛选。 */
+    val availableSkills: List<com.promenar.nexara.data.skills.DiscoveredSkill> = emptyList(),
     /** 同一次生成中首轮的检索结果；非空时跳过联网搜索、RAG 与 KG 检索，只重建系统提示。 */
     val cachedRetrieval: ContextRetrieval? = null,
     /** 会话当前工作区；null 表示调用方未解析，按私有工作区说明。 */
     val workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
+    /** 已路由模型的上下文窗口，未知时技能目录使用默认字符预算。 */
+    val modelContextTokens: Int? = null,
 )
 
 interface WebSearchProvider {
@@ -135,13 +139,19 @@ class ContextBuilder(
             null
         }
 
+        val workspaceSkillsShadowed = (params.workspace as? com.promenar.nexara.data.workspace.SessionWorkspace.Directory)?.let {
+            withContext(Dispatchers.IO) {
+                java.nio.file.Files.exists(it.root.resolve("skills").toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            }
+        } ?: false
         val systemPrompt = buildSystemPrompt(
             params = params,
             ragContext = retrieval.ragContext,
             ragReferences = retrieval.ragReferences,
             searchContext = retrieval.searchContext,
             kgContext = retrieval.kgContext,
-            activePlan = activePlan
+            activePlan = activePlan,
+            workspaceSkillsShadowed = workspaceSkillsShadowed,
         )
 
         return ContextBuilderResult(
@@ -387,7 +397,8 @@ class ContextBuilder(
         ragReferences: List<RagReference>,
         searchContext: String,
         kgContext: String = "",
-        activePlan: TaskState? = null
+        activePlan: TaskState? = null,
+        workspaceSkillsShadowed: Boolean = false,
     ): String {
         val sb = StringBuilder()
         val session = params.session
@@ -412,6 +423,7 @@ class ContextBuilder(
                 generic = false,
                 workspace = params.workspace,
                 workspaceChanged = session.messages.any { it.isWorkspaceSwitchNotice },
+                workspaceSkillsShadowed = workspaceSkillsShadowed,
             )
         }
         if (toolGuidance.isNotEmpty()) {
@@ -419,20 +431,19 @@ class ContextBuilder(
             sb.append(toolGuidance)
         }
 
-        // 3.1 技能目录：只给出名称与描述，正文由 activate_skill 按需加载。
-        SystemPromptSections.skillCatalog(params.availableSkills).takeIf(String::isNotEmpty)?.let {
-            sb.appendLine()
-            sb.append(it)
+        // 3.1 两级技能目录：只在模型有读取入口时披露元数据，正文按需加载。
+        if (SystemPromptSections.canReadSkills(params.availableToolNames)) {
+            SystemPromptSections.skillCatalog(params.availableSkills, params.content, params.modelContextTokens)
+                .takeIf(String::isNotEmpty)?.let {
+                    sb.appendLine()
+                    sb.append(it)
+                }
         }
 
         // 4. 任务计划
         if (activePlan != null && activePlan.status !in listOf("idle", "dropped")) {
             sb.appendLine()
-            if (params.session.options.economyMode) {
-                appendEconomyTaskContext(sb, activePlan)
-            } else {
-                appendFullTaskContext(sb, activePlan)
-            }
+            appendTaskContext(sb, activePlan)
         }
 
         // 5. 外部检索数据：只作为资料，不作为指令。
@@ -484,8 +495,8 @@ class ContextBuilder(
         return sb.toString().trimEnd() + "\n"
     }
 
-    /** 完整任务树上下文（economyMode=false） */
-    private fun appendFullTaskContext(
+    /** 已完成步骤仅保留标题，当前与未完成步骤保留完整说明。 */
+    private fun appendTaskContext(
         sb: StringBuilder,
         plan: TaskState
     ) {
@@ -496,7 +507,8 @@ class ContextBuilder(
         plan.currentFocusStepId?.let { focusId ->
             val focus = findStepById(plan.steps, focusId)
             if (focus != null) {
-                sb.appendLine("- **Current Focus**: \"${focus.title}\" — ${focus.description}")
+                val description = if (focus.status in setOf("completed", "done")) "" else " — ${focus.description}"
+                sb.appendLine("- **Current Focus**: \"${focus.title}\"$description")
             }
         }
         sb.appendLine()
@@ -525,28 +537,6 @@ class ContextBuilder(
         sb.appendLine()
     }
 
-    /** 精简任务上下文（economyMode=true） */
-    private fun appendEconomyTaskContext(
-        sb: StringBuilder,
-        plan: TaskState
-    ) {
-        val (completed, total) = countLeaves(plan.steps)
-        sb.appendLine("## Task Plan (Compact)")
-        sb.appendLine("- Goal: \"${plan.title}\" | Progress: $completed/$total steps")
-        plan.currentFocusStepId?.let { focusId ->
-            val focus = findStepById(plan.steps, focusId)
-            if (focus != null) {
-                sb.appendLine("- Focus: \"${focus.title}\" — ${focus.description.take(80)}")
-            }
-        }
-        val nextTodos = findNextTodos(plan.steps, maxCount = 1)
-        if (nextTodos.isNotEmpty()) {
-            sb.appendLine("- Next: \"${nextTodos.first().title}\"")
-        }
-        sb.appendLine("[Use get_plan to read the full task tree.]")
-        sb.appendLine()
-    }
-
     private fun renderTaskTree(sb: StringBuilder, steps: List<TaskStep>, indent: Int) {
         val prefix = "  ".repeat(indent)
         for (step in steps) {
@@ -558,8 +548,12 @@ class ContextBuilder(
                 else -> "○"
             }
             sb.appendLine("$prefix$icon ${step.title}")
-            if (step.note != null) {
-                sb.appendLine("$prefix   📝 ${step.note.take(120)}")
+            if (step.status !in setOf("completed", "done")) {
+                if (step.description.isNotBlank()) sb.appendLine("$prefix   ${step.description}")
+                step.note?.let { sb.appendLine("$prefix   📝 $it") }
+                step.artifactFileUuids?.takeIf(List<String>::isNotEmpty)?.let {
+                    sb.appendLine("$prefix   Artifacts: ${it.joinToString(", ")}")
+                }
             }
             if (step.children.isNotEmpty()) {
                 renderTaskTree(sb, step.children, indent + 1)

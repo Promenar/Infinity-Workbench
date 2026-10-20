@@ -1788,7 +1788,6 @@ class ChatViewModel(
         val nextOptions = when (toolName) {
             "timeInjection" -> options.copy(enableTimeInjection = enabled)
             "toolsEnabled" -> options.copy(toolsEnabled = enabled)
-            "economyMode" -> options.copy(economyMode = enabled)
             "enableGeminiSearch" -> options.copy(enableGeminiSearch = enabled)
             "webSearch" -> options.copy(webSearch = enabled)
             else -> options

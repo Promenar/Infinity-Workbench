@@ -581,7 +581,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             skillRegistry = skillRegistry,
             toolResolver = sessionToolResolver,
             presentationStore = generationPresentationStore,
-            skillCatalog = { agentSkillStore.enabledSkills() },
+            skillCatalog = skillCatalog,
             toolAllowlistStore = toolAllowlistStore,
             workspaceRepository = workspaceRepository,
             outputStore = toolOutputStore,
@@ -880,22 +880,26 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
-    val skillRegistry: SkillRegistry by lazy {
+    val skillRegistry: SkillRegistry by lazy { createSkillRegistry() }
+
+    /** 会话工具表绑定自己的工作区，后台生成不依赖界面当前选中的会话。 */
+    private fun createSkillRegistry(sessionId: String? = null): SkillRegistry =
         ModularSkillRegistry(
             listOf(
                 presetSkillRegistry,
-                com.promenar.nexara.ui.chat.manager.skills.AgentSkillToolRegistry(agentSkillStore),
+                com.promenar.nexara.ui.chat.manager.skills.AgentSkillToolRegistry(skillCatalog, sessionWorkspaceResolver::resolve, sessionId),
                 userSkillRegistry,
                 mcpSkillRegistry,
             )
         )
-    }
 
     val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver by lazy {
-        com.promenar.nexara.data.generation.DefaultSessionToolResolver(
-            getSharedPreferences("nexara_settings", MODE_PRIVATE),
-            skillRegistry,
-        )
+        com.promenar.nexara.data.generation.SessionToolResolver { session ->
+            com.promenar.nexara.data.generation.DefaultSessionToolResolver(
+                getSharedPreferences("nexara_settings", MODE_PRIVATE),
+                createSkillRegistry(session.id),
+            ).resolve(session)
+        }
     }
 
     private val prefs: SharedPreferences by lazy {

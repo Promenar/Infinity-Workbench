@@ -319,12 +319,94 @@ class ContextBuilderTest {
                 "s1", "hi", assistantMsgId = "m1",
                 session = Session(id = "s1", agentId = "a1"),
                 availableToolNames = setOf("activate_skill", "read_skill_file"),
-                availableSkills = listOf(com.promenar.nexara.data.skills.AgentSkillMetadata("weekly-report", "Write weekly reports")),
+                availableSkills = listOf(testSkill("weekly-report", "Write weekly reports")),
             ),
         ).finalSystemPrompt
 
         assertThat(prompt).contains("- weekly-report: Write weekly reports")
         assertThat(prompt.indexOf("## Skills")).isGreaterThan(prompt.indexOf("## Tool Use"))
+    }
+
+    @Test
+    fun skillCatalogRequiresAReadingTool() = testScope.runTest {
+        val prompt = ContextBuilder().buildContext(
+            ContextBuilderParams(
+                "s1", "hi", assistantMsgId = "m1", session = Session("s1", "a1"),
+                availableToolNames = setOf("calculator"),
+                availableSkills = listOf(testSkill("demo", "Demo")),
+            ),
+        ).finalSystemPrompt
+
+        assertThat(prompt).doesNotContain("## Skills")
+    }
+
+    @Test
+    fun taskPlanIgnoresEconomyModeAndKeepsUnfinishedDetails() = testScope.runTest {
+        val plan = TaskState(
+            id = "plan", title = "交付", status = "in-progress", currentFocusStepId = "doing",
+            steps = listOf(
+                com.promenar.nexara.data.model.TaskStep("done", title = "已完成", status = "completed", description = "完成说明", note = "完成备注"),
+                com.promenar.nexara.data.model.TaskStep("doing", title = "当前", status = "doing", description = "当前说明", note = "当前备注"),
+                com.promenar.nexara.data.model.TaskStep("todo", title = "待办", description = "待办说明", note = "待办备注"),
+            ),
+        )
+        val repository = io.mockk.mockk<com.promenar.nexara.domain.repository.ITaskRepository>()
+        io.mockk.coEvery { repository.getPlan("s1") } returns plan
+        val builder = ContextBuilder(taskRepository = repository)
+        suspend fun prompt(economy: Boolean) = builder.buildContext(
+            ContextBuilderParams(
+                "s1", "hi", assistantMsgId = "m1",
+                session = Session("s1", "a1", options = com.promenar.nexara.data.model.SessionOptions(economyMode = economy, enableTimeInjection = false)),
+            ),
+        ).finalSystemPrompt
+
+        val regular = prompt(false)
+        assertThat(prompt(true)).isEqualTo(regular)
+        assertThat(regular).contains("已完成")
+        assertThat(regular).doesNotContain("完成说明")
+        assertThat(regular).doesNotContain("完成备注")
+        listOf("当前说明", "当前备注", "待办说明", "待办备注").forEach { assertThat(regular).contains(it) }
+    }
+
+    private fun testSkill(name: String, description: String) = com.promenar.nexara.data.skills.DiscoveredSkill(
+        "user:$name", com.promenar.nexara.data.skills.SkillScope.USER, name, description, null, null,
+        "/skills/$name", emptyList(), com.promenar.nexara.data.skills.SkillStatus.ENABLED, false, true, null, null,
+    )
+
+    @Test
+    fun skillCatalogUsesExplicitMentionsAndAnyAvailableDocumentReader() = testScope.runTest {
+        val skill = testSkill("demo", "Demo").copy(allowImplicitInvocation = false)
+        for (toolNames in listOf(setOf("activate_skill"), setOf("read_file"), setOf("read_skill_file"), setOf("shell_exec"), emptySet(), null)) {
+            val prompt = ContextBuilder().buildContext(ContextBuilderParams(
+                "s1", "请使用 \$demo", assistantMsgId = "m1", session = Session("s1", "a1"),
+                availableSkills = listOf(skill), availableToolNames = toolNames,
+            )).finalSystemPrompt
+            assertThat(prompt.contains("/skills/demo/SKILL.md")).isEqualTo(toolNames?.any { it in setOf("activate_skill", "read_file", "read_skill_file") } == true)
+        }
+    }
+
+    @Test
+    fun rootSkillsShadowNoticeRequiresDirectoryWorkspaceAndRootEntry() = testScope.runTest {
+        val root = java.nio.file.Files.createTempDirectory("skill-shadow").toFile()
+        try {
+            val entity = com.promenar.nexara.data.local.db.entity.WorkspaceEntity("project", "project", "项目", "repo", 1)
+            val directory = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(entity, root)
+            suspend fun prompt(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?) = ContextBuilder().buildContext(ContextBuilderParams(
+                "s1", "hi", assistantMsgId = "m1", session = Session("s1", "a1"),
+                workspace = workspace, availableToolNames = setOf("read_file"),
+            )).finalSystemPrompt
+            root.resolve("sub/skills").mkdirs()
+            assertThat(prompt(directory)).doesNotContain("hiding that workspace entry")
+            root.resolve("skills").writeText("workspace entry")
+            assertThat(prompt(directory)).contains("hiding that workspace entry")
+            assertThat(prompt(directory)).contains("./skills")
+            for (workspace in listOf(null, com.promenar.nexara.data.workspace.SessionWorkspace.Private,
+                com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("project", entity, "不可用"))) {
+                assertThat(prompt(workspace)).doesNotContain("hiding that workspace entry")
+            }
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

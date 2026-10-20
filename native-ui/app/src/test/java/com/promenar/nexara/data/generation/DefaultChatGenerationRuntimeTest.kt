@@ -70,6 +70,141 @@ import kotlinx.coroutines.CancellationException
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    private fun discoveredSkill(name: String, scope: com.promenar.nexara.data.skills.SkillScope = com.promenar.nexara.data.skills.SkillScope.USER) =
+        com.promenar.nexara.data.skills.DiscoveredSkill(
+            "${scope.name}:$name", scope, name, "Description $name", null, null,
+            if (scope == com.promenar.nexara.data.skills.SkillScope.USER) "/skills/$name" else "/.agents/skills/$name",
+            emptyList(), com.promenar.nexara.data.skills.SkillStatus.ENABLED, false, true, null, null,
+        )
+
+    private data class SkillsFixture(
+        val runtime: DefaultChatGenerationRuntime,
+        val request: GenerationRequest,
+        val prompts: List<String>,
+        val toolThreads: List<Thread> = emptyList(),
+    )
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun kotlinx.coroutines.test.TestScope.skillsFixture(
+        catalog: com.promenar.nexara.data.skills.SkillCatalog,
+        workspace: suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace = { com.promenar.nexara.data.workspace.SessionWorkspace.Private },
+        toolNames: List<String> = listOf("read_file"),
+        contextTokens: Int = 100_000,
+        content: String = "使用 \$demo",
+    ): SkillsFixture {
+        val settings = mockk<SharedPreferences> {
+            every { getInt(any(), any()) } answers { secondArg() }
+            every { getInt("model_info_local::skills_context", any()) } returns contextTokens
+            every { getString(any(), any()) } answers { secondArg() }
+            every { getStringSet(any(), any()) } returns emptySet()
+            every { getFloat(any(), any()) } answers { secondArg() }
+        }
+        val session = Session("skills-session", "agent", modelId = "local::skills", inferenceParams = InferenceParams(maxTokens = 16),
+            options = SessionOptions(enableTimeInjection = false),
+            messages = listOf(Message("user", MessageRole.USER, content), Message("assistant", MessageRole.ASSISTANT, "")))
+        val store = ChatStore().apply { update { ChatState(sessions = listOf(session)) } }
+        val router = mockk<ProviderRequestRouter> {
+            every { resolve("local::skills") } returns ProviderResolution.Success(ResolvedProviderModel(
+                "local::skills", "skills", "local", "Local", UnifiedProviderConfig(ProtocolType.Local, "", "", "skills"),
+            ))
+        }
+        val prompts = mutableListOf<String>()
+        val toolThreads = mutableListOf<Thread>()
+        val strategy = mockk<ChatGenerationContentStrategy> {
+            every { buildTools(any()) } answers {
+                toolThreads += Thread.currentThread()
+                toolNames.map { ProtocolTool(function = ProtocolToolFunction(it, "", "{}")) }
+            }
+            every { buildProtocolMessages(any(), any(), any(), any(), any()) } answers {
+                val prompt = secondArg<String>()
+                prompts += prompt
+                listOf(com.promenar.nexara.data.remote.protocol.ProtocolMessage(role = "system", content = prompt))
+            }
+        }
+        val runtime = DefaultChatGenerationRuntime(
+            settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
+            ContextBuilder(), mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), mockk(relaxed = true),
+            mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
+        )
+        return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads)
+    }
+
+    @Test fun `工具表在调用协程线程之外构建`() = runTest {
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog)
+        val caller = Thread.currentThread()
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        // 工具注册表会同步扫描技能目录；生成作用域在主线程，构建必须切到 IO。
+        assertThat(fixture.toolThreads).isNotEmpty()
+        assertThat(fixture.toolThreads).doesNotContain(caller)
+    }
+
+    @Test fun `每轮重扫同一目录工作区且普通读取工具可暴露两级点名技能`() = runTest {
+        val calls = mutableListOf<com.promenar.nexara.data.skills.SkillWorkspace?>()
+        val directory = testDirectory("project")
+        var skills = listOf(discoveredSkill("demo").copy(allowImplicitInvocation = false), discoveredSkill("demo", com.promenar.nexara.data.skills.SkillScope.PROJECT))
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } answers {
+                val workspace = firstArg<com.promenar.nexara.data.skills.SkillWorkspace?>()
+                calls += workspace
+                com.promenar.nexara.data.skills.SkillSnapshot(workspace, skills)
+            }
+        }
+        val fixture = skillsFixture(catalog, workspace = { check(it == "skills-session"); directory })
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        assertThat(fixture.prompts.last()).contains("/skills/demo/SKILL.md")
+        assertThat(fixture.prompts.last()).contains("/.agents/skills/demo/SKILL.md")
+        skills = listOf(discoveredSkill("new-skill"))
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        assertThat(fixture.prompts.last()).contains("/skills/new-skill/SKILL.md")
+        assertThat(fixture.prompts.last()).doesNotContain("/skills/demo/SKILL.md")
+        assertThat(calls.map { it?.key }).containsExactly("project", "project").inOrder()
+        assertThat(calls.map { it?.root }).containsExactly(java.io.File("/project/project"), java.io.File("/project/project"))
+    }
+
+    @Test fun `扫描失败使用空清单且私有或不可用工作区不扫描项目`() = runTest {
+        val calls = mutableListOf<com.promenar.nexara.data.skills.SkillWorkspace?>()
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } answers {
+                calls += firstArg<com.promenar.nexara.data.skills.SkillWorkspace?>()
+                throw java.io.IOException("扫描不可用")
+            }
+        }
+        for (workspace in listOf(com.promenar.nexara.data.workspace.SessionWorkspace.Private,
+            com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("missing", null, "不可用"))) {
+            val fixture = skillsFixture(catalog, workspace = { workspace })
+            assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+            assertThat(fixture.prompts.last()).doesNotContain("## Skills")
+        }
+        assertThat(calls).containsExactly(null, null)
+    }
+
+    @Test fun `运行时透传保存的模型窗口控制清单预算`() = runTest {
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, (1..70).map { discoveredSkill("skill-$it") })
+        }
+        val fixture = skillsFixture(catalog, contextTokens = 15_000)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        val section = fixture.prompts.last().substringAfter("## Skills")
+        assertThat(section.length + "## Skills".length).isAtMost(1200)
+        assertThat(section).contains("more skills")
+        val noReader = skillsFixture(catalog, toolNames = listOf("calculator"))
+        assertThat(noReader.runtime.buildContext(noReader.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        assertThat(noReader.prompts.last()).doesNotContain("## Skills")
+    }
+
+    @Test fun `扫描取消原样上抛`() = runTest {
+        val cancellation = CancellationException("cancelled")
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } throws cancellation
+        }
+        val fixture = skillsFixture(catalog)
+        assertThat(runCatching { fixture.runtime.buildContext(fixture.request) }.exceptionOrNull()).isSameInstanceAs(cancellation)
+    }
+
     @Test
     fun `全局白名单让其它会话的host完整process及MCP调用免审批`() = runTest {
         val cases = listOf(

@@ -38,7 +38,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val skillRegistry: SkillRegistry?,
     private val toolResolver: SessionToolResolver,
     private val presentationStore: GenerationPresentationStore,
-    private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
+    private val skillCatalog: com.promenar.nexara.data.skills.SkillCatalog? = null,
     private val toolAllowlistStore: com.promenar.nexara.data.repository.ToolAllowlistStore? = null,
     private val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,

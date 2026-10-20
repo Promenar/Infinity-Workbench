@@ -247,7 +247,9 @@ class P0RuntimeIntegrationTest {
         for (type in listOf(ProtocolType.Local, ProtocolType.Google_VertexAI, ProtocolType.Google_Gemini)) {
             val fixture = fixture()
             fixture.providerProtocolType = type
-            fixture.skillCatalog = { error("没有activate_skill时不得加载技能目录") }
+            fixture.skillCatalog = mockk<com.promenar.nexara.data.skills.SkillCatalog>().also { catalog ->
+                coEvery { catalog.scan(any()) } throws java.io.IOException("目录不可用")
+            }
             val runtime = fixture.runtime()
             runtime.prepare(fixture.request)
             assertThat(runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
@@ -499,7 +501,7 @@ class P0RuntimeIntegrationTest {
         val builtContexts = mutableListOf<com.promenar.nexara.ui.chat.manager.ContextBuilderParams>()
         var providerProtocolType: ProtocolType = ProtocolType.Local
         var providerUnavailable = false
-        var skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() }
+        var skillCatalog: com.promenar.nexara.data.skills.SkillCatalog? = null
         var summaryResponse = PromptResponse("")
         var toolResult = "完整工具结果"
         var onPrompt: suspend (Int, PromptRequest) -> Unit = { _, _ -> }
