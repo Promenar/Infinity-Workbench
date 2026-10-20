@@ -89,7 +89,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
-import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.compose.LocalImageTransformer
 import com.mikepenz.markdown.compose.LocalMarkdownTypography
 import com.mikepenz.markdown.compose.MarkdownElement
@@ -405,11 +404,23 @@ fun MarkdownText(
         )
     )
 
+    // 正文内工作区链接点开媒体查看器；未提供工作区环境时链接保持原处理。
+    val workspaceMedia = com.promenar.nexara.ui.media.LocalWorkspaceMedia.current
+    val baseUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    var openedWorkspaceLink by remember { mutableStateOf<String?>(null) }
+    val uriHandler = remember(baseUriHandler, workspaceMedia) {
+        if (workspaceMedia == null) baseUriHandler else WorkspaceLinkUriHandler(baseUriHandler) { openedWorkspaceLink = it }
+    }
+    openedWorkspaceLink?.let { path ->
+        com.promenar.nexara.ui.media.WorkspaceMediaViewer(path = path, onDismiss = { openedWorkspaceLink = null })
+    }
+
     MaterialTheme(typography = m3Typography) {
         CompositionLocalProvider(
             LocalTextStyle provides m3Typography.bodyMedium,
             androidx.compose.material3.LocalContentColor provides effectiveColor,
-            LocalImageTransformer provides Coil3ImageTransformerImpl
+            LocalImageTransformer provides NexaraMarkdownImageTransformer,
+            androidx.compose.ui.platform.LocalUriHandler provides uriHandler,
         ) {
             Column(
                 modifier = modifier.fillMaxWidth(),
@@ -1072,7 +1083,17 @@ private fun MarkdownSafe(
                 val link = model.node.findLinkDestination()
                     ?.getUnescapedTextInNode(model.content)
 
-                if (link != null) {
+                val imageTarget = link?.let { com.promenar.nexara.ui.media.classifyMarkdownImageTarget(it, rememberLegacyGeneratedRoots()) }
+                if (imageTarget is com.promenar.nexara.ui.media.MarkdownImageTarget.Workspace) {
+                    // 渲染库把段落内的工作区图片提升为块级元素后交到这里，按媒体类别绘制卡片。
+                    com.promenar.nexara.ui.media.WorkspaceMediaReference(
+                        path = imageTarget.path,
+                        alt = model.node.findChildOfType(MarkdownElementTypes.INLINE_LINK)
+                            ?.findChildOfType(MarkdownElementTypes.LINK_TEXT)
+                            ?.getUnescapedTextInNode(model.content)
+                            ?.removePrefix("[")?.removeSuffix("]")?.trim(),
+                    )
+                } else if (link != null && imageTarget != com.promenar.nexara.ui.media.MarkdownImageTarget.Blocked) {
                     var showLightbox by remember(link) { mutableStateOf(false) }
                     val imageData = LocalImageTransformer.current.transform(link)
                     if (imageData != null) {
@@ -1207,11 +1228,13 @@ private fun MarkdownSafe(
         color = textColor,
     )
     val annotators = rememberReadingMarkdownAnnotators(inlineCodeStyle, textColor, sourceOffset, reveal)
+    val workspaceMedia = com.promenar.nexara.ui.media.LocalWorkspaceMedia.current
+    val legacyRoots = rememberLegacyGeneratedRoots()
 
     Markdown(
         state = visibleState,
         annotator = annotators.base,
-        imageTransformer = Coil3ImageTransformerImpl,
+        imageTransformer = NexaraMarkdownImageTransformer,
         extendedSpans = markdownExtendedSpans {
             remember(inlineCorner) {
                 ExtendedSpans(RoundedCornerSpanPainter(cornerRadius = inlineCorner, padding = RoundedCornerSpanPainter.TextPaddingValues()))
@@ -1294,8 +1317,13 @@ private fun MarkdownSafe(
                             }
 
                             node.type == MarkdownElementTypes.PARAGRAPH -> {
-                                val standaloneCode = standaloneInlineCode(node, renderContent)
-                                if (standaloneCode == null) {
+                                val mediaReferences = if (workspaceMedia == null) null else remember(renderContent, node, legacyRoots) {
+                                    markdownMediaOnlyReferences(node, renderContent, legacyRoots)
+                                }
+                                val standaloneCode = if (mediaReferences == null) standaloneInlineCode(node, renderContent) else null
+                                if (mediaReferences != null) {
+                                    MarkdownMediaBlock(mediaReferences)
+                                } else if (standaloneCode == null) {
                                     MarkdownElement(node, resolvedComponents, renderContent)
                                 } else {
                                     val codeStyle = LocalMarkdownTypography.current.inlineCode.copy(

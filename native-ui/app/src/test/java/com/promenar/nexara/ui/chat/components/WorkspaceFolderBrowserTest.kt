@@ -49,6 +49,29 @@ class WorkspaceFolderBrowserTest {
         assertThat(stack.navigateToCrumb(2).map(FolderCrumb::id)).containsExactly("docs", "specs").inOrder()
     }
 
+    @Test
+    fun `定位路径进入最近的已存在目录`() = runTest {
+        val byPath = listOf(docs, specs, plan).associateBy(FileEntry::materializedPath)
+        val lookup: suspend (String) -> FileEntry? = { byPath[it] }
+
+        assertThat(locateFolderStack("/docs/specs", "root", lookup)).isEqualTo(specs)
+        assertThat(locateFolderStack("docs/specs/", "root", lookup)).isEqualTo(specs)
+        // 目录不存在时向上回退；文件路径回退到所在目录。
+        assertThat(locateFolderStack("/docs/specs/gone/deeper", "root", lookup)).isEqualTo(specs)
+        assertThat(locateFolderStack("/docs/specs/plan.md", "root", lookup)).isEqualTo(specs)
+        assertThat(locateFolderStack("/missing/x", "root", lookup)).isNull()
+        assertThat(locateFolderStack("/", "root", lookup)).isNull()
+    }
+
+    @Test
+    fun `资源管理器只把图片、视频、音频当作可预览媒体`() {
+        assertThat(isPreviewableMediaEntry(entry("p", "root", "/a.bin", false).copy(mimeType = "image/png"))).isTrue()
+        assertThat(isPreviewableMediaEntry(entry("v", "root", "/clip.MP4", false))).isTrue()
+        assertThat(isPreviewableMediaEntry(entry("m", "root", "/voice.bin", false).copy(mimeType = "audio/mpeg"))).isTrue()
+        assertThat(isPreviewableMediaEntry(plan)).isFalse()
+        assertThat(isPreviewableMediaEntry(entry("d", "root", "/pics.png", true))).isFalse()
+    }
+
     private fun entry(uuid: String, parentUuid: String, path: String, isDirectory: Boolean) = FileEntry(
         uuid = uuid,
         workspaceRootUuid = "root",

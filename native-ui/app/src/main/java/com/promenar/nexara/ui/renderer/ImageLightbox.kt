@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.RotateRight
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
@@ -45,6 +47,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.promenar.nexara.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -58,10 +62,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 查看器底部操作；提供时替代按地址重新下载图片的旧保存与分享。 */
+data class ImageLightboxActions(
+    val onSave: () -> Unit,
+    val onShare: () -> Unit,
+    val onOpenWith: (() -> Unit)? = null,
+)
+
+/**
+ * 图片放大查看。[model] 为交给 Coil 的数据（如工作区媒体模型），缺省时使用 [imageUrl]；
+ * [overlay] 绘制在查看器窗口内（如提示宿主）。
+ */
 @Composable
 fun ImageLightbox(
     imageUrl: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    model: Any? = null,
+    actions: ImageLightboxActions? = null,
+    overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -90,7 +108,7 @@ fun ImageLightbox(
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
-                    model = imageUrl,
+                    model = model ?: imageUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -123,7 +141,7 @@ fun ImageLightbox(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.media_action_close),
                         tint = MaterialTheme.nexaraDomainColors.overlayContent,
                         modifier = Modifier.size(24.dp)
                     )
@@ -147,7 +165,7 @@ fun ImageLightbox(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ZoomOutMap,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.media_action_reset_zoom),
                             tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
@@ -158,7 +176,7 @@ fun ImageLightbox(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.RotateRight,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.media_action_rotate),
                             tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
@@ -166,14 +184,14 @@ fun ImageLightbox(
 
                     IconButton(
                         onClick = {
-                            scope.launch {
+                            if (actions != null) actions.onSave() else scope.launch {
                                 saveImageToGallery(context, imageUrl)
                             }
                         }
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.SaveAlt,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.media_action_save),
                             tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
@@ -181,19 +199,32 @@ fun ImageLightbox(
 
                     IconButton(
                         onClick = {
-                            scope.launch {
+                            if (actions != null) actions.onShare() else scope.launch {
                                 shareImage(context, imageUrl)
                             }
                         }
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Share,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.media_action_share),
                             tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
                     }
+
+                    actions?.onOpenWith?.let { openWith ->
+                        IconButton(onClick = openWith) {
+                            Icon(
+                                imageVector = Icons.Rounded.OpenInNew,
+                                contentDescription = stringResource(R.string.media_action_open_with),
+                                tint = MaterialTheme.nexaraDomainColors.overlayContent,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
+
+                overlay?.invoke(this)
             }
         }
     }

@@ -553,6 +553,11 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-video:3.0.0")
     implementation("io.coil-kt.coil3:coil-svg:3.0.0")
 
+    // ─── 音视频播放（会话内工作区媒体） ───
+    val media3Version = "1.11.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui-compose-material3:$media3Version")
+
     // ─── 数据存储 (Multiplatform-Ready) ───
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 

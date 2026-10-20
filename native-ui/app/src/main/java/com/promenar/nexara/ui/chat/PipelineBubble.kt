@@ -893,7 +893,14 @@ internal fun InlineToolRow(
                                 ExpandableToolText(text = args, collapsedLines = 6, arguments = true)
                             }
                             invocation.results.forEach { result ->
-                                val images = remember(result.data) { extractToolImageModels(result.data) }
+                                val media = result.media
+                                // 新结果以工作区媒体引用承载；旧数据仍从 data 字段取图片地址。
+                                val images = remember(result.data, media) {
+                                    if (media.isNullOrEmpty()) extractToolImageModels(result.data) else emptyList()
+                                }
+                                if (!media.isNullOrEmpty()) {
+                                    com.promenar.nexara.ui.media.ToolMediaList(media = media)
+                                }
                                 images.take(4).forEach { imageModel ->
                                     ChatImageThumbnail(
                                         imageModel = imageModel,

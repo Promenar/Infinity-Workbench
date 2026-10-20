@@ -93,6 +93,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
@@ -198,6 +199,8 @@ data class ChatScreenState(
 data class ChatScreenActions(
     val onNavigateBack: () -> Unit = {},
     val onOpenWorkspace: () -> Unit = {},
+    /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
+    val onLocateWorkspacePath: (String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
     val onOpenPromptEditor: () -> Unit = {},
     val onOpenClearDialog: () -> Unit = {},
@@ -433,6 +436,17 @@ fun ChatScreenContent(
         }
     }
 
+    // 会话内工作区媒体：解析环境、操作提示与播放协调（会话切换时暂停）。
+    val mediaSnackbarHostState = remember { SnackbarHostState() }
+    val mediaMessenger = com.promenar.nexara.ui.media.rememberSnackbarMediaMessenger(mediaSnackbarHostState)
+    val workspaceMedia = com.promenar.nexara.ui.media.rememberSessionWorkspaceMedia(
+        sessionId = uiState.session?.id,
+        onLocate = actions.onLocateWorkspacePath,
+    )
+    CompositionLocalProvider(
+        com.promenar.nexara.ui.media.LocalWorkspaceMedia provides workspaceMedia,
+        com.promenar.nexara.ui.media.LocalMediaMessenger provides mediaMessenger,
+    ) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -493,6 +507,7 @@ fun ChatScreenContent(
                             actions.onSnackbarAction()
                         }
                     )
+                    com.promenar.nexara.ui.media.MediaSnackbarHost(hostState = mediaSnackbarHostState)
                 }
             }
         ) { padding ->
@@ -856,6 +871,7 @@ fun ChatScreenContent(
             onPickImage = actions.onPickImages,
             onPickDocument = actions.onPickDocuments,
         )
+    }
     }
 }
 

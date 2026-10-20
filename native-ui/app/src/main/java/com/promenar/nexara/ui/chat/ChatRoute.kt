@@ -257,6 +257,8 @@ fun ChatRoute(
     var selectedImageUriStrings by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     val selectedImageUris = selectedImageUriStrings.map(Uri::parse)
     var activeOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
+    // 媒体不可用占位请求定位的工作区目录；资源管理器打开后消费。
+    var workspaceLocatePath by rememberSaveable { mutableStateOf<String?>(null) }
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
     val hasGenerationInteraction = interaction?.sessionId == sessionId
     val activeOverlay = if (hasGenerationInteraction) null else restoreChatOverlay(activeOverlayToken)
@@ -522,6 +524,10 @@ fun ChatRoute(
         actions = ChatScreenActions(
             onNavigateBack = onNavigateBack,
             onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
+            onLocateWorkspacePath = { path ->
+                workspaceLocatePath = path
+                requestOverlay(ChatOverlay.Workspace)
+            },
             onOpenSettings = { requestOverlay(ChatOverlay.ModelSettings) },
             onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
             onOpenClearDialog = { requestOverlay(ChatOverlay.ClearHistory) },
@@ -681,9 +687,13 @@ fun ChatRoute(
     }
     if (activeOverlay == ChatOverlay.Workspace) {
         ResourceExplorerSheet(
-            onDismiss = { activeOverlayToken = null },
+            onDismiss = {
+                activeOverlayToken = null
+                workspaceLocatePath = null
+            },
             sessionId = sessionId,
             chatViewModel = chatViewModel,
+            initialFolderPath = workspaceLocatePath,
         )
     }
     SessionSettingsSheet(
