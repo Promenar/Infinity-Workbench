@@ -16,7 +16,10 @@ object ApproximateTokenEstimator {
         MESSAGE_OVERHEAD_TOKENS +
             estimate(message.content) +
             estimate(message.reasoning.orEmpty()) +
-            message.toolCalls.orEmpty().sumOf { estimate(it.name) + estimate(it.arguments) }
+            message.toolCalls.orEmpty().sumOf { estimate(it.name) + estimate(it.arguments) } +
+            message.imageUrls.orEmpty().size * IMAGE_TOKENS +
+            message.audioData.orEmpty().size * AUDIO_TOKENS +
+            message.videoData.orEmpty().size * VIDEO_TOKENS
 
     fun estimate(prompt: PromptRequest): Int = (
         prompt.messages.sumOf { estimate(it).toLong() } +
@@ -25,6 +28,10 @@ object ApproximateTokenEstimator {
             }
         ).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
+    // 媒体估算不扫描 base64：按每个输入的保守固定值预留预算。
+    const val IMAGE_TOKENS = 2048
+    const val AUDIO_TOKENS = 32768
+    const val VIDEO_TOKENS = 65536
     private const val MESSAGE_OVERHEAD_TOKENS = 4
 }
 

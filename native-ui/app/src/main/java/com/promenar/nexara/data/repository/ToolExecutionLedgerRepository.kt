@@ -13,6 +13,7 @@ import com.promenar.nexara.data.model.ApprovalCallIdentity
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.json
+import com.promenar.nexara.domain.media.ViewedMedia
 import com.promenar.nexara.domain.tool.ToolArgumentsValidation
 import com.promenar.nexara.domain.tool.ToolArgumentsValidator
 import com.promenar.nexara.domain.tool.ToolRisk
@@ -372,6 +373,7 @@ interface ToolExecutionLedger {
         thoughtSignature: String?,
         outcome: ToolExecutionOutcome,
         images: String? = null,
+        viewedMedia: List<ViewedMedia>? = null,
     ): Message?
     suspend fun terminalizeWithResults(
         requests: Set<ToolTerminalRequest>,
@@ -510,6 +512,7 @@ class ToolExecutionLedgerRepository(
         thoughtSignature: String?,
         outcome: ToolExecutionOutcome,
         images: String?,
+        viewedMedia: List<ViewedMedia>?,
     ): Message? = database.withTransaction {
         val createdAt = clock()
         val message = terminalMessage(
@@ -518,6 +521,7 @@ class ToolExecutionLedgerRepository(
             content = content,
             createdAt = createdAt,
             images = images,
+            viewedMedia = viewedMedia,
         )
         val changed = dao.finish(
             sessionId = key.sessionId,
@@ -1313,6 +1317,7 @@ class ToolExecutionLedgerRepository(
         content: String,
         createdAt: Long,
         images: String? = null,
+        viewedMedia: List<ViewedMedia>? = null,
     ) = Message(
         id = deterministicResultMessageId(request.key, state),
         role = MessageRole.TOOL,
@@ -1323,6 +1328,7 @@ class ToolExecutionLedgerRepository(
         thoughtSignature = request.thoughtSignature,
         images = images,
         createdAt = createdAt,
+        viewedMedia = viewedMedia,
     )
 
     private fun deterministicResultMessageId(key: ToolExecutionKey, state: ToolLedgerState): String {

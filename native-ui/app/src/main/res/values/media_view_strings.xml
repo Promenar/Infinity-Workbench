@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="skill_view_media">View workspace media</string>
+    <string name="skill_view_media_desc">View images, audio and video supported by the active model; inspect videos as timestamped frames.</string>
+</resources>

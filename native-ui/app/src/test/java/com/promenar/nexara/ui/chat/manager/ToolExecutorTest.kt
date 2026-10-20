@@ -142,6 +142,7 @@ class ToolExecutorTest {
             thoughtSignature: String?,
             outcome: ToolExecutionOutcome,
             images: String?,
+            viewedMedia: List<com.promenar.nexara.domain.media.ViewedMedia>?,
         ): Message? = if (finish(key, outcome)) {
             Message(
                 id = "tool-result-${key.toolCallId}",
@@ -150,6 +151,7 @@ class ToolExecutorTest {
                 name = toolName,
                 content = content,
                 images = images,
+                viewedMedia = viewedMedia,
                 thoughtSignature = thoughtSignature,
             )
         } else null
@@ -484,6 +486,25 @@ class ToolExecutorTest {
         assertThat(executions).isEqualTo(0)
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", "revoked")))
             .isEqualTo(ToolLedgerState.FAILED)
+    }
+
+    @Test
+    fun `模型切换后撤销媒体能力必须在查看前拒绝执行`() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val skill = testSkill("view_media") { executions++; ToolResult("result", "不应执行") }
+        val registry = singleSkillRegistry(skill)
+        val settings = mockk<SharedPreferences>(relaxed = true)
+        every { settings.getStringSet(any(), null) } returns null
+        var caps = com.promenar.nexara.data.model.ModelCapabilities(vision = true)
+        val resolver = DefaultSessionToolResolver(settings, registry) { caps }
+        val prepared = resolver.resolve(com.promenar.nexara.data.model.Session("s1", "a")).single()
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, registry, resolver, ledger = ledger)
+        caps = com.promenar.nexara.data.model.ModelCapabilities()
+        executor.executeTools("s1", "m1", listOf(ToolCall("revoked-media", skill.name, "{}")), preparedTools = listOf(prepared))
+        assertThat(executions).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "revoked-media"))).isEqualTo(ToolLedgerState.FAILED)
     }
 
     @Test

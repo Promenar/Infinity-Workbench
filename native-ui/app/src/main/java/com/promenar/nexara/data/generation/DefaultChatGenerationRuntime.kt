@@ -25,6 +25,7 @@ import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ReasoningReplayCodec
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolToolChoice
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
@@ -151,6 +152,7 @@ internal class DefaultChatGenerationRuntime(
     /** 会话当前工作区，用于系统提示词的工作区说明；null 时按私有工作区说明。 */
     private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
     /** 构建工具表的调度器；工具注册表会同步扫描技能目录，不能落在主线程。 */
+    private val mediaContextLoader: ViewedMediaContextLoader? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
@@ -173,8 +175,19 @@ internal class DefaultChatGenerationRuntime(
     private var cachedRetrieval: com.promenar.nexara.ui.chat.manager.ContextRetrieval? = null
 
     /** 生成运行在主线程作用域；工具表要按会话扫描技能目录，统一放到 IO 上构建。 */
-    private suspend fun buildToolsOffMain(session: com.promenar.nexara.data.model.Session): List<ProtocolTool> =
-        kotlinx.coroutines.withContext(toolBuildDispatcher) { contentStrategy.buildTools(session) }
+    private suspend fun buildToolsOffMain(session: com.promenar.nexara.data.model.Session, modelId: String? = preparedRoute?.modelId): List<ProtocolTool> =
+        kotlinx.coroutines.withContext(toolBuildDispatcher) { contentStrategy.buildTools(if (modelId == null) session else session.copy(modelId = modelId)) }
+
+    private suspend fun buildMessagesWithMedia(
+        session: com.promenar.nexara.data.model.Session,
+        systemPrompt: String,
+        pinnedUserMessageId: String? = null,
+        excludedMessageIds: Set<String> = emptySet(),
+        modelId: String? = null,
+    ): List<ProtocolMessage> {
+        val messages = contentStrategy.buildProtocolMessages(session, systemPrompt, pinnedUserMessageId, excludedMessageIds, modelId)
+        return mediaContextLoader?.attach(session, messages, modelId) ?: messages
+    }
 
     private suspend fun scanSkills(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?): List<com.promenar.nexara.data.skills.DiscoveredSkill> {
         val directory = workspace as? com.promenar.nexara.data.workspace.SessionWorkspace.Directory
@@ -213,7 +226,7 @@ internal class DefaultChatGenerationRuntime(
                     val updatedSystem = replaceHistorySummary(systemPrompt, updated.summary, preparedContextSummary)
                     prompt.copy(messages = offloadToolResults(
                         request.sessionId,
-                        contentStrategy.buildProtocolMessages(
+                        buildMessagesWithMedia(
                             updated, updatedSystem, currentTurnId, request.messageIdsToReplace, preparedRoute?.modelId,
                         ),
                     ))
@@ -272,7 +285,7 @@ internal class DefaultChatGenerationRuntime(
         sessionId: String,
         messages: List<com.promenar.nexara.data.remote.protocol.ProtocolMessage>,
     ) = messages.map { message ->
-        if (message.role != "tool" || outputStore == null) message else {
+        if (message.role != "tool" || message.name == "view_media" || outputStore == null) message else {
             val content = try {
                 outputStore.offload(sessionId, message.content)
             } catch (cancelled: CancellationException) {
@@ -354,8 +367,8 @@ internal class DefaultChatGenerationRuntime(
 
     internal suspend fun estimateContext(sessionId: String): ContextUsageEstimate {
         val context = prepareStoredContext(sessionId)
-        val messages = contentStrategy.buildProtocolMessages(context.session, context.systemPrompt).map { message ->
-            if (message.role != "tool" || outputStore == null) message else message.copy(content = try {
+        val messages = buildMessagesWithMedia(context.session, context.systemPrompt).map { message ->
+            if (message.role != "tool" || message.name == "view_media" || outputStore == null) message else message.copy(content = try {
                 outputStore.previewForContext(sessionId, message.content)
             } catch (_: java.io.IOException) { ContextCompactionPipeline.headTail(message.content, 2000) })
         }
@@ -432,7 +445,7 @@ internal class DefaultChatGenerationRuntime(
         val preparation = try {
             routeGate.prepareWithRoute(model) { route ->
                 // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
-                routeTools = if (route.supportsToolCalls) buildToolsOffMain(session) else emptyList()
+                routeTools = if (route.supportsToolCalls) buildToolsOffMain(session, route.modelId) else emptyList()
                 val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
                 contextBuilder.buildContext(
                     params.copy(
@@ -491,7 +504,7 @@ internal class DefaultChatGenerationRuntime(
             context.finalSystemPrompt
         }
         val prompt = PromptRequest(
-            messages = contentStrategy.buildProtocolMessages(
+            messages = buildMessagesWithMedia(
                 session,
                 systemPrompt,
                 request.userMessageId,
@@ -546,7 +559,13 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> {
         val route = requireNotNull(preparedRoute) { "生成路由尚未准备完成" }
-        val prompt = requireNotNull(preparedPrompt) { "生成请求尚未准备完成" }
+        val prepared = requireNotNull(preparedPrompt) { "生成请求尚未准备完成" }
+        // 网络重试不会重建上下文；每次真正发起请求前都要重新校验工作区媒体。
+        val prompt = if (mediaContextLoader == null) prepared else {
+            val currentSession = store.getSession(request.sessionId)
+                ?: com.promenar.nexara.data.model.Session(request.sessionId, "")
+            prepared.copy(messages = mediaContextLoader.attach(currentSession, prepared.messages, route.modelId))
+        }
         val source = if (route.useLocalProvider) {
             localProviderFactory(prompt.model).sendPrompt(prompt)
         } else {

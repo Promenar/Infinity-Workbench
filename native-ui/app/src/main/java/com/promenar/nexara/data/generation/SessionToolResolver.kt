@@ -8,16 +8,21 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 /** 会话在当前时刻实际有权广告和执行的工具集合；提示构建与执行重验必须共用此策略。 */
 fun interface SessionToolResolver {
     fun resolve(session: Session): List<ProtocolTool>
+    suspend fun resolveForExecution(session: Session): List<ProtocolTool> = resolve(session)
 }
 
 class DefaultSessionToolResolver(
     private val settings: SharedPreferences,
     private val skillRegistry: SkillRegistry?,
+    private val mediaCapabilities: (Session) -> com.promenar.nexara.data.model.ModelCapabilities = { com.promenar.nexara.data.model.ModelCapabilities() },
 ) : SessionToolResolver {
     override fun resolve(session: Session): List<ProtocolTool> {
         if (!session.options.toolsEnabled) return emptyList()
         val allTools = skillRegistry?.getAllTools(null).orEmpty()
+        val capabilities = mediaCapabilities(session)
+        val canView = capabilities.vision || capabilities.audioInput || capabilities.videoUnderstanding
         return allTools.filter { tool ->
+            if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "view_media" && !canView) return@filter false
             when (tool.sourceId) {
                 // 内置工具只受全局启用状态约束；写入、删除、脚本等风险由会话执行模式统一审批。
                 // 会话 activeSkillIds 只选择自定义 Skill，其是否为空不得影响内置工具集合。

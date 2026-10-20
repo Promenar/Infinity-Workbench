@@ -177,7 +177,11 @@ class DefaultChatGenerationContentStrategy(
                     MessageRole.SYSTEM -> ProtocolMessage(role = "system", content = message.content)
                     MessageRole.TOOL -> ProtocolMessage(
                         role = "tool",
-                        content = message.content,
+                        content = if (index <= currentTurnStart && message.name == "view_media" && !message.viewedMedia.isNullOrEmpty()) {
+                            message.content + "\n" + message.viewedMedia.joinToString("\n") {
+                                "已查看 ${it.ref.path}（${if (it.mode == com.promenar.nexara.domain.media.MediaViewMode.KEYFRAMES) "关键帧" else "原文件"}）"
+                            }
+                        } else message.content,
                         toolCallId = message.toolCallId,
                         name = message.name,
                     )

@@ -154,6 +154,7 @@ class ApprovalManagerTest {
             thoughtSignature: String?,
             outcome: ToolExecutionOutcome,
             images: String?,
+            viewedMedia: List<com.promenar.nexara.domain.media.ViewedMedia>?,
         ): Message? = null
         override suspend fun terminalizeWithResults(
             requests: Set<ToolTerminalRequest>,

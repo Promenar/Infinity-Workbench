@@ -329,6 +329,10 @@ data class ToolResult(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val media: List<com.promenar.nexara.domain.media.MediaRef>? = null,
+    /** 模型已查看的媒体内容身份与查看方式，经执行账本保存到最终工具消息。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val viewedMedia: List<com.promenar.nexara.domain.media.ViewedMedia>? = null,
 )
 
 @Serializable
@@ -451,10 +455,16 @@ data class MessageDocumentAttachment(
     val estimatedTokens: Int,
 )
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class MessageDocumentEnvelope(
     val schema: String = SCHEMA,
-    val documents: List<MessageDocumentAttachment>,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val documents: List<MessageDocumentAttachment>? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val viewedMedia: List<com.promenar.nexara.domain.media.ViewedMedia>? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val legacyFilesPayload: String? = null,
 ) {
     companion object {
         const val SCHEMA = "nexara-full-context-documents-v1"
@@ -508,7 +518,11 @@ data class Message(
     val errorMessage: String? = null,
     val isLongWait: Boolean = false,
     val loopCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** 模型已查看的工作区媒体描述；媒体字节由生成链路按需读取。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val viewedMedia: List<com.promenar.nexara.domain.media.ViewedMedia>? = null,
 )
 
 @Serializable

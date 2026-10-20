@@ -257,11 +257,12 @@ class GenericOpenAICompatProtocol(
     )
 
     private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
+        val messages = chatMessagesWithToolMedia(request.messages)
         val body = buildJsonObject {
             put("model", request.model.ifEmpty { this@GenericOpenAICompatProtocol.model })
             put("stream", stream)
 
-            put("messages", JsonArray(request.messages.map { msg ->
+            put("messages", JsonArray(messages.map { msg ->
                 buildJsonObject {
                     put("role", msg.role)
                     
@@ -287,7 +288,7 @@ class GenericOpenAICompatProtocol(
                                     put("type", "input_audio")
                                     put("input_audio", buildJsonObject {
                                         put("data", aud.base64)
-                                        put("format", if (aud.mimeType.contains("wav")) "wav" else "mp3")
+                                        put("format", requireNotNull(chatAudioFormat(aud.mimeType)))
                                     })
                                 })
                             }
@@ -322,13 +323,10 @@ class GenericOpenAICompatProtocol(
                 }
             }))
 
-            val hasImages = request.messages.any { it.imageUrls?.isNotEmpty() == true }
-            val hasAudio = request.messages.any { it.audioData?.isNotEmpty() == true }
-            if (hasImages || hasAudio) {
+            val hasAudio = messages.any { it.audioData?.isNotEmpty() == true }
+            if (hasAudio) {
                 put("modalities", buildJsonArray {
                     add(JsonPrimitive("text"))
-                    if (hasImages) add(JsonPrimitive("image"))
-                    if (hasAudio) add(JsonPrimitive("audio"))
                 })
             }
 

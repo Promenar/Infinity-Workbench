@@ -318,7 +318,7 @@ class AnthropicProtocol(
                     }
                     
                     // 2. Handle Images
-                    msg.imageUrls?.forEach { img ->
+                    msg.imageUrls?.takeIf { msg.role != "tool" }?.forEach { img ->
                         contentParts.add(buildJsonObject {
                             put("type", "image")
                             put("source", buildJsonObject {
@@ -330,7 +330,7 @@ class AnthropicProtocol(
                     }
                     
                     // 3. Handle Documents
-                    msg.documentData?.forEach { doc ->
+                    msg.documentData?.takeIf { msg.role != "tool" }?.forEach { doc ->
                         contentParts.add(buildJsonObject {
                             put("type", "document")
                             put("source", buildJsonObject {
@@ -361,7 +361,41 @@ class AnthropicProtocol(
                         contentParts.add(buildJsonObject {
                             put("type", "tool_result")
                             put("tool_use_id", msg.toolCallId.orEmpty())
-                            put("content", msg.content)
+                            val resultText = msg.mediaResultText(
+                                "Anthropic Messages",
+                                unsupportedAudio = msg.audioData.orEmpty(),
+                                unsupportedVideo = msg.videoData.orEmpty(),
+                            )
+                            if (!msg.hasMediaPayload() && msg.documentData.isNullOrEmpty()) {
+                                put("content", resultText)
+                            } else {
+                                put("content", buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", "text")
+                                        put("text", resultText)
+                                    })
+                                    msg.imageUrls.orEmpty().forEach { image ->
+                                        add(buildJsonObject {
+                                            put("type", "image")
+                                            put("source", buildJsonObject {
+                                                put("type", "base64")
+                                                put("media_type", image.mimeType)
+                                                put("data", image.base64.orEmpty())
+                                            })
+                                        })
+                                    }
+                                    msg.documentData.orEmpty().forEach { document ->
+                                        add(buildJsonObject {
+                                            put("type", "document")
+                                            put("source", buildJsonObject {
+                                                put("type", "base64")
+                                                put("media_type", document.mimeType)
+                                                put("data", document.base64.orEmpty())
+                                            })
+                                        })
+                                    }
+                                })
+                            }
                         })
                     }
 

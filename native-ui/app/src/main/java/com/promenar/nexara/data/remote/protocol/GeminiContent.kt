@@ -47,12 +47,33 @@ internal object GeminiContentCodec {
         "HARM_CATEGORY_CIVIC_INTEGRITY",
     )
 
+    private val FUNCTION_IMAGE_TYPES = setOf("image/png", "image/jpeg", "image/webp")
+    private val GEMINI_AUDIO_TYPES = setOf(
+        "audio/wav", "audio/mp3", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac", "audio/mpeg",
+        "audio/m4a", "audio/l16", "audio/opus", "audio/alaw", "audio/mulaw", "audio/webm",
+    )
+    private val VERTEX_AUDIO_TYPES = setOf(
+        "audio/x-aac", "audio/flac", "audio/mp3", "audio/m4a", "audio/mpeg", "audio/mpga",
+        "audio/mp4", "audio/ogg", "audio/pcm", "audio/wav", "audio/webm",
+    )
+    private val GEMINI_VIDEO_TYPES = setOf(
+        "video/mp4", "video/mpeg", "video/quicktime", "video/avi", "video/x-flv", "video/mpg",
+        "video/webm", "video/wmv", "video/3gpp",
+    )
+    private val VERTEX_VIDEO_TYPES = setOf(
+        "video/x-flv", "video/quicktime", "video/mpeg", "video/mpegs", "video/mpg", "video/mp4",
+        "video/webm", "video/wmv", "video/3gpp",
+    )
+
     fun newLocalCallId(): String = LOCAL_CALL_ID_PREFIX + UUID.randomUUID().toString()
 
-    fun buildRequestBody(request: PromptRequest, json: Json): String {
+    fun buildRequestBody(request: PromptRequest, json: Json, isVertex: Boolean = false): String {
         val systemMessages = request.messages.filter { it.role == "system" }
-        val contentMessages = request.messages.filter { it.role != "system" }
-        val currentTurnStart = contentMessages.indexOfLast { it.role == "user" }
+        val originalMessages = request.messages.filter { it.role != "system" }
+        val contentMessages = messagesWithToolMedia(originalMessages, request.model, isVertex)
+        // 合成媒体消息属于工具结果，不能重置原始用户轮次的签名范围。
+        val currentUser = originalMessages.lastOrNull { it.role == "user" }
+        val currentTurnStart = contentMessages.indexOfLast { it === currentUser }
         val callNames = contentMessages.flatMap { it.toolCalls.orEmpty() }.associate { it.id to it.name }
         val hasFunctionTools = !request.tools.isNullOrEmpty()
 
@@ -127,6 +148,49 @@ internal object GeminiContentCodec {
                 put("properties", buildJsonObject {})
             }
 
+    private fun messagesWithToolMedia(
+        messages: List<ProtocolMessage>,
+        model: String,
+        isVertex: Boolean,
+    ): List<ProtocolMessage> {
+        val modelId = model.substringAfterLast('/').lowercase()
+        val nativeImages = Regex("^gemini-3(?:[.-]|$)").containsMatchIn(modelId)
+        val audioTypes = if (isVertex) VERTEX_AUDIO_TYPES else GEMINI_AUDIO_TYPES
+        val videoTypes = if (isVertex) VERTEX_VIDEO_TYPES else GEMINI_VIDEO_TYPES
+        fun nativeImage(image: ImageInput) = nativeImages && image.mimeType in FUNCTION_IMAGE_TYPES
+        return appendToolGroupMedia(
+            messages,
+            transformTool = { message ->
+                if (!message.hasMediaPayload() && message.mediaPaths.isNullOrEmpty()) message
+                else message.copy(
+                    content = message.mediaResultText(
+                        if (isVertex) "Vertex AI" else "Gemini API",
+                        unsupportedAudio = message.audioData.orEmpty().filter { it.mimeType !in audioTypes },
+                        unsupportedVideo = message.videoData.orEmpty().filter { it.mimeType !in videoTypes },
+                    ),
+                    imageUrls = message.imageUrls?.filter(::nativeImage)?.ifEmpty { null },
+                    audioData = null,
+                    videoData = null,
+                )
+            },
+            fallback = { group ->
+                val media = group.filter { message ->
+                    message.imageUrls.orEmpty().any { !nativeImage(it) } ||
+                        message.audioData.orEmpty().any { it.mimeType in audioTypes } ||
+                        message.videoData.orEmpty().any { it.mimeType in videoTypes }
+                }
+                if (media.isEmpty()) null
+                else ProtocolMessage(
+                    role = "user",
+                    content = media.joinToString("\n") { it.mediaSourceText() },
+                    imageUrls = media.flatMap { it.imageUrls.orEmpty() }.filterNot(::nativeImage).ifEmpty { null },
+                    audioData = media.flatMap { it.audioData.orEmpty() }.filter { it.mimeType in audioTypes }.ifEmpty { null },
+                    videoData = media.flatMap { it.videoData.orEmpty() }.filter { it.mimeType in videoTypes }.ifEmpty { null },
+                )
+            },
+        )
+    }
+
     private data class Turn(val role: String, val parts: List<JsonObject>)
 
     private fun normalizeTurns(messages: List<Pair<ProtocolMessage, List<JsonObject>>>): List<Turn> {
@@ -168,6 +232,11 @@ internal object GeminiContentCodec {
                     if (callId.isNotBlank() && !callId.startsWith(LOCAL_CALL_ID_PREFIX)) put("id", callId)
                     put("name", message.name ?: callNames[callId] ?: "unknown")
                     put("response", buildJsonObject { put("content", message.content) })
+                    if (!message.imageUrls.isNullOrEmpty()) {
+                        put("parts", JsonArray(message.imageUrls.map { image ->
+                            inlineData(image.mimeType, image.base64.orEmpty())
+                        }))
+                    }
                 })
             })
         }
@@ -220,6 +289,7 @@ internal object GeminiContentCodec {
             add(inlineData(image.mimeType, image.base64.orEmpty()))
         }
         message.audioData?.forEach { audio -> add(inlineData(audio.mimeType, audio.base64)) }
+        message.videoData?.forEach { video -> add(inlineData(video.mimeType, video.base64)) }
         message.documentData?.forEach { document ->
             if (document.url != null) {
                 add(buildJsonObject {

@@ -26,7 +26,15 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
 import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
+import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageDocumentAttachment
+import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.toDomain
+import com.promenar.nexara.data.model.toEntity
+import com.promenar.nexara.domain.media.MediaKind
+import com.promenar.nexara.domain.media.MediaRef
+import com.promenar.nexara.domain.media.MediaViewMode
+import com.promenar.nexara.domain.media.ViewedMedia
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
@@ -115,6 +123,77 @@ class RoomBackupDataSourceTest {
     fun tearDown() {
         db.close()
         sourceBase.parent.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `实际备份恢复保留查看描述文档与历史载荷`() = runBlocking {
+        seedCompleteGraph()
+        val viewed = listOf(
+            ViewedMedia(
+                ref = MediaRef(
+                    path = "/media/图片.png",
+                    mimeType = "image/png",
+                    kind = MediaKind.IMAGE,
+                    sizeBytes = 9L,
+                    sha256 = "a".repeat(64),
+                    width = 3,
+                    height = 3,
+                ),
+            ),
+            ViewedMedia(
+                ref = MediaRef(
+                    path = "/media/视频.mp4",
+                    mimeType = "video/mp4",
+                    kind = MediaKind.VIDEO,
+                    sizeBytes = 42L,
+                    sha256 = "b".repeat(64),
+                    durationMs = 5_000L,
+                ),
+                mode = MediaViewMode.KEYFRAMES,
+                frameTimestampsSeconds = listOf(1.25, 3.75),
+            ),
+        )
+        val message = Message(
+            id = "view-media-message",
+            role = MessageRole.TOOL,
+            content = "已查看图片与视频关键帧",
+            userDocuments = listOf(
+                MessageDocumentAttachment(
+                    id = "view-note",
+                    name = "说明.md",
+                    mimeType = "text/markdown",
+                    content = "# 媒体说明",
+                    sizeBytes = 14L,
+                    sha256 = "document-hash",
+                    estimatedTokens = 4,
+                ),
+            ),
+            legacyFilesPayload = """[{"uri":"legacy.pdf"}]""",
+            legacyAttachmentsPayload = """[{"uri":"content://legacy"}]""",
+            toolCallId = "view-call",
+            createdAt = 101L,
+            viewedMedia = viewed,
+        )
+        val entity = message.toEntity("session-1")
+        db.messageDao().insert(entity)
+        val source = newDataSource()
+
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        val backedUpRow = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8))
+            .jsonObject.getValue("tables").jsonObject.getValue("messages").jsonArray
+            .single { it.jsonObject.getValue("id").jsonPrimitive.content == message.id }.jsonObject
+        assertThat(backedUpRow.getValue("files").jsonPrimitive.content).isEqualTo(entity.files)
+        db.clearAllTables()
+        assertThat(db.messageDao().getById(message.id)).isNull()
+
+        source.restore(validated(snapshot))
+
+        val restored = db.messageDao().getById(message.id)!!
+        assertThat(restored.files).isEqualTo(entity.files)
+        assertThat(restored.toDomain()).isEqualTo(message)
+        assertThat(restored.toDomain().viewedMedia).containsExactlyElementsIn(viewed).inOrder()
+        assertThat(db.messageDao().getById("message-1")!!.toDomain().viewedMedia).isNull()
+        snapshot.wipe()
     }
 
     @Test

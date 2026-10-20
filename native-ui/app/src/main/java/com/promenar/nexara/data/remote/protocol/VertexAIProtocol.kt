@@ -321,7 +321,7 @@ class VertexAIProtocol(
     }
 
     private fun buildRequestBody(request: PromptRequest): String =
-        GeminiContentCodec.buildRequestBody(request, json)
+        GeminiContentCodec.buildRequestBody(request, json, isVertex = true)
 
     private fun normalizeError(e: Exception): StreamChunk.Error {
         val normalized = ErrorNormalizer.normalize(e)

@@ -14,6 +14,16 @@ import org.junit.Test
 
 class DefaultSessionToolResolverTest {
     @Test
+    fun `没有媒体能力的模型不广告查看工具`() {
+        val view = safeReadTool.copy(
+            function = ProtocolToolFunction("view_media", "查看媒体", "{}"), runtimeToolId = "view_media",
+        )
+        every { skillRegistry.getAllTools(null) } returns listOf(view)
+        every { settings.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns null
+        assertThat(DefaultSessionToolResolver(settings, skillRegistry).resolve(Session("s", "a"))).isEmpty()
+    }
+
+    @Test
     fun `Termux工具默认隐藏且关闭集成立即撤销暴露`() {
         val termux = ProtocolTool(
             function = ProtocolToolFunction(name = "termux_exec", description = "本机终端", parameters = "{}"),
