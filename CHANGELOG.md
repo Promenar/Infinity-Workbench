@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### 回复气泡生成统计浮卡
 
-- 点击 AI 回复底部“模型名 · 时间”一行，在其上方弹出生成统计浮卡（点外部或返回关闭；生成进行中不显示该行，因此不会弹出）。统计以气泡为单位，汇总其中全部模型轮次（模型→工具→模型…）：模型与服务商名、生成时间；输入、输出、生成速度三格主指标；缓存读取、未缓存、推理 Token（服务商报告时才显示）、首 Token 耗时、端到端吞吐、端到端耗时、多轮时的“N 轮合计”与“输入含每轮重复计入的上下文”说明；可展开的“运行时间分布”（模型 / 工具 / 其它）。估算用量标“估算”，旧消息缺计时显示“—”。不显示任何费用。
+- 点击 AI 回复底部“模型名 · 时间”一行，在其上方弹出生成统计浮卡；上方放不下时改在下方，始终避开状态栏、导航栏、刘海与输入法并留出边距，不遮住这一行，内容过长时在卡内滚动（点外部或返回关闭；生成进行中不显示该行，因此不会弹出）。统计只在打开浮卡时计算。统计以气泡为单位，汇总其中全部模型轮次（模型→工具→模型…）：模型与服务商名、生成时间；输入、输出、生成速度三格主指标；缓存读取、未缓存、推理 Token（服务商报告时才显示）、首 Token 耗时、端到端吞吐、端到端耗时、多轮时的“N 轮合计”与“输入含每轮重复计入的上下文”说明；可展开的“运行时间分布”（模型 / 工具 / 其它）。估算用量标“估算”，旧消息缺计时显示“—”。不显示任何费用。
 - 口径：生成速度 = 输出合计 ÷ Σ各轮(结束 − 首个输出)；端到端吞吐 = 输出合计 ÷ (最后一轮结束 − 第一轮请求开始)；首 Token 耗时取第一轮；模型时间 = Σ各轮(结束 − 请求开始)，工具时间取各轮工具调用墙钟区间之和，其它 = 端到端 − 模型 − 工具（下限 0）。Token 统计扣除并入消息的摘要模型用量；缺数据的项不臆造。
 - 每条助手消息的 `tokens` JSON 新增可空字段 `cacheReadInput`、`cacheWriteInput`、`reasoningOutput` 与 `timing`（`requestStartedAt`、`firstOutputAt`、`endedAt`，epoch 毫秒），为空时不写入；旧记录照常解码，无数据库迁移，`$.input`/`$.output`/`$.total` 键名与含义不变。生成运行器在每轮请求发出、首个正文/思考/工具调用增量到达、流结束时打点，失败与取消的轮次同样补记结束时间；自动重试沿用本轮首次请求时间。
 - 协议 usage 统一语义：`input` 为本轮全部输入（含缓存读写部分），`output` 含推理 Token。OpenAI 与兼容协议读取 `prompt_tokens_details.cached_tokens`、`completion_tokens_details.reasoning_tokens`，DeepSeek 的 `prompt_cache_hit_tokens` 记为缓存读取；OpenAI Responses 读取 `input_tokens_details`/`output_tokens_details`；Gemini/Vertex 读取 `cachedContentTokenCount`，`thoughtsTokenCount` 仍并入输出并另记推理。

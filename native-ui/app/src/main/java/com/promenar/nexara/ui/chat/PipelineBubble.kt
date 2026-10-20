@@ -32,7 +32,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -253,26 +255,26 @@ fun PipelineBubble(
                     modelDisplayNames[lastMsg.modelId]?.takeIf(String::isNotBlank)
                         ?: lastMsg.modelId.substringAfter("::", lastMsg.modelId)
                 }
-                val generatedAt = remember(lastMsg.createdAt) {
-                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                        .format(java.util.Date(lastMsg.createdAt))
-                }
                 val providerName = lastMsg.modelId?.substringBefore("::", "")
                     ?.takeIf(String::isNotBlank)
                     ?.let(providerDisplayNames::get)
-                val statsModel = remember(group.messages, modelDisplayName, providerName, generatedAt) {
-                    GenerationStatsCardModel(
-                        modelName = modelDisplayName,
-                        providerName = providerName,
-                        generatedAt = generatedAt,
-                        summary = summarizeGenerationStats(group.messages),
-                    )
+                // 统计只在打开浮卡时计算，列表渲染时每个气泡只保留一个轻量工厂。
+                val statsFactory = remember(group.messages, modelDisplayName, providerName, lastMsg.createdAt) {
+                    {
+                        GenerationStatsCardModel(
+                            modelName = modelDisplayName,
+                            providerName = providerName,
+                            generatedAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                                .format(java.util.Date(lastMsg.createdAt)),
+                            summary = summarizeGenerationStats(group.messages),
+                        )
+                    }
                 }
                 AssistantActionRow(
                     modelDisplayName = modelDisplayName,
                     timestamp = timestamp,
                     isGenerating = isGenerating,
-                    stats = statsModel,
+                    stats = statsFactory,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
                     onRegenerate = onRegenerate?.let { handler -> { handler(lastMsg.id) } },
                     onBranch = onBranch?.let { handler -> { handler(lastMsg.id) } },
@@ -639,12 +641,14 @@ internal fun AssistantActionRow(
     onBranch: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    /** 生成统计；为 null 时模型名与时间不可点击。生成进行中整行不显示，因此不会弹出。 */
-    stats: GenerationStatsCardModel? = null,
+    /** 生成统计工厂，打开浮卡时才调用；为 null 时模型名与时间不可点击。生成进行中整行不显示，因此不会弹出。 */
+    stats: (() -> GenerationStatsCardModel)? = null,
 ) {
     if (isGenerating) return
     var showMore by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    // 锚点坐标只在打开浮卡时读取，用普通引用持有，滚动时不触发重组。
+    val statsAnchor = remember { StatsAnchorHolder() }
     val metaStyle = NexaraTypography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     Box(modifier = modifier.fillMaxWidth().height(36.dp).testTag("CHAT_ASSISTANT_ACTIONS")) {
         Row(
@@ -691,7 +695,11 @@ internal fun AssistantActionRow(
             }
             Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 val statsLabel = stringResource(R.string.generation_stats_open_action)
-                Box {
+                Box(
+                    modifier = if (stats != null) {
+                        Modifier.onGloballyPositioned { statsAnchor.coordinates = it }
+                    } else Modifier,
+                ) {
                     Row(
                         modifier = Modifier
                             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
@@ -716,12 +724,26 @@ internal fun AssistantActionRow(
                         Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
                     }
                     if (showStats && stats != null) {
-                        GenerationStatsPopup(model = stats, onDismissRequest = { showStats = false })
+                        val model = remember { stats() }
+                        val anchorBounds = remember {
+                            statsAnchor.coordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let {
+                                androidx.compose.ui.unit.IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+                            }
+                        }
+                        GenerationStatsPopup(
+                            model = model,
+                            anchorBoundsInWindow = anchorBounds,
+                            onDismissRequest = { showStats = false },
+                        )
                     }
                 }
             }
         }
     }
+}
+
+private class StatsAnchorHolder {
+    var coordinates: androidx.compose.ui.layout.LayoutCoordinates? = null
 }
 
 @Composable

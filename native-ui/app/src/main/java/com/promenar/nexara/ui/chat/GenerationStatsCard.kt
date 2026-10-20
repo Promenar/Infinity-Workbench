@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -109,19 +112,36 @@ private fun GenerationStatsText.resolve(): String = stringResource(resId, *args.
 @Composable
 private fun currentLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
 
-/** 在锚点上方弹出生成统计浮卡；上方空间不足时改在下方。点外部或返回键关闭。 */
+/**
+ * 在锚点上方弹出生成统计浮卡；上方放不下时改在下方，两侧都放不下时放在空间较大的一侧并限制高度、内部滚动。
+ * 上下边界避开状态栏、导航栏、刘海与输入法（safeDrawing）并保留边距，浮卡不遮住锚点。点外部或返回键关闭。
+ *
+ * [anchorBoundsInWindow] 为锚点在窗口中的边界（与 Popup 定位用的锚点坐标一致），未知时只按屏幕高度限制。
+ */
 @Composable
 internal fun GenerationStatsPopup(
     model: GenerationStatsCardModel,
+    anchorBoundsInWindow: IntRect?,
     onDismissRequest: () -> Unit,
 ) {
     val density = LocalDensity.current
     val marginPx = with(density) { NexaraSpacing.Large.roundToPx() }
     val gapPx = with(density) { NexaraSpacing.XSmall.roundToPx() }
-    val provider = remember(marginPx, gapPx) { AboveAnchorPositionProvider(marginPx, gapPx) }
+    val safeDrawing = WindowInsets.safeDrawing
+    val rootHeightPx = LocalView.current.rootView.height
+    val topLimitPx = safeDrawing.getTop(density) + marginPx
+    val bottomLimitPx = rootHeightPx - safeDrawing.getBottom(density) - marginPx
+    val bounds = GenerationStatsPopupBounds(topLimitPx, bottomLimitPx, marginPx, gapPx)
+    val provider = remember(bounds) { AboveAnchorPositionProvider(bounds) }
     val configuration = LocalConfiguration.current
     val maxWidth = (configuration.screenWidthDp.dp - NexaraSpacing.Large * 2).coerceAtMost(CardMaxWidth)
-    val maxHeight = (configuration.screenHeightDp * 0.7f).dp
+    val screenCapPx = with(density) { (configuration.screenHeightDp * 0.7f).dp.roundToPx() }
+    val maxHeight = with(density) {
+        (anchorBoundsInWindow?.let { bounds.availableHeight(it) } ?: screenCapPx)
+            .coerceAtMost(screenCapPx)
+            .coerceAtLeast(0)
+            .toDp()
+    }
     Popup(
         popupPositionProvider = provider,
         onDismissRequest = onDismissRequest,
@@ -133,6 +153,20 @@ internal fun GenerationStatsPopup(
             scrollable = true,
         )
     }
+}
+
+/** 浮卡可用的竖向范围（窗口坐标，像素）与边距、与锚点的间隔。 */
+internal data class GenerationStatsPopupBounds(
+    val topLimitPx: Int,
+    val bottomLimitPx: Int,
+    val marginPx: Int,
+    val gapPx: Int,
+) {
+    fun spaceAbove(anchor: IntRect): Int = (anchor.top - gapPx - topLimitPx).coerceAtLeast(0)
+    fun spaceBelow(anchor: IntRect): Int = (bottomLimitPx - anchor.bottom - gapPx).coerceAtLeast(0)
+
+    /** 浮卡最多可用的高度：锚点上下两侧中较大的一侧，保证浮卡不遮住锚点。 */
+    fun availableHeight(anchor: IntRect): Int = maxOf(spaceAbove(anchor), spaceBelow(anchor))
 }
 
 private val CardMaxWidth = 340.dp
@@ -402,10 +436,12 @@ private fun RuntimeBar(label: String, duration: String, fraction: Float, color: 
     }
 }
 
-/** 优先放在锚点上方并与锚点末端对齐；上方放不下时放在下方，始终保留屏幕边距。 */
+/**
+ * 优先放在锚点上方并与锚点末端对齐；上方放不下时放在下方；两侧都放不下时放在空间较大的一侧，
+ * 竖向始终处于 [GenerationStatsPopupBounds] 的安全范围内，横向保留屏幕边距。
+ */
 internal class AboveAnchorPositionProvider(
-    private val marginPx: Int,
-    private val gapPx: Int,
+    private val bounds: GenerationStatsPopupBounds,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -413,19 +449,22 @@ internal class AboveAnchorPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
+        val margin = bounds.marginPx
         val preferredX = if (layoutDirection == LayoutDirection.Ltr) {
             anchorBounds.right - popupContentSize.width
         } else {
             anchorBounds.left
         }
-        val maxX = (windowSize.width - popupContentSize.width - marginPx).coerceAtLeast(marginPx)
-        val x = preferredX.coerceIn(marginPx.coerceAtMost(maxX), maxX)
-        val above = anchorBounds.top - gapPx - popupContentSize.height
-        val below = anchorBounds.bottom + gapPx
+        val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
+        val x = preferredX.coerceIn(margin.coerceAtMost(maxX), maxX)
+        val height = popupContentSize.height
+        val above = anchorBounds.top - bounds.gapPx - height
+        val below = anchorBounds.bottom + bounds.gapPx
         val y = when {
-            above >= marginPx -> above
-            below + popupContentSize.height <= windowSize.height - marginPx -> below
-            else -> marginPx
+            height <= bounds.spaceAbove(anchorBounds) -> above
+            height <= bounds.spaceBelow(anchorBounds) -> below
+            bounds.spaceAbove(anchorBounds) >= bounds.spaceBelow(anchorBounds) -> maxOf(bounds.topLimitPx, above)
+            else -> minOf(below, (bounds.bottomLimitPx - height).coerceAtLeast(bounds.topLimitPx))
         }
         return IntOffset(x, y)
     }
