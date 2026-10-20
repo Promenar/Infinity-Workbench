@@ -563,6 +563,7 @@ class ChatViewModelTest {
             skillRegistry = null,
             toolResolver = generationToolResolver,
             presentationStore = presentationStore,
+            toolBuildDispatcher = testDispatcher,
         )
         val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,

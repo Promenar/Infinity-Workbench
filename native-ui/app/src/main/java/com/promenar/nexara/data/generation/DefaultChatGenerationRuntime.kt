@@ -150,6 +150,8 @@ internal class DefaultChatGenerationRuntime(
     private val compactionService: ContextCompactionService? = null,
     /** 会话当前工作区，用于系统提示词的工作区说明；null 时按私有工作区说明。 */
     private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
+    /** 构建工具表的调度器；工具注册表会同步扫描技能目录，不能落在主线程。 */
+    private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -172,7 +174,7 @@ internal class DefaultChatGenerationRuntime(
 
     /** 生成运行在主线程作用域；工具表要按会话扫描技能目录，统一放到 IO 上构建。 */
     private suspend fun buildToolsOffMain(session: com.promenar.nexara.data.model.Session): List<ProtocolTool> =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { contentStrategy.buildTools(session) }
+        kotlinx.coroutines.withContext(toolBuildDispatcher) { contentStrategy.buildTools(session) }
 
     private suspend fun scanSkills(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?): List<com.promenar.nexara.data.skills.DiscoveredSkill> {
         val directory = workspace as? com.promenar.nexara.data.workspace.SessionWorkspace.Directory
