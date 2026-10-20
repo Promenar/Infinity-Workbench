@@ -1623,8 +1623,8 @@
     <string name="tailscale_title">Tailscale</string>
     <string name="tailscale_section_node">内置 Tailscale</string>
     <string name="tailscale_enable">启用 Tailscale</string>
-    <string name="tailscale_enable_desc">在 Nexara 内运行 Tailscale 节点，不占用系统 VPN，可与其它 VPN 同时使用</string>
-    <string name="tailscale_node_footer">连接后，SSH 主机、shell_exec 与 python_exec（含内置 git）以及应用内 HTTPS 请求可访问 tailnet IP 与 MagicDNS 名称；其它目标保持原有路径。web_fetch 只访问公网。节点在 Nexara 运行期间保持在线，退出后下线。</string>
+    <string name="tailscale_enable_desc">不占用系统 VPN，可与其它 VPN 同时使用</string>
+    <string name="tailscale_node_footer">登录后，SSH 主机、shell_exec、python_exec（含内置 git）与应用内 HTTPS 请求可访问 tailnet 设备，web_fetch 仍只访问公网。节点只在 Nexara 运行期间在线。</string>
     <string name="tailscale_unavailable_desc">当前安装包未包含内置 Tailscale。</string>
     <string name="tailscale_phase_unavailable">当前安装包未包含</string>
     <string name="tailscale_phase_disabled">未启用</string>
@@ -1636,9 +1636,6 @@
     <string name="tailscale_phase_failed">启动失败</string>
     <string name="tailscale_phase_exited">进程意外退出</string>
     <string name="tailscale_section_status">状态</string>
-    <string name="tailscale_status_title">连接状态</string>
-    <string name="tailscale_self_name">本机：%1$s</string>
-    <string name="tailscale_self_tailnet">Tailnet：%1$s</string>
     <string name="tailscale_login">在浏览器中登录</string>
     <string name="tailscale_login_desc">打开 Tailscale 登录页，批准本设备后返回即可</string>
     <string name="tailscale_logout">退出登录</string>
@@ -1650,17 +1647,17 @@
     <string name="tailscale_peer_online">在线</string>
     <string name="tailscale_peer_offline">离线</string>
     <string name="tailscale_peer_blocked">不在白名单</string>
-    <string name="tailscale_section_login">登录选项</string>
+    <string name="tailscale_section_login">高级</string>
     <string name="tailscale_auth_key">Auth key</string>
     <string name="tailscale_auth_key_desc">可选。用于免浏览器登录；加密保存在本机，不进入备份。</string>
     <string name="tailscale_control_url">控制服务器</string>
     <string name="tailscale_control_url_desc">留空使用 Tailscale 官方服务器；填写 Headscale 地址使用自建服务器。更换后本设备需要重新登录。</string>
     <string name="tailscale_control_url_invalid">请输入不含凭据、查询参数与片段的 http(s) 地址。</string>
     <string name="tailscale_ephemeral">临时节点</string>
-    <string name="tailscale_ephemeral_desc">离线后自动从 tailnet 移除，下次登录时生效</string>
+    <string name="tailscale_ephemeral_desc">离线后自动从 tailnet 移除，下次登录生效</string>
     <string name="tailscale_section_allowlist">设备白名单</string>
     <string name="tailscale_allowlist_label">允许的设备</string>
-    <string name="tailscale_allowlist_desc">设备名、MagicDNS 名称或 tailnet IP，以逗号或换行分隔。留空表示允许 tailnet 内全部设备。</string>
+    <string name="tailscale_allowlist_desc">只允许所列设备经 Nexara 访问；留空表示允许 tailnet 内全部设备。</string>
     <string name="tailscale_allowlist_invalid">每一项须为设备名、MagicDNS 名称或 tailnet IP。</string>
     <string name="tailscale_allowlist_too_many">最多 64 项。</string>
     <string name="tailscale_notice_auth_key_saved">Auth key 已保存</string>
@@ -1673,4 +1670,11 @@
     <string name="tailscale_notice_logout_failed">未能通知控制服务器注销；已删除保存的 auth key</string>
     <string name="tailscale_notice_failed">操作失败，请重试。</string>
     <string name="tailscale_error_browser">没有可打开登录页的浏览器</string>
+    <string name="tailscale_self_subtitle">本机 · %1$s</string>
+    <string name="tailscale_value_saved">已保存</string>
+    <string name="tailscale_value_not_set">未设置</string>
+    <string name="tailscale_control_official">Tailscale 官方</string>
+    <string name="tailscale_allowlist_all">全部设备</string>
+    <string name="tailscale_allowlist_format">每行或以逗号分隔一项：设备名、MagicDNS 名称或 tailnet IP。</string>
+    <string name="tailscale_auth_key_hint">粘贴以 tskey- 开头的 auth key</string>
 </resources>

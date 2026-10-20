@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 /** 设置页提示；界面按枚举显示文案（ViewModel 不读取资源）。 */
 enum class TailscaleNotice {
     AUTH_KEY_SAVED,
-    AUTH_KEY_INVALID,
     AUTH_KEY_CLEARED,
     CONTROL_URL_SAVED,
     PEERS_SAVED,
@@ -41,6 +40,8 @@ data class TailscaleSettingsUiState(
     val busy: Boolean = false,
     val controlUrlInvalid: Boolean = false,
     val peersProblem: TailnetSettingsProblem? = null,
+    /** 最近一次保存的 auth key 格式不正确；在编辑面板内提示，面板会遮住页面底部的通知。 */
+    val authKeyInvalid: Boolean = false,
     val notice: TailscaleNotice? = null,
 )
 
@@ -56,6 +57,7 @@ class TailscaleSettingsViewModel(private val controller: TailnetController) : Vi
         val busy: Boolean = false,
         val controlUrlInvalid: Boolean = false,
         val peersProblem: TailnetSettingsProblem? = null,
+        val authKeyInvalid: Boolean = false,
         val notice: TailscaleNotice? = null,
     )
 
@@ -71,6 +73,7 @@ class TailscaleSettingsViewModel(private val controller: TailnetController) : Vi
             busy = local.busy,
             controlUrlInvalid = local.controlUrlInvalid,
             peersProblem = local.peersProblem,
+            authKeyInvalid = local.authKeyInvalid,
             notice = local.notice,
         )
     }.stateIn(
@@ -102,8 +105,10 @@ class TailscaleSettingsViewModel(private val controller: TailnetController) : Vi
     /** [secret] 由本方法清零。 */
     fun saveAuthKey(secret: CharArray) = perform {
         val saved = controller.setAuthKey(secret)
-        notice(if (saved) TailscaleNotice.AUTH_KEY_SAVED else TailscaleNotice.AUTH_KEY_INVALID)
+        local.update { it.copy(authKeyInvalid = !saved, notice = if (saved) TailscaleNotice.AUTH_KEY_SAVED else null) }
     }
+
+    fun clearAuthKeyError() = local.update { it.copy(authKeyInvalid = false) }
 
     fun clearAuthKey() = perform {
         controller.clearAuthKey()
