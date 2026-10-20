@@ -607,6 +607,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             compactionPipeline = contextCompactionPipeline,
             compactionService = contextCompactionService,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
+            mediaContextLoader = com.promenar.nexara.data.generation.ViewedMediaContextLoader(workspaceMediaViewer, ::resolveMediaViewTarget),
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -847,6 +848,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             }.forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebFetchSkill(httpClient))
+            register(com.promenar.nexara.ui.chat.manager.skills.ViewMediaSkill(workspaceMediaViewer) { sessionId ->
+                chatStore.getSession(sessionId)?.let { resolveMediaViewTarget(it) }
+                    ?: com.promenar.nexara.data.generation.MediaViewTarget()
+            })
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
             register(mounted(FileReadSkill(fileOperationRepository, workspaceRepository)))
             register(mounted(FileWriteSkill(fileOperationRepository, workspaceRepository)))
@@ -911,11 +916,47 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
 
     val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver by lazy {
-        com.promenar.nexara.data.generation.SessionToolResolver { session ->
-            com.promenar.nexara.data.generation.DefaultSessionToolResolver(
-                getSharedPreferences("nexara_settings", MODE_PRIVATE),
-                createSkillRegistry(session.id),
-            ).resolve(session)
+        object : com.promenar.nexara.data.generation.SessionToolResolver {
+            override fun resolve(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> =
+                com.promenar.nexara.data.generation.DefaultSessionToolResolver(
+                    getSharedPreferences("nexara_settings", MODE_PRIVATE),
+                    createSkillRegistry(session.id),
+                ) { current ->
+                    com.promenar.nexara.data.generation.MediaViewTarget.capabilities(
+                        ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == current.modelId },
+                    )
+                }.resolve(session)
+
+            override suspend fun resolveForExecution(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
+                val target = resolveMediaViewTarget(session)
+                return if (target.modelId.isBlank()) resolve(session).filterNot { it.runtimeToolId == "view_media" }
+                    else resolve(session.copy(modelId = target.modelId))
+            }
+        }
+    }
+
+    private val workspaceMediaViewer by lazy {
+        com.promenar.nexara.data.generation.WorkspaceMediaViewer(
+            workspaceMediaResolver,
+            com.promenar.nexara.data.generation.AndroidMediaViewPreprocessor(this, workspaceMediaResolver),
+        )
+    }
+
+    private suspend fun resolveMediaViewTarget(
+        session: com.promenar.nexara.data.model.Session,
+        routedModelId: String? = null,
+    ): com.promenar.nexara.data.generation.MediaViewTarget = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val manager = ProviderManager.getInstance()
+        val modelId = routedModelId ?: session.modelId?.takeIf(String::isNotBlank)
+            ?: configResolver.resolve(agentRepository.getById(session.agentId)).modelId.takeIf(String::isNotBlank)
+            ?: manager.getMainConfiguredModelId().orEmpty()
+        when (val route = providerRequestRouter.resolve(modelId)) {
+            is com.promenar.nexara.data.remote.ProviderResolution.Failure -> com.promenar.nexara.data.generation.MediaViewTarget()
+            is com.promenar.nexara.data.remote.ProviderResolution.Success -> com.promenar.nexara.data.generation.MediaViewTarget(
+                com.promenar.nexara.data.generation.MediaViewTarget.capabilities(manager.providerModels.value.firstOrNull { it.id == route.value.modelId }),
+                route.value.config.protocolType,
+                route.value.modelId,
+            )
         }
     }
 

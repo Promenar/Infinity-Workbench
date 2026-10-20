@@ -17,19 +17,10 @@ class LocalProtocol(
     }
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
-        val formattedPrompt = buildString {
-            append(promptTemplate.format(
-                messages = request.messages,
-                tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE }
-            ))
-            
-            // Append image markers from all messages if any
-            request.messages.forEach { msg ->
-                msg.imageUrls?.forEach { img ->
-                    append("\n[Image: ${img.mimeType}]")
-                }
-            }
-        }
+        val formattedPrompt = promptTemplate.format(
+            messages = localMessagesWithToolMedia(request.messages),
+            tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE },
+        )
 
         val genConfig = ProtocolParamAdapter.buildGenerateConfig(request)
 
@@ -41,19 +32,10 @@ class LocalProtocol(
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
-        val formattedPrompt = buildString {
-            append(promptTemplate.format(
-                messages = request.messages,
-                tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE }
-            ))
-            
-            // Append image markers
-            request.messages.forEach { msg ->
-                msg.imageUrls?.forEach { img ->
-                    append("\n[Image: ${img.mimeType}]")
-                }
-            }
-        }
+        val formattedPrompt = promptTemplate.format(
+            messages = localMessagesWithToolMedia(request.messages),
+            tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE },
+        )
 
         val genConfig = ProtocolParamAdapter.buildGenerateConfig(request)
         val result = StringBuilder()

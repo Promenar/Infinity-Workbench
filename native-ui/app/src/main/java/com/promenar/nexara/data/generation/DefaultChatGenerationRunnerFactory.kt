@@ -49,6 +49,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val compactionService: ContextCompactionService? = null,
     /** 会话当前工作区，用于系统提示词的工作区说明；null 时按私有工作区说明。 */
     private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
+    private val mediaContextLoader: ViewedMediaContextLoader? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
@@ -86,6 +87,7 @@ internal class DefaultChatGenerationRunnerFactory(
             compactionService = compactionService,
             sessionWorkspace = sessionWorkspace,
             toolBuildDispatcher = toolBuildDispatcher,
+            mediaContextLoader = mediaContextLoader,
         )
     }
 }

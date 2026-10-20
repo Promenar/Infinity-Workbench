@@ -235,26 +235,46 @@ class OpenAIResponsesProtocol(
     }
 
     private fun ProtocolMessage.toResponsesInputItems(): List<JsonObject> {
+        val resultText = mediaResultText(
+            "Responses",
+            unsupportedAudio = audioData.orEmpty(),
+            unsupportedVideo = videoData.orEmpty(),
+        )
         if (role == "tool") {
             val callId = toolCallId.orEmpty()
             return listOf(buildJsonObject {
                 put("type", "function_call_output")
                 put("call_id", callId)
-                put("output", content)
+                if (!hasMediaPayload()) {
+                    put("output", resultText)
+                } else {
+                    put("output", buildJsonArray {
+                        add(buildJsonObject {
+                            put("type", "input_text")
+                            put("text", resultText)
+                        })
+                        imageUrls.orEmpty().forEach { image ->
+                            add(buildJsonObject {
+                                put("type", "input_image")
+                                put("image_url", image.url ?: "data:${image.mimeType};base64,${image.base64.orEmpty()}")
+                            })
+                        }
+                    })
+                }
             })
         }
         val items = mutableListOf<JsonObject>()
         if (content.isNotEmpty() || toolCalls.isNullOrEmpty()) {
             items += buildJsonObject {
                 put("role", if (role == "system") "developer" else role)
-                val hasMultimodal = imageUrls?.isNotEmpty() == true || audioData?.isNotEmpty() == true
+                val hasMultimodal = imageUrls?.isNotEmpty() == true
                 if (!hasMultimodal) {
-                    put("content", content)
+                    put("content", resultText)
                 } else {
                     put("content", buildJsonArray {
                         add(buildJsonObject {
                             put("type", "input_text")
-                            put("text", content)
+                            put("text", resultText)
                         })
                         imageUrls?.forEach { img ->
                             add(buildJsonObject {

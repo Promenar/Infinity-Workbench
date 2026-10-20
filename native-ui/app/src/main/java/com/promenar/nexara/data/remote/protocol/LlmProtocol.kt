@@ -27,6 +27,12 @@ data class AudioInput(
 )
 
 @Serializable
+data class VideoInput(
+    val base64: String,
+    val mimeType: String = "video/mp4"
+)
+
+@Serializable
 data class DocumentInput(
     val url: String? = null,
     val base64: String? = null,
@@ -49,6 +55,9 @@ data class ProtocolMessage(
     val documentData: List<DocumentInput>? = null,
     /** 仅当该消息由当前路由的同一模型产生时才填入；协议按原生格式回传。 */
     val reasoningReplay: ReasoningReplay? = null,
+    val videoData: List<VideoInput>? = null,
+    /** 成功查看的工作区路径，顺序与工具结果一致。 */
+    val mediaPaths: List<String>? = null,
 )
 
 @Serializable

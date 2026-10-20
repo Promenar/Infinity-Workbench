@@ -214,7 +214,7 @@ class ContextCompactionPipeline(private val folds: ContextFoldCache? = null) {
         return buildList {
             messages.forEachIndexed { index, message ->
                 if (message.role == "assistant") message.toolCalls.orEmpty().forEach { owners[it.id] = index }
-                if (message.role == "tool" && message.content.length > 512) {
+                if (message.role == "tool" && message.name != "view_media" && message.content.length > 512) {
                     val owner = owners[message.toolCallId]
                     if (owner != null && owner !in protected) add(index)
                 }

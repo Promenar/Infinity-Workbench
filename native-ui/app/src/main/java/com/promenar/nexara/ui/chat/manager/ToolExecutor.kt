@@ -213,7 +213,7 @@ class ToolExecutor internal constructor(
         expectedGrantTargets: Map<String, String>,
     ) {
         val currentSession = store.getSession(sessionId)
-        val currentResolvedTool = currentSession?.let(toolResolver::resolve)
+        val currentResolvedTool = currentSession?.let { toolResolver.resolveForExecution(it) }
             ?.singleOrNull { tool ->
                 tool.runtimeToolId == expectedIdentity.runtimeToolId &&
                     tool.function.name == expectedIdentity.toolName
@@ -341,6 +341,7 @@ class ToolExecutor internal constructor(
                 ToolExecutionOutcome.Succeeded
             },
             images = safeResultData?.takeIf { it.startsWith("data:image/") },
+            viewedMedia = if (failed) null else result.viewedMedia,
         )
         toolMessage?.let { messageManager.mirrorPersistedMessage(sessionId, it) }
     }

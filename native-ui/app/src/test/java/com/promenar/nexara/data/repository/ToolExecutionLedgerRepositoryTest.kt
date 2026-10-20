@@ -11,7 +11,12 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
+import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
+import com.promenar.nexara.domain.media.MediaKind
+import com.promenar.nexara.domain.media.MediaRef
+import com.promenar.nexara.domain.media.MediaViewMode
+import com.promenar.nexara.domain.media.ViewedMedia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -388,6 +393,55 @@ class ToolExecutionLedgerRepositoryTest {
         assertThat(toolMessages).hasSize(1)
         assertThat(toolMessages.single().toolCallId).isEqualTo("atomic")
         assertThat(toolMessages.single().parentMessageId).isEqualTo("m1")
+    }
+
+    @Test
+    fun `finishWithResult 将查看描述实际写入最终 TOOL 消息且重复完成不覆盖`() = runBlocking {
+        val key = key("view-media")
+        repository.register(key, "view_media", requiresApproval = false)
+        repository.claim(key)
+        val viewed = listOf(
+            ViewedMedia(
+                ref = MediaRef(
+                    path = "/media/片段.mp4",
+                    mimeType = "video/mp4",
+                    kind = MediaKind.VIDEO,
+                    sizeBytes = 42L,
+                    sha256 = "a".repeat(64),
+                    durationMs = 5_000L,
+                ),
+                mode = MediaViewMode.KEYFRAMES,
+                frameTimestampsSeconds = listOf(1.25, 3.75),
+            ),
+        )
+
+        val message = repository.finishWithResult(
+            key = key,
+            toolName = "view_media",
+            content = "以下为关键帧，不含声音",
+            thoughtSignature = "view-signature",
+            outcome = ToolExecutionOutcome.Succeeded,
+            images = "legacy-image-payload",
+            viewedMedia = viewed,
+        )!!
+
+        val stored = database.messageDao().getById(message.id)!!
+        assertThat(stored.toDomain().viewedMedia).containsExactlyElementsIn(viewed)
+        assertThat(stored.toDomain()).isEqualTo(message)
+        assertThat(stored.images).isEqualTo("legacy-image-payload")
+        assertThat(stored.thoughtSignature).isEqualTo("view-signature")
+        assertThat(repository.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(repository.finishWithResult(
+            key = key,
+            toolName = "view_media",
+            content = "重复结果",
+            thoughtSignature = null,
+            outcome = ToolExecutionOutcome.Succeeded,
+            viewedMedia = emptyList(),
+        )).isNull()
+        assertThat(database.messageDao().getById(message.id)!!.toDomain().viewedMedia)
+            .containsExactlyElementsIn(viewed)
+        Unit
     }
 
     @Test

@@ -20,15 +20,20 @@ private inline fun <reified T> encodeToJson(value: T): String =
 private inline fun <reified T> decodeFromJson(text: String): T =
     json.decodeFromString(serializer<T>(), text)
 
-internal fun decodeTextDocumentAttachmentsOrNull(text: String): List<MessageDocumentAttachment>? = try {
+private fun decodeMessageDocumentEnvelopeOrNull(text: String): MessageDocumentEnvelope? = try {
     decodeFromJson<MessageDocumentEnvelope>(text)
-        .takeIf { it.schema == MessageDocumentEnvelope.SCHEMA }
-        ?.documents
+        .takeIf {
+            it.schema == MessageDocumentEnvelope.SCHEMA &&
+                (it.documents != null || it.viewedMedia != null || it.legacyFilesPayload != null)
+        }
 } catch (_: SerializationException) {
     null
 } catch (_: IllegalArgumentException) {
     null
 }
+
+internal fun decodeTextDocumentAttachmentsOrNull(text: String): List<MessageDocumentAttachment>? =
+    decodeMessageDocumentEnvelopeOrNull(text)?.documents
 
 internal fun decodeKgPathsOrNull(
     text: String,
@@ -114,7 +119,7 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
 )
 
 fun MessageEntity.toDomain(): Message {
-    val decodedDocuments = files?.let(::decodeTextDocumentAttachmentsOrNull)
+    val envelope = files?.let(::decodeMessageDocumentEnvelopeOrNull)
     return Message(
         id = id,
         role = MessageRole.fromSerializedName(role),
@@ -124,8 +129,8 @@ fun MessageEntity.toDomain(): Message {
         reasoning = reasoning,
         thoughtSignature = thoughtSignature,
         images = images,
-        userDocuments = decodedDocuments,
-        legacyFilesPayload = files?.takeIf { decodedDocuments == null },
+        userDocuments = envelope?.documents,
+        legacyFilesPayload = if (envelope != null) envelope.legacyFilesPayload else files,
         legacyAttachmentsPayload = legacyAttachments,
         userImages = userImages?.let { decodeFromJson<List<String>>(it) },
         tokens = tokens?.let { decodeFromJson<TokenUsage>(it) },
@@ -149,6 +154,7 @@ fun MessageEntity.toDomain(): Message {
         isError = isError == 1,
         errorMessage = errorMessage,
         createdAt = createdAt,
+        viewedMedia = envelope?.viewedMedia,
     )
 }
 
@@ -162,8 +168,15 @@ fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     reasoning = reasoning,
     thoughtSignature = thoughtSignature,
     images = images,
-    files = userDocuments?.let { encodeToJson(MessageDocumentEnvelope(documents = it)) }
-        ?: legacyFilesPayload,
+    files = if (userDocuments != null || viewedMedia != null) {
+        encodeToJson(
+            MessageDocumentEnvelope(
+                documents = userDocuments,
+                viewedMedia = viewedMedia,
+                legacyFilesPayload = legacyFilesPayload,
+            ),
+        )
+    } else legacyFilesPayload,
     legacyAttachments = legacyAttachmentsPayload,
     userImages = userImages?.let { encodeToJson(it) },
     tokens = tokens?.let { encodeToJson(it) },
