@@ -28,9 +28,7 @@ internal class SkillRestoreTransaction(
         SkillBackupPaths.validate(partition.metadata, partition.files.keys, partition.files.values.sumOf { it.size.toLong() })
         if (keyOrNull(root) != record.oldRootFileKey) throw BackupValidationException("技能根目录在恢复准备期间发生变化")
         val staging = container(txId)
-        if (Files.getFileStore(preparingParent) != Files.getFileStore(parent)) {
-            throw BackupValidationException("技能恢复暂存目录与技能根目录不在同一文件系统")
-        }
+        // Android 禁止 Files.getFileStore；跨文件系统时 descriptor 间的 renameat 以 EXDEV 失败，由主事务回滚。
         createOwnedContainer(staging, txId, preparingParent)
         operations.createDirectory(staging, listOf(NEW))
         partition.metadata.directories.sortedBy { it.split('/').size }.forEach { path ->

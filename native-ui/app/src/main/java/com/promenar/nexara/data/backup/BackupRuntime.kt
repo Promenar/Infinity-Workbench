@@ -56,7 +56,9 @@ class BackupRuntime internal constructor(
             val result = try {
                 withContext(Dispatchers.IO) { recoverAll() }
                 BackupStartupState.Ready
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                // 阻塞态的原因只写入脱敏调试日志，界面保持统一提示。
+                com.promenar.nexara.utils.NexaraLogger.logError("BackupRuntimeRecovery", error)
                 BackupStartupState.Blocked
             }
             attemptMutex.withLock {
