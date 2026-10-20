@@ -413,6 +413,61 @@ class PackagedPythonBytecodeTest(ApkFixtureTestCase):
             verify_release_apk.verify_packaged_python_bytecode(self.make_apk(entries))
 
 
+def elf(machine: int) -> bytes:
+    return b"\x7fELF\x02\x01\x01" + b"\x00" * 9 + (2).to_bytes(2, "little") + machine.to_bytes(2, "little") + b"payload"
+
+
+class TailnetBinaryTest(ApkFixtureTestCase):
+    """内置 Tailscale（Go 程序）：每个打包 Python 的 ABI 都须带对应架构的 libnxtailnet.so；豁免只覆盖其中的上游常量。"""
+
+    def test_accepts_matching_binary_for_each_python_abi(self) -> None:
+        entries = {
+            "lib/arm64-v8a/libpystdlib.so": b"zip",
+            "lib/arm64-v8a/libnxtailnet.so": elf(183),
+            "lib/x86_64/libpysite.so": b"zip",
+            "lib/x86_64/libnxtailnet.so": elf(62),
+        }
+        verify_release_apk.verify_tailnet_binary(self.make_apk(entries))
+
+    def test_rejects_missing_wrong_architecture_or_non_elf_binary(self) -> None:
+        cases = {
+            "未包含 libnxtailnet.so": {"lib/arm64-v8a/libpystdlib.so": b"zip"},
+            "x86_64 缺少 libnxtailnet.so": {
+                "lib/arm64-v8a/libpystdlib.so": b"zip",
+                "lib/arm64-v8a/libnxtailnet.so": elf(183),
+                "lib/x86_64/libpystdlib.so": b"zip",
+            },
+            "架构与 ABI 不符": {"lib/arm64-v8a/libnxtailnet.so": elf(62)},
+            "不是 ELF": {"lib/arm64-v8a/libnxtailnet.so": b"#!/bin/sh\necho fake tailnet"},
+            "未知 ABI": {"lib/armeabi-v7a/libnxtailnet.so": elf(40)},
+        }
+        for message, entries in cases.items():
+            with self.subTest(message=message):
+                expected = "架构与 ABI 不符" if message == "未知 ABI" else message
+                with self.assertRaisesRegex(verify_release_apk.VerificationError, expected):
+                    verify_release_apk.verify_tailnet_binary(self.make_apk(entries))
+
+    def test_allows_go_symbol_runs_and_reserved_ranges_only_in_tailnet_binary(self) -> None:
+        content = (
+            b"sk-configip-forwarding-offavailable-versionunknown 10.0.0.0 100.64.0.0 172.16.0.0 192.168.0.0 "
+            b"100.115.92.0 100.100.100.100 10.076.76.10 10.276.76.10"
+        )
+        verify_release_apk.scan_sensitive_content(self.make_apk({"lib/arm64-v8a/libnxtailnet.so": content}))
+        cases = {
+            "真实密钥形态": {"lib/arm64-v8a/libnxtailnet.so": b"sk-proj-AbCdEf0123456789xyzQ"},
+            "其它私网地址": {"lib/arm64-v8a/libnxtailnet.so": b"192.168.1.20"},
+            "其它 CGNAT 地址": {"lib/arm64-v8a/libnxtailnet.so": b"100.64.12.7"},
+            "口令 URL": {"lib/arm64-v8a/libnxtailnet.so": b"https://deploy:s3cretValue@example.com/"},
+            "构建机路径": {"lib/arm64-v8a/libnxtailnet.so": b"/Users/fixture-user/go/pkg/mod"},
+            "其它条目": {"lib/arm64-v8a/libother.so": b"sk-configip-forwarding-offavailable"},
+            "伪装文件名": {"assets/libnxtailnet.so": b"100.64.0.0"},
+        }
+        for label, entries in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(verify_release_apk.VerificationError, "敏感信息"):
+                    verify_release_apk.scan_sensitive_content(self.make_apk(entries))
+
+
 class ChecksumVerificationTest(ApkFixtureTestCase):
     def test_writes_standard_checksum_with_apk_basename(self) -> None:
         apk = self.make_apk({"AndroidManifest.xml": b"manifest"})

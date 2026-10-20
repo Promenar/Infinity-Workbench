@@ -1,5 +1,6 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
+import com.promenar.nexara.buildlogic.BuildTailnetBinary
 import com.promenar.nexara.buildlogic.FetchVerifiedFile
 import com.promenar.nexara.buildlogic.GenerateLauncherIcons
 import com.promenar.nexara.buildlogic.PackagedPythonRelease
@@ -251,6 +252,29 @@ val preparePackagedSite = packagedPythonAbis.keys.associateWith { abi ->
     }
 }
 
+// 内置 Tailscale 节点（tsnet）：app/tailnet 的 Go 程序以固定 Go 版本与 go.sum 编译为 libnxtailnet.so，随两个渠道打包。
+// 宿主需要 Go 1.21 及以上（GOTOOLCHAIN 精确切换到登记版本）；-Pnexara.goExecutable 指定 go，
+// -Pnexara.tailnet=false 跳过（运行时报告不可用，发行校验会拒绝缺少该库的 APK）。
+val tailnetGoVersion = "1.27.1"
+val tailnetEnabled = providers.gradleProperty("nexara.tailnet").map(String::toBoolean).getOrElse(true)
+val tailnetGoExecutable = providers.gradleProperty("nexara.goExecutable").orElse("go")
+// ABI → GOOS/GOARCH。android/amd64 只支持 cgo 外部链接，x86_64（模拟器设备测试）改用静态 linux/amd64，
+// androidbin 为在 Android 内核上运行的静态 linux 程序补上网卡、DNS 与系统证书。
+val tailnetGoTargets = mapOf("arm64-v8a" to ("android" to "arm64"), "x86_64" to ("linux" to "amd64"))
+val buildTailnetBinary = tailnetGoTargets.mapValues { (abi, target) ->
+    val taskSuffix = abi.split('-', '_').joinToString("") { part -> part.replaceFirstChar { it.uppercaseChar() } }
+    tasks.register<BuildTailnetBinary>("buildTailnet$taskSuffix") {
+        moduleDirectory.set(layout.projectDirectory.dir("tailnet"))
+        sources.from(fileTree("tailnet") { include("**/*.go", "go.mod", "go.sum"); exclude("**/*_test.go") })
+        goVersion.set(tailnetGoVersion)
+        this.abi.set(abi)
+        goOs.set(target.first)
+        goArch.set(target.second)
+        goExecutable.set(tailnetGoExecutable)
+        outputDirectory.set(layout.buildDirectory.dir("generated/tailnet/$abi"))
+    }
+}
+
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
     // 只为变体实际打包的 ABI 准备 Python。未设 abiFilters 的通用包（Release）只带 arm64-v8a：
@@ -262,6 +286,12 @@ androidComponents.onVariants { variant ->
     }
     preparePackagedSite.filterKeys { it in pythonAbis }.values.forEach { prepare ->
         variant.sources.jniLibs?.addGeneratedSourceDirectory(prepare, PreparePackagedSite::getOutputDirectory)
+    }
+    // 内置 Tailscale 与打包 Python 使用相同的 ABI 规则。
+    if (tailnetEnabled) {
+        buildTailnetBinary.filterKeys { it in pythonAbis }.values.forEach { build ->
+            variant.sources.jniLibs?.addGeneratedSourceDirectory(build, BuildTailnetBinary::getOutputDirectory)
+        }
     }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
         masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
@@ -433,7 +463,8 @@ android {
         // 打包的 Python 启动器与扩展需要真实文件路径才能 execve/dlopen，安装时必须解压到 nativeLibraryDir。
         jniLibs.useLegacyPackaging = true
         // libpystdlib.so 与 libpysite.so 是 Python 模块 zip，不是 ELF，跳过符号剥离。
-        jniLibs.keepDebugSymbols += listOf("**/libpystdlib.so", "**/libpysite.so")
+        // libnxtailnet.so 是已用 -s -w 剥离的 Go 可执行文件，保持构建产物原样（可复现）。
+        jniLibs.keepDebugSymbols += listOf("**/libpystdlib.so", "**/libpysite.so", "**/libnxtailnet.so")
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

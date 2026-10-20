@@ -90,6 +90,19 @@ SITE_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
     "URL 内嵌明文口令": re.compile(rb"https?://username:password@"),
 }
 
+# 内置 Tailscale 节点（app/tailnet 的 Go 程序，依赖由 go.sum 固定）：Go 符号表中相邻的小写标识符会拼出 sk- 前缀，
+# Tailscale 与 Go 标准库中的保留地址段常量（含 MagicDNS 解析地址 100.100.100.100 与 ChromeOS ARC 网段）。
+# 只对 libnxtailnet.so 放行这些具体值；真实 API 密钥含大写或数字，口令 URL、用户路径等其它模式照常报警。
+TAILNET_BINARY_PATTERN = re.compile(r"lib/([^/]+)/libnxtailnet\.so\Z")
+TAILNET_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
+    "疑似 OpenAI 兼容密钥": re.compile(rb"sk-[a-z-]+"),
+    "私网或 CGNAT 测试地址": re.compile(
+        rb"10\.0\.0\.0|100\.64\.0\.0|172\.16\.0\.0|192\.168\.0\.0|100\.115\.92\.0|100\.100\.100\.100|10\.[02]76\.76\.10"
+    ),
+}
+# ELF e_machine：发行 APK 中每个带打包 Python 的 ABI 都须有对应架构的 libnxtailnet.so。
+TAILNET_ELF_MACHINES = {"arm64-v8a": 183, "x86_64": 62}
+
 # 打包 Python 须带构建期预编译的哈希 pyc：缺少时每次启动解释器都重新编译，内置 git 与 Git 面板在真机上慢约十倍。
 PYTHON_BYTECODE_MODULES: dict[str, tuple[str, ...]] = {
     "libpystdlib.so": ("os.pyc", "encodings/__init__.pyc", "sitecustomize.pyc"),
@@ -260,6 +273,35 @@ def verify_packaged_python_bytecode(apk: Path) -> None:
         raise VerificationError("打包 Python 字节码校验失败：" + "；".join(sorted(problems)))
 
 
+def verify_tailnet_binary(apk: Path) -> None:
+    """确认每个带打包 Python 的 ABI 都有内置 Tailscale 可执行文件，且是对应架构的 ELF。"""
+    python_abis: set[str] = set()
+    binaries: dict[str, bytes] = {}
+    with zipfile.ZipFile(apk) as archive:
+        for info in archive.infolist():
+            name = info.filename.replace("\\", "/")
+            python = PYTHON_BYTECODE_ENTRY_PATTERN.fullmatch(name)
+            if python is not None:
+                python_abis.add(python.group(1))
+            tailnet = TAILNET_BINARY_PATTERN.fullmatch(name)
+            if tailnet is not None:
+                with archive.open(info) as stream:
+                    binaries[tailnet.group(1)] = stream.read(20)
+    problems: list[str] = []
+    if not binaries:
+        problems.append("APK 未包含 libnxtailnet.so")
+    for abi in sorted(python_abis - set(binaries)):
+        problems.append(f"{abi} 缺少 libnxtailnet.so")
+    for abi, header in sorted(binaries.items()):
+        expected = TAILNET_ELF_MACHINES.get(abi)
+        if len(header) < 20 or header[:4] != b"\x7fELF":
+            problems.append(f"{abi}/libnxtailnet.so 不是 ELF 可执行文件")
+        elif expected is None or int.from_bytes(header[18:20], "little") != expected:
+            problems.append(f"{abi}/libnxtailnet.so 的架构与 ABI 不符")
+    if problems:
+        raise VerificationError("内置 Tailscale 校验失败：" + "；".join(problems))
+
+
 def parse_badging(output: str) -> dict[str, str]:
     package_lines = [line for line in output.splitlines() if line.startswith("package: ")]
     if len(package_lines) != 1:
@@ -328,6 +370,8 @@ def verify_signature(apk: Path, expected_digest: str) -> None:
 
 
 def upstream_allowances(entry_name: str) -> dict[str, re.Pattern[bytes]]:
+    if TAILNET_BINARY_PATTERN.fullmatch(entry_name):
+        return TAILNET_ALLOWANCES
     if PACKAGED_PYTHON_STDLIB_PATTERN.fullmatch(entry_name):
         return STDLIB_ALLOWANCES
     if PACKAGED_PYTHON_SITE_PATTERN.fullmatch(entry_name):
@@ -405,6 +449,7 @@ def main() -> int:
     verify_zip(apk)
     verify_no_local_inference_artifacts(apk)
     verify_packaged_python_bytecode(apk)
+    verify_tailnet_binary(apk)
     verify_badging(apk, args.expected_package, args.expected_version_code, args.expected_version_name)
     verify_signature(apk, args.expected_cert_sha256)
     scan_sensitive_content(apk)

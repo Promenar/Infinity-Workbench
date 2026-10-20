@@ -101,3 +101,9 @@ Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以�
 - [Apache MINA SSHD 2.16.0](https://github.com/apache/mina-sshd/tree/sshd-2.16.0)：Apache-2.0，仅用于 JVM 测试中的内嵌 SSH/SFTP 服务端，不进入应用运行时。
 
 SSH 与终端依赖保持版本固定；引入的终端原生进程桥接库不属于远端 PTY 的执行路径。许可原文按上游保留，中文说明不替代许可条款。
+
+## 内置 Tailscale（tsnet）
+
+- [tailscale/tailscale v1.104.1](https://github.com/tailscale/tailscale/tree/v1.104.1)：`tsnet` 节点、本地 API 客户端、`proxymux` 与 `feature/androidbin`，编译进 `libnxtailnet.so`（App 子进程，不占用系统 VPN）。三条款 BSD，Copyright (c) 2020 Tailscale Inc & contributors；完整许可见 [tailnet/tailscale-LICENSE.txt](tailnet/tailscale-LICENSE.txt)。
+- Go 1.27.1 标准库与运行时（三条款 BSD），以及经 `native-ui/app/tailnet/go.sum` 固定、实际链接的依赖：golang.org/x/crypto、net、sys、sync、term、text、time、oauth2、exp（三条款 BSD）；tailscale/wireguard-go、mdlayher/netlink 与 socket、jsimonetti/rtnetlink、fxamacker/cbor、x448/float16、gaissmai/bart、mitchellh/go-ps（MIT）；gvisor.dev/gvisor、klauspost/compress、google/btree、golang/groupcache、go4.org/mem、pires/go-proxyproto、safchain/ethtool（Apache-2.0）；coder/websocket（ISC）；godbus/dbus、huin/goupnp（两条款 BSD）；filippo.io/edwards25519、hdevalence/ed25519consensus、creachadair/msync、go-json-experiment/json、go4.org/netipx、tailscale/hujson、peercred、web-client-prebuilt（三条款 BSD）。各模块版本与许可原文汇总在 [tailnet/go-modules-LICENSES.txt](tailnet/go-modules-LICENSES.txt)。
+- 上述许可均可与 GPL-3.0 组合分发（Apache-2.0 兼容 GPLv3）。升级 Go 依赖时以 `go version -m libnxtailnet.so` 重新核对链接清单并更新许可汇总。
