@@ -279,6 +279,30 @@ class ChatPipelineLayoutTest {
     }
 
     @Test
+    fun longToolErrorCollapsesMessageAndDetailsAndExpandsTogether() {
+        val failure = "工具执行失败：{\"error_code\":\"COMMAND_FAILED\",\"exit_code\":2,\"guidance\":\"" +
+            (1..8).joinToString("\\n") { "guidance_$it" } + "\",\"stderr\":\"" + (1..10).joinToString("\\n") { "stderr_$it" } + "\"}"
+        rule.setContent {
+            NexaraTheme {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    InlineToolRow(listOf(
+                        ExecutionStep("a", "tool_call", "shell_exec", "{\"command\":\"ls\"}", "call", timestamp = 1_000),
+                        ExecutionStep("e", "error", "shell_exec", toolCallId = "call", content = failure, timestamp = 1_400),
+                    ), false, 15, initiallyExpanded = true)
+                }
+            }
+        }
+        rule.onNodeWithText("COMMAND_FAILED", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("工具执行失败", substring = true, useUnmergedTree = true).assertDoesNotExist()
+        assertThat(textLayout("CHAT_TOOL_ERROR_MESSAGE").lineCount).isEqualTo(4)
+        assertThat(textLayout("CHAT_TOOL_ERROR_DETAILS").lineCount).isEqualTo(6)
+        rule.onNodeWithTag("CHAT_TOOL_EXPAND_ALL").performScrollTo().performClick()
+        assertThat(textLayout("CHAT_TOOL_ERROR_MESSAGE").lineCount).isEqualTo(8)
+        assertThat(textLayout("CHAT_TOOL_ERROR_DETAILS").lineCount).isEqualTo(10)
+        assertThat(textLayout("CHAT_TOOL_ERROR_DETAILS").hasVisualOverflow).isFalse()
+    }
+
+    @Test
     fun historicalUnfinishedToolShowsPendingWithoutInternalIds() {
         val pending = InstrumentationRegistry.getInstrumentation().targetContext.resources
             .getQuantityString(R.plurals.chat_step_pending_count, 1, 1)
