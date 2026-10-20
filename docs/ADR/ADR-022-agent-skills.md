@@ -37,5 +37,6 @@
 ## 验证
 
 - JVM：两级扫描与增量重载、`openai.yaml` 子集解析、损坏原因、信任随内容哈希失效、已修改标注、回收与过期清理；`/skills` 路径解析与根模式归属、文件工具与脚本网关读写、技能目录写入审批与不可记忆；执行环境变量与符号链接；清单合并、点名、预算截断与读取工具门槛；`activate_skill`/`read_skill_file` 两级读取与歧义；备份分区往返、v1 兼容与 `.git` 超限降级。
-- 设备：`SkillsDirectoryDeviceTest` 在 API 31/35 ARM64 模拟器上验证 `filesDir` 下技能目录经审批的文件工具读写、目录扫描启停，以及 shell 经 `NEXARA_SKILLS` 与 `~/.agents/skills` 访问同一目录。
+- 设备：`SkillsDirectoryDeviceTest` 在 API 31/35 ARM64 模拟器上验证 `filesDir` 下技能目录经审批的文件工具读写、目录扫描启停，以及 shell 经 `NEXARA_SKILLS` 与 `~/.agents/skills` 访问同一目录。`SkillRestoreTransactionDeviceTest` 在同样两台模拟器上验证技能分区恢复的暂存、提交与清理（Android 禁止 `Files.getFileStore`，恢复路径不得依赖它）。
+- 真机（Android 16）与真实模型：Agent 经审批在 `/skills` 新建技能后默认停用、启用后按描述隐式加载；`allow_implicit_invocation: false` 的技能只在 `$名称` 点名时使用；shell 中 `git clone` 到 `$NEXARA_SKILLS` 的技能可发现并使用；项目级技能待信任、信任后可用、内容变化后回到待信任，私有工作区会话不可见；本地备份含技能分区与 `.git` 降级元数据，恢复后技能与启用状态一致并弹出重新 clone 提示。
 - 截图：会话“工具”标签与技能视图、设置页技能包、审批白名单页、技能恢复提示，含浅色、深色与 1.3 倍字号。
