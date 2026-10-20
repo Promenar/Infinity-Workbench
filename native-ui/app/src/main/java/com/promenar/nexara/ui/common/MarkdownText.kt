@@ -282,7 +282,10 @@ private fun splitPositionedRichSegments(text: String): List<PositionedContentSeg
         RegexOption.IGNORE_CASE
     )
     val latexPattern = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
-    val inlineLatexPattern = Regex("""(?<![\\\$])\$(?!\$)(?!\s)([^\$\n]+?)(?<!\s)(?<!\\)\$(?!\$)""")
+    // 闭合 `$` 后紧跟数字时视为货币金额（如 `$5/$10`），沿用 Pandoc 的 tex_math_dollars 约定。
+    val inlineLatexPattern = Regex("""(?<![\\\$])\$(?!\$)(?!\s)([^\$\n]+?)(?<!\s)(?<!\\)\$(?!\$)(?!\d)""")
+    // 行内代码、代码块与链接中的 `$` 是字面量，公式候选不得与其重叠。
+    val literalRanges = if ('$' in text) markdownMathLiteralRanges(text) else emptyList()
 
     data class RichSpan(val start: Int, val end: Int, val segment: ContentSegment)
 
@@ -300,14 +303,14 @@ private fun splitPositionedRichSegments(text: String): List<PositionedContentSeg
         spans.add(RichSpan(m.range.first, m.range.last + 1, seg))
     }
 
-    for (m in latexPattern.findAll(text)) {
+    for (m in latexPattern.findAllOutside(text, literalRanges)) {
         if (spans.none { it.start <= m.range.first && m.range.last < it.end }) {
             spans.add(RichSpan(m.range.first, m.range.last + 1,
                 ContentSegment.Latex(m.groupValues[1].trim())))
         }
     }
 
-    for (m in inlineLatexPattern.findAll(text)) {
+    for (m in inlineLatexPattern.findAllOutside(text, literalRanges)) {
         if (spans.none { it.start <= m.range.first && m.range.last < it.end }) {
             spans.add(RichSpan(m.range.first, m.range.last + 1,
                 ContentSegment.InlineLatex(m.groupValues[1].trim())))
@@ -524,7 +527,7 @@ internal fun rememberReadingMarkdownAnnotators(
     return ReadingMarkdownAnnotators(base, tail)
 }
 
-private fun readingMarkdownAnnotator(
+internal fun readingMarkdownAnnotator(
     inlineCodeStyle: SpanStyle,
     textColor: Color,
     ranges: List<ReadingRevealRange>,
@@ -541,6 +544,19 @@ private fun readingMarkdownAnnotator(
         }
         node.children.isEmpty() && node.type in revealLiteralTypes -> {
             appendRevealedLeaf(source, node, ranges, sourceOffset, textColor)
+            true
+        }
+        // 真正的公式已在分段时拆为 InlineLatex；GFM 仍会把 `$5 and $` 等货币片段解析为行内数学节点，
+        // 渲染库对该节点不输出任何文字，这里按原文逐个叶子显示。
+        node.type == GFMElementTypes.INLINE_MATH -> {
+            fun appendLiteral(child: ASTNode) {
+                if (child.children.isEmpty()) {
+                    appendRevealedLeaf(source, child, ranges, sourceOffset, textColor)
+                } else {
+                    child.children.forEach(::appendLiteral)
+                }
+            }
+            node.children.forEach(::appendLiteral)
             true
         }
         else -> false
@@ -843,7 +859,7 @@ private fun ReadingHighlightedCode(
     Text(visibleCode, style = style, softWrap = false, modifier = edges.modifier.testTag("CHAT_MARKDOWN_CODE_TEXT"), onTextLayout = edges.onTextLayout)
 }
 
-private val markdownCodeIndent = Regex("^(?: {4}| {0,3}\\t)")
+internal val markdownCodeIndent = Regex("^(?: {4}| {0,3}\\t)")
 
 internal fun safeTrimIndent(text: String): String {
     if (text.lines().any { markdownCodeIndent.containsMatchIn(it) && it.trimStart().isNotEmpty() }) {
@@ -911,8 +927,12 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
         "\n\n---\n\n"
     }
 
+    // 只移除本行未配对的 `**`；`**3.标题**` 这类成对加粗属于正常强调。代码与链接已替换为占位符，不参与计数。
     processed = processed.replace(Regex("""(?m)(^|[^\S\n])\*\*(?=\d{1,2}\.(?!\d)[^\s])""")) { match ->
-        match.groupValues[1]
+        val lineStart = processed.lastIndexOf('\n', match.range.first) + 1
+        val lineEnd = processed.indexOf('\n', match.range.last).let { if (it < 0) processed.length else it }
+        val boldMarkers = boldMarkerPattern.findAll(processed.substring(lineStart, lineEnd)).count()
+        if (boldMarkers % 2 == 0) match.value else match.groupValues[1]
     }
 
     processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9#]))[ \t]*(#{1,6})(?!#)[ \t]*([^\s#])""")) { match ->
@@ -922,6 +942,9 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
     }
 
     processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9.]))[ \t]*(\d{1,2})\.(?!\d)[ \t]*([^\s])""")) { match ->
+        // 编号前只有行首强调标记（可带列表或引用前缀）时是加粗的编号标题，拆行会让强调标记裸露。
+        val linePrefix = processed.substring(processed.lastIndexOf('\n', match.range.first - 1) + 1, match.range.first)
+        if (emphasizedLineStartPattern.matches(linePrefix)) return@replace match.value
         val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
         val prefix = if (needsBreak) "\n" else ""
         "$prefix${match.groupValues[2]}. ${match.groupValues[3]}"
@@ -977,6 +1000,9 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
 
     return processed
 }
+
+private val boldMarkerPattern = Regex("""(?<!\*)\*\*(?!\*)""")
+private val emphasizedLineStartPattern = Regex("""[ \t]*(?:(?:[-+*>]|\d{1,2}[.)])[ \t]+)*[*_]{1,3}""")
 
 /** 同步解析的片段长度上限；更长的历史片段仍在后台解析。 */
 private const val SYNC_MARKDOWN_PARSE_MAX_CHARS = 12_000
@@ -1459,14 +1485,23 @@ private fun WideContentHost(
     }
 }
 
+private val bracketBlockLatex = Regex("""\\\[(.*?)\\]""", RegexOption.DOT_MATCHES_ALL)
+private val parenInlineLatex = Regex("""\\\((.*?)\\\)""")
+
+/** 把 `\[...\]`、`\(...\)` 归一为美元定界符；代码与链接中的同形字符保持原文。 */
 internal fun normalizeLatexDelimiters(text: String): String {
-    return text
-        .replace(Regex("""\\\[(.*?)\\]""", RegexOption.DOT_MATCHES_ALL)) {
+    var result = text
+    if ("\\[" in result) {
+        result = bracketBlockLatex.replaceOutside(result, markdownMathLiteralRanges(result)) {
             "$$\n${it.groupValues[1].trim()}\n$$"
         }
-        .replace(Regex("""\\\((.*?)\\\)""")) {
+    }
+    if ("\\(" in result) {
+        result = parenInlineLatex.replaceOutside(result, markdownMathLiteralRanges(result)) {
             "$${it.groupValues[1].trim()}$"
         }
+    }
+    return result
 }
 
 internal fun sanitizeStreamingMarkdown(text: String): String {
@@ -1479,8 +1514,12 @@ internal fun sanitizeStreamingMarkdown(text: String): String {
         result += "```"
     }
 
+    // 只统计代码与链接之外的美元符号，避免 `echo $$` 之类的字面量被当作未闭合公式截断后文。
+    // 下方只删除尾部字符，已求出的区间在剩余文本中仍然有效。
+    val literalRanges = if ('$' in result) markdownMathLiteralRanges(result) else emptyList()
+
     // Handle inline math $...$
-    val inlineMathCount = Regex("""(?<!\$)\$(?!\$)""").findAll(result).count()
+    val inlineMathCount = Regex("""(?<!\$)\$(?!\$)""").findAllOutside(result, literalRanges).size
     if (inlineMathCount % 2 != 0) {
         if (result.endsWith("$")) {
             result = result.dropLast(1)
@@ -1488,12 +1527,9 @@ internal fun sanitizeStreamingMarkdown(text: String): String {
     }
 
     // Handle block math $$...$$
-    val blockMathCount = Regex("""\$\$""").findAll(result).count()
-    if (blockMathCount % 2 != 0) {
-        val lastIdx = result.lastIndexOf("$$")
-        if (lastIdx >= 0) {
-            result = result.substring(0, lastIdx)
-        }
+    val blockMathMarkers = Regex("""\$\$""").findAllOutside(result, literalRanges)
+    if (blockMathMarkers.size % 2 != 0) {
+        result = result.substring(0, blockMathMarkers.last().range.first)
     }
 
     // Handle streaming bold spans such as "**预" before the closing marker arrives.

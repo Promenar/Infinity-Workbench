@@ -90,6 +90,24 @@ fun chatMarkdownWideTableRegression() {
     }
 }
 
+@PreviewTest
+@Preview(name = "行内代码中的美元符号 不按公式排版", widthDp = 411, heightDp = 260, locale = "zh-rCN")
+@Composable
+fun chatMarkdownInlineCodeDollarRegression() {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(20.dp)) {
+                MarkdownText(
+                    "**3. 克隆 `\$HOME/src-demo` → `\$NEXARA_SKILLS/cloned-demo`** ✅\n\n" +
+                        "- 设置 `\$JAVA_HOME` 与 `\$ANDROID_HOME` 后重试\n" +
+                        "- 运行 `echo \$\$` 查看进程号，价格区间 \$5/\$10",
+                    fontSize = 15,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatMarkdownBatch2Preview(content: String? = null) {
     val markdown = content ?: if (LocalConfiguration.current.locales[0].language == "zh") MARKDOWN_BATCH2_ZH else MARKDOWN_BATCH2_EN
