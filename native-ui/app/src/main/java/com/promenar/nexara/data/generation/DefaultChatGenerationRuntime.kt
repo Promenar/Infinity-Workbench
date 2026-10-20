@@ -139,7 +139,7 @@ internal class DefaultChatGenerationRuntime(
     private val sessionManager: SessionManager,
     private val contentStrategy: ChatGenerationContentStrategy,
     private val ui: GenerationUiPort,
-    private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
+    private val skillCatalog: com.promenar.nexara.data.skills.SkillCatalog? = null,
     private val toolAllowlistStore: com.promenar.nexara.data.repository.ToolAllowlistStore? = null,
     private val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
@@ -169,6 +169,22 @@ internal class DefaultChatGenerationRuntime(
     private var replacementCommitted = false
     private var manualCompaction = false
     private var cachedRetrieval: com.promenar.nexara.ui.chat.manager.ContextRetrieval? = null
+
+    /** 生成运行在主线程作用域；工具表要按会话扫描技能目录，统一放到 IO 上构建。 */
+    private suspend fun buildToolsOffMain(session: com.promenar.nexara.data.model.Session): List<ProtocolTool> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { contentStrategy.buildTools(session) }
+
+    private suspend fun scanSkills(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?): List<com.promenar.nexara.data.skills.DiscoveredSkill> {
+        val directory = workspace as? com.promenar.nexara.data.workspace.SessionWorkspace.Directory
+        return try {
+            skillCatalog?.scan(directory?.let { com.promenar.nexara.data.skills.SkillWorkspace(it.workspace.id, it.root) })?.skills.orEmpty()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            NexaraLogger.log("[AgentSkills] 上下文目录扫描失败：${failure.javaClass.simpleName}")
+            emptyList()
+        }
+    }
 
     private suspend fun compactContext(
         request: GenerationRequest,
@@ -291,7 +307,14 @@ internal class DefaultChatGenerationRuntime(
                 null, model, result.failure, modelId = model, supportsToolCalls = false,
             )
         }
-        val tools = if (preparedRoute?.supportsToolCalls == true) contentStrategy.buildTools(session) else emptyList()
+        val tools = if (preparedRoute?.supportsToolCalls == true) buildToolsOffMain(session) else emptyList()
+        val workspace = sessionWorkspace?.invoke(sessionId)
+        val prompt = PromptRequest(
+            model = preparedRoute?.remoteModelId ?: model,
+            messages = emptyList(),
+            tools = tools.ifEmpty { null },
+            maxTokens = session.inferenceParams.withDefaults(config.inferenceDefaults()).maxTokens,
+        )
         val context = contextBuilder.buildContext(ContextBuilderParams(
             sessionId = sessionId,
             content = lastUser?.content.orEmpty(),
@@ -303,18 +326,13 @@ internal class DefaultChatGenerationRuntime(
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = config.retrievalConfig,
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
-            availableSkills = if (tools.any { it.function.name == ACTIVATE_SKILL_TOOL }) skillCatalog() else emptyList(),
+            availableSkills = scanSkills(workspace),
             cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
-            workspace = sessionWorkspace?.invoke(sessionId),
+            workspace = workspace,
+            modelContextTokens = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, preparedRoute?.modelId).modelContextTokens,
         ))
         preparedContext = context
         preparedContextSummary = session.summary
-        val prompt = PromptRequest(
-            model = preparedRoute?.remoteModelId ?: model,
-            messages = emptyList(),
-            tools = tools.ifEmpty { null },
-            maxTokens = session.inferenceParams.withDefaults(config.inferenceDefaults()).maxTokens,
-        )
         preparedPrompt = prompt
         return StoredContext(session, request, prompt, replaceHistorySummary(context.finalSystemPrompt, session.summary, session.summary))
     }
@@ -412,12 +430,15 @@ internal class DefaultChatGenerationRuntime(
         val preparation = try {
             routeGate.prepareWithRoute(model) { route ->
                 // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
-                routeTools = if (route.supportsToolCalls) contentStrategy.buildTools(session) else emptyList()
+                routeTools = if (route.supportsToolCalls) buildToolsOffMain(session) else emptyList()
                 val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
                 contextBuilder.buildContext(
                     params.copy(
                         availableToolNames = toolNames,
-                        availableSkills = if (ACTIVATE_SKILL_TOOL in toolNames) skillCatalog() else emptyList(),
+                        availableSkills = scanSkills(params.workspace),
+                        modelContextTokens = PreparedPromptBudgetGate.resolveWindow(
+                            session, PromptRequest(model = route.remoteModelId ?: model, messages = emptyList()), settings, route.modelId,
+                        ).modelContextTokens,
                         cachedRetrieval = reusedRetrieval,
                     ),
                 )
@@ -1196,7 +1217,6 @@ internal class DefaultChatGenerationRuntime(
 
     private companion object {
         const val LOOP_LIMIT_KEY = "loop_limit"
-        const val ACTIVATE_SKILL_TOOL = "activate_skill"
         const val FINAL_ANSWER_INSTRUCTION = "\n\n## Tool Budget Exhausted\n" +
             "The tool budget for this request is used up. Do NOT call any tool. " +
             "Using only the results already obtained, summarize what was completed, the current state, " +

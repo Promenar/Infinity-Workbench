@@ -3,92 +3,158 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.skills.AgentSkillFormatException
-import com.promenar.nexara.data.skills.AgentSkillStore
+import com.promenar.nexara.data.skills.DiscoveredSkill
+import com.promenar.nexara.data.skills.SkillCatalog
+import com.promenar.nexara.data.skills.SkillScope
+import com.promenar.nexara.data.skills.SkillSnapshot
+import com.promenar.nexara.data.skills.SkillStatus
+import com.promenar.nexara.data.skills.SkillWorkspace
+import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
+import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
-/** 加载已启用技能的完整指令；技能正文由用户安装，按用户授权的指令对待。 */
-class ActivateSkillTool(private val store: AgentSkillStore) : SkillDefinition {
+/** 每次操作重新扫描会话工作区，不复用其它会话的项目技能或旧启用状态。 */
+private class SkillToolAccess(
+    val catalog: SkillCatalog,
+    private val workspaceResolver: (suspend (String) -> SessionWorkspace)?,
+) {
+    suspend fun scan(sessionId: String?): SkillSnapshot {
+        val workspace = sessionId?.let { workspaceResolver?.invoke(it) } as? SessionWorkspace.Directory
+        return catalog.scan(workspace?.let { SkillWorkspace(it.workspace.id, it.root) })
+    }
+
+    fun select(snapshot: SkillSnapshot, name: String?, path: String?): DiscoveredSkill {
+        val selector = path?.trim()?.takeIf(String::isNotEmpty)
+        val skillName = name?.trim()?.takeIf(String::isNotEmpty)
+        val matches = if (selector != null) {
+            val directory = selector.trimEnd('/').removeSuffix("/SKILL.md")
+            snapshot.skills.filter { it.virtualDir == directory && (skillName == null || it.name == skillName) }
+        } else if (skillName != null) snapshot.byName(skillName) else emptyList()
+        if (matches.size > 1) {
+            throw AgentSkillFormatException("技能名称 `$skillName` 对应多个来源，请用 path 指定：\n" +
+                matches.joinToString("\n") { "- ${it.virtualDir}/SKILL.md" })
+        }
+        val skill = matches.singleOrNull() ?: throw AgentSkillFormatException("未找到技能 `${selector ?: skillName.orEmpty()}`，请使用清单中的名称或虚拟路径。")
+        if (skill.status != SkillStatus.ENABLED) {
+            throw AgentSkillFormatException("技能 `${skill.virtualDir}` 未启用（${skill.status}），无法加载。")
+        }
+        return skill
+    }
+}
+
+private suspend fun skillToolResult(id: String, block: suspend () -> String): ToolResult = try {
+    ToolResult("${id}_${System.currentTimeMillis()}", block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: AgentSkillFormatException) {
+    ToolResult("${id}_${System.currentTimeMillis()}", failure.message.orEmpty(), "error")
+} catch (failure: Exception) {
+    NexaraLogger.log("[AgentSkills] $id 失败：${failure.javaClass.simpleName}")
+    ToolResult("${id}_${System.currentTimeMillis()}", "技能目录或工作区无法读取，请检查当前工作区与技能状态。", "error")
+}
+
+/** 加载已启用技能的完整指令；来源路径用于区分两级同名技能。 */
+class ActivateSkillTool(
+    catalog: SkillCatalog,
+    workspaceResolver: (suspend (String) -> SessionWorkspace)? = null,
+) : SkillDefinition {
+    private val access = SkillToolAccess(catalog, workspaceResolver)
     override val id = "activate_skill"
     override val name = "activate_skill"
-    override val description = "加载一个已安装技能的完整指令。当任务与 System Prompt 中某个技能的描述相符时，先调用本工具再开始工作，并遵循返回的指令。"
+    override val description = "读取已启用的用户级或当前工作区项目级技能的 SKILL.md。任务匹配描述或用户以 \$名称点名技能时先读取并遵循指令；同名技能须以 path 区分。附带脚本可通过 shell_exec/python_exec 运行，沿用执行工具的审批规则。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
-    override val parametersSchema = """{"type":"object","properties":{"name":{"type":"string","description":"技能名称"}},"required":["name"]}"""
+    override val parametersSchema = """{"type":"object","description":"name 或 path 至少提供一个；同时提供时必须指向同一技能","properties":{"name":{"type":"string","description":"技能名称；两级同名时须用 path"},"path":{"type":"string","description":"技能目录或 SKILL.md 的虚拟路径，例如 /skills/demo/SKILL.md 或 /.agents/skills/demo"}}}"""
 
-    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val skillName = args.stringArgument("name")?.trim().orEmpty()
-        val installed = store.find(skillName)
-        if (installed == null || !installed.enabled) {
-            val available = store.enabledSkills().joinToString(", ") { it.name }.ifEmpty { "无" }
-            return ToolResult("activate_skill_${System.currentTimeMillis()}", "未找到已启用的技能 `$skillName`。可用技能：$available", "error")
-        }
-        val document = withContext(Dispatchers.IO) { store.readDocument(skillName) }
-            ?: return ToolResult("activate_skill_${System.currentTimeMillis()}", "技能 `$skillName` 的 SKILL.md 无法读取", "error")
-        return ToolResult(
-            "activate_skill_${System.currentTimeMillis()}",
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = withContext(Dispatchers.IO) {
+        skillToolResult(id) {
+            val skill = access.select(access.scan(context.sessionId), args.stringArgument("name"), args.stringArgument("path"))
+            val document = access.catalog.readDocument(skill)
+                ?: throw AgentSkillFormatException("技能 `${skill.virtualDir}/SKILL.md` 无法读取。")
             buildString {
-                appendLine("# Skill: ${document.metadata.name}")
-                appendLine("Instructions installed by the user. Follow them for the current task.")
+                appendLine("# Skill: ${skill.name}")
+                appendLine("Source: ${skill.scope.name.lowercase()}")
+                appendLine("Directory: ${skill.virtualDir}")
+                appendLine("Document: ${skill.virtualDir}/SKILL.md")
+                appendLine("Follow these skill instructions for the current task.")
                 appendLine()
                 appendLine(document.body.ifBlank { "(empty)" })
-                if (installed.files.isNotEmpty()) {
-                    appendLine()
-                    appendLine("## Bundled files")
-                    appendLine("Read with read_skill_file(name=\"$skillName\", path=...). Scripts are reference only and cannot be executed.")
-                    installed.files.take(MAX_LISTED_FILES).forEach { appendLine("- $it") }
-                    if (installed.files.size > MAX_LISTED_FILES) appendLine("- … (+${installed.files.size - MAX_LISTED_FILES})")
-                }
-            }.trimEnd(),
-        )
-    }
-
-    private companion object {
-        const val MAX_LISTED_FILES = 100
+                appendLine()
+                appendLine("## Bundled files")
+                appendLine("Read as needed with read_skill_file(path=\"${skill.virtualDir}/<relative-file>\") or file tools.")
+                if (skill.files.isEmpty()) appendLine("(none)")
+                skill.files.forEach { appendLine("- $it") }
+                appendLine("Run bundled scripts with shell_exec or python_exec, subject to the execution tool's approval rules.")
+                val shellDirectory = if (skill.scope == SkillScope.USER) "\$NEXARA_SKILLS/${skill.name}" else ".agents/skills/${skill.name}"
+                appendLine("Script directory in the shell: `$shellDirectory`.")
+            }.trimEnd()
+        }
     }
 }
 
-/** 读取已启用技能附带的文本文件。 */
-class ReadSkillFileTool(private val store: AgentSkillStore) : SkillDefinition {
+/** 读取两级技能的附带文件；目录边界、编码与大小约束由 SkillCatalog 统一执行。 */
+class ReadSkillFileTool(
+    catalog: SkillCatalog,
+    workspaceResolver: (suspend (String) -> SessionWorkspace)? = null,
+) : SkillDefinition {
+    private val access = SkillToolAccess(catalog, workspaceResolver)
     override val id = "read_skill_file"
     override val name = "read_skill_file"
-    override val description = "读取已启用技能包中附带的文本文件（参考资料、模板等）。路径来自 activate_skill 返回的文件清单。"
+    override val description = "读取已启用技能的文本文件。可传 name 与相对 path，或直接传完整虚拟文件 path；同名时用 skill_path 指定技能目录或 SKILL.md。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
-    override val parametersSchema = """{"type":"object","properties":{"name":{"type":"string","description":"技能名称"},"path":{"type":"string","description":"技能包内相对路径"}},"required":["name","path"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"name":{"type":"string","description":"技能名称"},"skill_path":{"type":"string","description":"技能目录或 SKILL.md 的虚拟路径，用于搭配相对 path"},"path":{"type":"string","description":"技能内相对文件路径，或完整虚拟文件路径，例如 /.agents/skills/demo/references/guide.md"}},"required":["path"]}"""
 
-    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val skillName = args.stringArgument("name")?.trim().orEmpty()
-        val path = args.stringArgument("path").orEmpty()
-        if (store.find(skillName)?.enabled != true) {
-            return ToolResult("read_skill_file_${System.currentTimeMillis()}", "未找到已启用的技能 `$skillName`", "error")
-        }
-        return try {
-            val text = withContext(Dispatchers.IO) { store.readFile(skillName, path) }
-            ToolResult("read_skill_file_${System.currentTimeMillis()}", text)
-        } catch (failure: AgentSkillFormatException) {
-            ToolResult("read_skill_file_${System.currentTimeMillis()}", failure.message.orEmpty(), "error")
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = withContext(Dispatchers.IO) {
+        skillToolResult(id) {
+            val snapshot = access.scan(context.sessionId)
+            val path = args.stringArgument("path").orEmpty()
+            val skillPath = args.stringArgument("skill_path")
+            val absoluteSkill = if (path.startsWith('/')) snapshot.skills.firstOrNull { path.startsWith("${it.virtualDir}/") } else null
+            val skill = access.select(snapshot, args.stringArgument("name"), skillPath ?: absoluteSkill?.virtualDir)
+            if (path.startsWith('/') && absoluteSkill?.id != skill.id) {
+                throw AgentSkillFormatException("文件路径不属于所选技能。")
+            }
+            val relative = if (absoluteSkill != null) path.removePrefix("${skill.virtualDir}/") else path
+            access.catalog.readFile(skill, relative)
         }
     }
 }
 
-/** 仅在存在已启用技能时广告 activate_skill / read_skill_file；执行查找始终可用以便失败关闭重验。 */
-class AgentSkillToolRegistry(private val store: AgentSkillStore) : SkillRegistry {
-    private val tools: List<SkillDefinition> = listOf(ActivateSkillTool(store), ReadSkillFileTool(store))
+/** 广告时只扫描用户级与所绑定会话的项目级技能，执行入口始终保留以便重验。 */
+class AgentSkillToolRegistry(
+    catalog: SkillCatalog,
+    workspaceResolver: (suspend (String) -> SessionWorkspace)? = null,
+    private val sessionId: String? = null,
+) : SkillRegistry {
+    private val access = SkillToolAccess(catalog, workspaceResolver)
+    private val tools: List<SkillDefinition> = listOf(ActivateSkillTool(catalog, workspaceResolver), ReadSkillFileTool(catalog, workspaceResolver))
 
     override fun getSkill(name: String): SkillDefinition? = tools.firstOrNull { it.name == name }
 
     override fun getAllSkills(): List<SkillDefinition> = tools
 
     override fun getAllTools(allowedIds: List<String>?): List<ProtocolTool> {
-        if (store.enabledSkills().isEmpty()) return emptyList()
+        // 现有注册表接口是同步的，磁盘扫描与工作区解析统一派发到 IO。
+        val enabled = try {
+            runBlocking(Dispatchers.IO) { access.scan(sessionId).skills.any { it.status == SkillStatus.ENABLED } }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            NexaraLogger.log("[AgentSkills] 工具目录扫描失败：${failure.javaClass.simpleName}")
+            false
+        }
+        if (!enabled) return emptyList()
         return tools.filter { allowedIds == null || it.id in allowedIds }.map(SkillDefinition::toProtocolTool)
     }
 }
