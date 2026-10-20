@@ -871,6 +871,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** 用户级与工作区项目级技能的文件目录入口。 */
+    val skillCatalog: com.promenar.nexara.data.skills.SkillCatalog by lazy {
+        com.promenar.nexara.data.skills.FileSkillCatalog(
+            File(filesDir, "agent_skills"),
+            getSharedPreferences("nexara_settings", MODE_PRIVATE),
+            File(noBackupFilesDir, "skill_state"),
+        )
+    }
+
     val skillRegistry: SkillRegistry by lazy {
         ModularSkillRegistry(
             listOf(
