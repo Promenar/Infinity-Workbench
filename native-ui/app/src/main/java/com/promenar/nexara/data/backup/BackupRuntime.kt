@@ -33,6 +33,8 @@ class BackupRuntime internal constructor(
     val state: StateFlow<BackupStartupState> = _state.asStateFlow()
     private val _restoreResult = MutableStateFlow<BackupRestoreResult?>(null)
     val restoreResult: StateFlow<BackupRestoreResult?> = _restoreResult.asStateFlow()
+    private val _restoreNotApplied = MutableStateFlow(false)
+    val restoreNotApplied: StateFlow<Boolean> = _restoreNotApplied.asStateFlow()
 
     private val attemptMutex = Mutex()
     private var activeAttempt: CompletableDeferred<BackupStartupState>? = null
@@ -93,8 +95,17 @@ class BackupRuntime internal constructor(
                 store.clear(txId)
                 return
             }
-            val validated = packageCodec.decode(payload.packageBytes, payload.password)
-            val result = dataSource.restoreWithResult(validated, txId)
+            val result = try {
+                val validated = packageCodec.decode(payload.packageBytes, payload.password)
+                dataSource.restoreWithResult(validated, txId)
+            } catch (error: Exception) {
+                // 同一 txId 重放只会被偏好账本拒绝；只有数据源证明已完整回滚时才放弃本次恢复并解除锁定。
+                if (!dataSource.isRestoreSettledWithoutApplying(txId)) throw error
+                com.promenar.nexara.utils.NexaraLogger.logError("BackupRuntimeRestoreNotApplied", error)
+                store.clear(txId)
+                _restoreNotApplied.value = true
+                return
+            }
             if (!dataSource.hasCompletedRestore(txId)) {
                 throw BackupValidationException("恢复完成回执缺失，待恢复记录已保留")
             }

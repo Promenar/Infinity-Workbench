@@ -213,6 +213,10 @@ open class MainActivity : ComponentActivity() {
                         skillRestoreNotice?.let { summary ->
                             com.promenar.nexara.ui.skills.SkillRestoreNoticeDialog(summary, app::consumeSkillRestoreNotice)
                         }
+                        val restoreNotAppliedNotice by app.restoreNotAppliedNotice.collectAsStateWithLifecycle()
+                        if (restoreNotAppliedNotice) {
+                            com.promenar.nexara.ui.startup.RestoreNotAppliedDialog(app::consumeRestoreNotAppliedNotice)
+                        }
                         ShareImportSheet(
                             state = importState,
                             onSelectTarget = shareImportViewModel::selectTarget,
