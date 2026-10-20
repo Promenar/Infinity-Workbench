@@ -72,6 +72,14 @@ class WorkspaceFolderBrowserTest {
         assertThat(isPreviewableMediaEntry(entry("d", "root", "/pics.png", true))).isFalse()
     }
 
+    @Test
+    fun `媒体文件不进入向量化因而不显示索引与图谱状态`() {
+        assertThat(showsIndexStatus(entry("p", "root", "/media/chart.png", false).copy(mimeType = "image/png"))).isFalse()
+        assertThat(showsIndexStatus(entry("v", "root", "/media/clip.mp4", false))).isFalse()
+        assertThat(showsIndexStatus(plan)).isTrue()
+        assertThat(showsIndexStatus(entry("d", "root", "/media", true))).isTrue()
+    }
+
     private fun entry(uuid: String, parentUuid: String, path: String, isDirectory: Boolean) = FileEntry(
         uuid = uuid,
         workspaceRootUuid = "root",

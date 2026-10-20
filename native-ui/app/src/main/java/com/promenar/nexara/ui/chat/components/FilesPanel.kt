@@ -950,7 +950,7 @@ private fun FileRow(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (!isSessionFile) {
+                        if (!isSessionFile && showsIndexStatus(file)) {
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -1246,6 +1246,9 @@ internal fun isPreviewableMediaEntry(file: FileEntry): Boolean {
     if (topLevel == "image" || topLevel == "video" || topLevel == "audio") return true
     return com.promenar.nexara.ui.media.mediaKindForFileName(file.name) != com.promenar.nexara.domain.media.MediaKind.FILE
 }
+
+/** 图片、音视频不在向量化支持范围内，显示“等待中”只会误导，资源管理器不为其显示索引与图谱状态。 */
+internal fun showsIndexStatus(file: FileEntry): Boolean = !isPreviewableMediaEntry(file)
 
 private fun fileIcon(file: FileEntry): ImageVector {
     if (file.isDirectory) return Icons.Rounded.Folder

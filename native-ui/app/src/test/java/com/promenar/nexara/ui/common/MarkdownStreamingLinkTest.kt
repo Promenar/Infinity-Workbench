@@ -51,6 +51,28 @@ class MarkdownStreamingLinkTest {
         assertEquals("https://example.com/gu", link.url)
     }
 
+    @Test
+    fun `引用式链接标签逐字放出期间不会因截断标签崩溃`() {
+        val samples = listOf(
+            "- 柱子：\n  - 红柱 x=[30,109]，高 **90px**\n  - 绿柱 x=[130,209]，高 120px\n",
+            "参见 [说明][ref] 与 [脚注] 结尾",
+            "[a]: https://example.com\n\n用 [a] 与 [文本][a] 链接",
+        )
+        for (content in samples) {
+            val tree = parse(content)
+            for (end in 0..content.length) {
+                val visible = visibleMarkdownNode(tree, end)
+                descendants(visible).filter { it.type == MarkdownElementTypes.PARAGRAPH }.forEach { paragraph ->
+                    val text = content.buildMarkdownAnnotatedString(paragraph, TextStyle.Default, settings).text
+                    assertTrue("可见终点=$end 渲染出未放出的文本：$text", text.length <= end)
+                }
+            }
+        }
+        val content = samples[1]
+        val end = content.indexOf("[ref]") + 1
+        assertEquals("参见 [说明][", annotate(content, visibleMarkdownNode(parse(content), end)).text)
+    }
+
     private fun annotate(content: String, tree: ASTNode) = content.buildMarkdownAnnotatedString(
         tree.children.single { it.type == MarkdownElementTypes.PARAGRAPH },
         TextStyle.Default,

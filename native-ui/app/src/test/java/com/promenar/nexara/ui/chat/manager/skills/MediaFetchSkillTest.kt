@@ -85,6 +85,17 @@ class MediaFetchSkillTest {
         assertThat(bodyClosed).isTrue()
     }
 
+    @Test fun `每一跳请求都带浏览器式UA以免被站点按爬虫拒绝`() = runTest {
+        val agents = mutableListOf<String?>()
+        val result = execute(downloader { request ->
+            agents += request.header("User-Agent")
+            if (request.url.encodedPath == "/image") response(request, code = 302, location = "/final.png") else response(request)
+        })
+        assertThat(result.status).isEqualTo("success")
+        assertThat(agents).hasSize(2)
+        agents.forEach { assertThat(it).startsWith("Mozilla/5.0") }
+    }
+
     @Test fun `响应头和文件头都不是媒体时拒绝且不调用存储`() = runTest {
         val result = execute(downloader { response(it, "<html>not media</html>".toByteArray(), "text/html") })
         assertThat(result.status).isEqualTo("error")

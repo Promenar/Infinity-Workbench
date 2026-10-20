@@ -65,7 +65,10 @@ class WorkspaceMediaDownloader(
                 // 固定本次调用的本机代理；状态随后变化也不能触发选择器回退。
                 client.newBuilder().proxy(proxy).build()
             } else client
-            val call = routedClient.newCall(Request.Builder().url(current).get().build())
+            val call = routedClient.newCall(
+                // 部分站点拒绝 OkHttp 默认 UA（403），与 web_fetch 一致使用浏览器式 UA。
+                Request.Builder().url(current).header("User-Agent", BROWSER_USER_AGENT).get().build(),
+            )
             val result = coroutineScope {
                 val activeResponse = AtomicReference<Response?>()
                 // 取消在响应头和响应体读取阶段都主动关闭调用，避免阻塞到读取超时。
@@ -147,6 +150,8 @@ class WorkspaceMediaDownloader(
 
     companion object {
         private const val HEADER_BYTES = 4096
+        private const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         private val MEDIA_TYPES = setOf("image", "audio", "video")
         private val REDIRECTS = setOf(301, 302, 303, 307, 308)
         private fun fail(code: String, message: String): Nothing = throw WorkspaceMediaException(code, message)

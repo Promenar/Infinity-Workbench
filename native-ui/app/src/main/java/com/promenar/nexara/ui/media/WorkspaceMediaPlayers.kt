@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -287,6 +288,8 @@ fun FullscreenVideoDialog(
             contentAlignment = Alignment.Center,
         ) {
             val player = session.player
+            // 已播完时换到新画面层不会再渲染帧；回到开头以显示首帧，点播放即重播。
+            LaunchedEffect(player) { if (player?.playbackState == Player.STATE_ENDED) player.seekTo(0) }
             if (player != null) VideoSurface(player, Modifier.fillMaxSize())
             val error = session.error
             CompositionLocalProvider(LocalContentColor provides overlay) {

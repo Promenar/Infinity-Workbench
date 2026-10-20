@@ -493,9 +493,13 @@ internal fun markdownReadingGap(previous: IElementType, next: IElementType, comp
     return (gap - (if (previous in readingListTypes) 5 else 0) - (if (next in readingListTypes) 5 else 0)).dp
 }
 
+private val referenceLinkTypes = setOf(MarkdownElementTypes.SHORT_REFERENCE_LINK, MarkdownElementTypes.FULL_REFERENCE_LINK)
+
 /** 保留已解析节点，只有跨越可见终点的分支建立轻量视图，不重新运行 MarkdownParser。 */
 internal fun visibleMarkdownNode(node: ASTNode, end: Int): ASTNode {
     if (node.endOffset <= end) return node
+    // 渲染库按“首尾为方括号”截取引用标签，截断后会越界；未放完的引用链接按已放出的纯文本显示。
+    if (node.type in referenceLinkTypes) return LeafASTNode(MarkdownTokenTypes.TEXT, node.startOffset, end)
     return object : ASTNode {
         override val type = node.type
         override val startOffset = node.startOffset.coerceAtMost(end)
