@@ -72,7 +72,8 @@ internal fun directoryCrumbs(path: String): List<FolderCrumb> {
 
 /**
  * 目录工作区的穿透式浏览：每次一级，面包屑以工作区名为根，系统返回先关闭文件再回到上级。
- * 文件只做有界文本预览，或经私有只读副本交给其它应用打开；不在此处写入或删除。
+ * 图片、视频、音频交给 [onOpenMedia] 在会话内查看或播放；其它文件只做有界文本预览，或经私有只读副本交给其它应用打开；
+ * 不在此处写入或删除。
  */
 @Composable
 internal fun DirectoryWorkspaceBrowser(
@@ -84,6 +85,7 @@ internal fun DirectoryWorkspaceBrowser(
     onRefresh: () -> Unit,
     readFile: suspend (path: String, maxBytes: Long) -> ByteArray,
     modifier: Modifier = Modifier,
+    onOpenMedia: ((ExternalFolderEntry) -> Unit)? = null,
     rootHeader: @Composable () -> Unit = {},
 ) {
     val selected = state.selectedFile
@@ -105,7 +107,9 @@ internal fun DirectoryWorkspaceBrowser(
             rootTitle = rootTitle,
             state = state,
             onNavigate = onNavigate,
-            onOpenFile = onOpenFile,
+            onOpenFile = { entry ->
+                if (onOpenMedia != null && isPreviewableMediaName(entry.name)) onOpenMedia(entry) else onOpenFile(entry)
+            },
             onRefresh = onRefresh,
             modifier = modifier,
             rootHeader = rootHeader,

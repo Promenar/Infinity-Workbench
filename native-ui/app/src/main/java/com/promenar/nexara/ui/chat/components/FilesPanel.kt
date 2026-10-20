@@ -1244,7 +1244,7 @@ internal fun isPreviewableMediaEntry(file: FileEntry): Boolean {
     if (file.isDirectory) return false
     val topLevel = file.mimeType?.substringBefore('/')?.lowercase()
     if (topLevel == "image" || topLevel == "video" || topLevel == "audio") return true
-    return com.promenar.nexara.ui.media.mediaKindForFileName(file.name) != com.promenar.nexara.domain.media.MediaKind.FILE
+    return isPreviewableMediaName(file.name)
 }
 
 /** 图片、音视频不在向量化支持范围内，显示“等待中”只会误导，资源管理器不为其显示索引与图谱状态。 */

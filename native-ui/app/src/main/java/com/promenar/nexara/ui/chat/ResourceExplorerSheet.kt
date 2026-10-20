@@ -76,6 +76,7 @@ import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerWorkspaceMode
 import com.promenar.nexara.ui.chat.components.DirectoryWorkspaceBrowser
 import com.promenar.nexara.ui.chat.components.ExternalFoldersPanel
+import com.promenar.nexara.ui.chat.components.rememberWorkspaceMediaOpener
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
@@ -177,6 +178,8 @@ fun ResourceExplorerSheet(
             filesContent = {
                 val directoryMode = workspaceMode as? ResourceExplorerWorkspaceMode.Directory
                 if (directoryMode != null) {
+                    // 目录工作区内的路径以目录根为 `/`，与 Agent 和媒体解析器看到的虚拟路径一致。
+                    val openMedia = rememberWorkspaceMediaOpener(sessionId, directoryMode.displayName)
                     DirectoryWorkspaceBrowser(
                         rootTitle = directoryMode.displayName,
                         state = directory,
@@ -185,6 +188,7 @@ fun ResourceExplorerSheet(
                         onCloseFile = viewModel::closeDirectoryFile,
                         onRefresh = viewModel::refreshDirectory,
                         readFile = viewModel::readDirectoryFile,
+                        onOpenMedia = openMedia?.let { open -> { entry -> open(entry.path) } },
                         rootHeader = {
                             // 目录工作区下 /mnt 挂载仍对 Agent 生效，其回收区也承接目录内被删除文件的备份。
                             externalFolderManager?.let { manager ->

@@ -707,6 +707,8 @@ private fun ExternalMountBrowserDialog(
     var sourceChanged by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<Int?>(null) }
+    // 图片、视频、音频按 `/mnt/<别名>/…` 虚拟路径在会话内查看或播放，其它文件保留文本预览。
+    val openMedia = rememberWorkspaceMediaOpener(sessionId.takeIf(String::isNotBlank), mount.id)
 
     LaunchedEffect(manager, sessionId, path, reload, mount.unavailableReason) {
         entries = emptyList()
@@ -789,7 +791,11 @@ private fun ExternalMountBrowserDialog(
                         items(entries, key = { it.path }) { file ->
                             ListItem(
                                 modifier = Modifier.clickable(role = Role.Button) {
-                                    if (file.isDirectory) path = file.path else selectedFile = file
+                                    when {
+                                        file.isDirectory -> path = file.path
+                                        openMedia != null && isPreviewableMediaName(file.name) -> openMedia(file.path)
+                                        else -> selectedFile = file
+                                    }
                                 },
                                 headlineContent = { NexaraIdentifierText(file.name) },
                                 supportingContent = {

@@ -127,22 +127,8 @@ internal fun WorkspaceFolderBrowser(
     }
 
     // 点按图片、视频、音频文件时直接打开查看器；条目的虚拟路径即其 materializedPath。
-    var openedMediaPath by rememberSaveable(workspaceRootUuid) { mutableStateOf<String?>(null) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val mediaEnvironment = com.promenar.nexara.ui.media.LocalWorkspaceMedia.current
-        ?: androidx.compose.runtime.remember(sessionId, context) {
-            val application = context.applicationContext as? com.promenar.nexara.NexaraApplication
-            if (sessionId == null || application == null) null
-            else com.promenar.nexara.ui.media.WorkspaceMediaEnvironment(sessionId, application.workspaceMediaResolver)
-        }
-    val onMediaFileClick: ((FileEntry) -> Unit)? = mediaEnvironment?.let { { entry -> openedMediaPath = entry.materializedPath } }
-    openedMediaPath?.let { path ->
-        if (mediaEnvironment != null) {
-            androidx.compose.runtime.CompositionLocalProvider(com.promenar.nexara.ui.media.LocalWorkspaceMedia provides mediaEnvironment) {
-                com.promenar.nexara.ui.media.WorkspaceMediaViewer(path = path, onDismiss = { openedMediaPath = null })
-            }
-        }
-    }
+    val openMedia = rememberWorkspaceMediaOpener(sessionId, workspaceRootUuid)
+    val onMediaFileClick: ((FileEntry) -> Unit)? = openMedia?.let { open -> { entry -> open(entry.materializedPath) } }
 
     BackHandler(enabled = !atRoot && searchQuery.isBlank()) {
         folderStack = folderStack.dropLast(1)
