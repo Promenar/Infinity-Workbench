@@ -172,8 +172,8 @@ class ToolAllowlistStore(private val root: File, private val now: () -> Long = S
         val file = File(root, FILE_NAME)
         if (!file.isFile) return@runCatching emptyList()
         val document = json.decodeFromString<Document>(file.readText(Charsets.UTF_8))
-        // 技能路径的旧授权失效时保留其它有效授权，不因规则收紧清空整份列表。
-        val entries = document.entries.filterNot { ToolExecutionTargets.isSkillsPathTarget(it.target) }
+        // 技能目录变更的旧授权失效时保留其它有效授权（含技能目录的只读授权），不因规则收紧清空整份列表。
+        val entries = document.entries.filterNot { ToolExecutionTargets.requiresSkillsApproval(it.toolName, it.target) }
         if (document.version != 1 || entries.any {
                 it.id.isBlank() || it.toolName.isBlank() || it.createdAt < 0 || !ToolAllowlistScopes.validScope(it.target, it.scopeKey)
             } || entries.map { it.id }.distinct().size != entries.size ||

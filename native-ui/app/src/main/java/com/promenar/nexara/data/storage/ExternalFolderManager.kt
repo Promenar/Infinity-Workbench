@@ -45,7 +45,8 @@ class ExternalFolderManager(
         ExternalMountPaths.SKILLS_MOUNT_ID, ExternalMountPaths.SKILLS_ALIAS, ExternalMountPaths.SKILLS_SOURCE,
         "agent_skills", null, readOnly = false, createdAt = 0,
     )
-    private val skillsDirectory by lazy { userSkillsDirectory ?: File(context.filesDir, "agent_skills") }
+    // filesDir 位于 /data/user/0 这一系统符号链接下，目录后端逐级拒绝符号链接，须先取真实路径。
+    private val skillsDirectory by lazy { (userSkillsDirectory ?: File(context.filesDir, "agent_skills")).canonicalFile }
     override fun observeMounts(sessionId: String) = dao.observeVisible(sessionId).map { it.map(ExternalMountEntity::model) }
     override suspend fun visible(sessionId: String) = withContext(Dispatchers.IO) {
         // 历史保留别名仍可在管理入口移除，但不作为工具可达路径列出。

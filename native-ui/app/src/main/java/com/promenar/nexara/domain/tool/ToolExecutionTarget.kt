@@ -89,7 +89,7 @@ object ToolExecutionTargets {
 
     fun canRemember(target: String): Boolean = runCatching {
         val metadata = (Json.parseToJsonElement(target) as? JsonArray)?.lastOrNull() as? JsonObject
-        (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true && !isSkillsPathTarget(target)
+        (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true
     }.getOrDefault(true)
 
     /** 技能目录及可连带变更项目技能的父目录不接受持久路径授权。 */
@@ -100,10 +100,15 @@ object ToolExecutionTargets {
         if (kind !in setOf("path", "move") || tuple.size != if (kind == "path") 2 else 3) return false
         tuple.drop(1).any { item ->
             val path = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@any false
+            // 共享存储工作区大小写不敏感，项目技能目录的两段按忽略大小写比较；/skills 是精确匹配的虚拟根。
+            val folded = path.lowercase(Locale.ROOT)
             path == "/skills" || path.startsWith("/skills/") ||
-                path == "/.agents" || path == "/.agents/skills" || path.startsWith("/.agents/skills/")
+                folded == "/.agents" || folded == "/.agents/skills" || folded.startsWith("/.agents/skills/")
         }
     }.getOrDefault(false)
+
+    /** 可能改变工作区或技能目录内容的文件工具。 */
+    fun isPathMutation(toolName: String): Boolean = toolName in SKILL_MUTATIONS
 
     fun requiresSkillsApproval(toolName: String, target: String?): Boolean =
         toolName in SKILL_MUTATIONS && target != null && isSkillsPathTarget(target)
@@ -157,12 +162,8 @@ object ToolExecutionTargets {
     private fun moveTarget(args: JsonObject, resolvedPaths: Map<String, String>): String? {
         val source = entryPath(args, resolvedPaths)?.takeIf { it != "/" } ?: return null
         val newName = args.string("newName")?.trim()?.takeIf(String::isNotEmpty)
-        if (args.containsKey("newName") && args.string("newName") == null) return null
         if (newName != null && validName(newName) == null) return null
         val hasParent = !args.string("newParentUuid").isNullOrBlank() || !args.string("newParentPath").isNullOrBlank()
-        if (args.containsKey("newParentUuid") && args.string("newParentUuid") == null ||
-            args.containsKey("newParentPath") && args.string("newParentPath") == null
-        ) return null
         if (!hasParent && newName == null) return null
         val parent = if (hasParent) {
             entryPath(args, resolvedPaths, "newParentUuid", "newParentPath") ?: return null
@@ -181,9 +182,7 @@ object ToolExecutionTargets {
         pathKey: String = "path",
         defaultPath: String? = null,
     ): String? {
-        if (args.containsKey(uuidKey) && args.string(uuidKey) == null ||
-            args.containsKey(pathKey) && args.string(pathKey) == null
-        ) return null
+        // 非字符串参数按缺省处理，与执行层的 stringArgument 一致，避免审批与实际定位不同。
         val uuid = args.string(uuidKey)?.trim()?.takeIf(String::isNotEmpty)
         if (uuid != null) return resolvedPaths[uuid]?.let(::normalizePath)
         val path = args.string(pathKey)?.takeIf(String::isNotBlank) ?: defaultPath ?: return null

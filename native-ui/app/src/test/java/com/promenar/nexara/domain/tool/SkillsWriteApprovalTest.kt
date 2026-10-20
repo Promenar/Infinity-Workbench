@@ -55,6 +55,41 @@ class SkillsWriteApprovalTest {
         }
     }
 
+    @Test fun `非字符串的uuid或路径参数按缺省处理与执行层一致仍需审批`() {
+        val calls = listOf(
+            "write_file" to """{"uuid":null,"path":"/skills/demo/SKILL.md"}""",
+            "patch_file" to """{"uuid":0,"path":"/.agents/skills/demo/SKILL.md"}""",
+            "delete_file" to """{"path":"/.agents/skills","uuid":null}""",
+            "create_file" to """{"parentPath":"/skills/demo","parentUuid":null,"name":"SKILL.md"}""",
+            "create_directory" to """{"parentPath":"/skills","parentUuid":false,"name":"demo"}""",
+            "move_file" to """{"path":"/a.md","newParentPath":"/.agents/skills","newParentUuid":0}""",
+            "move_file" to """{"path":"/skills/demo","uuid":null,"newName":null,"newParentPath":"/elsewhere"}""",
+        )
+        for ((name, args) in calls) {
+            assertThat(ToolExecutionTargets.extract(tool(name), args)).isNotNull()
+            assertThat(ToolArgumentApprovalRules.requiresExplicitApproval(name, args)).isTrue()
+        }
+    }
+
+    @Test fun `项目技能目录大小写变体同样审批`() {
+        for (path in listOf("/.Agents/Skills/demo/SKILL.md", "/.AGENTS", "/.agents/SKILLS/demo")) {
+            assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("write_file", """{"path":"$path"}""")).isTrue()
+        }
+    }
+
+    @Test fun `只读技能路径仍可记忆且旧白名单中的只读条目保留`() = runBlocking {
+        val target = requireNotNull(ToolExecutionTargets.extract(tool("read_file"), """{"path":"/skills/demo/SKILL.md"}"""))
+        assertThat(ToolExecutionTargets.canRemember(target)).isTrue()
+        assertThat(ToolAllowlistScopes.resolve(target, "session", SessionWorkspace.Private, mapOf("skills" to "builtin:skills"))?.scopeKey)
+            .isEqualTo("mount:builtin:skills")
+        val root = Files.createTempDirectory("skills-read-grants").toFile()
+        try {
+            val store = ToolAllowlistStore(root)
+            store.add("read_file", target, "mount:builtin:skills", "session")
+            assertThat(ToolAllowlistStore(root).contains("read_file", target, "mount:builtin:skills")).isTrue()
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun `历史白名单文件中的同名技能路径不可继续使用`() = runBlocking {
         val root = Files.createTempDirectory("skills-old-grants").toFile()
         try {

@@ -680,7 +680,11 @@ internal class DefaultChatGenerationRuntime(
         val policyPendingIds = contentStrategy
             .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
             .toMutableSet().apply {
-                calls.filter { com.promenar.nexara.domain.tool.ToolArgumentApprovalRules.requiresExplicitApproval(it.name, it.arguments, targets[it.id]) }
+                // 文件变更的目标无法还原时，无从判断是否落在技能目录，按失败关闭要求审批。
+                calls.filter {
+                    com.promenar.nexara.domain.tool.ToolArgumentApprovalRules.requiresExplicitApproval(it.name, it.arguments, targets[it.id]) ||
+                        com.promenar.nexara.domain.tool.ToolExecutionTargets.isPathMutation(it.name) && targets[it.id] == null
+                }
                     .forEach { add(it.id) }
             }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->

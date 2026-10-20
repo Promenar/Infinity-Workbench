@@ -88,6 +88,18 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `全自动模式中无法解析目标的文件变更要求审批`() = runTest {
+        val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
+        val repository = mockk<com.promenar.nexara.domain.repository.IWorkspaceRepository> {
+            coEvery { getByUuid(any(), any()) } returns null
+        }
+        // 目标无法还原时不知道是否落在技能目录，按失败关闭处理。
+        assertAllowlistDecision(tool, """{"uuid":"missing"}""", """["path","/a.md"]""", "session:current-session",
+            com.promenar.nexara.data.workspace.SessionWorkspace.Private, false,
+            executionMode = "auto", policyPending = false, repository = repository)
+    }
+
+    @Test
     fun `全自动模式识别内部技能挂载UUID且只读调用不额外审批`() = runTest {
         val mounts = mockk<com.promenar.nexara.domain.storage.ExternalWorkspaceAccess> {
             coEvery { workspaceMount(any()) } returns null
