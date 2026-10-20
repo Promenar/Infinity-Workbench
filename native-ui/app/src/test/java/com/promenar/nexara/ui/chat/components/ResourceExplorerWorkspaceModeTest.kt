@@ -87,7 +87,7 @@ class ResourceExplorerWorkspaceModeTest {
         settle { !viewModel.directory.value.isLoading && viewModel.directory.value.entries.isNotEmpty() }
 
         assertThat(viewModel.workspaceMode.value).isEqualTo(
-            ResourceExplorerWorkspaceMode.Directory("ws1", "p4-accept", WorkspaceEntity.KIND_PROJECT),
+            ResourceExplorerWorkspaceMode.Directory("ws1", "p4-accept", WorkspaceEntity.KIND_PROJECT, location = "p4-accept"),
         )
         // 符号链接与内部临时文件不出现在列表中，与 Agent 文件工具使用同一目录后端规则。
         assertThat(viewModel.directory.value.entries.map(ExternalFolderEntry::name)).containsExactly("src", "notes.md").inOrder()
@@ -126,7 +126,10 @@ class ResourceExplorerWorkspaceModeTest {
         advanceUntilIdle()
 
         assertThat(viewModel.workspaceMode.value).isEqualTo(
-            ResourceExplorerWorkspaceMode.Unavailable("ws1", "Docs", "需要“所有文件访问”授权"),
+            ResourceExplorerWorkspaceMode.Unavailable(
+                "ws1", "Docs", "需要“所有文件访问”授权",
+                kind = WorkspaceEntity.KIND_SHARED, location = "/storage/emulated/0/Docs",
+            ),
         )
         assertThat(viewModel.isLoading.value).isFalse()
         assertThat(viewModel.loadError.value).isNull()

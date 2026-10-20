@@ -678,6 +678,7 @@ fun ChatRoute(
         ResourceExplorerSheet(
             onDismiss = { activeOverlayToken = null },
             sessionId = sessionId,
+            chatViewModel = chatViewModel,
         )
     }
     SessionSettingsSheet(

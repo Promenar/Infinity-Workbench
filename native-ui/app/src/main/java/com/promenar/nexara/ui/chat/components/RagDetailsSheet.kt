@@ -1,6 +1,8 @@
 // UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 纯布局、UI 交互展现与跳转逻辑，不包含任何数据转换、判定、图算法或状态流转核心业务逻辑，故依全局开发规范 §4.2 予以单元测试豁免。
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
@@ -28,12 +30,10 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Source
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -166,20 +166,12 @@ fun RagDetailsSheet(
     openLink: ((String) -> Unit)? = null,
     trace: RagRetrievalTrace? = null,
 ) {
-    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-        skipPartiallyExpanded = true,
-    )
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismissRequest, height = NexaraSheetHeight.Full) {
         RagDetailsSheetContent(
             references = references.orEmpty(),
             citations = citations.orEmpty(),
             kgPaths = kgPaths.orEmpty(),
-            modifier = Modifier.fillMaxHeight(0.82f),
+            modifier = Modifier.weight(1f),
             openLink = openLink,
             trace = trace,
         )

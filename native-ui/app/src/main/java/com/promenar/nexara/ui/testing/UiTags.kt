@@ -329,7 +329,6 @@ object UiTags {
     const val RESOURCE_EXPLORER_PAGER = "resource_explorer_pager"
     const val RESOURCE_EXPLORER_SESSION_STATUS = "resource_explorer_session_status"
     const val RESOURCE_EXPLORER_RETRY_LOAD = "resource_explorer_retry_load"
-    const val RESOURCE_EXPLORER_DIRECTORY_HEADER = "resource_explorer_directory_header"
     const val RESOURCE_EXPLORER_DIRECTORY_LIST = "resource_explorer_directory_list"
     const val RESOURCE_EXPLORER_DIRECTORY_STATUS = "resource_explorer_directory_status"
     const val RESOURCE_EXPLORER_DIRECTORY_PREVIEW = "resource_explorer_directory_preview"

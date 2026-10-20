@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -117,34 +118,38 @@ fun workspacePickerSharedListPreview() = SheetFrame(stringResource(R.string.work
 }
 
 @PreviewTest
-@Preview(name = "会话工作区 四种状态 深中411", widthDp = 411, heightDp = 1100, locale = "zh-rCN")
-@Preview(name = "会话工作区 四种状态 深中360 大字", widthDp = 360, heightDp = 1300, locale = "zh-rCN", fontScale = 1.3f)
+@Preview(name = "资源管理器工作区栏 多种状态 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Preview(name = "资源管理器工作区栏 多种状态 深中360 大字", widthDp = 360, heightDp = 1300, locale = "zh-rCN", fontScale = 1.3f)
 @Composable
 fun sessionWorkspaceStatesPreview() = WorkspaceTheme {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        SessionWorkspaceSection(SessionWorkspaceUi.Private, busy = false)
-        SessionWorkspaceSection(
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SessionWorkspaceBar(SessionWorkspaceUi.Private, busy = false)
+        SessionWorkspaceBar(
             SessionWorkspaceUi.Directory(Project.id, Project.displayName, Project.kind, Project.location),
             busy = false,
-            notice = stringResource(R.string.workspace_switch_notice, stringResource(R.string.workspace_kind_private), Project.displayName),
+            footnote = stringResource(R.string.resource_explorer_directory_notice),
         )
-        SessionWorkspaceSection(
+        SessionWorkspaceBar(
             SessionWorkspaceUi.Directory(Shared.id, Shared.displayName, Shared.kind, Shared.location),
             busy = true,
         )
-        SessionWorkspaceSection(
+        SessionWorkspaceBar(
             SessionWorkspaceUi.Unavailable(Shared.id, Shared.displayName, Shared.kind, Shared.location, "请先授予所有文件访问权限"),
             busy = false,
+            switchFailed = true,
         )
     }
 }
 
 @PreviewTest
-@Preview(name = "会话工作区 登记已删除 浅英411", widthDp = 411, heightDp = 480, locale = "en")
+@Preview(name = "资源管理器工作区栏 登记已删除 浅英411", widthDp = 411, heightDp = 360, locale = "en")
 @Composable
 fun sessionWorkspaceMissingPreview() = WorkspaceTheme(NexaraThemeMode.LIGHT) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        SessionWorkspaceSection(SessionWorkspaceUi.Unavailable("gone", null, null, null, "工作区登记已删除"), busy = false)
+        SessionWorkspaceBar(SessionWorkspaceUi.Unavailable("gone", null, null, null, "Workspace registration was deleted"), busy = false)
     }
 }
 

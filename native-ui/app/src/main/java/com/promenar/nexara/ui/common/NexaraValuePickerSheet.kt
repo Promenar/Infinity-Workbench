@@ -36,8 +36,7 @@ fun NexaraValuePickerSheet(
     onDismiss: () -> Unit,
     description: String? = null,
 ) {
-    NexaraBottomSheet(show = show, onDismiss = onDismiss,
-        modifier = Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.7f).dp)) {
+    NexaraBottomSheet(show = show, onDismiss = onDismiss) {
         NexaraValuePickerContent(title, value, spec, onValueChange, onDismiss, description = description)
     }
 }

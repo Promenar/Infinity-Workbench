@@ -16,9 +16,7 @@ import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,11 +66,7 @@ fun ModelPicker(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismiss, height = NexaraSheetHeight.Full) {
         ModelPickerSheetContent(
             title = title ?: stringResource(R.string.common_model_picker_title),
             searchQuery = searchQuery,
@@ -82,7 +76,7 @@ fun ModelPicker(
             onSelect = onSelect,
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.9f),
+                .weight(1f),
         )
     }
 }

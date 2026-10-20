@@ -37,14 +37,12 @@
     <string name="workspace_missing_name">Deleted workspace</string>
     <string name="workspace_unavailable_reason">Workspace unavailable: %1$s</string>
 
-    <string name="workspace_section_title">Workspace</string>
     <string name="workspace_session_current">Current workspace</string>
     <string name="workspace_session_private_desc">Visible only to this session and managed by Nexara</string>
-    <string name="workspace_session_choose">Choose workspace</string>
     <string name="workspace_session_use_private">Use the session private workspace</string>
     <string name="workspace_session_reselect">Choose again</string>
+    <string name="workspace_bar_switch">Switch</string>
     <string name="workspace_session_busy">A reply or approval is in progress. The workspace cannot be switched now.</string>
-    <string name="workspace_session_footer">File tools and commands run in the current workspace. Switching never moves or deletes files.</string>
     <string name="workspace_switch_notice">Switched from “%1$s” to “%2$s”</string>
     <string name="workspace_switch_failed">Switching failed. Try again</string>
 
@@ -60,7 +58,7 @@
     </plurals>
     <string name="workspace_kb_entry_empty">No registered folders</string>
     <string name="workspace_kb_desc">Browse registered folders read-only and add single files to the knowledge base. Folders are never indexed automatically.</string>
-    <string name="workspace_kb_empty">No registered workspaces yet. Choose one in session settings or on the agent edit page.</string>
+    <string name="workspace_kb_empty">No registered workspaces yet. Choose one in the session resource explorer or on the agent edit page.</string>
     <string name="workspace_kb_more">More actions: %1$s</string>
     <string name="workspace_kb_rename">Rename</string>
     <string name="workspace_kb_display_name">Display name</string>

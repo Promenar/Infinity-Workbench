@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.background
@@ -45,7 +47,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,7 +54,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -204,20 +204,16 @@ internal fun BackupSettingsScreen(
     )
 
     if (showWebdavSheet) {
-        val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
+        NexaraModalSheet(
             onDismissRequest = {
                 tempWebdavPass = ""
                 showWebdavSheet = false
             },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            height = NexaraSheetHeight.Full,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.85f)
                     .verticalScroll(rememberScrollState())
                     .imePadding()
                     .safeDrawingPadding()

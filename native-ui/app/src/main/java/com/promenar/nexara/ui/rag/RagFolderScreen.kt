@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import android.app.Application
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,14 +44,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -498,15 +498,14 @@ internal fun RagFolderScreenContent(
     }
 
     if (showMoveSheet) {
-        ModalBottomSheet(
+        NexaraModalSheet(
             onDismissRequest = { if (!state.isMovingDocuments) showMoveSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            height = NexaraSheetHeight.Content,
             modifier = Modifier.testTag(UiTags.RAG_FOLDER_MOVE_SHEET),
         ) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),

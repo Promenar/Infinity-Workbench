@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.layout.Arrangement
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Column
@@ -30,12 +32,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -380,9 +380,10 @@ internal fun ModelEditorSheet(
     }
 
     if (renderAsModal) {
-        ModalBottomSheet(
+        // 底色与非弹窗形态（整页 Surface）一致，编辑器内的卡片按 background 配色。
+        NexaraModalSheet(
             onDismissRequest = onDismissRequest,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            height = NexaraSheetHeight.Full,
             containerColor = MaterialTheme.colorScheme.background,
             modifier = modifier.testTag(UiTags.providerModelsEditorSheet(model.id)),
         ) {

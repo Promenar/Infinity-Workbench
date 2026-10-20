@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
@@ -66,12 +68,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -1076,12 +1076,7 @@ private fun MoveToSheet(
         .collectAsState(initial = emptyList())
     val directoryList = folders.ifEmpty { dirs.filter { it.isDirectory } }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.extraLarge,
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismiss, height = NexaraSheetHeight.Content) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

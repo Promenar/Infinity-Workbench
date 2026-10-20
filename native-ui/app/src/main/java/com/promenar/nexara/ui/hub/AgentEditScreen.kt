@@ -185,7 +185,6 @@ fun AgentEditScreen(
         show = showIconPicker,
         onDismiss = { showIconPicker = false },
         title = stringResource(R.string.agent_edit_label_icon),
-        modifier = Modifier,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             presetIcons.chunked(4).forEach { rowIcons ->

@@ -1,5 +1,11 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.promenar.nexara.data.repository.SessionToolGrant
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.domain.usecase.withDefaults
 import com.promenar.nexara.domain.usecase.resolveKeepRecentTurns
 import androidx.compose.foundation.BorderStroke
@@ -50,7 +56,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
 import com.promenar.nexara.ui.common.NexaraTabItem
@@ -62,7 +67,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -178,9 +182,6 @@ fun SessionSettingsSheet(
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val session = uiState.session
     
-    val configuration = LocalConfiguration.current
-    val sheetHeight = (configuration.screenHeightDp * 0.7f).dp
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 4 })
     val tabTitles = listOf(
@@ -190,34 +191,17 @@ fun SessionSettingsSheet(
         stringResource(R.string.sheet_tab_settings)
     )
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-        dragHandle = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = NexaraSpacing.ScreenHorizontal)
-                    .padding(top = 12.dp, bottom = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(48.dp)
-                        .height(4.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(stringResource(R.string.sheet_title), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismiss, height = NexaraSheetHeight.Full) {
+        Text(
+            stringResource(R.string.sheet_title),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(sheetHeight)
+                .weight(1f)
         ) {
             val sessionTabs = remember(tabTitles) {
                 tabTitles.map { NexaraTabItem(title = it) }
@@ -494,27 +478,8 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
         executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi",
         isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true,
         onToolToggle = chatViewModel::toggleTool, onExecutionModeChange = chatViewModel::updateExecutionMode,
-        grantsSection = {
-        NexaraSettingsSection(title = stringResource(R.string.p0_grants_title),
-            footer = if (grants.isEmpty()) stringResource(R.string.p0_grants_empty) else grants.mapIndexed { index, grant ->
-                "${index + 1}. ${grant.toolName}: " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target)
-            }.joinToString("\n")) {
-            grants.forEachIndexed { index, grant ->
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Block,
-                    title = stringResource(R.string.session_revoke_tool, grant.toolName),
-                    subtitle = stringResource(R.string.session_grant_target, index + 1, com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target)),
-                    titleColor = MaterialTheme.colorScheme.error,
-                    subtitleIsIdentifier = true,
-                    onClickLabel = stringResource(
-                        R.string.p0_revoke_target,
-                        grant.toolName + ": " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target),
-                    ),
-                    onClick = { chatViewModel.revokeSessionGrant(grant) },
-                )
-            }
-        }
-        },
+        grants = grants,
+        onRevokeGrant = chatViewModel::revokeSessionGrant,
         additionalSections = {
         if (customSkills.isNotEmpty()) {
             NexaraSettingsSection(title = stringResource(R.string.sheet_tool_session_skills),
@@ -553,6 +518,32 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
     )
 }
 
+/** 本会话记住的目标授权：每条一行，工具名在上、目标在下（与工具名相同时省略），行尾按钮撤销。 */
+@Composable
+internal fun SessionGrantsSection(grants: List<SessionToolGrant>, onRevoke: (SessionToolGrant) -> Unit) {
+    NexaraSettingsSection(
+        title = stringResource(R.string.p0_grants_title),
+        footer = if (grants.isEmpty()) stringResource(R.string.p0_grants_empty) else null,
+    ) {
+        grants.forEach { grant ->
+            val target = ToolExecutionTargets.display(grant.target)
+            val revokeLabel = stringResource(R.string.p0_revoke_target, "${grant.toolName}: $target")
+            NexaraSettingsRowLayout(
+                title = grant.toolName,
+                subtitle = target.takeIf { it != grant.toolName },
+                subtitleIsIdentifier = true,
+                trailingContent = {
+                    TextButton(
+                        onClick = { onRevoke(grant) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.semantics { contentDescription = revokeLabel },
+                    ) { Text(stringResource(R.string.session_grant_revoke)) }
+                },
+            )
+        }
+    }
+}
+
 @Composable
 internal fun SessionToolsContent(
     options: com.promenar.nexara.data.model.SessionOptions = com.promenar.nexara.data.model.SessionOptions(),
@@ -560,14 +551,13 @@ internal fun SessionToolsContent(
     isGeminiModel: Boolean = false,
     onToolToggle: (String, Boolean) -> Unit = { _, _ -> },
     onExecutionModeChange: (String) -> Unit = {},
-    grantsSection: (@Composable () -> Unit)? = null,
+    grants: List<SessionToolGrant> = emptyList(),
+    onRevokeGrant: (SessionToolGrant) -> Unit = {},
     additionalSections: @Composable () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp)) {
-        if (grantsSection != null) grantsSection() else NexaraSettingsSection(
-            title = stringResource(R.string.p0_grants_title), footer = stringResource(R.string.p0_grants_empty),
-        ) {}
+        SessionGrantsSection(grants, onRevokeGrant)
         NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
             SettingsToggle(stringResource(R.string.sheet_tool_time_injection), checked = options.enableTimeInjection,
                 icon = Icons.Rounded.Timer, onCheckedChange = { onToolToggle("timeInjection", it) })
@@ -638,9 +628,6 @@ private fun SettingsPanel(
         onRagOptionsChange = { update -> chatViewModel.updateRagOptions(update(chatViewModel.currentRagOptions.value)) },
         onFontSizeChange = { chatViewModel.updateFontSizeLocally(it); chatViewModel.updateFontSize(it) },
         onCompactNow = onCompactNow,
-        workspaceSection = {
-            com.promenar.nexara.ui.workspace.SessionWorkspaceSettings(session, chatViewModel, isGenerating)
-        },
     )
 }
 
@@ -657,12 +644,10 @@ internal fun SessionContextPanelContent(
     onFontSizeChange: (Int) -> Unit = {},
     onCompactNow: () -> Unit = {},
     /** 会话工作区项，位于上下文设置之前；为空时不显示。 */
-    workspaceSection: (@Composable () -> Unit)? = null,
 ) {
     val retainedTurns = resolveKeepRecentTurns(params.keepRecentTurns, params.activeContextWindow)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp)) {
-        workspaceSection?.invoke()
         SessionContextSettingsSection(params.autoSummaryThreshold, retainedTurns, isGenerating, isCompressing,
             onThresholdChange = { onParamsChange(params.copy(autoSummaryThreshold = it)) },
             onKeepRecentTurnsChange = { onParamsChange(params.copy(keepRecentTurns = it)) }, onCompactNow = onCompactNow)

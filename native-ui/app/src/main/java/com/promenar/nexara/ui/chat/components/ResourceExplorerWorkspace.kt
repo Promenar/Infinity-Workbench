@@ -34,6 +34,7 @@ sealed interface ResourceExplorerWorkspaceMode {
         val workspaceId: String,
         val displayName: String,
         val kind: String,
+        val location: String = "",
     ) : ResourceExplorerWorkspaceMode
 
     /** 绑定的工作区当前不可用；不回退到会话私有工作区。 */
@@ -41,6 +42,8 @@ sealed interface ResourceExplorerWorkspaceMode {
         val workspaceId: String,
         val displayName: String?,
         val reason: String,
+        val kind: String? = null,
+        val location: String? = null,
     ) : ResourceExplorerWorkspaceMode
 }
 

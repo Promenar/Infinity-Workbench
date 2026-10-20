@@ -1,7 +1,8 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.layout.heightIn
-
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.annotation.StringRes
@@ -52,14 +53,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -98,6 +97,7 @@ import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.forInput
+
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -418,9 +418,9 @@ private fun ProviderModelsAddSheet(
     onSubmit: (id: String, name: String) -> Boolean,
     onAdded: () -> Unit,
 ) {
-    ModalBottomSheet(
+    NexaraModalSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        height = NexaraSheetHeight.Content,
         modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ADD_SHEET),
     ) {
         Text(

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,6 +68,7 @@ internal fun ScriptRuntimeSettingsCard(
     NexaraBottomSheet(
         show = showHostsEditor,
         title = stringResource(R.string.script_lan_hosts),
+        height = NexaraSheetHeight.Full,
         onDismiss = { showHostsEditor = false },
     ) {
         Column(

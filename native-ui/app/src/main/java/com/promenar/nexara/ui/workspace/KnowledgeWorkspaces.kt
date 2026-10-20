@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -156,7 +157,7 @@ private fun KnowledgeWorkspacesSheet(
         show = true,
         onDismiss = onDismiss,
         title = stringResource(R.string.workspace_kb_entry),
-        modifier = Modifier.fillMaxHeight(0.85f),
+        height = NexaraSheetHeight.Full,
         dragGesturesEnabled = false,
     ) {
         when (val current = page) {

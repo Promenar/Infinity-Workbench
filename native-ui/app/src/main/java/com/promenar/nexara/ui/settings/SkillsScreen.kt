@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,8 +62,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -400,11 +400,7 @@ fun SkillsScreen(
             "http", mcpUrl.trim(), allowLoopback, McpEndpointPolicy.isValidBearerToken(mcpBearer),
         )
         androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.clearMcpConfigError() }
-        ModalBottomSheet(
-            onDismissRequest = { if (!mcpSaving) showAddMcp = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
+        NexaraModalSheet(onDismissRequest = { if (!mcpSaving) showAddMcp = false }, height = NexaraSheetHeight.Full) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -500,11 +496,7 @@ fun SkillsScreen(
         var skillDesc by remember { mutableStateOf(skillToEdit?.description ?: "") }
         var skillCode by remember { mutableStateOf(skillToEdit?.code ?: "") }
 
-        ModalBottomSheet(
-            onDismissRequest = { showCreateSkill = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
+        NexaraModalSheet(onDismissRequest = { showCreateSkill = false }, height = NexaraSheetHeight.Full) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -826,25 +818,7 @@ internal fun SearchConfigBottomSheet(
     )
     val searchState by searchViewModel.uiState.collectAsState()
 
-    ModalBottomSheet(
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        dragHandle = {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .padding(vertical = 12.dp)
-                        .width(36.dp)
-                        .height(4.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), CircleShape)
-                )
-            }
-        }
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismiss, height = NexaraSheetHeight.Full) {
         SearchConfigContent(
             searchState = searchState,
             onSearchEngineChange = searchViewModel::updateSearchEngine,

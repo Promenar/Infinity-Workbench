@@ -1,5 +1,11 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import androidx.compose.runtime.remember
+import com.promenar.nexara.ui.workspace.WorkspacePickerSheet
+import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
+import com.promenar.nexara.ui.workspace.SessionWorkspaceBar
+import com.promenar.nexara.data.workspace.WorkspaceSwitchResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,6 +96,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun ResourceExplorerSheet(
     onDismiss: () -> Unit,
     sessionId: String,
+    chatViewModel: ChatViewModel,
     viewModel: ResourceExplorerViewModel = viewModel(
         factory = ResourceExplorerViewModel.factory(
             LocalContext.current.applicationContext as android.app.Application
@@ -116,6 +123,15 @@ fun ResourceExplorerSheet(
     val directory by viewModel.directory.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
     var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
+    val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
+    val workspaceBusy = chatState.isGenerating || chatState.session?.approvalRequest != null
+    var pickingWorkspace by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var workspaceSwitchFailed by remember(sessionId) { mutableStateOf(false) }
+    val onWorkspaceSwitched: (WorkspaceSwitchResult) -> Unit = { result ->
+        workspaceSwitchFailed = result is WorkspaceSwitchResult.Failed || result is WorkspaceSwitchResult.RejectedBusy
+        if (result is WorkspaceSwitchResult.Switched) viewModel.retryLoadSession()
+    }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -126,7 +142,7 @@ fun ResourceExplorerSheet(
         show = true,
         onDismiss = onDismiss,
         title = stringResource(R.string.resource_explorer_title),
-        modifier = Modifier.fillMaxHeight(),
+        height = NexaraSheetHeight.Full,
     ) {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
@@ -140,9 +156,13 @@ fun ResourceExplorerSheet(
                 hasLoadError = loadError != null,
                 gitEntry = gitEntry,
                 workspaceMode = workspaceMode,
+                workspaceSwitchBusy = workspaceBusy,
+                workspaceSwitchFailed = workspaceSwitchFailed,
             ),
             actions = ResourceExplorerSheetActions(
                 onOpenGitPanel = { showGitPanel = true },
+                onChooseWorkspace = { pickingWorkspace = true },
+                onUsePrivateWorkspace = { chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched) },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onImportFiles = {
                     filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray())
@@ -201,6 +221,15 @@ fun ResourceExplorerSheet(
             },
         )
     }
+    WorkspacePickerSheet(
+        show = pickingWorkspace && !workspaceBusy,
+        onDismiss = { pickingWorkspace = false },
+        currentWorkspaceId = chatState.session?.workspaceId,
+        onPicked = { picked ->
+            pickingWorkspace = false
+            chatViewModel.switchSessionWorkspace(picked.id, onWorkspaceSwitched)
+        },
+    )
     if (showGitPanel) {
         GitChangesSheet(
             sessionId = sessionId,
@@ -236,6 +265,9 @@ internal data class ResourceExplorerSheetState(
     val gitEntry: GitEntrySummary = GitEntrySummary.Hidden,
     /** 文件区展示的工作区；目录与不可用状态下停用搜索、导入与会话回收站。 */
     val workspaceMode: ResourceExplorerWorkspaceMode = ResourceExplorerWorkspaceMode.Private,
+    /** 生成进行中或有待审批时停用工作区切换。 */
+    val workspaceSwitchBusy: Boolean = false,
+    val workspaceSwitchFailed: Boolean = false,
 )
 
 internal data class ResourceExplorerSheetActions(
@@ -246,6 +278,8 @@ internal data class ResourceExplorerSheetActions(
     val onTabSelected: (ResourceExplorerTab) -> Unit = {},
     val onRetryLoad: () -> Unit = {},
     val onOpenGitPanel: () -> Unit = {},
+    val onChooseWorkspace: () -> Unit = {},
+    val onUsePrivateWorkspace: () -> Unit = {},
 )
 
 @Composable
@@ -355,7 +389,7 @@ private fun ResourceExplorerFilesPage(
         )
         ResourceExplorerWorkspaceMode.Private -> ResourceExplorerPrivateFilesPage(state, actions, filesContent)
         is ResourceExplorerWorkspaceMode.Directory -> Column(modifier = Modifier.fillMaxSize()) {
-            DirectoryWorkspaceHeader(mode)
+            ResourceExplorerWorkspaceBar(state, actions, footnote = stringResource(R.string.resource_explorer_directory_notice))
             ResourceExplorerGitEntry(state, actions)
             Spacer(modifier = Modifier.height(NexaraSpacing.Small))
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -363,6 +397,7 @@ private fun ResourceExplorerFilesPage(
             }
         }
         is ResourceExplorerWorkspaceMode.Unavailable -> Column(modifier = Modifier.fillMaxSize()) {
+            ResourceExplorerWorkspaceBar(state, actions)
             WorkspaceUnavailableState(mode, onRetry = actions.onRetryLoad)
             ResourceExplorerGitEntry(state, actions)
         }
@@ -380,25 +415,29 @@ private fun ResourceExplorerGitEntry(
     }
 }
 
+/** 文件页顶部的工作区栏：显示当前工作区并提供切换，取代原先在会话设置中的工作区项。 */
 @Composable
-private fun DirectoryWorkspaceHeader(mode: ResourceExplorerWorkspaceMode.Directory) {
-    BettboxListGroup(modifier = Modifier.fillMaxWidth().testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_HEADER)) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Medium),
-            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-        ) {
-            NexaraIdentifierText(
-                text = stringResource(R.string.resource_explorer_directory_badge, mode.displayName, workspaceKindLabel(mode.kind)),
-                style = NexaraTypography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.resource_explorer_directory_notice),
-                style = NexaraTypography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+private fun ResourceExplorerWorkspaceBar(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+    footnote: String? = null,
+) {
+    SessionWorkspaceBar(
+        workspace = state.workspaceMode.toWorkspaceUi(),
+        busy = state.workspaceSwitchBusy,
+        switchFailed = state.workspaceSwitchFailed,
+        footnote = footnote,
+        onChoose = actions.onChooseWorkspace,
+        onUsePrivate = actions.onUsePrivateWorkspace,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+internal fun ResourceExplorerWorkspaceMode.toWorkspaceUi(): SessionWorkspaceUi = when (this) {
+    ResourceExplorerWorkspaceMode.Resolving -> SessionWorkspaceUi.Loading
+    ResourceExplorerWorkspaceMode.Private -> SessionWorkspaceUi.Private
+    is ResourceExplorerWorkspaceMode.Directory -> SessionWorkspaceUi.Directory(workspaceId, displayName, kind, location)
+    is ResourceExplorerWorkspaceMode.Unavailable -> SessionWorkspaceUi.Unavailable(workspaceId, displayName, kind, location, reason)
 }
 
 @Composable
@@ -415,16 +454,10 @@ private fun WorkspaceUnavailableState(
                 liveRegion = LiveRegionMode.Assertive
                 stateDescription = reason
             }
-            .padding(NexaraSpacing.XLarge),
+            .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Medium),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        Text(
-            text = mode.displayName?.let { stringResource(R.string.resource_explorer_directory_badge, stringResource(R.string.resource_explorer_unavailable_title), it) }
-                ?: stringResource(R.string.resource_explorer_unavailable_title),
-            style = NexaraTypography.titleMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
-        Text(text = reason, style = NexaraTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        // 名称与原因已在工作区栏中显示，这里只保留说明与重试；无障碍仍即时播报原因。
         Text(
             text = stringResource(R.string.resource_explorer_unavailable_help),
             style = NexaraTypography.bodySmall,
@@ -468,6 +501,8 @@ private fun ResourceExplorerPrivateFilesPage(
     // 搜索框会被重建而丢失焦点，键盘随即收起。
     val compactLandscape = LocalConfiguration.current.screenHeightDp < 480 && LocalDensity.current.fontScale < 1.5f
     Column(modifier = Modifier.fillMaxSize()) {
+        ResourceExplorerWorkspaceBar(state, actions)
+        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
         Box(modifier = Modifier.fillMaxWidth()) {
             if (compactLandscape) {
                 Row(

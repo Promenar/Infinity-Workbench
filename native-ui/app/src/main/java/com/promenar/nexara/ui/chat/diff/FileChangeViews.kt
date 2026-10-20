@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat.diff
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,14 +19,11 @@ import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -238,16 +237,10 @@ private fun fileChangeTint(type: FileChangeType): Color = when (type) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FileChangeDiffSheet(change: FileChangeSummary, onDismissRequest: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val windowHeight = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-    // 窗口尺寸尚未就绪（为 0）时仍保留可用的最小视口。
-    val viewportHeight = (windowHeight * 0.6f).coerceAtLeast(240.dp)
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-    ) {
+    // 面板占满屏幕，差异视口扣除拖动条、标题与路径后的高度；窗口尺寸尚未就绪（为 0）时仍保留可用的最小视口。
+    val viewportHeight = (windowHeight * 0.7f).coerceAtLeast(240.dp)
+    NexaraModalSheet(onDismissRequest = onDismissRequest, height = NexaraSheetHeight.Full) {
         FileChangeDiffSheetContent(change, maxViewportHeight = viewportHeight, modifier = Modifier.navigationBarsPadding())
     }
 }

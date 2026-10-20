@@ -7,6 +7,5 @@
     <string name="session_memory_scope_off">Off</string>
     <string name="session_compaction_running">Compaction in progress</string>
     <string name="session_compaction_generating">Available after response</string>
-    <string name="session_revoke_tool">Revoke %1$s</string>
-    <string name="session_grant_target">%1$d. %2$s</string>
+    <string name="session_grant_revoke">Revoke</string>
 </resources>

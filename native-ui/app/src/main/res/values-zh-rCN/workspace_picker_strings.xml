@@ -37,14 +37,12 @@
     <string name="workspace_missing_name">已删除的工作区</string>
     <string name="workspace_unavailable_reason">工作区不可用：%1$s</string>
 
-    <string name="workspace_section_title">工作区</string>
     <string name="workspace_session_current">当前工作区</string>
     <string name="workspace_session_private_desc">仅本会话可见，由 Nexara 管理</string>
-    <string name="workspace_session_choose">选择工作区</string>
     <string name="workspace_session_use_private">改用会话私有工作区</string>
     <string name="workspace_session_reselect">重新选择</string>
+    <string name="workspace_bar_switch">切换</string>
     <string name="workspace_session_busy">生成进行中或有待审批的操作，暂不能切换工作区。</string>
-    <string name="workspace_session_footer">文件工具与命令在当前工作区中执行；切换不会移动或删除任何文件。</string>
     <string name="workspace_switch_notice">已从“%1$s”切换到“%2$s”</string>
     <string name="workspace_switch_failed">切换失败，请重试</string>
 
@@ -59,7 +57,7 @@
     </plurals>
     <string name="workspace_kb_entry_empty">尚未登记自选目录</string>
     <string name="workspace_kb_desc">只读浏览已登记的自选目录，可把单个文件加入知识库；不会自动索引整个目录。</string>
-    <string name="workspace_kb_empty">还没有登记的工作区。可在会话设置或 Agent 编辑页选择工作区。</string>
+    <string name="workspace_kb_empty">还没有登记的工作区。可在会话资源管理器或 Agent 编辑页选择工作区。</string>
     <string name="workspace_kb_more">更多操作：%1$s</string>
     <string name="workspace_kb_rename">重命名</string>
     <string name="workspace_kb_display_name">显示名称</string>

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -673,7 +674,8 @@ private fun SshHostEditorSheet(
         dismissEnabled = !busy,
         dragGesturesEnabled = false,
         title = stringResource(if (existing == null) R.string.ssh_add_host else R.string.ssh_edit_host),
-        modifier = Modifier.fillMaxHeight(0.95f).imePadding(),
+        height = NexaraSheetHeight.Full,
+        modifier = Modifier.imePadding(),
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight()) {
             Column(

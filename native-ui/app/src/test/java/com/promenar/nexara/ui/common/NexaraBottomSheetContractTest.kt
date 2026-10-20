@@ -6,7 +6,8 @@ import org.junit.jupiter.api.Test
 class NexaraBottomSheetContractTest {
 
     @Test
-    fun `未指定高度策略时保持既有七成高度`() {
-        assertThat(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION).isEqualTo(0.7f)
+    fun `未指定高度策略时按内容高度显示`() {
+        // 内容面板须显式声明 Full；短选择列表默认按内容高度，避免出现大片空白。
+        assertThat(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT).isEqualTo(NexaraSheetHeight.Content)
     }
 }

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -229,7 +230,7 @@ fun WorkspacePickerSheet(
         show = true,
         onDismiss = onDismiss,
         title = stringResource(R.string.workspace_picker_title),
-        modifier = Modifier.fillMaxHeight(0.85f),
+        height = NexaraSheetHeight.Full,
         dismissEnabled = !busy,
         dragGesturesEnabled = false,
     ) {

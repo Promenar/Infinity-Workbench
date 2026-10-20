@@ -225,6 +225,7 @@ class ResourceExplorerViewModel(
                     workspaceId = resolved.workspace.id,
                     displayName = resolved.workspace.displayName,
                     kind = resolved.kind,
+                    location = resolved.workspace.location,
                 )
                 val previous = _workspaceMode.value
                 leavePrivateWorkspace()
@@ -245,6 +246,8 @@ class ResourceExplorerViewModel(
                     workspaceId = resolved.workspaceId,
                     displayName = resolved.workspace?.displayName,
                     reason = resolved.reason,
+                    kind = resolved.workspace?.kind,
+                    location = resolved.workspace?.location,
                 )
             }
         }

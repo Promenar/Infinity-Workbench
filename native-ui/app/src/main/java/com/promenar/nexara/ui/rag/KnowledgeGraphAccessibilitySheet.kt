@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
@@ -9,7 +11,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,8 +35,9 @@ internal fun KnowledgeGraphAccessibilitySheet(
     onExpandNode: ((String) -> Unit)? = null,
 ) {
     val nodesById = remember(nodes) { nodes.associateBy { it.id } }
-    ModalBottomSheet(
+    NexaraModalSheet(
         onDismissRequest = onDismiss,
+        height = NexaraSheetHeight.Full,
         modifier = Modifier.testTag(UiTags.KG_ACCESSIBILITY_LIST),
     ) {
         Text(

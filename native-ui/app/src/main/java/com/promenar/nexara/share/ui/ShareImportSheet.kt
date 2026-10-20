@@ -1,5 +1,7 @@
 package com.promenar.nexara.share.ui
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.layout.FlowRow
@@ -20,7 +22,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,8 +76,9 @@ fun ShareImportSheet(
             },
         )
     }
-    ModalBottomSheet(
+    NexaraModalSheet(
         onDismissRequest = onClose,
+        height = NexaraSheetHeight.Content,
         modifier = Modifier
             .testTag(UiTags.SHARE_IMPORT_SHEET)
             .semantics { testTagsAsResourceId = true },

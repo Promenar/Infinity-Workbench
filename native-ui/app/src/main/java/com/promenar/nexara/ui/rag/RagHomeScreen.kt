@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import android.os.Build
 import com.promenar.nexara.ui.theme.forReading
 import android.view.HapticFeedbackConstants
@@ -87,7 +89,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -95,7 +96,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -1012,17 +1012,14 @@ internal fun RagHomeScreenContent(
     }
 
     if (showMoveSheet) {
-        ModalBottomSheet(
+        NexaraModalSheet(
             onDismissRequest = { if (!isMovingSelection) showMoveSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            height = NexaraSheetHeight.Content,
             modifier = Modifier.testTag(UiTags.RAG_HOME_MOVE_SHEET),
         ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
                     .testTag("rag-home-move-folder-list"),
                 contentPadding = PaddingValues(
                     start = NexaraSpacing.Large,

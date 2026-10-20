@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.git
 
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -116,7 +117,7 @@ fun GitChangesSheet(
         show = true,
         onDismiss = onDismiss,
         title = null,
-        modifier = Modifier.fillMaxHeight(),
+        height = NexaraSheetHeight.Full,
         // 面板内的列表与差异视图自带滚动，拖动面板会与内容滚动争抢手势。
         dragGesturesEnabled = false,
     ) {
