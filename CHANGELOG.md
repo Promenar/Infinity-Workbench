@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - 展开工具步骤后，失败结果显示为与参数块同形的错误底板：第一行是图标、“执行失败”和错误码类标签（如 `HTTP 503`、`model_not_found`、`COMMAND_FAILED`、`exit 2`），下面用正文色显示说明，命令输出等细节用等宽小字单独成框，过长时可展开。界面不再显示“工具执行失败：”前缀，发给模型的失败内容不变。
 - 结构化失败结果（`shell_exec`、MCP 等返回的 JSON）提取错误码、退出码、超时作标签，`guidance`/`message` 作说明，`stderr`/`stdout` 作细节；旧记录中嵌入的服务端错误体（含被截断的 JSON）也能取出状态码、错误码与说明。
 - 生图服务返回非 2xx 时，错误改为“Image generation failed (HTTP 503 · model_not_found): <服务端说明>”：提取错误体中的 `error.code` 与 `message`，不再重复前缀，也不再把含原始 JSON 的整条错误截断到 200 字符；服务端说明最多保留 500 字符。
+- 生图审批卡片的元信息行显示写入位置 `generate_image · /media`（结果保存在 `/media/<日期>/`），不再显示“未能确认执行目标”。该位置只用于显示，不参与授权比较或“本会话始终允许”。
 
 ### 流式回复中方括号文本导致闪退
 

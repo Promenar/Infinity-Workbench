@@ -93,6 +93,22 @@ class ApprovalCardTagsTest {
     }
 
     @Test
+    fun imageGenerationShowsMediaDirectoryInsteadOfUnknownTarget() {
+        val unknown = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(com.promenar.nexara.R.string.chat_approval_execution_target_unknown)
+        rule.setContent {
+            NexaraTheme {
+                ApprovalCard(
+                    toolName = "generate_image", description = "Review the request",
+                    calls = listOf(ApprovalDisplayCall("generate_image", "{\"prompt\":\"apple\"}", "External write")),
+                )
+            }
+        }
+        rule.onNodeWithText("/media", substring = true).assertIsDisplayed()
+        rule.onNodeWithText(unknown, substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun executedApproval_exposesExecutedStateWithoutActionTags() {
         rule.setContent {
             NexaraTheme {

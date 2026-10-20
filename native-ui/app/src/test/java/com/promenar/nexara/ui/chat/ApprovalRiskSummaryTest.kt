@@ -16,6 +16,13 @@ class ApprovalRiskSummaryTest {
     }
 
     @Test
+    fun `生图没有授权目标时元信息行显示默认媒体目录`() {
+        assertEquals("/media", approvalFixedWriteTarget("generate_image"))
+        assertEquals(null, approvalFixedWriteTarget("write_file"))
+        assertEquals(null, approvalFixedWriteTarget("mcp__files__remove"))
+    }
+
+    @Test
     fun `执行模式不能遮掉不可恢复或可联网的风险事实`() {
         assertEquals(listOf("不可恢复"), approvalRiskLines("Execution mode: semi", listOf("不可恢复")))
         assertEquals(listOf("可联网"), approvalRiskLines("Execution mode: semi", listOf("可联网")))

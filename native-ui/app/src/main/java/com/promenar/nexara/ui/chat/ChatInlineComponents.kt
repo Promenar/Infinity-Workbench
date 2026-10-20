@@ -845,6 +845,15 @@ internal fun approvalToolTitle(name: String): String = when {
     else -> toolFriendlyName(name)
 }
 
+/**
+ * 没有授权目标、但写入位置固定的工具在元信息行显示的位置。仅用于显示，不参与授权比较或“始终允许”。
+ * 生图结果总是保存到默认媒体目录（`/media/<日期>/`），与 `media_fetch` 未指定路径时的显示一致。
+ */
+internal fun approvalFixedWriteTarget(name: String): String? = when (name) {
+    "generate_image" -> "/media"
+    else -> null
+}
+
 /** 元信息行的目标：与工具 ID 相同（如隔离脚本的执行范围就是工具本身）时不再重复。 */
 internal fun approvalHeaderTarget(name: String, target: String?): String? =
     target?.takeIf { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
@@ -940,7 +949,10 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
             name = call.name,
             riskLabel = call.riskLabel,
             highRisk = call.highRisk,
-            target = approvalHeaderTarget(call.name, headerTarget ?: stringResource(R.string.chat_approval_execution_target_unknown)),
+            target = approvalHeaderTarget(
+                call.name,
+                headerTarget ?: approvalFixedWriteTarget(call.name) ?: stringResource(R.string.chat_approval_execution_target_unknown),
+            ),
         )
         ApprovalReason(description)
         if (preview == null) {
