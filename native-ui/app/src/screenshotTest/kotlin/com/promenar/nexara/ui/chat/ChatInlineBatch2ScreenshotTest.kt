@@ -234,3 +234,48 @@ fun approvalMultipleNarrowEnglishBatch2Preview() = InlineBatch2Frame {
         onApproveAll = {},
     )
 }
+
+/** 约 80 行的 python_exec 代码：每行带行号，便于在截图中确认首尾都能看到。 */
+private val LongPythonCode = buildString {
+    appendLine("import csv")
+    appendLine("from pathlib import Path")
+    for (index in 3..79) {
+        appendLine("rows.append({\"line\": $index, \"value\": compute($index)})  # L$index")
+    }
+    append("print(\"done: L80\")")
+}
+
+@PreviewTest
+@Preview(name = "长代码审批收起 深中411", widthDp = 411, heightDp = 560, locale = "zh-rCN")
+@Composable
+fun approvalLongPythonCollapsedBatch2Preview() = InlineBatch2Frame {
+    ApprovalCard(
+        toolName = "python_exec",
+        description = "",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "python_exec",
+                argumentsSummary = "{\"code\":\"import csv\"}",
+                riskLabel = "命令执行",
+                preview = ApprovalPreview.Preview(ApprovalPreview.Action.SCRIPT, "", LongPythonCode, commandRunsInWorkspace = true),
+                highRisk = true,
+            ),
+        ),
+        onAlwaysAllow = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "长代码审批展开顶部 深中411", widthDp = 411, heightDp = 460, locale = "zh-rCN")
+@Composable
+fun approvalLongPythonExpandedTopBatch2Preview() = InlineBatch2Frame {
+    ApprovalTextBlock(LongPythonCode, initiallyExpanded = true)
+}
+
+@PreviewTest
+@Preview(name = "长代码审批展开底部 深中411", widthDp = 411, heightDp = 460, locale = "zh-rCN")
+@Composable
+fun approvalLongPythonExpandedBottomBatch2Preview() = InlineBatch2Frame {
+    // 滚动值超出范围时由滚动容器收敛到末尾，用于确认最后一行可见。
+    ApprovalTextBlock(LongPythonCode, initiallyExpanded = true, initialScroll = Int.MAX_VALUE)
+}

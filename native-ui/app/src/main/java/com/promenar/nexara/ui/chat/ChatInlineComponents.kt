@@ -1017,32 +1017,80 @@ private val DiffPreviewActions = setOf(
 /** 审批卡内差异视口的最大高度；超出部分在视口内滚动。 */
 private val ApprovalDiffViewportHeight = 280.dp
 
-@Composable
-private fun ApprovalTextBlock(text: String) {
-    val collapsedLines = 6
-    var expanded by remember(text) { mutableStateOf(false) }
-    val explicitLineOverflow = remember(text, collapsedLines) {
-        text.lineSequence().take(collapsedLines + 1).count() > collapsedLines
+/** 审批卡内长参数展开后的最大视口高度；超出部分在视口内滚动，避免在聊天列表中无界嵌套滚动。 */
+internal val ApprovalTextViewportHeight = 360.dp
+
+/** 审批参数文本块的折叠规则：收起态只渲染前几行，展开态始终渲染完整原文。 */
+internal object ApprovalTextBlockLayout {
+    const val COLLAPSED_LINES = 6
+
+    /** 收起态单行最多渲染的字符数；只限制渲染量，超出的部分由省略号和展开入口表达。 */
+    private const val COLLAPSED_LINE_CHARS = 400
+
+    /**
+     * 不依赖布局即可确定收起态放不下全文：原文行数超过收起行数，或前几行中有超长行被渲染截断。
+     * 软换行造成的溢出由界面布局结果补充判断。
+     */
+    fun hasExplicitOverflow(text: String): Boolean {
+        val head = text.lineSequence().take(COLLAPSED_LINES + 1).toList()
+        return head.size > COLLAPSED_LINES || head.any { it.length > COLLAPSED_LINE_CHARS }
     }
-    var hasOverflow by remember(text, collapsedLines) { mutableStateOf(explicitLineOverflow) }
+
+    /** 收起态渲染的文本：多取一行保证省略号出现，超长参数不在折叠时整段排版。 */
+    fun collapsedText(text: String): String =
+        text.lineSequence().take(COLLAPSED_LINES + 1).joinToString("\n") { it.take(COLLAPSED_LINE_CHARS) }
+
+    /** 展开态渲染的文本：必须是完整原文，不做任何截断。 */
+    fun expandedText(text: String): String = text
+}
+
+@Composable
+internal fun ApprovalTextBlock(text: String, initiallyExpanded: Boolean = false, initialScroll: Int = 0) {
+    val collapsedLines = ApprovalTextBlockLayout.COLLAPSED_LINES
+    var expanded by remember(text) { mutableStateOf(initiallyExpanded) }
+    val explicitLineOverflow = remember(text) { ApprovalTextBlockLayout.hasExplicitOverflow(text) }
+    val collapsedText = remember(text) { ApprovalTextBlockLayout.collapsedText(text) }
+    var hasOverflow by remember(text) { mutableStateOf(explicitLineOverflow) }
+    val textStyle = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        fontSize = 12.sp,
+        lineHeight = 18.sp,
+    )
     Surface(
         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(Modifier.padding(10.dp)) {
-            SelectionContainer {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
-                    overflow = TextOverflow.Ellipsis,
-                    onTextLayout = { layout -> if (!expanded) hasOverflow = explicitLineOverflow || layout.hasVisualOverflow },
-                )
+            if (expanded) {
+                // 展开态展示完整参数：固定最大高度内自有滚动，滚到边界后交还外层聊天列表。
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = ApprovalTextViewportHeight)
+                        .verticalScroll(rememberScrollState(initialScroll))
+                        .testTag("CHAT_APPROVAL_TEXT_EXPANDED"),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = ApprovalTextBlockLayout.expandedText(text),
+                            style = textStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                SelectionContainer {
+                    Text(
+                        text = collapsedText,
+                        style = textStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = collapsedLines,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { layout ->
+                            hasOverflow = explicitLineOverflow || layout.hasVisualOverflow
+                        },
+                    )
+                }
             }
             if (hasOverflow || expanded) {
                 ChatExpandLink(

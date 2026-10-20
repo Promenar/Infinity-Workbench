@@ -7,6 +7,10 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.domain.tool.ToolArgumentsValidation
 import com.promenar.nexara.domain.tool.ToolArgumentsValidator
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Test
 
 class ApprovalPreviewTest {
@@ -58,14 +62,59 @@ class ApprovalPreviewTest {
     }
 
     @Test
-    fun `long content is truncated with remaining line count`() {
+    fun `long content keeps every line without truncation marker`() {
         val body = (1..20).joinToString("\\n") { "l$it" }
         val arguments = """{"name":"b.md","parentPath":"/docs","content":"$body"}"""
 
         val preview = ApprovalPreview.forCall(call("create_file", arguments), messages("create_file", arguments), "a1")!!
 
         assertThat(preview.target).isEqualTo("/docs/b.md")
-        assertThat(preview.detail).endsWith("… (+8)")
+        assertThat(preview.detail).isEqualTo((1..20).joinToString("\n") { "l$it" })
+        assertThat(preview.detail).doesNotContain("… (+")
+    }
+
+    @Test
+    fun `python exec preview keeps full 80 line code and long lines`() {
+        val longLine = "x = '" + "a".repeat(300) + "'"
+        val code = listOf("import os", longLine) + (3..80).map { "print($it)" }
+        val arguments = buildJsonObject { put("code", code.joinToString("\n")) }.toString()
+
+        val preview = ApprovalPreview.forCall(call("python_exec", arguments), messages("python_exec", arguments), "a1")!!
+
+        assertThat(preview.action).isEqualTo(ApprovalPreview.Action.SCRIPT)
+        assertThat(preview.detail!!.lines()).containsExactlyElementsIn(code).inOrder()
+        assertThat(preview.detail).doesNotContain("… (+")
+    }
+
+    @Test
+    fun `sandbox script with network keeps marker and full code`() {
+        val code = (1..30).joinToString("\n") { "console.log($it)" }
+        val arguments = buildJsonObject { put("code", code); put("allow_network", true) }.toString()
+
+        val preview = ApprovalPreview.forCall(call("exec_js", arguments), messages("exec_js", arguments), "a1")!!
+
+        assertThat(preview.scriptAllowsNetwork).isTrue()
+        assertThat(preview.detail).isEqualTo(ApprovalPreview.NETWORK_ALLOWED + "\n" + code)
+    }
+
+    @Test
+    fun `patch preview lists every operation and full new content`() {
+        val operations = buildJsonArray {
+            (1..15).forEach { index ->
+                add(buildJsonObject {
+                    put("action", "replace_lines"); put("startLine", index); put("endLine", index)
+                    put("newContent", "a$index\nb$index")
+                })
+            }
+        }
+        val arguments = buildJsonObject {
+            put("path", "/a.md"); put("expectedHash", "h"); put("operations", operations)
+        }.toString()
+
+        val preview = ApprovalPreview.forCall(call("patch_file", arguments), messages("patch_file", arguments), "a1")!!
+
+        val expected = (1..15).joinToString("\n") { "~ L$it–$it\n  + a$it\n  + b$it" }
+        assertThat(preview.detail).isEqualTo(expected)
     }
 
     @Test

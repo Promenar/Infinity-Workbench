@@ -12,14 +12,12 @@ import kotlinx.serialization.json.booleanOrNull
 
 /**
  * 审批卡片的写入预览：从助手消息中取出与审批身份摘要完全一致的原始参数，
- * 生成目标与内容片段。摘要不一致或无法解析时返回 null，界面回退到参数摘要。
+ * 生成目标与完整内容。摘要不一致或无法解析时返回 null，界面回退到参数摘要。
+ * 预览正文不做任何截断：用户批准的必须是完整参数，折叠与限高只由界面负责。
  */
 object ApprovalPreview {
     internal const val IRREVERSIBLE_WARNING = "不可恢复：文件超过挂载回收区上限或用户明确要求永久删除。"
     internal const val NETWORK_ALLOWED = "可联网"
-
-    private const val MAX_PREVIEW_LINES = 12
-    private const val MAX_LINE_CHARS = 120
 
     enum class Action { OVERWRITE, CREATE_FILE, EDIT, MOVE, DELETE, CREATE_DIRECTORY, SCRIPT }
 
@@ -54,20 +52,20 @@ object ApprovalPreview {
         val newChild = (args.string("parentPath") ?: args.string("parentUuid") ?: "").trimEnd('/') +
             "/" + args.string("name").orEmpty()
         return when (toolName) {
-            "write_file" -> Preview(Action.OVERWRITE, target, args.string("content")?.let { excerpt(it, "") })
-            "create_file" -> Preview(Action.CREATE_FILE, newChild, args.string("content")?.let { excerpt(it, "") })
+            "write_file" -> Preview(Action.OVERWRITE, target, args.string("content"))
+            "create_file" -> Preview(Action.CREATE_FILE, newChild, args.string("content"))
             "create_directory" -> Preview(Action.CREATE_DIRECTORY, newChild, null)
             "delete_file" -> Preview(Action.DELETE, target,
                 if ((args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) IRREVERSIBLE_WARNING else null)
             "exec_js", "run_script", "python_sandbox" -> Preview(Action.SCRIPT, if (toolName == "run_script") target else "", buildString {
                 if ((args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true) appendLine(NETWORK_ALLOWED)
-                args.string("code")?.let { append(excerpt(it, "")) }
+                args.string("code")?.let { append(it) }
             }.trimEnd().ifEmpty { null },
                 scriptAllowsNetwork = (args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true)
             "shell_exec", "python_exec" -> Preview(
                 Action.SCRIPT,
                 "",
-                (args.string("command") ?: args.string("code"))?.let { excerpt(it, "") },
+                args.string("command") ?: args.string("code"),
                 commandRunsInWorkspace = true,
             )
             "move_file" -> Preview(
@@ -82,7 +80,7 @@ object ApprovalPreview {
                 Action.EDIT,
                 target,
                 buildString {
-                    (args["operations"] as? JsonArray).orEmpty().take(MAX_PREVIEW_LINES).forEach { element ->
+                    (args["operations"] as? JsonArray).orEmpty().forEach { element ->
                         val op = element as? JsonObject ?: return@forEach
                         appendLine(
                             when (op.string("action")) {
@@ -91,7 +89,7 @@ object ApprovalPreview {
                                 else -> "~ L${op.int("startLine")}–${op.int("endLine")}"
                             },
                         )
-                        op.string("newContent")?.let { appendLine(excerpt(it, prefix = "  + ")) }
+                        op.string("newContent")?.let { appendLine(prefixLines(it, prefix = "  + ")) }
                     }
                 }.trimEnd().ifEmpty { null },
             )
@@ -99,11 +97,8 @@ object ApprovalPreview {
         }
     }
 
-    private fun excerpt(text: String, prefix: String): String {
-        val lines = text.lines()
-        val shown = lines.take(MAX_PREVIEW_LINES).joinToString("\n") { prefix + it.take(MAX_LINE_CHARS) }
-        return if (lines.size > MAX_PREVIEW_LINES) "$shown\n$prefix… (+${lines.size - MAX_PREVIEW_LINES})" else shown
-    }
+    private fun prefixLines(text: String, prefix: String): String =
+        text.lines().joinToString("\n") { prefix + it }
 
     private fun JsonObject.string(key: String): String? =
         (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf(String::isNotBlank)
