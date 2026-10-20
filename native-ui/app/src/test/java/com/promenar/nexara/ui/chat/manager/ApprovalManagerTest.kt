@@ -20,7 +20,7 @@ import com.promenar.nexara.data.repository.ApprovalCallCandidate
 import com.promenar.nexara.data.repository.ExactToolApprovalCompletion
 import com.promenar.nexara.data.repository.ExactToolApprovalDecision
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.repository.toInvocationIdentity
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.ui.chat.ChatStore
@@ -402,10 +402,11 @@ class ApprovalManagerTest {
     @Test
     fun `记住目标只在当前精确调用批准后保存且重启保持`() = testScope.runTest {
         val root = grantFiles.newFolder("grants")
-        val grants = SessionToolGrantStore(root)
+        val grants = ToolAllowlistStore(root)
         approvalManager = ApprovalManager(
             store, ledger, messageManager, stubSessionRepo,
-            toolGrantStore = grants,
+            toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
             resolveExecutionTarget = { _, _, call -> call.executionTarget },
         )
         val target = """["path","/docs/a.md"]"""
@@ -424,47 +425,50 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executed).containsExactly("first")
-        assertThat(SessionToolGrantStore(root).contains("s1", "write_file", target)).isTrue()
-        assertThat(grants.contains("s1", "delete_file", target)).isFalse()
-        assertThat(grants.contains("s2", "write_file", target)).isFalse()
+        assertThat(ToolAllowlistStore(root).contains("write_file", target, "session:s1")).isTrue()
+        assertThat(grants.contains("delete_file", target, "session:s1")).isFalse()
+        assertThat(grants.contains("write_file", target, "session:s2")).isFalse()
         assertThat(store.getSession("s1")!!.approvalRequest!!.calls.single().toolCallId).isEqualTo("next")
     }
 
     @Test
     fun `拒绝和过期审批即使传入记住标志也不会产生授权`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
-        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) })
         val target = """["path","/docs/a.md"]"""
         val request = seedExactApproval(executionTarget = target)
         approvalManager.setCallbacks(null) { _, _, _ -> error("不应执行") }
 
         approvalManager.resumeGeneration("s1", request.copy(identityHash = "expired"), rememberTarget = true)
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
 
         approvalManager.resumeGeneration("s1", request, approved = false, rememberTarget = true)
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.REJECTED)
     }
 
     @Test
     fun `台账已取消的精确审批不能产生目标授权`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
-        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) })
         val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
         ledger.states[ToolExecutionKey("s1", "m1", "risk")] = ToolLedgerState.CANCELLED
         approvalManager.setCallbacks(null) { _, _, _ -> error("不应执行") }
 
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
     }
 
     @Test
     fun `授权写入失败会补偿已批准调用且不执行工具`() = testScope.runTest {
         val invalidRoot = grantFiles.newFile("not-a-directory")
-        val grants = SessionToolGrantStore(invalidRoot)
-        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val grants = ToolAllowlistStore(invalidRoot)
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) })
         val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
         var executed = false
         approvalManager.setCallbacks(null) { _, _, _ -> executed = true }
@@ -480,10 +484,11 @@ class ApprovalManagerTest {
 
     @Test
     fun `审批期间 uuid 目标移动时取消调用并暂停且不授予旧目标`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         approvalManager = ApprovalManager(
             store, ledger, messageManager, stubSessionRepo,
-            toolGrantStore = grants,
+            toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
             resolveExecutionTarget = { session, assistantMessageId, call ->
                 assertThat(session.id).isEqualTo("s1")
                 assertThat(assistantMessageId).isEqualTo("m1")
@@ -498,7 +503,7 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executed).isFalse()
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
@@ -509,10 +514,11 @@ class ApprovalManagerTest {
 
     @Test
     fun `审批期间 uuid 目标删除不可解析时不能执行或记住授权`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         approvalManager = ApprovalManager(
             store, ledger, messageManager, stubSessionRepo,
-            toolGrantStore = grants,
+            toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
             resolveExecutionTarget = { _, _, _ -> null },
         )
         val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
@@ -520,7 +526,7 @@ class ApprovalManagerTest {
 
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
@@ -528,10 +534,11 @@ class ApprovalManagerTest {
 
     @Test
     fun `跨助手消息复用调用 id 时旧消息参数不能掩盖当前 uuid 目标变化`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         approvalManager = ApprovalManager(
             store, ledger, messageManager, stubSessionRepo,
-            toolGrantStore = grants,
+            toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
             resolveExecutionTarget = { session, assistantMessageId, call ->
                 targetForApprovalMessage(session, assistantMessageId, call, mapOf("current-file" to "/moved.md"))
             },
@@ -553,7 +560,7 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executions).isEqualTo(0)
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "shared-call")]).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
@@ -563,10 +570,11 @@ class ApprovalManagerTest {
 
     @Test
     fun `跨助手消息复用调用 id 时合法当前目标不会被旧消息参数误拒`() = testScope.runTest {
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         approvalManager = ApprovalManager(
             store, ledger, messageManager, stubSessionRepo,
-            toolGrantStore = grants,
+            toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
             resolveExecutionTarget = { session, assistantMessageId, call ->
                 targetForApprovalMessage(session, assistantMessageId, call)
             },
@@ -591,8 +599,8 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executedMessages).containsExactly("m1")
-        assertThat(grants.contains("s1", "write_file", target)).isTrue()
-        assertThat(grants.contains("s1", "write_file", """["path","/old.md"]""")).isFalse()
+        assertThat(grants.contains("write_file", target, "session:s1")).isTrue()
+        assertThat(grants.contains("write_file", """["path","/old.md"]""", "session:s1")).isFalse()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "shared-call")]).isEqualTo(ToolLedgerState.SUCCEEDED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
     }
@@ -622,7 +630,7 @@ class ApprovalManagerTest {
         ) { owner, id -> leases[owner to id] }
         assertThat(ToolExecutionTargets.display(requireNotNull(initialTarget))).isEqualTo("local · echo ok")
         assertThat(initialTarget).contains("\"sshHostId\":\"local-id\"")
-        val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("ssh-grants"))
         approvalManager = sshApprovalManager(tool, leases, grants)
         val request = seedExactApproval(listOf(call), initialTarget)
         val executed = mutableListOf<String>()
@@ -635,7 +643,7 @@ class ApprovalManagerTest {
 
         assertThat(executed).containsExactly("ssh-send")
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "ssh-send")]).isEqualTo(ToolLedgerState.SUCCEEDED)
-        assertThat(grants.contains("s1", "ssh_session_send", initialTarget!!)).isTrue()
+        assertThat(grants.contains("ssh_session_send", initialTarget!!, null)).isTrue()
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
     }
 
@@ -656,7 +664,7 @@ class ApprovalManagerTest {
         val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
             Session(id = "s1", agentId = "a1"), tool, call.arguments, null, sshHostStore = sshHosts,
         ) { owner, id -> leases[owner to id] }
-        val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-rejected-grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("ssh-rejected-grants"))
         approvalManager = sshApprovalManager(tool, leases, grants)
         val request = seedExactApproval(listOf(call), initialTarget)
         leases.clear()
@@ -667,7 +675,7 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executed).isFalse()
-        assertThat(grants.list("s1")).isEmpty()
+        assertThat(grants.entries.value).isEmpty()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "ssh-send")]).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
@@ -689,10 +697,11 @@ class ApprovalManagerTest {
     private fun sshApprovalManager(
         tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
         leases: Map<Pair<String, String>, String>,
-        grants: SessionToolGrantStore,
+        grants: ToolAllowlistStore,
     ) = ApprovalManager(
         store, ledger, messageManager, stubSessionRepo,
-        toolGrantStore = grants,
+        toolAllowlistStore = grants,
+            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) },
         resolveExecutionTarget = { session, messageId, identity ->
             com.promenar.nexara.ui.chat.resolveChatApprovalExecutionTarget(
                 session, messageId, identity,

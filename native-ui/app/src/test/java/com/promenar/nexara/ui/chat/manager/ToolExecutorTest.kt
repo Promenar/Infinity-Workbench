@@ -17,7 +17,7 @@ import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.data.repository.ToolLedgerState
 import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.data.repository.ToolTerminalRequest
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -526,10 +526,10 @@ class ToolExecutorTest {
     fun `批次内移动 uuid 后仅持旧目标授权的写入和删除在副作用前拒绝`() = testScope.runTest {
         seedSessionWithAssistant()
         val paths = mutableMapOf("entry" to "/before/a.md")
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         val oldTarget = """["path","/before/a.md"]"""
-        grants.grant("s1", "write_file", oldTarget)
-        grants.grant("s1", "delete_file", oldTarget)
+        grants.add("write_file", oldTarget, "session:s1", "s1")
+        grants.add("delete_file", oldTarget, "session:s1", "s1")
         val sideEffects = mutableListOf<String>()
         val move = testSkill(
             name = "move_file",
@@ -560,7 +560,7 @@ class ToolExecutorTest {
             store, messageManager, registry, testToolResolver(registry), ledger = ledger,
             grantVerifier = { session, skill, args, expected ->
                 ToolExecutionTargets.extract(skill.toPreparedTool(), args.toString(), paths) == expected &&
-                    grants.contains(session.id, skill.name, expected)
+                    grants.contains(skill.name, expected, "session:${session.id}")
             },
         )
         val calls = listOf(
@@ -588,16 +588,16 @@ class ToolExecutorTest {
     fun `授权撤销后已准备的免审批调用在执行前拒绝`() = testScope.runTest {
         seedSessionWithAssistant()
         val target = """["path","/a.md"]"""
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
-        grants.grant("s1", "write_file", target)
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
+        grants.add("write_file", target, "session:s1", "s1")
         var writes = 0
         val skill = testSkill("write_file") { writes++; ToolResult("write", "written", status = "success") }
         val registry = singleSkillRegistry(skill)
         val ledger = RecordingLedger()
         val executor = ToolExecutor(
             store, messageManager, registry, testToolResolver(registry), ledger = ledger,
-            hooks = ToolExecutorHooks(beforeAppendStep = { grants.revoke("s1", "write_file", target) }),
-            grantVerifier = { session, currentSkill, _, expected -> grants.contains(session.id, currentSkill.name, expected) },
+            hooks = ToolExecutorHooks(beforeAppendStep = { grants.remove(grants.entries.value.single().id) }),
+            grantVerifier = { session, currentSkill, _, expected -> grants.contains(currentSkill.name, expected, "session:${session.id}") },
         )
         val prepared = registry.getAllTools()
 
@@ -616,8 +616,8 @@ class ToolExecutorTest {
         seedSessionWithAssistant()
         val paths = mapOf("entry" to "/docs/a.md")
         val target = """["path","/docs/a.md"]"""
-        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
-        grants.grant("s1", "write_file", target)
+        val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
+        grants.add("write_file", target, "session:s1", "s1")
         var writes = 0
         val skill = testSkill(
             "write_file", schema = """{"type":"object","properties":{"uuid":{"type":"string"}},"required":["uuid"]}""",
@@ -629,7 +629,7 @@ class ToolExecutorTest {
             store, messageManager, registry, testToolResolver(registry), ledger = ledger,
             grantVerifier = { session, currentSkill, args, expected ->
                 ToolExecutionTargets.extract(currentSkill.toPreparedTool(), args.toString(), paths) == expected &&
-                    grants.contains(session.id, currentSkill.name, expected)
+                    grants.contains(currentSkill.name, expected, "session:${session.id}")
             },
         )
 

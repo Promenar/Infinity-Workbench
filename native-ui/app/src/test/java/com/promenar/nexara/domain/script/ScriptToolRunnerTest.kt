@@ -3,7 +3,7 @@ package com.promenar.nexara.domain.script
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.rag.FileIndexEventSink
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.script.*
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -60,6 +60,6 @@ class ScriptToolRunnerTest {
 
     private fun runner(mounts: ExternalWorkspaceAccess, directory: java.io.File, runtime: ScriptRuntime) = AndroidScriptToolRunner(
         runtime, mockk<IWorkspaceRepository>(), mounts, mockk<IFileOperationRepository>(), FileIndexEventSink.None,
-        ScriptFileApprovalBroker(), SessionToolGrantStore(directory), ScriptSettings(mockk<SharedPreferences>(relaxed = true)),
+        ScriptFileApprovalBroker(), ToolAllowlistStore(directory), ScriptSettings(mockk<SharedPreferences>(relaxed = true)),
     )
 }

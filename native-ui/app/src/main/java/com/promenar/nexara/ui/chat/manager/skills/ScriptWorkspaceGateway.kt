@@ -2,7 +2,9 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.FileIndexEventSink
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
+import com.promenar.nexara.data.repository.ToolAllowlistScopes
+import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.repository.WorkspaceTextContentPolicy
 import com.promenar.nexara.data.repository.WorkspaceTextOperation
 import com.promenar.nexara.data.repository.WorkspaceFileTooLargeException
@@ -35,10 +37,11 @@ class ScriptWorkspaceGateway private constructor(
     private val files: IFileOperationRepository,
     private val indexEvents: FileIndexEventSink,
     private val approvals: ScriptFileApprovalBroker,
-    private val grants: SessionToolGrantStore,
+    private val grants: ToolAllowlistStore,
     private val approveWrites: () -> Boolean,
     private val mountIds: Map<String, String>,
     private val moduleRoot: String?,
+    private val sessionWorkspace: (suspend (String) -> SessionWorkspace)?,
 ) : ScriptCapabilities {
     private val mutex = Mutex()
     /** 打开时会话为自选目录工作区：`/` 下的路径都经工作区挂载读写，私有工作区不可达。 */
@@ -121,12 +124,20 @@ class ScriptWorkspaceGateway private constructor(
         val targetParts = Json.parseToJsonElement(ToolExecutionTargets.extract(skill.toProtocolTool(), args.toString()) ?: throw ScriptFailure("INVALID_PATH", "无法确定文件审批目标")).jsonArray
         val alias = ExternalMountPaths.aliasOf(path, rooted)
         val bindings = if (alias == null) emptyMap() else mapOf(alias to JsonPrimitive(mountIds.getValue(alias)))
-        val target = if (bindings.isEmpty()) targetParts.toString() else JsonArray(targetParts + buildJsonObject { put("mountIds", JsonObject(bindings)) }).toString()
+        val target = if (bindings.isEmpty()) targetParts.toString() else JsonArray(targetParts + buildJsonObject {
+            put("mountIds", JsonObject(bindings)); put("legacyWorkspaceUuids", JsonArray(emptyList()))
+        }).toString()
         if (operation == "delete" || approveWrites()) {
-            if (!grants.contains(context.sessionId, skill.name, target)) {
+            val scope = ToolAllowlistScopes.resolveForSession(context.sessionId, target, sessionWorkspace, mounts)
+            if (scope == null || !grants.contains(skill.name, target, scope.scopeKey)) {
                 val decision = approvals.request(context.sessionId, skill.name, skill.risk, target, ApprovalPreview.format(skill.name, args)?.detail.orEmpty())
                 if (!decision.approved) throw ScriptFailure("APPROVAL_DENIED", "文件操作未获批准")
-                if (decision.remember) grants.grant(context.sessionId, skill.name, target)
+                if (decision.remember) {
+                    ToolAllowlistScopes.resolveForSession(context.sessionId, target, sessionWorkspace, mounts)?.let { current ->
+                        // 审批期间存储身份改变时，不把原目标写入新的存储作用域。
+                        if (current == scope) grants.add(skill.name, target, current.scopeKey, context.sessionId)
+                    }
+                }
             }
         }
         // 审批可能等待很久，执行前重新核验身份和读写权限；挂载工具会再做后端校验。
@@ -150,7 +161,7 @@ class ScriptWorkspaceGateway private constructor(
     }
 
     companion object {
-        suspend fun open(context: SkillExecutionContext, workspace: IWorkspaceRepository, mounts: ExternalWorkspaceAccess, files: IFileOperationRepository, indexEvents: FileIndexEventSink, approvals: ScriptFileApprovalBroker, grants: SessionToolGrantStore, approveWrites: () -> Boolean, entryPath: String?): ScriptWorkspaceGateway {
+        suspend fun open(context: SkillExecutionContext, workspace: IWorkspaceRepository, mounts: ExternalWorkspaceAccess, files: IFileOperationRepository, indexEvents: FileIndexEventSink, approvals: ScriptFileApprovalBroker, grants: ToolAllowlistStore, approveWrites: () -> Boolean, entryPath: String?, sessionWorkspace: (suspend (String) -> SessionWorkspace)? = null): ScriptWorkspaceGateway {
             val ids = mounts.namespaceBindings(context.sessionId)
             val approved = context.approvedExecutionTarget?.let { runCatching { Json.parseToJsonElement(it).jsonArray.lastOrNull() as? JsonObject }.getOrNull() }
                 ?.get("mountIds")?.jsonObject.orEmpty()
@@ -159,7 +170,7 @@ class ScriptWorkspaceGateway private constructor(
                 val alias = ExternalMountPaths.aliasOf(entryPath, ExternalMountPaths.WORKSPACE_ALIAS in ids)
                 if (alias != null && alias !in approved) throw ScriptFailure("MOUNT_CHANGED", "脚本审批缺少挂载或工作区身份")
             }
-            return ScriptWorkspaceGateway(context, workspace, mounts, files, indexEvents, approvals, grants, approveWrites, ids, entryPath?.let(ScriptModules::root))
+            return ScriptWorkspaceGateway(context, workspace, mounts, files, indexEvents, approvals, grants, approveWrites, ids, entryPath?.let(ScriptModules::root), sessionWorkspace)
         }
     }
 }

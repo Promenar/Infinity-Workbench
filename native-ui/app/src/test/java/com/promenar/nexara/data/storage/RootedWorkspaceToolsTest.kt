@@ -13,7 +13,7 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
-import com.promenar.nexara.data.repository.SessionToolGrantStore
+import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.script.ScriptFileApprovalBroker
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.domain.repository.IFileOperationRepository
@@ -173,7 +173,7 @@ class RootedWorkspaceToolsTest {
         File(repo, "lib").mkdirs()
         File(repo, "lib/data.txt").writeText("hello")
         val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None,
-            ScriptFileApprovalBroker(), SessionToolGrantStore(directory.resolve("grants")), { false }, null)
+            ScriptFileApprovalBroker(), ToolAllowlistStore(directory.resolve("grants")), { false }, null)
         val read = gateway.invoke("read", buildJsonObject { put("path", "/lib/data.txt") }).jsonObject
         assertThat(read.getValue("content").jsonPrimitive.content).isEqualTo("hello")
         gateway.invoke("create", buildJsonObject { put("path", "/lib/out.txt"); put("content", "made") })

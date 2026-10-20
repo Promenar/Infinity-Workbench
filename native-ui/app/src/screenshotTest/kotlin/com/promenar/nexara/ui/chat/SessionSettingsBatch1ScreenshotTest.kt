@@ -13,7 +13,6 @@ import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.ModelInfo
-import com.promenar.nexara.data.repository.SessionToolGrant
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.*
 
@@ -36,18 +35,6 @@ fun sessionParamsBatch1Preview() = SessionFrame(1) { SessionParamsContent(Infere
 @Preview(name = "会话工具 深中360", widthDp = 360, heightDp = 780, locale = "zh-rCN")
 @Composable
 fun sessionToolsBatch1Preview() = SessionFrame(2) { SessionToolsContent() }
-
-@PreviewTest
-@Preview(name = "会话工具 已授权 深中411", widthDp = 411, heightDp = 780, locale = "zh-rCN")
-@Preview(name = "会话工具 已授权 深中360 字号130", widthDp = 360, heightDp = 900, locale = "zh-rCN", fontScale = 1.3f)
-@Composable
-fun sessionToolsGrantsPreview() = SessionFrame(2) {
-    SessionToolsContent(grants = listOf(
-        SessionToolGrant("create_directory", "/demo"),
-        SessionToolGrant("create_file", "/approval_visual_test.txt"),
-        SessionToolGrant("python_sandbox", "python_sandbox"),
-    ))
-}
 
 @PreviewTest
 @Preview(name = "会话上下文 深中411", widthDp = 411, heightDp = 1120, locale = "zh-rCN")

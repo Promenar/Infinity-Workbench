@@ -1,11 +1,6 @@
 package com.promenar.nexara.ui.chat
 
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import com.promenar.nexara.data.repository.SessionToolGrant
-import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.domain.usecase.withDefaults
 import com.promenar.nexara.domain.usecase.resolveKeepRecentTurns
 import androidx.compose.foundation.BorderStroke
@@ -467,8 +462,6 @@ internal fun sessionContinuousSpec(min: Double, max: Double, defaultValue: Doubl
 
 @Composable
 private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexara.data.model.Session?) {
-    val grants by chatViewModel.currentSessionGrants.collectAsStateWithLifecycle()
-    LaunchedEffect(session?.id) { chatViewModel.refreshSessionGrants() }
     val customSkills by chatViewModel.availableSessionCustomSkills.collectAsStateWithLifecycle()
     val mcpServers by chatViewModel.availableSessionMcpServers.collectAsStateWithLifecycle()
     val mcpSettings = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? NexaraApplication)?.mcpConnectionSettings
@@ -478,8 +471,6 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
         executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi",
         isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true,
         onToolToggle = chatViewModel::toggleTool, onExecutionModeChange = chatViewModel::updateExecutionMode,
-        grants = grants,
-        onRevokeGrant = chatViewModel::revokeSessionGrant,
         additionalSections = {
         if (customSkills.isNotEmpty()) {
             NexaraSettingsSection(title = stringResource(R.string.sheet_tool_session_skills),
@@ -518,32 +509,6 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
     )
 }
 
-/** 本会话记住的目标授权：每条一行，工具名在上、目标在下（与工具名相同时省略），行尾按钮撤销。 */
-@Composable
-internal fun SessionGrantsSection(grants: List<SessionToolGrant>, onRevoke: (SessionToolGrant) -> Unit) {
-    NexaraSettingsSection(
-        title = stringResource(R.string.p0_grants_title),
-        footer = if (grants.isEmpty()) stringResource(R.string.p0_grants_empty) else null,
-    ) {
-        grants.forEach { grant ->
-            val target = ToolExecutionTargets.display(grant.target)
-            val revokeLabel = stringResource(R.string.p0_revoke_target, "${grant.toolName}: $target")
-            NexaraSettingsRowLayout(
-                title = grant.toolName,
-                subtitle = target.takeIf { it != grant.toolName },
-                subtitleIsIdentifier = true,
-                trailingContent = {
-                    TextButton(
-                        onClick = { onRevoke(grant) },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.semantics { contentDescription = revokeLabel },
-                    ) { Text(stringResource(R.string.session_grant_revoke)) }
-                },
-            )
-        }
-    }
-}
-
 @Composable
 internal fun SessionToolsContent(
     options: com.promenar.nexara.data.model.SessionOptions = com.promenar.nexara.data.model.SessionOptions(),
@@ -551,13 +516,10 @@ internal fun SessionToolsContent(
     isGeminiModel: Boolean = false,
     onToolToggle: (String, Boolean) -> Unit = { _, _ -> },
     onExecutionModeChange: (String) -> Unit = {},
-    grants: List<SessionToolGrant> = emptyList(),
-    onRevokeGrant: (SessionToolGrant) -> Unit = {},
     additionalSections: @Composable () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp)) {
-        SessionGrantsSection(grants, onRevokeGrant)
         NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
             SettingsToggle(stringResource(R.string.sheet_tool_time_injection), checked = options.enableTimeInjection,
                 icon = Icons.Rounded.Timer, onCheckedChange = { onToolToggle("timeInjection", it) })

@@ -17,7 +17,4 @@
     <string name="p0_continue">Continue</string>
     <string name="p0_progress">Round %1$d, %2$d calls, %3$d tokens%4$s</string>
     <string name="p0_estimated"> (estimated)</string>
-    <string name="p0_grants_title">Targets allowed in this session</string>
-    <string name="p0_grants_empty">No saved target permissions</string>
-    <string name="p0_revoke_target">Revoke permission for %1$s</string>
 </resources>

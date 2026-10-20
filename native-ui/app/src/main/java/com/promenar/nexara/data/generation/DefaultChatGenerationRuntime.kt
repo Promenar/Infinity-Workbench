@@ -140,7 +140,7 @@ internal class DefaultChatGenerationRuntime(
     private val contentStrategy: ChatGenerationContentStrategy,
     private val ui: GenerationUiPort,
     private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
-    private val toolGrantStore: com.promenar.nexara.data.repository.SessionToolGrantStore? = null,
+    private val toolAllowlistStore: com.promenar.nexara.data.repository.ToolAllowlistStore? = null,
     private val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
     private val interactionStore: GenerationInteractionStore? = null,
@@ -682,7 +682,10 @@ internal class DefaultChatGenerationRuntime(
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
             val target = targets[id]
-            target == null || toolGrantStore?.contains(session.id, call.name, target) != true
+            val scope = target?.let {
+                com.promenar.nexara.data.repository.ToolAllowlistScopes.resolveForSession(session.id, it, sessionWorkspace, externalFolders)
+            }
+            target == null || scope == null || toolAllowlistStore?.contains(call.name, target, scope.scopeKey) != true
         }
         val grantTargets = (policyPendingIds - requestedPendingIds).associateWith { targets.getValue(it)!! }
         val validInvocations = calls.mapNotNull { call ->

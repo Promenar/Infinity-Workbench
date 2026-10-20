@@ -265,10 +265,10 @@ class ExternalFolderManagerTest {
         val approvalTarget = resolveSessionToolTarget(session, deletion, arguments, workspace, manager)!!
         assertThat(ToolExecutionTargets.display(approvalTarget)).isEqualTo("/mnt/termux/a.txt")
         assertThat(ToolExecutionTargets.canRemember(approvalTarget)).isFalse()
-        val grants = com.promenar.nexara.data.repository.SessionToolGrantStore(directory.resolve("grants"))
-        grants.grant("session", "delete_file", approvalTarget)
-        assertThat(grants.contains("session", "delete_file", approvalTarget)).isFalse()
-        assertThat(grants.list("session")).isEmpty()
+        val grants = com.promenar.nexara.data.repository.ToolAllowlistStore(directory.resolve("grants"))
+        grants.add("delete_file", approvalTarget, "mount:replacement", "session")
+        assertThat(grants.contains("delete_file", approvalTarget, "mount:replacement")).isFalse()
+        assertThat(grants.entries.value).isEmpty()
         rows.value = rows.value.map { it.copy(id = "changed-again") }
         assertThat(resolveSessionToolTarget(session, deletion, arguments, workspace, manager)).isNotEqualTo(approvalTarget)
     }
