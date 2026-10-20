@@ -12,6 +12,7 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.repository.WorkspaceLinePatchResult
 import com.promenar.nexara.data.repository.applyWorkspaceLinePatch
 import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalWorkspaceAccess
 import com.promenar.nexara.ui.chat.ApprovalPreview
@@ -83,9 +84,9 @@ class ApprovalDiffPreviewLoader(
         privateWorkspaceRootUuid: String?,
     ): ApprovalDiffPreview? {
         val reader = reader(sessionId, privateWorkspaceRootUuid) ?: return null
-        val path = args.string("path")?.let(::normalizeWorkspaceToolPath)
-            ?: args.string("uuid")?.let { reader.pathOf(it) }
-            ?: return null
+        val uuid = args.string("uuid")?.trim()
+        val path = if (uuid != null) reader.pathOf(uuid) ?: return null
+            else args.string("path")?.let(::normalizeWorkspaceToolPath) ?: return null
         val current = (reader.read(path).snapshot as? FileSnapshot.Text)?.text ?: return null
         return when (toolName) {
             "write_file" -> diff(current, args.string("content") ?: return null, FileChangeKind.MODIFIED)
@@ -107,7 +108,9 @@ class ApprovalDiffPreviewLoader(
     private suspend fun reader(sessionId: String, privateWorkspaceRootUuid: String?): WorkspaceSnapshotReader? {
         val workspaceMount = mounts?.workspaceMount(sessionId)
         val rooted = workspaceMount != null
-        val rootUuid = workspaceMount?.let { ExternalMountPaths.uuid(it, "/") } ?: privateWorkspaceRootUuid ?: return null
+        val rootUuid = workspaceMount?.let { ExternalMountPaths.uuid(it, "/") } ?: privateWorkspaceRootUuid
+            ?: mounts?.visible(sessionId)?.firstOrNull { it.isUserSkills }?.let { ExternalMountPaths.uuid(it, "/") }
+            ?: return null
         val namespace = mounts?.let { MountedWorkspaceRepository(workspace, it, sessionId, rooted) } ?: workspace
         return WorkspaceSnapshotReader(namespace, workspace, mounts, sessionId, rootUuid, rooted, privateReader = privateReader)
     }

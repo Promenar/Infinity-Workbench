@@ -669,7 +669,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 scratchDirectory = { File(cacheDir, "exec-run") },
                 clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
             ),
-            environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = BuildConfig.DISTRIBUTION == "sideload"),
+            environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = BuildConfig.DISTRIBUTION == "sideload", skillsDirectory = skillCatalog.userRoot),
             unavailablePythonAbi = { android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" },
             keepAlive = com.promenar.nexara.background.exec.AndroidExecKeepAlive(
                 this,
@@ -723,7 +723,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             inspector = com.promenar.nexara.data.git.GitInspector(
                 // 只读检查不需要 pip 与用户站点目录，保持 PYTHONNOUSERSITE，确保加载打包的 dulwich。
                 runtime = com.promenar.nexara.data.git.BuiltinGitPythonRuntime(
-                    com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = false),
+                    com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = false, skillsDirectory = skillCatalog.userRoot),
                 ),
                 runner = com.promenar.nexara.data.git.BuiltinGitInspectCommandRunner(
                     com.promenar.nexara.data.exec.BuiltinCommandRunner(
@@ -755,6 +755,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.data.storage.ExternalFolderManager(
             this, database.externalMountDao(), workspaceRepository, pendingDocumentIndexCoordinator,
             workspaces = sessionWorkspaceResolver,
+            userSkillsDirectory = skillCatalog.userRoot,
         )
     }
 

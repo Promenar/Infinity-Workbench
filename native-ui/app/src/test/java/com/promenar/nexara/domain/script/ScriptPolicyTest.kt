@@ -14,6 +14,12 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ScriptPolicyTest {
+    @Test fun `工作区脚本不能跨虚拟根导入技能而技能内相对模块可用`() {
+        assertThrows(ScriptFailure::class.java) { ScriptModules.resolve("/", "/main.mjs", "./skills/helper.mjs") }
+        assertThat(ScriptModules.resolve("/skills/demo", "/skills/demo/main.mjs", "./helper.mjs"))
+            .isEqualTo("/skills/demo/helper.mjs")
+    }
+
     @Test fun `相对模块允许根内父目录但拒绝越根和绝对导入`() {
         assertThat(ScriptModules.resolve("/mnt/demo/project", "/mnt/demo/project/lib/a.mjs", "../b.js"))
             .isEqualTo("/mnt/demo/project/b.js")

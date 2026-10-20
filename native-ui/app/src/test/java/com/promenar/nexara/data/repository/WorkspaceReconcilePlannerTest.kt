@@ -18,6 +18,13 @@ class WorkspaceReconcilePlannerTest {
         override fun invoke(path: String): String? = values[path].also { requested += path }
     }
 
+    @Test fun `命令创建的skills同名物理目录不进入虚拟工作区索引`() {
+        val after = snapshot("/skills" to dir(), "/skills/a.md" to file(1))
+        val plan = WorkspaceReconcilePlanner.plan(emptyList(), snapshot(), after, Hasher(mapOf("/skills/a.md" to "h")))
+        assertThat(plan.inserts).isEmpty()
+        assertThat(plan.reservedChanges).containsExactly("/skills", "/skills/a.md")
+    }
+
     @Test
     fun `未变化的文件不重算哈希`() {
         val tree = snapshot("/a.txt" to file(3, key = "1"), "/d" to dir("2"))

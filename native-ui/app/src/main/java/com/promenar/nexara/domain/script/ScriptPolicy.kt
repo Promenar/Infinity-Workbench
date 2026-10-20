@@ -29,7 +29,7 @@ object ScriptModules {
         val path = try { ExternalFolderPaths.normalize(parts.joinToString("/", prefix = "/")) }
         catch (_: Exception) { throw ScriptFailure("IMPORT_DENIED", "模块路径无效或包含保留名") }
         if (canonicalRoot != "/" && !path.startsWith("$canonicalRoot/") ||
-            canonicalRoot == "/" && (path == "/mnt" || path.startsWith("/mnt/")) ||
+            canonicalRoot == "/" && (path == "/mnt" || path.startsWith("/mnt/") || path == "/skills" || path.startsWith("/skills/")) ||
             !path.endsWith(".js") && !path.endsWith(".mjs")
         ) throw ScriptFailure("IMPORT_DENIED", "模块导入越出根目录或扩展名不支持")
         return path

@@ -3,6 +3,7 @@ package com.promenar.nexara.data.exec
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import org.junit.After
 import org.junit.Test
 
@@ -35,6 +36,50 @@ class BuiltinExecEnvironmentTest {
         assertThat(env["PYTHONPATH"]).isEqualTo("${pythonDir.resolve(PackagedPython.STDLIB).path}:${pythonDir.resolve(PackagedPython.SITE).path}")
         pythonDir.resolve(PackagedPython.SITE).delete()
         assertThat(environment(null).forWorkspace(File(work, "ws"))["PYTHONPATH"]).isEqualTo(pythonDir.resolve(PackagedPython.STDLIB).path)
+    }
+
+    @Test fun `进程技能目录自动创建且HOME链接指向同一目录`() {
+        val env = environment(null).forWorkspace(File(work, "ws"))
+        val skills = File(work, "agent_skills")
+        assertThat(env["NEXARA_SKILLS"]).isEqualTo(skills.path)
+        assertThat(skills.isDirectory).isTrue()
+        val link = File(work, "home/.agents/skills").toPath()
+        assertThat(Files.isSymbolicLink(link)).isTrue()
+        assertThat(link.toRealPath()).isEqualTo(skills.toPath().toRealPath())
+        Files.write(link.resolve("SKILL.md"), "same directory".toByteArray())
+        assertThat(File(skills, "SKILL.md").readText()).isEqualTo("same directory")
+        assertThat(environment(null).forPython(File(work, "other"))["NEXARA_SKILLS"]).isEqualTo(skills.path)
+    }
+
+    @Test fun `正确的技能符号链接保持原始形式与身份`() {
+        File(work, "agent_skills").mkdirs()
+        val link = File(work, "home/.agents/skills").toPath()
+        Files.createDirectories(link.parent)
+        val target = java.nio.file.Path.of("../../agent_skills")
+        Files.createSymbolicLink(link, target)
+        val before = Files.getAttribute(link, "basic:lastModifiedTime", NOFOLLOW_LINKS)
+        environment(null).forWorkspace(File(work, "ws"))
+        assertThat(Files.readSymbolicLink(link)).isEqualTo(target)
+        assertThat(Files.getAttribute(link, "basic:lastModifiedTime", NOFOLLOW_LINKS)).isEqualTo(before)
+    }
+
+    @Test fun `错误链接以及既有文件和目录均不覆盖`() {
+        val link = File(work, "home/.agents/skills").toPath()
+        Files.createDirectories(link.parent)
+        for (kind in listOf("file", "directory", "symlink")) {
+            when (kind) {
+                "file" -> Files.write(link, "keep".toByteArray())
+                "directory" -> Files.createDirectory(link)
+                else -> Files.createSymbolicLink(link, java.nio.file.Path.of("/missing-skills"))
+            }
+            assertThat(environment(null).forWorkspace(File(work, "ws"))["NEXARA_SKILLS"]).isEqualTo(File(work, "agent_skills").path)
+            when (kind) {
+                "file" -> assertThat(String(Files.readAllBytes(link))).isEqualTo("keep")
+                "directory" -> assertThat(Files.isDirectory(link, NOFOLLOW_LINKS)).isTrue()
+                else -> assertThat(Files.readSymbolicLink(link).toString()).isEqualTo("/missing-skills")
+            }
+            Files.delete(link)
+        }
     }
 
     @Test fun `未开放 pip 时保持禁用用户站点且不设置 pip 变量`() {

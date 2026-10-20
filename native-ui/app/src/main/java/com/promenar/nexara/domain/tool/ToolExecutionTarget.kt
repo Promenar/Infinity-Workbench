@@ -81,15 +81,32 @@ object ToolExecutionTargets {
             "exec_js", "python_sandbox" -> args.string("code")?.let { tuple("tool", tool.function.name) }
             else -> null
         }
-        return if (target != null && tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) {
+        return if (target != null && (requiresSkillsApproval(tool.function.name, target) ||
+                tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true)) {
             JsonArray((Json.parseToJsonElement(target) as JsonArray) + JsonObject(mapOf("oneShot" to JsonPrimitive(true)))).toString()
         } else target
     }
 
     fun canRemember(target: String): Boolean = runCatching {
         val metadata = (Json.parseToJsonElement(target) as? JsonArray)?.lastOrNull() as? JsonObject
-        (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true
+        (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true && !isSkillsPathTarget(target)
     }.getOrDefault(true)
+
+    /** 技能目录及可连带变更项目技能的父目录不接受持久路径授权。 */
+    fun isSkillsPathTarget(target: String): Boolean = runCatching {
+        val array = Json.parseToJsonElement(target) as? JsonArray ?: return false
+        val tuple = if (array.lastOrNull() is JsonObject) array.dropLast(1) else array.toList()
+        val kind = (tuple.firstOrNull() as? JsonPrimitive)?.content
+        if (kind !in setOf("path", "move") || tuple.size != if (kind == "path") 2 else 3) return false
+        tuple.drop(1).any { item ->
+            val path = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@any false
+            path == "/skills" || path.startsWith("/skills/") ||
+                path == "/.agents" || path == "/.agents/skills" || path.startsWith("/.agents/skills/")
+        }
+    }.getOrDefault(false)
+
+    fun requiresSkillsApproval(toolName: String, target: String?): Boolean =
+        toolName in SKILL_MUTATIONS && target != null && isSkillsPathTarget(target)
 
     /** 清除不可见控制字符与格式控制后按 UTF-16 长度限制显示，保留完整代理对。 */
     /** 进程目标的执行位置（如 builtin、python、termux）；命令正文另行完整展示时用它代替整条目标，避免重复。 */
@@ -215,4 +232,5 @@ object ToolExecutionTargets {
         )))).toString()
     }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
+    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file")
 }

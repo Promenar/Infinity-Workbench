@@ -8,6 +8,9 @@ import com.promenar.nexara.data.tailnet.InstalledTailnetRouting
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.util.logging.Logger
 
 /**
  * 内置后端的进程环境：白名单启动，不继承主进程环境变量。
@@ -23,6 +26,7 @@ class BuiltinExecEnvironment(
     private val inherited: Map<String, String> = System.getenv(),
     /** 内置 Tailscale 运行时的代理变量（含 NO_PROXY）；未启用时为空，不改变子进程网络。 */
     private val tailnetEnvironment: () -> Map<String, String> = { InstalledTailnetRouting.routing.subprocessEnvironment() },
+    private val skillsDirectory: File = File(homeDirectory.parentFile, "agent_skills"),
 ) {
     val pythonAvailable: Boolean get() = python.isAvailable
 
@@ -33,6 +37,8 @@ class BuiltinExecEnvironment(
     fun forWorkspace(workspace: File, kind: String = SessionWorkspaceResolver.KIND_PRIVATE): Map<String, String> {
         homeDirectory.mkdirs()
         tempDirectory.mkdirs()
+        check(skillsDirectory.isDirectory || skillsDirectory.mkdirs()) { "无法创建用户级技能目录" }
+        ensureSkillsLink()
         val environment = linkedMapOf<String, String>()
         INHERITED_KEYS.forEach { key -> inherited[key]?.let { environment[key] = it } }
         environment.putIfAbsent("PATH", DEFAULT_PATH)
@@ -41,6 +47,7 @@ class BuiltinExecEnvironment(
         environment["NEXARA_WORKSPACE"] = workspace.path
         environment["NEXARA_WORKSPACE_KIND"] = kind
         environment["NEXARA_BACKEND"] = "builtin"
+        environment["NEXARA_SKILLS"] = skillsDirectory.absolutePath
         environment["LANG"] = "C.UTF-8"
         environment.putAll(tailnetEnvironment())
         if (python.isAvailable) {
@@ -60,6 +67,25 @@ class BuiltinExecEnvironment(
             }
         }
         return environment
+    }
+
+    /** 链接冲突只记录状态；保留用户已有文件、目录与符号链接。 */
+    private fun ensureSkillsLink() {
+        val parent = File(homeDirectory, ".agents").toPath()
+        val link = parent.resolve("skills")
+        try {
+            if (!Files.exists(parent, NOFOLLOW_LINKS)) Files.createDirectory(parent)
+            if (!Files.isDirectory(parent, NOFOLLOW_LINKS)) {
+                logger.warning("HOME 下 .agents 不是普通目录，保留现状；请通过 NEXARA_SKILLS 访问用户级技能")
+                return
+            }
+            if (!Files.exists(link, NOFOLLOW_LINKS)) Files.createSymbolicLink(link, skillsDirectory.absoluteFile.toPath())
+            if (!Files.isSymbolicLink(link) || !Files.isSameFile(link, skillsDirectory.toPath())) {
+                logger.warning("HOME 下 .agents/skills 已存在且不指向用户级技能目录，保留现状；请通过 NEXARA_SKILLS 访问")
+            }
+        } catch (_: Exception) {
+            logger.warning("无法维护 HOME 下 .agents/skills 链接，保留现状；请通过 NEXARA_SKILLS 访问用户级技能")
+        }
     }
 
     /** 直接运行解释器时补上库搜索路径。 */
@@ -88,13 +114,15 @@ class BuiltinExecEnvironment(
         private val INHERITED_KEYS = listOf(
             "PATH", "ANDROID_ROOT", "ANDROID_DATA", "ANDROID_ART_ROOT", "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT",
         )
+        private val logger = Logger.getLogger(BuiltinExecEnvironment::class.java.name)
 
-        fun create(context: Context, pipEnabled: Boolean): BuiltinExecEnvironment {
+        fun create(context: Context, pipEnabled: Boolean, skillsDirectory: File = File(context.filesDir, "agent_skills")): BuiltinExecEnvironment {
             val bundle = SystemCaBundle(File(context.noBackupFilesDir, "exec-ca"))
             return BuiltinExecEnvironment(
                 python = PackagedPython.from(context),
                 homeDirectory = File(context.filesDir, "exec-home"),
                 tempDirectory = File(context.cacheDir, "exec-tmp"),
+                skillsDirectory = skillsDirectory,
                 caBundle = bundle::ensure,
                 userPackages = if (pipEnabled) {
                     PythonUserPackages(

@@ -671,14 +671,18 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
         ensureAutomaticConsent(request, session.executionMode.ifEmpty { "semi" })
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        val policyPendingIds = contentStrategy
-            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
-            .toSet()
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
             call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }) }
         }
+        // UUID 必须先还原当前虚拟路径；技能目录变更在全自动模式也不能跳过审批。
+        val policyPendingIds = contentStrategy
+            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
+            .toMutableSet().apply {
+                calls.filter { com.promenar.nexara.domain.tool.ToolArgumentApprovalRules.requiresExplicitApproval(it.name, it.arguments, targets[it.id]) }
+                    .forEach { add(it.id) }
+            }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
             val target = targets[id]

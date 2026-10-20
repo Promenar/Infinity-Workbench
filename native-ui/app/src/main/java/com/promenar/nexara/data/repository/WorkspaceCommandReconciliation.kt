@@ -181,8 +181,8 @@ object WorkspaceReconcilePlanner {
         val candidates = after.nodes.filter { (path, node) ->
             node.kind != WorkspaceScanKind.UNSUPPORTED && path !in kept
         }.keys.filter { path ->
-            // 顶层 mnt 是挂载命名空间；命令新建的同名目录会被挂载遮蔽，不入索引。
-            val mountNamespace = path == "/mnt" || path.startsWith("/mnt/")
+            // 保留虚拟根会遮蔽同名物理目录；命令新建的条目不进入虚拟工作区索引。
+            val mountNamespace = path == "/mnt" || path.startsWith("/mnt/") || path == "/skills" || path.startsWith("/skills/")
             if (mountNamespace) reserved += path
             !mountNamespace
         }.sortedWith(compareBy({ it.count { char -> char == '/' } }, { it }))

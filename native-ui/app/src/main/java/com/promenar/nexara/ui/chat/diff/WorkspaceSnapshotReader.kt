@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.diff
 
 import com.promenar.nexara.data.repository.WorkspaceFileTooLargeException
+import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalWorkspaceAccess
@@ -26,7 +27,7 @@ fun interface PrivateWorkspaceReader {
 
 /**
  * 按工具面向模型的虚拟路径读取文件内容快照，只读、不改变工作区状态。
- * - [rooted] 为真（会话绑定自选目录工作区）或路径位于 `/mnt/…` 时经 [mounts] 的目录后端读取；
+ * - [rooted] 为真（会话绑定自选目录工作区）或路径位于 `/mnt/…`、`/skills` 时经 [mounts] 的目录后端读取；
  * - 否则读取会话私有工作区（Room 树），定位用 [namespace]、读取用 [privateWorkspace] 的物理根。
  *
  * [namespace] 应与执行工具时使用的仓库一致（挂载时为带挂载命名空间的仓库），保证路径解析与工具相同。
@@ -42,7 +43,7 @@ class WorkspaceSnapshotReader(
     private val maxBytes: Long = FileChangeSummaries.SNAPSHOT_MAX_BYTES,
     private val privateReader: PrivateWorkspaceReader = PrivateWorkspaceReader.Default,
 ) {
-    private fun external(path: String) = rooted || path == "/mnt" || path.startsWith("/mnt/")
+    private fun external(path: String) = rooted || ExternalMountPaths.isMountedPath(path)
 
     suspend fun read(path: String): CapturedSnapshot = withContext(Dispatchers.IO) {
         try {

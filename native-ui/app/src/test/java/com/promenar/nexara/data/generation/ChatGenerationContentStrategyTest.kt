@@ -365,6 +365,23 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
+    fun `全自动模式仍审批两级技能写入但读取和相似路径放行`() {
+        val strategy = strategy(mapOf("write_file" to ToolRisk.FILE_WRITE, "read_file" to ToolRisk.SAFE_READ))
+        val calls = listOf(
+            ToolCall("user", "write_file", """{"path":"/skills/demo/SKILL.md"}"""),
+            ToolCall("project", "write_file", """{"path":"/.agents/skills/demo/SKILL.md"}"""),
+            ToolCall("create", "create_directory", """{"parentPath":"/.agents","name":"skills"}"""),
+            ToolCall("move-source", "move_file", """{"path":"/skills/a","newParentPath":"/docs"}"""),
+            ToolCall("move-target", "move_file", """{"path":"/a","newParentPath":"/.agents/skills"}"""),
+            ToolCall("delete-parent", "delete_file", """{"path":"/.agents"}"""),
+            ToolCall("read", "read_file", """{"path":"/skills/demo/SKILL.md"}"""),
+            ToolCall("other", "write_file", """{"path":"/skills-other/demo/SKILL.md"}"""),
+        )
+        assertThat(strategy.pendingApprovalIds(calls, "auto"))
+            .containsExactly("user", "project", "create", "move-source", "move-target", "delete-parent").inOrder()
+    }
+
+    @Test
     fun `半自动模式下可能携带数据的 web_fetch 需要审批，普通网址放行`() {
         val strategy = strategy(mapOf("web_fetch" to ToolRisk.SAFE_READ))
         fun fetch(id: String, url: String) = ToolCall(id, "web_fetch", """{"url":"$url"}""")
