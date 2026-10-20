@@ -326,6 +326,7 @@ class ToolExecutor internal constructor(
             taskStepId = currentFocusId,
             // 改动摘要只进入界面步骤，不进入下方发给模型的工具结果与账本。
             fileChanges = if (failed) null else result.fileChanges?.takeIf { it.isNotEmpty() }?.withinHunkBudget(),
+            media = if (failed) null else result.media?.takeIf { it.isNotEmpty() },
         ))
 
         hooks.beforeLedgerFinish()

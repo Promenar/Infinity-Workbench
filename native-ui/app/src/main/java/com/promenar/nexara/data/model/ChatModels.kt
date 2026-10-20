@@ -302,6 +302,10 @@ data class ExecutionStep(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val fileChanges: List<FileChangeSummary>? = null,
+    /** 工具产出或引用的工作区媒体，供界面渲染卡片；为空时不写入 JSON。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val media: List<com.promenar.nexara.domain.media.MediaRef>? = null,
 )
 
 @Serializable
@@ -321,6 +325,10 @@ data class ToolResult(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val fileChanges: List<FileChangeSummary>? = null,
+    /** 工具产出或引用的工作区媒体，只复制到执行步骤供界面渲染，不进入发给模型的 [content]。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val media: List<com.promenar.nexara.domain.media.MediaRef>? = null,
 )
 
 @Serializable
