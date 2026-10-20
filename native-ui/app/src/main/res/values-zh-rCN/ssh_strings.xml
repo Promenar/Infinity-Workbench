@@ -53,7 +53,8 @@
     <string name="ssh_agent_host_key_message">Agent 请求连接 %1$s（%2$s）。</string>
     <string name="ssh_agent_section">Agent 协助</string>
     <string name="ssh_agent_manage_title">允许 Agent 管理 SSH 主机</string>
-    <string name="ssh_agent_manage_summary">默认关闭</string>
+    <string name="ssh_agent_manage_summary_on">每次变更都需你审批</string>
+    <string name="ssh_agent_manage_summary_off">Agent 只能连接已配置的主机</string>
     <string name="ssh_agent_manage_description">开启后，Agent 可新增、修改、删除主机，并为密码主机配置免密登录；每次变更都需你逐次审批，密码与主机指纹始终由你亲自输入和确认。</string>
     <string name="ssh_cancel">取消</string>
     <string name="ssh_forward_configure">本地端口转发</string>

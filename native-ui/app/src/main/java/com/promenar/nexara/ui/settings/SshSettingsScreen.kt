@@ -406,7 +406,11 @@ internal fun SshSettingsContent(
                 ) {
                     SettingsToggle(
                         title = stringResource(R.string.ssh_agent_manage_title),
-                        description = stringResource(R.string.ssh_agent_manage_summary),
+                        // 副标题描述当前状态，避免开关已打开时仍显示“默认关闭”。
+                        description = stringResource(
+                            if (state.agentManagementEnabled) R.string.ssh_agent_manage_summary_on
+                            else R.string.ssh_agent_manage_summary_off,
+                        ),
                         checked = state.agentManagementEnabled,
                         onCheckedChange = actions.onAgentManagementChange,
                         icon = Icons.Rounded.SmartToy,

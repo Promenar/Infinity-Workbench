@@ -1,10 +1,15 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -60,7 +65,15 @@ fun NexaraSettingsPageLayout(
                     navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
-            )
+            ) else {
+                // 无顶栏时用页面背景色垫住状态栏，滚动内容不会从状态栏图标下方穿过。
+                Spacer(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars)
+                        .background(MaterialTheme.colorScheme.background),
+                )
+            }
         },
     ) { scaffoldPadding ->
         content(

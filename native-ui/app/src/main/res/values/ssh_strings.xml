@@ -53,7 +53,8 @@
     <string name="ssh_agent_host_key_message">The agent wants to connect to %1$s (%2$s).</string>
     <string name="ssh_agent_section">Agent assistance</string>
     <string name="ssh_agent_manage_title">Let agents manage SSH hosts</string>
-    <string name="ssh_agent_manage_summary">Off by default</string>
+    <string name="ssh_agent_manage_summary_on">Every change needs your approval</string>
+    <string name="ssh_agent_manage_summary_off">Agents can only connect to configured hosts</string>
     <string name="ssh_agent_manage_description">When on, agents can add, edit and delete hosts and set up key login for password hosts. Every change needs your approval, and you always enter passwords and confirm fingerprints yourself.</string>
     <string name="ssh_cancel">Cancel</string>
     <string name="ssh_forward_configure">Local port forwarding</string>
