@@ -210,6 +210,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         _skillRestoreNotice.value = null
     }
 
+    /** 启动时待恢复事务确定性失败且已完整回滚；界面告知数据保持原状后清除。 */
+    private val _restoreNotAppliedNotice = MutableStateFlow(false)
+    val restoreNotAppliedNotice: StateFlow<Boolean> = _restoreNotAppliedNotice.asStateFlow()
+
+    fun consumeRestoreNotAppliedNotice() {
+        _restoreNotAppliedNotice.value = false
+    }
+
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val modelCatalogUpdater by lazy {
         com.promenar.nexara.data.model.catalog.ModelCatalogUpdater.create(this) { catalog ->
@@ -1077,6 +1085,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     runtime.restoreResult.value?.skills
                         ?.takeIf { it.skippedGitRepositories.isNotEmpty() || it.skippedSymbolicLinks > 0 }
                         ?.let { _skillRestoreNotice.value = it }
+                    if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
                     _startupState.value = BackupStartupState.Ready
                     startModelCatalogUpdates()
                 } else {

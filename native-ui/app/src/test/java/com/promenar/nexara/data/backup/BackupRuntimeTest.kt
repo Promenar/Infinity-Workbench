@@ -159,6 +159,43 @@ class BackupRuntimeTest {
         assertThat(source.restoreIds).containsExactly("skills-result")
     }
 
+    @Test
+    fun `恢复失败仅在数据源证明未改动数据时释放待恢复记录`() = runBlocking {
+        val codec = object : BackupPackageCodec {
+            override fun encode(snapshot: BackupSnapshot, options: BackupOptions) = error("unused")
+            override fun decode(bytes: ByteArray, password: CharArray?) = ValidatedBackup(
+                BackupManifest(1, 1, "test", 1, emptyList(), false, false),
+            )
+        }
+        for (settled in listOf(false, true)) {
+            val txId = "123e4567-e89b-12d3-a456-42661417402${if (settled) 1 else 0}"
+            val store = FakePendingStore(txId, byteArrayOf(9), null)
+            val source = FailingRestoreDataSource(settled)
+            val runtime = BackupRuntime(source, store, codec)
+
+            val expected = if (settled) BackupStartupState.Ready else BackupStartupState.Blocked
+            assertThat(runtime.recoverBeforeWriters()).isEqualTo(expected)
+            assertThat(store.isPresent).isEqualTo(!settled)
+            assertThat(runtime.restoreNotApplied.value).isEqualTo(settled)
+            assertThat(source.settledQueries).containsExactly(txId)
+        }
+    }
+
+    private class FailingRestoreDataSource(private val settled: Boolean) : BackupDataSource {
+        val settledQueries = mutableListOf<String>()
+        override suspend fun snapshot(content: Set<BackupContent>) = error("unused")
+        override suspend fun restore(validated: ValidatedBackup) = error("stable operation id required")
+        override suspend fun restore(validated: ValidatedBackup, operationId: String) {
+            validated.close()
+            throw BackupValidationException("确定性恢复失败")
+        }
+        override suspend fun isRestoreSettledWithoutApplying(operationId: String): Boolean {
+            settledQueries += operationId
+            return settled
+        }
+        override suspend fun recoverInterruptedRestore() = Unit
+    }
+
     private class FakeDataSource(
         private val recover: suspend () -> Unit,
     ) : BackupDataSource {

@@ -1998,7 +1998,7 @@ private class FakeSecretStore private constructor(private val state: State) : Tr
     )
 }
 
-private class TestRestoreFileOperations : RestoreFileOperations {
+internal class TestRestoreFileOperations : RestoreFileOperations {
     var failDeleteAt: Int? = null
     var failFinalRmdirOnce: Boolean = false
     var beforeDelete: ((Path) -> Unit)? = null

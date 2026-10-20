@@ -153,6 +153,11 @@ interface BackupDataSource {
         return result
     }
     suspend fun hasCompletedRestore(operationId: String): Boolean = false
+    /**
+     * 失败的 restore 是否已确定未改动现有数据：没有残留 restore journal，且该 operationId 没有完成回执。
+     * 只有能证明此事实的实现才可返回 true；默认 false 让调用方保持 fail closed。
+     */
+    suspend fun isRestoreSettledWithoutApplying(operationId: String): Boolean = false
     suspend fun recoverInterruptedRestore()
 }
 

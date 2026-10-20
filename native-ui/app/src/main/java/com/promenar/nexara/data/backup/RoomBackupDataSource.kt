@@ -251,6 +251,14 @@ class RoomBackupDataSource(
         hasCompletedRestoreLocked(operationId)
     }
 
+    // journal 只在补偿全部成功（或提交收尾完成并写回执）后删除；无 journal 且无回执即证明现有数据未被改动。
+    override suspend fun isRestoreSettledWithoutApplying(operationId: String): Boolean = restoreMutex.withLock {
+        withContext(Dispatchers.IO) {
+            requireOperationId(operationId)
+            journal.read() == null && !hasCompletedRestoreLocked(operationId)
+        }
+    }
+
     private suspend fun recoverInterruptedRestoreLocked() = withContext(Dispatchers.IO + NonCancellable) {
         var record = journal.read() ?: return@withContext
         record.skills?.let { skills ->

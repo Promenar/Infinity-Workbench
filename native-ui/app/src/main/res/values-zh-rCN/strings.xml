@@ -122,6 +122,9 @@
     <string name="startup_blocked_title">安全恢复需要处理</string>
     <string name="startup_blocked_message">Nexara 暂时无法完成本地数据恢复。你的数据仍受保护，应用功能保持锁定。</string>
     <string name="startup_blocked_icon_description">安全恢复已阻塞</string>
+    <string name="restore_not_applied_title">备份未能恢复</string>
+    <string name="restore_not_applied_message">Nexara 未能完成本次备份恢复，已撤销全部改动，数据保持恢复前的原状。如需再次尝试，可在“设置 → 备份”中重新导入。</string>
+    <string name="restore_not_applied_dismiss">知道了</string>
     <string name="startup_dual_database_title">发现两份本地数据库</string>
     <string name="startup_dual_database_icon_description">需要合并两份本地数据库</string>
     <string name="startup_dual_database_action">保留两份并恢复</string>
