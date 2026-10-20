@@ -30,6 +30,19 @@ class AgentSkillStoreTest {
     }
 
     @Test
+    fun `find sees skills changed on disk by other writers`() {
+        store.installMarkdown(skillMd("existing"))
+        assertThat(store.list().map { it.metadata.name }).containsExactly("existing")
+
+        // Agent 或技能目录视图直接改写 /skills 后，设置页编辑仍要读到磁盘上的当前内容。
+        java.io.File(root, "agent-made").apply { mkdirs() }.resolve("SKILL.md").writeText(skillMd("agent-made", body = "Fresh."))
+        java.io.File(root, "existing").deleteRecursively()
+
+        assertThat(store.readDocument("agent-made")!!.body).isEqualTo("Fresh.")
+        assertThat(store.find("existing")).isNull()
+    }
+
+    @Test
     fun `markdown install is enabled listed and readable`() {
         store.installMarkdown(skillMd("release-notes", body = "Write notes."))
 

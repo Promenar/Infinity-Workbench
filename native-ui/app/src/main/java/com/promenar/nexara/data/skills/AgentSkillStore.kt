@@ -48,7 +48,9 @@ class AgentSkillStore(
 
     fun enabledSkills(): List<AgentSkillMetadata> = list().filter { it.enabled }.map { it.metadata }
 
-    fun find(name: String): InstalledAgentSkill? = list().firstOrNull { it.metadata.name == name }
+    /** 按名称查找前先从磁盘重载：技能目录也会被 Agent 与技能目录视图直接修改。 */
+    fun find(name: String): InstalledAgentSkill? =
+        synchronized(lock) { reload(); _skills.value }.firstOrNull { it.metadata.name == name }
 
     fun setEnabled(name: String, enabled: Boolean) = synchronized(lock) {
         val current = enabledNames().toMutableSet()
