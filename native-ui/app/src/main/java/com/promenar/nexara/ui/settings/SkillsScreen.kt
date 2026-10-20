@@ -140,12 +140,17 @@ fun SkillsScreen(
     onOpenTermux: () -> Unit = {},
     onOpenGitCredentials: () -> Unit = {},
     onOpenTailscale: () -> Unit = {},
+    onOpenAllowlist: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val agentSkillsViewModel: AgentSkillsViewModel =
         viewModel(factory = AgentSkillsViewModel.factory(context.applicationContext as android.app.Application))
-    val agentSkills by agentSkillsViewModel.skills.collectAsState()
+    val skillCatalogViewModel: com.promenar.nexara.ui.skills.SkillCatalogViewModel =
+        viewModel(factory = com.promenar.nexara.ui.skills.SkillCatalogViewModel.factory(context.applicationContext as android.app.Application))
+    androidx.compose.runtime.LaunchedEffect(Unit) { skillCatalogViewModel.bind(null) }
+    val skillCatalogState by skillCatalogViewModel.state.collectAsState()
+    val skillCatalogError by skillCatalogViewModel.error.collectAsState()
     val agentSkillEvent by agentSkillsViewModel.event.collectAsState()
     var agentSkillEditor by remember { mutableStateOf<AgentSkillEditorState?>(null) }
     val agentSkillScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -153,6 +158,8 @@ fun SkillsScreen(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { agentSkillsViewModel.import(it) } }
 
+    val allowlistEntries by (context.applicationContext as com.promenar.nexara.NexaraApplication)
+        .toolAllowlistStore.entries.collectAsState()
     val presetSkills by viewModel.skills.collectAsState()
     val userSkills by viewModel.userSkills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
@@ -220,6 +227,7 @@ fun SkillsScreen(
                         retryLimit = retryLimit,
                         gitCredentialCount = gitCredentialCount,
                         tailscaleState = tailscaleState,
+                        allowlistCount = allowlistEntries.size,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -237,6 +245,7 @@ fun SkillsScreen(
                         onOpenTermux = onOpenTermux,
                         onOpenGitCredentials = onOpenGitCredentials,
                         onOpenTailscale = onOpenTailscale,
+                        onOpenAllowlist = onOpenAllowlist,
                     ),
                 )
 
@@ -260,20 +269,24 @@ fun SkillsScreen(
                     )
                     1 -> Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
                         AgentSkillsSection(
-                            skills = agentSkills,
-                            onToggle = { name, enabled -> agentSkillsViewModel.setEnabled(name, enabled) },
-                            onOpen = { name ->
-                                agentSkillScope.launch {
-                                    val document = agentSkillsViewModel.loadDocument(name) ?: return@launch
-                                    agentSkillEditor = AgentSkillEditorState(
-                                        name = name,
-                                        description = document.metadata.description,
-                                        body = document.body,
-                                        allowedTools = document.metadata.allowedTools,
-                                    )
-                                }
-                            },
-                            onDelete = agentSkillsViewModel::delete,
+                            skills = skillCatalogState.snapshot?.user.orEmpty(),
+                            actions = com.promenar.nexara.ui.skills.SkillCatalogActions(
+                                onToggle = { skill, enabled -> skillCatalogViewModel.setEnabled(skill, enabled) },
+                                onAcknowledge = skillCatalogViewModel::acknowledgeModified,
+                                onDelete = skillCatalogViewModel::delete,
+                                loadDocument = skillCatalogViewModel::loadDocument,
+                                onEdit = { skill ->
+                                    agentSkillScope.launch {
+                                        val document = agentSkillsViewModel.loadDocument(skill.name) ?: return@launch
+                                        agentSkillEditor = AgentSkillEditorState(
+                                            name = skill.name,
+                                            description = document.metadata.description,
+                                            body = document.body,
+                                            allowedTools = document.metadata.allowedTools,
+                                        )
+                                    }
+                                },
+                            ),
                             onImport = {
                                 importSkillLauncher.launch(
                                     arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
@@ -527,8 +540,20 @@ fun SkillsScreen(
         )
         is AgentSkillEvent.Installed -> androidx.compose.runtime.LaunchedEffect(event) {
             agentSkillsViewModel.consumeEvent()
+            // 导入与应用内编辑经技能包存储写入同一目录，完成后重扫技能目录。
+            skillCatalogViewModel.bind(null)
         }
         null -> Unit
+    }
+
+    skillCatalogError?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = skillCatalogViewModel::consumeError,
+            text = { Text(stringResource(R.string.skills_runtime_error, message)) },
+            confirmButton = {
+                TextButton(onClick = skillCatalogViewModel::consumeError) { Text(stringResource(R.string.shared_btn_close)) }
+            },
+        )
     }
 
     if (showSearchConfig) {

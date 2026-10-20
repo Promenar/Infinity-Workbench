@@ -75,7 +75,6 @@ class ReleaseReachableUiLocalizationContractTest {
         "recycle_bin_original_path",
         "recycle_bin_restore",
         "recycle_bin_empty_state",
-        "sheet_tool_economy_mode",
         "sheet_tool_gemini_grounding",
         "sheet_settings_rerank_unavailable",
         "retrieval_rerank_model_unconfigured",

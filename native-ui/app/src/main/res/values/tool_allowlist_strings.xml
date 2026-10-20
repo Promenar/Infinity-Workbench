@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_allowlist_title">Approval allowlist</string>
+    <string name="tool_allowlist_entry">Approval allowlist</string>
+    <string name="tool_allowlist_entry_empty">Nothing is always allowed</string>
+    <plurals name="tool_allowlist_entry_count">
+        <item quantity="one">%d target is always allowed</item>
+        <item quantity="other">%d targets are always allowed</item>
+    </plurals>
+    <string name="tool_allowlist_section">Always allowed</string>
+    <string name="tool_allowlist_footer">Added with “Always allow” on an approval card. Matching calls run without asking in every session; file targets apply only to the workspace they belong to.</string>
+    <string name="tool_allowlist_empty">Nothing yet. Choose “Always allow” on an approval card to skip asking for the same tool and target.</string>
+    <string name="tool_allowlist_scope_global">All sessions</string>
+    <string name="tool_allowlist_scope_workspace">Workspace %1$s</string>
+    <string name="tool_allowlist_scope_workspace_removed">Removed workspace</string>
+    <string name="tool_allowlist_scope_session">One session\'s private workspace</string>
+    <string name="tool_allowlist_scope_mount">One mounted folder</string>
+    <string name="tool_allowlist_revoke">Revoke</string>
+    <string name="tool_allowlist_revoke_cd">Revoke %1$s</string>
+    <string name="tool_allowlist_clear">Clear all</string>
+    <string name="tool_allowlist_clear_title">Clear the allowlist?</string>
+    <string name="tool_allowlist_clear_message">Every tool call that needs approval will ask again.</string>
+</resources>

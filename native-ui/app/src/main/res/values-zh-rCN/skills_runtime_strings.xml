@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="skills_runtime_section_user">用户技能</string>
+    <string name="skills_runtime_section_project">项目技能</string>
+    <string name="skills_runtime_user_footer">所有 Agent 与会话共用，位于 /skills；可以让 Agent 在其中新建、修改技能。</string>
+    <string name="skills_runtime_project_footer">来自当前工作区的 .agents/skills，信任后模型才能使用。</string>
+    <string name="skills_runtime_user_empty">还没有技能。可以让 Agent 在 /skills 中创建，或在设置中导入。</string>
+    <string name="skills_runtime_project_empty">当前工作区的 .agents/skills 中没有技能。</string>
+    <string name="skills_runtime_status_enabled">已启用</string>
+    <string name="skills_runtime_status_disabled">已停用</string>
+    <string name="skills_runtime_status_pending">待信任</string>
+    <string name="skills_runtime_status_broken">不可用：%1$s</string>
+    <string name="skills_runtime_status_broken_short">不可用</string>
+    <string name="skills_runtime_status_modified">内容已修改，待确认</string>
+    <string name="skills_runtime_status_explicit_only">仅在用 $%1$s 点名时使用</string>
+    <string name="skills_runtime_toggle_cd">启用 %1$s</string>
+    <string name="skills_runtime_trust">信任</string>
+    <string name="skills_runtime_trust_title">信任技能 %1$s？</string>
+    <string name="skills_runtime_trust_message">%1$s 中的指令会在当前工作区提供给模型；内容变化后需要重新信任。</string>
+    <string name="skills_runtime_acknowledge">确认修改</string>
+    <string name="skills_runtime_detail_path">路径</string>
+    <string name="skills_runtime_detail_status">状态</string>
+    <string name="skills_runtime_detail_files">附带文件</string>
+    <string name="skills_runtime_document_unavailable">无法读取 SKILL.md。</string>
+    <string name="skills_runtime_delete_title">删除技能 %1$s？</string>
+    <string name="skills_runtime_delete_message">%1$s 会移入应用回收区，30 天后清除。</string>
+    <string name="skills_runtime_error">技能操作失败：%1$s</string>
+    <string name="sheet_tool_section_usage">工具使用</string>
+    <string name="sheet_tool_tools_enabled">启用工具</string>
+    <string name="sheet_tool_tools_enabled_desc">关闭后，本会话不向模型提供任何工具。</string>
+    <string name="sheet_tool_time_injection_desc">每次请求都附带当前日期时间。</string>
+    <string name="skills_runtime_edit">编辑</string>
+</resources>

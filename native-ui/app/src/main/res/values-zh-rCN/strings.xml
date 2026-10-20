@@ -613,7 +613,6 @@
     <string name="sheet_execution_mode_auto">自动：所有工具自动运行</string>
     <string name="sheet_execution_mode_semi">半自动：写入文件和高风险工具需要批准</string>
     <string name="sheet_execution_mode_manual">手动：所有工具都需要批准</string>
-    <string name="sheet_tool_search_retrieval">搜索与检索</string>
     <string name="sheet_tool_code_analysis">代码分析</string>
     <string name="sheet_tool_web_search">Web 搜索</string>
     <string name="sheet_tool_filesystem_server">文件系统服务器</string>
@@ -1477,7 +1476,6 @@
     <string name="agent_avatar_edit">编辑智能体头像</string>
 
     <!-- 发行可达的检索能力状态 -->
-    <string name="sheet_tool_economy_mode">Token 节约模式</string>
     <string name="sheet_tool_gemini_grounding">Gemini 联网 Grounding</string>
     <string name="sheet_settings_rerank_unavailable">未配置默认重排模型，重排序已禁用。</string>
     <string name="retrieval_rerank_model_unconfigured">未配置模型</string>

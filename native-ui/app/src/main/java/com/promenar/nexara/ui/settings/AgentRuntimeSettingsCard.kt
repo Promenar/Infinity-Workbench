@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
@@ -33,6 +34,7 @@ internal data class SkillsSettingsVisualState(
     val retryLimit: Int = com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
     val gitCredentialCount: Int? = null,
     val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
+    val allowlistCount: Int? = null,
 )
 
 internal data class SkillsSettingsVisualActions(
@@ -48,6 +50,7 @@ internal data class SkillsSettingsVisualActions(
     val onOpenTermux: () -> Unit = {},
     val onOpenGitCredentials: () -> Unit = {},
     val onOpenTailscale: () -> Unit = {},
+    val onOpenAllowlist: () -> Unit = {},
 )
 
 /** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
@@ -151,6 +154,18 @@ internal fun AgentRuntimeSettingsCard(
             title = stringResource(R.string.p0_reset_consent),
             subtitle = stringResource(R.string.tools_reset_consent_desc),
             onClick = actions.onResetConsent,
+        )
+        NexaraSettingsItem(
+            icon = ToolAllowlistEntryIcon,
+            title = stringResource(R.string.tool_allowlist_entry),
+            subtitle = when (val count = state.allowlistCount) {
+                null -> stringResource(R.string.settings_status_loading)
+                0 -> stringResource(R.string.tool_allowlist_entry_empty)
+                else -> pluralStringResource(R.plurals.tool_allowlist_entry_count, count, count)
+            },
+            onClick = actions.onOpenAllowlist,
+            showChevron = true,
+            modifier = Modifier.testTag("tool_allowlist_entry"),
         )
     }
 }

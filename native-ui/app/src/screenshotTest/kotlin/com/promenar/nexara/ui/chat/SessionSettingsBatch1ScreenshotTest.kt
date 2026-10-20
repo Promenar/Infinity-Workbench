@@ -13,6 +13,13 @@ import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.skills.DiscoveredSkill
+import com.promenar.nexara.data.skills.SkillScope
+import com.promenar.nexara.data.skills.SkillSnapshot
+import com.promenar.nexara.data.skills.SkillStatus
+import com.promenar.nexara.ui.skills.SessionSkillsSections
+import com.promenar.nexara.ui.skills.SkillCatalogActions
+import com.promenar.nexara.ui.skills.SkillCatalogUiState
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.*
 
@@ -37,6 +44,65 @@ fun sessionParamsBatch1Preview() = SessionFrame(1) { SessionParamsContent(Infere
 fun sessionToolsBatch1Preview() = SessionFrame(2) { SessionToolsContent() }
 
 @PreviewTest
+@Preview(name = "会话工具 技能 深中411", widthDp = 411, heightDp = 1200, locale = "zh-rCN")
+@Preview(name = "会话工具 技能 深中360 字号130", widthDp = 360, heightDp = 1500, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun sessionToolsSkillsPreview() = SessionFrame(2) { SessionToolsSkillsSample() }
+
+@PreviewTest
+@Preview(name = "会话工具 技能 浅中411", widthDp = 411, heightDp = 1200, locale = "zh-rCN")
+@Composable
+fun sessionToolsSkillsLightPreview() = SessionFrame(2, light = true) { SessionToolsSkillsSample() }
+
+@Composable
+private fun SessionToolsSkillsSample() {
+    SessionToolsContent(skillsSection = {
+        SessionSkillsSections(
+            SkillCatalogUiState(
+                loading = false,
+                projectAvailable = true,
+                snapshot = SkillSnapshot(
+                    workspace = null,
+                    skills = listOf(
+                        previewSkill("pdf-report", "把分析结果整理为带目录与图表的 PDF 报告。"),
+                        previewSkill("git-release", "按仓库约定生成版本说明并打标签。", modified = true),
+                        previewSkill("meeting-notes", "从会议录音转写中提炼决议与待办。", status = SkillStatus.DISABLED, implicit = false),
+                        previewSkill("android-build", "构建并校验两个发行渠道的 APK。", scope = SkillScope.PROJECT),
+                        previewSkill("db-migration", "为 Room 迁移编写测试并核对 schema。", scope = SkillScope.PROJECT, status = SkillStatus.PENDING_TRUST),
+                        previewSkill("broken-skill", "", scope = SkillScope.PROJECT, status = SkillStatus.BROKEN, reason = "name 与目录名不一致"),
+                    ),
+                ),
+            ),
+            SkillCatalogActions(),
+        )
+    })
+}
+
+private fun previewSkill(
+    name: String,
+    description: String,
+    scope: SkillScope = SkillScope.USER,
+    status: SkillStatus = SkillStatus.ENABLED,
+    modified: Boolean = false,
+    implicit: Boolean = true,
+    reason: String? = null,
+) = DiscoveredSkill(
+    id = "${scope.name.lowercase()}:$name",
+    scope = scope,
+    name = name,
+    description = description,
+    displayName = null,
+    shortDescription = null,
+    virtualDir = if (scope == SkillScope.USER) "/skills/$name" else "/.agents/skills/$name",
+    files = emptyList(),
+    status = status,
+    modifiedSinceConfirmed = modified,
+    allowImplicitInvocation = implicit,
+    brokenReason = reason,
+    metadata = null,
+)
+
+@PreviewTest
 @Preview(name = "会话上下文 深中411", widthDp = 411, heightDp = 1120, locale = "zh-rCN")
 @Preview(name = "会话上下文 深中360", widthDp = 360, heightDp = 1120, locale = "zh-rCN")
 @Preview(name = "会话上下文 深中130", widthDp = 411, heightDp = 1400, locale = "zh-rCN", fontScale = 1.3f)
@@ -44,8 +110,8 @@ fun sessionToolsBatch1Preview() = SessionFrame(2) { SessionToolsContent() }
 fun sessionContextBatch1Preview() = SessionFrame(3) { SessionContextPanelContent() }
 
 @Composable
-private fun SessionFrame(index: Int, content: @Composable () -> Unit) {
-    NexaraTheme(preferences = NexaraThemePreferences(mode = NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
+private fun SessionFrame(index: Int, light: Boolean = false, content: @Composable () -> Unit) {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = if (light) NexaraThemeMode.LIGHT else NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
             Column(Modifier.fillMaxSize()) {
                 Text(stringResource(R.string.sheet_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))

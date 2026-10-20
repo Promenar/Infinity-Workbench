@@ -1,0 +1,326 @@
+package com.promenar.nexara.ui.skills
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
+import com.promenar.nexara.data.skills.DiscoveredSkill
+import com.promenar.nexara.data.skills.SkillScope
+import com.promenar.nexara.data.skills.SkillStatus
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.theme.forReading
+
+/** 技能行与详情面板的操作回调；会话面板与设置页共用。 */
+class SkillCatalogActions(
+    val onToggle: (DiscoveredSkill, Boolean) -> Unit = { _, _ -> },
+    val onTrust: (DiscoveredSkill) -> Unit = {},
+    val onAcknowledge: (DiscoveredSkill) -> Unit = {},
+    val onDelete: (DiscoveredSkill) -> Unit = {},
+    /** 非 null 时，用户级技能的详情面板提供“编辑”，由调用方打开应用内编辑器。 */
+    val onEdit: ((DiscoveredSkill) -> Unit)? = null,
+    val loadDocument: suspend (DiscoveredSkill) -> String? = { null },
+)
+
+/**
+ * 一个来源级别的技能分组：每行显示名称、描述与需要用户处理的状态。
+ * 点按打开详情；行尾为启用开关，待信任技能为“信任”按钮，损坏技能为错误图标。
+ */
+@Composable
+fun SkillScopeSection(
+    title: String,
+    footer: String?,
+    skills: List<DiscoveredSkill>,
+    emptyMessage: String,
+    actions: SkillCatalogActions,
+    modifier: Modifier = Modifier,
+    trailingRows: @Composable () -> Unit = {},
+) {
+    var opened by remember { mutableStateOf<DiscoveredSkill?>(null) }
+    var pendingTrust by remember { mutableStateOf<DiscoveredSkill?>(null) }
+    NexaraSettingsSection(
+        title = title,
+        footer = if (skills.isEmpty()) emptyMessage else footer,
+        modifier = modifier,
+    ) {
+        skills.forEach { skill ->
+            SkillRow(
+                skill = skill,
+                onOpen = { opened = skill },
+                onToggle = { actions.onToggle(skill, it) },
+                onTrust = { pendingTrust = skill },
+            )
+        }
+        trailingRows()
+    }
+
+    opened?.let { skill ->
+        // 详情随最新扫描结果刷新：同一 id 的技能状态变化后详情面板显示新状态。
+        val current = skills.firstOrNull { it.id == skill.id }
+        if (current == null) {
+            opened = null
+        } else {
+            SkillDetailSheet(
+                skill = current,
+                actions = actions,
+                onRequestTrust = { pendingTrust = current },
+                onDismiss = { opened = null },
+            )
+        }
+    }
+    pendingTrust?.let { skill ->
+        SkillTrustDialog(
+            skill = skill,
+            onConfirm = {
+                actions.onTrust(skill)
+                pendingTrust = null
+            },
+            onDismiss = { pendingTrust = null },
+        )
+    }
+}
+
+@Composable
+private fun SkillRow(
+    skill: DiscoveredSkill,
+    onOpen: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onTrust: () -> Unit,
+) {
+    val title = skill.displayName ?: skill.name
+    val description = (skill.shortDescription ?: skill.description).replace('\n', ' ').trim()
+    val note = skillStatusNote(skill)
+    val subtitle = listOfNotNull(note, description.takeIf(String::isNotEmpty)).joinToString(" · ").ifEmpty { null }
+    // 开关先在本地翻转，避免目录重扫完成前的回弹。
+    var checked by remember(skill.id, skill.status) { mutableStateOf(skill.status == SkillStatus.ENABLED) }
+    NexaraSettingsItem(
+        icon = if (skill.scope == SkillScope.USER) Icons.Rounded.AutoAwesome else Icons.Rounded.FolderSpecial,
+        title = title,
+        subtitle = subtitle,
+        subtitleMaxLines = 2,
+        onClick = onOpen,
+        modifier = Modifier.testTag("skill_row:${skill.id}"),
+        trailingContent = {
+            when (skill.status) {
+                SkillStatus.ENABLED, SkillStatus.DISABLED -> {
+                    val label = stringResource(R.string.skills_runtime_toggle_cd, title)
+                    Switch(
+                        checked = checked,
+                        onCheckedChange = { checked = it; onToggle(it) },
+                        modifier = Modifier.semantics { contentDescription = label },
+                    )
+                }
+                SkillStatus.PENDING_TRUST -> TextButton(onClick = onTrust) {
+                    Text(stringResource(R.string.skills_runtime_trust))
+                }
+                SkillStatus.BROKEN -> Icon(
+                    Icons.Rounded.ErrorOutline,
+                    contentDescription = stringResource(R.string.skills_runtime_status_broken_short),
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        },
+    )
+}
+
+/** 需要用户注意的状态说明；普通的启用、停用状态由开关表达，不重复写出。 */
+@Composable
+private fun skillStatusNote(skill: DiscoveredSkill): String? = when {
+    skill.status == SkillStatus.BROKEN ->
+        stringResource(R.string.skills_runtime_status_broken, skill.brokenReason.orEmpty())
+    skill.status == SkillStatus.PENDING_TRUST -> stringResource(R.string.skills_runtime_status_pending)
+    skill.modifiedSinceConfirmed -> stringResource(R.string.skills_runtime_status_modified)
+    !skill.allowImplicitInvocation -> stringResource(R.string.skills_runtime_status_explicit_only, skill.name)
+    else -> null
+}
+
+@Composable
+private fun SkillTrustDialog(skill: DiscoveredSkill, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.skills_runtime_trust_title, skill.displayName ?: skill.name)) },
+        text = { Text(stringResource(R.string.skills_runtime_trust_message, skill.virtualDir)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.skills_runtime_trust)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_btn_cancel)) } },
+    )
+}
+
+/** 技能详情：路径、状态、操作与只读的 SKILL.md 原文。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SkillDetailSheet(
+    skill: DiscoveredSkill,
+    actions: SkillCatalogActions,
+    onRequestTrust: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    var document by remember(skill.id) { mutableStateOf<String?>(null) }
+    var loading by remember(skill.id) { mutableStateOf(true) }
+    LaunchedEffect(skill.id, skill.status, skill.modifiedSinceConfirmed) {
+        loading = true
+        document = actions.loadDocument(skill)
+        loading = false
+    }
+    NexaraBottomSheet(
+        show = true,
+        onDismiss = onDismiss,
+        title = skill.displayName ?: skill.name,
+        height = NexaraSheetHeight.Full,
+        scrollContent = true,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 24.dp)) {
+            if (skill.description.isNotBlank()) {
+                Text(
+                    skill.description,
+                    style = MaterialTheme.typography.bodyMedium.forReading(),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            SkillDetailLine(stringResource(R.string.skills_runtime_detail_path), skill.virtualDir, monospace = true)
+            SkillDetailLine(
+                stringResource(R.string.skills_runtime_detail_status),
+                skillStatusNote(skill) ?: stringResource(
+                    if (skill.status == SkillStatus.ENABLED) R.string.skills_runtime_status_enabled else R.string.skills_runtime_status_disabled,
+                ),
+            )
+            if (skill.files.isNotEmpty()) {
+                SkillDetailLine(
+                    stringResource(R.string.skills_runtime_detail_files),
+                    pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size),
+                )
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (skill.status == SkillStatus.PENDING_TRUST) {
+                    OutlinedButton(onClick = onRequestTrust) { Text(stringResource(R.string.skills_runtime_trust)) }
+                }
+                if (skill.modifiedSinceConfirmed) {
+                    OutlinedButton(onClick = { actions.onAcknowledge(skill) }) {
+                        Text(stringResource(R.string.skills_runtime_acknowledge))
+                    }
+                }
+                val onEdit = actions.onEdit
+                if (onEdit != null && skill.scope == SkillScope.USER && skill.status != SkillStatus.BROKEN) {
+                    OutlinedButton(onClick = { onDismiss(); onEdit(skill) }) { Text(stringResource(R.string.skills_runtime_edit)) }
+                }
+                OutlinedButton(
+                    onClick = { confirmDelete = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.shared_btn_delete)) }
+            }
+            Text(
+                "SKILL.md",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            when {
+                loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                document == null -> Text(
+                    stringResource(R.string.skills_runtime_document_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                else -> SelectionContainer {
+                    Text(
+                        document.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.skills_runtime_delete_title, skill.displayName ?: skill.name)) },
+            text = { Text(stringResource(R.string.skills_runtime_delete_message, skill.virtualDir)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        actions.onDelete(skill)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.shared_btn_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.common_btn_cancel)) } },
+        )
+    }
+}
+
+@Composable
+private fun SkillDetailLine(label: String, value: String, monospace: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            style = if (monospace) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+            else MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** 会话面板“工具”标签中的技能视图：用户级一组，目录型工作区另有项目级一组。 */
+@Composable
+fun SessionSkillsSections(state: SkillCatalogUiState, actions: SkillCatalogActions) {
+    val snapshot = state.snapshot
+    if (state.loading && snapshot == null) return
+    Column(verticalArrangement = Arrangement.spacedBy(com.promenar.nexara.ui.theme.NexaraSpacing.Large)) {
+        SkillScopeSection(
+            title = stringResource(R.string.skills_runtime_section_user),
+            footer = stringResource(R.string.skills_runtime_user_footer),
+            skills = snapshot?.user.orEmpty(),
+            emptyMessage = stringResource(R.string.skills_runtime_user_empty),
+            actions = actions,
+        )
+        if (state.projectAvailable) {
+            SkillScopeSection(
+                title = stringResource(R.string.skills_runtime_section_project),
+                footer = stringResource(R.string.skills_runtime_project_footer),
+                skills = snapshot?.project.orEmpty(),
+                emptyMessage = stringResource(R.string.skills_runtime_project_empty),
+                actions = actions,
+            )
+        }
+    }
+}
