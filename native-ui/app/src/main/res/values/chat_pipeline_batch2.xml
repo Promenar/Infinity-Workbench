@@ -51,4 +51,5 @@
     <string name="chat_step_skill_name">Activate skill</string>
     <string name="chat_step_other_name">Other tool</string>
     <plurals name="chat_step_pending_count"><item quantity="one">%1$d tool is waiting</item><item quantity="other">%1$d tools are waiting</item></plurals>
+    <string name="chat_tool_error_title">Failed</string>
 </resources>

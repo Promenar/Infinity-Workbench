@@ -167,7 +167,9 @@ class ImageGenerationSkill(
         } catch (e: Exception) {
             ToolResult(
                 id = resultId,
-                content = "Image generation failed: ${e.message?.take(200) ?: "Unknown error"}",
+                // 客户端的 HTTP 失败已带“Image generation failed”前缀，不再重复包裹。
+                content = e.message?.takeIf { it.startsWith("Image generation failed") }
+                    ?: "Image generation failed: ${e.message ?: "Unknown error"}",
                 status = "error"
             )
         }

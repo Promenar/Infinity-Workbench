@@ -916,7 +916,8 @@ internal fun InlineToolRow(
                                     )
                                 }
                                 result.content?.takeIf(String::isNotBlank)?.let { content ->
-                                    ExpandableToolText(text = content, collapsedLines = 12, error = result.type == "error")
+                                    if (result.type == "error") ToolErrorBlock(content)
+                                    else ExpandableToolText(text = content, collapsedLines = 12)
                                 }
                             }
                         }
@@ -932,7 +933,6 @@ internal fun ExpandableToolText(
     text: String,
     collapsedLines: Int,
     arguments: Boolean = false,
-    error: Boolean = false,
 ) {
     var expanded by rememberSaveable(text) { mutableStateOf(false) }
     val explicitLineOverflow = remember(text, collapsedLines) {
@@ -948,7 +948,7 @@ internal fun ExpandableToolText(
             text = text,
             style = if (arguments) NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp)
                 else NexaraTypography.bodySmall.forReading(),
-            color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { if (!expanded) overflows = explicitLineOverflow || it.hasVisualOverflow },

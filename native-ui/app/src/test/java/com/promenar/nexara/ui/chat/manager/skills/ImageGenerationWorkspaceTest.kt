@@ -10,6 +10,7 @@ import com.promenar.nexara.domain.media.*
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,17 @@ class ImageGenerationWorkspaceTest {
         assertThat(result.status).isEqualTo("success")
         assertThat(result.media).hasSize(2)
         assertThat(result.content).contains("失败 1")
+    }
+    @Test fun `服务端错误返回状态码错误码与完整说明且不重复前缀`() = runTest {
+        val message = "No available channel for model default::sensenova-u1.5-lite under group default (distributor) (request id: 20261020145110140000000000000000)"
+        val body = buildJsonObject { put("error", buildJsonObject { put("code", "model_not_found"); put("message", message); put("type", "new_api_error") }) }.toString()
+        val client = HttpClient(MockEngine { respond(body, HttpStatusCode.ServiceUnavailable) })
+        val result = try {
+            ImageGenerationSkill(mockk<Context>(), providers, store, downloader) { url, key, model -> ImageGenClient(url, key, model, client) }
+                .execute(buildJsonObject { put("prompt", "一棵树") }, mediaTestContext)
+        } finally { client.close() }
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).isEqualTo("Image generation failed (HTTP 503 · model_not_found): $message")
     }
     @Test fun `工作区不可用返回明确错误不写旧目录`() = runTest {
         store.failure = WorkspaceMediaException("WORKSPACE_UNAVAILABLE", "当前会话工作区不可用")

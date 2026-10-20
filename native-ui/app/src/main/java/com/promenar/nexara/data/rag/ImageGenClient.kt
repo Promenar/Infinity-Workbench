@@ -85,8 +85,10 @@ class ImageGenClient(
             } catch (_: Exception) {
                 ""
             }
+            // 按错误体结构提取状态码、错误码与说明，避免硬截断把服务端 JSON 拦腰截断。
+            val summary = com.promenar.nexara.data.remote.httpErrorSummary(response.status.value, errorBody)
             throw IllegalStateException(
-                "Image generation failed (${response.status.value}): $errorBody".take(200)
+                "Image generation failed (${summary.head})" + summary.detail?.let { ": $it" }.orEmpty()
             )
         }
 
