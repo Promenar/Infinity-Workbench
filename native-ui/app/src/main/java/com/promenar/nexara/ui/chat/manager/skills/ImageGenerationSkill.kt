@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.rag.ImageGenClient
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -11,12 +10,8 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Base64
+import com.promenar.nexara.domain.media.*
+import com.promenar.nexara.data.media.download.WorkspaceMediaDownloader
 import java.util.UUID
 import kotlinx.serialization.json.JsonObject
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
@@ -25,7 +20,7 @@ import com.promenar.nexara.ui.chat.manager.registry.stringArgument
  * 图像生成工具。
  *
  * 供 LLM 调用，接收提示词和可选参数，调用默认图像模型生成图片，
- * 下载保存到本地，返回图片信息供主会话界面展示。
+ * 把生成结果保存到会话工作区，返回虚拟路径和媒体引用。
  *
  * 工具名: generate_image
  * 参数:
@@ -35,8 +30,10 @@ import com.promenar.nexara.ui.chat.manager.registry.stringArgument
  *   - style (可选): 风格，"vivid" / "natural"
  */
 class ImageGenerationSkill(
-    private val appContext: Context,
+    @Suppress("UNUSED_PARAMETER") appContext: Context,
     private val providerManager: ProviderManager,
+    private val mediaStore: WorkspaceMediaStore? = null,
+    private val mediaDownloader: WorkspaceMediaDownloader? = null,
     private val imageGenClientFactory: (baseUrl: String, apiKey: String, modelId: String) -> ImageGenClient =
         { baseUrl, apiKey, modelId -> ImageGenClient(baseUrl = baseUrl, apiKey = apiKey, model = modelId) },
 ) : SkillDefinition {
@@ -127,40 +124,43 @@ class ImageGenerationSkill(
                 return ToolResult(id = resultId, content = "Image generation returned no images.", status = "error")
             }
 
-            // 下载或解码图片到本地存储
-            val savedImages = withContext(Dispatchers.IO) {
-                result.images.mapNotNull { image ->
-                    val data = GeneratedImageData(
-                        url = image.url,
-                        b64Json = image.b64Json,
-                        revisedPrompt = image.revisedPrompt
-                    )
-                    saveImageToLocal(data)
+            val saved = mutableListOf<MediaRef>()
+            val failures = mutableListOf<String>()
+            val revised = mutableListOf<String>()
+            withContext(Dispatchers.IO) {
+                for (image in result.images) {
+                    image.revisedPrompt?.takeIf(String::isNotBlank)?.let(revised::add)
+                    try {
+                        val store = mediaStore ?: throw WorkspaceMediaException("WORKSPACE_UNAVAILABLE", "当前会话工作区不可用，图片未保存")
+                        val ref = when {
+                            image.url != null -> {
+                                val downloader = mediaDownloader ?: throw WorkspaceMediaException("DOWNLOAD_UNAVAILABLE", "图片下载服务不可用")
+                                downloader.save(image.url, context.sessionId, store, MediaOrigin.GENERATED,
+                                    maxBytes = MAX_WORKSPACE_MEDIA_BYTES, imageOnly = true)
+                            }
+                            image.b64Json != null -> store.save(context.sessionId,
+                                MediaPayload.Bytes(decodeMediaBase64(image.b64Json)), MediaOrigin.GENERATED, "image/png")
+                            else -> throw WorkspaceMediaException("IMAGE_MISSING", "生图结果没有 URL 或 base64 图片")
+                        }
+                        saved += ref
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        failures += mediaFailureDescription(failure)
+                    }
                 }
             }
-
-            if (savedImages.isEmpty()) {
-                return ToolResult(
-                    id = resultId,
-                    content = "Image generated but failed to save locally. URL: ${result.images.first().url}",
-                    status = "error"
-                )
-            }
-
-            val firstImage = savedImages.first()
-            val countSuffix = if (savedImages.size > 1) " (${savedImages.size} images generated)" else ""
-
-            // 将图片信息编码到 data 字段，供 ChatBubble 渲染
-            val imageData = Json.encodeToString(savedImages)
-
-            val revisedNote = result.images.first().revisedPrompt?.let { rp ->
-                "\n\n*Revised prompt used by model:* $rp"
-            } ?: ""
-
             ToolResult(
                 id = resultId,
-                content = "Image generated successfully$countSuffix.$revisedNote\n\nPrompt: \"$prompt\"",
-                data = imageData
+                content = buildString {
+                    appendLine("图片保存成功 ${saved.size} 张，失败 ${failures.size} 张。")
+                    saved.forEach { appendLine(mediaSavedDescription(it)); appendLine(mediaReferenceGuidance(it)) }
+                    failures.forEach { appendLine("保存失败：$it") }
+                    revised.distinct().forEach { appendLine("模型修订提示词：$it") }
+                    append("原始提示词：$prompt")
+                },
+                status = if (saved.isEmpty()) "error" else "success",
+                media = saved.takeIf { it.isNotEmpty() },
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -173,51 +173,6 @@ class ImageGenerationSkill(
         }
     }
 
-    /**
-     * 将生成的图片保存到应用内部存储，返回本地路径和元信息。
-     */
-    private fun saveImageToLocal(image: GeneratedImageData): GeneratedImageData? {
-        return try {
-            val imageDir = File(appContext.filesDir, "generated_images")
-            if (!imageDir.exists()) imageDir.mkdirs()
-
-            val fileName = "gen_${UUID.randomUUID().toString().take(12)}.png"
-            val file = File(imageDir, fileName)
-
-            if (image.url != null) {
-                downloadFromUrl(image.url, file)
-            } else if (image.b64Json != null) {
-                decodeBase64ToFile(image.b64Json, file)
-            } else {
-                return null
-            }
-
-            image.copy(localPath = file.absolutePath)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun downloadFromUrl(imageUrl: String, destFile: File) {
-        val url = URL(imageUrl)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 30_000
-        connection.readTimeout = 60_000
-        connection.useCaches = false
-
-        connection.inputStream.use { input ->
-            destFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
-    }
-
-    private fun decodeBase64ToFile(b64: String, destFile: File) {
-        val bytes = Base64.getDecoder().decode(b64)
-        destFile.writeBytes(bytes)
-    }
 }
 
 /**

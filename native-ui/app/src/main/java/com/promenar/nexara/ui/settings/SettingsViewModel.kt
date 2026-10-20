@@ -684,6 +684,7 @@ class SettingsViewModel(
             SkillInfo("get_plan", app.getString(R.string.skill_get_plan), app.getString(R.string.skill_get_plan_desc), enabledSet?.contains("get_plan") ?: true),
             SkillInfo("drop_plan", app.getString(R.string.skill_drop_plan), app.getString(R.string.skill_drop_plan_desc), enabledSet?.contains("drop_plan") ?: true),
         ) + listOf(
+            Triple("media_fetch", R.string.skill_media_fetch, R.string.skill_media_fetch_desc),
             Triple("create_file", R.string.skill_create_file, R.string.skill_create_file_desc),
             Triple("create_directory", R.string.skill_create_directory, R.string.skill_create_directory_desc),
             Triple("move_file", R.string.skill_move_file, R.string.skill_move_file_desc),

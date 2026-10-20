@@ -1,0 +1,4 @@
+<resources>
+    <string name="skill_media_fetch">下载媒体</string>
+    <string name="skill_media_fetch_desc">将网络图片、视频和音频保存到会话工作区。</string>
+</resources>

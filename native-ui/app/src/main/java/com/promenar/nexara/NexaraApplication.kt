@@ -847,7 +847,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             }.forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebFetchSkill(httpClient))
-            register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
+            register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance(), workspaceMediaStore, workspaceMediaDownloader))
+            register(com.promenar.nexara.ui.chat.manager.skills.MediaFetchSkill(workspaceMediaStore, workspaceMediaDownloader,
+                mounts = externalFolderManager, sessionWorkspace = sessionWorkspaceResolver::resolve))
             register(mounted(FileReadSkill(fileOperationRepository, workspaceRepository)))
             register(mounted(FileWriteSkill(fileOperationRepository, workspaceRepository)))
             register(mounted(FileDiffSkill(fileOperationRepository, workspaceRepository)))
@@ -877,7 +879,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val mcpSkillRegistry: McpSkillRegistry by lazy {
-        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope, connectionSettings = mcpConnectionSettings)
+        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope, connectionSettings = mcpConnectionSettings, mediaStore = workspaceMediaStore)
     }
 
     /** Agent Skills 指令包存储（ADR-022）。 */
@@ -1828,6 +1830,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     /** 把生图、MCP、下载等来源的媒体写入会话工作区。 */
     val workspaceMediaStore: com.promenar.nexara.domain.media.WorkspaceMediaStore by lazy {
         workspaceMediaResolver as com.promenar.nexara.domain.media.WorkspaceMediaStore
+    }
+
+    /** 媒体下载与内置 git 一样使用 tailnet 分流；逐跳策略和流量上限由下载器控制。 */
+    val workspaceMediaDownloader: com.promenar.nexara.data.media.download.WorkspaceMediaDownloader by lazy {
+        com.promenar.nexara.data.media.download.WorkspaceMediaDownloader(
+            client = gitRemoteHttpClient,
+            policy = com.promenar.nexara.domain.media.MediaFetchUrlPolicy(tailnetManager::isTailnetHost),
+            tailnetConnected = { tailnetManager.state.value.phase == com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING },
+            cleartextPermitted = { host -> android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host) },
+        )
     }
 
     /** 凭据注入代理向远端转发所用的 OkHttp 客户端：tailnet 上的 git 主机经内置 Tailscale 本机代理，其它主机按系统默认选择器。 */

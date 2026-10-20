@@ -38,6 +38,7 @@ class McpSkillRegistry(
     scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val connectionSettings: McpConnectionSettings? = null,
+    private val mediaStore: com.promenar.nexara.domain.media.WorkspaceMediaStore? = null,
 ) : SkillRegistry {
     private data class PublishedSkill(
         val skill: McpSkill,
@@ -170,6 +171,7 @@ class McpSkillRegistry(
                     repository.isMcpSnapshotCurrent(row.serverId, row.serverUrl, row.serverType)
                 },
                 mcpServerId = row.serverId,
+                mediaStore = mediaStore,
             ),
             serverUrl = row.serverUrl,
             serverType = row.serverType,
