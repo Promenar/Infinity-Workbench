@@ -92,6 +92,8 @@ ToolExecutor
 
 - 命令的工作目录是会话当前工作区的物理根目录，文件工具与 `workspace_changes` 仍以 `/` 表示工作区根。会话绑定自选工作区（项目文件夹或侧载共享文件夹）时，命令直接在该目录运行：不持工作区锁、不做 Room 对账，结果不含 `workspace_changes`，改以 `workspace_kind` 与 `workspace_tracking: "none"` 标明，改动用 `git status` 查看；目录不可用时返回 `EXEC_WORKSPACE_UNAVAILABLE`，不回退到私有工作区。内置后端把 stdout、stderr 中的工作区物理路径替换为 `$NEXARA_WORKSPACE` 而不是 `/`：替换后既不暴露应用目录，又能原样用于下一条命令；以 `/` 开头的虚拟路径在命令里会指向设备根目录。
 - `/mnt/<别名>` 是 SAF 挂载，只对文件工具可见，命令不可见。内置后端在 `guidance` 中说明需要先用文件工具复制到工作区。
+- `/skills` 是固定内部挂载，文件工具与脚本网关在所有工作区模式下均映射到用户级技能真实目录。内置 shell、Python 与 git 使用 `NEXARA_SKILLS` 环境变量访问该目录；HOME 下维护 `.agents/skills` 符号链接，已有正确链接时保持不变，已有其它文件、目录或链接时保留并记录日志。项目级技能位于工作区内 `.agents/skills/`，使用相对路径。文件工具中的保留虚拟根会遮蔽工作区同名 `skills/`；命令在物理工作区创建的同名条目不进入私有工作区虚拟索引。
+- 文件工具与脚本网关对 `/skills`、工作区 `/.agents/skills` 的变更，以及可能连带移除项目技能的父目录操作，在全部执行模式下逐次审批；UUID 按解析后的路径判断，审批目标不可记忆，旧路径白名单不适用。真实进程的技能目录写入沿用命令执行审批，不按文件路径拦截。
 - 环境变量统一：`HOME`（后端各自的家目录）、`TMPDIR`、`NEXARA_WORKSPACE`（工作区物理根）、`NEXARA_BACKEND`（`builtin` / `sandbox` / `termux` / `ssh`）、`NEXARA_WORKSPACE_KIND`（`private` / `project` / `shared`，内置 git 据此给出私有工作区 clone 提示与共享存储兼容配置）、`LANG=C.UTF-8`。内置后端额外设置 `PYTHONHOME`、`PYTHONPATH`、`NEXARA_PYEXT_DIR`、`NEXARA_PYTHON`、`SSL_CERT_FILE`、`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`、`PYTHONUTF8=1`，并从主进程只继承 `PATH` 与 `ANDROID_ROOT` 等系统路径变量。`LD_LIBRARY_PATH` 只在启动解释器时设置（`python_exec` 与 shell 函数 `python3`），不影响 shell 中的系统命令。
 
 ## 4. 内置后端（B）

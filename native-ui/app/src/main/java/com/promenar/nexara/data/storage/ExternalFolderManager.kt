@@ -33,15 +33,24 @@ class ExternalFolderManager(
     private val indexEvents: FileIndexEventSink,
     /** 为 null 时不支持自选目录工作区，所有会话都使用私有工作区。 */
     private val workspaces: SessionWorkspaceResolver? = null,
+    /** 与技能目录入口共用真实目录；未注入时使用应用默认用户级技能目录。 */
+    private val userSkillsDirectory: File? = null,
     /** 测试替身；返回 null 时使用真实来源。 */
     private val backendOverride: ((ExternalMount) -> ExternalFolderBackend?)? = null,
 ) : ExternalWorkspaceAccess {
     private val mutex = Mutex()
     private val recycle = ExternalRecycleStore(File(context.noBackupFilesDir, "external-recycle"))
     private val versions = File(context.noBackupFilesDir, "external-versions")
+    private val skillsMount = ExternalMount(
+        ExternalMountPaths.SKILLS_MOUNT_ID, ExternalMountPaths.SKILLS_ALIAS, ExternalMountPaths.SKILLS_SOURCE,
+        "agent_skills", null, readOnly = false, createdAt = 0,
+    )
+    // filesDir 位于 /data/user/0 这一系统符号链接下，目录后端逐级拒绝符号链接，须先取真实路径。
+    private val skillsDirectory by lazy { (userSkillsDirectory ?: File(context.filesDir, "agent_skills")).canonicalFile }
     override fun observeMounts(sessionId: String) = dao.observeVisible(sessionId).map { it.map(ExternalMountEntity::model) }
     override suspend fun visible(sessionId: String) = withContext(Dispatchers.IO) {
-        val models = dao.visible(sessionId).map(ExternalMountEntity::model)
+        // 历史保留别名仍可在管理入口移除，但不作为工具可达路径列出。
+        val models = dao.visible(sessionId).filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMountEntity::model) + skillsMount
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound == null) models else models.filter { bound[it.alias] == it.id }
     }
@@ -94,6 +103,7 @@ class ExternalFolderManager(
         } }
 
     override suspend fun remove(mountId: String) = withContext(Dispatchers.IO) { mutex.withLock {
+        if (mountId == skillsMount.id) fail("INVALID_PATH", "不能移除用户级技能根目录")
         val mount = dao.get(mountId) ?: return@withLock
         dao.delete(mountId)
         if (mount.sourceType == "saf_tree") releaseUnused(mount.sourceId)
@@ -117,14 +127,14 @@ class ExternalFolderManager(
 
     override suspend fun refresh(sessionId: String) = withContext(Dispatchers.IO) {
         visible(sessionId).forEach { mount ->
-            try { access(sessionId, "/mnt/${mount.alias}") { _, backend, _ -> requireDirectory(backend.stat("/")) } }
+            try { access(sessionId, ExternalMountPaths.virtualPath(mount, "/")) { _, backend, _ -> requireDirectory(backend.stat("/")) } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { /* 可用性已由 access 写入，不把单个离线挂载扩散到整个面板。 */ }
         }
     }
 
     override suspend fun list(sessionId: String, virtualPath: String): List<ExternalFolderEntry> = withContext(Dispatchers.IO) {
-        if (virtualPath == "/mnt") return@withContext visible(sessionId).map {
+        if (ExternalFolderPaths.normalize(virtualPath) == "/mnt") return@withContext visible(sessionId).filterNot { it.isUserSkills }.map {
             ExternalFolderEntry("/mnt/${it.alias}", it.alias, true, 0, it.createdAt)
         }
         access(sessionId, virtualPath) { mount, backend, relative -> visibleChildren(mount, relative, backend.list(relative)) }
@@ -135,7 +145,7 @@ class ExternalFolderManager(
     }
 
     override suspend fun entry(sessionId: String, path: String): FileEntry? = withContext(Dispatchers.IO) {
-        if (path == "/mnt") return@withContext FileEntry(
+        if (ExternalFolderPaths.normalize(path) == "/mnt") return@withContext FileEntry(
             ExternalMountPaths.ROOT_UUID, "", null, "mnt", "", isDirectory = true,
             physicalRootPath = "", materializedPath = "/mnt", createdAt = 0, updatedAt = 0,
         )
@@ -147,7 +157,7 @@ class ExternalFolderManager(
             } else ""
             val parent = when {
                 relative != "/" -> ExternalMountPaths.uuid(mount, relative.substringBeforeLast('/').ifEmpty { "/" })
-                mount.isWorkspaceRoot -> null
+                mount.isWorkspaceRoot || mount.isUserSkills -> null
                 else -> ExternalMountPaths.ROOT_UUID
             }
             FileEntry(
@@ -320,9 +330,9 @@ class ExternalFolderManager(
         }
     }
 
-    /** 列表路径改写为虚拟路径；工作区根下的 `mnt` 被虚拟挂载目录遮蔽，不对文件工具列出。 */
+    /** 列表路径改写为虚拟路径；工作区根下的同名条目由保留虚拟根遮蔽。 */
     private fun visibleChildren(mount: ExternalMount, relative: String, children: List<ExternalFolderEntry>) = children
-        .filterNot { mount.isWorkspaceRoot && relative == "/" && it.name == "mnt" }
+        .filterNot { mount.isWorkspaceRoot && relative == "/" && it.name in setOf("mnt", "skills") }
         .map { it.copy(path = ExternalMountPaths.virtualPath(mount, it.path)) }
 
     private suspend fun resolve(sessionId: String, path: String): Pair<ExternalMount, String> {
@@ -336,7 +346,8 @@ class ExternalFolderManager(
             return root to normalized
         }
         val (alias, relative) = parsed
-        val mount = dao.visible(sessionId).singleOrNull { it.alias == alias }?.model() ?: fail("NOT_FOUND", "挂载点不属于当前会话或已被移除")
+        val mount = if (alias == ExternalMountPaths.SKILLS_ALIAS) skillsMount
+            else dao.visible(sessionId).singleOrNull { it.alias == alias }?.model() ?: fail("NOT_FOUND", "挂载点不属于当前会话或已被移除")
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound != null && bound[alias] != mount.id) fail("CONFLICT", "操作期间挂载身份发生变化，请重新读取目标")
         return mount to relative
@@ -350,11 +361,12 @@ class ExternalFolderManager(
         if (write && mount.readOnly) fail("READ_ONLY", "挂载点为只读，拒绝写入")
         try {
             val result = block(mount, sourceBackend(mount), relative)
-            if (mount.unavailableReason != null && !mount.isWorkspaceRoot) dao.update(mount.copy(unavailableReason = null).entity())
+            if (mount.unavailableReason != null && !mount.isWorkspaceRoot && !mount.isUserSkills) dao.update(mount.copy(unavailableReason = null).entity())
             return result
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             val unavailable = failure is SecurityException || failure is ExternalFolderException && failure.code == "UNAVAILABLE"
+            if (unavailable && mount.isUserSkills) fail("UNAVAILABLE", "用户级技能目录不可用，请检查应用存储")
             if (unavailable && mount.isWorkspaceRoot) {
                 val reason = (failure as? ExternalFolderException)?.message ?: "目录访问被拒绝"
                 fail("UNAVAILABLE", "当前工作区不可用（$reason），不会改用会话私有工作区；请检查目录与授权，或在会话设置中更换工作区")
@@ -376,6 +388,10 @@ class ExternalFolderManager(
             }
         }
         backendOverride?.invoke(mount)?.let { return it }
+        if (mount.isUserSkills) {
+            if (!skillsDirectory.isDirectory && !skillsDirectory.mkdirs()) fail("UNAVAILABLE", "无法创建用户级技能目录")
+            return RealPathExternalFolderBackend(skillsDirectory)
+        }
         return when (mount.sourceType) {
             "saf_tree" -> {
                 val uri = Uri.parse(mount.sourceId)

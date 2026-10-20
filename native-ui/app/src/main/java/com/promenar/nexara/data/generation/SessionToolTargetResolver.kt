@@ -31,13 +31,11 @@ suspend fun resolveSessionToolTarget(
             sshSessionHost?.invoke("agent:${session.id}", id)?.let { paths["ssh_session:$id"] = it }
         }
         val rootUuid = session.workspaceRootUuid
-        if (rootUuid != null && repository != null || workspaceMount != null) {
-            listOf("uuid", "parentUuid", "newParentUuid").forEach { key ->
-                val uuid = (args[key] as? JsonPrimitive)?.content
-                if (!uuid.isNullOrBlank()) {
-                    if (uuid.startsWith("external:")) com.promenar.nexara.data.storage.ExternalMountPaths.uuidPath(uuid, namespaceMounts)?.let { paths[uuid] = it }
-                    else if (workspaceMount == null && rootUuid != null) repository?.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
-                }
+        listOf("uuid", "parentUuid", "newParentUuid").forEach { key ->
+            val uuid = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+            if (!uuid.isNullOrBlank()) {
+                if (uuid.startsWith("external:")) com.promenar.nexara.data.storage.ExternalMountPaths.uuidPath(uuid, namespaceMounts)?.let { paths[uuid] = it }
+                else if (workspaceMount == null && rootUuid != null) repository?.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
             }
         }
         val sshIdentities = if (tool.mcpServerId == null && tool.sourceId != "mcp" && !tool.runtimeToolId.startsWith("mcp:") &&
@@ -58,7 +56,7 @@ suspend fun resolveSessionToolTarget(
         val tuple = if (metadata != null) parts.dropLast(1) else parts.toList()
         val strings = tuple.map { (it as? JsonPrimitive)?.content ?: return null }
         if (strings.firstOrNull() !in setOf("path", "move")) return target
-        val legacyPaths = paths.filter { (uuid, path) -> !uuid.startsWith("external:") && (path == "/mnt" || path.startsWith("/mnt/")) }
+        val legacyPaths = paths.filter { (uuid, path) -> !uuid.startsWith("external:") && com.promenar.nexara.data.storage.ExternalMountPaths.isMountedPath(path) }
         val mountIds = strings.drop(1).mapNotNull { path ->
             val parsed = com.promenar.nexara.data.storage.ExternalMountPaths.parse(path)
             if (parsed == null) {

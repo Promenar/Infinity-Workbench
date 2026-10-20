@@ -103,8 +103,9 @@ class ToolExecutionTargetTest {
         listOf(
             """{"name":"../a"}""",
             """{"name":".nexara-private"}""",
-            """{"name":"a","parentPath":3}""",
         ).forEach { raw -> assertThat(extract("create_file", raw)).isNull() }
+        // 非字符串父目录与执行层一样按缺省处理，即在工作区根下创建。
+        assertThat(extract("create_file", """{"name":"a","parentPath":3}""")).isEqualTo("""["path","/a"]""")
         assertThat(extract("move_file", """{"path":"/a"}""")).isNull()
         assertThat(extract("move_file", """{"path":"/a","newParentUuid":"unknown"}""")).isNull()
         assertThat(extract("move_file", """{"path":"/","newName":"a"}""")).isNull()

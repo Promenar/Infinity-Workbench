@@ -694,14 +694,22 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
         ensureAutomaticConsent(request, session.executionMode.ifEmpty { "semi" })
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        val policyPendingIds = contentStrategy
-            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
-            .toSet()
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
             call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }) }
         }
+        // UUID 必须先还原当前虚拟路径；技能目录变更在全自动模式也不能跳过审批。
+        val policyPendingIds = contentStrategy
+            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
+            .toMutableSet().apply {
+                // 文件变更的目标无法还原时，无从判断是否落在技能目录，按失败关闭要求审批。
+                calls.filter {
+                    com.promenar.nexara.domain.tool.ToolArgumentApprovalRules.requiresExplicitApproval(it.name, it.arguments, targets[it.id]) ||
+                        com.promenar.nexara.domain.tool.ToolExecutionTargets.isPathMutation(it.name) && targets[it.id] == null
+                }
+                    .forEach { add(it.id) }
+            }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
             val target = targets[id]

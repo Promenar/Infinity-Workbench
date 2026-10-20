@@ -1,5 +1,7 @@
 package com.promenar.nexara.domain.tool
 
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -8,14 +10,17 @@ import java.net.URI
 
 /**
  * 按调用参数追加的审批规则：工具本身风险低，但某些参数可能把会话数据带到外部。
- * 外传参数在半自动模式审批；不可恢复删除与 SSH 主机配置变更在全部模式下逐次审批。
+ * 外传参数在半自动模式审批；不可恢复删除、技能目录变更与 SSH 主机配置变更逐次审批。
  */
 object ToolArgumentApprovalRules {
     /** 改变凭据所属主机或登录方式，Agent 不得在任何执行模式下自行完成。 */
     private val SSH_HOST_CONFIG_TOOLS = setOf("ssh_host_save", "ssh_host_delete", "ssh_host_install_key")
 
-    fun requiresExplicitApproval(toolName: String, arguments: String): Boolean = toolName in SSH_HOST_CONFIG_TOOLS || toolName == "delete_file" &&
-        runCatching {
+    fun requiresExplicitApproval(toolName: String, arguments: String, resolvedTarget: String? = null): Boolean =
+        toolName in SSH_HOST_CONFIG_TOOLS ||
+            ToolExecutionTargets.requiresSkillsApproval(toolName, resolvedTarget ?: ToolExecutionTargets.extract(
+                ProtocolTool(function = ProtocolToolFunction(toolName, "", "{}")), arguments,
+            )) || toolName == "delete_file" && runCatching {
             ((Json.parseToJsonElement(arguments) as? JsonObject)?.get("irreversible") as? JsonPrimitive)?.booleanOrNull == true
         }.getOrDefault(false)
     private const val WEB_FETCH = "web_fetch"

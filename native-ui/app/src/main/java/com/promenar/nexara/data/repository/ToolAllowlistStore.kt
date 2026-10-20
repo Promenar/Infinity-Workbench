@@ -51,7 +51,7 @@ object ToolAllowlistScopes {
         if (parts.first() !in PATH_KINDS) return resolve(target, sessionId, null)
         return try {
             val ids = mounts?.namespaceBindings(sessionId).orEmpty()
-            val needsWorkspace = parts.drop(1).any { !it.startsWith("/mnt/") }
+            val needsWorkspace = parts.drop(1).any { ExternalMountPaths.parse(it) == null }
             resolve(target, sessionId, if (needsWorkspace) workspace?.invoke(sessionId) else null, ids)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -76,7 +76,7 @@ object ToolAllowlistScopes {
         val scopes = parts.drop(1).map { path ->
             if (!path.startsWith('/') || runCatching { ExternalFolderPaths.normalize(path) }.getOrNull() != path || path == "/mnt") return null
             val mount = runCatching { ExternalMountPaths.parse(path) }.getOrNull()
-            if (path.startsWith("/mnt/")) {
+            if (mount != null) {
                 val id = mount?.first?.let(mountIds::get)?.takeIf(String::isNotBlank) ?: return null
                 "mount:$id"
             } else when (workspace) {
@@ -172,12 +172,14 @@ class ToolAllowlistStore(private val root: File, private val now: () -> Long = S
         val file = File(root, FILE_NAME)
         if (!file.isFile) return@runCatching emptyList()
         val document = json.decodeFromString<Document>(file.readText(Charsets.UTF_8))
-        if (document.version != 1 || document.entries.any {
+        // 技能目录变更的旧授权失效时保留其它有效授权（含技能目录的只读授权），不因规则收紧清空整份列表。
+        val entries = document.entries.filterNot { ToolExecutionTargets.requiresSkillsApproval(it.toolName, it.target) }
+        if (document.version != 1 || entries.any {
                 it.id.isBlank() || it.toolName.isBlank() || it.createdAt < 0 || !ToolAllowlistScopes.validScope(it.target, it.scopeKey)
-            } || document.entries.map { it.id }.distinct().size != document.entries.size ||
-            document.entries.map { Triple(it.toolName, it.target, it.scopeKey) }.distinct().size != document.entries.size
+            } || entries.map { it.id }.distinct().size != entries.size ||
+            entries.map { Triple(it.toolName, it.target, it.scopeKey) }.distinct().size != entries.size
         ) return@runCatching emptyList()
-        sorted(document.entries)
+        sorted(entries)
     }.getOrElse { emptyList() }
 
     private fun write(entries: List<ToolAllowlistEntry>) {

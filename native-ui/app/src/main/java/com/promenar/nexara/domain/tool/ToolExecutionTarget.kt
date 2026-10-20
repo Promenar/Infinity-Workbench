@@ -81,7 +81,8 @@ object ToolExecutionTargets {
             "exec_js", "python_sandbox" -> args.string("code")?.let { tuple("tool", tool.function.name) }
             else -> null
         }
-        return if (target != null && tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) {
+        return if (target != null && (requiresSkillsApproval(tool.function.name, target) ||
+                tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true)) {
             JsonArray((Json.parseToJsonElement(target) as JsonArray) + JsonObject(mapOf("oneShot" to JsonPrimitive(true)))).toString()
         } else target
     }
@@ -90,6 +91,27 @@ object ToolExecutionTargets {
         val metadata = (Json.parseToJsonElement(target) as? JsonArray)?.lastOrNull() as? JsonObject
         (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true
     }.getOrDefault(true)
+
+    /** 技能目录及可连带变更项目技能的父目录不接受持久路径授权。 */
+    fun isSkillsPathTarget(target: String): Boolean = runCatching {
+        val array = Json.parseToJsonElement(target) as? JsonArray ?: return false
+        val tuple = if (array.lastOrNull() is JsonObject) array.dropLast(1) else array.toList()
+        val kind = (tuple.firstOrNull() as? JsonPrimitive)?.content
+        if (kind !in setOf("path", "move") || tuple.size != if (kind == "path") 2 else 3) return false
+        tuple.drop(1).any { item ->
+            val path = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@any false
+            // 共享存储工作区大小写不敏感，项目技能目录的两段按忽略大小写比较；/skills 是精确匹配的虚拟根。
+            val folded = path.uppercase(Locale.ROOT).lowercase(Locale.ROOT)
+            path == "/skills" || path.startsWith("/skills/") ||
+                folded == "/.agents" || folded == "/.agents/skills" || folded.startsWith("/.agents/skills/")
+        }
+    }.getOrDefault(false)
+
+    /** 可能改变工作区或技能目录内容的文件工具。 */
+    fun isPathMutation(toolName: String): Boolean = toolName in SKILL_MUTATIONS
+
+    fun requiresSkillsApproval(toolName: String, target: String?): Boolean =
+        toolName in SKILL_MUTATIONS && target != null && isSkillsPathTarget(target)
 
     /** 清除不可见控制字符与格式控制后按 UTF-16 长度限制显示，保留完整代理对。 */
     /** 进程目标的执行位置（如 builtin、python、termux）；命令正文另行完整展示时用它代替整条目标，避免重复。 */
@@ -140,12 +162,8 @@ object ToolExecutionTargets {
     private fun moveTarget(args: JsonObject, resolvedPaths: Map<String, String>): String? {
         val source = entryPath(args, resolvedPaths)?.takeIf { it != "/" } ?: return null
         val newName = args.string("newName")?.trim()?.takeIf(String::isNotEmpty)
-        if (args.containsKey("newName") && args.string("newName") == null) return null
         if (newName != null && validName(newName) == null) return null
         val hasParent = !args.string("newParentUuid").isNullOrBlank() || !args.string("newParentPath").isNullOrBlank()
-        if (args.containsKey("newParentUuid") && args.string("newParentUuid") == null ||
-            args.containsKey("newParentPath") && args.string("newParentPath") == null
-        ) return null
         if (!hasParent && newName == null) return null
         val parent = if (hasParent) {
             entryPath(args, resolvedPaths, "newParentUuid", "newParentPath") ?: return null
@@ -164,9 +182,7 @@ object ToolExecutionTargets {
         pathKey: String = "path",
         defaultPath: String? = null,
     ): String? {
-        if (args.containsKey(uuidKey) && args.string(uuidKey) == null ||
-            args.containsKey(pathKey) && args.string(pathKey) == null
-        ) return null
+        // 非字符串参数按缺省处理，与执行层的 stringArgument 一致，避免审批与实际定位不同。
         val uuid = args.string(uuidKey)?.trim()?.takeIf(String::isNotEmpty)
         if (uuid != null) return resolvedPaths[uuid]?.let(::normalizePath)
         val path = args.string(pathKey)?.takeIf(String::isNotBlank) ?: defaultPath ?: return null
@@ -215,4 +231,5 @@ object ToolExecutionTargets {
         )))).toString()
     }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
+    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file")
 }

@@ -206,6 +206,51 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `全自动模式解析UUID后仍审批两级技能写入且旧白名单不能放行`() = runTest {
+        val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
+        for (path in listOf("/skills/demo/SKILL.md", "/.agents/skills/demo/SKILL.md")) {
+            val repository = mockk<com.promenar.nexara.domain.repository.IWorkspaceRepository> {
+                coEvery { getByUuid("root", "file") } returns com.promenar.nexara.data.local.db.entity.FileEntry(
+                    "file", "root", null, "SKILL.md", "", physicalRootPath = "", materializedPath = path, createdAt = 1, updatedAt = 1,
+                )
+            }
+            for (arguments in listOf("""{"path":"$path"}""", """{"uuid":"file"}""")) {
+                assertAllowlistDecision(tool, arguments, """["path","$path"]""", "session:current-session",
+                    com.promenar.nexara.data.workspace.SessionWorkspace.Private, false,
+                    executionMode = "auto", policyPending = false, repository = repository)
+            }
+        }
+    }
+
+    @Test
+    fun `全自动模式中无法解析目标的文件变更要求审批`() = runTest {
+        val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
+        val repository = mockk<com.promenar.nexara.domain.repository.IWorkspaceRepository> {
+            coEvery { getByUuid(any(), any()) } returns null
+        }
+        // 目标无法还原时不知道是否落在技能目录，按失败关闭处理。
+        assertAllowlistDecision(tool, """{"uuid":"missing"}""", """["path","/a.md"]""", "session:current-session",
+            com.promenar.nexara.data.workspace.SessionWorkspace.Private, false,
+            executionMode = "auto", policyPending = false, repository = repository)
+    }
+
+    @Test
+    fun `全自动模式识别内部技能挂载UUID且只读调用不额外审批`() = runTest {
+        val mounts = mockk<com.promenar.nexara.domain.storage.ExternalWorkspaceAccess> {
+            coEvery { workspaceMount(any()) } returns null
+            coEvery { visible(any()) } returns listOf(com.promenar.nexara.domain.storage.ExternalMount(
+                "builtin:skills", "skills", "builtin_skills", "agent_skills", null, false, 0,
+            ))
+        }
+        for (name in listOf("write_file", "read_file")) {
+            val tool = ProtocolTool(function = ProtocolToolFunction(name, "", "{}"), risk = if (name == "write_file") ToolRisk.FILE_WRITE else ToolRisk.SAFE_READ,
+                runtimeToolId = name, sourceId = "builtin")
+            assertAllowlistDecision(tool, """{"uuid":"external:builtin:skills:L1NLSUxMLm1k"}""", """["path","/skills/SKILL.md"]""", "mount:builtin:skills",
+                com.promenar.nexara.data.workspace.SessionWorkspace.Private, name == "read_file", executionMode = "auto", policyPending = false, mounts = mounts)
+        }
+    }
+
+    @Test
     fun `全局白名单让其它会话的host完整process及MCP调用免审批`() = runTest {
         val cases = listOf(
             Triple(ProtocolTool(function = ProtocolToolFunction("web_fetch", "", "{}"), risk = ToolRisk.SAFE_READ, runtimeToolId = "web_fetch", sourceId = "builtin"),
@@ -245,6 +290,10 @@ class DefaultChatGenerationRuntimeTest {
         rememberedScope: String?,
         workspace: com.promenar.nexara.data.workspace.SessionWorkspace,
         bypass: Boolean,
+        executionMode: String = "semi",
+        policyPending: Boolean = true,
+        repository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
+        mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     ) {
         val root = java.nio.file.Files.createTempDirectory("runtime-allowlist").toFile()
         try {
@@ -252,10 +301,10 @@ class DefaultChatGenerationRuntimeTest {
             allowlist.add(tool.function.name, rememberedTarget, rememberedScope, "other-session")
             val settings = mockk<SharedPreferences> { every { getInt(any(), any()) } answers { secondArg() } }
             val store = ChatStore().apply {
-                update { ChatState(sessions = listOf(Session(id = "current-session", agentId = "agent", executionMode = "semi"))) }
+                update { ChatState(sessions = listOf(Session(id = "current-session", agentId = "agent", executionMode = executionMode, workspaceRootUuid = "root"))) }
             }
             val strategy = mockk<ChatGenerationContentStrategy> {
-                every { pendingApprovalIds(any(), any()) } returns listOf("call")
+                every { pendingApprovalIds(any(), any()) } returns if (policyPending) listOf("call") else emptyList()
             }
             val executor = mockk<ToolExecutor>(relaxed = true)
             val ledger = mockk<ToolExecutionLedger>(relaxed = true)
@@ -263,7 +312,7 @@ class DefaultChatGenerationRuntimeTest {
             val runtime = DefaultChatGenerationRuntime(
                 settings, this, store, mockk(), mockk(), mockk(), mockk(), mockk(relaxed = true),
                 { mockk() }, mockk(), ledger, executor, mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true),
-                toolAllowlistStore = allowlist, sessionWorkspace = { workspace },
+                toolAllowlistStore = allowlist, sessionWorkspace = { workspace }, workspaceRepository = repository, externalFolders = mounts,
             )
             DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedTools").apply {
                 isAccessible = true
@@ -276,7 +325,7 @@ class DefaultChatGenerationRuntimeTest {
             coVerify(exactly = 1) {
                 executor.executeTools("current-session", "assistant", any(),
                     if (bypass) setOf("call") else emptySet(), listOf(tool),
-                    if (bypass) mapOf("call" to rememberedTarget) else emptyMap())
+                    if (bypass && policyPending) mapOf("call" to rememberedTarget) else emptyMap())
             }
         } finally {
             root.deleteRecursively()

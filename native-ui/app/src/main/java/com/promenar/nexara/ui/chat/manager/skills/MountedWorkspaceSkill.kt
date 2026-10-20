@@ -6,10 +6,12 @@ import com.promenar.nexara.data.model.withinHunkBudget
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.*
 import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.data.storage.ExternalTreeTransfer
 import com.promenar.nexara.data.storage.externalSnapshotMime
 import com.promenar.nexara.domain.repository.*
 import com.promenar.nexara.domain.storage.*
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.infra.util.MyersDiff
 import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.ui.chat.diff.FileChangeSummaries
@@ -37,7 +39,7 @@ class MountedWorkspaceSkill(
     private val captureFileChanges: Boolean = true,
     private val privateReader: PrivateWorkspaceReader = PrivateWorkspaceReader.Default,
 ) : SkillDefinition by original {
-    override val description = original.description + " 支持 /mnt/<别名>/... 挂载路径；挂载文件使用 expected_sha256（兼容 expectedHash）校验版本。"
+    override val description = original.description + " 支持用户级技能 /skills/... 与 /mnt/<别名>/... 挂载路径；挂载文件使用 expected_sha256（兼容 expectedHash）校验版本。"
     override val parametersSchema: String = run {
         val schema = Json.parseToJsonElement(original.parametersSchema).jsonObject
         val properties = schema["properties"]?.jsonObject.orEmpty().toMutableMap()
@@ -89,6 +91,20 @@ class MountedWorkspaceSkill(
                     ?: (parentPath?.isMounted() == true))
                 val destinationMounted = rooted || (args.stringArgument("newParentUuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
                     ?: (destinationParent?.isMounted() == true || destinationParent == null && sourceMounted))
+                val resolvedPaths = listOf("uuid" to sourcePath, "parentUuid" to parentPath, "newParentUuid" to destinationParent)
+                    .mapNotNull { (key, path) -> routedArgs.stringArgument(key)?.trim()?.takeIf { it.isNotEmpty() && path != null }?.let { it to path!! } }.toMap()
+                val currentTarget = ToolExecutionTargets.extract(original.toProtocolTool(), routedArgs.toString(), resolvedPaths)
+                // 审批侧无法给出目标的变更（如路径写法与审批规范化不一致）不执行，避免批准内容与实际写入位置不同。
+                if (ToolExecutionTargets.isPathMutation(original.id) && currentTarget == null) {
+                    fail("INVALID_PATH", "无法确定变更的目标路径，请使用以 / 开头的规范路径重新发起")
+                }
+                if (ToolExecutionTargets.requiresSkillsApproval(original.id, currentTarget)) {
+                    fun tuple(target: String?) = target?.let { Json.parseToJsonElement(it).jsonArray }
+                        ?.let { if (it.lastOrNull() is JsonObject) JsonArray(it.dropLast(1)) else it }
+                    if (!context.isApprovalBoundExecution || tuple(context.approvedExecutionTarget) != tuple(currentTarget)) {
+                        fail("APPROVAL_REQUIRED", "技能目录变更需要按当前路径逐次审批，请重新发起操作")
+                    }
+                }
                 if (context.isApprovalBoundExecution || context.approvedExecutionTarget != null) {
                     val usedAliases = listOfNotNull(sourcePath?.takeIf { sourceMounted }, parentPath?.takeIf { parentMounted }, destinationParent?.takeIf { destinationMounted })
                         .mapNotNull(::aliasOf)
@@ -104,10 +120,10 @@ class MountedWorkspaceSkill(
                     destinationParent = destinationParent,
                 )
                 suspend fun finish(result: ToolResult): ToolResult = capture?.finish(result) ?: result
-                if (original.id in setOf("create_file", "create_directory") && (parentPath ?: "/") == "/" && args.stringArgument("name")?.trim() == "mnt") {
-                    fail("INVALID_PATH", "/mnt 为挂载保留目录，请在文件面板添加挂载")
+                if (original.id in setOf("create_file", "create_directory") && (parentPath ?: "/") == "/" && args.stringArgument("name")?.trim() in setOf("mnt", "skills")) {
+                    fail("INVALID_PATH", "/mnt 与 /skills 为保留虚拟目录")
                 }
-                if (original.id in setOf("move_file", "delete_file") && sourceMounted && sourcePath == "/mnt") fail("INVALID_PATH", "不能变更虚拟挂载根目录")
+                if (original.id in setOf("move_file", "delete_file") && sourceMounted && sourcePath in setOf("/mnt", "/skills")) fail("INVALID_PATH", "不能变更保留虚拟根目录")
                 if (original.id in setOf("move_file", "delete_file") && rooted && sourcePath == "/") fail("INVALID_PATH", "不能移动或删除工作区根目录")
                 if (original.id == "create_file" && parentMounted && parentPath != null) {
                     val name = args.stringArgument("name")?.trim() ?: fail("INVALID_PATH", "缺少文件名")
@@ -129,7 +145,7 @@ class MountedWorkspaceSkill(
                     if (source != null) {
                         val destination = (destinationParent ?: source.substringBeforeLast('/').ifEmpty { "/" }).trimEnd('/') + "/" +
                             (newName ?: source.substringAfterLast('/'))
-                        if (destination == "/mnt") fail("INVALID_PATH", "不能覆盖虚拟挂载根目录")
+                        if (destination in setOf("/mnt", "/skills")) fail("INVALID_PATH", "不能覆盖保留虚拟根目录")
                         if (sourceMounted || destinationMounted) {
                             if (newName == null && destinationParent == null) fail("INVALID_PATH", "需要指定新名称或目标目录")
                             return@bound finish(move(context, source, destination, routedArgs.stringArgument("expectedHash"), sourceMounted, destinationMounted))
@@ -200,7 +216,7 @@ class MountedWorkspaceSkill(
     }
 }
 
-private fun String.isMounted() = this == "/mnt" || startsWith("/mnt/")
+private fun String.isMounted() = ExternalMountPaths.isMountedPath(this)
 private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
 
 /**
@@ -227,21 +243,27 @@ internal class MountedWorkspaceRepository(
         if (parentUuid.startsWith("external:")) return flow {
             val path = mounts.resolveUuid(session, parentUuid) ?: fail("NOT_FOUND", "挂载条目不可见")
             val children = mounts.list(session, path).mapNotNull { mounts.entry(session, it.path)?.copy(workspaceRootUuid = workspaceRootUuid) }
-            val mountRoot = if (rooted && path == "/" && mounts.visible(session).isNotEmpty()) mounts.entry(session, "/mnt") else null
-            emit(children + listOfNotNull(mountRoot?.copy(workspaceRootUuid = workspaceRootUuid)))
+            emit(children + if (rooted && path == "/") virtualRoots(workspaceRootUuid) else emptyList())
         }
         if (rooted) return flowOf(emptyList())
         val children = base.observeChildren(workspaceRootUuid, parentUuid)
         if (parentUuid != workspaceRootUuid) return children
-        return combine(children, mounts.observeMounts(session)) { entries, visible ->
-            if (visible.isEmpty()) entries else entries + listOfNotNull(mounts.entry(session, "/mnt")?.copy(workspaceRootUuid = workspaceRootUuid))
+        return combine(children, mounts.observeMounts(session)) { entries, _ ->
+            entries.filterNot { it.name == "skills" } + virtualRoots(workspaceRootUuid)
         }
+    }
+    private suspend fun virtualRoots(workspaceRootUuid: String): List<FileEntry> {
+        val visible = mounts.visible(session)
+        return listOfNotNull(
+            "/mnt".takeIf { visible.any { !it.isUserSkills } },
+            "/skills".takeIf { visible.any { it.isUserSkills } },
+        ).mapNotNull { mounts.entry(session, it)?.copy(workspaceRootUuid = workspaceRootUuid) }
     }
     override fun searchByName(workspaceRootUuid: String, query: String): Flow<List<FileEntry>> = flow {
         val matches = if (rooted) mutableListOf() else base.searchByName(workspaceRootUuid, query).first().toMutableList()
         // 自选目录不建索引，按目录逐层遍历；`.git` 内部对象不参与名称搜索。
         val limit = if (rooted) 5_000 else 500
-        val pending = ArrayDeque(if (rooted) listOf("/", "/mnt") else listOf("/mnt"))
+        val pending = ArrayDeque(if (rooted) listOf("/", "/mnt", "/skills") else listOf("/mnt", "/skills"))
         var count = 0
         while (pending.isNotEmpty() && count < limit && matches.size < 100) {
             mounts.list(session, pending.removeFirst()).forEach { entry ->

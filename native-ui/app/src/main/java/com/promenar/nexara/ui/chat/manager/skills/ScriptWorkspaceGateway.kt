@@ -16,6 +16,7 @@ import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.script.*
 import com.promenar.nexara.domain.storage.*
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
+import com.promenar.nexara.domain.tool.ToolArgumentApprovalRules
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.ui.chat.ApprovalPreview
@@ -59,7 +60,7 @@ class ScriptWorkspaceGateway private constructor(
             if (alias != null && (alias !in mountIds || currentMounts[alias]?.id != mountIds[alias])) throw ScriptFailure("MOUNT_CHANGED", "挂载身份已失效，请重新执行脚本")
             if (operation == "module") {
                 val root = moduleRoot ?: throw ScriptFailure("IMPORT_DENIED", "内联脚本不允许模块导入")
-                if (root != "/" && !path.startsWith("$root/") || root == "/" && (path == "/mnt" || path.startsWith("/mnt/")) || !path.endsWith(".js") && !path.endsWith(".mjs")) {
+                if (root != "/" && !path.startsWith("$root/") || root == "/" && ExternalMountPaths.isMountedPath(path) || !path.endsWith(".js") && !path.endsWith(".mjs")) {
                     throw ScriptFailure("IMPORT_DENIED", "模块导入越出根目录")
                 }
             }
@@ -124,10 +125,12 @@ class ScriptWorkspaceGateway private constructor(
         val targetParts = Json.parseToJsonElement(ToolExecutionTargets.extract(skill.toProtocolTool(), args.toString()) ?: throw ScriptFailure("INVALID_PATH", "无法确定文件审批目标")).jsonArray
         val alias = ExternalMountPaths.aliasOf(path, rooted)
         val bindings = if (alias == null) emptyMap() else mapOf(alias to JsonPrimitive(mountIds.getValue(alias)))
-        val target = if (bindings.isEmpty()) targetParts.toString() else JsonArray(targetParts + buildJsonObject {
-            put("mountIds", JsonObject(bindings)); put("legacyWorkspaceUuids", JsonArray(emptyList()))
-        }).toString()
-        if (operation == "delete" || approveWrites()) {
+        val metadata = targetParts.lastOrNull() as? JsonObject
+        val tuple = if (metadata == null) targetParts.toList() else targetParts.dropLast(1)
+        val target = if (bindings.isEmpty()) targetParts.toString() else JsonArray(tuple + JsonObject(metadata.orEmpty() + mapOf(
+            "mountIds" to JsonObject(bindings), "legacyWorkspaceUuids" to JsonArray(emptyList()),
+        ))).toString()
+        if (operation == "delete" || approveWrites() || ToolArgumentApprovalRules.requiresExplicitApproval(skill.name, args.toString(), target)) {
             val scope = ToolAllowlistScopes.resolveForSession(context.sessionId, target, sessionWorkspace, mounts)
             if (scope == null || !grants.contains(skill.name, target, scope.scopeKey)) {
                 val decision = approvals.request(context.sessionId, skill.name, skill.risk, target, ApprovalPreview.format(skill.name, args)?.detail.orEmpty())
