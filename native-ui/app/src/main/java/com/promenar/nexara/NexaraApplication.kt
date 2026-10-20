@@ -993,6 +993,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     override fun newImageLoader(context: Context): ImageLoader {
         return ImageLoader.Builder(context)
             .components {
+                // 工作区媒体：字符串地址映射、带内容身份的缓存键与经解析器读取的取数器。
+                add(com.promenar.nexara.ui.media.WorkspaceMediaUriMapper())
+                add(com.promenar.nexara.ui.media.WorkspaceMediaKeyer())
+                add(com.promenar.nexara.ui.media.WorkspaceMediaFetcher.Factory(context) { workspaceMediaResolver })
                 add(VideoFrameDecoder.Factory())
                 add(SvgDecoder.Factory())
             }

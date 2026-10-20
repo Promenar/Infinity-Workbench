@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_cd_image">Image: %1$s</string>
+    <string name="media_cd_video">Video: %1$s</string>
+    <string name="media_cd_audio">Audio: %1$s</string>
+    <string name="media_cd_file">File: %1$s</string>
+    <string name="media_action_play">Play</string>
+    <string name="media_action_fullscreen">Full screen</string>
+    <string name="media_action_exit_fullscreen">Exit full screen</string>
+    <string name="media_action_retry">Retry</string>
+    <string name="media_action_save">Save to device</string>
+    <string name="media_action_share">Share</string>
+    <string name="media_action_open_with">Open with another app</string>
+    <string name="media_action_view">View</string>
+    <string name="media_action_close">Close</string>
+    <string name="media_action_locate">Show in resource explorer</string>
+    <string name="media_action_reset_zoom">Reset zoom</string>
+    <string name="media_action_rotate">Rotate</string>
+    <string name="media_unavailable_title">File unavailable</string>
+    <string name="media_unavailable_not_found">Does not exist</string>
+    <string name="media_unavailable_invalid_path">Invalid path</string>
+    <string name="media_unavailable_unreadable">Cannot be read</string>
+    <string name="media_unavailable_directory">Is a folder</string>
+    <string name="media_unavailable_no_session">Not linked to a conversation</string>
+    <string name="media_unavailable_detail">%1$s · %2$s</string>
+    <string name="media_loading">Loading media</string>
+    <string name="media_saved_to">Saved to %1$s</string>
+    <string name="media_save_failed">Could not save: %1$s</string>
+    <string name="media_share_failed">Could not share: %1$s</string>
+    <string name="media_open_failed">Could not open: %1$s</string>
+    <string name="media_failure_unavailable">the file is unavailable</string>
+    <string name="media_failure_read">the file cannot be read</string>
+    <string name="media_failure_write">the system media library refused the write</string>
+    <string name="media_failure_no_app">no app can handle this file</string>
+    <string name="media_playback_error">This media cannot be played</string>
+    <string name="media_playback_progress">Playback position</string>
+    <string name="media_duration_unknown">--:--</string>
+    <string name="media_kind_video">Video</string>
+    <string name="media_kind_audio">Audio</string>
+</resources>

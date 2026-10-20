@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_cd_image">图片：%1$s</string>
+    <string name="media_cd_video">视频：%1$s</string>
+    <string name="media_cd_audio">音频：%1$s</string>
+    <string name="media_cd_file">文件：%1$s</string>
+    <string name="media_action_play">播放</string>
+    <string name="media_action_fullscreen">全屏</string>
+    <string name="media_action_exit_fullscreen">退出全屏</string>
+    <string name="media_action_retry">重试</string>
+    <string name="media_action_save">保存到设备</string>
+    <string name="media_action_share">分享</string>
+    <string name="media_action_open_with">用其它应用打开</string>
+    <string name="media_action_view">查看</string>
+    <string name="media_action_close">关闭</string>
+    <string name="media_action_locate">在资源管理器中定位</string>
+    <string name="media_action_reset_zoom">重置缩放</string>
+    <string name="media_action_rotate">旋转</string>
+    <string name="media_unavailable_title">文件不可用</string>
+    <string name="media_unavailable_not_found">不存在</string>
+    <string name="media_unavailable_invalid_path">无效路径</string>
+    <string name="media_unavailable_unreadable">无法读取</string>
+    <string name="media_unavailable_directory">是文件夹</string>
+    <string name="media_unavailable_no_session">未关联会话</string>
+    <string name="media_unavailable_detail">%1$s · %2$s</string>
+    <string name="media_loading">正在加载媒体</string>
+    <string name="media_saved_to">已保存到 %1$s</string>
+    <string name="media_save_failed">保存失败：%1$s</string>
+    <string name="media_share_failed">分享失败：%1$s</string>
+    <string name="media_open_failed">打开失败：%1$s</string>
+    <string name="media_failure_unavailable">文件不可用</string>
+    <string name="media_failure_read">无法读取文件</string>
+    <string name="media_failure_write">系统媒体库拒绝写入</string>
+    <string name="media_failure_no_app">没有可处理此文件的应用</string>
+    <string name="media_playback_error">无法播放此媒体</string>
+    <string name="media_playback_progress">播放进度</string>
+    <string name="media_duration_unknown">--:--</string>
+    <string name="media_kind_video">视频</string>
+    <string name="media_kind_audio">音频</string>
+</resources>

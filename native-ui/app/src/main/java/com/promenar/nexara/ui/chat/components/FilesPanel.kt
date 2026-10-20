@@ -186,6 +186,8 @@ internal fun FilesPanel(
     nowMillis: Long = System.currentTimeMillis(),
     currentParentUuid: String? = null,
     allowTreeExpansion: Boolean = true,
+    /** 点按图片、视频、音频文件时调用（[onFileClick] 为空时生效），其它文件行为不变。 */
+    onMediaFileClick: ((FileEntry) -> Unit)? = null,
 ) {
     val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo) {
         if (rootFiles == null) {
@@ -364,7 +366,9 @@ internal fun FilesPanel(
             selectedIds = selectedIds,
             isMultiSelectMode = isMultiSelectMode,
             onFolderClick = onFolderClick,
-            onFileClick = onFileClick,
+            onFileClick = onFileClick ?: onMediaFileClick
+                ?.takeIf { isPreviewableMediaEntry(node.file) }
+                ?.let { openMedia -> { _: String -> openMedia(node.file) } },
             folders = folders,
             nowMillis = nowMillis,
             allowTreeExpansion = allowTreeExpansion,
@@ -1233,6 +1237,14 @@ private fun EmptyFilesState(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/** 资源管理器中可直接预览或播放的文件：图片、视频、音频。 */
+internal fun isPreviewableMediaEntry(file: FileEntry): Boolean {
+    if (file.isDirectory) return false
+    val topLevel = file.mimeType?.substringBefore('/')?.lowercase()
+    if (topLevel == "image" || topLevel == "video" || topLevel == "audio") return true
+    return com.promenar.nexara.ui.media.mediaKindForFileName(file.name) != com.promenar.nexara.domain.media.MediaKind.FILE
 }
 
 private fun fileIcon(file: FileEntry): ImageVector {

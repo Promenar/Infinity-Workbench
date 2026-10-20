@@ -97,6 +97,8 @@ fun ResourceExplorerSheet(
     onDismiss: () -> Unit,
     sessionId: String,
     chatViewModel: ChatViewModel,
+    /** 打开后定位到的工作区虚拟目录；不存在时定位到最近的已存在上级。 */
+    initialFolderPath: String? = null,
     viewModel: ResourceExplorerViewModel = viewModel(
         factory = ResourceExplorerViewModel.factory(
             LocalContext.current.applicationContext as android.app.Application
@@ -206,6 +208,7 @@ fun ResourceExplorerSheet(
                     hasLoadError = loadError != null,
                     onRetryLoad = viewModel::retryLoadSession,
                     onClearSearch = { viewModel.updateSearchQuery("") },
+                    initialFolderPath = initialFolderPath,
                 )
             },
             recycleBinContent = {

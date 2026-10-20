@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -53,6 +54,21 @@ internal data class WorkspaceSearchHit(
     /** 打开命中项时进入的导航栈：目录进入自身，文件进入所在目录。 */
     val navigationStack: List<FolderCrumb>
         get() = if (file.isDirectory) parents + FolderCrumb(file.uuid, file.name) else parents
+}
+
+/** 自 [path] 起逐级向上查找第一个存在的目录；到达工作区根仍未找到时返回 null（停在根目录）。 */
+internal suspend fun locateFolderStack(
+    path: String,
+    workspaceRootUuid: String,
+    lookup: suspend (String) -> FileEntry?,
+): FileEntry? {
+    var candidate: String? = com.promenar.nexara.ui.media.normalizeLocatePath(path)
+    while (candidate != null && candidate != "/") {
+        val entry = lookup(candidate)
+        if (entry != null && entry.isDirectory && entry.uuid != workspaceRootUuid) return entry
+        candidate = com.promenar.nexara.ui.media.mediaParentPath(candidate)
+    }
+    return null
 }
 
 /** 沿 parentUuid 回溯到工作区根，返回从根下第一级开始的目录链；遇到环或缺失的父节点即停止。 */
@@ -88,11 +104,45 @@ internal fun WorkspaceFolderBrowser(
     hasLoadError: Boolean,
     onRetryLoad: () -> Unit,
     onClearSearch: () -> Unit,
+    initialFolderPath: String? = null,
 ) {
     var folderStack by rememberSaveable(workspaceRootUuid) { mutableStateOf(listOf<FolderCrumb>()) }
     val activeFolderId = folderStack.lastOrNull()?.id ?: workspaceRootUuid
     val atRoot = folderStack.isEmpty()
     val rootTitle = stringResource(R.string.resource_explorer_workspace_root)
+
+    // 媒体不可用占位请求的定位：进入该虚拟目录，不存在时进入最近的已存在上级。
+    var consumedLocatePath by rememberSaveable(workspaceRootUuid) { mutableStateOf<String?>(null) }
+    LaunchedEffect(workspaceRootUuid, initialFolderPath) {
+        val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
+        val target = initialFolderPath ?: return@LaunchedEffect
+        if (target == consumedLocatePath) return@LaunchedEffect
+        consumedLocatePath = target
+        folderStack = locateFolderStack(target, rootUuid) { path ->
+            runCatching { workspaceRepo.getByMaterializedPath(rootUuid, path) }.getOrNull()
+        }?.let { folder ->
+            resolveFolderChain(folder, rootUuid) { uuid -> workspaceRepo.getByUuid(rootUuid, uuid) } +
+                FolderCrumb(folder.uuid, folder.name)
+        }.orEmpty()
+    }
+
+    // 点按图片、视频、音频文件时直接打开查看器；条目的虚拟路径即其 materializedPath。
+    var openedMediaPath by rememberSaveable(workspaceRootUuid) { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val mediaEnvironment = com.promenar.nexara.ui.media.LocalWorkspaceMedia.current
+        ?: androidx.compose.runtime.remember(sessionId, context) {
+            val application = context.applicationContext as? com.promenar.nexara.NexaraApplication
+            if (sessionId == null || application == null) null
+            else com.promenar.nexara.ui.media.WorkspaceMediaEnvironment(sessionId, application.workspaceMediaResolver)
+        }
+    val onMediaFileClick: ((FileEntry) -> Unit)? = mediaEnvironment?.let { { entry -> openedMediaPath = entry.materializedPath } }
+    openedMediaPath?.let { path ->
+        if (mediaEnvironment != null) {
+            androidx.compose.runtime.CompositionLocalProvider(com.promenar.nexara.ui.media.LocalWorkspaceMedia provides mediaEnvironment) {
+                com.promenar.nexara.ui.media.WorkspaceMediaViewer(path = path, onDismiss = { openedMediaPath = null })
+            }
+        }
+    }
 
     BackHandler(enabled = !atRoot && searchQuery.isBlank()) {
         folderStack = folderStack.dropLast(1)
@@ -127,6 +177,7 @@ internal fun WorkspaceFolderBrowser(
                         onFolderClick = { folderId, folderName ->
                             folderStack = folderStack + FolderCrumb(folderId, folderName)
                         },
+                        onMediaFileClick = onMediaFileClick,
                     )
                 }
             }
