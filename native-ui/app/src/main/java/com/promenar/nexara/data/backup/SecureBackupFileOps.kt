@@ -18,6 +18,10 @@ interface RestoreFileOperations {
     fun writeNew(root: Path, relative: List<String>, bytes: ByteArray)
     fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String
     fun moveTree(parent: Path, sourceName: String, targetName: String)
+    fun moveTreeBetween(sourceParent: Path, sourceName: String, targetParent: Path, targetName: String) {
+        if (sourceParent != targetParent) throw BackupValidationException("恢复文件操作未实现跨目录移动")
+        moveTree(sourceParent, sourceName, targetName)
+    }
     fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry>
     fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>)
     fun deleteTree(
@@ -162,6 +166,14 @@ internal object SecureBackupFileOps : RestoreFileOperations {
     override fun moveTree(parent: Path, sourceName: String, targetName: String) {
         openSecure(parent).use { secure ->
             secure.move(Paths.get(sourceName), secure, Paths.get(targetName))
+        }
+    }
+
+    override fun moveTreeBetween(sourceParent: Path, sourceName: String, targetParent: Path, targetName: String) {
+        openSecure(sourceParent).use { source ->
+            openSecure(targetParent).use { target ->
+                source.move(Paths.get(sourceName), target, Paths.get(targetName))
+            }
         }
     }
 

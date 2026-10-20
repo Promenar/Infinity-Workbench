@@ -31,6 +31,8 @@ class BackupRuntime internal constructor(
 ) {
     private val _state = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val state: StateFlow<BackupStartupState> = _state.asStateFlow()
+    private val _restoreResult = MutableStateFlow<BackupRestoreResult?>(null)
+    val restoreResult: StateFlow<BackupRestoreResult?> = _restoreResult.asStateFlow()
 
     private val attemptMutex = Mutex()
     private var activeAttempt: CompletableDeferred<BackupStartupState>? = null
@@ -83,14 +85,18 @@ class BackupRuntime internal constructor(
                 return
             }
             if (dataSource.hasCompletedRestore(txId)) {
+                packageCodec.decode(payload.packageBytes, payload.password).use {
+                    _restoreResult.value = BackupRestoreResult(it.skills?.metadata?.summary)
+                }
                 store.clear(txId)
                 return
             }
             val validated = packageCodec.decode(payload.packageBytes, payload.password)
-            dataSource.restore(validated, txId)
+            val result = dataSource.restoreWithResult(validated, txId)
             if (!dataSource.hasCompletedRestore(txId)) {
                 throw BackupValidationException("恢复完成回执缺失，待恢复记录已保留")
             }
+            _restoreResult.value = result
             store.clear(txId)
         }
     }
@@ -100,6 +106,7 @@ class BackupRuntime internal constructor(
             context: Context,
             database: NexaraDatabase,
             liveSecretStore: SecretStore,
+            userSkillsRoot: java.nio.file.Path = context.applicationContext.filesDir.resolve("agent_skills").toPath(),
         ): BackupRuntime {
             val appContext = context.applicationContext
             val workspaceBase = appContext.filesDir.resolve("WorkSpace").also { it.mkdirs() }.toPath()
@@ -122,6 +129,7 @@ class BackupRuntime internal constructor(
                     trustedRestoreBase = restoreBase,
                     appVersion = BuildConfig.VERSION_NAME,
                     journalAuthenticator = AndroidRestoreJournalAuthenticator(),
+                    userSkillsRoot = userSkillsRoot,
                 )
             return BackupRuntime(
                 dataSource = dataSource,
