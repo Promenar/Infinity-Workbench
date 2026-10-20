@@ -455,6 +455,8 @@ run_test workspace-picker "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.workspace.WorkspacePickerDeviceTest
 run_test git-inspector "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.git.GitInspectorDeviceTest
+run_test git-remote-auth "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.git.remote.GitRemoteAuthDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then
