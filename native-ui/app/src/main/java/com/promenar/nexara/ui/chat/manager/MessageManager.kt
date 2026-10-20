@@ -332,15 +332,48 @@ class MessageManager(
         messageId: String,
         content: String,
         options: UpdateMessageOptions? = null
+    ) = enqueueUpdate(sessionId, messageId) { _ -> content to options }
+
+    /**
+     * 在 [stateLock] 内基于消息的“最新视图”计算并合并一次增量更新，正文沿用最新视图。
+     *
+     * 最新视图 = store 已提交消息 → 叠加正在刷入 store 的缓冲 → 叠加同代未刷新的节流缓冲。
+     * 先从 store 读取列表字段（执行步骤、引用等）再经 [updateMessageContent] 整体写回，
+     * 会读到节流窗口内尚未刷新的旧值并覆盖其间的追加；对这类读-改-写必须使用本方法。
+     * [transform] 在锁内执行，只能做纯计算，不得回调 [MessageManager]。
+     */
+    fun updateFromLatest(
+        sessionId: String,
+        messageId: String,
+        transform: (Message) -> UpdateMessageOptions?,
+    ) = enqueueUpdate(sessionId, messageId) { latestView ->
+        val latest = latestView() ?: return@enqueueUpdate null
+        latest.content to transform(latest)
+    }
+
+    /** [resolve] 返回 null 表示放弃本次更新；最新视图按需惰性构造，流式正文热路径不承担额外开销。 */
+    private fun enqueueUpdate(
+        sessionId: String,
+        messageId: String,
+        resolve: (latestView: () -> Message?) -> Pair<String, UpdateMessageOptions?>?,
     ) {
         val key = "$sessionId:$messageId"
         if (store.getSession(sessionId)?.messages?.any { it.id == messageId } != true) return
         val jobToStart = synchronized(stateLock) {
             if (key in purgingKeys) return
             val lane = lanes.getOrPut(key) { MessageLane() }
-            val current = pendingUpdates[key]
-                ?.takeIf { it.epoch == lane.epoch }
-                ?: PendingUpdate(epoch = lane.epoch, content = content)
+            val pending = pendingUpdates[key]?.takeIf { it.epoch == lane.epoch }
+            val (content, options) = resolve {
+                // 必须在锁内读取：flushUpdate 先在锁内把缓冲转入 inFlight，写入 store 后才在锁内移除，
+                // 因此任一时刻“store + inFlight + pending”都覆盖全部已排队的更新。
+                val inFlight = inFlightUiUpdates[key]?.takeIf { it.epoch == lane.epoch }
+                store.getSession(sessionId)?.messages?.firstOrNull { it.id == messageId }?.let { committed ->
+                    listOfNotNull(inFlight, pending).fold(committed) { message, update ->
+                        applyPendingToMessage(message, update, update.tokens ?: message.tokens ?: TokenUsage())
+                    }
+                }
+            } ?: return
+            val current = pending ?: PendingUpdate(epoch = lane.epoch, content = content)
 
             current.content = content
             options?.status?.let { current.status = it }

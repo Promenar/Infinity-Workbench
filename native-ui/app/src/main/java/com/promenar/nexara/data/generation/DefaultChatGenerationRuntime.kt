@@ -558,17 +558,9 @@ internal class DefaultChatGenerationRuntime(
         val calls = snapshot.toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
         val normalized = contentStrategy.normalize(snapshot.content, calls)
         if (normalized.syntheticSteps.isNotEmpty()) {
-            val current = store.getSession(request.sessionId)?.messages
-                ?.firstOrNull { it.id == assistantMessageId(request) }
-            if (current != null) {
-                messageManager.updateMessageContent(
-                    request.sessionId,
-                    assistantMessageId(request),
-                    current.content,
-                    UpdateMessageOptions(
-                        executionSteps = current.executionSteps.orEmpty() + normalized.syntheticSteps,
-                    ),
-                )
+            // 基于最新视图追加，避免覆盖上一轮工具调用尚未刷入 store 的执行步骤。
+            messageManager.updateFromLatest(request.sessionId, assistantMessageId(request)) { current ->
+                UpdateMessageOptions(executionSteps = current.executionSteps.orEmpty() + normalized.syntheticSteps)
             }
         }
         return snapshot.copy(content = normalized.content)
