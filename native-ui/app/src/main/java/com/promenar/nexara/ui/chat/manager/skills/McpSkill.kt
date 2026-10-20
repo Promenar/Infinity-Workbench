@@ -15,7 +15,8 @@ class McpSkill(
     override val parametersSchema: String,
     private val mcpClient: McpClient,
     private val headerParameters: Set<String> = emptySet(),
-    override val mcpServerId: String? = null
+    override val mcpServerId: String? = null,
+    private val mediaStore: com.promenar.nexara.domain.media.WorkspaceMediaStore? = null,
 ) : SkillDefinition {
     override val sourceId: String = "mcp"
     override val risk get() = mcpClient.defaultToolRisk
@@ -23,11 +24,7 @@ class McpSkill(
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         return try {
             val result = mcpClient.callTool(remoteToolName, args, headerParameters)
-            ToolResult(
-                id = "mcp_${System.currentTimeMillis()}",
-                content = result.toString(),
-                status = "success"
-            )
+            McpMediaResultProcessor(mediaStore).process(result, context.sessionId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {

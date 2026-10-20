@@ -66,6 +66,9 @@ object ToolExecutionTargets {
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
         val target = when (tool.function.name) {
+            "media_fetch" -> runCatching {
+                com.promenar.nexara.domain.media.MediaFetchPaths.targetPath(args.string("path")) ?: "/media"
+            }.getOrNull()?.let { tuple("path", it) }
             "read_file", "write_file", "patch_file", "diff_file", "delete_file", "run_script" ->
                 entryPath(args, resolvedPaths)?.let { tuple("path", it) }
             "create_file", "create_directory" -> {
@@ -231,5 +234,5 @@ object ToolExecutionTargets {
         )))).toString()
     }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
-    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file")
+    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file", "media_fetch")
 }
