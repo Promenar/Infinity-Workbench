@@ -138,6 +138,7 @@ fun SkillsScreen(
     onNavigateBack: () -> Unit,
     onOpenSsh: () -> Unit = {},
     onOpenTermux: () -> Unit = {},
+    onOpenTailscale: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -192,6 +193,7 @@ fun SkillsScreen(
         application.sshHostStore.observeHosts().flowOn(Dispatchers.IO)
     }.collectAsState(initial = emptyList())
     var termuxAvailability by remember { mutableStateOf<TermuxAvailability?>(null) }
+    val tailscaleState by application.tailnetManager.state.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
@@ -238,6 +240,7 @@ fun SkillsScreen(
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
                         retryLimit = retryLimit,
+                        tailscaleState = tailscaleState,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -253,6 +256,7 @@ fun SkillsScreen(
                         onScriptHostsSaved = { scope.launch { snackbarHost.showSnackbar(hostsSavedMessage) } },
                         onOpenSsh = onOpenSsh,
                         onOpenTermux = onOpenTermux,
+                        onOpenTailscale = onOpenTailscale,
                     ),
                 )
 

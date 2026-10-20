@@ -504,6 +504,8 @@ class SshRuntime(
                 setServerAliveInterval(15_000)
                 setServerAliveCountMax(3)
                 setDaemonThread(true)
+                // tailnet 主机经内置 Tailscale 的本机 SOCKS5 代理（主机名由代理端解析）；其它主机直连不变。
+                com.promenar.nexara.data.tailnet.InstalledTailnetRouting.routing.jschProxy(host.hostname)?.let { setProxy(it) }
             }
             var outputFilter: SshOutputFilter? = null
             try {

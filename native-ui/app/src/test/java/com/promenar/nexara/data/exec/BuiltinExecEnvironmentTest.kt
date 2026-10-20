@@ -17,13 +17,17 @@ class BuiltinExecEnvironmentTest {
 
     @After fun tearDown() { work.deleteRecursively() }
 
-    private fun environment(userPackages: PythonUserPackages?) = BuiltinExecEnvironment(
+    private fun environment(
+        userPackages: PythonUserPackages?,
+        tailnet: () -> Map<String, String> = { emptyMap() },
+    ) = BuiltinExecEnvironment(
         python = PackagedPython(pythonDir),
         homeDirectory = File(work, "home"),
         tempDirectory = File(work, "tmp"),
         caBundle = { null },
         userPackages = userPackages,
         inherited = emptyMap(),
+        tailnetEnvironment = tailnet,
     )
 
     @Test fun `站点 zip 排在标准库之后进入 PYTHONPATH`() {
@@ -56,5 +60,23 @@ class BuiltinExecEnvironmentTest {
         listOf("python3()", "python()", "git()", "pip()", "pip3()").forEach { assertThat(prelude).contains(it) }
         assertThat(prelude).contains("-m nexara_git")
         assertThat(prelude).contains("-m nexara_pip")
+    }
+
+    @Test fun `内置 Tailscale 未运行时不设置任何代理变量`() {
+        val env = environment(null).forWorkspace(File(work, "ws"))
+        assertThat(env.keys.filter { it.lowercase().endsWith("_proxy") }).isEmpty()
+        val default = BuiltinExecEnvironment(PackagedPython(pythonDir), File(work, "home"), File(work, "tmp"), { null }, inherited = emptyMap())
+        assertThat(default.forWorkspace(File(work, "ws")).keys.filter { it.lowercase().endsWith("_proxy") }).isEmpty()
+    }
+
+    @Test fun `内置 Tailscale 运行时合入代理变量且 NO_PROXY 覆盖本机地址`() {
+        val endpoint = com.promenar.nexara.data.tailnet.TailnetProxyEndpoint(41000, "u".repeat(24), "p".repeat(24))
+        val tailnet = com.promenar.nexara.data.tailnet.TailnetProxyConfig.environment(endpoint)
+        val env = environment(null) { tailnet }.forPython(File(work, "ws"))
+        assertThat(env["NO_PROXY"]).isEqualTo("localhost,127.0.0.1,::1")
+        assertThat(env["no_proxy"]).isEqualTo("localhost,127.0.0.1,::1")
+        assertThat(env["https_proxy"]).isEqualTo("http://${"u".repeat(24)}:${"p".repeat(24)}@127.0.0.1:41000")
+        assertThat(env["ALL_PROXY"]).startsWith("socks5h://")
+        assertThat(env["NEXARA_BACKEND"]).isEqualTo("builtin")
     }
 }

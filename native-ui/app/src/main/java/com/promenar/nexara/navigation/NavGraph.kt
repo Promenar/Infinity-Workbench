@@ -79,6 +79,7 @@ object NavDestinations {
     const val SKILLS_CONFIG = "skills_config"
     const val SSH_CONFIG = "ssh_config"
     const val TERMUX_CONFIG = "termux_config"
+    const val TAILSCALE_CONFIG = "tailscale_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
@@ -593,7 +594,12 @@ fun NexaraNavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
                 onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
+                onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
             )
+        }
+
+        composable(NavDestinations.TAILSCALE_CONFIG) {
+            com.promenar.nexara.ui.settings.TailscaleSettingsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(NavDestinations.TERMUX_CONFIG) {
