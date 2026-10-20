@@ -59,6 +59,20 @@ interface GitCredentialStore {
 }
 
 /**
+ * 首次使用时才创建底层存储：[SecretGitCredentialStore] 构造时要解密 Keystore 中的主机列表，
+ * 而代理与执行后端可能在主线程装配；实际调用都发生在 IO 线程。
+ */
+class LazyGitCredentialStore(provider: () -> GitCredentialStore) : GitCredentialStore {
+    private val store by lazy(provider)
+    override val credentials: StateFlow<List<GitCredential>> get() = store.credentials
+    override fun save(host: String, username: String, token: ByteArray) = store.save(host, username, token)
+    override fun delete(host: String) = store.delete(host)
+    override fun token(host: String): ByteArray? = store.token(host)
+    override fun username(host: String): String? = store.username(host)
+    override fun hosts(): Set<String> = store.hosts()
+}
+
+/**
  * 主机列表与令牌都存于 [SecretStore]（Android Keystore 加密）：
  * 应用的备份只收录 `SecretCatalog.backupEligible` 白名单中的密钥，系统备份已关闭，因此 Git 凭据不进入任何备份。
  */

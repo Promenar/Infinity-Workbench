@@ -57,7 +57,7 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例；`libpysite.so` 只放行 urllib3 文档中的占位地址 `https://username:password@`。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。校验还要求每个 ABI 同时带 `libpystdlib.so` 与 `libpysite.so`，`os`、`encodings`、`sitecustomize`、`nexara_git`、`dulwich`、`dulwich.repo` 有不核对源码的哈希 pyc，且同一 ABI 内 magic 一致。Release 通用 APK 实测约 34.7 MB（其中内置 git 依赖约 2.5 MB，预编译字节码合计约 3.6 MB），校验上限 50 MB。
 
-升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，按新包的 `pycore_magic_number.h` 更新 `pycMagic`，准备同主次版本的宿主解释器（本机与 CI 的 `python-version`），再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）。
+升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，按新包的 `pycore_magic_number.h` 更新 `pycMagic`，准备同主次版本的宿主解释器（本机与 CI 的 `python-version`），再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）与 `com.promenar.nexara.data.git.remote.GitRemoteAuthDeviceTest`（`android-device-core-e2e.sh` 的 `git-remote-auth` 阶段：本机 dulwich 智能 HTTP 上游经凭据注入代理 clone/push、未配置主机直连、SSH 远端经 SSH 桥 clone/push，不需要外网）。
 
 ## 富内容 WebView
 

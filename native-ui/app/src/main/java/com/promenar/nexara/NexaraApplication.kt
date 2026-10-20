@@ -1743,17 +1743,24 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     /** 凭据注入代理向远端转发所用的 OkHttp 客户端；接入 tailnet 时在此挂 ProxySelector。 */
     val gitRemoteHttpClient: okhttp3.OkHttpClient by lazy { okhttp3.OkHttpClient() }
 
-    /** 内置 git 的远端认证代理（HTTPS 凭据注入 + SSH 桥），由内置执行后端按命令签发 nonce。 */
+    /**
+     * 内置 git 的远端认证代理（HTTPS 凭据注入 + SSH 桥），由内置执行后端按命令签发 nonce。
+     * 装配可能发生在主线程：凭据存储与 SshRuntime 都延迟到首次使用（在 IO 线程）再创建。
+     */
     val gitRemoteBroker: com.promenar.nexara.data.git.remote.GitRemoteBroker by lazy {
         val nonces = com.promenar.nexara.data.git.remote.GitNonceRegistry()
+        val credentials = com.promenar.nexara.data.git.remote.LazyGitCredentialStore { gitCredentialStore }
         com.promenar.nexara.data.git.remote.GitRemoteBroker(
-            credentials = gitCredentialStore,
+            credentials = credentials,
             nonces = nonces,
-            proxy = com.promenar.nexara.data.git.remote.GitCredentialProxy(gitCredentialStore, nonces, gitRemoteHttpClient),
+            proxy = com.promenar.nexara.data.git.remote.GitCredentialProxy(credentials, nonces, gitRemoteHttpClient),
             sshBridge = com.promenar.nexara.data.git.remote.GitSshBridge(
                 nonces = nonces,
                 hosts = { com.promenar.nexara.data.git.remote.currentSshHosts(sshHostStore) },
-                executor = com.promenar.nexara.data.git.remote.sshRuntimeGitExecutor(sshRuntime),
+                executor = { host, command, environment, stdin, stdout, stderr, started ->
+                    com.promenar.nexara.data.git.remote.sshRuntimeGitExecutor(sshRuntime)
+                        .execute(host, command, environment, stdin, stdout, stderr, started)
+                },
             ),
         )
     }

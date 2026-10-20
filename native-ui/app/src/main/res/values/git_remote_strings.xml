@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="git_credentials_entry">Git credentials</string>
-    <string name="git_credentials_entry_count">%1$d hosts saved</string>
+    <plurals name="git_credentials_entry_count">
+        <item quantity="one">%1$d host saved</item>
+        <item quantity="other">%1$d hosts saved</item>
+    </plurals>
     <string name="git_credentials_entry_empty">HTTPS tokens for the built-in git</string>
     <string name="git_credentials_title">Git credentials</string>
     <string name="git_credentials_saved_section">Saved credentials</string>

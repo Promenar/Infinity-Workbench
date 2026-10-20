@@ -88,6 +88,18 @@ class GitCredentialStoreTest {
         assertThat(eligible.map { it.value }.none { it.startsWith("git_credential") }).isTrue()
     }
 
+    @Test fun `延迟存储在装配时不创建底层存储，首次调用才创建且只创建一次`() {
+        var created = 0
+        val secrets = MemorySecrets()
+        val store = LazyGitCredentialStore { created++; SecretGitCredentialStore(secrets) }
+        assertThat(created).isEqualTo(0)
+        assertThat(store.hosts()).isEmpty()
+        store.save("github.com", "octocat", token.toByteArray())
+        assertThat(store.credentials.value).containsExactly(GitCredential("github.com", "octocat"))
+        assertThat(store.token("github.com")!!.toString(Charsets.UTF_8)).isEqualTo(token)
+        assertThat(created).isEqualTo(1)
+    }
+
     @Test fun `损坏的主机列表视为空`() {
         val secrets = MemorySecrets()
         secrets.put(SecretGitCredentialStore.INDEX_ID, "not json".toByteArray())

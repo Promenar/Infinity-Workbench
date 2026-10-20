@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
 import com.promenar.nexara.data.termux.TermuxAvailability
@@ -86,7 +87,7 @@ internal fun SkillsSettingsHeaderContent(
                 subtitle = when (val count = state.gitCredentialCount) {
                     null -> stringResource(R.string.settings_status_loading)
                     0 -> stringResource(R.string.git_credentials_entry_empty)
-                    else -> stringResource(R.string.git_credentials_entry_count, count)
+                    else -> pluralStringResource(R.plurals.git_credentials_entry_count, count, count)
                 },
                 onClick = actions.onOpenGitCredentials,
                 showChevron = true,

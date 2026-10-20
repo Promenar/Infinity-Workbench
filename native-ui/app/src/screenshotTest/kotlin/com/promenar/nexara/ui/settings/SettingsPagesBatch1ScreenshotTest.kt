@@ -49,6 +49,7 @@ private val Batch1ToolsState = SkillsSettingsVisualState(
     approveScriptWrites = true,
     sshHostCount = 0,
     termuxAvailability = TermuxAvailability(false, null, false),
+    gitCredentialCount = 0,
 )
 
 @Composable

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="git_credentials_entry">Git 凭据</string>
-    <string name="git_credentials_entry_count">已保存 %1$d 个主机</string>
+    <plurals name="git_credentials_entry_count">
+        <item quantity="other">已保存 %1$d 个主机</item>
+    </plurals>
     <string name="git_credentials_entry_empty">内置 git 的 HTTPS 令牌</string>
     <string name="git_credentials_title">Git 凭据</string>
     <string name="git_credentials_saved_section">已保存的凭据</string>

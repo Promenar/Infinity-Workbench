@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 内置 git 远端认证（HTTPS 凭据与 SSH 远端）
+
+- 新增“设置 → 工具 → Git 凭据”：按主机（如 `github.com`、`git.example.com:8443`）保存用户名与访问令牌。令牌存于 Android Keystore 支撑的 `SecretStore`，不进入任何备份，界面不显示明文。
+- 内置 git 访问已配置主机的 HTTPS 远端时，请求改经 App 内的凭据注入代理（只监听 `127.0.0.1` 随机端口），由代理加 `Authorization` 后经 HTTPS 转发；令牌不出现在命令、环境变量、文件、输出与模型上下文中。每条 `shell_exec` / `python_exec` 命令获得一次性 nonce，命令结束（含超时、停止、取消）即失效；代理只放行 git 智能协议路径，重定向到未配置主机时拒绝。未配置的主机保持直连。
+- `git@主机:路径` 与 `ssh://` 远端改经 App 内的 SSH 桥，使用“SSH 主机与终端”中已固定主机密钥的主机（例如主机 `github.com`、用户 `git`），只执行 `git-upload-pack` / `git-receive-pack` / `git-upload-archive` 加单个引号路径；私钥不离开 App。未匹配主机或未固定主机密钥时给出配置指引。
+- `nexara_git` 用法改为引导使用 Git 凭据；URL 中的用户信息仍兼容但不再推荐，错误信息不含令牌。推送仍是普通 `shell_exec` 命令，沿用现有审批。
+- 设备门禁新增 `git-remote-auth` 阶段（`GitRemoteAuthDeviceTest`）。
+
 ### 打包 Python 预编译字节码
 
 - 标准库与内置 git 依赖的 zip 在构建期预编译为不核对源码的哈希 pyc：标准库只放 pyc，dulwich 与 Nexara 模块保留源码。真机实测一次 Git 状态检查从约 2 秒降到约 0.2 秒，`shell_exec` 中每条 `git` 命令与 `python_exec`、`python_sandbox` 的启动同步变快。
