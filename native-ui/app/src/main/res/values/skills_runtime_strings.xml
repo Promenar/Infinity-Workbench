@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="skills_runtime_section_user">User skills</string>
+    <string name="skills_runtime_section_project">Project skills</string>
+    <string name="skills_runtime_user_footer">Shared by all agents and sessions at /skills. Ask the agent to create or edit skills there.</string>
+    <string name="skills_runtime_project_footer">From this workspace\'s .agents/skills. The model can use a project skill only after you trust it.</string>
+    <string name="skills_runtime_user_empty">No skills yet. Ask the agent to create one in /skills, or import one in Settings.</string>
+    <string name="skills_runtime_project_empty">This workspace has no skills in .agents/skills.</string>
+    <string name="skills_runtime_status_enabled">Enabled</string>
+    <string name="skills_runtime_status_disabled">Off</string>
+    <string name="skills_runtime_status_pending">Needs your trust</string>
+    <string name="skills_runtime_status_broken">Unavailable: %1$s</string>
+    <string name="skills_runtime_status_broken_short">Unavailable</string>
+    <string name="skills_runtime_status_modified">Changed since you confirmed it</string>
+    <string name="skills_runtime_status_explicit_only">Used only when you mention $%1$s</string>
+    <string name="skills_runtime_toggle_cd">Enable %1$s</string>
+    <string name="skills_runtime_trust">Trust</string>
+    <string name="skills_runtime_trust_title">Trust %1$s?</string>
+    <string name="skills_runtime_trust_message">The instructions in %1$s will be offered to the model in this workspace. If the content changes, you will be asked again.</string>
+    <string name="skills_runtime_acknowledge">Confirm changes</string>
+    <string name="skills_runtime_detail_path">Path</string>
+    <string name="skills_runtime_detail_status">Status</string>
+    <string name="skills_runtime_detail_files">Bundled files</string>
+    <string name="skills_runtime_document_unavailable">SKILL.md cannot be read.</string>
+    <string name="skills_runtime_delete_title">Delete %1$s?</string>
+    <string name="skills_runtime_delete_message">%1$s moves to the app\'s recycle area and is cleared after 30 days.</string>
+    <string name="skills_runtime_error">Skill action failed: %1$s</string>
+    <string name="sheet_tool_section_usage">Tool use</string>
+    <string name="sheet_tool_tools_enabled">Use tools</string>
+    <string name="sheet_tool_tools_enabled_desc">When off, this session offers no tools to the model.</string>
+    <string name="sheet_tool_time_injection_desc">Each request includes the current date and time.</string>
+    <string name="skills_runtime_edit">Edit</string>
+</resources>

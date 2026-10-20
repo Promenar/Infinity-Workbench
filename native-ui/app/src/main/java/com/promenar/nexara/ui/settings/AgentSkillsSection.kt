@@ -52,91 +52,40 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
-import com.promenar.nexara.data.skills.InstalledAgentSkill
+import com.promenar.nexara.data.skills.DiscoveredSkill
+import com.promenar.nexara.ui.skills.SkillCatalogActions
+import com.promenar.nexara.ui.skills.SkillScopeSection
 import com.promenar.nexara.data.skills.SkillMarkdownParser
 import com.promenar.nexara.ui.theme.forInput
 
-/** 技能包列表与操作入口；无状态，便于截图与预览。 */
+/** 设置页“技能包”标签：用户级技能列表，末尾是导入与新建；无状态，便于截图与预览。 */
 @Composable
 fun AgentSkillsSection(
-    skills: List<InstalledAgentSkill>,
-    onToggle: (String, Boolean) -> Unit,
-    onOpen: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    skills: List<DiscoveredSkill>,
+    actions: SkillCatalogActions,
     onImport: () -> Unit,
     onCreate: () -> Unit,
 ) {
-    var pendingDelete by remember { mutableStateOf<String?>(null) }
-    NexaraSettingsSection(
-        title = stringResource(R.string.skills_tab_user),
-        footer = stringResource(R.string.settings_batch1_agent_skills_footer),
-    ) {
-        if (skills.isEmpty()) {
-            SkillsEmptyState(
-                icon = Icons.Rounded.AutoAwesome,
-                message = stringResource(R.string.agent_skills_empty),
+    SkillScopeSection(
+        title = stringResource(R.string.skills_runtime_section_user),
+        footer = stringResource(R.string.skills_runtime_user_footer),
+        skills = skills,
+        emptyMessage = stringResource(R.string.agent_skills_empty),
+        actions = actions,
+        trailingRows = {
+            // 导入与新建作为分组末尾的操作行，和 MCP 的“添加服务器”保持同一形态。
+            NexaraSettingsItem(
+                icon = Icons.Rounded.FileOpen,
+                title = stringResource(R.string.tools_skill_import_row),
+                titleColor = MaterialTheme.colorScheme.primary,
+                onClick = onImport,
             )
-        }
-        skills.forEach { skill ->
-            AgentSkillItem(
-                skill = skill,
-                onToggle = { onToggle(skill.metadata.name, it) },
-                onOpen = { onOpen(skill.metadata.name) },
-                onDelete = { pendingDelete = skill.metadata.name },
+            NexaraSettingsItem(
+                icon = Icons.Rounded.Add,
+                title = stringResource(R.string.agent_skills_create),
+                titleColor = MaterialTheme.colorScheme.primary,
+                onClick = onCreate,
             )
-        }
-        // 导入与新建作为分组末尾的操作行，和 MCP 的“添加服务器”保持同一形态。
-        NexaraSettingsItem(
-            icon = Icons.Rounded.FileOpen,
-            title = stringResource(R.string.tools_skill_import_row),
-            titleColor = MaterialTheme.colorScheme.primary,
-            onClick = onImport,
-        )
-        NexaraSettingsItem(
-            icon = Icons.Rounded.Add,
-            title = stringResource(R.string.agent_skills_create),
-            titleColor = MaterialTheme.colorScheme.primary,
-            onClick = onCreate,
-        )
-    }
-
-    pendingDelete?.let { name ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text(stringResource(R.string.agent_skills_delete_title, name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(name)
-                    pendingDelete = null
-                }) { Text(stringResource(R.string.shared_btn_delete)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.common_btn_cancel)) }
-            },
-        )
-    }
-}
-
-/** 技能包的启用、打开与删除均保留为同行操作。 */
-@Composable
-private fun AgentSkillItem(
-    skill: InstalledAgentSkill,
-    onToggle: (Boolean) -> Unit,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    NexaraSettingsItem(
-        icon = Icons.Rounded.AutoAwesome,
-        title = skill.metadata.name,
-        subtitle = if (skill.files.isNotEmpty()) pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size) else null,
-        onClick = onOpen,
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.shared_btn_delete), tint = MaterialTheme.colorScheme.error)
-                }
-                Switch(checked = skill.enabled, onCheckedChange = onToggle)
-            }
         },
     )
 }

@@ -28,8 +28,10 @@ import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
-import com.promenar.nexara.data.skills.AgentSkillMetadata
-import com.promenar.nexara.data.skills.InstalledAgentSkill
+import com.promenar.nexara.data.skills.DiscoveredSkill
+import com.promenar.nexara.data.skills.SkillScope
+import com.promenar.nexara.data.skills.SkillStatus
+import com.promenar.nexara.ui.skills.SkillCatalogActions
 import com.promenar.nexara.ui.chat.ApprovalCard
 import com.promenar.nexara.ui.chat.ApprovalDisplayCall
 import com.promenar.nexara.ui.chat.ApprovalPreview
@@ -138,9 +140,7 @@ class TextWrappingDeviceTest {
                         )
                         AgentSkillsSection(
                             skills = skills,
-                            onToggle = { _, _ -> },
-                            onOpen = {},
-                            onDelete = {},
+                            actions = SkillCatalogActions(),
                             onImport = {},
                             onCreate = {},
                         )
@@ -188,10 +188,20 @@ class TextWrappingDeviceTest {
     )
 
     private val skills = listOf(
-        InstalledAgentSkill(
-            AgentSkillMetadata("release-notes", "根据提交记录与变更文件撰写结构化发行说明，适用于版本发布前整理。"),
+        DiscoveredSkill(
+            id = "user:release-notes",
+            scope = SkillScope.USER,
+            name = "release-notes",
+            description = "根据提交记录与变更文件撰写结构化发行说明，适用于版本发布前整理。",
+            displayName = null,
+            shortDescription = null,
+            virtualDir = "/skills/release-notes",
             files = listOf("templates/notes.md"),
-            enabled = true,
+            status = SkillStatus.ENABLED,
+            modifiedSinceConfirmed = false,
+            allowImplicitInvocation = true,
+            brokenReason = null,
+            metadata = null,
         ),
     )
 

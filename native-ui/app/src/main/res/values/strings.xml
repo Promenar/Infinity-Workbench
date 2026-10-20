@@ -608,7 +608,6 @@
     <string name="sheet_execution_mode_auto">Auto: All tools run automatically</string>
     <string name="sheet_execution_mode_semi">Semi: File writes and high-risk tools need approval</string>
     <string name="sheet_execution_mode_manual">Manual: All tools need approval</string>
-    <string name="sheet_tool_search_retrieval">Search &amp; Retrieval</string>
     <string name="sheet_tool_code_analysis">Code Analysis</string>
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
@@ -1476,7 +1475,6 @@
     <string name="agent_avatar_edit">Edit agent avatar</string>
 
     <!-- Release-reachable retrieval availability -->
-    <string name="sheet_tool_economy_mode">Token economy mode</string>
     <string name="sheet_tool_gemini_grounding">Gemini web grounding</string>
     <string name="sheet_settings_rerank_unavailable">No default rerank model is configured. Reranking has been disabled.</string>
     <string name="retrieval_rerank_model_unconfigured">Model not configured</string>

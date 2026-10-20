@@ -958,26 +958,20 @@ fun agentSkillPacksReleasePreview() {
         Box(modifier = Modifier.padding(16.dp)) {
             com.promenar.nexara.ui.settings.AgentSkillsSection(
                 skills = listOf(
-                    com.promenar.nexara.data.skills.InstalledAgentSkill(
-                        com.promenar.nexara.data.skills.AgentSkillMetadata(
-                            "release-notes",
-                            "根据提交记录与变更文件撰写结构化发行说明，适用于版本发布前整理。",
-                        ),
+                    releasePreviewSkill(
+                        "release-notes",
+                        "根据提交记录与变更文件撰写结构化发行说明，适用于版本发布前整理。",
                         files = listOf("templates/notes.md", "reference/style.md"),
-                        enabled = true,
+                        status = com.promenar.nexara.data.skills.SkillStatus.ENABLED,
                     ),
-                    com.promenar.nexara.data.skills.InstalledAgentSkill(
-                        com.promenar.nexara.data.skills.AgentSkillMetadata(
-                            "weekly-report",
-                            "把工作区中的会议记录整理成周报。",
-                        ),
+                    releasePreviewSkill(
+                        "weekly-report",
+                        "把工作区中的会议记录整理成周报。",
                         files = emptyList(),
-                        enabled = false,
+                        status = com.promenar.nexara.data.skills.SkillStatus.DISABLED,
                     ),
                 ),
-                onToggle = { _, _ -> },
-                onOpen = {},
-                onDelete = {},
+                actions = com.promenar.nexara.ui.skills.SkillCatalogActions(),
                 onImport = {},
                 onCreate = {},
             )
@@ -3819,3 +3813,24 @@ private class PreviewSecretStore : SecretStore {
         values.remove(id)?.fill(0)
     }
 }
+
+private fun releasePreviewSkill(
+    name: String,
+    description: String,
+    files: List<String>,
+    status: com.promenar.nexara.data.skills.SkillStatus,
+) = com.promenar.nexara.data.skills.DiscoveredSkill(
+    id = "user:$name",
+    scope = com.promenar.nexara.data.skills.SkillScope.USER,
+    name = name,
+    description = description,
+    displayName = null,
+    shortDescription = null,
+    virtualDir = "/skills/$name",
+    files = files,
+    status = status,
+    modifiedSinceConfirmed = false,
+    allowImplicitInvocation = true,
+    brokenReason = null,
+    metadata = null,
+)

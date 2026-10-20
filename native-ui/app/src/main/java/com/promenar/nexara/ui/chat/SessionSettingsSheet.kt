@@ -1,11 +1,5 @@
 package com.promenar.nexara.ui.chat
 
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import com.promenar.nexara.data.repository.SessionToolGrant
-import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.domain.usecase.withDefaults
 import com.promenar.nexara.domain.usecase.resolveKeepRecentTurns
 import androidx.compose.foundation.BorderStroke
@@ -40,12 +34,14 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Build
+import com.promenar.nexara.ui.skills.SessionSkillsSections
+import com.promenar.nexara.ui.skills.SkillCatalogActions
+import com.promenar.nexara.ui.skills.SkillCatalogViewModel
 import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.History
@@ -467,19 +463,38 @@ internal fun sessionContinuousSpec(min: Double, max: Double, defaultValue: Doubl
 
 @Composable
 private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexara.data.model.Session?) {
-    val grants by chatViewModel.currentSessionGrants.collectAsStateWithLifecycle()
-    LaunchedEffect(session?.id) { chatViewModel.refreshSessionGrants() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val skillsViewModel: SkillCatalogViewModel = viewModel(
+        factory = SkillCatalogViewModel.factory(context.applicationContext as android.app.Application),
+    )
+    LaunchedEffect(session?.id) { skillsViewModel.bind(session?.id) }
+    val skillsState by skillsViewModel.state.collectAsStateWithLifecycle()
+    val skillsError by skillsViewModel.error.collectAsStateWithLifecycle()
+    LaunchedEffect(skillsError) {
+        skillsError?.let { message ->
+            android.widget.Toast.makeText(context, context.getString(R.string.skills_runtime_error, message), android.widget.Toast.LENGTH_SHORT).show()
+            skillsViewModel.consumeError()
+        }
+    }
+    val skillActions = remember(skillsViewModel) {
+        SkillCatalogActions(
+            onToggle = { skill, enabled -> skillsViewModel.setEnabled(skill, enabled) },
+            onTrust = skillsViewModel::trust,
+            onAcknowledge = skillsViewModel::acknowledgeModified,
+            onDelete = skillsViewModel::delete,
+            loadDocument = skillsViewModel::loadDocument,
+        )
+    }
     val customSkills by chatViewModel.availableSessionCustomSkills.collectAsStateWithLifecycle()
     val mcpServers by chatViewModel.availableSessionMcpServers.collectAsStateWithLifecycle()
-    val mcpSettings = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? NexaraApplication)?.mcpConnectionSettings
+    val mcpSettings = (context.applicationContext as? NexaraApplication)?.mcpConnectionSettings
     val mcpConnectionRevision = mcpSettings?.revision?.collectAsStateWithLifecycle()?.value
     SessionToolsContent(
         options = session?.options ?: com.promenar.nexara.data.model.SessionOptions(),
         executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi",
         isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true,
         onToolToggle = chatViewModel::toggleTool, onExecutionModeChange = chatViewModel::updateExecutionMode,
-        grants = grants,
-        onRevokeGrant = chatViewModel::revokeSessionGrant,
+        skillsSection = { SessionSkillsSections(skillsState, skillActions) },
         additionalSections = {
         if (customSkills.isNotEmpty()) {
             NexaraSettingsSection(title = stringResource(R.string.sheet_tool_session_skills),
@@ -518,32 +533,9 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
     )
 }
 
-/** 本会话记住的目标授权：每条一行，工具名在上、目标在下（与工具名相同时省略），行尾按钮撤销。 */
-@Composable
-internal fun SessionGrantsSection(grants: List<SessionToolGrant>, onRevoke: (SessionToolGrant) -> Unit) {
-    NexaraSettingsSection(
-        title = stringResource(R.string.p0_grants_title),
-        footer = if (grants.isEmpty()) stringResource(R.string.p0_grants_empty) else null,
-    ) {
-        grants.forEach { grant ->
-            val target = ToolExecutionTargets.display(grant.target)
-            val revokeLabel = stringResource(R.string.p0_revoke_target, "${grant.toolName}: $target")
-            NexaraSettingsRowLayout(
-                title = grant.toolName,
-                subtitle = target.takeIf { it != grant.toolName },
-                subtitleIsIdentifier = true,
-                trailingContent = {
-                    TextButton(
-                        onClick = { onRevoke(grant) },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.semantics { contentDescription = revokeLabel },
-                    ) { Text(stringResource(R.string.session_grant_revoke)) }
-                },
-            )
-        }
-    }
-}
-
+/**
+ * “工具”标签：工具使用（总开关与执行模式）置顶，其后是技能、自定义工具与 MCP，最后是会话选项。
+ */
 @Composable
 internal fun SessionToolsContent(
     options: com.promenar.nexara.data.model.SessionOptions = com.promenar.nexara.data.model.SessionOptions(),
@@ -551,36 +543,34 @@ internal fun SessionToolsContent(
     isGeminiModel: Boolean = false,
     onToolToggle: (String, Boolean) -> Unit = { _, _ -> },
     onExecutionModeChange: (String) -> Unit = {},
-    grants: List<SessionToolGrant> = emptyList(),
-    onRevokeGrant: (SessionToolGrant) -> Unit = {},
+    skillsSection: @Composable () -> Unit = {},
     additionalSections: @Composable () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-        .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp)) {
-        SessionGrantsSection(grants, onRevokeGrant)
-        NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
-            SettingsToggle(stringResource(R.string.sheet_tool_time_injection), checked = options.enableTimeInjection,
-                icon = Icons.Rounded.Timer, onCheckedChange = { onToolToggle("timeInjection", it) })
-            SettingsToggle(stringResource(R.string.sheet_tool_economy_mode), checked = options.economyMode,
-                icon = Icons.Rounded.Tune, onCheckedChange = { onToolToggle("economyMode", it) })
-            if (isGeminiModel) SettingsToggle(stringResource(R.string.sheet_tool_gemini_grounding), checked = options.enableGeminiSearch,
-                icon = Icons.Rounded.Language, onCheckedChange = { onToolToggle("enableGeminiSearch", it) })
-            SettingsToggle(stringResource(R.string.sheet_tool_search_retrieval), checked = options.toolsEnabled,
-                icon = Icons.Rounded.Storage, onCheckedChange = { onToolToggle("toolsEnabled", it) })
-        }
-        additionalSections()
-        val selectedExecutionMode = when (executionMode) {
-            "auto" -> ExecutionMode.AUTO
-            "manual" -> ExecutionMode.MANUAL
-            else -> ExecutionMode.SEMI
-        }
-        val modeDesc = stringResource(when (selectedExecutionMode) {
-            ExecutionMode.AUTO -> R.string.sheet_execution_mode_auto
-            ExecutionMode.MANUAL -> R.string.sheet_execution_mode_manual
-            ExecutionMode.SEMI -> R.string.sheet_execution_mode_semi
-        })
-        var showModePicker by remember { mutableStateOf(false) }
-        NexaraSettingsSection(title = stringResource(R.string.settings_batch1_tool_approval)) {
+    val selectedExecutionMode = when (executionMode) {
+        "auto" -> ExecutionMode.AUTO
+        "manual" -> ExecutionMode.MANUAL
+        else -> ExecutionMode.SEMI
+    }
+    val modeDesc = stringResource(when (selectedExecutionMode) {
+        ExecutionMode.AUTO -> R.string.sheet_execution_mode_auto
+        ExecutionMode.MANUAL -> R.string.sheet_execution_mode_manual
+        ExecutionMode.SEMI -> R.string.sheet_execution_mode_semi
+    })
+    var showModePicker by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
+    ) {
+        NexaraSettingsSection(title = stringResource(R.string.sheet_tool_section_usage)) {
+            SettingsToggle(
+                stringResource(R.string.sheet_tool_tools_enabled),
+                description = stringResource(R.string.sheet_tool_tools_enabled_desc),
+                checked = options.toolsEnabled,
+                icon = Icons.Rounded.Build,
+                onCheckedChange = { onToolToggle("toolsEnabled", it) },
+                modifier = Modifier.testTag("session_tools_enabled"),
+            )
             NexaraValueRow(
                 title = stringResource(R.string.sheet_tool_execution_mode),
                 value = stringResource(selectedExecutionMode.labelRes),
@@ -588,24 +578,37 @@ internal fun SessionToolsContent(
                 modifier = Modifier.testTag("session_execution_mode_picker"),
             )
         }
-        NexaraBottomSheet(show = showModePicker, onDismiss = { showModePicker = false },
-            title = stringResource(R.string.sheet_tool_execution_mode), scrollContent = true) {
-            Text(modeDesc, style = MaterialTheme.typography.bodySmall.forReading(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-            ExecutionMode.entries.forEach { mode ->
-                val label = stringResource(mode.labelRes)
-                NexaraSettingsItem(
+        skillsSection()
+        additionalSections()
+        NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
+            SettingsToggle(
+                stringResource(R.string.sheet_tool_time_injection),
+                description = stringResource(R.string.sheet_tool_time_injection_desc),
+                checked = options.enableTimeInjection,
+                icon = Icons.Rounded.Timer,
+                onCheckedChange = { onToolToggle("timeInjection", it) },
+            )
+            if (isGeminiModel) SettingsToggle(stringResource(R.string.sheet_tool_gemini_grounding), checked = options.enableGeminiSearch,
+                icon = Icons.Rounded.Language, onCheckedChange = { onToolToggle("enableGeminiSearch", it) })
+        }
+    }
+    NexaraBottomSheet(show = showModePicker, onDismiss = { showModePicker = false },
+        title = stringResource(R.string.sheet_tool_execution_mode), scrollContent = true) {
+        Text(modeDesc, style = MaterialTheme.typography.bodySmall.forReading(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+        ExecutionMode.entries.forEach { mode ->
+            val label = stringResource(mode.labelRes)
+            NexaraSettingsItem(
                 horizontalPadding = 0.dp,
-                    title = if (mode == ExecutionMode.SEMI) stringResource(R.string.numeric_default_value, label) else label,
-                    role = Role.RadioButton,
-                    selected = mode == selectedExecutionMode,
-                    modifier = Modifier.testTag("session_execution_mode_${mode.name.lowercase()}"),
-                    onClick = { onExecutionModeChange(mode.name.lowercase()); showModePicker = false },
-                    trailingContent = {
-                        if (mode == selectedExecutionMode) Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
-                    },
-                )
-            }
+                title = if (mode == ExecutionMode.SEMI) stringResource(R.string.numeric_default_value, label) else label,
+                role = Role.RadioButton,
+                selected = mode == selectedExecutionMode,
+                modifier = Modifier.testTag("session_execution_mode_${mode.name.lowercase()}"),
+                onClick = { onExecutionModeChange(mode.name.lowercase()); showModePicker = false },
+                trailingContent = {
+                    if (mode == selectedExecutionMode) Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
+                },
+            )
         }
     }
 }
