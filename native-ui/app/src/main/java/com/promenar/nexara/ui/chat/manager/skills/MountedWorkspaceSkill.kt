@@ -94,6 +94,10 @@ class MountedWorkspaceSkill(
                 val resolvedPaths = listOf("uuid" to sourcePath, "parentUuid" to parentPath, "newParentUuid" to destinationParent)
                     .mapNotNull { (key, path) -> routedArgs.stringArgument(key)?.trim()?.takeIf { it.isNotEmpty() && path != null }?.let { it to path!! } }.toMap()
                 val currentTarget = ToolExecutionTargets.extract(original.toProtocolTool(), routedArgs.toString(), resolvedPaths)
+                // 审批侧无法给出目标的变更（如路径写法与审批规范化不一致）不执行，避免批准内容与实际写入位置不同。
+                if (ToolExecutionTargets.isPathMutation(original.id) && currentTarget == null) {
+                    fail("INVALID_PATH", "无法确定变更的目标路径，请使用以 / 开头的规范路径重新发起")
+                }
                 if (ToolExecutionTargets.requiresSkillsApproval(original.id, currentTarget)) {
                     fun tuple(target: String?) = target?.let { Json.parseToJsonElement(it).jsonArray }
                         ?.let { if (it.lastOrNull() is JsonObject) JsonArray(it.dropLast(1)) else it }

@@ -101,7 +101,7 @@ object ToolExecutionTargets {
         tuple.drop(1).any { item ->
             val path = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@any false
             // 共享存储工作区大小写不敏感，项目技能目录的两段按忽略大小写比较；/skills 是精确匹配的虚拟根。
-            val folded = path.lowercase(Locale.ROOT)
+            val folded = path.uppercase(Locale.ROOT).lowercase(Locale.ROOT)
             path == "/skills" || path.startsWith("/skills/") ||
                 folded == "/.agents" || folded == "/.agents/skills" || folded.startsWith("/.agents/skills/")
         }

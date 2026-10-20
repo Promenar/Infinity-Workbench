@@ -230,6 +230,16 @@ class SkillsVirtualWorkspaceTest {
         assertThat(File(userSkills, "blocked.md").exists()).isFalse()
     }
 
+    @Test fun `审批侧无法解析目标的技能写入在执行层被拒绝`() = runBlocking {
+        for (root in listOf(true, false)) {
+            rooted = root
+            val result = execute(FileWriteSkill(files, workspace), """{"path":"\\\\skills\\\\demo\\\\SKILL.md","content":"x"}""")
+            assertThat(result.status).isEqualTo("error")
+            assertThat(result.content).contains("INVALID_PATH")
+            assertThat(userSkills.walkTopDown().none { it.isFile }).isTrue()
+        }
+    }
+
     @Test fun `工作区不可用时用户级技能仍然可读`() = runBlocking {
         File(userSkills, "available.md").writeText("available")
         repo.deleteRecursively()

@@ -72,7 +72,7 @@ class SkillsWriteApprovalTest {
     }
 
     @Test fun `项目技能目录大小写变体同样审批`() {
-        for (path in listOf("/.Agents/Skills/demo/SKILL.md", "/.AGENTS", "/.agents/SKILLS/demo")) {
+        for (path in listOf("/.Agents/Skills/demo/SKILL.md", "/.AGENTS", "/.agents/SKILLS/demo", "/.agent\u017f/\u017fkills/demo")) {
             assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("write_file", """{"path":"$path"}""")).isTrue()
         }
     }
