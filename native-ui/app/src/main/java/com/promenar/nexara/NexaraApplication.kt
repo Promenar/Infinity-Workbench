@@ -1818,12 +1818,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     /** 按会话把工作区虚拟路径解析为图片、视频、音频等媒体，供会话渲染、播放与模型查看。 */
     val workspaceMediaResolver: com.promenar.nexara.domain.media.WorkspaceMediaResolver by lazy {
-        com.promenar.nexara.data.media.UnwiredWorkspaceMedia
+        com.promenar.nexara.data.media.DefaultWorkspaceMedia(
+            this, sessionRepository, workspaceRepository, externalFolderManager,
+            sessionWorkspaceResolver::resolve, pendingDocumentIndexCoordinator,
+            userSkillsDirectory = skillCatalog.userRoot,
+        )
     }
 
     /** 把生图、MCP、下载等来源的媒体写入会话工作区。 */
     val workspaceMediaStore: com.promenar.nexara.domain.media.WorkspaceMediaStore by lazy {
-        com.promenar.nexara.data.media.UnwiredWorkspaceMedia
+        workspaceMediaResolver as com.promenar.nexara.domain.media.WorkspaceMediaStore
     }
 
     /** 凭据注入代理向远端转发所用的 OkHttp 客户端：tailnet 上的 git 主机经内置 Tailscale 本机代理，其它主机按系统默认选择器。 */

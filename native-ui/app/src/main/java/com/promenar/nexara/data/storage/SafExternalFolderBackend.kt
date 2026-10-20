@@ -28,6 +28,11 @@ import java.util.concurrent.ConcurrentHashMap
 class SafExternalFolderBackend(private val contentResolver: ContentResolver, private val treeUri: Uri) : ExternalFolderBackend {
     private val lock = locks.getOrPut(treeUri.toString()) { Mutex() }
 
+    /** 媒体直接使用文档流，不经过文本工具的整块读取上限。沿用后端的同名冲突与目录校验。 */
+    internal suspend fun documentUri(path: String): Uri? = io {
+        find(ExternalFolderPaths.normalize(path))?.also(::requireFile)?.uri
+    }
+
     override suspend fun stat(path: String): ExternalFolderEntry? = io {
         val normalized = ExternalFolderPaths.normalize(path)
         find(normalized)?.let { document ->
