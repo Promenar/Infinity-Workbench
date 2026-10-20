@@ -19,7 +19,10 @@ import com.promenar.nexara.data.git.NioGitWorkTreeReader
 import com.promenar.nexara.ui.common.diff.FileChangeKind
 import com.promenar.nexara.ui.common.diff.FileDiffContent
 import com.promenar.nexara.ui.common.diff.FileDiffSummaryReason
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -52,9 +55,15 @@ class GitPanelViewModelTest {
         workTree = NioGitWorkTreeReader(pathFallback = true),
     )
 
+    // 面板读取走真实 IO 调度；断言满足时可能仍有读取在 IO 上返回途中。
+    // 撤销 Main 之前先取消并等待这些 ViewModel 的协程结束，否则它们回到 Main 时的异常会记到后续测试头上。
+    private val viewModels = mutableListOf<GitPanelViewModel>()
+    private fun track(viewModel: GitPanelViewModel) = viewModel.also(viewModels::add)
+
     @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
 
     @After fun tearDown() {
+        runBlocking { viewModels.forEach { it.viewModelScope.coroutineContext.job.cancelAndJoin() } }
         Dispatchers.resetMain()
         work.deleteRecursively()
     }
@@ -63,7 +72,7 @@ class GitPanelViewModelTest {
         runBlocking { withTimeout(10_000) { viewModel.state.first(predicate) } }
 
     @Test fun `打开面板读取状态，切换到最近提交时才读取提交列表`() {
-        val viewModel = GitPanelViewModel("s", service)
+        val viewModel = track(GitPanelViewModel("s", service))
         viewModel.open()
         val loaded = awaitState(viewModel) { it.status is GitLoad.Ready }
         assertThat((loaded.status as GitLoad.Ready).value.branch).isEqualTo("main")
@@ -83,7 +92,7 @@ class GitPanelViewModelTest {
 
     @Test fun `未跟踪文件差异在后台构建为新建文件，返回后回到列表`() {
         File(root, "notes.txt").writeText("第一行\n第二行\n")
-        val viewModel = GitPanelViewModel("s", service)
+        val viewModel = track(GitPanelViewModel("s", service))
         viewModel.open()
         awaitState(viewModel) { it.status is GitLoad.Ready }
         viewModel.openChange(GitChangeGroup.UNTRACKED, GitFileChange("notes.txt", GitChangeKind.ADDED))
@@ -99,7 +108,7 @@ class GitPanelViewModelTest {
     }
 
     @Test fun `提交详情与提交内文件差异分两级返回`() {
-        val viewModel = GitPanelViewModel("s", service)
+        val viewModel = track(GitPanelViewModel("s", service))
         viewModel.open()
         viewModel.selectTab(GitPanelTab.COMMITS)
         val log = awaitState(viewModel) { it.log is GitLoad.Ready }.log as GitLoad.Ready
@@ -125,7 +134,7 @@ class GitPanelViewModelTest {
     }
 
     @Test fun `刷新详情页时提交详情与文件差异都重新加载`() {
-        val viewModel = GitPanelViewModel("s", service)
+        val viewModel = track(GitPanelViewModel("s", service))
         viewModel.open()
         viewModel.selectTab(GitPanelTab.COMMITS)
         val log = awaitState(viewModel) { it.log is GitLoad.Ready }.log as GitLoad.Ready
@@ -146,7 +155,7 @@ class GitPanelViewModelTest {
             locate = { GitWorkspaceResolution.Unavailable("目录不可用") },
             inspector = GitInspector(FakePythonRuntime(), runner, { File(work, "out") }),
         )
-        val viewModel = GitPanelViewModel("s", failing)
+        val viewModel = track(GitPanelViewModel("s", failing))
         viewModel.open()
         val state = awaitState(viewModel) { it.status is GitLoad.Failed }
         assertThat((state.status as GitLoad.Failed).problem).isEqualTo(GitPanelProblem(GitProblemKind.WORKSPACE_UNAVAILABLE, "目录不可用"))
