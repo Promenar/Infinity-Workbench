@@ -11,6 +11,8 @@ import com.promenar.nexara.data.backup.AndroidTransactionalBackupSecretStore
 import com.promenar.nexara.data.backup.BackupContent
 import com.promenar.nexara.data.backup.BackupDataSource
 import com.promenar.nexara.data.backup.BackupExportOptions
+import com.promenar.nexara.data.backup.BackupExportResult
+import com.promenar.nexara.data.backup.SkillBackupSummary
 import com.promenar.nexara.data.backup.BackupOptions
 import com.promenar.nexara.data.backup.BackupPackageCodec
 import com.promenar.nexara.data.backup.BackupPackageLimits
@@ -36,6 +38,7 @@ import kotlinx.coroutines.withContext
 data class BackupUploadReceipt(
     val fileName: String,
     val pruneWarning: WebDavPruneWarning?,
+    val skills: SkillBackupSummary? = null,
 )
 
 /**
@@ -56,14 +59,16 @@ class BackupRepository internal constructor(
         pendingStore = AndroidPendingRestoreStore(context),
     )
 
-    suspend fun export(options: BackupExportOptions = BackupExportOptions()): ByteArray = withContext(Dispatchers.IO) {
+    suspend fun export(options: BackupExportOptions = BackupExportOptions()): ByteArray = exportWithSummary(options).packageBytes
+
+    suspend fun exportWithSummary(options: BackupExportOptions = BackupExportOptions()): BackupExportResult = withContext(Dispatchers.IO) {
         val password = validatedPassword(options)
         val content = CANONICAL_CONTENT + if (options.includeSecrets) setOf(BackupContent.SECRETS) else emptySet()
         var snapshot: com.promenar.nexara.data.backup.BackupSnapshot? = null
         try {
             val captured = dataSource.snapshot(content)
             snapshot = captured
-            codec.encode(
+            val bytes = codec.encode(
                 captured,
                 BackupOptions(
                     content = content,
@@ -73,6 +78,7 @@ class BackupRepository internal constructor(
                 ),
             )
                 .also(::requireBoundedPackage)
+            BackupExportResult(bytes, captured.skills?.metadata?.summary)
         } finally {
             snapshot?.wipe()
             password?.fill('\u0000')
@@ -80,12 +86,13 @@ class BackupRepository internal constructor(
     }
 
     suspend fun upload(config: WebDavConfig, options: BackupExportOptions = BackupExportOptions()): BackupUploadReceipt {
-        val bytes = export(options)
+        val exported = exportWithSummary(options)
+        val bytes = exported.packageBytes
         try {
             val fileName = backupFileName(clock())
             val result = webDav.uploadAndPrune(config, fileName, bytes, keep = REMOTE_KEEP)
             return when (result) {
-                is UploadAndPruneResult.Committed -> BackupUploadReceipt(result.fileName, result.pruneWarning)
+                is UploadAndPruneResult.Committed -> BackupUploadReceipt(result.fileName, result.pruneWarning, exported.skills)
             }
         } finally {
             bytes.fill(0)
@@ -238,6 +245,7 @@ class BackupRepository internal constructor(
                 appVersion = BuildConfig.VERSION_NAME,
                 configurationRevision = ProviderConfigurationRevision::current,
                 journalAuthenticator = AndroidRestoreJournalAuthenticator(),
+                userSkillsRoot = app.filesDir.resolve("agent_skills").toPath(),
             )
         }
     }

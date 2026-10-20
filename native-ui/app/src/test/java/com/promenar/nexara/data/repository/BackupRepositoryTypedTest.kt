@@ -14,6 +14,11 @@ import com.promenar.nexara.data.backup.ValidatedBackup
 import com.promenar.nexara.data.backup.DefaultBackupPackageCodec
 import com.promenar.nexara.data.backup.PendingRestorePayload
 import com.promenar.nexara.data.backup.PendingRestorePhase
+import com.promenar.nexara.data.backup.SkillBackupPartition
+import com.promenar.nexara.data.backup.SkillBackupMetadata
+import com.promenar.nexara.data.backup.SkillBackupSummary
+import com.promenar.nexara.data.backup.SkippedSkillGitRepository
+import com.promenar.nexara.data.backup.SkillGitRemote
 import com.promenar.nexara.data.remote.webdav.RemoteBackup
 import com.promenar.nexara.data.remote.webdav.UploadAndPruneResult
 import com.promenar.nexara.data.remote.webdav.WebDavBackupClient
@@ -213,8 +218,42 @@ class BackupRepositoryTypedTest {
         assertThat(observedThreads.none { it === caller }).isTrue()
     }
 
-    private class RecordingSource : BackupDataSource {
-        val snapshot = BackupSnapshot(byteArrayOf(1, 2, 3), byteArrayOf(4), databaseSchemaVersion = 1, appVersion = "test")
+    @Test
+    fun `本地与 WebDAV 导出包含相同技能分区并返回跳过统计`() = runBlocking {
+        val summary = SkillBackupSummary(1, 2, listOf(SkippedSkillGitRepository(".",
+            listOf(SkillGitRemote("origin", "https://example.invalid/repo.git")), "main", "a".repeat(40))))
+        fun source() = RecordingSource(BackupSnapshot(
+            database = byteArrayOf(1), preferences = byteArrayOf(2), databaseSchemaVersion = 5,
+            appVersion = "test", createdAt = 1,
+            skills = SkillBackupPartition(mapOf("alpha/SKILL.md" to "技能".toByteArray()),
+                SkillBackupMetadata(listOf("alpha"), summary)),
+        ))
+        val codec = DefaultBackupPackageCodec()
+        val webDav = FakeWebDav()
+        val local = BackupRepository(source(), codec, webDav, FakePendingStore()).exportWithSummary()
+        val receipt = BackupRepository(source(), codec, webDav, FakePendingStore())
+            .upload(WebDavConfig("https://dav.invalid/", "synthetic", "synthetic"))
+        assertThat(local.skills).isEqualTo(summary)
+        assertThat(receipt.skills).isEqualTo(summary)
+        assertThat(webDav.uploadedBytes).isEqualTo(local.packageBytes)
+        codec.decode(webDav.uploadedBytes, null).use {
+            assertThat(it.skills?.files?.get("alpha/SKILL.md")).isEqualTo("技能".toByteArray())
+            assertThat(it.skills?.metadata?.summary).isEqualTo(summary)
+        }
+        val localPending = RecordingPendingStore()
+        val remotePending = RecordingPendingStore()
+        webDav.downloadBytes = webDav.uploadedBytes.copyOf()
+        BackupRepository(source(), codec, webDav, localPending)
+            .stageLocalRestore("local-skill-op", ByteArrayInputStream(local.packageBytes))
+        BackupRepository(source(), codec, webDav, remotePending)
+            .stageRemoteRestore("remote-skill-op", WebDavConfig("https://dav.invalid/", "synthetic", "synthetic"), webDav.list(WebDavConfig("https://dav.invalid/", "synthetic", "synthetic")).single())
+        assertThat(localPending.stagedCopy).isEqualTo(remotePending.stagedCopy)
+        codec.decode(remotePending.stagedCopy!!, null).use {
+            assertThat(it.skills?.metadata?.summary).isEqualTo(summary)
+        }
+    }
+
+    private class RecordingSource(val snapshot: BackupSnapshot = BackupSnapshot(byteArrayOf(1, 2, 3), byteArrayOf(4), databaseSchemaVersion = 1, appVersion = "test")) : BackupDataSource {
         var lastContent: Set<BackupContent>? = null
         override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = snapshot.also { lastContent = content }
         override suspend fun restore(validated: ValidatedBackup) = error("unused")
@@ -235,6 +274,7 @@ class BackupRepositoryTypedTest {
     private class FakeWebDav(private val warning: WebDavPruneWarning? = null) : WebDavBackupClient {
         var keep = 0
         var uploadedBytes = ByteArray(0)
+        var downloadBytes: ByteArray? = null
         override suspend fun test(config: WebDavConfig) = Result.success(Unit)
         override suspend fun uploadAtomic(config: WebDavConfig, fileName: String, bytes: ByteArray) = error("must not be called")
         override suspend fun uploadAndPrune(config: WebDavConfig, fileName: String, bytes: ByteArray, keep: Int): UploadAndPruneResult {
@@ -242,8 +282,8 @@ class BackupRepositoryTypedTest {
             uploadedBytes = bytes.copyOf()
             return UploadAndPruneResult.Committed(fileName, warning)
         }
-        override suspend fun list(config: WebDavConfig): List<RemoteBackup> = emptyList()
-        override suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray = error("unused")
+        override suspend fun list(config: WebDavConfig): List<RemoteBackup> = downloadBytes?.let { listOf(RemoteBackup("skill.nexara", it.size.toLong(), 1, null)) }.orEmpty()
+        override suspend fun download(config: WebDavConfig, backup: RemoteBackup): ByteArray = downloadBytes?.copyOf() ?: error("unused")
         override suspend fun prune(config: WebDavConfig, keep: Int) = error("must not be called")
     }
 
@@ -259,11 +299,13 @@ class BackupRepositoryTypedTest {
     private class RecordingPendingStore : PendingRestoreStore {
         var stageCalls = 0
         var packageReference: ByteArray? = null
+        var stagedCopy: ByteArray? = null
         var passwordReference: CharArray? = null
         override fun begin(expectedTxId: String) = Unit
         override fun stage(expectedTxId: String, packageBytes: ByteArray, password: CharArray?): PendingRestoreMetadata {
             stageCalls++
             packageReference = packageBytes
+            stagedCopy = packageBytes.copyOf()
             passwordReference = password
             return PendingRestoreMetadata(
                 expectedTxId,

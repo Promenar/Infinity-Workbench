@@ -54,7 +54,7 @@ class DefaultBackupPackageCodec private constructor(
         var entries: List<Pair<String, ByteArray>> = emptyList()
         try {
             entries = buildContentEntries(snapshot, options)
-            validateEncodeEntries(entries)
+            validateEncodeEntries(entries, snapshot.skills?.metadata?.directories?.size ?: 0)
             val createZipPackage: (BackupKdfMetadata?) -> ByteArray = { kdf ->
                 val manifest = BackupManifest(
                     formatVersion = FORMAT_VERSION,
@@ -67,6 +67,7 @@ class DefaultBackupPackageCodec private constructor(
                     encrypted = kdf != null,
                     containsSecrets = entries.any { it.first == SECRETS_PATH },
                     kdf = kdf,
+                    skills = snapshot.skills?.metadata,
                 )
                 val manifestBytes = json.encodeToString(manifest).toByteArray()
                 try {
@@ -142,6 +143,15 @@ class DefaultBackupPackageCodec private constructor(
                     result += "$FILES_PREFIX$id" to content.copyOf()
                 }
             }
+            snapshot.skills?.let { skills ->
+                SkillBackupPaths.validate(skills.metadata, skills.files.keys, skills.files.values.sumOf { it.size.toLong() })
+                skills.files.toSortedMap().forEach { (path, bytes) ->
+                    result += "${SkillBackupPaths.PREFIX}$path" to bytes.copyOf()
+                }
+                if (result.size + skills.metadata.directories.size > limits.maxEntries) {
+                    throw BackupValidationException("技能分区与备份内容项总数超过上限")
+                }
+            }
             if (options.includeSecrets && BackupContent.SECRETS in options.content) {
                 val secrets = snapshot.secrets
                     .filterKeys { it != SecretCatalog.automaticBackupPassword }
@@ -156,8 +166,8 @@ class DefaultBackupPackageCodec private constructor(
         }
     }
 
-    private fun validateEncodeEntries(entries: List<Pair<String, ByteArray>>) {
-        if (entries.size > limits.maxEntries) throw BackupValidationException("备份内容项过多")
+    private fun validateEncodeEntries(entries: List<Pair<String, ByteArray>>, directoryCount: Int) {
+        if (entries.size + directoryCount > limits.maxEntries) throw BackupValidationException("备份内容项过多")
         var contentTotal = 0L
         entries.forEach { (path, content) ->
             validateArchivePath(path)
@@ -190,8 +200,10 @@ class DefaultBackupPackageCodec private constructor(
     ): ValidatedBackup {
         val contents = linkedMapOf<String, ByteArray>()
         try {
+            val centralPaths = BackupZipEntryTypes.rejectLinks(zipBytes)
             ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
                 val first = zip.nextEntry ?: throw BackupValidationException("空备份包")
+                BackupZipEntryTypes.rejectExtraLinks(first.extra)
                 if (first.isDirectory || first.name != MANIFEST_PATH) {
                     throw BackupValidationException("manifest.json 必须是第一项")
                 }
@@ -208,6 +220,7 @@ class DefaultBackupPackageCodec private constructor(
 
                 while (true) {
                     val entry = zip.nextEntry ?: break
+                    BackupZipEntryTypes.rejectExtraLinks(entry.extra)
                     if (entry.isDirectory) throw BackupValidationException("备份包不允许目录项")
                     validateArchivePath(entry.name)
                     if (!seen.add(entry.name)) throw BackupValidationException("备份包包含重复路径")
@@ -232,6 +245,7 @@ class DefaultBackupPackageCodec private constructor(
                 if ((seen - MANIFEST_PATH) != declared.keys) {
                     throw BackupValidationException("备份包缺少 manifest 声明的 entry")
                 }
+                if (seen != centralPaths) throw BackupValidationException("ZIP 本地条目与中央目录不一一对应")
 
                 val secrets = parseSecrets(contents[SECRETS_PATH])
                 return ValidatedBackup(
@@ -242,6 +256,14 @@ class DefaultBackupPackageCodec private constructor(
                         .mapKeys { (path, _) -> path.removePrefix(FILES_PREFIX) }
                         .mapValues { (_, content) -> content.copyOf() },
                     secrets = secrets,
+                    skills = manifest.skills?.let { metadata ->
+                        SkillBackupPartition(
+                            contents.filterKeys { it.startsWith(SkillBackupPaths.PREFIX) }
+                                .mapKeys { (path, _) -> path.removePrefix(SkillBackupPaths.PREFIX) }
+                                .mapValues { (_, bytes) -> bytes.copyOf() },
+                            metadata,
+                        )
+                    },
                 )
             }
         } catch (error: BackupValidationException) {
@@ -266,7 +288,10 @@ class DefaultBackupPackageCodec private constructor(
         } catch (error: IllegalArgumentException) {
             throw BackupValidationException("备份 manifest 无效")
         }
-        if (manifest.formatVersion != FORMAT_VERSION) throw BackupValidationException("不支持的备份格式版本")
+        if (manifest.formatVersion !in 1..FORMAT_VERSION) throw BackupValidationException("不支持的备份格式版本")
+        if (manifest.formatVersion == 1 && manifest.skills != null) {
+            throw BackupValidationException("旧格式不支持技能分区")
+        }
         if (manifest.encrypted != (envelopeMetadata != null)) throw BackupValidationException("备份加密元数据不一致")
         validateKdf(manifest.kdf, envelopeMetadata)
         if (manifest.entries.size > limits.maxEntries) throw BackupValidationException("manifest 内容项过多")
@@ -288,6 +313,19 @@ class DefaultBackupPackageCodec private constructor(
         val declaresSecrets = SECRETS_PATH in paths
         if (manifest.containsSecrets != declaresSecrets || declaresSecrets && !manifest.encrypted) {
             throw BackupValidationException("备份密钥元数据不一致")
+        }
+        val skillEntries = manifest.entries.filter { it.path.startsWith(SkillBackupPaths.PREFIX) }
+        val skills = manifest.skills
+        if (skills == null && skillEntries.isNotEmpty()) throw BackupValidationException("技能分区缺少清单元数据")
+        if (skills != null) {
+            if (manifest.entries.size + skills.directories.size > limits.maxEntries) {
+                throw BackupValidationException("技能分区与备份内容项总数超过上限")
+            }
+            SkillBackupPaths.validate(
+                skills,
+                skillEntries.map { it.path.removePrefix(SkillBackupPaths.PREFIX) },
+                skillEntries.sumOf { it.sizeBytes },
+            )
         }
         return manifest
     }
@@ -406,6 +444,10 @@ class DefaultBackupPackageCodec private constructor(
             requireSafeFileId(path.removePrefix(FILES_PREFIX))
             return
         }
+        if (path.startsWith(SkillBackupPaths.PREFIX)) {
+            SkillBackupPaths.parts(path.removePrefix(SkillBackupPaths.PREFIX))
+            return
+        }
         throw BackupValidationException("备份包包含未知内容路径")
     }
 
@@ -520,7 +562,7 @@ class DefaultBackupPackageCodec private constructor(
     }
 
     companion object {
-        const val FORMAT_VERSION = 1
+        const val FORMAT_VERSION = 2
         private const val MANIFEST_PATH = "manifest.json"
         private const val DATABASE_PATH = "database.json"
         private const val PREFERENCES_PATH = "preferences.json"

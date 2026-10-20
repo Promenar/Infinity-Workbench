@@ -139,6 +139,26 @@ class BackupRuntimeTest {
         }
     }
 
+    @Test
+    fun `启动恢复结果保留重新克隆需要的远端与提交信息`(): Unit = runBlocking {
+        val summary = SkillBackupSummary(1, 0, listOf(SkippedSkillGitRepository("alpha",
+            listOf(SkillGitRemote("origin", "https://example.invalid/repo.git")), "main", "a".repeat(40))))
+        val codec = DefaultBackupPackageCodec()
+        val bytes = codec.encode(
+            BackupSnapshot(databaseSchemaVersion = 5, appVersion = "test", skills = SkillBackupPartition(
+                mapOf("alpha/SKILL.md" to "技能".toByteArray()), SkillBackupMetadata(listOf("alpha"), summary))),
+            BackupOptions(emptySet()),
+        )
+        val store = FakePendingStore("skills-result", bytes, null).apply { failNextClear = true }
+        val source = ReceiptDataSource()
+        val first = BackupRuntime(source, store, codec)
+        assertThat(first.recoverBeforeWriters()).isEqualTo(BackupStartupState.Blocked)
+        val retried = BackupRuntime(source, store, codec)
+        assertThat(retried.recoverBeforeWriters()).isEqualTo(BackupStartupState.Ready)
+        assertThat(retried.restoreResult.value?.skills).isEqualTo(summary)
+        assertThat(source.restoreIds).containsExactly("skills-result")
+    }
+
     private class FakeDataSource(
         private val recover: suspend () -> Unit,
     ) : BackupDataSource {

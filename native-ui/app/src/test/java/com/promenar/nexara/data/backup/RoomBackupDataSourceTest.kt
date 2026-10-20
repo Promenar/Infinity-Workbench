@@ -987,7 +987,9 @@ class RoomBackupDataSourceTest {
     @Test
     fun `interrupted restore recovers to exactly old or new state after datasource recreation`() {
         runBlocking {
-            RestoreCrashPoint.entries.forEach { point ->
+            RestoreCrashPoint.entries.filter { it !in setOf(
+                RestoreCrashPoint.SKILLS_STAGED, RestoreCrashPoint.SKILLS_OLD_MOVED, RestoreCrashPoint.SKILLS_COMMITTED,
+            ) }.forEach { point ->
                 db.clearAllTables()
                 if (!Files.exists(sourceRoot)) Files.createDirectories(sourceRoot)
                 seedCompleteGraph()
@@ -1327,6 +1329,175 @@ class RoomBackupDataSourceTest {
         }
     }
 
+    @Test
+    fun `技能分区经真实包往返后整体替换含空目录的技能树`(): Unit = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        Files.createDirectories(skills.resolve("alpha/scripts"))
+        Files.createDirectories(skills.resolve("beta/empty"))
+        writeUtf8(skills.resolve("alpha/SKILL.md"), "甲")
+        writeUtf8(skills.resolve("alpha/scripts/run.py"), "print(1)")
+        writeUtf8(skills.resolve("beta/SKILL.md"), "乙")
+        val source = newDataSource(userSkillsRoot = skills)
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        val codec = DefaultBackupPackageCodec()
+        val packageBytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        skills.toFile().deleteRecursively()
+        Files.createDirectories(skills)
+        writeUtf8(skills.resolve("old"), "旧内容")
+
+        val result = source.restoreWithResult(codec.decode(packageBytes, null), "skills-roundtrip")
+
+        assertThat(readUtf8(skills.resolve("alpha/SKILL.md"))).isEqualTo("甲")
+        assertThat(readUtf8(skills.resolve("alpha/scripts/run.py"))).isEqualTo("print(1)")
+        assertThat(readUtf8(skills.resolve("beta/SKILL.md"))).isEqualTo("乙")
+        assertThat(Files.isDirectory(skills.resolve("beta/empty"))).isTrue()
+        assertThat(Files.exists(skills.resolve("old"))).isFalse()
+        assertThat(result.skills?.skillCount).isEqualTo(2)
+        assertThat(Files.list(sourceBase).use { it.map { p -> p.fileName.toString() }.toList() })
+            .containsExactly("root-1", "agent_skills")
+    }
+
+    @Test
+    fun `旧格式不含技能分区时原技能树不被修改`() = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        Files.createDirectories(skills)
+        writeUtf8(skills.resolve("keep"), "保留")
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        val legacy = validated(backup)
+        assertThat(legacy.manifest.formatVersion).isEqualTo(1)
+
+        newDataSource(userSkillsRoot = skills).restore(legacy)
+
+        assertThat(readUtf8(skills.resolve("keep"))).isEqualTo("保留")
+    }
+
+    @Test
+    fun `技能目录在提交失败时回滚且恢复原有符号链接`() = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        Files.createDirectories(skills)
+        writeUtf8(skills.resolve("new"), "新")
+        val source = newDataSource(userSkillsRoot = skills)
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        val codec = DefaultBackupPackageCodec()
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        Files.delete(skills.resolve("new"))
+        writeUtf8(skills.resolve("old"), "旧")
+        Files.createSymbolicLink(skills.resolve("link"), skills.resolve("old"))
+        preferences.failCommit = true
+
+        assertFails { source.restore(codec.decode(bytes, null)) }
+
+        assertThat(readUtf8(skills.resolve("old"))).isEqualTo("旧")
+        assertThat(Files.isSymbolicLink(skills.resolve("link"))).isTrue()
+        assertThat(Files.exists(skills.resolve("new"))).isFalse()
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+    }
+
+    @Test
+    fun `技能目录在每个事务中断点重启后与数据库一致且恢复幂等`() = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        val codec = DefaultBackupPackageCodec()
+        RestoreCrashPoint.entries.forEach { point ->
+            skills.toFile().deleteRecursively()
+            Files.createDirectories(skills)
+            writeUtf8(skills.resolve("new"), "新")
+            val snapshot = newDataSource(userSkillsRoot = skills).snapshot(CANONICAL_CONTENT)
+            val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+            snapshot.wipe()
+            Files.delete(skills.resolve("new"))
+            writeUtf8(skills.resolve("old"), "旧")
+            var interrupted = false
+            try { newDataSource(point, userSkillsRoot = skills).restore(codec.decode(bytes, null)) }
+            catch (_: SimulatedRestoreProcessDeath) { interrupted = true }
+            assertThat(interrupted).isTrue()
+            newDataSource(userSkillsRoot = skills).recoverInterruptedRestore()
+            newDataSource(userSkillsRoot = skills).recoverInterruptedRestore()
+            val committed = point == RestoreCrashPoint.ROOM_COMMITTED ||
+                point == RestoreCrashPoint.JOURNAL_COMMITTED || point == RestoreCrashPoint.RECEIPT_PERSISTED
+            assertThat(Files.exists(skills.resolve("new"))).isEqualTo(committed)
+            assertThat(Files.exists(skills.resolve("old"))).isEqualTo(!committed)
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `技能暂存所有者标记写入失败后回滚不阻断下次启动`(): Unit = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        Files.createDirectories(skills)
+        writeUtf8(skills.resolve("old"), "旧")
+        val codec = DefaultBackupPackageCodec()
+        val snapshot = newDataSource(userSkillsRoot = skills).snapshot(CANONICAL_CONTENT)
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        val ops = object : RestoreFileOperations by TestRestoreFileOperations() {
+            override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) {
+                if (relative == listOf(".restore-owner") && root.fileName.toString().contains("skills-preparing")) {
+                    throw java.io.IOException("注入技能所有者标记写入失败")
+                }
+                TestRestoreFileOperations().writeNew(root, relative, bytes)
+            }
+        }
+
+        assertFails { newDataSource(fileOperations = ops, userSkillsRoot = skills).restore(codec.decode(bytes, null)) }
+        newDataSource(userSkillsRoot = skills).recoverInterruptedRestore()
+
+        assertThat(readUtf8(skills.resolve("old"))).isEqualTo("旧")
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        assertThat(Files.list(sourceBase).use { it.map { p -> p.fileName.toString() }.toList() })
+            .containsExactly("root-1", "agent_skills")
+    }
+
+    @Test
+    fun `技能清理在所有者标记删除后最终 rmdir 失败仍能幂等重试`() = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        val snapshot = newDataSource(userSkillsRoot = skills).snapshot(CANONICAL_CONTENT)
+        val codec = DefaultBackupPackageCodec()
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        try { newDataSource(RestoreCrashPoint.ROOM_COMMITTED, userSkillsRoot = skills).restore(codec.decode(bytes, null)) }
+        catch (_: SimulatedRestoreProcessDeath) { }
+        val ops = TestRestoreFileOperations().apply { failFinalRmdirOnce = true }
+        assertFails { newDataSource(fileOperations = ops, userSkillsRoot = skills).recoverInterruptedRestore() }
+
+        newDataSource(fileOperations = ops, userSkillsRoot = skills).recoverInterruptedRestore()
+
+        assertThat(Files.isDirectory(skills)).isTrue()
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+    }
+
+    @Test
+    fun `技能所有者标记发布前进程中断由主恢复所有者树清理`() = runBlocking {
+        val skills = sourceBase.resolve("agent_skills")
+        Files.createDirectories(skills)
+        writeUtf8(skills.resolve("old"), "旧")
+        val codec = DefaultBackupPackageCodec()
+        val snapshot = newDataSource(userSkillsRoot = skills).snapshot(CANONICAL_CONTENT)
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        val ops = object : RestoreFileOperations by TestRestoreFileOperations() {
+            override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) {
+                if (root.fileName.toString().contains("skills-preparing")) {
+                    throw SimulatedRestoreProcessDeath(RestoreCrashPoint.JOURNAL_PREPARED)
+                }
+                TestRestoreFileOperations().writeNew(root, relative, bytes)
+            }
+        }
+        try { newDataSource(fileOperations = ops, userSkillsRoot = skills).restore(codec.decode(bytes, null)) }
+        catch (_: SimulatedRestoreProcessDeath) { }
+
+        newDataSource(userSkillsRoot = skills).recoverInterruptedRestore()
+
+        assertThat(readUtf8(skills.resolve("old"))).isEqualTo("旧")
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        assertThat(Files.list(sourceBase).use { it.anyMatch { p -> p.fileName.toString().startsWith(".nexara-skills-") } })
+            .isFalse()
+    }
+
+    private fun writeUtf8(path: Path, value: String) = Files.write(path, value.toByteArray(Charsets.UTF_8))
+    private fun readUtf8(path: Path): String = Files.readAllBytes(path).toString(Charsets.UTF_8)
+
     private fun newDataSource(
         crashPoint: RestoreCrashPoint? = null,
         snapshotReadHook: (Path) -> Unit = {},
@@ -1334,6 +1505,7 @@ class RoomBackupDataSourceTest {
         secretStore: FakeSecretStore = secrets,
         fileOperations: RestoreFileOperations = TestRestoreFileOperations(),
         configurationRevision: () -> Long = { 0L },
+        userSkillsRoot: Path? = null,
     ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
         preferences = preferenceStore,
@@ -1348,6 +1520,7 @@ class RoomBackupDataSourceTest {
         configurationRevision = configurationRevision,
         journalAuthenticator = TestRestoreJournalAuthenticator,
         restoreFileOperations = fileOperations,
+        userSkillsRoot = userSkillsRoot,
     )
 
     private suspend fun emptyWorkspaceBackup(): BackupSnapshot {
@@ -1920,6 +2093,10 @@ private class TestRestoreFileOperations : RestoreFileOperations {
             parent.resolve(sourceName), parent.resolve(targetName),
             java.nio.file.StandardCopyOption.ATOMIC_MOVE,
         )
+    }
+
+    override fun moveTreeBetween(sourceParent: Path, sourceName: String, targetParent: Path, targetName: String) {
+        Files.move(sourceParent.resolve(sourceName), targetParent.resolve(targetName), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
     }
 
     override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> {

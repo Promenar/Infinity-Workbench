@@ -53,6 +53,7 @@ class RoomBackupDataSource(
     private val configurationRevision: () -> Long = { 0L },
     journalAuthenticator: RestoreJournalAuthenticator,
     private val restoreFileOperations: RestoreFileOperations = SecureBackupFileOps,
+    userSkillsRoot: Path? = null,
 ) : BackupDataSource {
     private val trustedSourceBases = trustedSourceBases.map(FileRestoreJournal::requireTrustedDirectory)
     private val restoreParent = FileRestoreJournal.requireTrustedDirectory(trustedRestoreBase)
@@ -63,6 +64,8 @@ class RoomBackupDataSource(
         ignoreUnknownKeys = false
     }
     private val restoreMutex = Mutex()
+    private val skillSnapshotter = userSkillsRoot?.let(::SkillBackupSnapshotter)
+    private val skillRestore = userSkillsRoot?.let { SkillRestoreTransaction(it, restoreFileOperations, crashHook) }
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
         repeat(MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS) {
@@ -86,6 +89,8 @@ class RoomBackupDataSource(
         }
         var files: Map<String, ByteArray> = emptyMap()
         var secretSnapshot: Map<SecretId, ByteArray> = emptyMap()
+        var skillSnapshot: SkillBackupPartition? = null
+        var databaseBytes = ByteArray(0)
         return try {
             secretSnapshot = if (BackupContent.SECRETS in content) {
                 snapshotSecrets(
@@ -108,8 +113,14 @@ class RoomBackupDataSource(
                 result.payload to result.files
             }
             files = databaseAndFiles.second
-            val databaseBytes = json.encodeToString(databaseAndFiles.first).toByteArray(Charsets.UTF_8)
-            validateSnapshotLimits(databaseBytes, preferenceBytes, files, secretSnapshot)
+            databaseBytes = json.encodeToString(databaseAndFiles.first).toByteArray(Charsets.UTF_8)
+            val existingTotal = databaseBytes.size.toLong() + preferenceBytes.size +
+                files.values.sumOf { it.size.toLong() } + secretSnapshot.values.sumOf { it.size.toLong() }
+            skillSnapshot = skillSnapshotter?.snapshot(
+                BackupPackageLimits.MAX_IN_MEMORY_BYTES - existingTotal,
+                BackupPackageLimits.MAX_ENTRIES - files.size - 2 - (if (BackupContent.SECRETS in content) 1 else 0),
+            )
+            validateSnapshotLimits(databaseBytes, preferenceBytes, files, secretSnapshot, skillSnapshot)
             BackupSnapshot(
                 database = databaseBytes,
                 preferences = preferenceBytes,
@@ -117,10 +128,14 @@ class RoomBackupDataSource(
                 secrets = secretSnapshot,
                 databaseSchemaVersion = DATABASE_SCHEMA_VERSION,
                 appVersion = appVersion,
+                skills = skillSnapshot,
             )
         } catch (error: Throwable) {
             files.values.forEach { it.fill(0) }
             secretSnapshot.values.forEach { it.fill(0) }
+            skillSnapshot?.wipe()
+            preferenceBytes.fill(0)
+            databaseBytes.fill(0)
             throw error
         }
     }
@@ -151,6 +166,9 @@ class RoomBackupDataSource(
         var transformed = transformPaths(payload, finalRoot)
         validatePayload(transformed, validated.files)
         var expectedFingerprint = fingerprint(transformed)
+        val plannedSkills = validated.skills?.let {
+            (skillRestore ?: throw BackupValidationException("技能恢复根目录未配置")).plan(restoreId)
+        }
         val beforePreferences = preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         preferences.preflightRestore(restoreId, beforePreferences, preferenceSnapshot)
         val eligibleIds = eligibleSecretIds(preferenceSnapshot.providerIds + beforePreferences.providerIds)
@@ -163,6 +181,7 @@ class RoomBackupDataSource(
             newRootIdentity = finalRoot.fileName.toString(),
             newRootFileKey = null,
             phase = RestoreJournalPhase.PREPARED,
+            skills = plannedSkills,
         )
 
         try {
@@ -182,6 +201,11 @@ class RoomBackupDataSource(
             record = record.copy(newRootFileKey = fileKey(finalRoot))
             journal.write(record)
             crashHook.hit(RestoreCrashPoint.FILES_MOVED)
+            validated.skills?.let { partition ->
+                record = record.copy(skills = skillRestore!!.stage(restoreId, partition, record.skills!!, finalRoot))
+                journal.write(record)
+                crashHook.hit(RestoreCrashPoint.SKILLS_STAGED)
+            }
 
             // Task 8 仍须在应用层冻结其它 DB/文件 writer；本地 mutex 只串行化 restore/recovery。
             restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
@@ -191,6 +215,7 @@ class RoomBackupDataSource(
             database.withTransaction {
                 clearAllRestorableTables()
                 insertPayload(transformed)
+                record.skills?.let { skillRestore!!.commit(restoreId, it) }
                 preferences.commitPrepared(restoreId)
                 secrets.commitPrepared(restoreId)
                 crashHook.hit(RestoreCrashPoint.EXTERNAL_COMMITTED)
@@ -227,7 +252,14 @@ class RoomBackupDataSource(
     }
 
     private suspend fun recoverInterruptedRestoreLocked() = withContext(Dispatchers.IO + NonCancellable) {
-        val record = journal.read() ?: return@withContext
+        var record = journal.read() ?: return@withContext
+        record.skills?.let { skills ->
+            val recovered = requireSkillRestore().recoverRecord(record.txId, skills)
+            if (recovered != skills) {
+                record = record.copy(skills = recovered)
+                journal.write(record)
+            }
+        }
         val failures = mutableListOf<Throwable>()
         val databaseCommitted = when (record.phase) {
             RestoreJournalPhase.COMMITTED -> true
@@ -246,6 +278,9 @@ class RoomBackupDataSource(
         } else {
             runCatching { preferences.rollbackPrepared(record.txId) }.onFailure(failures::add)
             runCatching { secrets.rollbackPrepared(record.txId) }.onFailure(failures::add)
+            record.skills?.let { skills ->
+                runCatching { requireSkillRestore().rollback(record.txId, skills) }.onFailure(failures::add)
+            }
             runCatching { deleteOwnedRestoreRoots(record) }.onFailure(failures::add)
             if (failures.isEmpty()) {
                 runCatching { preferences.finalizePrepared(record.txId) }.onFailure(failures::add)
@@ -1052,13 +1087,15 @@ class RoomBackupDataSource(
         preferenceBytes: ByteArray,
         files: Map<String, ByteArray>,
         secretValues: Map<SecretId, ByteArray>,
+        skills: SkillBackupPartition? = null,
     ) {
         if (databaseBytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES ||
             preferenceBytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES ||
-            files.size + 2 + (if (secretValues.isEmpty()) 0 else 1) > BackupPackageLimits.MAX_ENTRIES
+            files.size + 2 + (if (secretValues.isEmpty()) 0 else 1) +
+                (skills?.let { it.files.size + it.metadata.directories.size } ?: 0) > BackupPackageLimits.MAX_ENTRIES
         ) throw BackupValidationException("snapshot 超过备份 entry 限制")
         var total = databaseBytes.size.toLong() + preferenceBytes.size.toLong()
-        (files.values + secretValues.values).forEach { bytes ->
+        (files.values + secretValues.values + skills?.files.orEmpty().values).forEach { bytes ->
             if (bytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES) {
                 throw BackupValidationException("snapshot 内容项超过大小限制")
             }
@@ -1079,8 +1116,16 @@ class RoomBackupDataSource(
             (("secrets.json" in paths) != validated.manifest.containsSecrets) ||
             (validated.secrets.isNotEmpty() && "secrets.json" !in paths)
         ) throw BackupValidationException("恢复包不是规范全量包")
+        val skills = validated.skills
+        val skillPaths = paths.filter { it.startsWith(SkillBackupPaths.PREFIX) }
+            .map { it.removePrefix(SkillBackupPaths.PREFIX) }.toSet()
+        if (validated.manifest.skills != skills?.metadata || skillPaths != skills?.files.orEmpty().keys ||
+            paths.size + (skills?.metadata?.directories?.size ?: 0) > BackupPackageLimits.MAX_ENTRIES
+        ) throw BackupValidationException("恢复技能分区与清单不一致")
+        skills?.let { SkillBackupPaths.validate(it.metadata, it.files.keys, it.files.values.sumOf { bytes -> bytes.size.toLong() }) }
         val materializedTotal = validated.database.size.toLong() + validated.preferences.size +
-            validated.files.values.sumOf { it.size.toLong() } + validated.secrets.values.sumOf { it.size.toLong() }
+            validated.files.values.sumOf { it.size.toLong() } + validated.secrets.values.sumOf { it.size.toLong() } +
+            skills?.files.orEmpty().values.sumOf { it.size.toLong() }
         if (materializedTotal > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
             throw BackupValidationException("恢复包超过 Android 内存安全限制")
         }
@@ -1156,6 +1201,7 @@ class RoomBackupDataSource(
 
     private suspend fun finishCommitted(record: RestoreJournalRecord) {
         requireOwnedRestoreRoot(restoreParent.resolve(record.newRootIdentity), record)
+        record.skills?.let { requireSkillRestore().finish(record.txId, it) }
         preferences.finalizePrepared(record.txId)
         secrets.finalizePrepared(record.txId)
         deleteOldRoots(record)
@@ -1163,6 +1209,9 @@ class RoomBackupDataSource(
         crashHook.hit(RestoreCrashPoint.RECEIPT_PERSISTED)
         journal.delete()
     }
+
+    private fun requireSkillRestore(): SkillRestoreTransaction = skillRestore
+        ?: throw BackupValidationException("技能恢复 journal 存在，但技能根目录未配置")
 
     private fun writeDatabaseCommitMarker(record: RestoreJournalRecord) {
         database.openHelper.writableDatabase.execSQL(
