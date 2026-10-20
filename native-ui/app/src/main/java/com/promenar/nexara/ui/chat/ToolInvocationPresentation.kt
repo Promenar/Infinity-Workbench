@@ -104,7 +104,7 @@ internal fun toolDurationText(durationMs: Long): ToolDurationText =
 internal data class ToolDurationText(val resId: Int, val args: List<Any>)
 
 internal enum class ToolSummaryCategory {
-    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, IMAGE, PLAN, UTILITY, SKILL, OTHER,
+    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, MEDIA, PLAN, UTILITY, SKILL, OTHER,
 }
 
 internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
@@ -115,7 +115,9 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     FILE_EDIT(ToolSummaryCategory.FILE_EDIT),
     KNOWLEDGE_SEARCH(ToolSummaryCategory.RETRIEVAL),
     MEMORY_SEARCH(ToolSummaryCategory.RETRIEVAL),
-    IMAGE(ToolSummaryCategory.IMAGE),
+    IMAGE(ToolSummaryCategory.MEDIA),
+    MEDIA_VIEW(ToolSummaryCategory.MEDIA),
+    MEDIA_FETCH(ToolSummaryCategory.MEDIA),
     PLAN(ToolSummaryCategory.PLAN),
     TIME(ToolSummaryCategory.UTILITY),
     CALCULATE(ToolSummaryCategory.UTILITY),
@@ -153,6 +155,8 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "knowledge_search" -> ToolSummaryAction.KNOWLEDGE_SEARCH
     "memory_search" -> ToolSummaryAction.MEMORY_SEARCH
     "generate_image", "image_generation" -> ToolSummaryAction.IMAGE
+    "view_media" -> ToolSummaryAction.MEDIA_VIEW
+    "media_fetch" -> ToolSummaryAction.MEDIA_FETCH
     "initialize_plan", "update_plan", "get_plan", "drop_plan" -> ToolSummaryAction.PLAN
     "current_time" -> ToolSummaryAction.TIME
     "calculator" -> ToolSummaryAction.CALCULATE
@@ -160,13 +164,25 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     else -> ToolSummaryAction.OTHER
 }
 
-/** 摘要保留类别首次出现顺序；同一类别中的检索与实用动作分别计数。 */
+/**
+ * 摘要中一次调用计入的数量：生图按成功结果中的图片张数，查看与下载按媒体个数；
+ * 没有结构化媒体的旧结果按一次调用计。
+ */
+internal fun toolSummaryWeight(action: ToolSummaryAction, invocation: ToolInvocationPresentation): Int {
+    if (action != ToolSummaryAction.IMAGE && action != ToolSummaryAction.MEDIA_VIEW && action != ToolSummaryAction.MEDIA_FETCH) return 1
+    val media = invocation.results.filter { it.type == "tool_result" }.flatMap { it.media.orEmpty() }
+    val counted = if (action == ToolSummaryAction.IMAGE) media.count { it.kind == com.promenar.nexara.domain.media.MediaKind.IMAGE } else media.size
+    return counted.takeIf { it > 0 } ?: 1
+}
+
+/** 摘要保留类别首次出现顺序；同一类别中的检索、实用与媒体动作分别计数。 */
 internal fun toolGroupSummary(invocations: List<ToolInvocationPresentation>): ToolGroupSummary {
     val actions = invocations.map { toolSummaryAction(it.name) }
     val categories = actions.map { it.category }.distinct()
     val parts = categories.flatMap { category ->
-        actions.filter { it.category == category }.groupingBy { it }.eachCount()
-            .map { (action, count) -> ToolSummaryPart(action, count) }
+        invocations.zip(actions).filter { (_, action) -> action.category == category }
+            .groupBy({ it.second }, { (invocation, action) -> toolSummaryWeight(action, invocation) })
+            .map { (action, weights) -> ToolSummaryPart(action, weights.sum()) }
     }
     val unfinished = invocations.lastOrNull { !it.complete }
     val failedCount = invocations.count { it.failed }

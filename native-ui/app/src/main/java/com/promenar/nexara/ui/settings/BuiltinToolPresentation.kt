@@ -14,10 +14,12 @@ import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Difference
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FindInPage
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.Javascript
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PlayCircleOutline
@@ -33,6 +35,7 @@ internal enum class BuiltinToolCategory(@StringRes val titleRes: Int) {
     WEB(R.string.tools_category_web),
     FILES(R.string.tools_category_files),
     EXECUTION(R.string.tools_category_execution),
+    MEDIA(R.string.tools_category_media),
     PLANNING(R.string.tools_category_planning),
     OTHER(R.string.tools_category_other),
 }
@@ -42,6 +45,7 @@ internal fun builtinToolCategory(id: String): BuiltinToolCategory = when (id) {
     "file_read", "file_list", "file_search", "file_diff", "file_write", "file_patch",
     "create_file", "create_directory", "move_file", "delete_file" -> BuiltinToolCategory.FILES
     "exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox" -> BuiltinToolCategory.EXECUTION
+    "image_generation", "view_media", "media_fetch" -> BuiltinToolCategory.MEDIA
     "initialize_plan", "update_plan", "get_plan", "drop_plan" -> BuiltinToolCategory.PLANNING
     else -> BuiltinToolCategory.OTHER
 }
@@ -57,6 +61,8 @@ internal fun builtinToolIcon(id: String): ImageVector = when (id) {
     "web_fetch" -> Icons.Rounded.Language
     "calculator" -> Icons.Rounded.Calculate
     "image_generation" -> Icons.Rounded.Image
+    "view_media" -> Icons.Rounded.ImageSearch
+    "media_fetch" -> Icons.Rounded.Download
     "file_read" -> Icons.Rounded.Description
     "file_write" -> Icons.Rounded.EditNote
     "file_list" -> Icons.Rounded.FolderOpen

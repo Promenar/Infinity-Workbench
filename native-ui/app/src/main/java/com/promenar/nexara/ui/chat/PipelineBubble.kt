@@ -757,6 +757,8 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.KNOWLEDGE_SEARCH -> R.plurals.chat_step_knowledge_done
         ToolSummaryAction.MEMORY_SEARCH -> R.plurals.chat_step_memory_done
         ToolSummaryAction.IMAGE -> R.plurals.chat_step_image_done
+        ToolSummaryAction.MEDIA_VIEW -> R.plurals.chat_step_media_view_done
+        ToolSummaryAction.MEDIA_FETCH -> R.plurals.chat_step_media_fetch_done
         ToolSummaryAction.PLAN -> R.plurals.chat_step_plan_done
         ToolSummaryAction.TIME -> R.plurals.chat_step_time_done
         ToolSummaryAction.CALCULATE -> R.plurals.chat_step_calculate_done
@@ -776,6 +778,8 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_name
     ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_name
     ToolSummaryAction.IMAGE -> R.string.chat_step_image_name
+    ToolSummaryAction.MEDIA_VIEW -> R.string.chat_step_media_view_name
+    ToolSummaryAction.MEDIA_FETCH -> R.string.chat_step_media_fetch_name
     ToolSummaryAction.PLAN -> R.string.chat_step_plan_name
     ToolSummaryAction.TIME -> R.string.chat_step_time_name
     ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_name
@@ -798,6 +802,8 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_running
             ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_running
             ToolSummaryAction.IMAGE -> R.string.chat_step_image_running
+            ToolSummaryAction.MEDIA_VIEW -> R.string.chat_step_media_view_running
+            ToolSummaryAction.MEDIA_FETCH -> R.string.chat_step_media_fetch_running
             ToolSummaryAction.PLAN -> R.string.chat_step_plan_running
             ToolSummaryAction.TIME -> R.string.chat_step_time_running
             ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_running

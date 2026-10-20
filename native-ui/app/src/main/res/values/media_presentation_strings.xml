@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="chat_step_media_view_done"><item quantity="one">Viewed %1$d media file</item><item quantity="other">Viewed %1$d media files</item></plurals>
+    <plurals name="chat_step_media_fetch_done"><item quantity="one">Downloaded %1$d media file</item><item quantity="other">Downloaded %1$d media files</item></plurals>
+    <string name="chat_step_media_view_running">Viewing media…</string>
+    <string name="chat_step_media_fetch_running">Downloading media…</string>
+    <string name="chat_step_media_view_name">View media</string>
+    <string name="chat_step_media_fetch_name">Download media</string>
+    <string name="tools_category_media">Media</string>
+</resources>

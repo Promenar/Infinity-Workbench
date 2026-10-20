@@ -7,18 +7,19 @@ class BuiltinToolPresentationTest {
     private fun tool(id: String) = SkillInfo(id, id, "", enabled = true)
 
     @Test
-    fun `内置工具按联网、文件、执行、计划、其它分组`() {
+    fun `内置工具按联网、文件、执行、媒体、计划、其它分组`() {
         val tools = listOf(
             "web_search", "web_fetch", "calculator", "image_generation", "file_read", "file_write",
             "file_list", "file_search", "file_diff", "file_patch", "exec_js", "run_script",
             "initialize_plan", "update_plan", "get_plan", "drop_plan", "create_file", "create_directory",
-            "move_file", "delete_file", "shell_exec", "python_exec", "python_sandbox",
+            "move_file", "delete_file", "shell_exec", "python_exec", "python_sandbox", "view_media", "media_fetch",
         ).map(::tool)
         val groups = tools.groupedByToolCategory()
         assertThat(groups.map { it.first }).containsExactly(
             BuiltinToolCategory.WEB,
             BuiltinToolCategory.FILES,
             BuiltinToolCategory.EXECUTION,
+            BuiltinToolCategory.MEDIA,
             BuiltinToolCategory.PLANNING,
             BuiltinToolCategory.OTHER,
         ).inOrder()
@@ -29,7 +30,8 @@ class BuiltinToolPresentationTest {
         ).inOrder()
         assertThat(byCategory[BuiltinToolCategory.EXECUTION])
             .containsExactly("exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox").inOrder()
-        assertThat(byCategory[BuiltinToolCategory.OTHER]).containsExactly("calculator", "image_generation").inOrder()
+        assertThat(byCategory[BuiltinToolCategory.MEDIA]).containsExactly("image_generation", "view_media", "media_fetch").inOrder()
+        assertThat(byCategory[BuiltinToolCategory.OTHER]).containsExactly("calculator")
         assertThat(groups.sumOf { it.second.size }).isEqualTo(tools.size)
     }
 

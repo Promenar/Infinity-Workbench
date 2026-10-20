@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.domain.media.MediaKind
+import com.promenar.nexara.domain.media.MediaRef
 import org.junit.jupiter.api.Test
 
 class ToolInvocationPresentationTest {
@@ -58,6 +60,8 @@ class ToolInvocationPresentationTest {
             listOf("knowledge_search") to ToolSummaryAction.KNOWLEDGE_SEARCH,
             listOf("memory_search") to ToolSummaryAction.MEMORY_SEARCH,
             listOf("generate_image", "image_generation") to ToolSummaryAction.IMAGE,
+            listOf("view_media") to ToolSummaryAction.MEDIA_VIEW,
+            listOf("media_fetch") to ToolSummaryAction.MEDIA_FETCH,
             listOf("initialize_plan", "update_plan", "get_plan", "drop_plan") to ToolSummaryAction.PLAN,
             listOf("current_time") to ToolSummaryAction.TIME,
             listOf("calculator") to ToolSummaryAction.CALCULATE,
@@ -149,6 +153,26 @@ class ToolInvocationPresentationTest {
         assertThat(summary.failedCount).isEqualTo(0)
         assertThat(summary.runningAction).isNull()
         assertThat(summary.durationMs).isNull()
+    }
+
+    @Test
+    fun `媒体动作按结果中的媒体个数计数，旧结果按调用计`() {
+        fun ref(path: String, kind: MediaKind) = MediaRef(path, "application/octet-stream", kind, 1)
+        val steps = listOf(
+            call("g", "gen", "image_generation", 1000),
+            result("g-r", "gen", 1400).copy(media = listOf(
+                ref("/media/a.png", MediaKind.IMAGE), ref("/media/b.png", MediaKind.IMAGE), ref("/media/c.png", MediaKind.IMAGE),
+            )),
+            call("v", "view", "view_media", 1500),
+            result("v-r", "view", 1700).copy(media = listOf(ref("/media/a.png", MediaKind.IMAGE), ref("/media/d.mp4", MediaKind.VIDEO))),
+            call("legacy", "old", "image_generation", 1800), result("legacy-r", "old", 1900),
+        )
+        val summary = toolGroupSummary(toolInvocations(steps))
+        assertThat(summary.categories).containsExactly(ToolSummaryCategory.MEDIA)
+        assertThat(summary.parts).containsExactly(
+            ToolSummaryPart(ToolSummaryAction.IMAGE, 4), ToolSummaryPart(ToolSummaryAction.MEDIA_VIEW, 2),
+        ).inOrder()
+        assertThat(summary.count).isEqualTo(3)
     }
 
     private fun completedInvocations(vararg names: String) = toolInvocations(names.flatMapIndexed { index, name ->

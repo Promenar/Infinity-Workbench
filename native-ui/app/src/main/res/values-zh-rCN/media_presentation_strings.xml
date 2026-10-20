@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="chat_step_media_view_done"><item quantity="other">查看了 %1$d 个媒体文件</item></plurals>
+    <plurals name="chat_step_media_fetch_done"><item quantity="other">下载了 %1$d 个媒体文件</item></plurals>
+    <string name="chat_step_media_view_running">正在查看媒体…</string>
+    <string name="chat_step_media_fetch_running">正在下载媒体…</string>
+    <string name="chat_step_media_view_name">查看媒体</string>
+    <string name="chat_step_media_fetch_name">下载媒体</string>
+    <string name="tools_category_media">媒体</string>
+</resources>
