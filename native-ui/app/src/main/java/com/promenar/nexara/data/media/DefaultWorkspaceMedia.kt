@@ -1,0 +1,385 @@
+package com.promenar.nexara.data.media
+
+import android.content.Context
+import androidx.core.net.toUri
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
+import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.storage.*
+import com.promenar.nexara.data.workspace.SessionWorkspace
+import com.promenar.nexara.domain.media.*
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.storage.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.io.InputStream
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.security.MessageDigest
+import java.time.Clock
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.UUID
+
+internal class DefaultWorkspaceMedia(
+    private val context: Context,
+    private val sessions: ISessionRepository,
+    private val workspace: IWorkspaceRepository,
+    private val mounts: ExternalWorkspaceAccess,
+    private val sessionWorkspace: suspend (String) -> SessionWorkspace,
+    private val indexEvents: FileIndexEventSink,
+    private val clock: Clock = Clock.systemDefaultZone(),
+    private val fileSystem: RealPathFileSystem = AndroidRealPathFileSystem,
+    private val userSkillsDirectory: File = File(context.filesDir, "agent_skills").canonicalFile,
+) : WorkspaceMediaResolver, WorkspaceMediaStore {
+    private val local = MediaLocalAccess(fileSystem)
+    private val metadata = MediaMetadataReader(context)
+    // 弱键不延长卡片生命周期；open 必须重新核验会话和挂载身份，不能接受任意本机文件。
+    private val expiredBindings = ReferenceQueue<MediaResolution.Available>()
+    private val bindings = HashMap<ResolutionKey, Target>()
+
+    override suspend fun resolve(sessionId: String, path: String): MediaResolution = withContext(Dispatchers.IO) {
+        var normalized = path
+        try {
+            normalized = normalize(path)
+            val target = target(sessionId, normalized, writing = false)
+            withContext(ExternalMountOperationBindings(target.mountIds)) {
+                val entry = entry(target, normalized) ?: return@withContext MediaResolution.Unavailable(normalized, MediaUnavailableReason.NOT_FOUND)
+                if (entry.isDirectory) return@withContext MediaResolution.Unavailable(normalized, MediaUnavailableReason.IS_DIRECTORY)
+                val source = source(target, normalized)
+                val header = openSource(target, normalized, source).use { readHeader(it) }
+                val type = MediaTypeSniffer.sniff(header, entry.name)
+                val info = metadata.read(type.kind, source) { openSource(target, normalized, source) }
+                MediaResolution.Available(
+                    MediaRef(normalized, type.mimeType, type.kind, entry.sizeBytes, entry.hash.takeIf(String::isNotBlank), info.width, info.height, info.durationMs), source,
+                ).also { binding(it, target) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            MediaResolution.Unavailable(normalized, reason(failure))
+        }
+    }
+
+    override suspend fun open(resolution: MediaResolution.Available): InputStream = withContext(Dispatchers.IO) {
+        val bound = binding(resolution) ?: fail("INVALID_PATH", "媒体引用未经过当前解析器核验，请重新解析路径")
+        try {
+            val current = target(bound.sessionId, resolution.ref.path, writing = false)
+            if (current.identity != bound.identity) fail("WORKSPACE_UNAVAILABLE", "会话工作区或挂载身份已变化，请重新解析媒体")
+            withContext(ExternalMountOperationBindings(current.mountIds)) {
+                val entry = entry(current, resolution.ref.path) ?: fail("IO", "媒体文件已不存在")
+                if (entry.isDirectory) fail("IO", "媒体路径当前指向目录")
+                val source = source(current, resolution.ref.path)
+                if (source != resolution.source) fail("WORKSPACE_UNAVAILABLE", "媒体来源已变化，请重新解析路径")
+                openSource(current, resolution.ref.path, source)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            throw storageFailure(failure)
+        }
+    }
+
+    override suspend fun save(
+        sessionId: String,
+        payload: MediaPayload,
+        origin: MediaOrigin,
+        mimeTypeHint: String?,
+        suggestedName: String?,
+        targetPath: String?,
+    ): MediaRef = withContext(Dispatchers.IO) {
+        locks[sessionId.hashCode() and (locks.size - 1)].withLock {
+            try {
+                val explicit = targetPath?.takeUnless(String::isEmpty)?.let(::normalize)
+                val initialPath = explicit ?: "/media"
+                protect(initialPath)
+                val target = target(sessionId, initialPath, writing = true)
+                if (target.mount?.readOnly == true) fail("READ_ONLY", "目标挂载为只读，无法保存媒体")
+                withContext(ExternalMountOperationBindings(target.mountIds)) {
+                    if (explicit != null && exists(target, explicit)) fail("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖")
+                    val temporary = File.createTempFile("workspace-media-", ".tmp", context.cacheDir.canonicalFile)
+                    try {
+                        val staged = stage(payload, temporary)
+                        val type = MediaTypeSniffer.forStorage(staged.header, mimeTypeHint, suggestedName)
+                        val info = metadata.read(type.kind, MediaSource.LocalFile(temporary)) { local.open(temporary.parentFile!!, "/${temporary.name}") }
+                        val now = LocalDateTime.now(clock)
+                        val extension = MediaTypeSniffer.extension(type.mimeType, suggestedName)
+                        val base = "/media/${now.toLocalDate()}/${origin.prefix}-${now.format(TIME)}-${staged.sha256.take(6)}"
+                        var suffix = 1
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val path = explicit ?: "$base${if (suffix == 1) "" else "-$suffix"}.$extension"
+                            checkCurrent(target, path)
+                            if (exists(target, path)) {
+                                if (explicit != null) fail("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖")
+                                suffix++
+                                continue
+                            }
+                            ensureParents(target, path)
+                            try {
+                                create(target, path, temporary, type.mimeType)
+                            } catch (failure: Exception) {
+                                if (failure is CancellationException) throw failure
+                                if (explicit == null && (failure as? WorkspaceMediaException)?.code == "EXISTS") { suffix++; continue }
+                                throw failure
+                            }
+                            return@withContext MediaRef(path, type.mimeType, type.kind, staged.size, staged.sha256, info.width, info.height, info.durationMs)
+                        }
+                        @Suppress("UNREACHABLE_CODE")
+                        error("媒体保存未返回")
+                    } finally {
+                        Files.deleteIfExists(temporary.toPath())
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                throw storageFailure(failure)
+            }
+        }
+    }
+
+    private data class Target(val sessionId: String, val root: FileEntry?, val directory: File?, val mount: ExternalMount?, val workspaceMount: ExternalMount? = null) {
+        val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, workspaceMount?.id)
+        val mountIds: Map<String, String> get() = listOfNotNull(workspaceMount, mount).associate { it.alias to it.id }
+        fun relative(path: String): String = ExternalMountPaths.parse(path)?.second ?: path
+        val virtualRoot: String get() = when {
+            mount == null || mount.isWorkspaceRoot -> "/"
+            mount.isUserSkills -> "/skills"
+            else -> "/mnt/${mount.alias}"
+        }
+    }
+
+    private class ResolutionKey(resolution: MediaResolution.Available, queue: ReferenceQueue<MediaResolution.Available>? = null) :
+        WeakReference<MediaResolution.Available>(resolution, queue) {
+        private val identityHash = System.identityHashCode(resolution)
+        override fun hashCode() = identityHash
+        override fun equals(other: Any?): Boolean = this === other || other is ResolutionKey && get()?.let { it === other.get() } == true
+    }
+
+    private fun binding(resolution: MediaResolution.Available, target: Target? = null): Target? = synchronized(bindings) {
+        while (true) { val expired = expiredBindings.poll() ?: break; bindings.remove(expired) }
+        if (target != null) {
+            bindings[ResolutionKey(resolution, expiredBindings)] = target
+            target
+        } else bindings[ResolutionKey(resolution)]
+    }
+
+    private suspend fun target(sessionId: String, path: String, writing: Boolean): Target {
+        val current = sessionWorkspace(sessionId)
+        if (current is SessionWorkspace.Unavailable) fail("WORKSPACE_UNAVAILABLE", "当前会话工作区不可用，请检查目录与授权")
+        val workspaceMount = mounts.workspaceMount(sessionId)
+        if (current is SessionWorkspace.Directory && workspaceMount == null || current is SessionWorkspace.Private && workspaceMount != null) {
+            fail("WORKSPACE_UNAVAILABLE", "会话工作区正在变化，请重新执行媒体操作")
+        }
+        val alias = ExternalMountPaths.aliasOf(path, workspaceMount != null)
+        if (alias != null) {
+            val mount = if (alias == ExternalMountPaths.WORKSPACE_ALIAS) workspaceMount
+                else mounts.visible(sessionId).singleOrNull { it.alias == alias }
+            if (mount == null || mount.unavailableReason != null) fail("WORKSPACE_UNAVAILABLE", "媒体挂载已失效或不属于当前会话")
+            val directory = when {
+                mount.isWorkspaceRoot -> (current as? SessionWorkspace.Directory)?.root
+                mount.isUserSkills -> userSkillsDirectory.canonicalFile
+                mount.sourceType == "real_path" -> File(mount.sourceId)
+                mount.sourceType == "saf_tree" -> null
+                else -> fail("WORKSPACE_UNAVAILABLE", "不支持该媒体挂载来源")
+            }
+            return Target(sessionId, null, directory, mount, workspaceMount)
+        }
+        // /mnt 是挂载列表的虚拟目录，不应误落到私有工作区的同名路径。
+        if (path == "/mnt") return Target(sessionId, null, null, null, workspaceMount)
+        val session = sessions.getById(sessionId) ?: fail("WORKSPACE_UNAVAILABLE", "会话不存在，无法访问媒体工作区")
+        val root = session.workspaceRootUuid?.let { workspace.getByUuid(it, it) }
+            ?: if (writing) workspace.ensureSessionRoot(sessionId) else fail("WORKSPACE_UNAVAILABLE", "会话私有工作区尚不可用")
+        return Target(sessionId, root, File(root.physicalRootPath), null)
+    }
+
+    private suspend fun checkCurrent(bound: Target, path: String) {
+        if (target(bound.sessionId, path, writing = false).identity != bound.identity) {
+            fail("WORKSPACE_UNAVAILABLE", "会话工作区或挂载在保存期间发生变化，已停止写入")
+        }
+    }
+
+    private suspend fun entry(target: Target, path: String): FileEntry? = when {
+        path == "/mnt" || target.mount != null -> mounts.entry(target.sessionId, path)
+        else -> workspace.getByMaterializedPath(target.root!!.uuid, path)
+    }
+
+    private suspend fun exists(target: Target, path: String): Boolean = entry(target, path) != null ||
+        target.root != null && Files.exists(local.file(target.directory!!, path).toPath(), NOFOLLOW_LINKS)
+
+    private suspend fun source(target: Target, path: String): MediaSource = if (target.directory != null) {
+        MediaSource.LocalFile(local.file(target.directory, target.relative(path)))
+    } else {
+        val mount = target.mount ?: fail("INVALID_PATH", "媒体路径没有可读来源")
+        val uri = SafExternalFolderBackend(context.contentResolver, mount.sourceId.toUri()).documentUri(target.relative(path))
+            ?: fail("IO", "媒体文件已不存在")
+        MediaSource.ContentUri(uri.toString())
+    }
+
+    private fun openSource(target: Target, path: String, source: MediaSource): InputStream = when (source) {
+        is MediaSource.LocalFile -> local.open(target.directory!!, target.relative(path))
+        is MediaSource.ContentUri -> context.contentResolver.openInputStream(source.uri.toUri())
+            ?: fail("IO", "无法打开媒体文件，请检查目录与授权")
+    }
+
+    private suspend fun ensureParents(target: Target, path: String) {
+        var parent = target.virtualRoot
+        for (component in target.relative(path).trim('/').split('/').dropLast(1)) {
+            parent = if (parent == "/") "/$component" else "$parent/$component"
+            val existing = entry(target, parent)
+            if (existing != null) {
+                if (!existing.isDirectory) fail("INVALID_PATH", "媒体父路径包含文件，无法创建目录")
+                continue
+            }
+            try {
+                if (target.mount != null) mounts.createDirectory(target.sessionId, parent)
+                else {
+                    val parentEntry = entry(target, parent.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不可用")
+                    workspace.createDirectoryInWorkspace(target.root!!.uuid, UUID.randomUUID().toString(), component, parentEntry.uuid, parent)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (entry(target, parent)?.isDirectory != true) throw failure
+            }
+        }
+    }
+
+    private suspend fun create(target: Target, path: String, file: File, mime: String) {
+        var created: FileEntry? = null
+        try {
+            checkCurrent(target, path)
+            if (target.mount != null) {
+                // 外部后端只接受整块字节；暂存阶段已用统一上限约束大小。
+                mounts.write(target.sessionId, path, file.readBytes(), expectedSha256 = null, createOnly = true)
+            } else {
+                val root = target.root ?: fail("INVALID_PATH", "不能向挂载列表目录保存媒体")
+                val parent = entry(target, path.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不存在")
+                val coroutine = currentCoroutineContext()
+                created = workspace.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), path.substringAfterLast('/'), mime, parent.uuid, path, MAX_WORKSPACE_MEDIA_BYTES) { output ->
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) {
+                            coroutine.ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                indexEvents.publish(FileIndexEvent.Changed(root.uuid, created.uuid, created.hash, created.updatedAt.coerceAtLeast(1)))
+                workspace.confirmCreatedEntry(root.uuid, created.uuid)
+            }
+        } catch (failure: Exception) {
+            created?.let { entry ->
+                withContext(NonCancellable) {
+                    try { workspace.rollbackCreatedEntry(entry.workspaceRootUuid, entry.uuid) }
+                    catch (rollback: Exception) { failure.addSuppressed(rollback) }
+                    try { indexEvents.publish(FileIndexEvent.Deleted(entry.workspaceRootUuid, entry.uuid)) }
+                    catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
+                }
+            }
+            if (failure is CancellationException) throw failure
+            if (failure is ExternalFolderException && failure.code == "CONFLICT" ||
+                failure is java.nio.file.FileAlreadyExistsException || created == null && exists(target, path)) {
+                throw WorkspaceMediaException("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖").apply { initCause(failure) }
+            }
+            throw failure
+        }
+    }
+
+    private data class Staged(val header: ByteArray, val sha256: String, val size: Long)
+
+    private suspend fun stage(payload: MediaPayload, file: File): Staged {
+        if (payload is MediaPayload.Bytes && payload.bytes.size.toLong() > MAX_WORKSPACE_MEDIA_BYTES) fail("TOO_LARGE", "单个媒体不能超过 256 MiB")
+        val input = when (payload) { is MediaPayload.Bytes -> payload.bytes.inputStream(); is MediaPayload.Stream -> payload.open() }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val header = ByteArray(HEADER_SIZE)
+        var headerSize = 0
+        var size = 0L
+        input.use { source -> file.outputStream().use { output ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                var count = source.read(buffer, 0, minOf(buffer.size.toLong(), MAX_WORKSPACE_MEDIA_BYTES - size + 1).toInt())
+                if (count < 0) break
+                if (count == 0) { val byte = source.read(); if (byte < 0) break; buffer[0] = byte.toByte(); count = 1 }
+                size += count
+                if (size > MAX_WORKSPACE_MEDIA_BYTES) fail("TOO_LARGE", "单个媒体不能超过 256 MiB")
+                val copied = minOf(count, header.size - headerSize)
+                buffer.copyInto(header, headerSize, 0, copied)
+                headerSize += copied
+                digest.update(buffer, 0, count)
+                output.write(buffer, 0, count)
+            }
+        } }
+        return Staged(header.copyOf(headerSize), digest.digest().joinToString("") { "%02x".format(it) }, size)
+    }
+
+    private suspend fun readHeader(input: InputStream): ByteArray {
+        val bytes = ByteArray(HEADER_SIZE)
+        var count = 0
+        while (count < bytes.size) {
+            currentCoroutineContext().ensureActive()
+            val read = input.read(bytes, count, bytes.size - count)
+            if (read < 0) break
+            if (read == 0) { val byte = input.read(); if (byte < 0) break; bytes[count++] = byte.toByte() } else count += read
+        }
+        return bytes.copyOf(count)
+    }
+
+    private fun normalize(path: String): String {
+        if (SCHEME.containsMatchIn(path.trimStart())) fail("INVALID_PATH", "媒体只接受工作区虚拟路径，不接受 URI")
+        return ExternalFolderPaths.normalize(path).also { ExternalMountPaths.parse(it) }
+    }
+
+    private fun protect(path: String) {
+        val relative = (ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
+        if (path == "/skills" || path.startsWith("/skills/") || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")) {
+            fail("PROTECTED_PATH", "技能目录写入需要逐次审批，媒体存储不能直接写入")
+        }
+    }
+
+    private fun reason(failure: Exception) = when {
+        failure is WorkspaceMediaException && failure.code == "INVALID_PATH" || failure is ExternalFolderException && failure.code == "INVALID_PATH" -> MediaUnavailableReason.INVALID_PATH
+        failure is ExternalFolderException && failure.code in setOf("NOT_FOUND", "NOT_DIRECTORY") || failure is java.io.FileNotFoundException || failure is java.nio.file.NoSuchFileException -> MediaUnavailableReason.NOT_FOUND
+        failure is ExternalFolderException && failure.code == "IS_DIRECTORY" -> MediaUnavailableReason.IS_DIRECTORY
+        else -> MediaUnavailableReason.UNREADABLE
+    }
+
+    private fun storageFailure(failure: Exception): WorkspaceMediaException {
+        if (failure is WorkspaceMediaException) return failure
+        val code = when ((failure as? ExternalFolderException)?.code) {
+            "INVALID_PATH", "READ_ONLY", "TOO_LARGE" -> failure.code
+            "UNAVAILABLE" -> "WORKSPACE_UNAVAILABLE"
+            "CONFLICT" -> "EXISTS"
+            else -> "IO"
+        }
+        val message = when (code) {
+            "INVALID_PATH" -> "媒体路径无效、越出工作区或包含保留目录"
+            "READ_ONLY" -> "目标位置为只读，无法保存媒体"
+            "TOO_LARGE" -> "单个媒体不能超过 256 MiB"
+            "WORKSPACE_UNAVAILABLE" -> "工作区或挂载不可用，请检查目录与授权"
+            "EXISTS" -> "目标文件或目录已存在，媒体保存不会覆盖"
+            else -> "媒体读写失败，请检查存储空间、目录与授权"
+        }
+        return WorkspaceMediaException(code, message).apply { initCause(failure) }
+    }
+
+    companion object {
+        private const val HEADER_SIZE = 64 * 1024
+        private const val BUFFER_SIZE = 64 * 1024
+        private val TIME = DateTimeFormatter.ofPattern("HHmm", Locale.ROOT)
+        private val SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
+        // 有界锁池避免随会话数量增长；跨实例的同一会话也共享新建命名临界区。
+        private val locks = Array(64) { Mutex() }
+        private fun fail(code: String, message: String): Nothing = throw WorkspaceMediaException(code, message)
+    }
+}
