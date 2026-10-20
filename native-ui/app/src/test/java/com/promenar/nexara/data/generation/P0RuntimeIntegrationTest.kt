@@ -112,6 +112,41 @@ class P0RuntimeIntegrationTest {
     }
 
     @Test
+    fun `协议上报的缓存与推理用量和每轮计时写入对应助手消息`() = runTest {
+        val fixture = fixture()
+        fixture.rounds = { index ->
+            if (index == 1) listOf(
+                StreamChunk.ToolCallDelta("call-1", "write_file", """{"path":"/a.md"}""", 0),
+                StreamChunk.Usage(ProtocolUsage(500, 20, 520, cacheReadInput = 400, cacheWriteInput = 50)),
+                StreamChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call-1")),
+            ) else listOf(
+                StreamChunk.TextDelta("任务完成"),
+                StreamChunk.Usage(ProtocolUsage(600, 30, 630, reasoningOutput = 12)),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+            )
+        }
+
+        ChatGenerationRunner(fixture.runtime()).run(fixture.request) {}
+
+        val assistants = fixture.messageRepository.getBySession("session").filter { it.role == MessageRole.ASSISTANT }
+        val first = requireNotNull(assistants.single { it.id == "assistant" }.tokens)
+        assertThat(first.input).isEqualTo(500)
+        assertThat(first.cacheReadInput).isEqualTo(400)
+        assertThat(first.cacheWriteInput).isEqualTo(50)
+        assertThat(first.reasoningOutput).isNull()
+        val firstTiming = requireNotNull(first.timing)
+        assertThat(firstTiming.firstOutputAt).isAtLeast(firstTiming.requestStartedAt!!)
+        assertThat(firstTiming.endedAt).isAtLeast(firstTiming.firstOutputAt!!)
+        val second = requireNotNull(assistants.single { it.id != "assistant" }.tokens)
+        assertThat(second.reasoningOutput).isEqualTo(12)
+        assertThat(second.cacheReadInput).isNull()
+        assertThat(requireNotNull(second.timing).requestStartedAt).isAtLeast(firstTiming.endedAt!!)
+        val raw = requireNotNull(fixture.database.messageDao().getById("assistant")!!.tokens)
+        assertThat(raw).contains("\"cacheReadInput\":400")
+        assertThat(raw).doesNotContain("reasoningOutput")
+    }
+
+    @Test
     fun `阈值触发先折叠再归档摘要且两类压缩只使用活跃模型并记录费用`() = runTest {
         val fixture = fixture(priorToolResults = listOf("旧工具事实".repeat(500), "最近一", "最近二", "最近三"), historicalTurn = true)
         fixture.preferences.edit().putString("preset_summary_model", "quick::different").commit()

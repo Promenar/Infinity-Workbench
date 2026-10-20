@@ -372,11 +372,7 @@ class GenericOpenAICompatProtocol(
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         if (choice == null) {
             val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
-            if (usageRaw != null) send(StreamChunk.Usage(ProtocolUsage(
-                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            )))
+            if (usageRaw != null) send(StreamChunk.Usage(ProtocolUsageParsers.openAiChat(usageRaw)))
             return null
         }
         val delta = choice["delta"] as? JsonObject ?: JsonObject(emptyMap())
@@ -437,12 +433,7 @@ class GenericOpenAICompatProtocol(
 
         val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         if (usageRaw != null) {
-            val usage = ProtocolUsage(
-                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            )
-            send(StreamChunk.Usage(usage))
+            send(StreamChunk.Usage(ProtocolUsageParsers.openAiChat(usageRaw)))
         }
 
         return when (val finishReason = choice.stringField("finish_reason")) {
@@ -514,13 +505,7 @@ class GenericOpenAICompatProtocol(
         requireValidSyncCompletion(completionReason, toolCalls)
 
         val usageRaw = parsed["usage"]?.takeUnless { it is JsonNull }?.jsonObject
-        val usage = if (usageRaw != null) {
-            ProtocolUsage(
-                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            )
-        } else null
+        val usage = usageRaw?.let(ProtocolUsageParsers::openAiChat)
 
         return PromptResponse(
             content = content,

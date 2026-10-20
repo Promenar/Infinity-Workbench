@@ -75,6 +75,7 @@ class AnthropicProtocol(
         thinkingAccumulators.clear()
         completedThinking.clear()
         pendingStopReason = null
+        startUsage = null
 
         try {
             // 回传的思考块被拒绝（签名失效、跨账号或兼容网关不支持）时，去掉全部思考块重发一次；官方允许整体省略。
@@ -201,6 +202,7 @@ class AnthropicProtocol(
                 thinkingAccumulators.clear()
                 completedThinking.clear()
                 pendingStopReason = null
+                startUsage = null
             }
         } catch (e: CancellationException) {
             throw e
@@ -410,7 +412,8 @@ class AnthropicProtocol(
         return body.toString()
     }
 
-    private var inputTokenCount = 0
+    /** message_start 携带的 usage（未缓存输入与缓存读写），与 message_delta 合并后上报。 */
+    private var startUsage: JsonObject? = null
 
     private suspend fun SendChannel<StreamChunk>.processSseEvent(event: String, data: String): Boolean {
         if (data.isEmpty()) return false
@@ -514,25 +517,17 @@ class AnthropicProtocol(
                 else -> throw IllegalStateException("Unknown Anthropic stop_reason: $stopReason")
             }
         }
-        val usage = eventData["usage"]?.jsonObject
+        val usage = eventData["usage"] as? JsonObject
         if (usage != null) {
-            val outputTokens = usage["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            if (outputTokens > 0 && inputTokenCount > 0) {
-                send(StreamChunk.Usage(
-                    ProtocolUsage(
-                        input = inputTokenCount,
-                        output = outputTokens,
-                        total = inputTokenCount + outputTokens
-                    )
-                ))
+            val merged = ProtocolUsageParsers.anthropic(startUsage, usage)
+            if (merged.output > 0 && merged.input > 0) {
+                send(StreamChunk.Usage(merged))
             }
         }
     }
 
     private fun processMessageStart(eventData: JsonObject) {
-        inputTokenCount = eventData["message"]?.jsonObject
-            ?.get("usage")?.jsonObject
-            ?.get("input_tokens")?.jsonPrimitive?.intOrNull ?: 0
+        startUsage = (eventData["message"] as? JsonObject)?.get("usage") as? JsonObject
     }
 
     private suspend fun SendChannel<StreamChunk>.processContentBlockStart(eventData: JsonObject) {
@@ -621,15 +616,7 @@ class AnthropicProtocol(
         }
 
         val usageRaw = parsed["usage"]?.jsonObject
-        val usage = if (usageRaw != null) {
-            val inputTokens = usageRaw["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            val outputTokens = usageRaw["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            ProtocolUsage(
-                input = inputTokens,
-                output = outputTokens,
-                total = inputTokens + outputTokens
-            )
-        } else null
+        val usage = usageRaw?.let { ProtocolUsageParsers.anthropic(it) }
 
         val toolCalls = contentArray.orEmpty().mapNotNull { block ->
             val blockObj = block as? JsonObject

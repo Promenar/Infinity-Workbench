@@ -189,6 +189,8 @@ data class ChatScreenState(
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
+    /** 服务商 ID → 显示名，供生成统计浮卡使用。 */
+    val providerDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
     val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
 )
@@ -558,6 +560,7 @@ fun ChatScreenContent(
                         streamingContent = uiState.streamingContent,
                         fontSize = uiState.session?.options?.fontSize ?: 15,
                         modelDisplayNames = state.modelDisplayNames,
+                        providerDisplayNames = state.providerDisplayNames,
                         onMessageContentChange = actions.onContentChange,
                         onContentChange = { newContent ->
                             group.assistantMessages.lastOrNull()?.let { lastMsg ->

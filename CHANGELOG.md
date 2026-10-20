@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 回复气泡生成统计浮卡
+
+- 点击 AI 回复底部“模型名 · 时间”一行，在其上方弹出生成统计浮卡（点外部或返回关闭；生成进行中不显示该行，因此不会弹出）。统计以气泡为单位，汇总其中全部模型轮次（模型→工具→模型…）：模型与服务商名、生成时间；输入、输出、生成速度三格主指标；缓存读取、未缓存、推理 Token（服务商报告时才显示）、首 Token 耗时、端到端吞吐、端到端耗时、多轮时的“N 轮合计”与“输入含每轮重复计入的上下文”说明；可展开的“运行时间分布”（模型 / 工具 / 其它）。估算用量标“估算”，旧消息缺计时显示“—”。不显示任何费用。
+- 口径：生成速度 = 输出合计 ÷ Σ各轮(结束 − 首个输出)；端到端吞吐 = 输出合计 ÷ (最后一轮结束 − 第一轮请求开始)；首 Token 耗时取第一轮；模型时间 = Σ各轮(结束 − 请求开始)，工具时间取各轮工具调用墙钟区间之和，其它 = 端到端 − 模型 − 工具（下限 0）。Token 统计扣除并入消息的摘要模型用量；缺数据的项不臆造。
+- 每条助手消息的 `tokens` JSON 新增可空字段 `cacheReadInput`、`cacheWriteInput`、`reasoningOutput` 与 `timing`（`requestStartedAt`、`firstOutputAt`、`endedAt`，epoch 毫秒），为空时不写入；旧记录照常解码，无数据库迁移，`$.input`/`$.output`/`$.total` 键名与含义不变。生成运行器在每轮请求发出、首个正文/思考/工具调用增量到达、流结束时打点，失败与取消的轮次同样补记结束时间；自动重试沿用本轮首次请求时间。
+- 协议 usage 统一语义：`input` 为本轮全部输入（含缓存读写部分），`output` 含推理 Token。OpenAI 与兼容协议读取 `prompt_tokens_details.cached_tokens`、`completion_tokens_details.reasoning_tokens`，DeepSeek 的 `prompt_cache_hit_tokens` 记为缓存读取；OpenAI Responses 读取 `input_tokens_details`/`output_tokens_details`；Gemini/Vertex 读取 `cachedContentTokenCount`，`thoughtsTokenCount` 仍并入输出并另记推理。
+- **口径变化**：Anthropic 协议的输入 Token 改为 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`（此前只计未缓存部分），更接近计费口径；启用提示缓存的 Anthropic 会话此后记录的输入与总量、会话累计用量和设置“用量”统计会相应变大，历史记录不变。
+
 ### 上滑面板统一、工作区入口迁移与授权列表精简
 
 - 全站上滑面板统一为同一外壳（形状、底色、拖动条一致，始终直接完全展开）并按两档高度显示：会话设置、资源管理器、Git 变更、工作区选择器、文件差异、检索详情、模型选择及各类编辑表单铺满屏幕；单选列表、“移动到”等目标选择与短表单按内容高度显示，不再使用 0.7、0.82、0.85、0.9、0.95 等各自的固定比例。

@@ -8,6 +8,7 @@ import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRunner
 import com.promenar.nexara.domain.generation.GenerationSnapshot
+import com.promenar.nexara.domain.generation.GenerationTiming
 import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolUsage
 import com.promenar.nexara.domain.generation.GenerationToolCall
@@ -80,6 +81,8 @@ interface ChatGenerationRuntime {
 
 class ChatGenerationRunner(
     private val runtime: ChatGenerationRuntime,
+    /** 记录每轮请求时间点所用的时钟（epoch 毫秒），测试可注入。 */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : GenerationRunner {
     override suspend fun run(request: GenerationRequest, emit: suspend (GenerationEvent) -> Unit) {
         var snapshot = GenerationSnapshot()
@@ -117,6 +120,30 @@ class ChatGenerationRunner(
                     flushed = true
                     if (primary != null) primary.addSuppressed(flushFailure) else throw flushFailure
                 }
+            }
+        }
+        fun markFirstOutput() {
+            val timing = snapshot.timing ?: return
+            if (timing.firstOutputAt == null && timing.endedAt == null) {
+                snapshot = snapshot.copy(timing = timing.copy(firstOutputAt = clock()))
+            }
+        }
+        fun markRoundEnded() {
+            val timing = snapshot.timing ?: return
+            if (timing.endedAt == null) snapshot = snapshot.copy(timing = timing.copy(endedAt = clock()))
+        }
+        /** 失败或取消时补记本轮结束时间；未确认的工具调用由 [clearUnconfirmedToolCalls] 一并持久化。 */
+        suspend fun closeOpenRoundTiming(primary: Throwable) {
+            val timing = snapshot.timing ?: return
+            if (timing.endedAt != null) return
+            markRoundEnded()
+            if (snapshot.toolCalls.isNotEmpty() && !resultsCommitted) return
+            try {
+                withContext(NonCancellable) {
+                    snapshot = persist(request, snapshot, emit)
+                }
+            } catch (timingFailure: Throwable) {
+                if (timingFailure !== primary) primary.addSuppressed(timingFailure)
             }
         }
         suspend fun clearUnconfirmedToolCalls(primary: Throwable) {
@@ -251,10 +278,14 @@ class ChatGenerationRunner(
                 var retries = 0
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
                 var reportedUsage: Long? = null
+                // 自动重试沿用本轮首次请求时间，首个输出与结束时间以最终成功的那次请求为准。
+                var roundRequestStartedAt: Long? = null
                 val terminal: GenerationChunk.Completed
                 while (true) {
                     val outcome: GenerationChunk.Completed? = try {
                         phase(GenerationPhase.CONNECTING)
+                        val requestStartedAt = roundRequestStartedAt ?: clock().also { roundRequestStartedAt = it }
+                        snapshot = snapshot.copy(timing = GenerationTiming(requestStartedAt))
                         val stream = runtime.stream(request, attempt)
                         phase(GenerationPhase.THINKING)
                         var streamingPhaseEmitted = false
@@ -267,6 +298,7 @@ class ChatGenerationRunner(
                         }.collect { chunk ->
                             when (chunk) {
                                 is GenerationChunk.Text -> {
+                                    if (chunk.content.isNotEmpty() || !chunk.reasoning.isNullOrEmpty()) markFirstOutput()
                                     if (!streamingPhaseEmitted) {
                                         streamingPhaseEmitted = true
                                         phase(GenerationPhase.STREAMING)
@@ -278,6 +310,7 @@ class ChatGenerationRunner(
                                     snapshot = persist(request, snapshot, emit)
                                 }
                                 is GenerationChunk.Thinking -> {
+                                    if (chunk.content.isNotEmpty()) markFirstOutput()
                                     snapshot = snapshot.copy(reasoning = snapshot.reasoning + chunk.content)
                                     snapshot = persist(request, snapshot, emit)
                                 }
@@ -286,6 +319,7 @@ class ChatGenerationRunner(
                                     snapshot = persist(request, snapshot, emit)
                                 }
                                 is GenerationChunk.ToolCall -> {
+                                    markFirstOutput()
                                     val old = roundTools[chunk.id]
                                     roundTools[chunk.id] = GenerationToolCall(
                                         id = chunk.id,
@@ -308,6 +342,9 @@ class ChatGenerationRunner(
                                         inputTokens = inputTokens,
                                         outputTokens = outputTokens,
                                         totalTokens = (reportedUsage ?: 0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                                        cacheReadInputTokens = maxReported(snapshot.cacheReadInputTokens, chunk.cacheReadInput),
+                                        cacheWriteInputTokens = maxReported(snapshot.cacheWriteInputTokens, chunk.cacheWriteInput),
+                                        reasoningOutputTokens = maxReported(snapshot.reasoningOutputTokens, chunk.reasoningOutput),
                                     )
                                     snapshot = persist(request, snapshot, emit)
                                     if (reportedUsage != null) progress(cumulativeTokens + requireNotNull(reportedUsage))
@@ -318,23 +355,28 @@ class ChatGenerationRunner(
                                 }
                                 is GenerationChunk.Failure -> {
                                     snapshot = snapshot.copy(failure = chunk.failure)
+                                    markRoundEnded()
                                     snapshot = persist(request, snapshot, emit)
                                     throw GenerationFailedException(chunk.failure)
                                 }
                                 is GenerationChunk.Completed -> completed = chunk
                             }
                         }
-                        completed
+                        (completed
                             ?: throw GenerationFailedException(GenerationFailure(
                                 code = GenerationFailureCode.NETWORK,
                                 technical = "Provider stream ended without explicit Completed",
                                 retryable = true,
-                            ))
+                            ))).also { markRoundEnded() }
                     } catch (failed: GenerationFailedException) {
                         if (retries >= maxRetries || !isRetryableStreamFailure(failed.failure)) throw failed
                         retries++
                         val delayMs = streamRetryDelayMs(retries, failed.failure)
-                        snapshot = persist(request, roundStart, emit)
+                        snapshot = persist(
+                            request,
+                            roundStart.copy(timing = roundRequestStartedAt?.let { GenerationTiming(it) }),
+                            emit,
+                        )
                         safeEmit(GenerationEvent.RetryScheduled(
                             com.promenar.nexara.domain.generation.GenerationRetry(retries, maxRetries, failed.failure.code, delayMs),
                         ))
@@ -502,6 +544,7 @@ class ChatGenerationRunner(
                     cancelled.addSuppressed(cleanupFailure)
                 }
             }
+            closeOpenRoundTiming(cancelled)
             clearUnconfirmedToolCalls(cancelled)
             try {
                 withContext(NonCancellable) {
@@ -524,6 +567,7 @@ class ChatGenerationRunner(
                 mapOf("sessionId" to request.sessionId, "code" to generationFailure.code.name),
             )
             withContext(NonCancellable) {
+                closeOpenRoundTiming(failure)
                 clearUnconfirmedToolCalls(failure)
                 if (persistTerminal(GenerationTerminalStatus.ERROR, failure)) {
                     safeEmit(GenerationEvent.Failed(generationFailure), failure)
@@ -556,6 +600,11 @@ class ChatGenerationRunner(
                 }
             }
         }
+    }
+
+    private fun maxReported(current: Int?, reported: Int?): Int? {
+        val value = reported?.coerceAtLeast(0) ?: return current
+        return if (current == null) value else maxOf(current, value)
     }
 
     private suspend fun persist(

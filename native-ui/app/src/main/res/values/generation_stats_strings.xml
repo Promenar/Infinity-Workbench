@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="generation_stats_open_action">View generation stats</string>
+    <string name="generation_stats_title">Generation stats</string>
+    <string name="generation_stats_input">Input</string>
+    <string name="generation_stats_output">Output</string>
+    <string name="generation_stats_generation_speed">Speed</string>
+    <string name="generation_stats_cache_read">Cache read</string>
+    <string name="generation_stats_uncached">Uncached</string>
+    <string name="generation_stats_reasoning">Reasoning tokens</string>
+    <string name="generation_stats_ttft">Time to first token</string>
+    <string name="generation_stats_end_to_end_throughput">End-to-end throughput</string>
+    <string name="generation_stats_end_to_end_time">End-to-end time</string>
+    <string name="generation_stats_rounds_label">Rounds</string>
+    <plurals name="generation_stats_rounds_total">
+        <item quantity="one">%1$d round total</item>
+        <item quantity="other">%1$d rounds total</item>
+    </plurals>
+    <string name="generation_stats_multi_round_input_note">Includes context resent each round</string>
+    <string name="generation_stats_estimated">Estimated</string>
+    <string name="generation_stats_estimated_description">Token counts are estimated</string>
+    <string name="generation_stats_runtime_breakdown">Runtime breakdown</string>
+    <string name="generation_stats_runtime_model">Model</string>
+    <string name="generation_stats_runtime_tools">Tools</string>
+    <string name="generation_stats_runtime_other">Other</string>
+    <string name="generation_stats_unavailable">—</string>
+    <string name="generation_stats_unavailable_description">Not recorded</string>
+    <string name="generation_stats_tps">%1$s tok/s</string>
+    <string name="generation_stats_tps_unit">tok/s</string>
+    <string name="generation_stats_token_unit">tokens</string>
+    <string name="generation_stats_duration_ms">%1$s ms</string>
+    <string name="generation_stats_duration_seconds">%1$s s</string>
+    <string name="generation_stats_duration_minutes">%1$d min %2$d s</string>
+    <string name="generation_stats_metric_description">%1$s: %2$s</string>
+</resources>

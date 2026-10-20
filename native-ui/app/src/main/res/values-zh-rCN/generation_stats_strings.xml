@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="generation_stats_open_action">查看生成统计</string>
+    <string name="generation_stats_title">生成统计</string>
+    <string name="generation_stats_input">输入</string>
+    <string name="generation_stats_output">输出</string>
+    <string name="generation_stats_generation_speed">生成速度</string>
+    <string name="generation_stats_cache_read">缓存读取</string>
+    <string name="generation_stats_uncached">未缓存</string>
+    <string name="generation_stats_reasoning">推理 Token</string>
+    <string name="generation_stats_ttft">首 Token 耗时</string>
+    <string name="generation_stats_end_to_end_throughput">端到端吞吐</string>
+    <string name="generation_stats_end_to_end_time">端到端耗时</string>
+    <string name="generation_stats_rounds_label">轮次</string>
+    <plurals name="generation_stats_rounds_total">
+        <item quantity="other">%1$d 轮合计</item>
+    </plurals>
+    <string name="generation_stats_multi_round_input_note">含每轮重复计入的上下文</string>
+    <string name="generation_stats_estimated">估算</string>
+    <string name="generation_stats_estimated_description">Token 数为估算值</string>
+    <string name="generation_stats_runtime_breakdown">运行时间分布</string>
+    <string name="generation_stats_runtime_model">模型</string>
+    <string name="generation_stats_runtime_tools">工具</string>
+    <string name="generation_stats_runtime_other">其它</string>
+    <string name="generation_stats_unavailable">—</string>
+    <string name="generation_stats_unavailable_description">未记录</string>
+    <string name="generation_stats_tps">%1$s Token/秒</string>
+    <string name="generation_stats_tps_unit">Token/秒</string>
+    <string name="generation_stats_token_unit">Token</string>
+    <string name="generation_stats_duration_ms">%1$s 毫秒</string>
+    <string name="generation_stats_duration_seconds">%1$s 秒</string>
+    <string name="generation_stats_duration_minutes">%1$d 分 %2$d 秒</string>
+    <string name="generation_stats_metric_description">%1$s：%2$s</string>
+</resources>
