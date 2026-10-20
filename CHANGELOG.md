@@ -28,6 +28,14 @@ All notable changes to this project will be documented in this file.
 - `nexara_git` 用法改为引导使用 Git 凭据；URL 中的用户信息仍兼容但不再推荐，错误信息不含令牌。推送仍是普通 `shell_exec` 命令，沿用现有审批。
 - 设备门禁新增 `git-remote-auth` 阶段（`GitRemoteAuthDeviceTest`）。
 
+### 内置 Tailscale（tsnet）
+
+- 设置 → 工具 → Tailscale 可在 Nexara 进程内运行一个 Tailscale 节点（`libnxtailnet.so` 子进程，基于 tsnet），不占用系统 VPN，可与其它 VPN 同时使用。支持浏览器登录或 auth key、自建控制服务器（Headscale）、临时节点与设备白名单；节点只在 Nexara 运行期间在线，没有后台服务。
+- 启用后，SSH 主机、`shell_exec`、`python_exec`（含内置 git）以及共享 HTTP 客户端发出的请求可以访问 tailnet IP（100.64.0.0/10、fd7a:115c:a1e0::/48）与 MagicDNS 名称；其它目标保持原有路径（未启用时与此前完全一致，不经 Nexara 本机代理）。`web_fetch` 仍只访问公网。
+- 新增只读工具 `tailnet_status`，返回节点状态、本机名称与 IP、tailnet 名称和设备列表，不含登录链接与代理信息。
+- tsnet 状态写入不进备份的应用私有目录；auth key 存于 `SecretStore`，不进备份、日志、命令行与模型上下文。本机代理只监听 127.0.0.1，只接受每次启动随机生成的凭据。退出登录会同时删除已保存的 auth key。
+- 构建需要 Go 1.21 及以上（经 `GOTOOLCHAIN` 固定使用 Go 1.27.1，依赖由 `go.sum` 锁定，产物可复现），`-Pnexara.goExecutable` 指定 go，`-Pnexara.tailnet=false` 跳过。CI 的 Gradle 作业安装 Go 1.27.1；发行校验要求每个带打包 Python 的 ABI 都有对应架构的 `libnxtailnet.so`，并对其中的上游常量做窄豁免。第三方许可见 `docs/legal/THIRD_PARTY_NOTICES.md`。
+
 ### 打包 Python 预编译字节码
 
 - 标准库与内置 git 依赖的 zip 在构建期预编译为不核对源码的哈希 pyc：标准库只放 pyc，dulwich 与 Nexara 模块保留源码。真机实测一次 Git 状态检查从约 2 秒降到约 0.2 秒，`shell_exec` 中每条 `git` 命令与 `python_exec`、`python_sandbox` 的启动同步变快。

@@ -166,6 +166,26 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             com.promenar.nexara.background.ssh.SshConnectionService.update(this, active)
         })
     }
+    /** 内置 Tailscale（tsnet 子进程，不占用系统 VPN）；创建时安装为全局 tailnet 路由。未打包可执行文件时报告不可用。 */
+    val tailnetManager: com.promenar.nexara.data.tailnet.TailnetManager by lazy {
+        val executable = File(applicationInfo.nativeLibraryDir, com.promenar.nexara.data.tailnet.TailnetManager.EXECUTABLE_NAME)
+        com.promenar.nexara.data.tailnet.TailnetManager(
+            settingsStore = com.promenar.nexara.data.tailnet.TailnetSettingsStore(
+                getSharedPreferences(com.promenar.nexara.data.tailnet.TailnetSettingsStore.PREFERENCES_NAME, MODE_PRIVATE),
+                secretStore,
+            ),
+            launcher = if (executable.isFile) {
+                com.promenar.nexara.data.tailnet.AndroidTailnetProcessLauncher(
+                    executable = executable,
+                    homeDirectory = File(noBackupFilesDir, "tailnet-home"),
+                    tempDirectory = File(cacheDir, "tailnet-tmp"),
+                )
+            } else null,
+            stateDirectory = File(noBackupFilesDir, "tailnet"),
+            hostname = com.promenar.nexara.data.tailnet.TailnetManager.hostnameFor(android.os.Build.MODEL),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        ).also { com.promenar.nexara.data.tailnet.InstalledTailnetRouting.routing = it }
+    }
     val themePreferenceStore: ThemePreferenceStore by lazy { ThemePreferenceStore(this) }
 
     /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
@@ -768,6 +788,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             }
             engine {
                 addInterceptor(com.promenar.nexara.utils.MetroLogInterceptor())
+                // tailnet 目标经内置 Tailscale 本机代理；其它目标仍按系统默认选择器（无系统代理即直连）。
+                config {
+                    proxySelector(tailnetManager.proxySelector)
+                    proxyAuthenticator(tailnetManager.proxyAuthenticator)
+                }
             }
         }
     }
@@ -818,6 +843,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(GetPlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))
             register(DropPlanSkill(taskRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.TailnetStatusSkill(tailnetManager))
         }
     }
 
@@ -920,6 +946,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
         PDFBoxResourceLoader.init(applicationContext)
         startBackupRecovery()
+        // 内置 Tailscale 启用时随 App 启动拉起子进程；App 进程结束时子进程随 stdin 关闭退出。
+        startupScope.launch(Dispatchers.IO) { tailnetManager.start() }
     }
 
     private fun currentProcessName(): String = try {

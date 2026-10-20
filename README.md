@@ -35,6 +35,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 - **SSH 与远端终端**：设置 → 工具 → SSH 主机与终端中管理主机别名、密码或密钥认证，支持生成 Ed25519、导入口令保护的 OpenSSH 私钥和复制公钥。首次连接需要确认 SHA256 指纹，指纹变化会拦截；Agent 可通过别名执行命令、读写 SFTP 和使用常驻 PTY，沿用会话内目标审批及大输出分页。用户终端支持 ANSI、滚动历史、控制键与旋转调整窗口，本地转发仅监听 `127.0.0.1`。在同一页开启“允许 Agent 管理 SSH 主机”（默认关闭、不随备份迁移）后，Agent 可列出、新增、修改、删除主机，并为密码主机安装本机生成的 Ed25519 公钥实现免密登录；这些变更在任何执行模式下都逐次审批，密码与指纹只在应用弹窗中由用户输入和确认，工具结果不含凭据。
 - **Termux 本机终端**：两个发行渠道均可从设置 → 工具 → Termux 接入与诊断启用集成。`termux_exec` 在 Termux 的 bash 中后台执行，支持工作目录、stdin 和 1–600 秒超时，默认 60 秒；沿用 PROCESS 审批，目标绑定 `termux` 与完整命令。诊断页提供安装、外部调用开关、系统权限、SSH 公钥复制和主目录 SAF 挂载引导。
 - **内置命令执行**：无需 Termux，`shell_exec` 用系统 `/system/bin/sh`（POSIX sh 与系统 toybox，命令随设备不同）、`python_exec` 用随 APK 打包的 Python 3.14（仅 arm64-v8a，标准库完整，附带 dulwich）直接在会话工作区根目录运行；shell 中可用 `python3`/`python`，以及基于 dulwich 的 `git`（clone、commit、log、diff、push、pull 等常用子命令，远端只支持 HTTPS，不支持的子命令返回 `GIT_UNSUPPORTED`）；侧载版另有 `pip`，可把纯 Python 包装到应用用户目录（含原生扩展的包无法导入），Play 版不提供 pip。`.git` 内部文件入索引但不进入知识库向量化。沿用 PROCESS 审批（半自动与手动模式下逐次审批，全自动模式不审批），审批卡写明命令可访问 Nexara 私有数据与网络、删除或覆盖的文件不进回收站。运行期间独占工作区写锁（文件工具的读写排队等待），结束后按磁盘对账索引并在 `workspace_changes` 中列出新增、修改、删除与移动；保留路径、符号链接与特殊文件不入索引并给出警告。默认 60 秒、最多 600 秒，超时、取消或命令结束时结束整个进程组，stdout/stderr 各保留尾部 32,000 字符。运行期间持有唤醒锁，侧载版在通知栏显示命令并可停止（Play 版只有唤醒锁）；系统冻结的时间不计入超时，ColorOS 等系统需把 Nexara 设为“完全允许后台行为”，离开应用后命令才能持续运行。
+- **内置 Tailscale**：设置 → 工具 → Tailscale 启用后，Nexara 在进程内运行一个 Tailscale 节点（tsnet），不占用系统 VPN，可与其它 VPN 同时使用；支持浏览器登录或 auth key、自建控制服务器（Headscale）、临时节点与设备白名单。SSH 主机、`shell_exec`、`python_exec`（含内置 git）与应用内 HTTPS 请求可直接访问 tailnet IP 与 MagicDNS 名称，其它目标保持原有路径，`web_fetch` 只访问公网；Agent 可用只读工具 `tailnet_status` 查看节点与设备。节点只在 Nexara 运行期间在线，退出后下线。
 - **本机 MCP（高级）**：工具的 MCP 配置中可显式开启本机 HTTP，仅接受 `http://127.0.0.1:<端口>`。访问令牌必填并由 SecretStore 保存，发现和执行均使用 Bearer，工具按 PROCESS 风险审批；关闭开关立即停止暴露与执行环回工具。
 - **会话工作区**：资源管理器与知识库同样按目录下钻浏览（面包屑与返回键逐级返回），搜索结果平铺并显示所在路径，点击即进入所在目录。按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护；文档索引使用版本化目标与失败重试，进程重启后按当前文件版本和 KG 配置补建缺失任务。
 - **自选工作区**：Agent 可设默认工作区，会话可单独切换到 Nexara 项目文件夹或（侧载版）共享存储文件夹，文件工具、`shell_exec`、`python_exec` 与内置 git 直接在该目录工作；会话资源面板为 git 仓库提供只读的变更与提交差异面板，文件工具执行卡与审批卡显示逐文件增删行数与差异。
@@ -53,6 +54,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 - SSH 主机配置、信任记录和全部 SSH 凭据均不进入应用备份，包括启用“包含完整密钥”的加密备份；换设备需要重新配置与确认指纹。SSH 私钥、密码和口令不会交给模型，底层 SSH 日志关闭，工具错误只返回稳定错误代码，远端文本按当前连接的认证材料脱敏。
 - Git 凭据（主机、用户名与访问令牌）不进入应用备份，包括启用“包含完整密钥”的加密备份；令牌只由 App 内凭据注入代理使用，不出现在命令、环境变量、文件、输出或模型上下文中。
 - Termux 集成、本机 HTTP MCP 的启用开关和本机 MCP 令牌属于当前设备的授权，不随应用备份迁移；另一台设备需要单独配置与启用。
+- 内置 Tailscale 的节点状态写入不进备份的应用私有目录，auth key 存于 `SecretStore`；两者不进入备份、日志、命令行与模型上下文，换设备需要重新登录。本机代理只监听 `127.0.0.1` 并只接受每次启动随机生成的凭据；该凭据经代理环境变量交给 `shell_exec`/`python_exec` 子进程，命令可读取，Nexara 退出后失效。
 - 云端 Provider、WebDAV 与远端 MCP 使用 HTTPS；网络安全配置仅对精确地址 `127.0.0.1` 放开明文。本机 MCP 需显式启用和 Bearer 认证，因为同机其它应用也可能访问该端口；`localhost`、其它 IPv4 和 IPv6 地址均不作为 HTTP 例外。
 - Release 诊断事件不得写入 Prompt、模型输出、请求/响应正文、完整 URL、Authorization、API Key、SQL 参数或完整异常堆栈；文件限制为 512 KiB，并可由用户主动导出。
 
@@ -160,6 +162,8 @@ python3 ../scripts/ci/check-distribution-manifests.py
 ```
 
 首次构建会从 python.org 下载官方 CPython Android 包（每个 ABI 约 23 MB）并按 SHA-256 校验，之后使用 Gradle 缓存。构建期需要 PATH 中有 `python3.14`，用它预编译打包 Python 的字节码（也可用 `-Pnexara.hostPython=<路径>` 指定）。离线方式与打包结构见[打包 Python](docs/distribution-builds.md#打包-python)。Debug 构建不需要发行签名变量。Release 构建必须通过进程环境提供 `NEXARA_KEYSTORE_PATH`、`NEXARA_STORE_PASSWORD`、`NEXARA_KEY_ALIAS` 和 `NEXARA_KEY_PASSWORD`；仓库不保存 keystore 或密码。
+
+内置 Tailscale 由 `native-ui/app/tailnet/` 的 Go 程序编译为 `libnxtailnet.so`：构建需要 PATH 中有 Go 1.21 及以上（经 `GOTOOLCHAIN` 自动切换到固定的 Go 1.27.1，依赖由 `go.sum` 锁定；首次构建需要能访问 Go 模块代理，或预先填好模块缓存后设 `GOPROXY=off`），可用 `-Pnexara.goExecutable=<路径>` 指定 go。临时没有 Go 时可加 `-Pnexara.tailnet=false` 跳过，此时设置页提示安装包未包含内置 Tailscale，发行校验会拒绝这样的 APK。详见[内置 Tailscale](docs/distribution-builds.md#内置-tailscale)。
 
 `distribution` 维度包含 `sideload` 与 `play`，二者共享包名，沿用各构建类型的后缀。仅侧载清单声明所有文件访问权限；`DistributionCapabilities` 提供渠道和能力开关，尚未提供该权限对应的文件管理功能。设置中的“导出诊断”首行包含渠道及版本。Debug APK 位于 `app/build/outputs/apk/<渠道>/debug/`；签名构建、设备测试及完整任务/产物表见[发行渠道构建说明](docs/distribution-builds.md)。
 

@@ -59,6 +59,18 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，按新包的 `pycore_magic_number.h` 更新 `pycMagic`，准备同主次版本的宿主解释器（本机与 CI 的 `python-version`），再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）与 `com.promenar.nexara.data.git.remote.GitRemoteAuthDeviceTest`（`android-device-core-e2e.sh` 的 `git-remote-auth` 阶段：本机 dulwich 智能 HTTP 上游经凭据注入代理 clone/push、未配置主机直连、SSH 远端经 SSH 桥 clone/push，不需要外网）。
 
+## 内置 Tailscale
+
+两个渠道都打包 `libnxtailnet.so`：`native-ui/app/tailnet/` 的 Go 程序（tailscale.com 的 tsnet，版本由 `go.mod`/`go.sum` 锁定），由应用以子进程启动，经 stdin/stdout 的 JSON 行协议控制。ABI 规则与打包 Python 相同：设了 `abiFilters` 的变体按过滤打包，未设过滤的 Release 通用包只带 arm64-v8a。arm64-v8a 以 `GOOS=android GOARCH=arm64` 编译；x86_64 以 `GOOS=linux GOARCH=amd64` 编译（Go 的 android/amd64 必须 cgo 外部链接），两者都 `CGO_ENABLED=0` 静态链接，`feature/androidbin` 提供合成网卡、经系统 dnsproxyd 的 DNS 与系统 CA 证书。
+
+构建任务 `buildTailnet<ABI>` 输出到 `app/build/generated/tailnet/<ABI>/`，作为生成的 jniLibs 目录接入，不入库。任务固定 `GOTOOLCHAIN=go1.27.1`、`GOFLAGS=-mod=readonly`，使用 `-trimpath -buildvcs=false -ldflags=-s -w -buildid=`，同一输入得到相同产物，二进制不含构建机路径；宿主只需 Go 1.21 及以上，`-Pnexara.goExecutable=<路径>` 指定 go。首次构建由 Go 模块代理下载工具链与依赖，离线构建需预先填好 `GOMODCACHE` 并设 `GOPROXY=off`。`-Pnexara.tailnet=false` 跳过编译，只用于没有 Go 的临时环境：设置页提示安装包未包含内置 Tailscale，发行校验拒绝这样的 APK。CI 的 Gradle 作业用 `actions/setup-go`（按 SHA 固定）安装 Go 1.27.1。Go 侧单元测试：在 `native-ui/app/tailnet/` 运行 `go test -race ./...` 与 `go vet ./...`。
+
+可执行文件已剥离符号，`keepDebugSymbols` 保持原样。运行时只传入 `HOME`、`TMPDIR`，节点状态目录位于 `noBackupFilesDir/tailnet`，不进备份；更换控制服务器会清空该目录。本机代理只监听 127.0.0.1，同一端口同时提供 HTTP（CONNECT 与绝对 URI）和 SOCKS5，用户名与口令每次启动随机生成；tailnet IP 与 MagicDNS 名称经 tsnet 转发，其它目标由子进程直连（域名经 Android 系统 DNS 解析），节点未连接时 tailnet 目标返回 503，不回落到公网。
+
+发行校验 `scripts/verify-release-apk.py` 要求每个带打包 Python 的 ABI 都有 `libnxtailnet.so`，且 ELF 架构与 ABI 一致。敏感信息扫描对 `libnxtailnet.so` 只放行两类上游常量：`sk-` 开头的小写字母与连字符组合（Go 符号拼接产生的误报）与登记的私有及保留网段地址（如 `10.0.0.0`、`100.64.0.0`、`192.168.0.0`、`100.100.100.100`）；凭据类模式与构建机路径不在豁免内。第三方许可原文见 `docs/legal/tailnet/`。
+
+升级 tailscale.com 或 Go：在 `native-ui/app/tailnet/` 修改 `go.mod` 后运行 `go mod tidy` 更新 `go.sum`，同步 `build.gradle.kts` 的 `tailnetGoVersion` 与两个工作流的 `go-version`，重新生成 `docs/legal/tailnet/go-modules-LICENSES.txt`，再运行 `TailnetDeviceTest`（沙箱启动、待登录链接、代理凭据与回环监听、公网直连、stdin 关闭后自行退出；需要设备能访问公网）。
+
 ## 富内容 WebView
 
 富内容池及所有派生客户端统一应用协议、地址与导航策略。打包的 KaTeX、Mermaid、ECharts、知识图谱模板通过 `https://appassets.androidplatform.net/assets/` 受控读取；其它应用资产、路径穿越和缺失文件直接拒绝。复用现有 OkHttp，无新增 AndroidX WebKit 依赖。

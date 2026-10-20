@@ -632,6 +632,18 @@ is_expected_resumed_activity "$2"
         self.assertIn("if: always()", RELEASE)
         self.assertIn('rm -f "${RUNNER_TEMP}/nexara-release.jks"', RELEASE)
 
+    def test_every_gradle_job_installs_registered_go_for_tailnet(self) -> None:
+        version = re.search(r'val tailnetGoVersion = "([0-9.]+)"', APP_BUILD)
+        self.assertIsNotNone(version)
+        for workflow in (ANDROID_CI, RELEASE):
+            jobs = re.findall(r"^  [a-z][a-z0-9-]*:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow, flags=re.MULTILINE | re.DOTALL)
+            gradle_jobs = [job for job in jobs if "actions/setup-java@" in job]
+            self.assertTrue(gradle_jobs)
+            for job in gradle_jobs:
+                self.assertRegex(job, r"uses: actions/setup-go@[0-9a-f]{40} # v\d+")
+                self.assertIn(f'go-version: "{version.group(1)}"', job)
+                self.assertIn("cache-dependency-path: native-ui/app/tailnet/go.sum", job)
+
     def test_release_workflow_api35_api36_matrix_includes_minified_blackbox(self) -> None:
         self.assertEqual(RELEASE.count("- api-level: 31"), 1)
         self.assertEqual(RELEASE.count("- api-level: 35"), 4)

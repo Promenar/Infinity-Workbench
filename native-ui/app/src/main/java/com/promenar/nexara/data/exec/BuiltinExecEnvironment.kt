@@ -4,6 +4,7 @@ import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
+import com.promenar.nexara.data.tailnet.InstalledTailnetRouting
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
@@ -20,6 +21,8 @@ class BuiltinExecEnvironment(
     /** 为 null 时（Play 渠道）不开放 pip 与用户站点目录。 */
     private val userPackages: PythonUserPackages? = null,
     private val inherited: Map<String, String> = System.getenv(),
+    /** 内置 Tailscale 运行时的代理变量（含 NO_PROXY）；未启用时为空，不改变子进程网络。 */
+    private val tailnetEnvironment: () -> Map<String, String> = { InstalledTailnetRouting.routing.subprocessEnvironment() },
 ) {
     val pythonAvailable: Boolean get() = python.isAvailable
 
@@ -39,6 +42,7 @@ class BuiltinExecEnvironment(
         environment["NEXARA_WORKSPACE_KIND"] = kind
         environment["NEXARA_BACKEND"] = "builtin"
         environment["LANG"] = "C.UTF-8"
+        environment.putAll(tailnetEnvironment())
         if (python.isAvailable) {
             environment.putAll(python.environment() - "LD_LIBRARY_PATH")
             environment["PYTHONUTF8"] = "1"

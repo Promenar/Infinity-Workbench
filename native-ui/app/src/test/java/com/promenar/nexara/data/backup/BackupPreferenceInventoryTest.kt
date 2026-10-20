@@ -76,6 +76,8 @@ class BackupPreferenceInventoryTest {
             "data/manager/ProviderManager.kt#searchPrefs" to "nexara_search",
             "data/manager/ProviderManager.kt#backupPrefs" to "nexara_backup_settings",
             "data/model/catalog/ModelCatalogUpdater.kt#prefs" to "catalog_update_schedule",
+            // 内置 Tailscale 设置：独立偏好文件，不在备份命名空间内（键为常量，见 TailnetSettingsStoreTest）。
+            "data/tailnet/TailnetSettings.kt#preferences" to "nexara_tailnet",
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")

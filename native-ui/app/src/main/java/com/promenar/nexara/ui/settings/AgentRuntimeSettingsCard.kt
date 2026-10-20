@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +28,7 @@ internal data class SkillsSettingsVisualState(
     val termuxAvailability: TermuxAvailability? = null,
     val retryLimit: Int = com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
     val gitCredentialCount: Int? = null,
+    val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
 )
 
 internal data class SkillsSettingsVisualActions(
@@ -41,6 +43,7 @@ internal data class SkillsSettingsVisualActions(
     val onOpenSsh: () -> Unit = {},
     val onOpenTermux: () -> Unit = {},
     val onOpenGitCredentials: () -> Unit = {},
+    val onOpenTailscale: () -> Unit = {},
 )
 
 /** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
@@ -90,6 +93,14 @@ internal fun SkillsSettingsHeaderContent(
                     else -> pluralStringResource(R.plurals.git_credentials_entry_count, count, count)
                 },
                 onClick = actions.onOpenGitCredentials,
+                showChevron = true,
+            )
+            NexaraSettingsItem(
+                icon = Icons.Rounded.Hub,
+                title = stringResource(R.string.settings_tailscale_entry),
+                subtitle = state.tailscaleState?.let { stringResource(tailscalePhaseText(it)) }
+                    ?: stringResource(R.string.settings_status_loading),
+                onClick = actions.onOpenTailscale,
                 showChevron = true,
             )
         }

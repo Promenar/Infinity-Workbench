@@ -139,6 +139,7 @@ fun SkillsScreen(
     onOpenSsh: () -> Unit = {},
     onOpenTermux: () -> Unit = {},
     onOpenGitCredentials: () -> Unit = {},
+    onOpenTailscale: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -197,6 +198,7 @@ fun SkillsScreen(
     val gitCredentialCount by androidx.compose.runtime.produceState<Int?>(null, application) {
         withContext(Dispatchers.IO) { application.gitCredentialStore }.credentials.collect { value = it.size }
     }
+    val tailscaleState by application.tailnetManager.state.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
@@ -244,6 +246,7 @@ fun SkillsScreen(
                         termuxAvailability = termuxAvailability,
                         retryLimit = retryLimit,
                         gitCredentialCount = gitCredentialCount,
+                        tailscaleState = tailscaleState,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -260,6 +263,7 @@ fun SkillsScreen(
                         onOpenSsh = onOpenSsh,
                         onOpenTermux = onOpenTermux,
                         onOpenGitCredentials = onOpenGitCredentials,
+                        onOpenTailscale = onOpenTailscale,
                     ),
                 )
 
