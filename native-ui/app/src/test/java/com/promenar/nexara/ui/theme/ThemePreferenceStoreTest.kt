@@ -127,4 +127,29 @@ class ThemePreferenceStoreTest {
         assertThat(store.state.value.mode).isEqualTo(NexaraThemeMode.LIGHT)
         assertThat(store.state.value.colorSource).isEqualTo(NexaraColorSource.DYNAMIC)
     }
+
+    @Test
+    fun `完成后折叠过程缺省开启并持久化关闭`() {
+        val booleans = mutableMapOf<String, Boolean>()
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putBoolean(any(), any()) } answers {
+            booleans[firstArg()] = secondArg()
+            editor
+        }
+        every { editor.apply() } returns Unit
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { contains(any()) } answers { firstArg<String>() in booleans }
+            every { getBoolean(any(), any()) } answers { booleans[firstArg()] ?: secondArg() }
+            every { edit() } returns editor
+        }
+
+        val store = ThemePreferenceStore(contextFor(prefs))
+        assertThat(store.state.value.collapseFinishedTurns).isTrue()
+
+        store.setCollapseFinishedTurns(false)
+        assertThat(store.state.value.collapseFinishedTurns).isFalse()
+        verify { editor.putBoolean("theme_collapse_finished_turns", false) }
+        // 进程重建后从同一偏好文件读回关闭状态。
+        assertThat(ThemePreferenceStore(contextFor(prefs)).state.value.collapseFinishedTurns).isFalse()
+    }
 }

@@ -133,4 +133,16 @@ class ThemeViewModelTest {
         viewModel.setThemeMode(NexaraThemeMode.LIGHT)
         assertThat(store.state.value.mode).isEqualTo(NexaraThemeMode.LIGHT)
     }
+
+    @Test
+    fun setCollapseFinishedTurnsUpdatesStoreAndViewModelState() = runTest {
+        val store = createStore()
+        val viewModel = ThemeViewModel(store, dynamicColorAvailable = true)
+        assertThat(viewModel.uiState.value.preferences.collapseFinishedTurns).isTrue()
+
+        viewModel.setCollapseFinishedTurns(false)
+
+        assertThat(viewModel.uiState.value.preferences.collapseFinishedTurns).isFalse()
+        assertThat(store.state.value.collapseFinishedTurns).isFalse()
+    }
 }

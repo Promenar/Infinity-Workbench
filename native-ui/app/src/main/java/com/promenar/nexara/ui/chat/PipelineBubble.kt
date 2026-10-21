@@ -166,6 +166,14 @@ fun PipelineBubble(
     modifier: Modifier = Modifier,
     hasRagContent: Boolean = false,
     onMessageContentChange: ((String, String) -> Unit)? = null,
+    /** 外观设置“完成后折叠过程”；关闭时保持逐步平铺。 */
+    collapseFinishedTurn: Boolean = false,
+    /** 本组存在等待用户审批的工具调用，此时不进入完成态。 */
+    hasPendingApproval: Boolean = false,
+    /** 本组因紧随其后的错误消息被提前截断，此时不进入完成态。 */
+    interruptedByError: Boolean = false,
+    /** 完成态时间线的初始展开状态，仅供预览使用。 */
+    initialProcessExpanded: Boolean = false,
     ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isNotice) {
@@ -194,23 +202,51 @@ fun PipelineBubble(
         )
     }
     val allSteps = renderPlan.steps
+    val collapsePlan = remember(allSteps, group.messages, isGenerating, hasPendingApproval, interruptedByError, collapseFinishedTurn) {
+        buildCollapsedTurnPlan(
+            messages = group.messages,
+            steps = allSteps,
+            isGenerating = isGenerating,
+            hasPendingApproval = hasPendingApproval,
+            enabled = collapseFinishedTurn,
+            interruptedByError = interruptedByError,
+        )
+    }
+    // 展开状态只保存在界面层，以组首条消息 ID 为稳定键，不写数据库。
+    var processExpanded by rememberSaveable(group.messages.firstOrNull()?.id) { mutableStateOf(initialProcessExpanded) }
+    val visibleSteps = when {
+        collapsePlan == null -> allSteps
+        processExpanded -> collapsePlan.processSteps + collapsePlan.finalContent
+        else -> listOf(collapsePlan.finalContent)
+    }
 
-    val footerContent = allSteps.filterIsInstance<PipelineStep.Content>().lastOrNull { it.content.isNotBlank() }
-    val replyCopyText = remember(allSteps) { pipelineReplyCopyText(allSteps) }
+    val footerContent = collapsePlan?.finalContent
+        ?: allSteps.filterIsInstance<PipelineStep.Content>().lastOrNull { it.content.isNotBlank() }
+    val replyCopyText = remember(allSteps, collapsePlan) { collapsePlan?.finalCopyText ?: pipelineReplyCopyText(allSteps) }
+    val allProcessCopyText = remember(collapsePlan) { collapsePlan?.allProcessCopyText() }
     Column(modifier = modifier.fillMaxWidth()) {
         ragContent()
-        allSteps.forEachIndexed { index, step ->
-            val isLastInGroup = index == allSteps.lastIndex
-            val followsContent = allSteps.getOrNull(index - 1) is PipelineStep.Content
+        if (collapsePlan != null) {
+            TurnProcessSummaryRow(
+                summary = collapsePlan.summary,
+                expanded = processExpanded,
+                fontSize = fontSize,
+                onToggle = { processExpanded = !processExpanded },
+            )
+        }
+        visibleSteps.forEachIndexed { index, step ->
+            val isLastInGroup = index == visibleSteps.lastIndex
+            val followsContent = visibleSteps.getOrNull(index - 1) is PipelineStep.Content
             if ((index > 0 && (step is PipelineStep.Content || followsContent)) ||
-                (index == 0 && hasRagContent && step is PipelineStep.Content)
+                (index == 0 && (hasRagContent || collapsePlan != null) && step is PipelineStep.Content)
             ) {
                 Spacer(Modifier.height(8.dp))
             }
             key(when (step) {
                 is PipelineStep.Thinking -> "thinking:${step.messageId}"
                 is PipelineStep.ToolExec -> "tools:${step.steps.firstOrNull()?.id}"
-                is PipelineStep.Content -> "content:$index"
+                // 最终正文在收起与展开之间位置会变，使用固定键避免重建正文。
+                is PipelineStep.Content -> if (collapsePlan != null && step === collapsePlan.finalContent) "content:final" else "content:$index"
             }) {
                 when (step) {
                     is PipelineStep.Thinking -> ThinkingTrace(
@@ -276,6 +312,9 @@ fun PipelineBubble(
                     isGenerating = isGenerating,
                     stats = statsFactory,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
+                    onCopyAllProcess = allProcessCopyText?.let { text ->
+                        { onCopy?.invoke(text) ?: copyToClipboard(context, text) }
+                    },
                     onRegenerate = onRegenerate?.let { handler -> { handler(lastMsg.id) } },
                     onBranch = onBranch?.let { handler -> { handler(lastMsg.id) } },
                     onDelete = onDelete?.let { handler -> { handler(lastMsg.id) } },
@@ -641,6 +680,8 @@ internal fun AssistantActionRow(
     onBranch: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    /** 完成态折叠后，在“更多”菜单中提供复制全部过程；为 null 时不显示该项。 */
+    onCopyAllProcess: (() -> Unit)? = null,
     /** 生成统计工厂，打开浮卡时才调用；为 null 时模型名与时间不可点击。生成进行中整行不显示，因此不会弹出。 */
     stats: (() -> GenerationStatsCardModel)? = null,
 ) {
@@ -670,12 +711,20 @@ internal fun AssistantActionRow(
             Box {
                 IconButton(
                     onClick = { showMore = true },
-                    enabled = onBranch != null || onDelete != null,
+                    enabled = onBranch != null || onDelete != null || onCopyAllProcess != null,
                     modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_MORE"),
                 ) {
                     Icon(Icons.Rounded.MoreHoriz, stringResource(R.string.chat_step_more_actions), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
                 NexaraDropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                    if (onCopyAllProcess != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
+                            leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
+                            modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
+                            onClick = { onCopyAllProcess(); showMore = false },
+                        )
+                    }
                     if (onBranch != null) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.chat_action_branch)) },

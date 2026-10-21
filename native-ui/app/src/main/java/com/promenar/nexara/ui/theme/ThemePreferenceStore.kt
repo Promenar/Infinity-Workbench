@@ -14,6 +14,7 @@ class ThemePreferenceStore(context: Context) {
         const val PURE_BLACK_KEY = "theme_pure_black"
         const val TEXT_SCALE_ENABLED_KEY = "theme_text_scale_enabled"
         const val TEXT_SCALE_KEY = "theme_text_scale"
+        const val COLLAPSE_FINISHED_TURNS_KEY = "theme_collapse_finished_turns"
         private const val PREFERENCES_NAME = "nexara_settings"
         private val THEME_KEYS = setOf(
             MODE_KEY,
@@ -22,6 +23,7 @@ class ThemePreferenceStore(context: Context) {
             PURE_BLACK_KEY,
             TEXT_SCALE_ENABLED_KEY,
             TEXT_SCALE_KEY,
+            COLLAPSE_FINISHED_TURNS_KEY,
         )
     }
 
@@ -73,6 +75,11 @@ class ThemePreferenceStore(context: Context) {
             .apply()
     }
 
+    fun setCollapseFinishedTurns(enabled: Boolean) {
+        _state.value = _state.value.copy(collapseFinishedTurns = enabled)
+        preferences.edit().putBoolean(COLLAPSE_FINISHED_TURNS_KEY, enabled).apply()
+    }
+
     private fun readPreferences(): NexaraThemePreferences = NexaraThemePreferences(
         mode = NexaraThemeMode.fromPreferenceValue(preferences.getString(MODE_KEY, null)),
         colorSource = NexaraColorSource.fromPreferenceValue(
@@ -89,6 +96,12 @@ class ThemePreferenceStore(context: Context) {
             preferences.getFloat(TEXT_SCALE_KEY, 1f).coerceIn(0.8f, 1.4f)
         } else {
             1f
+        },
+        // 缺省开启；只有用户显式关闭后才写入 false。
+        collapseFinishedTurns = if (preferences.contains(COLLAPSE_FINISHED_TURNS_KEY)) {
+            preferences.getBoolean(COLLAPSE_FINISHED_TURNS_KEY, true)
+        } else {
+            true
         },
     )
 }

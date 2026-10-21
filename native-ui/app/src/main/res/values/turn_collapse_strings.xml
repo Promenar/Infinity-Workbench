@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="turn_collapse_ran_steps">
+        <item quantity="one">Ran %1$d step</item>
+        <item quantity="other">Ran %1$d steps</item>
+    </plurals>
+    <string name="turn_collapse_thought">Thought</string>
+    <plurals name="turn_collapse_changed_files">
+        <item quantity="one">Changed %1$d file</item>
+        <item quantity="other">Changed %1$d files</item>
+    </plurals>
+    <string name="turn_collapse_duration_seconds">%1$ds</string>
+    <string name="turn_collapse_duration_minutes">%1$dm %2$ds</string>
+    <string name="turn_collapse_duration_hours">%1$dh %2$dm</string>
+    <string name="turn_collapse_cd_expand">Show process</string>
+    <string name="turn_collapse_cd_collapse">Hide process</string>
+    <string name="turn_collapse_copy_all_process">Copy full process</string>
+    <string name="turn_collapse_settings_section">Chat</string>
+    <string name="turn_collapse_setting_title">Collapse process when done</string>
+    <string name="turn_collapse_setting_summary">Fold steps into a summary line</string>
+</resources>

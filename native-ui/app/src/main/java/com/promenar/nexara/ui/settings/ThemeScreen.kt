@@ -78,6 +78,7 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onPureBlackChange = viewModel::setPureBlack,
         onTextScaleEnabledChange = viewModel::setTextScaleEnabled,
         onTextScaleChange = viewModel::setTextScale,
+        onCollapseFinishedTurnsChange = viewModel::setCollapseFinishedTurns,
     )
 }
 
@@ -91,6 +92,7 @@ fun ThemeScreenContent(
     onPureBlackChange: (Boolean) -> Unit = {},
     onTextScaleEnabledChange: (Boolean) -> Unit = {},
     onTextScaleChange: (Float) -> Unit = {},
+    onCollapseFinishedTurnsChange: (Boolean) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -172,6 +174,19 @@ fun ThemeScreenContent(
                             onValueChange = { onTextScaleChange((it / 100.0).toFloat()) },
                         )
                     }
+                }
+            }
+            item("chat") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.turn_collapse_settings_section),
+                ) {
+                    SettingsToggle(
+                        title = stringResource(R.string.turn_collapse_setting_title),
+                        description = stringResource(R.string.turn_collapse_setting_summary),
+                        checked = preferences.collapseFinishedTurns,
+                        onCheckedChange = onCollapseFinishedTurnsChange,
+                        modifier = Modifier.testTag("theme_collapse_finished_turns_switch"),
+                    )
                 }
             }
             item("bottom-space") { Spacer(modifier = Modifier.height(24.dp)) }

@@ -194,6 +194,8 @@ data class ChatScreenState(
     val providerDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
     val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
+    /** 外观页“完成后折叠过程”，由路由层从外观偏好读取后传入。 */
+    val collapseFinishedTurns: Boolean = true,
 )
 
 data class ChatScreenActions(
@@ -276,6 +278,7 @@ fun ChatScreenContent(
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
+    val collapseFinishedTurns = state.collapseFinishedTurns
 
     val density = LocalDensity.current
     var composerHeightPx by remember { mutableIntStateOf(0) }
@@ -537,6 +540,11 @@ fun ChatScreenContent(
                 items(pipelineGroups.size, key = { pipelineGroups[it].messages.first().id }) { idx ->
                     val group = pipelineGroups[idx]
                     val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
+                    val hasPendingApproval = groupHasPendingApproval(
+                        group = group,
+                        request = uiState.approvalRequest,
+                        isLastGroup = idx == pipelineGroups.lastIndex,
+                    )
 
                     val itemKind = if (group.isUser) ChatItemKind.USER else ChatItemKind.ASSISTANT
                     val previousKind = pipelineGroups.getOrNull(idx - 1)?.let {
@@ -571,6 +579,9 @@ fun ChatScreenContent(
                         },
                         group = group,
                         isGenerating = isGeneratingGroup,
+                        collapseFinishedTurn = collapseFinishedTurns,
+                        hasPendingApproval = hasPendingApproval,
+                        interruptedByError = groupInterruptedByError(pipelineGroups, idx),
                         status = uiState.status,
                         streamingContent = uiState.streamingContent,
                         fontSize = uiState.session?.options?.fontSize ?: 15,
@@ -1814,4 +1825,24 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/** 助手组后紧跟错误组时，本组是被错误截断的半轮回复。 */
+internal fun groupInterruptedByError(groups: List<PipelineGroup>, index: Int): Boolean {
+    val group = groups.getOrNull(index) ?: return false
+    if (group.isUser || group.isNotice) return false
+    val next = groups.getOrNull(index + 1) ?: return false
+    if (next.isUser || next.isNotice) return false
+    return next.messages.firstOrNull()?.let { it.isError || it.errorMessage != null } == true
+}
+
+/** 审批请求指向本组的助手消息时视为待审批；旧请求缺少消息 ID 时只作用于最后一组。 */
+internal fun groupHasPendingApproval(
+    group: PipelineGroup,
+    request: com.promenar.nexara.data.model.ApprovalRequest?,
+    isLastGroup: Boolean,
+): Boolean {
+    if (request == null || group.isUser || group.isNotice) return false
+    val targetId = request.assistantMessageId ?: return isLastGroup
+    return group.messages.any { it.id == targetId }
 }

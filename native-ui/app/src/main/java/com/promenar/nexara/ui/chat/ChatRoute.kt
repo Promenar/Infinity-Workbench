@@ -234,6 +234,7 @@ fun ChatRoute(
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
     val generationRetry by chatViewModel.generationRetry.collectAsStateWithLifecycle()
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
+    val themePreferences by application.themePreferenceStore.state.collectAsStateWithLifecycle()
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
     val deletionUndo by chatViewModel.deletionUndo.collectAsStateWithLifecycle()
@@ -520,6 +521,7 @@ fun ChatRoute(
             providerDisplayNames = providerDisplayNames,
             taskPanel = taskPanel,
             generationProgress = generationProgress?.progress,
+            collapseFinishedTurns = themePreferences.collapseFinishedTurns,
         ),
         actions = ChatScreenActions(
             onNavigateBack = onNavigateBack,

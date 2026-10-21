@@ -28,4 +28,6 @@ data class NexaraThemePreferences(
     val pureBlack: Boolean = false,
     val textScaleEnabled: Boolean = false,
     val textScale: Float = 1f,
+    /** 一轮回复完成后把思考与工具过程收为一行摘要，只单独显示最终正文。 */
+    val collapseFinishedTurns: Boolean = true,
 )

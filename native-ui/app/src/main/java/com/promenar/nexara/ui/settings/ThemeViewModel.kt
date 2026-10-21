@@ -66,6 +66,10 @@ class ThemeViewModel(
         store.setTextScale(store.state.value.textScaleEnabled, scale)
     }
 
+    fun setCollapseFinishedTurns(enabled: Boolean) {
+        store.setCollapseFinishedTurns(enabled)
+    }
+
     companion object {
         fun provideFactory(store: ThemePreferenceStore): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
