@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.params.ParameterScheme
 import com.promenar.nexara.data.model.params.ReasoningEffort
-import com.promenar.nexara.data.model.params.SamplingParam
 import com.promenar.nexara.data.model.params.SamplingValues
 import com.promenar.nexara.ui.chat.ChatReasoningControl
 import com.promenar.nexara.ui.chat.ReasoningMenuContent
@@ -29,24 +28,22 @@ import com.promenar.nexara.ui.chat.reasoningEffortLabel
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraValueRow
-import com.promenar.nexara.ui.common.params.ParameterSchemeRow
-import com.promenar.nexara.ui.common.params.SAMPLING_PARAM_ORDER
+import com.promenar.nexara.ui.common.params.ParameterSchemeSection
 import com.promenar.nexara.ui.common.params.SamplingEditorActions
 import com.promenar.nexara.ui.common.params.SamplingEditorState
+import com.promenar.nexara.ui.common.params.SamplingParamLayout
 import com.promenar.nexara.ui.common.params.SamplingParamRows
-import com.promenar.nexara.ui.common.params.hiddenParamsFooter
 
 /** 助手默认参数的编辑器数据：助手是最上一层，未设置的项按模型默认。 */
 internal fun agentSamplingEditorState(
     sampling: SamplingValues,
     baseSchemeId: String?,
-    unsupported: Set<SamplingParam>,
+    layout: SamplingParamLayout,
     schemes: List<ParameterScheme>,
 ) = SamplingEditorState(
     own = sampling,
     baseSchemeId = baseSchemeId,
-    visible = SAMPLING_PARAM_ORDER.filterNot { it in unsupported },
-    hidden = SAMPLING_PARAM_ORDER.filter { it in unsupported },
+    layout = layout,
     schemes = schemes,
 )
 
@@ -73,7 +70,8 @@ internal fun AgentDefaultParamsContent(
     modelName: String?,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+    val scrollState = rememberScrollState()
+    Column(modifier.fillMaxWidth().verticalScroll(scrollState)) {
         Text(stringResource(R.string.agent_edit_default_params), style = MaterialTheme.typography.titleMedium)
         Text(
             stringResource(R.string.agent_edit_default_params_desc),
@@ -101,11 +99,8 @@ internal fun AgentDefaultParamsContent(
                 }
             }
         }
-        ParameterSchemeRow(editor, actions, modelName, Modifier.padding(top = 16.dp, bottom = 16.dp))
-        NexaraSettingsSection(
-            title = stringResource(R.string.params_section_sampling),
-            footer = hiddenParamsFooter(editor.hidden),
-        ) {
+        ParameterSchemeSection(editor, actions, modelName, scrollState = scrollState)
+        NexaraSettingsSection(title = stringResource(R.string.params_section_sampling)) {
             SamplingParamRows(editor, actions, ownLabel = null)
         }
     }

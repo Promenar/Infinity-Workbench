@@ -286,7 +286,7 @@ class AnthropicProtocol(
     )
 
     private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
-        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@AnthropicProtocol.model })
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@AnthropicProtocol.model }, baseUrl)
         val request = adapted.request
         val maxTokens = request.maxTokens ?: anthropicDefaultMaxTokens(request.model.ifEmpty { this@AnthropicProtocol.model })
         val body = buildJsonObject {

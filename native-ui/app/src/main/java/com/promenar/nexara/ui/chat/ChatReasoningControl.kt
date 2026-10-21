@@ -111,9 +111,9 @@ internal fun sessionModelParameterProfile(
     val stableId = modelId?.takeIf(String::isNotBlank) ?: return null
     val model = providerModels.firstOrNull { it.id == stableId }
     val providerId = stableId.substringBefore("::", "").ifEmpty { model?.providerId.orEmpty() }
-    val protocol = providers.firstOrNull { it.id == providerId }?.protocolType ?: return null
+    val provider = providers.firstOrNull { it.id == providerId } ?: return null
     val remoteId = model?.remoteModelId ?: stableId.substringAfter("::")
-    return resolveModelParameterProfile(protocol, remoteId)
+    return resolveModelParameterProfile(provider.protocolType, remoteId, provider.baseUrl)
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -52,15 +53,16 @@ fun NexaraInlineStepper(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StepperButton(Icons.Rounded.Remove, decreaseLabel, enabled && canDecrease, onDecrease)
+        NexaraStepperButton(Icons.Rounded.Remove, decreaseLabel, enabled && canDecrease, onDecrease)
         Text(value, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
             textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.widthIn(min = 32.dp))
-        StepperButton(Icons.Rounded.Add, increaseLabel, enabled && canIncrease, onIncrease)
+        NexaraStepperButton(Icons.Rounded.Add, increaseLabel, enabled && canIncrease, onIncrease)
     }
 }
 
+/** 点按单步、长按连续调整的加减按钮；[outlined] 为真时画成带描边的方形按钮，用于独立的数值编辑区。 */
 @Composable
-private fun StepperButton(icon: ImageVector, label: String, enabled: Boolean, onStep: () -> Unit) {
+internal fun NexaraStepperButton(icon: ImageVector, label: String, enabled: Boolean, onStep: () -> Unit, outlined: Boolean = false) {
     val haptics = LocalNexaraHaptics.current
     val tickingStep: () -> Unit = {
         haptics.perform(NexaraHapticEvent.STEP)
@@ -102,7 +104,13 @@ private fun StepperButton(icon: ImageVector, label: String, enabled: Boolean, on
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(32.dp).clip(CircleShape), contentAlignment = Alignment.Center) {
+        val visual = if (outlined) {
+            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+        } else {
+            Modifier.size(32.dp).clip(CircleShape)
+        }
+        Box(visual, contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(18.dp).alpha(if (enabled) 1f else 0.38f), MaterialTheme.colorScheme.primary)
         }
     }

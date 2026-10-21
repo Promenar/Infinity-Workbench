@@ -257,7 +257,7 @@ class GenericOpenAICompatProtocol(
     )
 
     private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
-        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@GenericOpenAICompatProtocol.model })
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@GenericOpenAICompatProtocol.model }, baseUrl)
         val request = adapted.request
         val messages = chatMessagesWithToolMedia(request.messages)
         val body = buildJsonObject {

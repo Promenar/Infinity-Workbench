@@ -1,12 +1,13 @@
 package com.promenar.nexara.ui.chat
 
 import com.promenar.nexara.data.model.params.sampling
-import com.promenar.nexara.ui.common.params.ParameterSchemeRow
+import com.promenar.nexara.ui.common.params.ParameterSchemeSection
 import com.promenar.nexara.ui.common.params.SAMPLING_PARAM_ORDER
 import com.promenar.nexara.ui.common.params.SamplingEditorActions
 import com.promenar.nexara.ui.common.params.SamplingEditorState
+import com.promenar.nexara.ui.common.params.SamplingParamLayout
 import com.promenar.nexara.ui.common.params.SamplingParamRows
-import com.promenar.nexara.ui.common.params.hiddenParamsFooter
+import com.promenar.nexara.ui.common.params.samplingParamLayout
 import com.promenar.nexara.domain.usecase.resolveKeepRecentTurns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -307,7 +308,7 @@ private fun ParamsPanel(
     val storedEffort = com.promenar.nexara.data.model.params.ReasoningEffort.fromWireName(
         params.reasoningEffort ?: agentDefaults?.reasoningEffort,
     )
-    val editor = sessionSamplingEditorState(params, agentDefaults, profile?.unsupportedParams(storedEffort).orEmpty(), schemes)
+    val editor = sessionSamplingEditorState(params, agentDefaults, samplingParamLayout(profile, storedEffort), schemes)
     val actions = remember(chatViewModel, modelKey, editor) {
         SamplingEditorActions(
             onApplyModelDefault = chatViewModel::applyModelDefaultSampling,
@@ -328,60 +329,61 @@ private fun ParamsPanel(
     )
 }
 
-/** 会话参数页的编辑器数据：模型不使用的参数移到底部说明，未识别的模型显示全部参数。 */
+/** 会话参数页的编辑器数据；未识别的模型显示全部参数。 */
 internal fun sessionSamplingEditorState(
     params: com.promenar.nexara.data.model.InferenceParams,
     agentDefaults: com.promenar.nexara.data.model.InferenceParams?,
-    unsupported: Set<com.promenar.nexara.data.model.params.SamplingParam>,
+    layout: SamplingParamLayout,
     schemes: List<com.promenar.nexara.data.model.params.ParameterScheme>,
 ) = SamplingEditorState(
     own = params.sampling,
     inherited = agentDefaults?.sampling ?: com.promenar.nexara.data.model.params.SamplingValues(),
     followsScheme = params.parameterSchemeId != null,
     baseSchemeId = params.parameterSchemeId,
-    visible = SAMPLING_PARAM_ORDER.filterNot { it in unsupported },
-    hidden = SAMPLING_PARAM_ORDER.filter { it in unsupported },
+    layout = layout,
     schemes = schemes,
 )
 
 @Composable
 internal fun SessionParamsContent(
     params: com.promenar.nexara.data.model.InferenceParams,
-    editor: SamplingEditorState = sessionSamplingEditorState(params, null, emptySet(), emptyList()),
+    editor: SamplingEditorState = sessionSamplingEditorState(params, null, SamplingParamLayout(SAMPLING_PARAM_ORDER), emptyList()),
     modelName: String? = null,
     actions: SamplingEditorActions = SamplingEditorActions(),
     onParamsChange: (com.promenar.nexara.data.model.InferenceParams) -> Unit = {},
+    initialExpanded: com.promenar.nexara.data.model.params.SamplingParam? = null,
 ) {
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = NexaraSpacing.ScreenHorizontal),
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = NexaraSpacing.ScreenHorizontal), state = listState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 24.dp)) {
         item {
-            ParameterSchemeRow(editor, actions, modelName, Modifier.padding(bottom = 16.dp))
+            ParameterSchemeSection(editor, actions, modelName, scrollState = listState)
         }
         item {
-            NexaraSettingsSection(
-                title = stringResource(R.string.params_section_sampling),
-                footer = hiddenParamsFooter(editor.hidden),
-            ) {
-                SamplingParamRows(editor, actions, ownLabel = stringResource(R.string.params_source_session))
+            NexaraSettingsSection(title = stringResource(R.string.params_section_sampling)) {
+                SamplingParamRows(editor, actions, ownLabel = stringResource(R.string.params_source_session), initialExpanded = initialExpanded)
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.params_section_request), modifier = Modifier.padding(top = 16.dp)) {
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_stream_timeout), value = params.streamTimeout ?: 120,
-                    spec = NumericSettingSpec(30.0, 300.0, step = 10.0, defaultValue = 120.0,
-                        unit = stringResource(R.string.session_numeric_seconds),
-                        presets = listOf(60.0, 120.0, 180.0, 300.0).map { NumericSettingSpec.Preset(it) }),
-                    onValueChange = { onParamsChange(params.copy(streamTimeout = it.toInt())) },
+            val timeout = params.streamTimeout ?: STREAM_TIMEOUT_DEFAULT_SECONDS
+            NexaraSettingsSection(title = stringResource(R.string.params_section_request)) {
+                NexaraStepperSetting(
+                    title = stringResource(R.string.sheet_settings_stream_timeout),
+                    value = stringResource(R.string.session_numeric_seconds_value, timeout),
+                    onDecrease = { onParamsChange(params.copy(streamTimeout = (timeout - STREAM_TIMEOUT_STEP_SECONDS).coerceAtLeast(STREAM_TIMEOUT_MIN_SECONDS))) },
+                    onIncrease = { onParamsChange(params.copy(streamTimeout = (timeout + STREAM_TIMEOUT_STEP_SECONDS).coerceAtMost(STREAM_TIMEOUT_MAX_SECONDS))) },
+                    canDecrease = timeout > STREAM_TIMEOUT_MIN_SECONDS,
+                    canIncrease = timeout < STREAM_TIMEOUT_MAX_SECONDS,
                 )
             }
         }
     }
 }
 
-internal fun sessionContinuousSpec(min: Double, max: Double, defaultValue: Double, presets: List<Double>) =
-    NumericSettingSpec(min, max, step = 0.0, defaultValue = defaultValue,
-        presets = presets.map { NumericSettingSpec.Preset(it) }, kind = NumericSettingKind.Continuous, decimalPlaces = 2)
+private const val STREAM_TIMEOUT_DEFAULT_SECONDS = 120
+private const val STREAM_TIMEOUT_MIN_SECONDS = 30
+private const val STREAM_TIMEOUT_MAX_SECONDS = 300
+private const val STREAM_TIMEOUT_STEP_SECONDS = 10
 
 @Composable
 private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexara.data.model.Session?) {

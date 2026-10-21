@@ -49,11 +49,26 @@ fun sessionParamsSchemesPreview() = SessionFrame(1) {
         com.promenar.nexara.data.model.params.ParameterScheme("writing", "qwen::qwen3.8-max", "长文创作",
             com.promenar.nexara.data.model.params.SamplingValues(temperature = 1.1), 2, 2),
     )
-    val unsupported = setOf(
-        com.promenar.nexara.data.model.params.SamplingParam.PRESENCE_PENALTY,
-        com.promenar.nexara.data.model.params.SamplingParam.FREQUENCY_PENALTY,
+    val profile = com.promenar.nexara.data.model.params.resolveModelParameterProfile(
+        com.promenar.nexara.data.remote.protocol.ProtocolType.Qwen_DashScope, "qwen3.8-max", "https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
-    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(topK = 20), unsupported, schemes), modelName = "Qwen3.8 Max")
+    val layout = com.promenar.nexara.ui.common.params.samplingParamLayout(profile, null)
+    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(topK = 20), layout, schemes), modelName = "Qwen3.8 Max",
+        initialExpanded = com.promenar.nexara.data.model.params.SamplingParam.TEMPERATURE)
+}
+
+@PreviewTest
+@Preview(name = "会话参数 第三方接口 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Preview(name = "会话参数 第三方接口 深英360", widthDp = 360, heightDp = 1000, locale = "en")
+@Composable
+fun sessionParamsThirdPartyPreview() = SessionFrame(1) {
+    val params = InferenceParams(maxTokens = 8192, topK = 40)
+    val profile = com.promenar.nexara.data.model.params.resolveModelParameterProfile(
+        com.promenar.nexara.data.remote.protocol.ProtocolType.Generic_OpenAI_Compat, "deepseek/deepseek-v4-pro", "https://openrouter.ai/api/v1",
+    )
+    val layout = com.promenar.nexara.ui.common.params.samplingParamLayout(profile, null)
+    SessionParamsContent(params, sessionSamplingEditorState(params, null, layout, emptyList()), modelName = "DeepSeek V4 Pro",
+        initialExpanded = com.promenar.nexara.data.model.params.SamplingParam.MAX_TOKENS)
 }
 
 @PreviewTest
@@ -61,7 +76,8 @@ fun sessionParamsSchemesPreview() = SessionFrame(1) {
 @Composable
 fun sessionParamsInheritedPreview() = SessionFrame(1) {
     val params = InferenceParams(maxTokens = 8192)
-    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(temperature = 0.3, topK = 20), emptySet(), emptyList()), modelName = "DeepSeek V4 Pro")
+    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(temperature = 0.3, topK = 20),
+        com.promenar.nexara.ui.common.params.SamplingParamLayout(com.promenar.nexara.ui.common.params.SAMPLING_PARAM_ORDER), emptyList()), modelName = "DeepSeek V4 Pro")
 }
 
 @PreviewTest

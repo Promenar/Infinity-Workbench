@@ -213,7 +213,7 @@ class OpenAIResponsesProtocol(
     )
 
     private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
-        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@OpenAIResponsesProtocol.model })
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@OpenAIResponsesProtocol.model }, baseUrl)
         val request = adapted.request
         return buildJsonObject {
             put("model", request.model.ifEmpty { this@OpenAIResponsesProtocol.model })

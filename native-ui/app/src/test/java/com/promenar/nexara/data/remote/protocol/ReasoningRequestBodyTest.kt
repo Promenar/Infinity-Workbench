@@ -40,9 +40,9 @@ class ReasoningRequestBodyTest {
         reasoningEffort = effort,
     )
 
-    private fun compat(type: ProtocolType, model: String) = { client: HttpClient ->
-        GenericOpenAICompatProtocol("https://example.test/v1", "k", model, type, client)
-    }
+    /** 默认用协议的官方地址；自定义兼容协议没有官方地址，用测试域名。 */
+    private fun compat(type: ProtocolType, model: String, baseUrl: String = type.defaultBaseUrl.ifEmpty { "https://example.test/v1" }) =
+        { client: HttpClient -> GenericOpenAICompatProtocol(baseUrl, "k", model, type, client) }
 
     private operator fun JsonObject.get(path: String, key: String) = this[path]!!.jsonObject[key]
 
@@ -101,6 +101,23 @@ class ReasoningRequestBodyTest {
 
         val kimi = body(compat(ProtocolType.Moonshot_Kimi, "kimi-k3"), request("kimi-k3", null))
         assertThat(kimi.keys).containsNoneOf("temperature", "top_p", "reasoning_effort")
+    }
+
+    @Test
+    fun `第三方或自建接口上的同名模型照常发送资料里不支持的参数`() = runTest {
+        val relay = body(compat(ProtocolType.Generic_OpenAI_Compat, "deepseek/deepseek-v4-pro", "https://openrouter.ai/api/v1"),
+            request("deepseek/deepseek-v4-pro", ReasoningEffort.HIGH))
+        assertThat(relay["temperature"]!!.jsonPrimitive.content).isEqualTo("0.7")
+        assertThat(relay["top_p"]!!.jsonPrimitive.content).isEqualTo("0.9")
+
+        val local = body(compat(ProtocolType.Moonshot_Kimi, "kimi-k3", "http://192.168.1.20:8000/v1"), request("kimi-k3", null))
+        assertThat(local["temperature"]!!.jsonPrimitive.content).isEqualTo("0.7")
+
+        // 官方接口的子域名仍按文档剔除；仿冒官方域名的主机不算官方。
+        val official = body(compat(ProtocolType.Moonshot_Kimi, "kimi-k3", "https://api.moonshot.ai/v1"), request("kimi-k3", null))
+        assertThat(official.keys).containsNoneOf("temperature", "top_p")
+        val lookalike = body(compat(ProtocolType.Moonshot_Kimi, "kimi-k3", "https://api.moonshot.cn.proxy.example/v1"), request("kimi-k3", null))
+        assertThat(lookalike["temperature"]!!.jsonPrimitive.content).isEqualTo("0.7")
     }
 
     @Test

@@ -37,7 +37,7 @@ fun agentDefaultParamsPreview() {
                 editor = agentSamplingEditorState(
                     SamplingValues(temperature = 0.2),
                     baseSchemeId = null,
-                    unsupported = profile.unsupportedParams(reasoning.stored),
+                    layout = com.promenar.nexara.ui.common.params.samplingParamLayout(profile, reasoning.stored),
                     schemes = schemes,
                 ),
                 actions = SamplingEditorActions(),

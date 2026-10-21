@@ -21,8 +21,8 @@ internal class ModelAdaptedRequest(
     val effort: ReasoningEffort?,
 )
 
-internal fun PromptRequest.adaptedTo(protocolType: ProtocolType, modelId: String): ModelAdaptedRequest {
-    val profile = resolveModelParameterProfile(protocolType, modelId)
+internal fun PromptRequest.adaptedTo(protocolType: ProtocolType, modelId: String, baseUrl: String? = null): ModelAdaptedRequest {
+    val profile = resolveModelParameterProfile(protocolType, modelId, baseUrl)
     val support = profile.reasoning
     return ModelAdaptedRequest(
         request = withSupportedSampling(profile),

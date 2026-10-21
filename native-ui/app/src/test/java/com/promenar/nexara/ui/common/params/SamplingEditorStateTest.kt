@@ -2,9 +2,13 @@ package com.promenar.nexara.ui.common.params
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID
+import com.promenar.nexara.data.model.params.ParamAvailability
 import com.promenar.nexara.data.model.params.ParameterScheme
+import com.promenar.nexara.data.model.params.ReasoningEffort
 import com.promenar.nexara.data.model.params.SamplingParam
 import com.promenar.nexara.data.model.params.SamplingValues
+import com.promenar.nexara.data.model.params.resolveModelParameterProfile
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import org.junit.Test
 
 class SamplingEditorStateTest {
@@ -16,7 +20,8 @@ class SamplingEditorStateTest {
         inherited: SamplingValues = SamplingValues(),
         base: String? = null,
         visible: List<SamplingParam> = all,
-    ) = SamplingEditorState(own, inherited, followsScheme = base != null, baseSchemeId = base, visible = visible, schemes = listOf(coding))
+    ) = SamplingEditorState(own, inherited, followsScheme = base != null, baseSchemeId = base,
+        layout = SamplingParamLayout(visible), schemes = listOf(coding))
 
     @Test
     fun `未选过方案时按当前取值匹配模型默认或已存方案`() {
@@ -51,5 +56,39 @@ class SamplingEditorStateTest {
         assertThat(inheriting.source(SamplingParam.TOP_P)).isEqualTo(ParamSource.DEFAULT)
         assertThat(state(SamplingValues(topK = 20, temperature = 0.5), visible = listOf(SamplingParam.TOP_K)).savableValues)
             .isEqualTo(SamplingValues(topK = 20))
+    }
+
+    @Test
+    fun `方案被修改时列出与方案不同的参数`() {
+        assertThat(state(SamplingValues(temperature = 0.5, topP = 0.9, topK = 20), base = "s1").changedParams)
+            .containsExactly(SamplingParam.TEMPERATURE, SamplingParam.TOP_K).inOrder()
+        assertThat(state(SamplingValues(maxTokens = 8192), base = MODEL_DEFAULT_SCHEME_ID).changedParams)
+            .containsExactly(SamplingParam.MAX_TOKENS)
+        assertThat(state(SamplingValues(temperature = 0.2, topP = 0.9), base = "s1").changedParams).isEmpty()
+    }
+
+    @Test
+    fun `官方接口不接受的参数收进不适用分组，第三方接口全部可编辑`() {
+        val official = samplingParamLayout(
+            resolveModelParameterProfile(ProtocolType.Moonshot_Kimi, "kimi-k3", "https://api.moonshot.cn/v1"), null,
+        )
+        assertThat(official.visible).containsExactly(SamplingParam.MAX_TOKENS)
+        assertThat(official.notApplicable).contains(SamplingParam.TEMPERATURE)
+
+        val local = samplingParamLayout(
+            resolveModelParameterProfile(ProtocolType.Moonshot_Kimi, "kimi-k3", "http://10.0.0.2:8000/v1"), null,
+        )
+        assertThat(local.visible).containsExactlyElementsIn(SAMPLING_PARAM_ORDER).inOrder()
+        assertThat(local.notApplicable).isEmpty()
+        assertThat(local.availability[SamplingParam.TEMPERATURE]).isEqualTo(ParamAvailability.MAY_BE_IGNORED)
+
+        // 思考时不生效的参数仍可编辑，只是不发送。
+        val deepseek = samplingParamLayout(
+            resolveModelParameterProfile(ProtocolType.DeepSeek, "deepseek-v4-pro", "https://api.deepseek.com"), ReasoningEffort.HIGH,
+        )
+        assertThat(deepseek.visible).contains(SamplingParam.TEMPERATURE)
+        assertThat(deepseek.availability[SamplingParam.TEMPERATURE]).isEqualTo(ParamAvailability.NOT_SENT_WHILE_THINKING)
+
+        assertThat(samplingParamLayout(null, null).visible).containsExactlyElementsIn(SAMPLING_PARAM_ORDER)
     }
 }

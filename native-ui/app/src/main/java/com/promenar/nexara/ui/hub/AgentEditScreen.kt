@@ -128,7 +128,7 @@ fun AgentEditScreen(
     val samplingEditor = agentSamplingEditorState(
         sampling = agentSampling,
         baseSchemeId = baseSchemeId,
-        unsupported = modelProfile?.unsupportedParams(reasoningControl?.stored).orEmpty(),
+        layout = com.promenar.nexara.ui.common.params.samplingParamLayout(modelProfile, reasoningControl?.stored),
         schemes = parameterSchemes,
     )
     val samplingActions = remember(viewModel, samplingEditor) {

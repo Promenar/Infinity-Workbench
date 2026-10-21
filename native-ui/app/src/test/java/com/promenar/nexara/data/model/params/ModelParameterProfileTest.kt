@@ -102,4 +102,47 @@ class ModelParameterProfileTest {
         assertThat(SamplingParam.entries.all { unknown.supports(it, null) }).isTrue()
         assertThat(profile(ProtocolType.Anthropic_Messages, "unknown").supports(SamplingParam.PRESENCE_PENALTY, null)).isFalse()
     }
+
+    @Test
+    fun `参数可用性按接口是否为厂商官方地址区分剔除与提醒`() {
+        val official = resolveModelParameterProfile(ProtocolType.DeepSeek, "deepseek-v4-pro", "https://api.deepseek.com")
+        assertThat(official.officialEndpoint).isTrue()
+        assertThat(official.availability(SamplingParam.TOP_K, HIGH)).isEqualTo(ParamAvailability.NOT_APPLICABLE)
+        assertThat(official.availability(SamplingParam.TEMPERATURE, HIGH)).isEqualTo(ParamAvailability.NOT_SENT_WHILE_THINKING)
+        assertThat(official.availability(SamplingParam.TEMPERATURE, NONE)).isEqualTo(ParamAvailability.SUPPORTED)
+
+        val relay = resolveModelParameterProfile(ProtocolType.Generic_OpenAI_Compat, "deepseek/deepseek-v4-pro", "https://openrouter.ai/api/v1")
+        assertThat(relay.officialEndpoint).isFalse()
+        assertThat(relay.availability(SamplingParam.TOP_K, HIGH)).isEqualTo(ParamAvailability.MAY_BE_IGNORED)
+        assertThat(relay.availability(SamplingParam.TEMPERATURE, HIGH)).isEqualTo(ParamAvailability.MAY_BE_IGNORED)
+        assertThat(relay.availability(SamplingParam.TEMPERATURE, NONE)).isEqualTo(ParamAvailability.SUPPORTED)
+        assertThat(relay.unsupportedParams(HIGH)).isEmpty()
+
+        // 协议请求体没有的字段不论接口都不发送。
+        val claudeRelay = resolveModelParameterProfile(ProtocolType.Anthropic_Messages, "claude-opus-5-5", "https://gateway.example/anthropic")
+        assertThat(claudeRelay.availability(SamplingParam.FREQUENCY_PENALTY, null)).isEqualTo(ParamAvailability.NOT_IN_PROTOCOL)
+        assertThat(claudeRelay.availability(SamplingParam.TEMPERATURE, null)).isEqualTo(ParamAvailability.MAY_BE_IGNORED)
+    }
+
+    @Test
+    fun `空地址取协议默认地址，自定义兼容接口与本地推理按第三方处理`() {
+        assertThat(resolveModelParameterProfile(ProtocolType.DeepSeek, "deepseek-v4-pro", "").officialEndpoint).isTrue()
+        assertThat(resolveModelParameterProfile(ProtocolType.Generic_OpenAI_Compat, "deepseek-v4-pro", "").officialEndpoint).isFalse()
+        assertThat(resolveModelParameterProfile(ProtocolType.Local, "qwen3.8-flash", "").officialEndpoint).isFalse()
+        // 调用方不知道地址时沿用文档判断；Gemini 协议只有 Google 自己的接口。
+        assertThat(resolveModelParameterProfile(ProtocolType.DeepSeek, "deepseek-v4-pro").officialEndpoint).isTrue()
+        assertThat(resolveModelParameterProfile(ProtocolType.Google_Gemini, "gemini-4-pro", "https://proxy.example").officialEndpoint).isTrue()
+    }
+
+    @Test
+    fun `厂商域名只匹配本身与子域名`() {
+        val domains = setOf("deepseek.com")
+        assertThat(isVendorEndpoint("https://api.deepseek.com/v1", domains)).isTrue()
+        assertThat(isVendorEndpoint("api.deepseek.com", domains)).isTrue()
+        assertThat(isVendorEndpoint("https://API.DeepSeek.com.", domains)).isTrue()
+        assertThat(isVendorEndpoint("https://notdeepseek.com", domains)).isFalse()
+        assertThat(isVendorEndpoint("https://api.deepseek.com.evil.io", domains)).isFalse()
+        assertThat(isVendorEndpoint("http://127.0.0.1:8080", domains)).isFalse()
+        assertThat(isVendorEndpoint("not a url", domains)).isFalse()
+    }
 }
