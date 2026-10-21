@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.domain.model.Agent
 
 class AgentConfigResolver(
@@ -12,9 +13,8 @@ class AgentConfigResolver(
     data class ResolvedConfig(
         val systemPrompt: String,
         val modelId: String,
-        val temperature: Double,
-        val topP: Double,
-        val maxTokens: Int,
+        /** 助手为其会话提供的默认采样参数与推理强度；为空的项按模型默认。 */
+        val inferenceDefaults: InferenceParams,
         val ragConfig: AgentRagConfig?,
         val retrievalConfig: AgentRetrievalConfig?,
         val memoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
@@ -24,9 +24,7 @@ class AgentConfigResolver(
         return ResolvedConfig(
             systemPrompt = agent?.systemPrompt ?: "",
             modelId = agent?.modelId ?: globalPrefs.getString("default_model", "") ?: "",
-            temperature = agent?.temperature ?: globalPrefs.getFloat("default_temperature", 0.7f).toDouble(),
-            topP = agent?.topP ?: globalPrefs.getFloat("default_top_p", 0.9f).toDouble(),
-            maxTokens = agent?.maxTokens ?: globalPrefs.getInt("default_max_tokens", 4096),
+            inferenceDefaults = agent?.inferenceDefaults() ?: InferenceParams(),
             ragConfig = agent?.ragConfig,
             retrievalConfig = agent?.retrievalConfig?.takeUnless { agent.useInheritedConfig },
             memoryPolicy = agent?.memoryPolicy ?: AgentMemoryPolicy(),
@@ -35,3 +33,14 @@ class AgentConfigResolver(
 
     fun resolveName(agent: Agent?): String = agent?.name ?: ""
 }
+
+fun Agent.inferenceDefaults(): InferenceParams = InferenceParams(
+    temperature = temperature,
+    topP = topP,
+    maxTokens = maxTokens,
+    frequencyPenalty = frequencyPenalty,
+    presencePenalty = presencePenalty,
+    topK = topK,
+    repetitionPenalty = repetitionPenalty,
+    reasoningEffort = reasoningEffort,
+)

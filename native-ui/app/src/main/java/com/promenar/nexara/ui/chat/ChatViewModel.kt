@@ -16,6 +16,7 @@ import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.PostProcessType
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.data.model.params.sampling
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ExecutionStep
@@ -317,6 +318,8 @@ class ChatViewModel(
     ) -> String)? = null,
     /** 会话图谱抽取状态；为 null 时读取应用实例。 */
     private val sessionGraphPortOverride: com.promenar.nexara.data.rag.SessionGraphPort? = null,
+    /** 参数方案；为 null 时读取应用实例。 */
+    private val parameterSchemeRepositoryOverride: com.promenar.nexara.data.repository.ParameterSchemeRepository? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -1986,14 +1989,90 @@ class ChatViewModel(
     suspend fun agentInferenceDefaults(): InferenceParams {
         val agentId = _currentSessionId.value?.let(store::getSession)?.agentId
         val agent = agentId?.let { agentRepository.getById(it) }
-        return configResolver.resolve(agent).let {
-            InferenceParams(temperature = it.temperature, topP = it.topP, maxTokens = it.maxTokens)
-        }
+        return configResolver.resolve(agent).inferenceDefaults
     }
 
     fun updateInferenceParams(params: InferenceParams) {
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
+            sessionManager.updateSessionInferenceParams(sessionId, params)
+        }
+    }
+
+    /** 当前会话所属助手保存的推理强度（原始取值），输入区胶囊在会话未设置时沿用。 */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val agentReasoningEffort: StateFlow<String?> = _currentSessionId
+        .flatMapLatest { sessionId ->
+            val agentId = sessionId?.let(store::getSession)?.agentId
+            if (agentId == null) flowOf(null) else agentRepository.observeById(agentId).map { it?.reasoningEffort }
+        }
+        .catch { error ->
+            NexaraLogger.logError("[ChatViewModel] 读取助手推理强度失败", error)
+            emit(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val parameterSchemeRepository by lazy {
+        parameterSchemeRepositoryOverride ?: (application as NexaraApplication).parameterSchemeRepository
+    }
+
+    /** 当前模型的已存方案；读取失败时视为没有方案。 */
+    fun parameterSchemes(modelKey: String): kotlinx.coroutines.flow.Flow<List<com.promenar.nexara.data.model.params.ParameterScheme>> =
+        flow { emitAll(parameterSchemeRepository.observeForModel(modelKey)) }
+            .catch { error ->
+                NexaraLogger.logError("[ChatViewModel] 读取参数方案失败", error)
+                emit(emptyList())
+            }
+
+    private fun editSessionParams(transform: suspend (InferenceParams, InferenceParams) -> InferenceParams?) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val session = store.getSession(sessionId) ?: return@launch
+            val next = transform(session.inferenceParams ?: InferenceParams(), agentInferenceDefaults()) ?: return@launch
+            sessionManager.updateSessionInferenceParams(sessionId, next)
+        }
+    }
+
+    fun applyModelDefaultSampling() = editSessionParams { params, _ -> params.withModelDefaultSampling() }
+
+    fun applyParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme) =
+        editSessionParams { params, _ -> params.withScheme(scheme) }
+
+    fun updateSamplingParam(param: com.promenar.nexara.data.model.params.SamplingParam, value: Double?) =
+        editSessionParams { params, agent ->
+            params.withSamplingParam(param, value, agent.sampling)
+        }
+
+    /** 把当前取值存为本模型的新方案，会话随即选用它。 */
+    fun saveParameterScheme(modelKey: String, name: String, values: com.promenar.nexara.data.model.params.SamplingValues) =
+        editSessionParams { params, _ ->
+            params.withScheme(parameterSchemeRepository.create(modelKey, name, values))
+        }
+
+    fun overwriteParameterScheme(
+        scheme: com.promenar.nexara.data.model.params.ParameterScheme,
+        values: com.promenar.nexara.data.model.params.SamplingValues,
+    ) = editSessionParams { params, _ ->
+        if (parameterSchemeRepository.overwrite(scheme.id, values)) params.withScheme(scheme.copy(values = values)) else null
+    }
+
+    fun renameParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme, name: String) {
+        viewModelScope.launch { parameterSchemeRepository.rename(scheme.id, name) }
+    }
+
+    /** 删除方案不改动正在使用它的会话取值。 */
+    fun deleteParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme) {
+        viewModelScope.launch { parameterSchemeRepository.delete(scheme.id) }
+    }
+
+    /** 输入区选择推理强度，只写入当前会话；null 为模型默认。 */
+    fun updateReasoningEffort(effort: com.promenar.nexara.data.model.params.ReasoningEffort?) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val session = store.getSession(sessionId) ?: return@launch
+            val agentValue = session.agentId?.let { agentRepository.getById(it) }?.reasoningEffort
+            val params = (session.inferenceParams ?: InferenceParams())
+                .copy(reasoningEffort = sessionReasoningEffortFor(effort, agentValue))
             sessionManager.updateSessionInferenceParams(sessionId, params)
         }
     }

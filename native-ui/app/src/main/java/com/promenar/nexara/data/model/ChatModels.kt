@@ -108,7 +108,13 @@ data class InferenceParams(
     val presencePenalty: Double? = null,
     val topK: Int? = null,
     val repetitionPenalty: Double? = null,
-    val thinkingLevel: String? = null,
+    /** 推理强度（[com.promenar.nexara.data.model.params.ReasoningEffort.wireName]）；null 为模型默认。 */
+    val reasoningEffort: String? = null,
+    /**
+     * 会话采样参数所依据的方案：参数方案 id，或 [com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID]。
+     * 非空时采样参数完全由会话决定，不再逐项沿用助手设置；null 时逐项回退到助手。
+     */
+    val parameterSchemeId: String? = null,
     val streamTimeout: Int? = 120,
     val autoSummaryThreshold: Double = 0.8,
     val keepRecentTurns: Int? = null,

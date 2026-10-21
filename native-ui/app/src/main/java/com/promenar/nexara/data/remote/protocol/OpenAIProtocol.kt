@@ -243,7 +243,9 @@ class OpenAIProtocol(
         ProviderEndpointOperation.INFERENCE,
     )
 
-    private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
+    private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@OpenAIProtocol.model })
+        val request = adapted.request
         val messages = chatMessagesWithToolMedia(request.messages)
         val body = buildJsonObject {
             put("model", request.model.ifEmpty { this@OpenAIProtocol.model })
@@ -317,6 +319,7 @@ class OpenAIProtocol(
             ProtocolParamAdapter.mapCommonParams(this, request)
             ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
             ProtocolParamAdapter.mapSamplingParams(this, request)
+            putChatReasoning(adapted)
 
             if (stream) {
                 put("stream_options", buildJsonObject { put("include_usage", true) })

@@ -212,7 +212,9 @@ class OpenAIResponsesProtocol(
         ProviderEndpointOperation.INFERENCE,
     )
 
-    private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
+    private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@OpenAIResponsesProtocol.model })
+        val request = adapted.request
         return buildJsonObject {
             put("model", request.model.ifEmpty { this@OpenAIResponsesProtocol.model })
             put("stream", stream)
@@ -220,6 +222,7 @@ class OpenAIResponsesProtocol(
             request.temperature?.let { put("temperature", it) }
             request.topP?.let { put("top_p", it) }
             request.maxTokens?.let { put("max_output_tokens", it) }
+            putResponsesReasoning(adapted)
             if (!request.tools.isNullOrEmpty()) {
                 put("tools", JsonArray(request.tools.map { tool ->
                     buildJsonObject {

@@ -193,6 +193,8 @@ data class ChatScreenState(
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
+    /** 输入区推理强度胶囊；当前模型不支持调节时为 null。 */
+    val reasoningControl: ChatReasoningControl? = null,
     /** 服务商 ID → 显示名，供生成统计浮卡使用。 */
     val providerDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
@@ -226,6 +228,7 @@ data class ChatScreenActions(
     val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
+    val onReasoningEffortChange: (com.promenar.nexara.data.model.params.ReasoningEffort?) -> Unit = {},
     val onDismissCompressionResult: () -> Unit = {},
     val onTextChange: (String) -> Unit = {},
     val onSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
@@ -797,6 +800,8 @@ fun ChatScreenContent(
                             isCompressing = compressionState.isCompressing,
                             onModelClick = actions.onOpenSettings,
                             onManualSummary = actions.onManualSummary,
+                            reasoningControl = state.reasoningControl,
+                            onReasoningChange = actions.onReasoningEffortChange,
                             attachmentContent = {
                                 ChatComposerAttachments(
                                     imageUris = selectedImageUris,
@@ -1594,6 +1599,8 @@ fun ChatInputBar(
     isCompressing: Boolean = false,
     onModelClick: () -> Unit = {},
     onManualSummary: () -> Unit = {},
+    reasoningControl: ChatReasoningControl? = null,
+    onReasoningChange: (com.promenar.nexara.data.model.params.ReasoningEffort?) -> Unit = {},
     attachmentContent: @Composable () -> Unit = {},
     /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
     topContent: @Composable ColumnScope.() -> Unit = {},
@@ -1676,8 +1683,15 @@ fun ChatInputBar(
                         tint = if (hasImages || hasDocuments) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp).rotate(attachmentIconRotation))
                 }
-                Box(Modifier.weight(1f)) {
-                    ChatModelSelector(modelName, modelId, onModelClick, Modifier.widthIn(max = 216.dp))
+                BoxWithConstraints(Modifier.weight(1f)) {
+                    // 空间不足时推理强度胶囊只留灯泡，模型名优先显示。
+                    val compactReasoning = maxWidth < ReasoningChipCompactBelow
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ChatModelSelector(modelName, modelId, onModelClick, Modifier.weight(1f, fill = false).widthIn(max = 216.dp))
+                        reasoningControl?.let { control ->
+                            ChatReasoningChip(control, onReasoningChange, Modifier.padding(start = 2.dp), compact = compactReasoning)
+                        }
+                    }
                 }
                 TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
                 Spacer(Modifier.width(4.dp))
@@ -1694,6 +1708,8 @@ fun ChatInputBar(
         }
     }
 }
+
+private val ReasoningChipCompactBelow = 200.dp
 
 @Composable
 private fun GenerationStatusButton(

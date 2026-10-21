@@ -2,6 +2,8 @@ package com.promenar.nexara.data.local.db
 
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -232,6 +234,54 @@ val MIGRATION_22_23 = object : Migration(22, 23) {
         db.execSQL("ALTER TABLE `kg_evidence` ADD COLUMN `message_id` TEXT")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_kg_evidence_message_id` ON `kg_evidence` (`message_id`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_sessions_agent_id` ON `sessions` (`agent_id`)")
+    }
+}
+
+/**
+ * 推理强度与参数方案：助手可保存完整采样参数与默认推理强度，新增按模型保存的参数方案表。
+ * 旧数据恢复为模型默认：助手的温度、Top P、最大输出清空；会话里由旧档位写入的采样参数与思考档位一并清空，
+ * 流式超时、自动摘要与保留轮数等非采样设置保持不变。
+ */
+val MIGRATION_23_24 = object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf(
+            "top_k INTEGER", "frequency_penalty REAL", "presence_penalty REAL",
+            "repetition_penalty REAL", "reasoning_effort TEXT",
+        ).forEach { column -> db.execSQL("ALTER TABLE `agents` ADD COLUMN $column") }
+        db.execSQL("UPDATE `agents` SET `temperature` = NULL, `top_p` = NULL, `max_tokens` = NULL")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `parameter_schemes` (`id` TEXT NOT NULL, `model_key` TEXT NOT NULL, " +
+                "`name` TEXT NOT NULL, `params` TEXT NOT NULL, `created_at` INTEGER NOT NULL, " +
+                "`updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_parameter_schemes_model_key` ON `parameter_schemes` (`model_key`)")
+        resetSessionSamplingParams(db)
+    }
+}
+
+/** 旧会话参数中会被视为采样设置的键。 */
+internal val LEGACY_SESSION_SAMPLING_KEYS = setOf(
+    "temperature", "topP", "maxTokens", "frequencyPenalty", "presencePenalty",
+    "topK", "repetitionPenalty", "thinkingLevel",
+)
+
+/** 无法解析的 JSON 保持原样，读取时按默认值处理。 */
+internal fun resetSessionSamplingJson(raw: String): String? {
+    val parsed = runCatching { Json.parseToJsonElement(raw) }.getOrNull()
+    val obj = parsed as? JsonObject ?: return null
+    if (obj.keys.none { it in LEGACY_SESSION_SAMPLING_KEYS }) return null
+    return JsonObject(obj - LEGACY_SESSION_SAMPLING_KEYS).toString()
+}
+
+private fun resetSessionSamplingParams(db: SupportSQLiteDatabase) {
+    val updates = mutableListOf<Pair<String, String>>()
+    db.query("SELECT `id`, `inference_params` FROM `sessions` WHERE `inference_params` IS NOT NULL").use { cursor ->
+        while (cursor.moveToNext()) {
+            resetSessionSamplingJson(cursor.getString(1))?.let { updates += cursor.getString(0) to it }
+        }
+    }
+    updates.forEach { (id, params) ->
+        db.execSQL("UPDATE `sessions` SET `inference_params` = ? WHERE `id` = ?", arrayOf<Any>(params, id))
     }
 }
 

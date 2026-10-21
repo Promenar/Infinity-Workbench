@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.agent.PresetAgents
+import com.promenar.nexara.data.model.params.SamplingValues
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
@@ -22,8 +23,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -39,6 +42,8 @@ class AgentEditViewModel(
     private val avatarCleaner: (Uri) -> Unit = {},
     /** 已登记的自选工作区，用于显示默认工作区的名称与路径。 */
     workspaces: Flow<List<WorkspaceEntity>> = flowOf(emptyList()),
+    /** 按模型保存的参数方案；为 null 时不提供方案。 */
+    private val parameterSchemeRepository: com.promenar.nexara.data.repository.ParameterSchemeRepository? = null,
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -51,8 +56,10 @@ class AgentEditViewModel(
     private val _selectedColor = MutableStateFlow(Agent(id = "", name = "").color)
     private val _selectedIcon = MutableStateFlow("✨")
     private val _avatarPath = MutableStateFlow<String?>(null)
-    private val _temperature = MutableStateFlow(0.7f)
-    private val _topP = MutableStateFlow(0.9f)
+    private val _sampling = MutableStateFlow(SamplingValues())
+    private val _reasoningEffort = MutableStateFlow<String?>(null)
+    /** 本次编辑中最近选用的方案，只用于标出“已修改”，不落库。 */
+    private val _baseSchemeId = MutableStateFlow<String?>(null)
     private val _isPinned = MutableStateFlow(false)
     private val _useInheritedConfig = MutableStateFlow(true)
     private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
@@ -69,8 +76,20 @@ class AgentEditViewModel(
     val selectedColor: StateFlow<String> = _selectedColor.asStateFlow()
     val selectedIcon: StateFlow<String> = _selectedIcon.asStateFlow()
     val avatarPath: StateFlow<String?> = _avatarPath.asStateFlow()
-    val temperature: StateFlow<Float> = _temperature.asStateFlow()
-    val topP: StateFlow<Float> = _topP.asStateFlow()
+    /** 助手会话默认的采样参数；为空的项按模型默认。 */
+    val sampling: StateFlow<SamplingValues> = _sampling.asStateFlow()
+    val reasoningEffort: StateFlow<String?> = _reasoningEffort.asStateFlow()
+    val baseSchemeId: StateFlow<String?> = _baseSchemeId.asStateFlow()
+
+    /** 助手当前模型的已存方案。 */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val parameterSchemes: StateFlow<List<com.promenar.nexara.data.model.params.ParameterScheme>> = _selectedModel
+        .flatMapLatest { modelKey ->
+            val repository = parameterSchemeRepository
+            if (repository == null || modelKey.isBlank()) flowOf(emptyList()) else repository.observeForModel(modelKey)
+        }
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val isPinned: StateFlow<Boolean> = _isPinned.asStateFlow()
     val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
     val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
@@ -95,17 +114,18 @@ class AgentEditViewModel(
         },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
-        combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) },
+        combine(_sampling, _reasoningEffort) { values, effort -> Pair(values, effort) },
         combine(_useInheritedConfig, _ragConfig, _retrievalConfig, _defaultWorkspaceId, _memoryPolicy) { u, r, ret, ws, policy ->
             InheritanceEditState(u, r, ret.copy(memoryPolicy = policy), ws, policy)
         }
-    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr, workspace, policy) ->
+    ) { text, (prompt, model, color), (icon, path, pin), (values, effort), (useIn, rag, retr, workspace, policy) ->
         val initial = text.initial
         initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
         initial.defaultWorkspaceId != workspace ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
         initial.useInheritedConfig != useIn || initial.memoryPolicy != policy ||
+        initial.samplingValues() != values || initial.reasoningEffort != effort ||
         (!useIn && (initial.ragConfig != rag || initial.retrievalConfig != retr))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -139,8 +159,8 @@ class AgentEditViewModel(
                 _selectedIcon.value = agent.icon
                 _avatarPath.value = agent.avatarPath
                 _isPinned.value = agent.isPinned
-                _temperature.value = agent.temperature?.toFloat() ?: 0.7f
-                _topP.value = agent.topP?.toFloat() ?: 0.9f
+                _sampling.value = agent.samplingValues()
+                _reasoningEffort.value = agent.reasoningEffort
                 _useInheritedConfig.value = agent.useInheritedConfig
                 _defaultWorkspaceId.value = agent.defaultWorkspaceId
                 _memoryPolicy.value = agent.memoryPolicy
@@ -251,13 +271,56 @@ class AgentEditViewModel(
         retryAction = null
     }
 
-    fun setTemperature(value: Float) {
-        _temperature.value = value
+    fun setSampling(values: SamplingValues) {
+        _sampling.value = values
         scheduleSave()
     }
 
-    fun setTopP(value: Float) {
-        _topP.value = value
+    fun applyModelDefaultSampling() {
+        _baseSchemeId.value = com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID
+        setSampling(SamplingValues())
+    }
+
+    fun applyParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme) {
+        _baseSchemeId.value = scheme.id
+        setSampling(scheme.values)
+    }
+
+    fun setSamplingParam(param: com.promenar.nexara.data.model.params.SamplingParam, value: Double?) =
+        setSampling(_sampling.value.with(param, value))
+
+    fun saveParameterScheme(name: String, values: SamplingValues) {
+        val repository = parameterSchemeRepository ?: return
+        val modelKey = _selectedModel.value.takeIf(String::isNotBlank) ?: return
+        viewModelScope.launch {
+            val scheme = repository.create(modelKey, name, values)
+            _baseSchemeId.value = scheme.id
+            setSampling(values)
+        }
+    }
+
+    fun overwriteParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme, values: SamplingValues) {
+        val repository = parameterSchemeRepository ?: return
+        viewModelScope.launch {
+            if (repository.overwrite(scheme.id, values)) {
+                _baseSchemeId.value = scheme.id
+                setSampling(values)
+            }
+        }
+    }
+
+    fun renameParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme, name: String) {
+        val repository = parameterSchemeRepository ?: return
+        viewModelScope.launch { repository.rename(scheme.id, name) }
+    }
+
+    fun deleteParameterScheme(scheme: com.promenar.nexara.data.model.params.ParameterScheme) {
+        val repository = parameterSchemeRepository ?: return
+        viewModelScope.launch { repository.delete(scheme.id) }
+    }
+
+    fun setReasoningEffort(value: String?) {
+        _reasoningEffort.value = value
         scheduleSave()
     }
 
@@ -394,9 +457,14 @@ class AgentEditViewModel(
             color = _selectedColor.value,
             avatarPath = _avatarPath.value,
             isPinned = _isPinned.value,
-            temperature = _temperature.value.toDouble(),
-            topP = _topP.value.toDouble(),
-            maxTokens = 4096,
+            temperature = _sampling.value.temperature,
+            topP = _sampling.value.topP,
+            maxTokens = _sampling.value.maxTokens,
+            topK = _sampling.value.topK,
+            frequencyPenalty = _sampling.value.frequencyPenalty,
+            presencePenalty = _sampling.value.presencePenalty,
+            repetitionPenalty = _sampling.value.repetitionPenalty,
+            reasoningEffort = _reasoningEffort.value,
             ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
             retrievalConfig = if (_useInheritedConfig.value) {
                 _memoryPolicy.value.takeIf { it != com.promenar.nexara.data.agent.AgentMemoryPolicy() }
@@ -469,6 +537,7 @@ class AgentEditViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return AgentEditViewModel(
+                        parameterSchemeRepository = app.parameterSchemeRepository,
                         agentRepository = app.agentRepository,
                         ragConfigPersistence = RagConfigPersistence(
                             app.getSharedPreferences("rag_settings", 0)

@@ -134,4 +134,17 @@ class InferenceParamsResolutionTest {
         assertThat(effective.autoSummaryThreshold).isEqualTo(0.65)
         assertThat(effective.temperature).isEqualTo(0.2)
     }
+
+    @Test
+    fun `会话选用方案或模型默认后采样参数不再沿用助手而推理强度仍回退`() {
+        val withEffort = agent.copy(reasoningEffort = "high")
+        val modelDefault = InferenceParams(parameterSchemeId = com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID)
+            .withDefaults(withEffort)
+        assertThat(listOf(modelDefault.temperature, modelDefault.topP, modelDefault.maxTokens?.toDouble())).containsExactly(null, null, null)
+        assertThat(modelDefault.reasoningEffort).isEqualTo("high")
+
+        val scheme = InferenceParams(temperature = 0.9, parameterSchemeId = "scheme-1").withDefaults(withEffort)
+        assertThat(scheme.temperature).isEqualTo(0.9)
+        assertThat(scheme.topP).isNull()
+    }
 }

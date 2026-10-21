@@ -19,10 +19,6 @@
     <string name="prompt_editor_cd_save">Save</string>
 
     <!-- InferencePresets -->
-    <string name="common_preset_precise">Precise</string>
-    <string name="common_preset_balanced">Balanced</string>
-    <string name="common_preset_creative">Creative</string>
-    <string name="common_preset_temp_label">T: %1$s</string>
 
     <!-- ColorPickerPanel -->
     <string name="common_color_custom">Custom</string>
@@ -56,6 +52,50 @@
     <string name="common_cd_expand">Expand</string>
     <string name="common_state_collapsed">Collapsed</string>
     <string name="common_state_expanded">Expanded</string>
+    <string name="common_state_selected">Selected</string>
+    <string name="params_section_request">Request</string>
+    <string name="params_section_reasoning">Reasoning</string>
+    <string name="params_section_sampling">Sampling</string>
+    <string name="params_temperature">Temperature</string>
+    <string name="params_source_session">This chat</string>
+    <string name="params_source_agent">From agent</string>
+    <string name="params_value_default">Default</string>
+    <string name="params_restore_agent">Use agent setting</string>
+    <string name="params_use_model_default">Use model default</string>
+    <string name="params_scheme_model_default">Model default</string>
+    <string name="params_scheme_save">Save as scheme</string>
+    <string name="params_scheme_modified">“%1$s” modified</string>
+    <string name="params_scheme_overwrite">Update</string>
+    <string name="params_scheme_save_as">Save as new</string>
+    <string name="params_scheme_rename">Rename</string>
+    <string name="params_scheme_delete">Delete scheme</string>
+    <string name="params_scheme_name_title">Scheme name</string>
+    <string name="params_scheme_name_placeholder">e.g. Coding</string>
+    <string name="params_scheme_scope">Schemes belong to %1$s. Long-press a scheme to rename or delete it.</string>
+    <string name="params_hidden_footer">Not used by this model: %1$s.</string>
+    <string name="params_no_model">Choose a model to save parameter schemes for it.</string>
+    <string name="params_list_separator">", "</string>
+    <string name="agent_edit_default_params">Default parameters</string>
+    <string name="agent_edit_default_params_desc">New chats with this agent, and chats without their own settings, use these values.</string>
+    <string name="agent_edit_reasoning_effort">Reasoning effort</string>
+    <plurals name="agent_edit_params_count">
+        <item quantity="one">%1$d parameter</item>
+        <item quantity="other">%1$d parameters</item>
+    </plurals>
+    <string name="reasoning_effort_title">Reasoning effort</string>
+    <string name="reasoning_effort_model_default">Model default</string>
+    <string name="reasoning_effort_default_short">Default</string>
+    <string name="reasoning_effort_model_default_state">Model default: %1$s</string>
+    <string name="reasoning_effort_on">Thinking</string>
+    <string name="reasoning_effort_none">No thinking</string>
+    <string name="reasoning_effort_minimal">Minimal</string>
+    <string name="reasoning_effort_low">Low</string>
+    <string name="reasoning_effort_medium">Medium</string>
+    <string name="reasoning_effort_high">High</string>
+    <string name="reasoning_effort_xhigh">Extra high</string>
+    <string name="reasoning_effort_max">Max</string>
+    <string name="reasoning_effort_fastest">Fastest, uses least</string>
+    <string name="reasoning_effort_deepest">Slowest, uses most</string>
     <string name="common_cd_navigate">Navigate</string>
     <string name="common_cd_pin">Pin</string>
     <string name="common_cd_unpin">Unpin</string>
@@ -584,14 +624,6 @@
     <string name="sheet_tab_thinking">Parameters</string>
     <string name="sheet_tab_tools">Tools</string>
     <string name="sheet_tab_settings">Context</string>
-    <string name="sheet_thinking_minimal">Precise</string>
-    <string name="sheet_thinking_minimal_desc">Low randomness for facts and code</string>
-    <string name="sheet_thinking_low">Steady</string>
-    <string name="sheet_thinking_low_desc">Slight variation for explanations</string>
-    <string name="sheet_thinking_medium">Balanced</string>
-    <string name="sheet_thinking_medium_desc">Stable yet expressive, recommended</string>
-    <string name="sheet_thinking_high">Creative</string>
-    <string name="sheet_thinking_high_desc">More varied wording and ideas</string>
     <string name="sheet_stats_prompt">Prompt</string>
     <string name="sheet_stats_completion">Completion</string>
     <string name="sheet_stats_rag">Memory RAG</string>

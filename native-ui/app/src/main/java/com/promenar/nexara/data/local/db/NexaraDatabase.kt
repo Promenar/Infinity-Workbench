@@ -19,6 +19,7 @@ import com.promenar.nexara.data.local.db.dao.KgJitCacheDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.KgEvidenceDao
 import com.promenar.nexara.data.local.db.dao.MessageDao
+import com.promenar.nexara.data.local.db.dao.ParameterSchemeDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
 import com.promenar.nexara.data.local.db.dao.SessionDeletionDao
 import com.promenar.nexara.data.local.db.dao.SkillDao
@@ -33,6 +34,7 @@ import com.promenar.nexara.data.local.db.dao.WorkspaceMutationDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceDao
 import com.promenar.nexara.data.local.db.entity.AgentEntity
 import com.promenar.nexara.data.local.db.entity.AgentRuleRevisionEntity
+import com.promenar.nexara.data.local.db.entity.ParameterSchemeEntity
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
 import com.promenar.nexara.data.local.db.entity.AuditLogEntity
@@ -96,8 +98,9 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         SshHostEntity::class,
         WorkspaceEntity::class,
         AgentRuleRevisionEntity::class,
+        ParameterSchemeEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -129,11 +132,13 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun externalMountDao(): ExternalMountDao
     abstract fun workspaceDao(): WorkspaceDao
     abstract fun agentRuleRevisionDao(): AgentRuleRevisionDao
+    abstract fun parameterSchemeDao(): ParameterSchemeDao
 }
 
 internal const val NEXARA_SCHEMA_V21_IDENTITY_HASH = "b59d4265cdf25db536fb91226cd85ab3"
 internal const val NEXARA_SCHEMA_V22_IDENTITY_HASH = "44c225495bedbde35d20c36ffbddf6a4"
 internal const val NEXARA_SCHEMA_V23_IDENTITY_HASH = "7d4eb1523842672010345f378c8b7bd9"
+internal const val NEXARA_SCHEMA_V24_IDENTITY_HASH = "25746d91c031c8c926030a9e148b20a1"
 
 internal fun SQLiteDatabase.hasSshHostContract(): Boolean {
     val expectedColumns = mapOf(

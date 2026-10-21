@@ -125,6 +125,8 @@ data class PromptRequest(
     val toolChoice: ProtocolToolChoice = ProtocolToolChoice.AUTO,
     val stream: Boolean = true,
     val reasoning: Boolean? = null,
+    /** 会话选择的推理强度；null 为模型默认，不发送推理字段。 */
+    val reasoningEffort: com.promenar.nexara.data.model.params.ReasoningEffort? = null,
     val webSearch: Boolean? = null,
     val enableGeminiSearch: Boolean? = null,
     val streamTimeout: Long? = null,

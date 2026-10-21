@@ -84,6 +84,11 @@ fun AgentEditScreen(
     val defaultWorkspaceId by viewModel.defaultWorkspaceId.collectAsState()
     val defaultWorkspace by viewModel.defaultWorkspace.collectAsState()
     val memoryPolicy by viewModel.memoryPolicy.collectAsState()
+    val agentSampling by viewModel.sampling.collectAsState()
+    val agentReasoningEffort by viewModel.reasoningEffort.collectAsState()
+    val baseSchemeId by viewModel.baseSchemeId.collectAsState()
+    val parameterSchemes by viewModel.parameterSchemes.collectAsState()
+    val providers by settingsViewModel.providers.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
     val resolver = ModelCatalogRuntime.resolver
@@ -112,6 +117,31 @@ fun AgentEditScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showWorkspacePicker by remember { mutableStateOf(false) }
+    var showDefaultParams by remember { mutableStateOf(false) }
+
+    val modelProfile = remember(selectedModel, providers, allModels) {
+        com.promenar.nexara.ui.chat.sessionModelParameterProfile(selectedModel, providers, allModels)
+    }
+    val reasoningControl = modelProfile?.reasoning?.let {
+        com.promenar.nexara.ui.chat.ChatReasoningControl(it, com.promenar.nexara.data.model.params.ReasoningEffort.fromWireName(agentReasoningEffort))
+    }
+    val samplingEditor = agentSamplingEditorState(
+        sampling = agentSampling,
+        baseSchemeId = baseSchemeId,
+        unsupported = modelProfile?.unsupportedParams(reasoningControl?.stored).orEmpty(),
+        schemes = parameterSchemes,
+    )
+    val samplingActions = remember(viewModel, samplingEditor) {
+        com.promenar.nexara.ui.common.params.SamplingEditorActions(
+            onApplyModelDefault = viewModel::applyModelDefaultSampling,
+            onApplyScheme = viewModel::applyParameterScheme,
+            onParamChange = viewModel::setSamplingParam,
+            onSaveScheme = { name -> viewModel.saveParameterScheme(name, samplingEditor.savableValues) },
+            onOverwriteScheme = { scheme -> viewModel.overwriteParameterScheme(scheme, samplingEditor.savableValues) },
+            onRenameScheme = viewModel::renameParameterScheme,
+            onDeleteScheme = viewModel::deleteParameterScheme,
+        )
+    }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
     val parsedColor = remember(selectedColor, defaultPrimary) {
@@ -157,6 +187,16 @@ fun AgentEditScreen(
         confirmColor = MaterialTheme.colorScheme.error,
         destructive = true
     )
+
+    com.promenar.nexara.ui.common.NexaraBottomSheet(show = showDefaultParams, onDismiss = { showDefaultParams = false }) {
+        AgentDefaultParamsContent(
+            reasoning = reasoningControl,
+            onReasoningChange = { viewModel.setReasoningEffort(it?.wireName) },
+            editor = samplingEditor,
+            actions = samplingActions,
+            modelName = currentModelDisplayName.takeIf { selectedModel.isNotBlank() },
+        )
+    }
 
     if (showModelPicker) {
         ModelPicker(
@@ -407,6 +447,14 @@ fun AgentEditScreen(
                         onClick = { showModelPicker = true },
                         showChevron = true,
                         modifier = Modifier.testTag("agent_edit_model"),
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Tune,
+                        title = stringResource(R.string.agent_edit_default_params),
+                        subtitle = agentDefaultParamsSummary(samplingEditor, reasoningControl),
+                        onClick = { showDefaultParams = true },
+                        showChevron = true,
+                        modifier = Modifier.testTag("agent_edit_default_params"),
                     )
                 }
             }

@@ -20,7 +20,7 @@ class NexaraDatabaseMigration18To23Test {
             execSQL("INSERT INTO messages(id,session_id,role,content,created_at) VALUES('device-message','device-session','user','中文消息😀',4)")
             close()
         }
-        helper.runMigrationsAndValidate(name, 23, true, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23).use { database ->
+        helper.runMigrationsAndValidate(name, 23, true, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24).use { database ->
             database.query("SELECT name FROM agents WHERE id='device-agent'").use { cursor ->
                 check(cursor.moveToFirst()); assertThat(cursor.getString(0)).isEqualTo("迁移保留😀")
             }
@@ -52,7 +52,7 @@ class NexaraDatabaseMigration18To23Test {
                 assertThat(names).contains("index_sessions_agent_id")
             }
             database.query("PRAGMA foreign_key_check").use { assertThat(it.count).isEqualTo(0) }
-            database.query("PRAGMA user_version").use { cursor -> check(cursor.moveToFirst()); assertThat(cursor.getInt(0)).isEqualTo(23) }
+            database.query("PRAGMA user_version").use { cursor -> check(cursor.moveToFirst()); assertThat(cursor.getInt(0)).isEqualTo(24) }
         }
     }
 }

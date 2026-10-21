@@ -129,8 +129,10 @@ class ProtocolParamTest {
         assertThat(capturedBody).isNotNull()
         val body = json.parseToJsonElement(capturedBody!!).jsonObject
         assertThat(body["temperature"]?.jsonPrimitive?.double).isEqualTo(0.5)
-        assertThat(body["top_k"]?.jsonPrimitive?.int).isEqualTo(40)
-        assertThat(body["repetition_penalty"]?.jsonPrimitive?.double).isEqualTo(1.1)
+        assertThat(body["frequency_penalty"]?.jsonPrimitive?.double).isEqualTo(0.3)
+        // OpenAI 官方接口不接受 top_k / repetition_penalty，请求层按模型剔除。
+        assertThat(body).doesNotContainKey("top_k")
+        assertThat(body).doesNotContainKey("repetition_penalty")
     }
 
     @Test

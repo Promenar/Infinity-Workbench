@@ -13,7 +13,7 @@ class CrossProtocolParamAuditTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun `OpenAIProtocol transmits all 7 parameters`() = runTest {
+    fun `OpenAIProtocol transmits all 7 parameters to unrecognized compatible models`() = runTest {
         var capturedBody: String? = null
         val mockEngine = MockEngine { request ->
             capturedBody = request.body.toByteReadPacket().readText()
@@ -22,11 +22,11 @@ class CrossProtocolParamAuditTest {
         }
         val protocol = OpenAIProtocol(
             baseUrl = "https://api.openai.com", apiKey = "test-key",
-            model = "gpt-4o", httpClient = HttpClient(mockEngine)
+            model = "vllm-served-model", httpClient = HttpClient(mockEngine)
         )
         val request = PromptRequest(
             messages = listOf(ProtocolMessage(role = "user", content = "hi")),
-            model = "gpt-4o",
+            model = "vllm-served-model",
             temperature = 0.5, topP = 0.8, maxTokens = 100,
             topK = 40, repetitionPenalty = 1.1,
             frequencyPenalty = 0.3, presencePenalty = 0.2,

@@ -19,10 +19,6 @@
     <string name="prompt_editor_cd_save">保存</string>
 
     <!-- InferencePresets -->
-    <string name="common_preset_precise">精确</string>
-    <string name="common_preset_balanced">均衡</string>
-    <string name="common_preset_creative">创意</string>
-    <string name="common_preset_temp_label">温度: %1$s</string>
 
     <!-- ColorPickerPanel -->
     <string name="common_color_custom">自定义</string>
@@ -56,6 +52,49 @@
     <string name="common_cd_expand">展开</string>
     <string name="common_state_collapsed">已折叠</string>
     <string name="common_state_expanded">已展开</string>
+    <string name="common_state_selected">已选中</string>
+    <string name="params_section_request">请求</string>
+    <string name="params_section_reasoning">推理</string>
+    <string name="params_section_sampling">采样参数</string>
+    <string name="params_temperature">温度</string>
+    <string name="params_source_session">本会话</string>
+    <string name="params_source_agent">沿用助手</string>
+    <string name="params_value_default">默认</string>
+    <string name="params_restore_agent">沿用助手设置</string>
+    <string name="params_use_model_default">使用模型默认</string>
+    <string name="params_scheme_model_default">模型默认</string>
+    <string name="params_scheme_save">存为方案</string>
+    <string name="params_scheme_modified">“%1$s”已修改</string>
+    <string name="params_scheme_overwrite">覆盖</string>
+    <string name="params_scheme_save_as">另存为</string>
+    <string name="params_scheme_rename">重命名</string>
+    <string name="params_scheme_delete">删除方案</string>
+    <string name="params_scheme_name_title">方案名称</string>
+    <string name="params_scheme_name_placeholder">例如：写代码</string>
+    <string name="params_scheme_scope">方案只属于 %1$s，长按方案可重命名或删除。</string>
+    <string name="params_hidden_footer">此模型不使用：%1$s。</string>
+    <string name="params_no_model">先选择模型，再按模型保存参数方案。</string>
+    <string name="params_list_separator">、</string>
+    <string name="agent_edit_default_params">默认参数</string>
+    <string name="agent_edit_default_params_desc">本助手的新会话和未单独设置的会话沿用这些参数。</string>
+    <string name="agent_edit_reasoning_effort">推理强度</string>
+    <plurals name="agent_edit_params_count">
+        <item quantity="other">%1$d 项参数</item>
+    </plurals>
+    <string name="reasoning_effort_title">推理强度</string>
+    <string name="reasoning_effort_model_default">模型默认</string>
+    <string name="reasoning_effort_default_short">默认</string>
+    <string name="reasoning_effort_model_default_state">模型默认：%1$s</string>
+    <string name="reasoning_effort_on">思考</string>
+    <string name="reasoning_effort_none">不思考</string>
+    <string name="reasoning_effort_minimal">最低</string>
+    <string name="reasoning_effort_low">低</string>
+    <string name="reasoning_effort_medium">中</string>
+    <string name="reasoning_effort_high">高</string>
+    <string name="reasoning_effort_xhigh">超高</string>
+    <string name="reasoning_effort_max">极限</string>
+    <string name="reasoning_effort_fastest">快、省</string>
+    <string name="reasoning_effort_deepest">慢、耗用多</string>
     <string name="common_cd_navigate">导航</string>
     <string name="common_cd_pin">置顶</string>
     <string name="common_cd_unpin">取消置顶</string>
@@ -589,14 +628,6 @@
     <string name="sheet_tab_thinking">参数</string>
     <string name="sheet_tab_tools">工具</string>
     <string name="sheet_tab_settings">上下文</string>
-    <string name="sheet_thinking_minimal">精确</string>
-    <string name="sheet_thinking_minimal_desc">低随机性，适合事实与代码</string>
-    <string name="sheet_thinking_low">稳健</string>
-    <string name="sheet_thinking_low_desc">略有变化，适合说明与总结</string>
-    <string name="sheet_thinking_medium">平衡</string>
-    <string name="sheet_thinking_medium_desc">稳定与表达兼顾，推荐</string>
-    <string name="sheet_thinking_high">创意</string>
-    <string name="sheet_thinking_high_desc">措辞与想法更多样</string>
     <string name="sheet_stats_prompt">提示词</string>
     <string name="sheet_stats_completion">补全</string>
     <string name="sheet_stats_rag">RAG 系统</string>

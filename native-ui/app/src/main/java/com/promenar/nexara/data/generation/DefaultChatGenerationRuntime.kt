@@ -8,6 +8,7 @@ import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.domain.usecase.resolvedKeepRecentTurns
 import com.promenar.nexara.domain.usecase.inferenceDefaults
 import com.promenar.nexara.domain.usecase.withDefaults
+import com.promenar.nexara.domain.usecase.resolvedReasoningEffort
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessStatus
@@ -525,6 +526,7 @@ internal class DefaultChatGenerationRuntime(
             presencePenalty = inference.presencePenalty,
             topK = inference.topK,
             repetitionPenalty = inference.repetitionPenalty,
+            reasoningEffort = inference.resolvedReasoningEffort,
             tools = tools.ifEmpty { null },
             // 收尾轮仍声明工具（历史中的调用需要它们才能被部分协议解析），但禁止再发起调用。
             toolChoice = if (finalAnswerMode) ProtocolToolChoice.NONE else ProtocolToolChoice.AUTO,
@@ -587,6 +589,7 @@ internal class DefaultChatGenerationRuntime(
                     presencePenalty = prompt.presencePenalty,
                     topK = prompt.topK,
                     repetitionPenalty = prompt.repetitionPenalty,
+                    reasoningEffort = prompt.reasoningEffort,
                     streamTimeout = prompt.streamTimeout,
                     enableGeminiSearch = prompt.enableGeminiSearch,
                     tools = preparedTools.associateBy { it.function.name },

@@ -38,6 +38,33 @@ fun sessionModelBatch1Preview() = SessionFrame(0) {
 fun sessionParamsBatch1Preview() = SessionFrame(1) { SessionParamsContent(InferenceParams()) }
 
 @PreviewTest
+@Preview(name = "会话参数 方案已修改 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Preview(name = "会话参数 方案已修改 深英360 字号130", widthDp = 360, heightDp = 1200, locale = "en", fontScale = 1.3f)
+@Composable
+fun sessionParamsSchemesPreview() = SessionFrame(1) {
+    val params = InferenceParams(temperature = 0.6, topP = 0.9, parameterSchemeId = "coding")
+    val schemes = listOf(
+        com.promenar.nexara.data.model.params.ParameterScheme("coding", "qwen::qwen3.8-max", "写代码",
+            com.promenar.nexara.data.model.params.SamplingValues(temperature = 0.2, topP = 0.9), 1, 1),
+        com.promenar.nexara.data.model.params.ParameterScheme("writing", "qwen::qwen3.8-max", "长文创作",
+            com.promenar.nexara.data.model.params.SamplingValues(temperature = 1.1), 2, 2),
+    )
+    val unsupported = setOf(
+        com.promenar.nexara.data.model.params.SamplingParam.PRESENCE_PENALTY,
+        com.promenar.nexara.data.model.params.SamplingParam.FREQUENCY_PENALTY,
+    )
+    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(topK = 20), unsupported, schemes), modelName = "Qwen3.8 Max")
+}
+
+@PreviewTest
+@Preview(name = "会话参数 沿用助手 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Composable
+fun sessionParamsInheritedPreview() = SessionFrame(1) {
+    val params = InferenceParams(maxTokens = 8192)
+    SessionParamsContent(params, sessionSamplingEditorState(params, InferenceParams(temperature = 0.3, topK = 20), emptySet(), emptyList()), modelName = "DeepSeek V4 Pro")
+}
+
+@PreviewTest
 @Preview(name = "会话工具 深中411", widthDp = 411, heightDp = 780, locale = "zh-rCN")
 @Preview(name = "会话工具 深中360", widthDp = 360, heightDp = 780, locale = "zh-rCN")
 @Composable

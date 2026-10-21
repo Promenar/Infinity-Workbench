@@ -14,6 +14,8 @@ import com.promenar.nexara.ui.theme.*
 import com.promenar.nexara.ui.settings.ToolLoopLimitSpec
 import com.promenar.nexara.ui.settings.ToolTokenLimitSpec
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.params.SamplingParam
+import com.promenar.nexara.ui.common.params.samplingParamSpec
 import androidx.compose.ui.res.stringResource
 
 @PreviewTest
@@ -102,5 +104,29 @@ private fun PickerFrame(content: @Composable () -> Unit) = Column(Modifier.fillM
 private fun ComponentTheme(content: @Composable () -> Unit) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer, content = content)
+    }
+}
+
+@PreviewTest
+@Preview(name = "未设置连续弹层 深中411", widthDp = 411, heightDp = 350, locale = "zh-rCN")
+@Preview(name = "未设置连续弹层 深英360", widthDp = 360, heightDp = 350, locale = "en")
+@Composable
+fun unsetContinuousPickerBatch1Preview() = ComponentTheme {
+    PickerFrame {
+        NexaraValuePickerContent(stringResource(R.string.params_temperature), 1.0, samplingParamSpec(SamplingParam.TEMPERATURE), {}, {},
+            restoreDefault = PickerRestoreAction(stringResource(R.string.params_use_model_default),
+                activeLabel = stringResource(R.string.params_value_default)) {})
+    }
+}
+
+@PreviewTest
+@Preview(name = "未设置离散弹层 深中411", widthDp = 411, heightDp = 560, locale = "zh-rCN")
+@Preview(name = "未设置离散弹层 深英360", widthDp = 360, heightDp = 560, locale = "en")
+@Composable
+fun unsetDiscretePickerBatch1Preview() = ComponentTheme {
+    PickerFrame {
+        NexaraValuePickerContent("Top K", 40.0, samplingParamSpec(SamplingParam.TOP_K), {}, {},
+            restoreDefault = PickerRestoreAction(stringResource(R.string.params_use_model_default),
+                activeLabel = stringResource(R.string.params_value_default)) {})
     }
 }

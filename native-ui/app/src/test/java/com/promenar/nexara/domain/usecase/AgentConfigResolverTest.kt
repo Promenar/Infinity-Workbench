@@ -3,6 +3,7 @@ package com.promenar.nexara.domain.usecase
 import android.content.SharedPreferences
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.domain.model.Agent
 import io.mockk.every
 import io.mockk.mockk
@@ -50,15 +51,15 @@ class AgentConfigResolverTest {
 
         assertEquals("You are helpful", config.systemPrompt)
         assertEquals("gpt-4", config.modelId)
-        assertEquals(0.5, config.temperature)
-        assertEquals(0.8, config.topP)
-        assertEquals(2048, config.maxTokens)
+        assertEquals(0.5, config.inferenceDefaults.temperature)
+        assertEquals(0.8, config.inferenceDefaults.topP)
+        assertEquals(2048, config.inferenceDefaults.maxTokens)
         assertEquals(ragConfig, config.ragConfig)
         assertEquals(retrievalConfig, config.retrievalConfig)
     }
 
     @Test
-    fun `resolve falls back to global prefs when agent is null`() {
+    fun `resolve falls back to global model but never to stored sampling defaults when agent is null`() {
         val prefs = createPrefs(defaultModel = "global-model", defaultTemperature = 0.3f, defaultTopP = 0.5f, defaultMaxTokens = 8192)
         val resolver = AgentConfigResolver(prefs)
 
@@ -66,15 +67,13 @@ class AgentConfigResolverTest {
 
         assertEquals("", config.systemPrompt)
         assertEquals("global-model", config.modelId)
-        assertEquals(0.3f.toDouble(), config.temperature, 0.001)
-        assertEquals(0.5f.toDouble(), config.topP, 0.001)
-        assertEquals(8192, config.maxTokens)
+        assertEquals(InferenceParams(), config.inferenceDefaults)
         assertNull(config.ragConfig)
         assertNull(config.retrievalConfig)
     }
 
     @Test
-    fun `resolve falls back to global prefs for null agent fields`() {
+    fun `null agent sampling fields stay null so requests use model defaults`() {
         val prefs = createPrefs(defaultModel = "global-model")
         val resolver = AgentConfigResolver(prefs)
         val agent = Agent(
@@ -88,22 +87,20 @@ class AgentConfigResolverTest {
         val config = resolver.resolve(agent)
 
         assertEquals("", config.modelId)
-        assertEquals(0.7, config.temperature, 0.001)
-        assertEquals(0.9, config.topP, 0.001)
-        assertEquals(4096, config.maxTokens)
+        assertNull(config.inferenceDefaults.temperature)
+        assertNull(config.inferenceDefaults.topP)
+        assertNull(config.inferenceDefaults.maxTokens)
     }
 
     @Test
-    fun `resolve uses global defaults when both agent and prefs have no values`() {
+    fun `resolve uses model defaults when both agent and prefs have no values`() {
         val prefs = createPrefs()
         val resolver = AgentConfigResolver(prefs)
 
         val config = resolver.resolve(null)
 
         assertEquals("", config.modelId)
-        assertEquals(0.7, config.temperature, 0.001)
-        assertEquals(0.9, config.topP, 0.001)
-        assertEquals(4096, config.maxTokens)
+        assertEquals(InferenceParams(), config.inferenceDefaults)
     }
 
     @Test

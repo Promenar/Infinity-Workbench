@@ -230,7 +230,7 @@ class GeminiProtocolTest {
     }
 
     @Test
-    fun `只发送显式设置的采样参数并按需请求思考摘要`() = runBlocking {
+    fun `只发送显式设置的采样参数，思考模型默认请求思考摘要`() = runBlocking {
         val recorder = Recorder()
         val protocol = gemini(recorder)
         protocol.sendPrompt(prompt(ProtocolMessage("user", "hi"), tools = null)).toList()
@@ -240,7 +240,8 @@ class GeminiProtocolTest {
         ).toList()
 
         val plain = body(recorder.bodies[0])["generationConfig"]!!.jsonObject
-        assertThat(plain).isEmpty()
+        assertThat(plain.keys).containsExactly("thinkingConfig")
+        assertThat(plain["thinkingConfig"]!!.jsonObject.keys).containsExactly("includeThoughts")
         val tuned = body(recorder.bodies[1])["generationConfig"]!!.jsonObject
         assertThat(tuned["temperature"]!!.jsonPrimitive.content).isEqualTo("0.3")
         assertThat(tuned["maxOutputTokens"]!!.jsonPrimitive.content).isEqualTo("2048")

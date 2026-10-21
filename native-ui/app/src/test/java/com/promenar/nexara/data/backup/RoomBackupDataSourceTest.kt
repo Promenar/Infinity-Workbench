@@ -19,6 +19,7 @@ import com.promenar.nexara.data.local.db.entity.ExternalSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
+import com.promenar.nexara.data.local.db.entity.ParameterSchemeEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
@@ -530,13 +531,13 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(5)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("5")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(6)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("6")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
-                "workspace_files", "workspace_seq",
+                "workspace_files", "workspace_seq", "parameter_schemes",
             ).forEach { assertThat(text).contains("\"$it\"") }
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
@@ -549,7 +550,7 @@ class RoomBackupDataSourceTest {
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
-                "workspace_files", "workspace_seq",
+                "workspace_files", "workspace_seq", "parameter_schemes",
             ).forEach { assertThat(rowCount(it)).isGreaterThan(0) }
             val restoredAgent = db.agentDao().getById("agent-1")!!
             assertThat(restoredAgent.executionMode).isEqualTo("manual")
@@ -557,6 +558,9 @@ class RoomBackupDataSourceTest {
             assertThat(restoredAgent.mcpServerIds).isEqualTo("[\"mcp-1\"]")
             assertThat(restoredAgent.defaultWorkspaceId).isEqualTo("ws-1")
             assertThat(restoredAgent.userRules).isEqualTo("先读 AGENTS.md😀")
+            assertThat(listOf(restoredAgent.temperature, restoredAgent.topK?.toDouble())).containsExactly(0.3, 40.0).inOrder()
+            assertThat(restoredAgent.reasoningEffort).isEqualTo("low")
+            assertThat(db.parameterSchemeDao().getById("scheme-1")!!.name).isEqualTo("写代码")
             assertThat(db.sessionDao().getById("session-1")!!.workspaceId).isEqualTo("ws-1")
             assertThat(db.workspaceDao().getById("ws-1")!!.location).isEqualTo("demo")
             assertThat(db.messageDao().getById("message-1")!!.vectorizationStatus).isNull()
@@ -1683,6 +1687,29 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `恢复v5备份时助手与会话采样参数回到模型默认且方案表为空`() = runBlocking {
+        seedCompleteGraph()
+        db.sessionDao().getById("session-1")!!.let {
+            db.sessionDao().update(it.copy(inferenceParams = """{"temperature":1.0,"topK":100,"streamTimeout":90}"""))
+        }
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val v5 = JsonObject(root + mapOf(
+            "schemaVersion" to JsonPrimitive(5),
+            "tables" to historicalV5Tables(root.getValue("tables").jsonObject),
+        )).toString().toByteArray()
+
+        db.clearAllTables()
+        newDataSource().restore(validated(current, database = v5))
+
+        val agent = db.agentDao().getById("agent-1")!!
+        assertThat(listOf(agent.temperature, agent.topK?.toDouble(), agent.reasoningEffort)).containsExactly(null, null, null)
+        assertThat(agent.userRules).isEqualTo("先读 AGENTS.md😀")
+        assertThat(db.sessionDao().getById("session-1")!!.inferenceParams).isEqualTo("""{"streamTimeout":90}""")
+        assertThat(rowCount("parameter_schemes")).isEqualTo(0)
+    }
+
+    @Test
     fun `v4备份携带工作区表时拒绝且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         val current = newDataSource().snapshot(CANONICAL_CONTENT)
@@ -1726,12 +1753,24 @@ class RoomBackupDataSourceTest {
     }
 
     /** 真实 v1–v4 备份没有 v5 的工作区表和工作区绑定、用户规则列。 */
-    private fun historicalV4Tables(tables: JsonObject): JsonObject = JsonObject(
-        (tables - "workspaces") + mapOf(
+    private fun historicalV4Tables(tables: JsonObject): JsonObject {
+        val v5 = historicalV5Tables(tables)
+        return JsonObject(
+            (v5 - "workspaces") + mapOf(
+                "agents" to JsonArray(v5.getValue("agents").jsonArray.map {
+                    JsonObject(it.jsonObject - "default_workspace_id" - "user_rules")
+                }),
+                "sessions" to JsonArray(v5.getValue("sessions").jsonArray.map { JsonObject(it.jsonObject - "workspace_id") }),
+            ),
+        )
+    }
+
+    /** 真实 v5 备份没有参数方案表和助手的扩展采样、推理强度列。 */
+    private fun historicalV5Tables(tables: JsonObject): JsonObject = JsonObject(
+        (tables - "parameter_schemes") + (
             "agents" to JsonArray(tables.getValue("agents").jsonArray.map {
-                JsonObject(it.jsonObject - "default_workspace_id" - "user_rules")
-            }),
-            "sessions" to JsonArray(tables.getValue("sessions").jsonArray.map { JsonObject(it.jsonObject - "workspace_id") }),
+                JsonObject(it.jsonObject - "top_k" - "frequency_penalty" - "presence_penalty" - "repetition_penalty" - "reasoning_effort")
+            })
         ),
     )
 
@@ -1751,6 +1790,9 @@ class RoomBackupDataSourceTest {
             mcpServerIds = "[\"mcp-1\"]",
             defaultWorkspaceId = workspace.id,
             userRules = "先读 AGENTS.md😀",
+            temperature = 0.3,
+            topK = 40,
+            reasoningEffort = "low",
         )
         val session = SessionEntity(
             id = "session-1", agentId = agent.id, workspacePath = sourceRoot.toString(),
@@ -1791,6 +1833,7 @@ class RoomBackupDataSourceTest {
         db.skillDao().insertCustomSkill(CustomSkillEntity("skill-1", "Skill", "desc", "{}", "return 1", createdAt = now))
         db.skillDao().insertMcpServer(McpServerEntity("mcp-1", "MCP", "https://example.invalid", createdAt = now))
         db.workspaceSeqDao().getNextSeqForDate("20260712")
+        db.parameterSchemeDao().upsert(ParameterSchemeEntity("scheme-1", "provider::model", "写代码", "{\"temperature\":0.2}", now, now))
         return SeededGraph(filePath)
     }
 

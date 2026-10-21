@@ -18,6 +18,7 @@ data class StreamTextParams(
     val presencePenalty: Double? = null,
     val topK: Int? = null,
     val repetitionPenalty: Double? = null,
+    val reasoningEffort: com.promenar.nexara.data.model.params.ReasoningEffort? = null,
     val streamTimeout: Long? = null,
     val enableGeminiSearch: Boolean? = null,
     val tools: Map<String, ProtocolTool>? = null,

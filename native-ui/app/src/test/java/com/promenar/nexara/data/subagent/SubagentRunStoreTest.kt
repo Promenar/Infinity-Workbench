@@ -73,7 +73,7 @@ class SubagentRunStoreTest {
     fun `并行运行多个子代理，结束后归档并把用量记到父会话`() = runTest {
         val bothStarted = CompletableDeferred<Unit>()
         var started = 0
-        val models = SubagentModelClient { _, messages, _, _ ->
+        val models = SubagentModelClient { _, messages, _, _, _ ->
             flow {
                 // 两个子代理都开始请求后才返回，证明是并行而不是依次执行。
                 if (++started == 2) bothStarted.complete(Unit)
@@ -101,7 +101,7 @@ class SubagentRunStoreTest {
 
     @Test
     fun `agent_task 校验任务数量与必填字段，探索者档位不能被放宽`() {
-        val skill = AgentTaskSkill { launcher(SubagentModelClient { _, _, _, _ -> error("不应请求") }) }
+        val skill = AgentTaskSkill { launcher(SubagentModelClient { _, _, _, _, _ -> error("不应请求") }) }
         fun parse(json: String) = skill.parse(Json.parseToJsonElement(json).jsonObject)
 
         assertThat(parse("""{"tasks":[]}""")).isNull()
@@ -156,7 +156,7 @@ class SubagentRunStoreTest {
         val host = object : SubagentToolHost by NoTools {
             override suspend fun tools(session: Session): List<ProtocolTool> = emptyList()
         }
-        val models = SubagentModelClient { _, messages, _, _ ->
+        val models = SubagentModelClient { _, messages, _, _, _ ->
             flow {
                 if (messages.last().content == "坏任务") throw IllegalStateException("https://secret.example/key")
                 emit(StreamChunk.TextDelta("好结果"))
@@ -175,7 +175,7 @@ class SubagentRunStoreTest {
 
     @Test
     fun `取消派生时尚未结束的子代理都记为已停止`() = runTest {
-        val models = SubagentModelClient { _, _, _, _ -> flow { kotlinx.coroutines.awaitCancellation() } }
+        val models = SubagentModelClient { _, _, _, _, _ -> flow { kotlinx.coroutines.awaitCancellation() } }
         val launcher = launcher(models)
         val job = launch { launcher.launch(context(), "step", listOf(SubagentSpec("a", "p", null, SubagentToolProfile.INHERIT), SubagentSpec("b", "q", null, SubagentToolProfile.INHERIT))) }
         testScheduler.runCurrent()

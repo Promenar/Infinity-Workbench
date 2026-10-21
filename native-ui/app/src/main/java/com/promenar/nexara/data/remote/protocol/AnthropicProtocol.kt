@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import io.ktor.client.*
@@ -284,11 +285,14 @@ class AnthropicProtocol(
         ProviderEndpointOperation.INFERENCE,
     )
 
-    private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
+    private fun buildRequestBody(rawRequest: PromptRequest, stream: Boolean): String {
+        val adapted = rawRequest.adaptedTo(protocolType, rawRequest.model.ifEmpty { this@AnthropicProtocol.model })
+        val request = adapted.request
+        val maxTokens = request.maxTokens ?: anthropicDefaultMaxTokens(request.model.ifEmpty { this@AnthropicProtocol.model })
         val body = buildJsonObject {
             put("model", request.model.ifEmpty { this@AnthropicProtocol.model })
             put("stream", stream)
-            put("max_tokens", request.maxTokens ?: DEFAULT_MAX_TOKENS)
+            put("max_tokens", maxTokens)
 
             val systemMessage = request.messages.find { it.role == "system" }
             if (systemMessage != null) {
@@ -413,7 +417,8 @@ class AnthropicProtocol(
             }))
 
             val modelId = request.model.ifEmpty { this@AnthropicProtocol.model }
-            val thinking = anthropicThinkingConfig(modelId, request.reasoning, request.maxTokens ?: DEFAULT_MAX_TOKENS)
+            val reasoning = anthropicReasoningFields(modelId, adapted, maxTokens)
+            val thinking = reasoning.thinking
             // 新模型对非默认采样参数一律返回 400；旧模型开启思考时也不接受 temperature / top_k。
             if (!rejectsSamplingParams(modelId) && thinking == null) {
                 ProtocolParamAdapter.mapCommonParams(this, request)
@@ -421,6 +426,7 @@ class AnthropicProtocol(
             }
             ProtocolParamAdapter.mapPenaltyParams(this, request, protocolType)
             thinking?.let { put("thinking", it) }
+            reasoning.effort?.let { effort -> put("output_config", buildJsonObject { put("effort", effort) }) }
 
             if (request.tools != null && request.tools.isNotEmpty()) {
                 put("tools", JsonArray(request.tools.map { tool ->
@@ -711,7 +717,10 @@ class AnthropicProtocol(
     }
 
     internal companion object {
-        const val DEFAULT_MAX_TOKENS = 4096
+        /** 模型输出上限未知时的 max_tokens；思考与正文共用这一上限。 */
+        const val DEFAULT_MAX_TOKENS = 16_384
+        /** 已知输出上限时的封顶值，避免单次请求预留过大。 */
+        const val MAX_DEFAULT_MAX_TOKENS = 64_000
     }
 }
 
@@ -746,6 +755,13 @@ private val CLAUDE_ALWAYS_THINKING = Regex("""(^|[/.:])claude-(opus|sonnet|haiku
 /** 只接受自适应思考、不再接受 budget_tokens 的模型（4.6 起支持自适应，4.7 起拒绝 enabled）。 */
 private val CLAUDE_ADAPTIVE_ONLY = Regex("""(^|[/.:])claude-(opus|sonnet)-4-([7-9])(\b|[-.@])""")
 private val CLAUDE_ADAPTIVE_CAPABLE = Regex("""(^|[/.:])claude-(opus|sonnet)-4-6(\b|[-.@])""")
+
+/** Anthropic 必须带 max_tokens；未自定义时取模型输出上限，避免思考加正文被截断。 */
+internal fun anthropicDefaultMaxTokens(model: String): Int =
+    ModelCatalogRuntime.resolver.resolveExactOrNull(model)?.outputTokens
+        ?.takeIf { it > 0 }
+        ?.coerceAtMost(AnthropicProtocol.MAX_DEFAULT_MAX_TOKENS)
+        ?: AnthropicProtocol.DEFAULT_MAX_TOKENS
 
 /** Claude 4.7 起非默认 temperature / top_p / top_k 都返回 400。 */
 internal fun rejectsSamplingParams(model: String): Boolean {

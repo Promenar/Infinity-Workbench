@@ -147,7 +147,7 @@ class SubagentRunnerTest {
     @Test
     fun `父轮取消时停止模型请求并记录为已停止`() = runTest {
         val started = CompletableDeferred<Unit>()
-        val models = SubagentModelClient { _, _, _, _ -> flow { started.complete(Unit); awaitCancellation() } }
+        val models = SubagentModelClient { _, _, _, _, _ -> flow { started.complete(Unit); awaitCancellation() } }
         val published = mutableListOf<SubagentRun>()
         val job = launch { runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(), null) { run, _ -> published += run } }
         started.await()
@@ -178,7 +178,7 @@ class SubagentRunnerTest {
 
     @Test
     fun `模型请求失败或没有结论时以失败交回且不暴露异常原文`() = runTest {
-        val failing = SubagentModelClient { _, _, _, _ -> flow { throw java.io.IOException("https://secret.example/token=abc") } }
+        val failing = SubagentModelClient { _, _, _, _, _ -> flow { throw java.io.IOException("https://secret.example/token=abc") } }
         val failed = runner(failing, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
         assertThat(failed.status).isEqualTo(SubagentStatus.FAILED)
         assertThat(failed.error).doesNotContain("secret")
@@ -308,7 +308,13 @@ class SubagentRunnerTest {
     private class ScriptedModels(vararg rounds: List<StreamChunk>) : SubagentModelClient {
         private val pending = ArrayDeque(rounds.toList())
         val requests = mutableListOf<Request>()
-        override suspend fun stream(modelId: String, messages: List<ProtocolMessage>, tools: List<ProtocolTool>, maxOutputTokens: Int): Flow<StreamChunk> {
+        override suspend fun stream(
+            modelId: String,
+            messages: List<ProtocolMessage>,
+            tools: List<ProtocolTool>,
+            maxOutputTokens: Int,
+            reasoningEffort: com.promenar.nexara.data.model.params.ReasoningEffort?,
+        ): Flow<StreamChunk> {
             requests += Request(messages.toList(), tools)
             val round = pending.removeFirstOrNull() ?: listOf(StreamChunk.TextDelta("（脚本结束）"))
             val reason = if (round.any { it is StreamChunk.ToolCallDelta }) CompletionReason.TOOL_CALLS else CompletionReason.END_TURN

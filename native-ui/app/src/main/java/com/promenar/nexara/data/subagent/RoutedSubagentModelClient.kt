@@ -2,6 +2,7 @@ package com.promenar.nexara.data.subagent
 
 import com.promenar.nexara.data.generation.ChatProviderRouteGate
 import com.promenar.nexara.data.generation.ChatRoutePreparation
+import com.promenar.nexara.data.model.params.ReasoningEffort
 import com.promenar.nexara.data.remote.StreamConfig
 import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.protocol.PromptRequest
@@ -26,6 +27,7 @@ internal class RoutedSubagentModelClient(
         messages: List<ProtocolMessage>,
         tools: List<ProtocolTool>,
         maxOutputTokens: Int,
+        reasoningEffort: ReasoningEffort?,
     ): Flow<StreamChunk> {
         val prepared = routeGate.prepareWithRoute(modelId) { it }
         if (prepared !is ChatRoutePreparation.Success) throw SubagentModelUnavailable("会话模型当前不可用")
@@ -40,6 +42,7 @@ internal class RoutedSubagentModelClient(
                 messages = messages,
                 model = remoteModelId,
                 maxTokens = maxOutputTokens,
+                reasoningEffort = reasoningEffort,
                 tools = usable.takeIf { it.isNotEmpty() },
                 toolChoice = choice,
                 stream = true,
@@ -54,6 +57,7 @@ internal class RoutedSubagentModelClient(
                 messages = messages,
                 model = remoteModelId,
                 maxOutputTokens = maxOutputTokens,
+                reasoningEffort = reasoningEffort,
                 tools = usable.associateBy { it.function.name },
                 toolChoice = choice,
                 enableWebSearch = false,

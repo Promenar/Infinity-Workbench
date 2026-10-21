@@ -30,18 +30,6 @@ object ProtocolParamAdapter {
         request.topK?.let { body.put("top_k", it) }
     }
 
-    fun mapCommonParamsVertexAI(body: JsonObjectBuilder, request: PromptRequest) {
-        body.put("temperature", request.temperature ?: 0.7)
-        request.topP?.let { if (it < 1.0) body.put("top_p", it) }
-        request.maxTokens?.let { body.put("max_output_tokens", it) }
-    }
-
-    fun mapPenaltyParamsVertexAI(body: JsonObjectBuilder, request: PromptRequest) {
-        request.frequencyPenalty?.let { body.put("frequency_penalty", it) }
-        request.presencePenalty?.let { body.put("presence_penalty", it) }
-        request.repetitionPenalty?.let { body.put("repetition_penalty", it) }
-    }
-
     fun buildGenerateConfig(request: PromptRequest): GenerateConfig {
         return clampGenerateConfig(GenerateConfig(
             maxTokens = request.maxTokens ?: 512,

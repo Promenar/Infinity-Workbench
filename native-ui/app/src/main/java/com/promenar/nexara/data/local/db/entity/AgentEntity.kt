@@ -30,6 +30,17 @@ data class AgentEntity(
     val temperature: Double? = null,
     val top_p: Double? = null,
     val max_tokens: Int? = null,
+    @ColumnInfo(name = "top_k")
+    val topK: Int? = null,
+    @ColumnInfo(name = "frequency_penalty")
+    val frequencyPenalty: Double? = null,
+    @ColumnInfo(name = "presence_penalty")
+    val presencePenalty: Double? = null,
+    @ColumnInfo(name = "repetition_penalty")
+    val repetitionPenalty: Double? = null,
+    /** 助手会话默认的推理强度；为空时按模型默认。 */
+    @ColumnInfo(name = "reasoning_effort")
+    val reasoningEffort: String? = null,
     @ColumnInfo(name = "rag_config")
     val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig? = null,
     @ColumnInfo(name = "retrieval_config")

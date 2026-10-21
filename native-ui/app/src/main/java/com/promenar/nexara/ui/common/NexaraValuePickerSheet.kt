@@ -35,10 +35,20 @@ fun NexaraValuePickerSheet(
     onValueChange: (Double) -> Unit,
     onDismiss: () -> Unit,
     description: String? = null,
+    restoreDefault: PickerRestoreAction? = null,
 ) {
     NexaraBottomSheet(show = show, onDismiss = onDismiss) {
-        NexaraValuePickerContent(title, value, spec, onValueChange, onDismiss, description = description)
+        NexaraValuePickerContent(title, value, spec, onValueChange, onDismiss, description = description, restoreDefault = restoreDefault)
     }
+}
+
+/**
+ * 替换选择器自带的“恢复默认”：不写入 [NumericSettingSpec.defaultValue]，交给调用方清空设置；
+ * 同时不再给预设标注“默认”，避免与模型默认混淆。
+ * [activeLabel] 非空表示当前就处于该状态（尚未设置具体值）：预设不打勾，连续值显示该文字直到拖动或点选。
+ */
+data class PickerRestoreAction(val label: String, val activeLabel: String? = null, val onRestore: () -> Unit) {
+    val active: Boolean get() = activeLabel != null
 }
 
 @Composable
@@ -52,7 +62,10 @@ fun NexaraValuePickerContent(
     description: String? = null,
     initialCustomExpanded: Boolean = false,
     initialCustomInput: String? = null,
+    restoreDefault: PickerRestoreAction? = null,
 ) {
+    val markDefault = restoreDefault == null
+    val restoreActive = restoreDefault?.active == true
     val haptics = LocalNexaraHaptics.current
     var customExpanded by rememberSaveable(title) { mutableStateOf(initialCustomExpanded) }
     val editableValue = value.takeIf { it in spec.min..spec.max }
@@ -60,6 +73,8 @@ fun NexaraValuePickerContent(
     var customInput by rememberSaveable(title) { mutableStateOf(initialCustomInput ?: spec.format(editableValue).removeSuffix(spec.unit).trim()) }
     var attempted by rememberSaveable(title) { mutableStateOf(initialCustomInput != null) }
     var draft by rememberSaveable(value) { mutableStateOf(value) }
+    var touched by rememberSaveable(value) { mutableStateOf(false) }
+    val selectedValue = if (restoreActive && !touched) null else draft
     val invalid = customExpanded && attempted && spec.parseCustom(customInput).isFailure
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Text(title, style = MaterialTheme.typography.titleMedium)
@@ -72,21 +87,30 @@ fun NexaraValuePickerContent(
             Column(Modifier.selectableGroup()) {
                 spec.effectivePresets.forEach { preset ->
                     val label = numericValueLabel(spec, preset.value)
+                    val selected = !restoreActive && spec.selectedPreset(value)?.value == preset.value
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        .selectable(selected = spec.selectedPreset(value)?.value == preset.value, role = Role.RadioButton,
+                        .selectable(selected = selected, role = Role.RadioButton,
                             onClick = {
-                                haptics.select(spec.selectedPreset(value)?.value == preset.value)
+                                haptics.select(selected)
                                 onValueChange(preset.value); onDismiss()
                             })
                         .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
+                        Text(if (markDefault && spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
                             style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (spec.selectedPreset(value)?.value == preset.value) {
+                        if (selected) {
                             Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
+            }
+            if (restoreDefault != null) {
+                NexaraSettingsItem(title = restoreDefault.label, horizontalPadding = 0.dp,
+                    onClick = { if (!restoreActive) restoreDefault.onRestore(); onDismiss() },
+                    trailingContent = if (restoreActive) ({
+                        Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
+                    }) else null,
+                    modifier = Modifier.testTag("numeric_restore_default"))
             }
             NexaraSettingsItem(title = stringResource(R.string.numeric_custom), horizontalPadding = 0.dp,
                 onClick = { customExpanded = true }, modifier = Modifier.testTag("numeric_custom"))
@@ -107,10 +131,10 @@ fun NexaraValuePickerContent(
                 }, modifier = Modifier.align(Alignment.End).testTag("numeric_done")) { Text(stringResource(R.string.numeric_done)) }
             }
         } else {
-            Text(spec.format(draft), style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"),
+            Text(selectedValue?.let(spec::format) ?: restoreDefault?.activeLabel.orEmpty(), style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"),
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp))
             val intervals = if (spec.step > 0) ((spec.max - spec.min) / spec.step).roundToInt() else 0
-            NexaraSlider(value = draft.toFloat(), onValueChange = { draft = spec.clamp(it.toDouble()) },
+            NexaraSlider(value = draft.toFloat(), onValueChange = { draft = spec.clamp(it.toDouble()); touched = true },
                 valueRange = spec.min.toFloat()..spec.max.toFloat(), steps = (intervals - 1).coerceAtLeast(0),
                 onValueChangeFinished = { onValueChange(draft) }, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -119,18 +143,25 @@ fun NexaraValuePickerContent(
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 spec.effectivePresets.forEach { preset ->
-                    FilterChip(selected = spec.selectedPreset(draft)?.value == preset.value,
-                        onClick = { draft = preset.value; onValueChange(draft) },
+                    FilterChip(selected = selectedValue != null && spec.selectedPreset(selectedValue)?.value == preset.value,
+                        onClick = { draft = preset.value; touched = true; onValueChange(draft) },
                         label = {
                             val label = numericValueLabel(spec, preset.value)
-                            Text(if (spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
+                            Text(if (markDefault && spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
                                 style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                         },
                         modifier = Modifier.height(32.dp))
                 }
             }
-            TextButton(onClick = { draft = spec.defaultValue; onValueChange(draft) }, modifier = Modifier.align(Alignment.End)) {
-                Text(stringResource(R.string.numeric_restore_default))
+            if (restoreDefault != null) {
+                TextButton(onClick = { restoreDefault.onRestore(); onDismiss() }, enabled = !restoreActive,
+                    modifier = Modifier.align(Alignment.End).testTag("numeric_restore_default")) {
+                    Text(restoreDefault.label)
+                }
+            } else {
+                TextButton(onClick = { draft = spec.defaultValue; onValueChange(draft) }, modifier = Modifier.align(Alignment.End)) {
+                    Text(stringResource(R.string.numeric_restore_default))
+                }
             }
         }
     }

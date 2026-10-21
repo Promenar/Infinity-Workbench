@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import androidx.room.withTransaction
 import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.resetSessionSamplingJson
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
@@ -38,7 +39,7 @@ internal const val ROOM_SCHEMA_V4_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75
 internal const val ROOM_SCHEMA_V19_IDENTITY_HASH = "694f9ee43b8b6fbca993a11d4a789f64"
 internal const val ROOM_SCHEMA_V20_IDENTITY_HASH = "4cbc9d57e418ec09a3469f1fcdc6bac6"
 internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
-internal const val ROOM_SCHEMA_V23_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V23_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
 
 class RoomBackupDataSource(
@@ -503,10 +504,11 @@ class RoomBackupDataSource(
         }
         return when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> decoded
-            1 -> upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded)))
-            2 -> upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded)))
-            3 -> upgradeV4Payload(upgradeV3Payload(decoded))
-            4 -> upgradeV4Payload(decoded)
+            1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
+            2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
+            3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
+            4 -> upgradeV5Payload(upgradeV4Payload(decoded))
+            5 -> upgradeV5Payload(decoded)
             else -> decoded
         }
     }
@@ -598,6 +600,34 @@ class RoomBackupDataSource(
                 },
                 "sessions" to sessions.map { row ->
                     JsonObject(row + ("workspace_id" to (row["workspace_id"] ?: JsonNull)))
+                },
+            ),
+        )
+    }
+
+    /**
+     * v5 → v6：助手新增采样参数与推理强度列，新增参数方案表；
+     * 与数据库迁移一致，旧备份里的助手与会话采样参数恢复为模型默认。
+     */
+    private fun upgradeV5Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        if (PARAMETER_SCHEME_TABLE in payload.tables) throw BackupValidationException("v5 数据库 payload 不应包含参数方案表")
+        val agents = payload.tables["agents"]
+            ?: throw BackupValidationException("数据库 payload 缺少表: agents")
+        val sessions = payload.tables["sessions"]
+            ?: throw BackupValidationException("数据库 payload 缺少表: sessions")
+        val clearedAgentColumns = listOf(
+            "temperature", "top_p", "max_tokens",
+            "top_k", "frequency_penalty", "presence_penalty", "repetition_penalty", "reasoning_effort",
+        ).associateWith { JsonNull }
+        return payload.copy(
+            schemaVersion = DATABASE_SCHEMA_VERSION,
+            tables = payload.tables + mapOf(
+                PARAMETER_SCHEME_TABLE to emptyList(),
+                "agents" to agents.map { row -> JsonObject(row + clearedAgentColumns) },
+                "sessions" to sessions.map { row ->
+                    val params = (row["inference_params"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    val reset = params?.let(::resetSessionSamplingJson) ?: return@map row
+                    JsonObject(row + ("inference_params" to JsonPrimitive(reset)))
                 },
             ),
         )
@@ -764,8 +794,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 23 || identityHash != ROOM_SCHEMA_V23_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v23")
+        if (sqlite.version != 24 || identityHash != ROOM_SCHEMA_V24_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v24")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1552,7 +1582,8 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 5
+        const val DATABASE_SCHEMA_VERSION = 6
+        const val PARAMETER_SCHEME_TABLE = "parameter_schemes"
         const val FILE_TABLE = "workspace_files"
         const val WORKSPACE_TABLE = "workspaces"
         const val OWNER_MARKER = ".restore-owner"
@@ -1582,6 +1613,7 @@ class RoomBackupDataSource(
             "task_nodes",
             "custom_skills",
             "mcp_servers",
+            PARAMETER_SCHEME_TABLE,
             FILE_TABLE,
             "workspace_seq",
         )

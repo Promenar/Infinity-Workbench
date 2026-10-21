@@ -276,6 +276,11 @@ fun ChatRoute(
     val providerDisplayNames = remember(providers) {
         providers.filter { it.name.isNotBlank() }.associate { it.id to it.name }
     }
+    val agentReasoningEffort by chatViewModel.agentReasoningEffort.collectAsStateWithLifecycle()
+    val sessionReasoningEffort = uiState.session?.inferenceParams?.reasoningEffort
+    val reasoningControl = remember(providers, providerModels, uiState.session?.modelId, sessionReasoningEffort, agentReasoningEffort) {
+        chatReasoningControl(uiState.session?.modelId, providers, providerModels, sessionReasoningEffort, agentReasoningEffort)
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
@@ -560,6 +565,7 @@ fun ChatRoute(
                 draftDocuments = draftDocuments,
                 isImportingDocument = isImportingDocument,
                 modelDisplayNames = modelDisplayNames,
+                reasoningControl = reasoningControl,
                 providerDisplayNames = providerDisplayNames,
                 taskPanel = taskPanel,
                 generationProgress = generationProgress?.progress,
@@ -616,6 +622,7 @@ fun ChatRoute(
                 onDecline = chatViewModel::rejectRequest,
                 onRemovePostProcessTask = chatViewModel::removePostProcessTask,
                 onManualSummary = chatViewModel::compactNow,
+                onReasoningEffortChange = chatViewModel::updateReasoningEffort,
                 onDismissCompressionResult = chatViewModel::dismissCompressionResult,
                 onTextChange = chatViewModel::updateInputText,
                 onSend = { text, images ->

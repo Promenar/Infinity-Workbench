@@ -1,6 +1,12 @@
 package com.promenar.nexara.ui.chat
 
-import com.promenar.nexara.domain.usecase.withDefaults
+import com.promenar.nexara.data.model.params.sampling
+import com.promenar.nexara.ui.common.params.ParameterSchemeRow
+import com.promenar.nexara.ui.common.params.SAMPLING_PARAM_ORDER
+import com.promenar.nexara.ui.common.params.SamplingEditorActions
+import com.promenar.nexara.ui.common.params.SamplingEditorState
+import com.promenar.nexara.ui.common.params.SamplingParamRows
+import com.promenar.nexara.ui.common.params.hiddenParamsFooter
 import com.promenar.nexara.domain.usecase.resolveKeepRecentTurns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -100,48 +106,6 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-private data class ThinkingLevelOption(
-    val id: String,
-    val icon: ImageVector
-)
-
-private val thinkingLevels = listOf(
-    ThinkingLevelOption("minimal", Icons.Rounded.Bolt),
-    ThinkingLevelOption("low", Icons.Rounded.Psychology),
-    ThinkingLevelOption("medium", Icons.Rounded.AutoFixHigh),
-    ThinkingLevelOption("high", Icons.Rounded.School)
-)
-
-@Composable
-private fun getThinkingLevelColor(id: String): Color {
-    return when (id) {
-        "minimal" -> MaterialTheme.colorScheme.secondary
-        "low" -> MaterialTheme.colorScheme.primary
-        "medium" -> MaterialTheme.colorScheme.tertiary
-        "high" -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.primary
-    }
-}
-
-@Composable
-private fun thinkingLevelTitle(id: String): String = when (id) {
-    "minimal" -> stringResource(R.string.sheet_thinking_minimal)
-    "low" -> stringResource(R.string.sheet_thinking_low)
-    "medium" -> stringResource(R.string.sheet_thinking_medium)
-    "high" -> stringResource(R.string.sheet_thinking_high)
-    else -> id
-}
-
-@Composable
-private fun thinkingLevelDesc(id: String): String = when (id) {
-    "minimal" -> stringResource(R.string.sheet_thinking_minimal_desc)
-    "low" -> stringResource(R.string.sheet_thinking_low_desc)
-    "medium" -> stringResource(R.string.sheet_thinking_medium_desc)
-    "high" -> stringResource(R.string.sheet_thinking_high_desc)
-    else -> ""
-}
-
 
 internal fun filterLocalInferenceModels(
     models: List<ModelInfo>,
@@ -329,132 +293,86 @@ private fun ParamsPanel(
     val agentDefaults by androidx.compose.runtime.produceState<com.promenar.nexara.data.model.InferenceParams?>(
         initialValue = null, session?.agentId,
     ) { value = chatViewModel.agentInferenceDefaults() }
-    SessionParamsContent(params, agentDefaults, chatViewModel::updateInferenceParams)
+    val providerManager = ProviderManager.getInstance()
+    val providers by providerManager.providers.collectAsStateWithLifecycle()
+    val providerModels by providerManager.providerModels.collectAsStateWithLifecycle()
+    val modelKey = session?.modelId?.takeIf(String::isNotBlank)
+    val schemesFlow = remember(modelKey) {
+        modelKey?.let(chatViewModel::parameterSchemes) ?: kotlinx.coroutines.flow.flowOf(emptyList())
+    }
+    val schemes by schemesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val profile = remember(modelKey, providers, providerModels) {
+        sessionModelParameterProfile(modelKey, providers, providerModels)
+    }
+    val storedEffort = com.promenar.nexara.data.model.params.ReasoningEffort.fromWireName(
+        params.reasoningEffort ?: agentDefaults?.reasoningEffort,
+    )
+    val editor = sessionSamplingEditorState(params, agentDefaults, profile?.unsupportedParams(storedEffort).orEmpty(), schemes)
+    val actions = remember(chatViewModel, modelKey, editor) {
+        SamplingEditorActions(
+            onApplyModelDefault = chatViewModel::applyModelDefaultSampling,
+            onApplyScheme = chatViewModel::applyParameterScheme,
+            onParamChange = chatViewModel::updateSamplingParam,
+            onSaveScheme = { name -> modelKey?.let { chatViewModel.saveParameterScheme(it, name, editor.savableValues) } },
+            onOverwriteScheme = { scheme -> chatViewModel.overwriteParameterScheme(scheme, editor.savableValues) },
+            onRenameScheme = chatViewModel::renameParameterScheme,
+            onDeleteScheme = chatViewModel::deleteParameterScheme,
+        )
+    }
+    SessionParamsContent(
+        params = params,
+        editor = editor,
+        modelName = modelKey?.let { resolveModelDisplayName(it, providerModels) },
+        actions = actions,
+        onParamsChange = chatViewModel::updateInferenceParams,
+    )
 }
+
+/** 会话参数页的编辑器数据：模型不使用的参数移到底部说明，未识别的模型显示全部参数。 */
+internal fun sessionSamplingEditorState(
+    params: com.promenar.nexara.data.model.InferenceParams,
+    agentDefaults: com.promenar.nexara.data.model.InferenceParams?,
+    unsupported: Set<com.promenar.nexara.data.model.params.SamplingParam>,
+    schemes: List<com.promenar.nexara.data.model.params.ParameterScheme>,
+) = SamplingEditorState(
+    own = params.sampling,
+    inherited = agentDefaults?.sampling ?: com.promenar.nexara.data.model.params.SamplingValues(),
+    followsScheme = params.parameterSchemeId != null,
+    baseSchemeId = params.parameterSchemeId,
+    visible = SAMPLING_PARAM_ORDER.filterNot { it in unsupported },
+    hidden = SAMPLING_PARAM_ORDER.filter { it in unsupported },
+    schemes = schemes,
+)
 
 @Composable
 internal fun SessionParamsContent(
     params: com.promenar.nexara.data.model.InferenceParams,
-    agentDefaults: com.promenar.nexara.data.model.InferenceParams? = null,
+    editor: SamplingEditorState = sessionSamplingEditorState(params, null, emptySet(), emptyList()),
+    modelName: String? = null,
+    actions: SamplingEditorActions = SamplingEditorActions(),
     onParamsChange: (com.promenar.nexara.data.model.InferenceParams) -> Unit = {},
 ) {
-    val shown = params.withDefaults(agentDefaults)
-    val currentTemperature = (shown.temperature ?: 0.7).toFloat()
-    val selectedLevel = when {
-        currentTemperature <= 0.3f -> "minimal"
-        currentTemperature <= 0.6f -> "low"
-        currentTemperature <= 0.9f -> "medium"
-        else -> "high"
-    }
-    val onLevelClick: (String) -> Unit = { levelId ->
-        val (temperature, topP, topK) = when (levelId) {
-            "minimal" -> Triple(0.1, 0.5, 10)
-            "low" -> Triple(0.4, 0.8, 30)
-            "medium" -> Triple(0.7, 0.9, 50)
-            else -> Triple(1.0, 1.0, 100)
-        }
-        onParamsChange(params.copy(temperature = temperature, topP = topP, topK = topK))
-    }
-    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = NexaraSpacing.ScreenHorizontal),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 24.dp)) {
         item {
-            NexaraSettingsSection(title = stringResource(R.string.session_thinking_style)) {
-                Column(Modifier.padding(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (row in listOf(thinkingLevels.take(2), thinkingLevels.drop(2))) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        row.forEach { level ->
-                            val isSelected = selectedLevel == level.id
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .then(
-                                        if (isSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                                        else Modifier
-                                    )
-                                    .clickable {
-                                        haptics.select(isSelected)
-                                        onLevelClick(level.id)
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .then(if (isSelected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) else Modifier)
-                                        .padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    val levelColor = getThinkingLevelColor(level.id)
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(levelColor.copy(alpha = 0.15f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(level.icon, null, tint = levelColor, modifier = Modifier.size(20.dp))
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(thinkingLevelTitle(level.id), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(thinkingLevelDesc(level.id), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-                }
+            ParameterSchemeRow(editor, actions, modelName, Modifier.padding(bottom = 16.dp))
+        }
+        item {
+            NexaraSettingsSection(
+                title = stringResource(R.string.params_section_sampling),
+                footer = hiddenParamsFooter(editor.hidden),
+            ) {
+                SamplingParamRows(editor, actions, ownLabel = stringResource(R.string.params_source_session))
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.sheet_settings_section_inference)) {
+            NexaraSettingsSection(title = stringResource(R.string.params_section_request), modifier = Modifier.padding(top = 16.dp)) {
                 NexaraNumericSetting(
                     title = stringResource(R.string.sheet_settings_stream_timeout), value = params.streamTimeout ?: 120,
                     spec = NumericSettingSpec(30.0, 300.0, step = 10.0, defaultValue = 120.0,
                         unit = stringResource(R.string.session_numeric_seconds),
                         presets = listOf(60.0, 120.0, 180.0, 300.0).map { NumericSettingSpec.Preset(it) }),
                     onValueChange = { onParamsChange(params.copy(streamTimeout = it.toInt())) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_top_p), value = shown.topP ?: 1.0,
-                    spec = sessionContinuousSpec(0.0, 1.0, 1.0, listOf(0.5, 0.8, 0.95, 1.0)),
-                    onValueChange = { onParamsChange(params.copy(topP = it)) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_max_tokens), value = shown.maxTokens ?: 0,
-                    spec = NumericSettingSpec(0.0, 8192.0, defaultValue = 0.0, unlimitedValue = 0.0,
-                        presets = listOf(0.0, 1024.0, 2048.0, 4096.0, 8192.0).map { NumericSettingSpec.Preset(it) }),
-                    onValueChange = { onParamsChange(params.copy(maxTokens = it.toInt().takeIf { value -> value != 0 })) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_top_k), value = params.topK ?: 0,
-                    spec = NumericSettingSpec(0.0, 100.0, defaultValue = 0.0, unlimitedValue = 0.0,
-                        presets = listOf(0.0, 20.0, 40.0, 100.0).map { NumericSettingSpec.Preset(it) }),
-                    onValueChange = { onParamsChange(params.copy(topK = it.toInt().takeIf { value -> value != 0 })) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_repetition_penalty), value = params.repetitionPenalty ?: 1.0,
-                    spec = sessionContinuousSpec(0.5, 2.0, 1.0, listOf(0.5, 1.0, 1.5, 2.0)),
-                    onValueChange = { onParamsChange(params.copy(repetitionPenalty = it)) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_presence_penalty), value = params.presencePenalty ?: 0.0,
-                    spec = sessionContinuousSpec(-2.0, 2.0, 0.0, listOf(-2.0, -1.0, 0.0, 1.0, 2.0)),
-                    onValueChange = { onParamsChange(params.copy(presencePenalty = it)) },
-                )
-                NexaraNumericSetting(
-                    title = stringResource(R.string.sheet_settings_frequency_penalty), value = params.frequencyPenalty ?: 0.0,
-                    spec = sessionContinuousSpec(-2.0, 2.0, 0.0, listOf(-2.0, -1.0, 0.0, 1.0, 2.0)),
-                    onValueChange = { onParamsChange(params.copy(frequencyPenalty = it)) },
                 )
             }
         }

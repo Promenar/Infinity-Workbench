@@ -88,8 +88,9 @@ class AgentEditViewModelTest {
         assertThat(vm.selectedColor.value).isEqualTo("#FF0000")
         assertThat(vm.avatarPath.value).isEqualTo("/path.png")
         assertThat(vm.isPinned.value).isTrue()
-        assertThat(vm.temperature.value).isEqualTo(0.5f)
-        assertThat(vm.topP.value).isEqualTo(0.8f)
+        assertThat(vm.sampling.value.temperature).isEqualTo(0.5)
+        assertThat(vm.sampling.value.topP).isEqualTo(0.8)
+        assertThat(vm.sampling.value.maxTokens).isEqualTo(2048)
     }
 
     @Test
@@ -554,5 +555,36 @@ class AgentEditViewModelTest {
             assertThat(awaitItem()).isNull()
             coVerify(exactly = 1) { repo.update(match { it.defaultWorkspaceId == null && it.userRules == "规则" }) }
         }
+    }
+
+    @Test
+    fun `助手选用方案、改项与保存方案都写入默认参数`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent(id = "a1", name = "Agent", modelId = "p::m", temperature = 0.5))
+        val dao = object : com.promenar.nexara.data.local.db.dao.ParameterSchemeDao {
+            val rows = kotlinx.coroutines.flow.MutableStateFlow<List<com.promenar.nexara.data.local.db.entity.ParameterSchemeEntity>>(emptyList())
+            override fun observeForModel(modelKey: String) = rows
+            override suspend fun getById(id: String) = rows.value.firstOrNull { it.id == id }
+            override suspend fun upsert(scheme: com.promenar.nexara.data.local.db.entity.ParameterSchemeEntity) {
+                rows.value = rows.value.filterNot { it.id == scheme.id } + scheme
+            }
+            override suspend fun delete(id: String) { rows.value = rows.value.filterNot { it.id == id } }
+        }
+        val schemes = com.promenar.nexara.data.repository.ParameterSchemeRepository(dao, newId = { "s1" })
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), parameterSchemeRepository = schemes)
+        vm.loadAgent("a1")
+
+        vm.applyModelDefaultSampling()
+        assertThat(vm.sampling.value.isModelDefault).isTrue()
+        assertThat(vm.baseSchemeId.value).isEqualTo(com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID)
+
+        vm.setSamplingParam(com.promenar.nexara.data.model.params.SamplingParam.TOP_K, 20.0)
+        vm.saveParameterScheme("写代码", vm.sampling.value)
+        runCurrent()
+        assertThat(vm.baseSchemeId.value).isEqualTo("s1")
+        assertThat(dao.rows.value.single().modelKey).isEqualTo("p::m")
+
+        advanceTimeBy(2_000)
+        runCurrent()
+        coVerify { repo.update(match { it.topK == 20 && it.temperature == null }) }
     }
 }

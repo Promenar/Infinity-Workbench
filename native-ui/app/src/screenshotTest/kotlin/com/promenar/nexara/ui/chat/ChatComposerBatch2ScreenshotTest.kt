@@ -16,6 +16,9 @@ import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.data.model.*
+import com.promenar.nexara.data.model.params.ReasoningEffort
+import com.promenar.nexara.data.model.params.resolveModelParameterProfile
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.GenerationRetry
 import com.promenar.nexara.ui.theme.*
@@ -32,6 +35,33 @@ fun chatTopBarLongBatch2Preview() = ChatBatch2Frame { Batch2TopBar("关于2026�
 
 @Composable
 private fun Batch2TopBar(title: String) = ChatTopBar(title, {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {})
+
+private fun previewReasoning(model: String, stored: ReasoningEffort? = null): ChatReasoningControl =
+    ChatReasoningControl(requireNotNull(resolveModelParameterProfile(ProtocolType.Anthropic_Messages, model).reasoning), stored)
+
+@PreviewTest
+@Preview(name = "输入推理强度模型默认 深中411", widthDp = 411, heightDp = 156, locale = "zh-rCN")
+@Composable
+fun chatComposerReasoningDefaultBatch2Preview() = ComposerFrame(modelName = "Claude Opus 5.5", reasoning = previewReasoning("claude-opus-5-5"))
+
+@PreviewTest
+@Preview(name = "输入推理强度已选 深中411", widthDp = 411, heightDp = 156, locale = "zh-rCN")
+@Preview(name = "输入推理强度已选长模型名 深英360", widthDp = 360, heightDp = 170, locale = "en", fontScale = 1.3f)
+@Preview(name = "输入推理强度已选 深中360", widthDp = 360, heightDp = 156, locale = "zh-rCN")
+@Composable
+fun chatComposerReasoningSelectedBatch2Preview() = ComposerFrame(
+    "请审阅这段代码。", modelName = "Claude Opus 5.5 (Thinking) Long Name",
+    reasoning = previewReasoning("claude-opus-5-5", ReasoningEffort.XHIGH),
+)
+
+@PreviewTest
+@Preview(name = "推理强度菜单 深中411", widthDp = 240, heightDp = 420, locale = "zh-rCN")
+@Composable
+fun chatReasoningMenuBatch2Preview() = ChatBatch2Frame {
+    Column(Modifier.padding(vertical = 8.dp)) {
+        ReasoningMenuContent(previewReasoning("claude-opus-5-20260115", ReasoningEffort.HIGH)) {}
+    }
+}
 
 @PreviewTest
 @Preview(name = "输入空态 深中411", widthDp = 411, heightDp = 156, locale = "zh-rCN")
@@ -79,7 +109,10 @@ fun chatComposerRetryBatch2Preview() = ComposerFrame(
 fun chatComposerLargeFontBatch2Preview() = ComposerFrame("请比较这两份报告。", modelName = "超长模型名称 Gemini 2.5 Flash Preview")
 
 @Composable
-private fun ComposerFrame(text: String = "", generating: Boolean = false, attachments: Boolean = false, task: Boolean = false, modelName: String = "Gemini 2.5 Flash", retry: GenerationRetry? = null) {
+private fun ComposerFrame(
+    text: String = "", generating: Boolean = false, attachments: Boolean = false, task: Boolean = false,
+    modelName: String = "Gemini 2.5 Flash", retry: GenerationRetry? = null, reasoning: ChatReasoningControl? = null,
+) {
     ChatBatch2Frame {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (retry != null) ChatComposerStatusBar(taskPanel = null, postProcessTasks = emptyList(), retry = retry)
@@ -94,6 +127,7 @@ private fun ComposerFrame(text: String = "", generating: Boolean = false, attach
                 modelName = modelName, modelId = "google::gemini-2.5-flash",
                 tokenState = ChatViewModel.TokenIndicatorState(used = 44800, max = 128000),
                 hasImages = attachments, hasDocuments = attachments,
+                reasoningControl = reasoning,
                 attachmentContent = {
                     if (attachments) CompositionLocalProvider(
                         LocalAsyncImagePreviewHandler provides AsyncImagePreviewHandler { ColorImage(0xFF426A85.toInt()) },

@@ -86,6 +86,7 @@ class UnifiedLlmClient(
             presencePenalty = finalParams.presencePenalty,
             topK = finalParams.topK,
             repetitionPenalty = finalParams.repetitionPenalty,
+            reasoningEffort = finalParams.reasoningEffort,
             tools = allTools.ifEmpty { null },
             toolChoice = finalParams.toolChoice,
             stream = true,

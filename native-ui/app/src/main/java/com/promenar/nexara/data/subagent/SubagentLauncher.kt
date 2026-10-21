@@ -17,6 +17,8 @@ class SubagentLauncher(
     private val store: SubagentRunStore,
     private val session: suspend (String) -> Session?,
     private val modelFor: suspend (Session) -> String?,
+    /** 父会话生效的推理强度，子代理沿用。 */
+    private val reasoningEffortFor: suspend (Session) -> String? = { it.inferenceParams?.reasoningEffort },
     /** 父会话的任务 token 上限，0 表示不限。 */
     private val taskTokenLimit: () -> Long = { 0L },
     private val clock: () -> Long = System::currentTimeMillis,
@@ -25,6 +27,7 @@ class SubagentLauncher(
         require(specs.size in 1..SubagentLimits.MAX_PARALLEL) { "一次最多派生 ${SubagentLimits.MAX_PARALLEL} 个子代理" }
         val parent = session(context.sessionId) ?: throw SubagentModelUnavailable("会话不存在")
         val modelId = modelFor(parent)?.takeIf(String::isNotBlank) ?: throw SubagentModelUnavailable("会话没有可用模型")
+        val reasoningEffort = reasoningEffortFor(parent)
         val startedAt = clock()
         val maxTokens = SubagentLimits.tokenBudget(taskTokenLimit(), specs.size)
         val runs = specs.mapIndexed { index, spec ->
@@ -35,6 +38,7 @@ class SubagentLauncher(
                 prompt = spec.prompt,
                 toolProfile = spec.toolProfile,
                 modelId = modelId,
+                reasoningEffort = reasoningEffort,
                 maxSteps = SubagentLimits.DEFAULT_MAX_STEPS,
                 maxTokens = maxTokens,
                 startedAt = startedAt,

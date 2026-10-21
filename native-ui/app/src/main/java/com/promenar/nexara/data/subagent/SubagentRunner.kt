@@ -4,6 +4,7 @@ import com.promenar.nexara.data.exec.ToolLiveOutputStore
 import com.promenar.nexara.data.generation.ApproximateTokenEstimator
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ToolCall
+import com.promenar.nexara.data.model.params.ReasoningEffort
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
@@ -28,7 +29,13 @@ import kotlinx.serialization.json.JsonObject
 
 /** 子代理请求模型的通道；路由失败时抛出带原因的异常。 */
 fun interface SubagentModelClient {
-    suspend fun stream(modelId: String, messages: List<ProtocolMessage>, tools: List<ProtocolTool>, maxOutputTokens: Int): Flow<StreamChunk>
+    suspend fun stream(
+        modelId: String,
+        messages: List<ProtocolMessage>,
+        tools: List<ProtocolTool>,
+        maxOutputTokens: Int,
+        reasoningEffort: ReasoningEffort?,
+    ): Flow<StreamChunk>
 }
 
 /** 子代理模型不可用的原因，可直接展示并交回主 Agent。 */
@@ -94,7 +101,7 @@ class SubagentRunner(
                 val finalRound = round > run.maxSteps || tokens >= run.maxTokens
                 if (finalRound) messages += ProtocolMessage("user", FINAL_ANSWER_PROMPT)
                 update(run.copy(step = round.coerceAtMost(run.maxSteps), currentTool = null, liveOutputKey = null), persist = false)
-                val response = streamRound(run.modelId, messages, if (finalRound) emptyList() else tools)
+                val response = streamRound(run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), messages, if (finalRound) emptyList() else tools)
                 tokens += response.input + response.output
                 input += response.input
                 output += response.output
@@ -266,7 +273,12 @@ class SubagentRunner(
         val failure: String?,
     )
 
-    private suspend fun streamRound(modelId: String, messages: List<ProtocolMessage>, tools: List<ProtocolTool>): RoundResponse {
+    private suspend fun streamRound(
+        modelId: String,
+        reasoningEffort: ReasoningEffort?,
+        messages: List<ProtocolMessage>,
+        tools: List<ProtocolTool>,
+    ): RoundResponse {
         val content = StringBuilder()
         val reasoning = StringBuilder()
         val calls = LinkedHashMap<String, Pair<String, StringBuilder>>()
@@ -277,7 +289,7 @@ class SubagentRunner(
         var completed = false
         var failure: String? = null
         try {
-            models.stream(modelId, messages, tools, SubagentLimits.MAX_OUTPUT_TOKENS).collect { chunk ->
+            models.stream(modelId, messages, tools, SubagentLimits.MAX_OUTPUT_TOKENS, reasoningEffort).collect { chunk ->
                 when (chunk) {
                     is StreamChunk.TextDelta -> {
                         content.append(chunk.content)

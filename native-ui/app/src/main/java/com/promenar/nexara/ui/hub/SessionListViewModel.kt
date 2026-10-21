@@ -116,13 +116,7 @@ class SessionListViewModel(
                 executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "semi",
                 activeSkillIds = agent?.skills.orEmpty(),
                 activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
-                inferenceParams = if (agent != null) {
-                    com.promenar.nexara.data.model.InferenceParams(
-                        temperature = agent.temperature,
-                        topP = agent.topP,
-                        maxTokens = agent.maxTokens
-                    )
-                } else null,
+                // 参数不复制进会话：生成时逐项回退到助手设置，修改助手后未自定义的会话随之生效。
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )

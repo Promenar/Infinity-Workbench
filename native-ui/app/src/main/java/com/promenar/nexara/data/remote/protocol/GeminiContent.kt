@@ -67,7 +67,12 @@ internal object GeminiContentCodec {
 
     fun newLocalCallId(): String = LOCAL_CALL_ID_PREFIX + UUID.randomUUID().toString()
 
-    fun buildRequestBody(request: PromptRequest, json: Json, isVertex: Boolean = false): String {
+    fun buildRequestBody(rawRequest: PromptRequest, json: Json, isVertex: Boolean = false): String {
+        val adapted = rawRequest.adaptedTo(
+            if (isVertex) ProtocolType.Google_VertexAI else ProtocolType.Google_Gemini,
+            rawRequest.model,
+        )
+        val request = adapted.request
         val systemMessages = request.messages.filter { it.role == "system" }
         val originalMessages = request.messages.filter { it.role != "system" }
         val contentMessages = messagesWithToolMedia(originalMessages, request.model, isVertex)
@@ -104,9 +109,7 @@ internal object GeminiContentCodec {
                 request.maxTokens?.let { put("maxOutputTokens", it) }
                 request.frequencyPenalty?.let { if (it != 0.0) put("frequencyPenalty", it) }
                 request.presencePenalty?.let { if (it != 0.0) put("presencePenalty", it) }
-                if (request.reasoning == true) {
-                    put("thinkingConfig", buildJsonObject { put("includeThoughts", true) })
-                }
+                geminiThinkingConfig(adapted)?.let { put("thinkingConfig", it) }
             })
             if (systemMessages.isNotEmpty()) {
                 put("systemInstruction", buildJsonObject {

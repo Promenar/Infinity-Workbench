@@ -1,6 +1,7 @@
 package com.promenar.nexara.domain.usecase
 
 import com.promenar.nexara.data.model.InferenceParams
+import com.promenar.nexara.data.model.params.ReasoningEffort
 import kotlin.math.ceil
 
 /** 显式保留轮数优先，旧消息窗口按每三条一轮迁移，未配置时保留五轮。 */
@@ -18,23 +19,32 @@ fun InferenceParams.withResolvedContextTurns(): InferenceParams = copy(
     activeContextWindow = null,
 )
 
-/** 智能体预设可提供默认值的推理参数。 */
-fun AgentConfigResolver.ResolvedConfig.inferenceDefaults(): InferenceParams = InferenceParams(
-    temperature = temperature,
-    topP = topP,
-    maxTokens = maxTokens,
-)
+/** 助手为会话提供的默认推理参数。 */
+fun AgentConfigResolver.ResolvedConfig.inferenceDefaults(): InferenceParams = inferenceDefaults
 
 /**
  * 会话推理参数逐字段回退到 [defaults]：会话只覆盖用户显式设置过的项，
- * 其余（温度、Top P、最大输出）继续沿用智能体预设，而不是整体失效后交给 Provider 默认值。
+ * 其余沿用助手设置；两者都未设置的项保持为空，请求中不发送，由模型按默认处理。
+ * 会话选用了参数方案或“模型默认”时，采样参数不再沿用助手，推理强度仍逐项回退。
  */
 fun InferenceParams?.withDefaults(defaults: InferenceParams?): InferenceParams {
     val base = this ?: InferenceParams()
     if (defaults == null) return base
+    if (base.parameterSchemeId != null) {
+        return base.copy(reasoningEffort = base.reasoningEffort ?: defaults.reasoningEffort)
+    }
     return base.copy(
         temperature = base.temperature ?: defaults.temperature,
         topP = base.topP ?: defaults.topP,
         maxTokens = base.maxTokens ?: defaults.maxTokens,
+        frequencyPenalty = base.frequencyPenalty ?: defaults.frequencyPenalty,
+        presencePenalty = base.presencePenalty ?: defaults.presencePenalty,
+        topK = base.topK ?: defaults.topK,
+        repetitionPenalty = base.repetitionPenalty ?: defaults.repetitionPenalty,
+        reasoningEffort = base.reasoningEffort ?: defaults.reasoningEffort,
     )
 }
+
+/** 解析后的推理强度；未知取值按模型默认处理。 */
+val InferenceParams.resolvedReasoningEffort: ReasoningEffort?
+    get() = ReasoningEffort.fromWireName(reasoningEffort)

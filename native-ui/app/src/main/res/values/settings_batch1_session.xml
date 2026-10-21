@@ -1,5 +1,4 @@
 <resources>
-    <string name="session_thinking_style">Thinking style</string>
     <string name="session_numeric_seconds">s</string>
     <string name="session_retrieval_section">Retrieval</string>
     <string name="session_compaction_running">Compaction in progress</string>

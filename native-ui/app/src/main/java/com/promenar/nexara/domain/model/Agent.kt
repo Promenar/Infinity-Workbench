@@ -3,6 +3,7 @@ package com.promenar.nexara.domain.model
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.model.params.SamplingValues
 
 data class Agent(
     val id: String,
@@ -14,9 +15,15 @@ data class Agent(
     val color: String = "#C0C1FF",
     val avatarPath: String? = null,
     val isPinned: Boolean = false,
-    val temperature: Double? = 0.7,
-    val topP: Double? = 0.9,
-    val maxTokens: Int? = 4096,
+    /** 以下采样参数与推理强度是该助手会话的默认值；为空表示按模型默认、不发送。 */
+    val temperature: Double? = null,
+    val topP: Double? = null,
+    val maxTokens: Int? = null,
+    val topK: Int? = null,
+    val frequencyPenalty: Double? = null,
+    val presencePenalty: Double? = null,
+    val repetitionPenalty: Double? = null,
+    val reasoningEffort: String? = null,
     val ragConfig: AgentRagConfig? = null,
     val retrievalConfig: AgentRetrievalConfig? = null,
     val useInheritedConfig: Boolean = true,
@@ -29,6 +36,9 @@ data class Agent(
     val userRules: String = "",
     val createdAt: Long = 0L
 ) {
+    fun samplingValues(): SamplingValues =
+        SamplingValues(temperature, topP, maxTokens, frequencyPenalty, presencePenalty, topK, repetitionPenalty)
+
     /** 继承全局检索参数时 [retrievalConfig] 只承载记忆权限，参数部分不生效。 */
     val memoryPolicy: AgentMemoryPolicy
         get() = retrievalConfig?.memoryPolicy ?: AgentMemoryPolicy()

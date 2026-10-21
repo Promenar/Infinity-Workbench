@@ -111,7 +111,8 @@ class SessionListViewModelTest {
         assertThat(createdSessionId!!).startsWith("session_")
         val session = store.get().sessions.first()
         assertThat(session.modelId).isEqualTo("provider::gpt-4")
-        assertThat(session.inferenceParams?.temperature).isEqualTo(0.5)
+        // 会话不复制助手参数，生成时按 会话 → 助手 → 模型默认 解析。
+        assertThat(session.inferenceParams).isNull()
         assertThat(session.executionMode).isEqualTo("manual")
         assertThat(session.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
         assertThat(session.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()

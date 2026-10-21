@@ -54,6 +54,8 @@ data class SubagentRun(
     val prompt: String,
     val toolProfile: SubagentToolProfile,
     val modelId: String,
+    /** 继承父会话的推理强度（取值同 [com.promenar.nexara.data.model.InferenceParams.reasoningEffort]）。 */
+    val reasoningEffort: String? = null,
     val maxSteps: Int,
     /** 本子代理的合计 token 上限；父会话设置了任务 token 上限时按子代理数分摊。 */
     val maxTokens: Int = SubagentLimits.MAX_TOTAL_TOKENS,

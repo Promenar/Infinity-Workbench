@@ -1,5 +1,4 @@
 <resources>
-    <string name="session_thinking_style">思考强度</string>
     <string name="session_numeric_seconds">秒</string>
     <string name="session_retrieval_section">检索</string>
     <string name="session_compaction_running">正在压缩上下文</string>

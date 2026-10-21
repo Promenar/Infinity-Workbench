@@ -69,7 +69,7 @@ class NexaraDatabaseMigration2To3Test {
             MIGRATION_19_20,
             MIGRATION_20_21,
             MIGRATION_21_22,
-            MIGRATION_22_23,
+            MIGRATION_22_23, MIGRATION_23_24,
         ).use { database ->
             assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent-1'"))
                 .isEqualTo("semi")
@@ -140,7 +140,7 @@ class NexaraDatabaseMigration2To3Test {
             MIGRATION_19_20,
             MIGRATION_20_21,
             MIGRATION_21_22,
-            MIGRATION_22_23,
+            MIGRATION_22_23, MIGRATION_23_24,
         ).use { database ->
             assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent-v3'"))
                 .isEqualTo("manual")
