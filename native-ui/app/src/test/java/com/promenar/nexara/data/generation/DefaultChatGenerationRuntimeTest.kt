@@ -643,6 +643,43 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `postProcess先把本轮正文写入数据库再排入图谱与状态抽取`() = runTest {
+        val order = mutableListOf<String>()
+        val memory = mockk<MemoryManager> { every { canEmbed } returns true }
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            memoryManager = memory,
+            sessionGraph = { _, _, _ -> order += "graph"; true },
+            sessionState = { _, _, _ -> order += "state"; true },
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery { fixture.messageManager.flushNonApprovalUpdatesNow("session", "assistant") } answers { order += "flush" }
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        // 抽取任务从数据库读取本轮正文；流式正文的防抖写入未落库时，抽取会读到残缺正文且结果在写回时被判为过期。
+        assertThat(order).containsExactly("flush", "graph", "state").inOrder()
+    }
+
+    @Test
+    fun `postProcess正文落库失败时不排入抽取`() = runTest {
+        val scheduled = mutableListOf<String>()
+        val memory = mockk<MemoryManager> { every { canEmbed } returns true }
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            memoryManager = memory,
+            sessionGraph = { _, _, _ -> scheduled += "graph"; true },
+            sessionState = { _, _, _ -> scheduled += "state"; true },
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery { fixture.messageManager.flushNonApprovalUpdatesNow("session", "assistant") } throws IllegalStateException("disk full")
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        assertThat(scheduled).isEmpty()
+    }
+
+    @Test
     fun `postProcess状态排队异常不影响本轮且取消照常传播`() = runTest {
         val memory = mockk<MemoryManager> { every { canEmbed } returns true }
         val failing = postProcessFixture(

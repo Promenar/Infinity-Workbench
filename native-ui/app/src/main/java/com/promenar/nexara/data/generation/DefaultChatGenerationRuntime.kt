@@ -942,11 +942,22 @@ internal class DefaultChatGenerationRuntime(
                     if (written > 0) TurnMemoryState(TurnMemoryState.Status.STORED, written, System.currentTimeMillis()) else null
                 }
             }
+            // 后台抽取从数据库读取本轮正文，并在写回前核对正文未变；流式正文按防抖落库，
+            // 此时可能还缺最后一段，必须先落库，否则抽取读到残缺正文、结果又在终态写入后被判为过期。
+            val extractable = snapshot.failure == null && memoryEnabled(session) &&
+                request.userContent.isNotBlank() && snapshot.content.isNotBlank() &&
+                (sessionGraph != null || sessionState != null) && try {
+                    messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    NexaraLogger.logError("[GenerationRuntime] 本轮正文落库失败，跳过后台抽取", error)
+                    false
+                }
             // 图谱抽取只需要抽取模型，不依赖嵌入模型；会话关闭记忆时同样不抽取对话内容。
             val graph = sessionGraph
-            if (graph != null && snapshot.failure == null && memoryEnabled(session) &&
-                request.userContent.isNotBlank() && snapshot.content.isNotBlank()
-            ) {
+            if (graph != null && extractable) {
                 try {
                     graph.schedule(request.sessionId, assistantMessageId(request), userMessageId)
                 } catch (cancelled: CancellationException) {
@@ -955,9 +966,7 @@ internal class DefaultChatGenerationRuntime(
                     NexaraLogger.logError("[GenerationRuntime] 会话图谱抽取排队失败", error)
                 }
             }
-            if (sessionState != null && snapshot.failure == null && memoryEnabled(session) &&
-                request.userContent.isNotBlank() && snapshot.content.isNotBlank() && memory?.canEmbed == true
-            ) {
+            if (sessionState != null && extractable && memory?.canEmbed == true) {
                 try {
                     sessionState.schedule(request.sessionId, assistantMessageId(request), userMessageId)
                 } catch (cancelled: CancellationException) {
