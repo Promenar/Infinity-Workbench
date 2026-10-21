@@ -393,6 +393,7 @@ class ToolExecutor internal constructor(
                     override val approvedExecutionTarget = approvedTarget
                     override val isApprovalBoundExecution = approvalBound
                     override val liveOutput = sink
+                    override val toolStepId = stepId
                     override val workspaceRootUuid = session.workspaceRootUuid
                         ?: throw SecurityException("Session workspace root is missing")
                 }

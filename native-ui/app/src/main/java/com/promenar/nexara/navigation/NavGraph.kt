@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ import com.promenar.nexara.ui.welcome.WelcomeScreen
 import com.promenar.nexara.ui.welcome.onboardingModelCandidates
 import com.promenar.nexara.util.LocaleController
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 object NavDestinations {
@@ -71,6 +73,7 @@ object NavDestinations {
     const val DOC_EDITOR = "doc_editor/{workspaceRootUuid}/{docId}"
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
     const val KNOWLEDGE_GRAPH_ROUTE = "knowledge_graph?query={query}"
+    const val SUBAGENT_VIEWER_ROUTE = "subagent/{sessionId}/{stepId}/{index}"
     const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
     const val RAG_GLOBAL_CONFIG = "rag_global_config"
@@ -102,6 +105,8 @@ object NavDestinations {
     @Suppress("UNUSED_PARAMETER")
     fun ragFolder(folderId: String) = "rag_folder/$folderId"
     fun knowledgeGraph(query: String) = "knowledge_graph?query=${android.net.Uri.encode(query)}"
+    fun subagentViewer(sessionId: String, stepId: String, index: Int) =
+        "subagent/${android.net.Uri.encode(sessionId)}/${android.net.Uri.encode(stepId)}/$index"
 }
 
 typealias ChatDestination = @Composable (
@@ -110,6 +115,7 @@ typealias ChatDestination = @Composable (
     onNavigateToSession: (String) -> Unit,
     onOpenDefaultModels: () -> Unit,
     onOpenKnowledgeGraph: (String) -> Unit,
+    onOpenSubagent: (sessionId: String, stepId: String, index: Int) -> Unit,
 ) -> Unit
 
 @Composable
@@ -121,13 +127,14 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
-    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph ->
+    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent ->
         ChatRoute(
             sessionId = sessionId,
             onNavigateBack = onNavigateBack,
             onNavigateToSession = onNavigateToSession,
             onOpenDefaultModels = onOpenDefaultModels,
             onOpenKnowledgeGraph = onOpenKnowledgeGraph,
+            onOpenSubagent = onOpenSubagent,
         )
     },
 ) {
@@ -363,7 +370,38 @@ fun NexaraNavGraph(
                     }
                 },
                 { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
+                { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
             )
+        }
+
+        composable(
+            route = NavDestinations.SUBAGENT_VIEWER_ROUTE,
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+                navArgument("stepId") { type = NavType.StringType },
+                navArgument("index") { type = NavType.IntType },
+            ),
+        ) { backStackEntry ->
+            val owner = backStackEntry.arguments?.getString("sessionId").orEmpty()
+            val stepId = backStackEntry.arguments?.getString("stepId").orEmpty()
+            val index = backStackEntry.arguments?.getInt("index") ?: 0
+            val initial = remember(owner, stepId) { app.subagentRunStore.snapshot(owner, stepId) }
+            // 已结束的记录要从磁盘读取，读完之前不显示“记录不存在”。
+            var loaded by remember(owner, stepId) { mutableStateOf(initial != null) }
+            val batch by remember(owner, stepId) { app.subagentRunStore.observe(owner, stepId).onEach { loaded = true } }
+                .collectAsState(initial = initial)
+            val providerModels by com.promenar.nexara.data.manager.ProviderManager.getInstance().providerModels.collectAsState()
+            CompositionLocalProvider(com.promenar.nexara.ui.chat.LocalToolLiveOutput provides app.toolLiveOutputStore) {
+                com.promenar.nexara.ui.chat.SubagentViewerScreen(
+                    batch = batch,
+                    loading = !loaded,
+                    index = index,
+                    modelName = { modelId ->
+                        com.promenar.nexara.ui.chat.resolveModelDisplayNames(modelId, emptyList(), providerModels)[modelId] ?: modelId
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(

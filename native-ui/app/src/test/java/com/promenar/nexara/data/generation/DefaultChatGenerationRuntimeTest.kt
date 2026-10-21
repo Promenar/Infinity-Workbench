@@ -12,6 +12,7 @@ import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.PostProcessStatus
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
@@ -607,6 +608,30 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(result).isSameInstanceAs(cancellation)
     }
 
+    @Test
+    fun `postProcess把子代理用量并入本轮助手消息的附加用量，只汇入一次`() = runTest {
+        val ledger = object : com.promenar.nexara.data.subagent.SubagentUsageLedger {
+            var pending: TokenUsage? = TokenUsage(input = 30, output = 12, total = 42, estimated = true)
+            override fun add(sessionId: String, usage: TokenUsage) { pending = usage }
+            override fun drain(sessionId: String) = pending.also { pending = null }
+        }
+        val fixture = postProcessFixture(ragOptions = RagOptions(enableMemory = false, enableDocs = false), subagentUsage = ledger)
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        val written = mutableListOf<TokenUsage?>()
+        coEvery { fixture.messageManager.updateMessageContent("session", "assistant", any(), any()) } answers {
+            written += arg<UpdateMessageOptions>(3).tokens
+        }
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        val tokens = written.single()!!
+        assertThat(tokens.summaryTotal).isEqualTo(42)
+        assertThat(tokens.summaryInput).isEqualTo(30)
+        assertThat(tokens.summaryEstimated).isTrue()
+        assertThat(fixture.runtime.additionalTokenUsage(fixture.request).tokens).isEqualTo(42)
+        assertThat(ledger.pending).isNull()
+    }
+
     /** 让模拟的 MessageManager 执行交给它的写入块，并记录写入块给出的最终状态。 */
     private fun MessageManager.runTurnMemoryWrites(): MutableList<TurnMemoryState?> {
         val results = mutableListOf<TurnMemoryState?>()
@@ -838,6 +863,7 @@ class DefaultChatGenerationRuntimeTest {
         memoryManager: MemoryManager? = null,
         sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
         sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
+        subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
     ): PostProcessFixture {
         val messages = (0 until messageCount).map { index ->
             Message(
@@ -896,6 +922,7 @@ class DefaultChatGenerationRuntimeTest {
             ui = ui,
             sshRuntime = sshRuntime,
             sessionGraph = sessionGraph,
+            subagentUsage = subagentUsage,
         )
         DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedContext").apply {
             isAccessible = true
@@ -1335,6 +1362,61 @@ class DefaultChatGenerationRuntimeTest {
         coVerify(exactly = 0) {
             messageManager.markGenerationTerminal(any(), any(), any(), any(), any())
         }
+    }
+
+    @Test
+    fun `停止本轮时子代理已消耗的用量仍计入本轮助手消息`() = runTest {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getInt(any(), any()) } answers { secondArg() }
+        val store = ChatStore().apply {
+            update {
+                ChatState(sessions = listOf(Session(
+                    id = "s1", agentId = "agent", executionMode = "auto",
+                    messages = listOf(Message(id = "a1", role = MessageRole.ASSISTANT, content = "")),
+                )))
+            }
+        }
+        val ledger = com.promenar.nexara.data.subagent.SubagentRunStore(java.nio.file.Files.createTempDirectory("subagent-usage").toFile())
+        val contentStrategy = mockk<ChatGenerationContentStrategy>(relaxed = true)
+        every { contentStrategy.pendingApprovalIds(any(), any()) } returns emptyList()
+        val cancellation = CancellationException("user-stop")
+        val toolExecutor = mockk<ToolExecutor>(relaxed = true)
+        coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } answers {
+            // 子代理在取消前已记账，随后父轮被停止。
+            ledger.add("s1", TokenUsage(input = 100, output = 20, total = 120))
+            throw cancellation
+        }
+        val messageManager = mockk<MessageManager>(relaxed = true)
+        val written = mutableListOf<TokenUsage?>()
+        coEvery { messageManager.updateMessageContent("s1", "a1", any(), any()) } answers { written += arg<UpdateMessageOptions>(3).tokens }
+        val runtime = DefaultChatGenerationRuntime(
+            settings = settings,
+            applicationScope = this,
+            store = store,
+            agentRepository = mockk<IAgentRepository>(),
+            configResolver = mockk<AgentConfigResolver>(),
+            routeGate = mockk<ChatProviderRouteGate>(),
+            contextBuilder = mockk<ContextBuilder>(),
+            messageManager = messageManager,
+            localProviderFactory = { mockk<LlmProvider>() },
+            provider = mockk<LlmProvider>(relaxed = true),
+            toolLedger = mockk<ToolExecutionLedger>(),
+            toolExecutor = toolExecutor,
+            postProcessor = mockk<PostProcessor>(),
+            memoryManager = null,
+            summaryManager = mockk<SummaryManager>(),
+            sessionManager = mockk<SessionManager>(),
+            contentStrategy = contentStrategy,
+            ui = mockk<GenerationUiPort>(relaxed = true),
+            subagentUsage = ledger,
+        )
+        val request = GenerationRequest("s1", "a1", "u1", "hello", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED)
+
+        val failure = runCatching { runtime.handleTools(request, listOf(GenerationToolCall("tool-1", "agent_task", "{}"))) }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(cancellation)
+        assertThat(written.single()!!.summaryTotal).isEqualTo(120)
+        assertThat(ledger.drain("s1")).isNull()
     }
 
     @Test

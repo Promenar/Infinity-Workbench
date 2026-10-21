@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Checklist
@@ -78,6 +79,7 @@ internal fun builtinToolIcon(id: String): ImageVector = when (id) {
     "shell_exec" -> Icons.Rounded.Terminal
     "python_exec" -> Icons.Rounded.Code
     "python_sandbox" -> Icons.Rounded.Science
+    "agent_task" -> Icons.Rounded.AccountTree
     "initialize_plan" -> Icons.AutoMirrored.Rounded.PlaylistAdd
     "update_plan" -> Icons.Rounded.Checklist
     "get_plan" -> Icons.AutoMirrored.Rounded.ListAlt

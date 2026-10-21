@@ -156,6 +156,7 @@ internal class DefaultChatGenerationRuntime(
     private val mediaContextLoader: ViewedMediaContextLoader? = null,
     /** 会话图谱抽取排队；为空或全局开关关闭时不抽取。 */
     private val sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
+    private val subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
@@ -707,6 +708,17 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
     }
 
+    /** 子代理用量计入父会话本轮：并入助手消息的附加用量，不计入主模型的速度统计。 */
+    private suspend fun recordSubagentUsage(request: GenerationRequest) {
+        val usage = subagentUsage?.drain(request.sessionId) ?: return
+        // 取出即结算：写入在不可取消区内完成，取消不会让同一笔用量被重复计入。
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { recordSummaryUsage(request, usage) }
+        } catch (error: Exception) {
+            NexaraLogger.logError("[GenerationRuntime] 子代理用量写入失败", error)
+        }
+    }
+
     override fun additionalTokenUsage(request: GenerationRequest): GenerationToolUsage =
         GenerationToolUsage(tokens = summarySpentTokens, tokensEstimated = summaryUsageEstimated)
 
@@ -759,14 +771,19 @@ internal class DefaultChatGenerationRuntime(
             .filterNot { it.first.id in pendingIds }
             .mapTo(linkedSetOf()) { it.first.id }
         if (pendingIds.isEmpty()) toolRounds++
-        toolExecutor.executeTools(
-            request.sessionId,
-            assistantMessageId(request),
-            calls,
-            allowedIds,
-            preparedTools,
-            expectedGrantTargets = grantTargets,
-        )
+        try {
+            toolExecutor.executeTools(
+                request.sessionId,
+                assistantMessageId(request),
+                calls,
+                allowedIds,
+                preparedTools,
+                expectedGrantTargets = grantTargets,
+            )
+        } finally {
+            // 停止本轮时子代理已消耗的用量同样计入本轮，不留给下一轮。
+            recordSubagentUsage(request)
+        }
         if (pendingIds.isNotEmpty()) {
             val approval = ToolApprovalRequestFactory.create(
                 assistantMessageId = assistantMessageId(request),
@@ -881,6 +898,8 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) {
         ui.setStreamingContent("")
+        // 审批通过后由审批流程执行的子代理，用量在本轮结束时汇入。
+        recordSubagentUsage(request)
         val userMessageId = request.userMessageId ?: return
         val context = requireNotNull(preparedContext)
         val session = store.getSession(request.sessionId) ?: return

@@ -495,6 +495,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     { toolOutputStore.deleteSession(sessionId) },
                     deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
                     deleteFolds = { contextFoldStore.deleteSession(sessionId) },
+                    deleteSubagents = { subagentRunStore.deleteSession(sessionId) },
                 )
             },
         )
@@ -510,6 +511,79 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
     /** 运行中命令的实时输出，只存内存。 */
     val toolLiveOutputStore by lazy { com.promenar.nexara.data.exec.ToolLiveOutputStore() }
+    val subagentRunStore by lazy {
+        com.promenar.nexara.data.subagent.SubagentRunStore(java.io.File(noBackupFilesDir, "subagents"))
+    }
+    val subagentApprovalBroker by lazy {
+        com.promenar.nexara.data.subagent.SubagentApprovalBroker().also { broker ->
+            broker.notifier = com.promenar.nexara.background.subagent.SubagentApprovalNotifications(this) { sessionId ->
+                generationCoordinator.observe(sessionId).value
+            }
+        }
+    }
+    private val subagentToolHost = object : com.promenar.nexara.data.subagent.SubagentToolHost {
+        override suspend fun tools(session: com.promenar.nexara.data.model.Session) = sessionToolResolver.resolveForExecution(session)
+
+        override suspend fun target(
+            session: com.promenar.nexara.data.model.Session,
+            tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
+            arguments: String,
+        ) = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+            session, tool, arguments, workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost,
+        )
+
+        override suspend fun isGranted(sessionId: String, toolName: String, target: String): Boolean {
+            val scope = resolveToolAllowlistScope(sessionId, target) ?: return false
+            return toolAllowlistStore.contains(toolName, target, scope.scopeKey)
+        }
+
+        override suspend fun remember(sessionId: String, toolName: String, target: String) {
+            resolveToolAllowlistScope(sessionId, target)?.let { scope -> toolAllowlistStore.add(toolName, target, scope.scopeKey, sessionId) }
+        }
+
+        override fun preview(toolName: String, arguments: kotlinx.serialization.json.JsonObject): String =
+            com.promenar.nexara.ui.chat.ApprovalPreview.format(toolName, arguments)?.let { preview ->
+                listOfNotNull(preview.target.takeIf(String::isNotBlank), preview.detail?.takeIf(String::isNotBlank)).joinToString("\n")
+            }.orEmpty()
+
+        override suspend fun execute(
+            tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
+            arguments: kotlinx.serialization.json.JsonObject,
+            context: com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext,
+        ): com.promenar.nexara.data.subagent.SubagentToolOutcome {
+            val skill = skillRegistry.getSkillByRuntimeToolId(tool.runtimeToolId)?.takeIf { it.name == tool.function.name }
+                ?: return com.promenar.nexara.data.subagent.SubagentToolOutcome("工具当前不可用", failed = true)
+            val result = skill.execute(arguments, context)
+            val failed = result.status != "success"
+            return com.promenar.nexara.data.subagent.SubagentToolOutcome(
+                if (failed) com.promenar.nexara.ui.chat.manager.ToolFailureSummary.format(result.content) else result.content,
+                failed,
+            )
+        }
+    }
+    val subagentLauncher by lazy {
+        com.promenar.nexara.data.subagent.SubagentLauncher(
+            runner = com.promenar.nexara.data.subagent.SubagentRunner(
+                models = com.promenar.nexara.data.subagent.RoutedSubagentModelClient(
+                    com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
+                ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) },
+                host = subagentToolHost,
+                approvals = subagentApprovalBroker,
+                liveOutput = toolLiveOutputStore,
+            ),
+            store = subagentRunStore,
+            session = { sessionId -> chatStore.getSession(sessionId) },
+            modelFor = { session ->
+                // 与父会话生成相同的模型选择顺序。
+                session.modelId?.takeIf(String::isNotBlank)
+                    ?: configResolver.resolve(agentRepository.getById(session.agentId)).modelId.takeIf(String::isNotBlank)
+                    ?: ProviderManager.getInstance().getMainConfiguredModelId()
+            },
+            taskTokenLimit = {
+                getSharedPreferences("nexara_settings", MODE_PRIVATE).getInt("task_token_limit", 0).coerceAtLeast(0).toLong()
+            },
+        )
+    }
     val generationForegroundController:
         com.promenar.nexara.background.generation.GenerationForegroundController by lazy {
         com.promenar.nexara.background.generation.AndroidGenerationForegroundController(this)
@@ -623,6 +697,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             mediaContextLoader = com.promenar.nexara.data.generation.ViewedMediaContextLoader(workspaceMediaViewer, ::resolveMediaViewTarget),
             sessionGraph = sessionGraphScheduler,
+            subagentUsage = subagentRunStore,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -891,6 +966,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.nexara.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))
             register(DropPlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.TailnetStatusSkill(tailnetManager))
+            register(com.promenar.nexara.ui.chat.manager.skills.AgentTaskSkill { subagentLauncher })
         }
     }
 

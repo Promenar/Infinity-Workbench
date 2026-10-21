@@ -51,4 +51,6 @@ interface SkillExecutionContext {
     /** 运行中输出推送到界面的通道；只用于展示。 */
     val liveOutput: com.promenar.nexara.domain.tool.ToolLiveOutputSink
         get() = com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
+    /** 本次调用的执行步骤 id，供需要按调用归档过程的工具使用。 */
+    val toolStepId: String? get() = null
 }

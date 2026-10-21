@@ -135,6 +135,7 @@ open class MainActivity : ComponentActivity() {
             val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
             NexaraTheme(preferences = themePreferences) {
                 com.promenar.nexara.ui.chat.ScriptFileApprovalDialog(app.scriptFileApprovals) { app.chatStore.getSession(it)?.title }
+                com.promenar.nexara.ui.chat.SubagentApprovalDialog(app.subagentApprovalBroker) { app.chatStore.getSession(it)?.title }
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 StartupGate(
                     state = startupState,
@@ -185,7 +186,7 @@ open class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
-                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph ->
+                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent ->
                                 ChatRoute(
                                     sessionId = sessionId,
                                     onNavigateBack = onNavigateBack,
@@ -193,6 +194,7 @@ open class MainActivity : ComponentActivity() {
                                     dependencies = chatRouteDependencies,
                                     onOpenDefaultModels = onOpenDefaultModels,
                                     onOpenKnowledgeGraph = onOpenKnowledgeGraph,
+                                    onOpenSubagent = onOpenSubagent,
                                 )
                             },
                             openGenerationRequest = openGenerationRequest,

@@ -195,6 +195,8 @@ fun ChatRoute(
     onOpenDefaultModels: () -> Unit = {},
     /** 打开知识图谱页并搜索给定实体（“本轮记忆”面板的“在图谱中查看”）。 */
     onOpenKnowledgeGraph: ((String) -> Unit)? = null,
+    /** 打开子代理只读查看页。 */
+    onOpenSubagent: ((sessionId: String, stepId: String, index: Int) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
@@ -521,7 +523,17 @@ fun ChatRoute(
         if (result == SnackbarResult.Dismissed) chatViewModel.dismissTaskCompletionUndo(undo.token)
     }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalToolLiveOutput provides application.toolLiveOutputStore) {
+    val subagentRuns = remember(application, sessionId, onOpenSubagent) {
+        SubagentRunsAccess(
+            observe = { stepId -> application.subagentRunStore.observe(sessionId, stepId) },
+            snapshot = { stepId -> application.subagentRunStore.snapshot(sessionId, stepId) },
+            onOpen = { stepId, index -> onOpenSubagent?.invoke(sessionId, stepId, index) },
+        )
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalToolLiveOutput provides application.toolLiveOutputStore,
+        LocalSubagentRuns provides subagentRuns,
+    ) {
         ChatScreenContent(
             state = ChatScreenState(
                 uiState = uiState,

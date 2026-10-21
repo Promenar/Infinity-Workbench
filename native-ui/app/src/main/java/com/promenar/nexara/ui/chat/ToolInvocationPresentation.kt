@@ -104,7 +104,7 @@ internal fun toolDurationText(durationMs: Long): ToolDurationText =
 internal data class ToolDurationText(val resId: Int, val args: List<Any>)
 
 internal enum class ToolSummaryCategory {
-    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, MEDIA, PLAN, UTILITY, SKILL, OTHER,
+    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, MEDIA, PLAN, UTILITY, SKILL, SUBAGENT, OTHER,
 }
 
 internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
@@ -122,6 +122,7 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     TIME(ToolSummaryCategory.UTILITY),
     CALCULATE(ToolSummaryCategory.UTILITY),
     SKILL(ToolSummaryCategory.SKILL),
+    SUBAGENT(ToolSummaryCategory.SUBAGENT),
     OTHER(ToolSummaryCategory.OTHER),
 }
 
@@ -161,6 +162,7 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "current_time" -> ToolSummaryAction.TIME
     "calculator" -> ToolSummaryAction.CALCULATE
     "activate_skill" -> ToolSummaryAction.SKILL
+    com.promenar.nexara.data.subagent.SubagentLimits.TOOL_NAME -> ToolSummaryAction.SUBAGENT
     else -> ToolSummaryAction.OTHER
 }
 
@@ -169,6 +171,7 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
  * 没有结构化媒体的旧结果按一次调用计。
  */
 internal fun toolSummaryWeight(action: ToolSummaryAction, invocation: ToolInvocationPresentation): Int {
+    if (action == ToolSummaryAction.SUBAGENT) return subagentTaskCount(invocation.call?.toolArgs)
     if (action != ToolSummaryAction.IMAGE && action != ToolSummaryAction.MEDIA_VIEW && action != ToolSummaryAction.MEDIA_FETCH) return 1
     val media = invocation.results.filter { it.type == "tool_result" }.flatMap { it.media.orEmpty() }
     val counted = if (action == ToolSummaryAction.IMAGE) media.count { it.kind == com.promenar.nexara.domain.media.MediaKind.IMAGE } else media.size
@@ -211,3 +214,9 @@ internal fun toolGroupDisplaySummary(
         summary.copy(status = ToolSummaryStatus.PENDING, runningAction = null)
     } else summary
 }
+
+/** 一次 `agent_task` 调用派生的子代理数；参数无法解析时按一个计。 */
+internal fun subagentTaskCount(arguments: String?): Int = runCatching {
+    (kotlinx.serialization.json.Json.parseToJsonElement(arguments.orEmpty()) as? kotlinx.serialization.json.JsonObject)
+        ?.get("tasks")?.let { it as? kotlinx.serialization.json.JsonArray }?.size
+}.getOrNull()?.takeIf { it > 0 } ?: 1

@@ -6,6 +6,7 @@ suspend fun cleanupSessionRuntimeData(
     deleteOutputs: suspend () -> Unit,
     deleteMounts: suspend () -> Unit = {},
     deleteFolds: suspend () -> Unit = {},
+    deleteSubagents: suspend () -> Unit = {},
 ) {
     var failure: Throwable? = null
     try { deleteGrants() } catch (error: Throwable) { failure = error }
@@ -16,6 +17,9 @@ suspend fun cleanupSessionRuntimeData(
         if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
     }
     try { deleteFolds() } catch (error: Throwable) {
+        if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
+    }
+    try { deleteSubagents() } catch (error: Throwable) {
         if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
     }
     failure?.let { throw it }

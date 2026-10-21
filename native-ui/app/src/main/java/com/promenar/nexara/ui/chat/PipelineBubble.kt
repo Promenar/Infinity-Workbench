@@ -864,6 +864,7 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.TIME -> R.plurals.chat_step_time_done
         ToolSummaryAction.CALCULATE -> R.plurals.chat_step_calculate_done
         ToolSummaryAction.SKILL -> R.plurals.chat_step_skill_done
+        ToolSummaryAction.SUBAGENT -> R.plurals.chat_step_subagent_done
         ToolSummaryAction.OTHER -> R.plurals.chat_step_other_done
     }
     return pluralStringResource(resId, part.count, part.count)
@@ -885,6 +886,7 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.TIME -> R.string.chat_step_time_name
     ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_name
     ToolSummaryAction.SKILL -> R.string.chat_step_skill_name
+    ToolSummaryAction.SUBAGENT -> R.string.chat_step_subagent_name
     ToolSummaryAction.OTHER -> R.string.chat_step_other_name
 })
 
@@ -909,6 +911,7 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.TIME -> R.string.chat_step_time_running
             ToolSummaryAction.CALCULATE -> R.string.chat_step_calculate_running
             ToolSummaryAction.SKILL -> R.string.chat_step_skill_running
+            ToolSummaryAction.SUBAGENT -> R.string.chat_step_subagent_running
             ToolSummaryAction.OTHER -> R.string.chat_step_other_running
         })
     }
@@ -976,6 +979,10 @@ internal fun InlineToolRow(
             failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )
+        // 子代理分组卡始终跟在摘要下方，随轮次一起折叠。
+        invocations.filter { it.name == com.promenar.nexara.data.subagent.SubagentLimits.TOOL_NAME }.forEach { invocation ->
+            invocation.call?.id?.let { stepId -> key("subagent", stepId) { SubagentGroupCard(unscopedStepId(stepId)) } }
+        }
         if (executing) {
             // 运行中的命令在摘要下方显示实时输出，结束后由结果展示接替。
             invocations.filterNot { it.complete }.forEach { invocation ->
