@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -315,6 +316,70 @@ class MessageManagerDeletionTest {
         assertThat(store.getSession("s1")?.summary).isEqualTo("新摘要")
         assertThat(store.getSession("s1")?.messages?.single()?.id).isEqualTo(survivor.id)
         assertThat(store.getSession("s1")?.messages?.single()?.isArchived).isTrue()
+    }
+
+    @Test
+    fun `删除丢弃截断清空都会同步对话记忆，删除失败与记忆同步失败互不影响`() = runTest {
+        val first = message("first", createdAt = 1)
+        val second = message("second", createdAt = 2)
+        val initial = session(listOf(first, second))
+        val store = ChatStore().apply { upsertSession(initial) }
+        val memory = RecordingMemoryLifecycle()
+        // 剩余列表保留 second，使随后的丢弃路径确有删除。
+        val messages = DeletionRepository(initial.messages, listOf(second))
+        val manager = MessageManager(store, messages, SnapshotRepository(initial.copy(messages = emptyList())), this,
+            memoryLifecycle = memory)
+
+        manager.deleteMessage("s1", first.id)
+        manager.discardPreparedMessages("s1", listOf(second.id))
+        manager.deleteMessagesAfter("s1", 0)
+        manager.clearMessages("s1")
+        advanceUntilIdle()
+        assertThat(memory.events).containsExactly("removed:s1", "removed:s1", "removed:s1", "removed:s1").inOrder()
+
+        messages.failure = IllegalStateException("db down")
+        runCatching { manager.deleteMessages("s1", listOf(first.id)) }
+        advanceUntilIdle()
+        assertThat(memory.events).hasSize(4)
+
+        messages.failure = null
+        memory.failure = IllegalStateException("embedding down")
+        store.upsertSession(initial)
+        manager.deleteMessage("s1", second.id)
+        advanceUntilIdle()
+        assertThat(store.getSession("s1")?.messages?.map { it.id }).doesNotContain(second.id)
+    }
+
+    @Test
+    fun `撤销删除后通知对话记忆恢复`() = runTest {
+        val store = ChatStore().apply { upsertSession(session(emptyList())) }
+        val memory = RecordingMemoryLifecycle()
+        val restored = mutableListOf<String>()
+        val repository = object : IMessageRepository {
+            override suspend fun insert(message: Message, sessionId: String) { restored += message.id }
+            override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) = Unit
+            override suspend fun delete(messageId: String) = Unit
+            override suspend fun deleteBySessionId(sessionId: String) = Unit
+            override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) = Unit
+            override suspend fun getById(messageId: String): Message? = null
+            override suspend fun getBySession(sessionId: String): List<Message> = emptyList()
+            override suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?) = Unit
+        }
+        MessageManager(store, repository, SnapshotRepository(session(emptyList())), this, memoryLifecycle = memory)
+            .restoreMessages("s1", listOf(message("back")))
+        advanceUntilIdle()
+
+        assertThat(restored).containsExactly("back")
+        assertThat(memory.events).containsExactly("restored:s1")
+    }
+
+    private class RecordingMemoryLifecycle : com.promenar.nexara.data.rag.ConversationMemoryLifecycle {
+        val events = mutableListOf<String>()
+        var failure: Throwable? = null
+        override suspend fun onMessagesRemoved(sessionId: String) { failure?.let { throw it }; events += "removed:$sessionId" }
+        override suspend fun onMessagesRestored(sessionId: String) { events += "restored:$sessionId" }
+        override suspend fun onMessageEdited(sessionId: String, messageId: String) { events += "edited:$messageId" }
+        override suspend fun purgeExpired() = Unit
     }
 
     private fun session(messages: List<Message>) = Session(

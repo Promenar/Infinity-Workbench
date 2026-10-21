@@ -320,7 +320,12 @@ class ChatViewModel(
     val availableSessionMcpServers = (application as NexaraApplication).skillRepository
         .getAllMcpServers()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    private val messageManager = MessageManager(store, messageRepository, sessionRepository)
+    private val messageManager = MessageManager(
+        store,
+        messageRepository,
+        sessionRepository,
+        memoryLifecycle = (application as NexaraApplication).conversationMemoryLifecycle,
+    )
     private val toolLedger = (application as NexaraApplication).toolExecutionLedger
     private val toolExecutor = ToolExecutor(
         store,

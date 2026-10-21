@@ -95,6 +95,24 @@ interface KgEvidenceDao {
         collectAffected(affected)
     }
 
+    /**
+     * 即时抽取把同一任务的整张图归给任务内每个来源，因此只要任务用过本会话的对话记忆，
+     * 该任务的全部即时证据（含文档来源）都随对话记录删除；即时证据可在下次检索时重新抽取。
+     */
+    @Query("SELECT * FROM kg_evidence WHERE source_type = 'jit' AND task_id IN (SELECT task_id FROM kg_evidence WHERE source_type = 'jit' AND session_id = :sessionId AND doc_id IS NULL)")
+    suspend fun affectedBySessionMemoryJit(sessionId: String): List<KgEvidenceEntity>
+
+    @Query("DELETE FROM kg_evidence WHERE source_type = 'jit' AND task_id IN (SELECT task_id FROM kg_evidence WHERE source_type = 'jit' AND session_id = :sessionId AND doc_id IS NULL)")
+    suspend fun deleteSessionMemoryJitEvidence(sessionId: String): Int
+
+    @Transaction
+    suspend fun clearSessionMemoryJit(sessionId: String): Pair<Int, Int> {
+        val affected = affectedBySessionMemoryJit(sessionId)
+        if (affected.isEmpty()) return 0 to 0
+        deleteSessionMemoryJitEvidence(sessionId)
+        return collectAffected(affected)
+    }
+
     @Transaction
     suspend fun pruneSessions(activeIds: List<String>) {
         val affected = orphanSessionEvidence(activeIds)

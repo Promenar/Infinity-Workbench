@@ -20,6 +20,8 @@ import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.rag.ConversationMemoryLifecycle
+import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -75,6 +77,8 @@ class MessageManager(
     /** 不绑定 ViewModel；生成协调器迁移后由应用级 scope 注入。 */
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val hooks: MessageManagerHooks = MessageManagerHooks(),
+    /** 聊天记录删除、恢复、编辑后同步对话记忆；为空时不维护记忆。 */
+    private val memoryLifecycle: ConversationMemoryLifecycle? = null,
 ) {
     private data class PendingUpdate(
         val epoch: Long,
@@ -305,6 +309,7 @@ class MessageManager(
             val persisted = checkNotNull(sessionRepository.getById(sessionId)) { "正文编辑后所属会话不存在" }
             val byId = persisted.messages.associateBy(Message::id)
             checkNotNull(byId[messageId]) { "正文编辑后消息不存在" }
+            syncMemory { onMessageEdited(sessionId, messageId) }
             store.update { state ->
                 state.copy(
                     sessions = state.sessions.map { current ->
@@ -801,6 +806,7 @@ class MessageManager(
             } finally {
                 finishPurge(purgeKeys)
             }
+            syncMemory { onMessagesRemoved(sessionId) }
         }
     }
 
@@ -810,6 +816,7 @@ class MessageManager(
         withContextMutation(sessionId) {
             val restoredMessages = messages.map { it.copy(isArchived = false) }
             restoredMessages.forEach { messageRepository.insert(it, sessionId) }
+            syncMemory { onMessagesRestored(sessionId) }
             val restoredIds = restoredMessages.mapTo(hashSetOf()) { it.id }
             store.update { state ->
                 state.copy(
@@ -855,6 +862,7 @@ class MessageManager(
             } finally {
                 finishPurge(purgeKeys)
             }
+            if (hasDeleted) syncMemory { onMessagesRemoved(sessionId) }
             failure?.let { throw it }
         }
     }
@@ -885,6 +893,24 @@ class MessageManager(
                 mirrorDeletedMessages(sessionId, targetIds, persistedSnapshot)
             } finally {
                 finishPurge(purgeKeys)
+            }
+            syncMemory { onMessagesRemoved(sessionId) }
+        }
+    }
+
+    /**
+     * 记忆维护在后台执行，不阻塞聊天记录变更，失败也不影响变更本身。
+     * 各操作按执行时的数据库状态判定，由实现方串行化，乱序执行结果一致。
+     */
+    private fun syncMemory(action: suspend ConversationMemoryLifecycle.() -> Unit) {
+        val lifecycle = memoryLifecycle ?: return
+        scope.launch {
+            try {
+                lifecycle.action()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("[MessageManager] 对话记忆同步失败", error)
             }
         }
     }
@@ -977,6 +1003,7 @@ class MessageManager(
             } finally {
                 finishPurge(purgeKeys)
             }
+            syncMemory { onMessagesRemoved(sessionId) }
         }
     }
 

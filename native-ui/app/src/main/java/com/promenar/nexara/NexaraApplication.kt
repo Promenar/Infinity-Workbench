@@ -525,6 +525,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             messageRepository,
             sessionRepository,
             generationScope,
+            memoryLifecycle = conversationMemoryLifecycle,
+        )
+    }
+    val conversationMemoryLifecycle: com.promenar.nexara.data.rag.ConversationMemoryLifecycle by lazy {
+        com.promenar.nexara.data.rag.RoomConversationMemoryLifecycle(
+            databaseProvider = { database },
+            turnWriter = { sessionId, userContent, assistantContent, userMessageId, assistantMessageId ->
+                memoryManager.addTurnToMemory(sessionId, userContent, assistantContent, userMessageId, assistantMessageId)
+            },
         )
     }
     private val generationContextBuilder by lazy {
@@ -1135,6 +1144,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
                     _startupState.value = BackupStartupState.Ready
                     startModelCatalogUpdates()
+                    generationScope.launch(Dispatchers.IO) {
+                        try {
+                            conversationMemoryLifecycle.purgeExpired()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            NexaraLogger.logError("[ConversationMemory] 孤儿记忆清理失败", error)
+                        }
+                    }
                 } else {
                     _startupState.value = BackupStartupState.Blocked
                 }
