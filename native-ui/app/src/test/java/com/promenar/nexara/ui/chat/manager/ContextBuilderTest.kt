@@ -480,7 +480,26 @@ class ContextBuilderTest {
         val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
         val params = ContextBuilderParams(sessionId = "s1", content = "q", assistantMsgId = "m1", session = session)
 
-        assertThat(builder.buildContext(params).ragTrace).isEqualTo(trace)
+        // 轨迹记录实际执行的档位（含助手上限收紧后的值）；未启用的图谱不记录档位。
+        assertThat(builder.buildContext(params).ragTrace).isEqualTo(trace.copy(
+            memoryScope = com.promenar.nexara.data.model.ConversationScope.SESSION,
+            documentScope = com.promenar.nexara.data.model.DocumentScope.KNOWLEDGE_BASE,
+        ))
+        val capped = params.copy(
+            session = session.copy(ragOptions = RagOptions(enableMemory = true, enableDocs = false,
+                memoryScope = com.promenar.nexara.data.model.ConversationScope.ALL_AGENTS)),
+            agentMemoryPolicy = com.promenar.nexara.data.agent.AgentMemoryPolicy(memoryCap = com.promenar.nexara.data.model.ConversationScope.AGENT),
+        )
+        assertThat(builder.buildContext(capped).ragTrace?.let { it.memoryScope to it.documentScope })
+            .isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT to null)
+
+        val kgBuilder = ContextBuilder(ragProvider = ragProvider, kgProvider = object : KgProvider {
+            override suspend fun extractContext(query: String, sessionId: String, topKResults: List<com.promenar.nexara.data.model.RagReference>) =
+                KgContextResult("graph", jitExtractionCount = 1, jitModel = "p::kg-model")
+        })
+        val kgParams = params.copy(session = session.copy(ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)))
+        assertThat(kgBuilder.buildContext(kgParams).ragTrace?.let { Triple(it.graphScope, it.jitExtractionCount, it.jitModel) })
+            .isEqualTo(Triple(com.promenar.nexara.data.model.ConversationScope.SESSION, 1, "p::kg-model"))
         fail = true
         assertThat(builder.buildContext(params).ragTrace?.outcome)
             .isEqualTo(com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_FAILED)

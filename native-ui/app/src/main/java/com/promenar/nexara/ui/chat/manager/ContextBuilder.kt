@@ -104,6 +104,9 @@ data class KgContextResult(
     val error: String? = null,
     val canonicalPaths: Boolean = false,
     val maxContextTokens: Int = 2048,
+    /** 本次是否调用了临时抽取（JIT）及其模型；持久图足够时为 0。 */
+    val jitExtractionCount: Int = 0,
+    val jitModel: String? = null,
 )
 
 interface KgProvider {
@@ -184,6 +187,8 @@ class ContextBuilder(
 
         // KG 启用判定与 RAG 共享 effective 配置：agent enableKnowledgeGraph=false 可覆盖 session true
         val kgEnabled = effectiveRagOptions.enableKnowledgeGraph == true
+        var jitExtractionCount = 0
+        var jitModel: String? = null
         val (kgContext, kgPaths) = if (kgProvider != null && kgEnabled) {
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
@@ -193,6 +198,8 @@ class ContextBuilder(
                     "" to emptyList<com.promenar.nexara.data.model.KgPath>()
                 } else {
                     params.onRagProgress?.invoke("Context ready", 100, null)
+                    jitExtractionCount = kgResult.jitExtractionCount
+                    jitModel = kgResult.jitModel
                     val paths = snapshotKgPaths(kgResult.paths)
                     if (kgResult.canonicalPaths) {
                         val fitted = com.promenar.nexara.data.rag.KgContextBudget.fit(paths, kgResult.maxContextTokens)
@@ -217,7 +224,13 @@ class ContextBuilder(
             kgContext = kgContext,
             kgPaths = kgPaths,
             // 未配置嵌入模型或没有检索范围时检索并未执行：不记录轨迹，回复中不出现检索步骤。
-            ragTrace = ragResult.trace?.takeUnless { it.isSkipped },
+            ragTrace = ragResult.trace?.takeUnless { it.isSkipped }?.copy(
+                memoryScope = effectiveRagOptions.effectiveMemoryScope.takeIf { effectiveRagOptions.enableMemory },
+                graphScope = effectiveRagOptions.effectiveGraphScope.takeIf { kgEnabled },
+                documentScope = effectiveRagOptions.effectiveDocumentScope.takeIf { effectiveRagOptions.enableDocs },
+                jitExtractionCount = jitExtractionCount,
+                jitModel = jitModel,
+            ),
         )
     }
 

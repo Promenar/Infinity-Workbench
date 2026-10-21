@@ -123,4 +123,25 @@ class MessageDaoTest {
         assertThat(result.toolCalls).isEqualTo("""[{"id":"tc1"}]""")
         assertThat(result.isError).isEqualTo(0)
     }
+
+    @Test
+    fun turnMemoryStateWritesOnlyWhenExpectedAndArchiveStatusKeepsIt() = runBlocking {
+        insertTestSession()
+        messageDao.insert(MessageEntity(id = "a1", sessionId = "s1", role = "assistant", content = "r", createdAt = 1L))
+        messageDao.insert(MessageEntity(id = "u1", sessionId = "s1", role = "user", content = "q", createdAt = 0L))
+
+        assertThat(messageDao.compareAndSetTurnMemoryState("a1", null, "{\"status\":\"writing\"}")).isEqualTo(1)
+        assertThat(messageDao.compareAndSetTurnMemoryState("a1", null, "{\"status\":\"failed\"}")).isEqualTo(0)
+        assertThat(messageDao.compareAndSetTurnMemoryState("a1", "{\"status\":\"writing\"}", "{\"status\":\"stored\"}")).isEqualTo(1)
+
+        messageDao.updateArchiveVectorizationStatus("a1", "success")
+        messageDao.updateArchiveVectorizationStatus("u1", "success")
+        assertThat(messageDao.getById("a1")?.vectorizationStatus).isEqualTo("{\"status\":\"stored\"}")
+        assertThat(messageDao.getById("u1")?.vectorizationStatus).isEqualTo("success")
+
+        // 局部更新在事务内读出并写回整行；目标不存在时返回 -1。
+        assertThat(messageDao.updateWith("a1") { it.copy(content = "edited") }).isEqualTo(1)
+        assertThat(messageDao.getById("a1")?.let { it.content to it.vectorizationStatus }).isEqualTo("edited" to "{\"status\":\"stored\"}")
+        assertThat(messageDao.updateWith("missing") { it }).isEqualTo(-1)
+    }
 }

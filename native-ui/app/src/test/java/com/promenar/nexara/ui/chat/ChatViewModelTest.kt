@@ -1852,6 +1852,19 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `删除用户消息连同已记入记忆的回复时撤销提示说明记忆一并删除`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        val stored = com.promenar.nexara.data.model.TurnMemoryState(com.promenar.nexara.data.model.TurnMemoryState.Status.STORED, 1)
+        seedSession(messages = multiMessageTurn().map { if (it.id == "a2") it.copy(vectorizationStatus = stored.encode()) else it })
+        advanceUntilIdle()
+
+        viewModel.deleteMessage("u1"); advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.messages).isEmpty()
+        assertThat(viewModel.deletionUndo.value?.let { it.count to it.withMemory }).isEqualTo(2 to true)
+    }
+
+    @Test
     fun `删除助手回复按整轮删除并可撤销`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(messages = multiMessageTurn()); advanceUntilIdle()
@@ -1859,7 +1872,9 @@ class ChatViewModelTest {
         viewModel.deleteMessage("a2"); advanceUntilIdle()
 
         assertThat(viewModel.uiState.value.messages.map { it.id }).containsExactly("u1")
-        assertThat(viewModel.deletionUndo.value?.count).isEqualTo(3)
+        // 撤销提示按气泡计数：整轮回复（两条助手消息与一条工具消息）算一条。
+        assertThat(viewModel.deletionUndo.value?.count).isEqualTo(1)
+        assertThat(viewModel.deletionUndo.value?.withMemory).isFalse()
 
         viewModel.undoLastDeletion(); advanceUntilIdle()
 

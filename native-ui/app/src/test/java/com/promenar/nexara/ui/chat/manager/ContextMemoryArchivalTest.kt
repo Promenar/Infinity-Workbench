@@ -238,6 +238,11 @@ class ContextMemoryArchivalTest {
                 super.updatePartial(messageId, updates)
             }
 
+            override suspend fun updateArchiveVectorizationStatus(messageId: String, status: String) {
+                beforeStatusWrite()
+                super.updateArchiveVectorizationStatus(messageId, status)
+            }
+
             override suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?) {
                 beforeStatusWrite()
                 super.updateVectorizationStatus(messageId, status, isArchived)

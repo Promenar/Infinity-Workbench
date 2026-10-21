@@ -8,6 +8,7 @@ import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.ui.chat.manager.KgContextResult
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MicroGraphKgAdapterTest {
-    private val extractor: MicroGraphExtractor = mockk()
+    private val extractor: MicroGraphExtractor = mockk { every { modelId } returns "provider::kg" }
     private val adapter = MicroGraphKgAdapter(extractor)
 
     private fun node(name: String, type: String = "concept", metadata: String? = null) =
@@ -32,15 +33,28 @@ class MicroGraphKgAdapterTest {
         nodes: List<ExtractedNode>,
         edges: List<ExtractedEdge>,
         context: String = "ctx",
-        query: String = "q"
+        query: String = "q",
+        modelCalled: Boolean = true,
     ) = MicroGraphResult(
         nodes = nodes,
         edges = edges,
         context = context,
         sourceChunkIds = listOf("r1"),
         query = query,
-        extractedAt = 100L
+        extractedAt = 100L,
+        modelCalled = modelCalled,
     )
+
+    @Test
+    fun `命中缓存或无可抽取文本时不计临时抽取`() = runTest {
+        coEvery { extractor.extract(any(), any(), any()) } returns
+            microResult(listOf(node("A"), node("B")), listOf(edge("A", "B", "related_to")), modelCalled = false)
+
+        val result = adapter.extractContext("q", "s1", listOf(ragRef("r1")))
+
+        assertThat(result!!.paths).hasSize(1)
+        assertThat(result.jitExtractionCount to result.jitModel).isEqualTo(0 to null)
+    }
 
     @Test
     fun `传递失败状态且不产生上下文或路径`() = runTest {
@@ -67,6 +81,7 @@ class MicroGraphKgAdapterTest {
 
         assertThat(result).isNotNull()
         assertThat(result!!.context).isEqualTo("- A --[related_to]--> B\n- B --[part_of]--> C")
+        assertThat(result.jitExtractionCount to result.jitModel).isEqualTo(1 to "provider::kg")
         assertThat(result.paths).hasSize(1)
         val path = result.paths.first()
         assertThat(path.edges).containsExactly(

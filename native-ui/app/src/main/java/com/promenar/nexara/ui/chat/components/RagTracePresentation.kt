@@ -1,14 +1,23 @@
 package com.promenar.nexara.ui.chat.components
 
+import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
+import com.promenar.nexara.data.model.ConversationScope
 import com.promenar.nexara.data.model.RagRetrievalTrace
+import com.promenar.nexara.ui.common.ScopeResource
+import com.promenar.nexara.ui.common.labelRes
 import kotlin.math.roundToInt
 
-/** 待本地化的一段文字：资源 ID 加格式参数。 */
-data class RagText(@StringRes val resId: Int, val args: List<Any> = emptyList())
+/**
+ * 待本地化的一段文字：资源 ID 加格式参数。[quantity] 非空时 [resId] 是复数资源；
+ * 参数本身也可以是 [RagText]（如档位名称），解析时先行本地化。
+ */
+data class RagText(val resId: Int, val args: List<Any> = emptyList(), val quantity: Int? = null)
+
+private fun plural(@PluralsRes resId: Int, count: Int) = RagText(resId, listOf(count), quantity = count)
 
 /** 检索结果的观感等级：命中、未命中（中性），以及未能检索（需要用户处理）。 */
 enum class RagOutcomeTone { HIT, NEUTRAL, ATTENTION }
@@ -67,7 +76,43 @@ internal fun ragTraceLines(trace: RagRetrievalTrace): List<List<RagText>> = buil
         RagRetrievalTrace.OUTCOME_NO_SCOPE -> add(listOf(RagText(R.string.rag_trace_no_scope_hint)))
         else -> add(listOf(RagText(R.string.rag_trace_failed_hint)))
     }
+    trace.memoryScope?.let { scope ->
+        add(buildList {
+            add(RagText(R.string.rag_trace_scope_memory, listOf(RagText(scope.labelRes(ScopeResource.Memory)))))
+            trace.memorySessionCount?.let { add(plural(R.plurals.rag_trace_reach_sessions, it)) }
+            // 跨助手档才需要说明助手数；其余档位只涉及本助手。
+            if (scope == ConversationScope.ALL_AGENTS) trace.memoryAgentCount?.let { add(plural(R.plurals.rag_trace_reach_agents, it)) }
+        })
+    }
+    trace.graphScope?.let { add(listOf(RagText(R.string.rag_trace_scope_graph, listOf(RagText(it.labelRes(ScopeResource.Graph)))))) }
+    trace.documentScope?.let { add(listOf(RagText(R.string.rag_trace_scope_documents, listOf(RagText(it.labelRes()))))) }
+    if (trace.jitExtractionCount > 0) {
+        add(buildList {
+            add(RagText(R.string.rag_trace_jit, listOf(trace.jitExtractionCount)))
+            trace.jitModel?.takeIf(String::isNotBlank)?.let { add(RagText(R.string.rag_trace_jit_model, listOf(it.substringAfter("::", it)))) }
+        })
+    }
     if (trace.searchTimeMs > 0) add(listOf(RagText(R.string.rag_trace_time, listOf(trace.searchTimeMs))))
+}
+
+/** 检索卡摘要中的范围段：优先说明对话记忆档位，未检索记忆时说明文档档位。 */
+internal fun ragScopeSegment(trace: RagRetrievalTrace?): RagText? {
+    val label = trace?.memoryScope?.labelRes(ScopeResource.Memory) ?: trace?.documentScope?.labelRes() ?: return null
+    return RagText(R.string.chat_rag_scope_segment, listOf(RagText(label)))
+}
+
+/**
+ * 检索卡摘要下一行：按来源计数（对话记忆、文档、图谱路径），并标出图谱临时抽取次数。
+ * 引用按是否关联文档区分来源，会话摘要计入记忆。没有任何条目时为空。
+ */
+internal fun ragSourceBreakdown(references: List<RagReference>, kgPathCount: Int, trace: RagRetrievalTrace?): List<RagText> = buildList {
+    val documents = references.count { it.documentId != null || it.kind == RagReferenceKind.DOCUMENT }
+    val memory = references.size - documents
+    if (memory > 0) add(RagText(R.string.chat_rag_breakdown_memory, listOf(memory)))
+    if (documents > 0) add(RagText(R.string.chat_rag_breakdown_documents, listOf(documents)))
+    if (kgPathCount > 0) add(RagText(R.string.chat_rag_breakdown_graph, listOf(kgPathCount)))
+    val jit = trace?.jitExtractionCount ?: 0
+    if (jit > 0) add(RagText(R.string.chat_rag_breakdown_jit, listOf(jit)))
 }
 
 private fun rerankLine(trace: RagRetrievalTrace): List<RagText> = when (trace.rerank) {

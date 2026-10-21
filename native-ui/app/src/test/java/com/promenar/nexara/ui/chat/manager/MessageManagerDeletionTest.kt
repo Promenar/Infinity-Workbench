@@ -378,8 +378,14 @@ class MessageManagerDeletionTest {
         var failure: Throwable? = null
         override suspend fun onMessagesRemoved(sessionId: String) { failure?.let { throw it }; events += "removed:$sessionId" }
         override suspend fun onMessagesRestored(sessionId: String) { events += "restored:$sessionId" }
-        override suspend fun onMessageEdited(sessionId: String, messageId: String) { events += "edited:$messageId" }
+        override suspend fun onMessageEdited(sessionId: String, messageId: String): Map<String, com.promenar.nexara.data.model.TurnMemoryState> {
+            events += "edited:$messageId"
+            return emptyMap()
+        }
         override suspend fun purgeExpired() = Unit
+        override suspend fun removeTurn(sessionId: String, assistantMessageId: String) = 0
+        override suspend fun rewriteTurn(sessionId: String, assistantMessageId: String) = 0
+        override suspend fun turnChunkCount(sessionId: String, assistantMessageId: String) = 0
     }
 
     private fun session(messages: List<Message>) = Session(

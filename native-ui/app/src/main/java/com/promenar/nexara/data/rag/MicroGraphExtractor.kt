@@ -12,7 +12,8 @@ class MicroGraphExtractor(
     private val requestClient: KgRequestClient,
     private val graphStore: GraphStore,
     private val jitCacheDao: KgJitCacheDao,
-    private val modelId: String? = null,
+    /** 抽取所用模型的稳定 ID，供检索轨迹展示。 */
+    val modelId: String? = null,
     private val systemPrompt: String = GraphExtractor.DEFAULT_KG_PROMPT,
     private val cacheTtlSeconds: Long = 3600,
     private val timeoutMs: Long = 5000,
@@ -66,7 +67,7 @@ class MicroGraphExtractor(
             else requestClient.extract(modelId, systemPrompt, "检索问题：$query\n\n请从以下文本片段提取关系：\n$text", timeout)
             if (!extracted.isSuccess) return@withTimeoutOrNull MicroGraphResult.failure(extracted.status, extracted.error.orEmpty(), query)
             val graph = ValidatedGraph.from(extracted.nodes, extracted.edges)
-            val result = MicroGraphResult(graph.nodes, graph.edges, graph.context, input.sources.map { it.id }, query, System.currentTimeMillis(), sourceDocumentIds = sources.mapNotNull { it.docId }.distinct().sorted())
+            val result = MicroGraphResult(graph.nodes, graph.edges, graph.context, input.sources.map { it.id }, query, System.currentTimeMillis(), sourceDocumentIds = sources.mapNotNull { it.docId }.distinct().sorted(), modelCalled = text.isNotBlank())
             currentCoroutineContext().ensureActive()
             if (!scope.isActive) return@withTimeoutOrNull MicroGraphResult.failure(KgExtractionStatus.CANCELLED, "JIT 抽取器已关闭", query)
             // 单个消费者与固定容量限制后台工作；队列繁忙时保留当前请求结果，跳过可选持久化。

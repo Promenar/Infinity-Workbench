@@ -146,16 +146,19 @@ class PersistentGraphRetrievalTest {
         val jit = object : KgProvider {
             override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>): KgContextResult {
                 calls++
-                return KgContextResult("")
+                return KgContextResult("", jitExtractionCount = 1, jitModel = "p::kg")
             }
         }
         val options = RagOptions(activeDocIds = listOf("doc"), enableKnowledgeGraph = true)
         val refs = listOf(RagReference("r", "片段", documentId = "doc"))
         val provider = PersistentGraphKgProvider(store, jit) { RagConfiguration(kgJitMinSeeds = 1) }
-        provider.retrieveContext("甲", "s", refs, options)
+        val persistentOnly = provider.retrieveContext("甲", "s", refs, options)
         assertThat(calls).isEqualTo(0)
-        provider.retrieveContext("不存在", "s", refs, options)
+        assertThat(persistentOnly.jitExtractionCount).isEqualTo(0)
+        // 临时抽取的次数与模型交给检索轨迹展示。
+        val withJit = provider.retrieveContext("不存在", "s", refs, options)
         assertThat(calls).isEqualTo(1)
+        assertThat(withJit.jitExtractionCount to withJit.jitModel).isEqualTo(1 to "p::kg")
         val disabled = PersistentGraphKgProvider(store, jit) { RagConfiguration(kgJitFallbackEnabled = false) }
         disabled.retrieveContext("不存在", "s", refs, options)
         assertThat(calls).isEqualTo(1)

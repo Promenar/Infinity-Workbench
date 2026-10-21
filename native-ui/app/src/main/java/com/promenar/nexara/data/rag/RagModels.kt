@@ -219,6 +219,8 @@ data class MicroGraphResult(
     val status: KgExtractionStatus = KgExtractionStatus.SUCCESS,
     val error: String? = null,
     val sourceDocumentIds: List<String> = emptyList(),
+    /** 本次是否实际请求了抽取模型；命中缓存或无可抽取文本时为 false，不写入缓存。 */
+    @kotlinx.serialization.Transient val modelCalled: Boolean = false,
 ) {
     val isSuccess: Boolean get() = status == KgExtractionStatus.SUCCESS && error == null
 

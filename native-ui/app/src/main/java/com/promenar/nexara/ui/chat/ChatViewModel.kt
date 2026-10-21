@@ -35,7 +35,13 @@ import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.domain.usecase.ExportSessionUseCase
 import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.domain.usecase.resolvedKeepRecentTurns
+import com.promenar.nexara.data.model.ConversationScope
+import com.promenar.nexara.data.model.RagOptions
+import com.promenar.nexara.data.model.TurnMemoryState
+import com.promenar.nexara.data.model.turnMemory
+import com.promenar.nexara.data.rag.ConversationReachStats
 import com.promenar.nexara.data.rag.EmbeddingClient
+import com.promenar.nexara.data.rag.RetrievalScopeResolver
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
@@ -174,8 +180,17 @@ data class ChatUiState(
 )
 
 enum class BackgroundWarningKind { FGS_UNAVAILABLE, NOTIFICATIONS_UNAVAILABLE }
-/** 删除后的撤销提示：[count] 为被删除的消息条数。 */
-data class DeletionUndo(val token: String, val count: Int)
+/**
+ * 删除后的撤销提示：[count] 为被删除的气泡数（用户消息与整轮回复各计一条），
+ * [withMemory] 表示其中有已记入记忆的回复，提示需说明记忆一并删除。
+ */
+data class DeletionUndo(val token: String, val count: Int, val withMemory: Boolean = false)
+
+/** “本轮记忆”面板的内容：本轮写入的片段，以及决定其他会话能否检索到它的设置。 */
+data class TurnMemoryDetails(
+    val chunks: List<String>,
+    val shareWithOtherAgents: Boolean,
+)
 
 /** 用户在待办面板上“标记完成”后可撤销的记录；[previousStatuses] 为各步骤原状态。 */
 data class TaskCompletionUndo(
@@ -1398,6 +1413,7 @@ class ChatViewModel(
             }
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
+            viewModelScope.launch { messageManager.reconcileTurnMemory(sessionId) }
             // 同步当前会话的 ragOptions 到缓存
             existing.ragOptions?.let { _currentRagOptions.value = it }
             // P0 持久化修复: 恢复历史检索指示器
@@ -1442,6 +1458,7 @@ class ChatViewModel(
                     }
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
+                    messageManager.reconcileTurnMemory(sessionId)
                     // 同步当前会话的 ragOptions 到缓存
                     hydrated.ragOptions?.let { _currentRagOptions.value = it }
                 // P0 持久化修复: 若会话中已有检索结果，恢复指示器为历史完成态
@@ -1850,6 +1867,61 @@ class ChatViewModel(
         return configResolver.resolve(agentId?.let { agentRepository.getById(it) }).memoryPolicy
     }
 
+    /** 当前会话在三档对话范围下各可检索多少会话与助手，供会话设置说明范围。 */
+    suspend fun conversationReachStats(): Map<ConversationScope, ConversationReachStats> {
+        val sessionId = _currentSessionId.value ?: return emptyMap()
+        val resolver = RetrievalScopeResolver((application as NexaraApplication).database)
+        return ConversationScope.entries.associateWith { scope ->
+            resolver.stats(resolver.resolve(sessionId, RagOptions(memoryScope = scope)).memory)
+        }
+    }
+
+    suspend fun loadTurnMemory(assistantMessageId: String): TurnMemoryDetails {
+        val sessionId = _currentSessionId.value ?: return TurnMemoryDetails(emptyList(), true)
+        val chunks = withContext(Dispatchers.IO) {
+            (application as NexaraApplication).database.vectorDao()
+                .getMemoryByAssistantMessage(sessionId, assistantMessageId)
+                .sortedWith(compareBy({ it.createdAt }, { memoryChunkIndex(it.metadata) }))
+                .map { it.content }
+        }
+        return TurnMemoryDetails(chunks, agentMemoryPolicy().shareWithOtherAgents)
+    }
+
+    /** 只从记忆中移除这一轮，消息保留；之后可在面板中重新记入。 */
+    fun removeTurnMemory(assistantMessageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            try {
+                (application as NexaraApplication).conversationMemoryLifecycle.removeTurn(sessionId, assistantMessageId)
+                messageManager.setTurnMemoryState(sessionId, assistantMessageId,
+                    TurnMemoryState(TurnMemoryState.Status.REMOVED, updatedAt = System.currentTimeMillis()))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("[ChatViewModel] 移除本轮记忆失败", error)
+                _error.value = application.getString(R.string.turn_memory_remove_failed)
+            }
+        }
+    }
+
+    /** 按当前正文重新写入这一轮的记忆，用于写入失败后重试或移除后重新记入。 */
+    fun rewriteTurnMemory(assistantMessageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val app = application as NexaraApplication
+            val previous = store.getSession(sessionId)?.messages?.firstOrNull { it.id == assistantMessageId }?.turnMemory
+            messageManager.writeTurnMemory(sessionId, assistantMessageId, previous) {
+                check(app.memoryManager.canEmbed) { "未配置嵌入模型" }
+                val written = app.conversationMemoryLifecycle.rewriteTurn(sessionId, assistantMessageId)
+                TurnMemoryState(
+                    status = if (written > 0) TurnMemoryState.Status.STORED else TurnMemoryState.Status.FAILED,
+                    chunkCount = written,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
+        }
+    }
+
     suspend fun agentInferenceDefaults(): InferenceParams {
         val agentId = _currentSessionId.value?.let(store::getSession)?.agentId
         val agent = agentId?.let { agentRepository.getById(it) }
@@ -2074,7 +2146,11 @@ class ChatViewModel(
             messageManager.deleteMessages(sessionId, targetIds) { stopGeneration() }
             lastDeletedMessages.clear()
             messagesToRestore.forEach { lastDeletedMessages.add(sessionId to it) }
-            _deletionUndo.value = DeletionUndo(IdGenerator.message("undo"), messagesToRestore.size)
+            _deletionUndo.value = DeletionUndo(
+                token = IdGenerator.message("undo"),
+                count = buildPipelineGroups(messagesToRestore).size,
+                withMemory = messagesToRestore.any { it.turnMemory?.status == TurnMemoryState.Status.STORED },
+            )
         }
     }
 
@@ -2414,3 +2490,7 @@ class ChatViewModel(
     }
 
 }
+
+/** 记忆片段在一轮内的顺序，取自向量元数据的 chunkIndex。 */
+private fun memoryChunkIndex(metadata: String?): Int =
+    metadata?.let { Regex("\"chunkIndex\":(\\d+)").find(it)?.groupValues?.get(1)?.toIntOrNull() } ?: 0

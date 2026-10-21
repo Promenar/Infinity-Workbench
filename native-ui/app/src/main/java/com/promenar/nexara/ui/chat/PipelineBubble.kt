@@ -54,6 +54,8 @@ import android.widget.Toast
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.turnMemory
+import com.promenar.nexara.data.model.TurnMemoryState
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentCodec
@@ -174,6 +176,8 @@ fun PipelineBubble(
     interruptedByError: Boolean = false,
     /** 完成态时间线的初始展开状态，仅供预览使用。 */
     initialProcessExpanded: Boolean = false,
+    /** 点按记忆写入状态时以该轮记忆所在的助手消息 ID 回调；为 null 时不显示记忆状态（会话关闭了记忆）。 */
+    onOpenTurnMemory: ((String) -> Unit)? = null,
     ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isNotice) {
@@ -306,10 +310,14 @@ fun PipelineBubble(
                         )
                     }
                 }
+                val memoryOwner = if (onOpenTurnMemory == null) null
+                    else group.assistantMessages.lastOrNull { it.turnMemory != null }
                 AssistantActionRow(
                     modelDisplayName = modelDisplayName,
                     timestamp = timestamp,
                     isGenerating = isGenerating,
+                    memoryState = memoryOwner?.turnMemory,
+                    onOpenMemory = memoryOwner?.let { owner -> onOpenTurnMemory?.let { open -> { open(owner.id) } } },
                     stats = statsFactory,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
                     onCopyAllProcess = allProcessCopyText?.let { text ->
@@ -684,6 +692,9 @@ internal fun AssistantActionRow(
     onCopyAllProcess: (() -> Unit)? = null,
     /** 生成统计工厂，打开浮卡时才调用；为 null 时模型名与时间不可点击。生成进行中整行不显示，因此不会弹出。 */
     stats: (() -> GenerationStatsCardModel)? = null,
+    /** 本轮的记忆写入状态，显示在模型名之前；为 null 时不显示。 */
+    memoryState: TurnMemoryState? = null,
+    onOpenMemory: (() -> Unit)? = null,
 ) {
     if (isGenerating) return
     var showMore by remember { mutableStateOf(false) }
@@ -742,52 +753,84 @@ internal fun AssistantActionRow(
                     }
                 }
             }
-            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                val statsLabel = stringResource(R.string.generation_stats_open_action)
-                Box(
-                    modifier = if (stats != null) {
-                        Modifier.onGloballyPositioned { statsAnchor.coordinates = it }
-                    } else Modifier,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                            .then(
-                                if (stats != null) {
-                                    Modifier.clickable(onClickLabel = statsLabel, role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
-                                        .testTag(UiTags.CHAT_ASSISTANT_STATS_TRIGGER)
-                                } else Modifier,
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (modelDisplayName.isNotBlank()) {
-                            Text(
-                                text = modelDisplayName,
-                                style = metaStyle,
-                                modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
-                        }
-                        Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
+            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                val memoryLabel = memoryState?.let { stringResource(it.status.labelRes()) }
+                // 宽度不足时记忆状态只保留图标：时间始终完整，模型名其次，最后才是状态文字。
+                val memoryTextFits = memoryLabel != null && turnMemoryTextFits(
+                    maxWidth = maxWidth, style = metaStyle, memoryLabel = memoryLabel,
+                    modelDisplayName = modelDisplayName, timestamp = timestamp,
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    if (memoryState != null && onOpenMemory != null) {
+                        TurnMemoryStatusLabel(memoryState, onOpenMemory, showText = memoryTextFits)
+                        Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(end = 4.dp).clearAndSetSemantics {})
                     }
-                    if (showStats && stats != null) {
-                        val model = remember { stats() }
-                        val anchorBounds = remember {
-                            statsAnchor.coordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let {
-                                androidx.compose.ui.unit.IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+                    val statsLabel = stringResource(R.string.generation_stats_open_action)
+                    Box(
+                        modifier = if (stats != null) {
+                            Modifier.onGloballyPositioned { statsAnchor.coordinates = it }
+                        } else Modifier,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                                .then(
+                                    if (stats != null) {
+                                        Modifier.clickable(onClickLabel = statsLabel, role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
+                                            .testTag(UiTags.CHAT_ASSISTANT_STATS_TRIGGER)
+                                    } else Modifier,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (modelDisplayName.isNotBlank()) {
+                                Text(
+                                    text = modelDisplayName,
+                                    style = metaStyle,
+                                    modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
                             }
+                            Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
                         }
-                        GenerationStatsPopup(
-                            model = model,
-                            anchorBoundsInWindow = anchorBounds,
-                            onDismissRequest = { showStats = false },
-                        )
+                        if (showStats && stats != null) {
+                            val model = remember { stats() }
+                            val anchorBounds = remember {
+                                statsAnchor.coordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let {
+                                    androidx.compose.ui.unit.IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+                                }
+                            }
+                            GenerationStatsPopup(
+                                model = model,
+                                anchorBoundsInWindow = anchorBounds,
+                                onDismissRequest = { showStats = false },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** 记忆状态文字、模型名（至少保留一段）与时间能否在 [maxWidth] 内同时排下。 */
+@Composable
+private fun turnMemoryTextFits(
+    maxWidth: androidx.compose.ui.unit.Dp,
+    style: androidx.compose.ui.text.TextStyle,
+    memoryLabel: String,
+    modelDisplayName: String,
+    timestamp: String,
+): Boolean {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return remember(maxWidth, style, memoryLabel, modelDisplayName, timestamp, density) {
+        fun width(text: String) = with(density) { measurer.measure(text, style, maxLines = 1).size.width.toDp() }
+        val separator = width(NexaraMetaSeparator) + 8.dp
+        val model = if (modelDisplayName.isBlank()) 0.dp else minOf(width(modelDisplayName), 72.dp) + separator
+        // 图标、间距与左右内边距见 TurnMemoryStatusLabel。
+        24.dp + width(memoryLabel) + separator + model + width(timestamp) <= maxWidth
     }
 }
 

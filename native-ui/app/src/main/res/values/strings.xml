@@ -471,7 +471,6 @@
     <string name="chat_confirm_truncate_title">Confirm Truncate?</string>
     <string name="chat_confirm_truncate_message">This will permanently delete all messages after this point. Continue?</string>
     <string name="chat_undo_truncate">Truncated history</string>
-    <string name="chat_undo_delete">Message deleted</string>
     <string name="chat_btn_undo">Undo</string>
 
     <string name="chat_context_usage_title">Context Usage</string>

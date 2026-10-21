@@ -27,7 +27,8 @@ class MicroGraphKgAdapter(
                 createdAt = UNKNOWN_CREATED_AT_SENTINEL
             )
         }
-        val result = extractorProvider().extract(
+        val extractor = extractorProvider()
+        val result = extractor.extract(
             topKResults = searchResults,
             query = query,
             sessionId = sessionId
@@ -37,7 +38,9 @@ class MicroGraphKgAdapter(
         val validated = result.copy(nodes = graph.nodes, edges = graph.edges, context = graph.context)
         return KgContextResult(
             context = validated.context,
-            paths = validated.toKgPaths()
+            paths = validated.toKgPaths(),
+            jitExtractionCount = if (result.modelCalled) 1 else 0,
+            jitModel = extractor.modelId.takeIf { result.modelCalled },
         )
     }
 

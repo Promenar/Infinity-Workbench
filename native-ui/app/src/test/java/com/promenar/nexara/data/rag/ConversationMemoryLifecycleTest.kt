@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.model.TurnMemoryState
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -39,6 +40,7 @@ class ConversationMemoryLifecycleTest {
             turnWriter = { sessionId, user, assistant, userId, assistantId ->
                 writes += listOf(sessionId, user, assistant, userId, assistantId)
                 database.vectorDao().insert(memory("rewritten", sessionId, userId, assistantId, "$user / $assistant"))
+                1
             },
             clock = { now },
             undoWindowMillis = window,
@@ -160,6 +162,67 @@ class ConversationMemoryLifecycleTest {
         failing.onMessageEdited("s1", "a1")
 
         assertThat(database.vectorDao().getBySessionId("s1")).isEmpty()
+    }
+
+    @Test
+    fun `编辑返回受影响各轮的新记忆状态：助手正文重写为已记入，用户消息为已移除，重写失败为失败`() = runTest {
+        seedTurn()
+        assertThat(lifecycle.onMessageEdited("s1", "a1")).containsExactly("a1", TurnMemoryState(TurnMemoryState.Status.STORED, 1, now))
+        assertThat(lifecycle.turnChunkCount("s1", "a1")).isEqualTo(1)
+        // 编辑用户消息移除的是以其为起点的轮次，状态记在该轮的助手消息上。
+        assertThat(lifecycle.onMessageEdited("s1", "u1")).containsExactly("a1", TurnMemoryState(TurnMemoryState.Status.REMOVED, updatedAt = now))
+        assertThat(lifecycle.turnChunkCount("s1", "a1")).isEqualTo(0)
+        assertThat(lifecycle.onMessageEdited("s1", "u1")).isEmpty()
+
+        database.vectorDao().insert(memory("mem", "s1", "u1", "a1", "again"))
+        val failing = RoomConversationMemoryLifecycle({ database }, { _, _, _, _, _ -> error("embedding unavailable") }, clock = { now })
+        assertThat(failing.onMessageEdited("s1", "a1")["a1"]?.status).isEqualTo(TurnMemoryState.Status.FAILED)
+    }
+
+    @Test
+    fun `从记忆中移除本轮后检索不可见且消息保留，只影响该轮`() = runTest {
+        seedTurn()
+        database.messageDao().insert(MessageEntity(id = "u2", sessionId = "s1", role = "user", content = "second", createdAt = 3))
+        database.messageDao().insert(MessageEntity(id = "a2", sessionId = "s1", role = "assistant", content = "reply", createdAt = 4))
+        database.vectorDao().insert(memory("mem2", "s1", "u2", "a2", "needle two"))
+        database.kgNodeDao().insert(KgNodeEntity("n-memory", "n-memory", createdAt = 1))
+        database.kgEvidenceDao().insert(evidence("jit-memory", "jit", nodeId = "n-memory", sessionId = "s1", docId = null, task = "task-1"))
+
+        assertThat(lifecycle.removeTurn("s1", "a1")).isEqualTo(1)
+
+        val dao = database.vectorDao()
+        assertThat(dao.getBySessionIdAndType("s1", "memory").map { it.id }).containsExactly("mem2")
+        assertThat(dao.searchFtsExcludeDocs("needle").map { it.id }).containsExactly("mem2")
+        assertThat(dao.getById("mem")).isNull()
+        assertThat(database.messageDao().getById("a1")).isNotNull()
+        assertThat(database.messageDao().getById("u1")).isNotNull()
+        // 即时图谱证据可能含被移除的片段，随之失效。
+        assertThat(database.kgNodeDao().getAll()).isEmpty()
+    }
+
+    @Test
+    fun `重新记入本轮按当前消息写入并替换旧片段`() = runTest {
+        seedTurn()
+        database.messageDao().insert(MessageEntity(id = "a3", sessionId = "s1", role = "assistant", content = "edited reply",
+            parentMessageId = "u1", createdAt = 5))
+        database.vectorDao().insert(memory("old-a3", "s1", "u1", "a3", "stale"))
+
+        assertThat(lifecycle.rewriteTurn("s1", "a3")).isEqualTo(1)
+
+        assertThat(writes).containsExactly(listOf("s1", "question", "edited reply", "u1", "a3"))
+        assertThat(database.vectorDao().getMemoryByAssistantMessage("s1", "a3").map { it.id }).containsExactly("rewritten")
+
+        lifecycle.removeTurn("s1", "a3")
+        assertThat(lifecycle.rewriteTurn("s1", "a3")).isEqualTo(1)
+        assertThat(database.vectorDao().getMemoryByAssistantMessage("s1", "a3").map { it.id }).containsExactly("rewritten")
+    }
+
+    @Test
+    fun `缺少本轮用户消息时重新记入失败且不写入`() = runTest {
+        seedTurn()
+        val result = runCatching { lifecycle.rewriteTurn("s1", "a1") }
+        assertThat(result.isFailure).isTrue()
+        assertThat(writes).isEmpty()
     }
 
     private suspend fun seedTurn() {

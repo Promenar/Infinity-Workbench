@@ -131,6 +131,18 @@ class RetrievalScopeTest {
     }
 
     @Test
+    fun `范围统计与检索读取的会话集合一致`() = runBlocking<Unit> {
+        fun stats(session: String, scope: ConversationScope) = runBlocking {
+            resolver.stats(resolver.resolve(session, RagOptions(memoryScope = scope)).memory)
+        }
+        assertThat(stats("a1", ConversationScope.SESSION)).isEqualTo(ConversationReachStats(1, 1))
+        assertThat(stats("a1", ConversationScope.AGENT)).isEqualTo(ConversationReachStats(2, 1))
+        // 全部助手档排除私密助手 P，包含 A、B 与知识库会话所属的系统助手。
+        assertThat(stats("a1", ConversationScope.ALL_AGENTS)).isEqualTo(ConversationReachStats(4, 3))
+        assertThat(stats("p1", ConversationScope.ALL_AGENTS)).isEqualTo(ConversationReachStats(5, 4))
+    }
+
+    @Test
     fun `旧会话isGlobal迁移为本助手，会话档位不超过助手上限`() {
         assertThat(RagOptions(isGlobal = true).effectiveMemoryScope).isEqualTo(ConversationScope.AGENT)
         assertThat(RagOptions(isGlobal = true).effectiveGraphScope).isEqualTo(ConversationScope.AGENT)

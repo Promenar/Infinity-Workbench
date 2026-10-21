@@ -57,6 +57,10 @@ import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
+import com.promenar.nexara.ui.chat.components.ragScopeSegment
+import com.promenar.nexara.ui.chat.components.ragSourceBreakdown
+import com.promenar.nexara.ui.chat.components.resolve
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.common.NexaraMetaSeparator
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
@@ -303,30 +307,42 @@ fun RagProgressCard(
             RagInlineStatus.FAILED -> if (webOnly) R.string.chat_inline_retrieval_web_failed else R.string.chat_inline_retrieval_knowledge_failed
         },
     )
+    val scopeSegment = if (ready) ragScopeSegment(trace)?.resolve() else null
     val segments = buildList {
         add(summaryText)
         summary.resultCount?.let { count ->
             add(pluralStringResource(R.plurals.chat_inline_retrieval_result_count, count, count))
         }
+        scopeSegment?.let(::add)
     }
+    val breakdown = if (ready) ragSourceBreakdown(references.orEmpty(), kgPaths.orEmpty().size, trace).map { it.resolve() } else emptyList()
     val partialFailureText = if (summary.partialFailure) {
         stringResource(R.string.chat_inline_retrieval_partial_failure)
     } else null
     val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
-    CompactStepRow(
-        segments = segments,
-        icon = Icons.Rounded.Search,
-        active = !ready,
-        progress = if (ready) null else progress,
-        tone = if (summary.status == RagInlineStatus.FAILED) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-        state = partialFailureText ?: if (summary.status == RagInlineStatus.COMPLETED) stringResource(R.string.chat_rag_done) else summaryText,
-        clickLabel = openDetailsLabel,
-        tag = UiTags.RAG_PROGRESS_CARD,
-        onClick = { showDetailsSheet = true },
-        modifier = modifier,
-        failureText = partialFailureText,
-    )
+    Column(modifier) {
+        CompactStepRow(
+            segments = segments,
+            icon = Icons.Rounded.Search,
+            active = !ready,
+            progress = if (ready) null else progress,
+            tone = if (summary.status == RagInlineStatus.FAILED) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            state = partialFailureText ?: if (summary.status == RagInlineStatus.COMPLETED) stringResource(R.string.chat_rag_done) else summaryText,
+            clickLabel = openDetailsLabel,
+            tag = UiTags.RAG_PROGRESS_CARD,
+            onClick = { showDetailsSheet = true },
+            failureText = partialFailureText,
+        )
+        if (breakdown.isNotEmpty()) {
+            NexaraMetaLine(
+                segments = breakdown,
+                style = NexaraTypography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                modifier = Modifier.padding(bottom = 4.dp).testTag(UiTags.RAG_SOURCE_BREAKDOWN),
+            )
+        }
+    }
 
     if (showDetailsSheet) {
         RagDetailsSheet(

@@ -24,6 +24,16 @@ interface MessageDao {
     @Delete
     suspend fun delete(message: MessageEntity)
 
+    /**
+     * 局部更新按“读出、修改、写回”整行执行，必须在同一事务内完成，
+     * 否则并发写入的单列更新（如一轮的记忆状态）会被读出时的旧值覆盖。返回 -1 表示消息不存在。
+     */
+    @Transaction
+    suspend fun updateWith(messageId: String, transform: (MessageEntity) -> MessageEntity): Int {
+        val existing = getById(messageId) ?: return -1
+        return update(transform(existing))
+    }
+
     @Query("UPDATE messages SET content = :content WHERE session_id = :sessionId AND id = :messageId")
     suspend fun updateEditedContentInSession(sessionId: String, messageId: String, content: String): Int
 
@@ -166,6 +176,17 @@ interface MessageDao {
 
     @Query("UPDATE messages SET vectorization_status = :status, is_archived = :isArchived WHERE id = :messageId")
     suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Int?)
+
+    @Query("UPDATE messages SET vectorization_status = :encoded WHERE id = :messageId")
+    suspend fun updateTurnMemoryState(messageId: String, encoded: String?)
+
+    /** 仅当状态列仍为 [expected] 时改写一轮的记忆状态；返回影响行数。 */
+    @Query("UPDATE messages SET vectorization_status = :encoded WHERE id = :messageId AND vectorization_status IS :expected")
+    suspend fun compareAndSetTurnMemoryState(messageId: String, expected: String?, encoded: String?): Int
+
+    /** 摘要归档的纯文本向量化状态；该列已记有一轮的记忆状态（JSON）时保留后者。 */
+    @Query("UPDATE messages SET vectorization_status = :status WHERE id = :messageId AND (vectorization_status IS NULL OR vectorization_status NOT LIKE '{%')")
+    suspend fun updateArchiveVectorizationStatus(messageId: String, status: String)
 
     @Query("UPDATE messages SET content = :content, tokens = :tokens, reasoning = :reasoning, citations = :citations, rag_references = :ragReferences, rag_metadata = :ragMetadata, thought_signature = :thoughtSignature, planning_task = :planningTask, execution_steps = :executionSteps, pending_approval_tool_ids = :pendingApprovalToolIds, tool_results = :toolResults, tool_calls = :toolCalls, is_error = :isError, error_message = :errorMessage WHERE id = :messageId")
     suspend fun updateContent(

@@ -626,10 +626,15 @@ private fun SettingsPanel(
     val memoryPolicy by androidx.compose.runtime.produceState(
         initialValue = com.promenar.nexara.data.agent.AgentMemoryPolicy(), session?.agentId,
     ) { value = chatViewModel.agentMemoryPolicy() }
+    val reachStats by androidx.compose.runtime.produceState(
+        initialValue = emptyMap<com.promenar.nexara.data.model.ConversationScope, com.promenar.nexara.data.rag.ConversationReachStats>(),
+        session?.id, memoryPolicy,
+    ) { value = runCatching { chatViewModel.conversationReachStats() }.getOrDefault(emptyMap()) }
     SessionContextPanelContent(
         params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams(),
         ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions(),
         memoryPolicy = memoryPolicy,
+        reachStats = reachStats,
         fontSize = session?.options?.fontSize ?: 15,
         isRerankAvailable = presetRerankModel.isNotBlank(), isGenerating = isGenerating, isCompressing = isCompressing,
         onParamsChange = chatViewModel::updateInferenceParams,
@@ -644,6 +649,8 @@ internal fun SessionContextPanelContent(
     params: com.promenar.nexara.data.model.InferenceParams = com.promenar.nexara.data.model.InferenceParams(),
     ragOptions: com.promenar.nexara.data.model.RagOptions = com.promenar.nexara.data.model.RagOptions(),
     memoryPolicy: com.promenar.nexara.data.agent.AgentMemoryPolicy = com.promenar.nexara.data.agent.AgentMemoryPolicy(),
+    /** 三档对话范围各覆盖的会话数；为空时不显示。 */
+    reachStats: Map<com.promenar.nexara.data.model.ConversationScope, com.promenar.nexara.data.rag.ConversationReachStats> = emptyMap(),
     fontSize: Int = 15,
     isRerankAvailable: Boolean = true,
     isGenerating: Boolean = false,
@@ -679,7 +686,7 @@ internal fun SessionContextPanelContent(
             SettingsToggle(stringResource(R.string.sheet_settings_kg), checked = ragOptions.enableKnowledgeGraph ?: false, icon = Icons.Rounded.Psychology,
                 onCheckedChange = { onRagOptionsChange { current -> current.withRetrievalToggle(SessionRetrievalToggle.KnowledgeGraph, it) } })
         }
-        SessionScopeSection(ragOptions, memoryPolicy, onRagOptionsChange)
+        SessionScopeSection(ragOptions, memoryPolicy, onRagOptionsChange, reachStats)
         NexaraSettingsSection(title = stringResource(R.string.sheet_settings_ui_title)) {
             NexaraStepperSetting(title = stringResource(R.string.sheet_settings_font_size), value = fontSize.toString(),
                 canDecrease = fontSize > 10, canIncrease = fontSize < 18,

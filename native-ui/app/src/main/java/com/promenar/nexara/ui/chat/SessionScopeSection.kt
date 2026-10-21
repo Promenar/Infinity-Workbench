@@ -7,12 +7,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.model.ConversationScope
 import com.promenar.nexara.data.model.DocumentScope
 import com.promenar.nexara.data.model.RagOptions
+import com.promenar.nexara.data.rag.ConversationReachStats
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.ScopePickerSheet
@@ -31,6 +33,7 @@ internal fun SessionScopeSection(
     ragOptions: RagOptions,
     policy: AgentMemoryPolicy,
     onRagOptionsChange: ((RagOptions) -> RagOptions) -> Unit,
+    reachStats: Map<ConversationScope, ConversationReachStats> = emptyMap(),
 ) {
     var picking by remember { mutableStateOf<ScopeResource?>(null) }
     NexaraSettingsSection(
@@ -46,10 +49,24 @@ internal fun SessionScopeSection(
             val (saved, cap) = scopeOrdinals(resource, ragOptions, policy)
             val effective = minOf(saved, cap)
             val effectiveLabel = stringResource(scopeLabelRes(resource, effective))
+            // 对话记忆与图谱对话证据按会话计范围，说明当前档位实际覆盖多少会话。
+            val reach = if (resource == ScopeResource.Documents) null else reachStats[ConversationScope.entries[effective]]
+            val reachText = reach?.let { stats ->
+                listOfNotNull(
+                    pluralStringResource(R.plurals.memory_scope_reach_sessions, stats.sessionCount, stats.sessionCount),
+                    if (effective == ConversationScope.ALL_AGENTS.ordinal) {
+                        pluralStringResource(R.plurals.rag_trace_reach_agents, stats.agentCount, stats.agentCount)
+                    } else null,
+                ).joinToString(stringResource(R.string.chat_step_summary_separator))
+            }
             NexaraValueRow(
                 title = stringResource(resource.titleRes),
                 value = if (enabled) effectiveLabel else stringResource(R.string.memory_scope_feature_off),
-                subtitle = if (enabled && saved > cap) stringResource(R.string.memory_scope_capped, effectiveLabel) else null,
+                subtitle = when {
+                    !enabled -> null
+                    saved > cap -> stringResource(R.string.memory_scope_capped, effectiveLabel)
+                    else -> reachText
+                },
                 enabled = enabled,
                 onClick = { picking = resource },
                 modifier = Modifier.testTag("session_scope_${resource.name.lowercase()}"),

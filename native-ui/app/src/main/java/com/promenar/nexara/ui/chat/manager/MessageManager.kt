@@ -5,6 +5,8 @@ import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.TurnMemoryState
+import com.promenar.nexara.data.model.turnMemory
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
@@ -27,11 +29,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -116,6 +120,8 @@ class MessageManager(
     )
 
     private val stateLock = Any()
+    /** 正在写入记忆的轮次（会话:助手消息）及并发写入数，用于识别残留的“写入中”。 */
+    private val activeTurnWrites = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val lanes = mutableMapOf<String, MessageLane>()
     private val purgingKeys = mutableSetOf<String>()
     private val pendingUpdates = mutableMapOf<String, PendingUpdate>()
@@ -309,7 +315,7 @@ class MessageManager(
             val persisted = checkNotNull(sessionRepository.getById(sessionId)) { "正文编辑后所属会话不存在" }
             val byId = persisted.messages.associateBy(Message::id)
             checkNotNull(byId[messageId]) { "正文编辑后消息不存在" }
-            syncMemory { onMessageEdited(sessionId, messageId) }
+            syncMemory { onMessageEdited(sessionId, messageId).forEach { (id, state) -> setTurnMemoryState(sessionId, id, state) } }
             store.update { state ->
                 state.copy(
                     sessions = state.sessions.map { current ->
@@ -816,7 +822,6 @@ class MessageManager(
         withContextMutation(sessionId) {
             val restoredMessages = messages.map { it.copy(isArchived = false) }
             restoredMessages.forEach { messageRepository.insert(it, sessionId) }
-            syncMemory { onMessagesRestored(sessionId) }
             val restoredIds = restoredMessages.mapTo(hashSetOf()) { it.id }
             store.update { state ->
                 state.copy(
@@ -827,6 +832,8 @@ class MessageManager(
                     }
                 )
             }
+            // 恢复记忆后再修正恢复快照里残留的“写入中”。
+            syncMemory { onMessagesRestored(sessionId); reconcileTurnMemory(sessionId) }
         }
     }
 
@@ -952,11 +959,115 @@ class MessageManager(
         }
     }
 
+    /**
+     * 一轮的记忆写入状态记在该轮最后一条助手消息上，见 [TurnMemoryState]。
+     * 只改写状态列；消息已被删除时数据库中无行可改，界面状态也不再包含该消息。
+     */
+    suspend fun setTurnMemoryState(sessionId: String, assistantMessageId: String, state: TurnMemoryState?) {
+        val encoded = state?.encode()
+        try {
+            messageRepository.updateTurnMemoryState(assistantMessageId, encoded)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NexaraLogger.logError("[MessageManager] 记忆状态写入失败", error)
+        }
+        store.updateMessageInSession(sessionId, assistantMessageId) { it.copy(vectorizationStatus = encoded) }
+    }
+
+    /**
+     * 执行一轮记忆写入并维护其状态：先记“写入中”，[write] 返回最终状态（异常记为失败）。
+     * 最终状态只在该轮仍是本次“写入中”时落盘，写入期间被移除、编辑或删除后恢复的状态保留；
+     * 取消时按该轮实际存在的片段记为已记入，没有片段则恢复为 [previous]。
+     */
+    suspend fun writeTurnMemory(
+        sessionId: String,
+        assistantMessageId: String,
+        previous: TurnMemoryState?,
+        write: suspend () -> TurnMemoryState?,
+    ) {
+        val key = "$sessionId:$assistantMessageId"
+        val writing = TurnMemoryState(TurnMemoryState.Status.WRITING, updatedAt = System.currentTimeMillis())
+        activeTurnWrites.compute(key) { _, count -> (count ?: 0) + 1 }
+        try {
+            setTurnMemoryState(sessionId, assistantMessageId, writing)
+            val result = try {
+                write()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("[MessageManager] 本轮记忆写入失败", error)
+                TurnMemoryState(TurnMemoryState.Status.FAILED, updatedAt = System.currentTimeMillis())
+            }
+            withContext(NonCancellable) { compareAndSetTurnMemoryState(sessionId, assistantMessageId, writing.encode(), result) }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            withContext(NonCancellable) {
+                val stored = storedTurnMemory(sessionId, assistantMessageId)
+                compareAndSetTurnMemoryState(sessionId, assistantMessageId, writing.encode(), stored ?: previous)
+            }
+            throw cancelled
+        } finally {
+            activeTurnWrites.computeIfPresent(key) { _, count -> (count - 1).takeIf { it > 0 } }
+        }
+    }
+
+    /**
+     * 修正没有写入在进行却仍显示“写入中”的轮次：写入途中进程被结束，或撤销删除恢复了写入中的快照。
+     * 按该轮实际存在的片段记为已记入，没有片段时记为失败以便重试。
+     */
+    suspend fun reconcileTurnMemory(sessionId: String) {
+        val lifecycle = memoryLifecycle ?: return
+        val stale = store.getSession(sessionId)?.messages.orEmpty().filter { message ->
+            message.turnMemory?.status == TurnMemoryState.Status.WRITING &&
+                !activeTurnWrites.containsKey("$sessionId:${message.id}")
+        }
+        for (message in stale) {
+            val count = try {
+                lifecycle.turnChunkCount(sessionId, message.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("[MessageManager] 记忆状态修正失败", error)
+                continue
+            }
+            val now = System.currentTimeMillis()
+            compareAndSetTurnMemoryState(
+                sessionId, message.id, message.vectorizationStatus,
+                if (count > 0) TurnMemoryState(TurnMemoryState.Status.STORED, count, now) else TurnMemoryState(TurnMemoryState.Status.FAILED, updatedAt = now),
+            )
+        }
+    }
+
+    private suspend fun storedTurnMemory(sessionId: String, assistantMessageId: String): TurnMemoryState? = try {
+        memoryLifecycle?.turnChunkCount(sessionId, assistantMessageId)?.takeIf { it > 0 }
+            ?.let { TurnMemoryState(TurnMemoryState.Status.STORED, it, System.currentTimeMillis()) }
+    } catch (error: Exception) {
+        NexaraLogger.logError("[MessageManager] 读取本轮记忆片段失败", error)
+        null
+    }
+
+    /** 仅当状态列仍为 [expected] 时改写；数据库不可用时按界面状态判断。 */
+    private suspend fun compareAndSetTurnMemoryState(sessionId: String, assistantMessageId: String, expected: String?, state: TurnMemoryState?) {
+        val encoded = state?.encode()
+        val applied = try {
+            messageRepository.compareAndSetTurnMemoryState(assistantMessageId, expected, encoded)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NexaraLogger.logError("[MessageManager] 记忆状态写入失败", error)
+            true
+        }
+        if (!applied) return
+        store.updateMessageInSession(sessionId, assistantMessageId) { message ->
+            if (message.vectorizationStatus == expected) message.copy(vectorizationStatus = encoded) else message
+        }
+    }
+
     suspend fun setVectorizationStatus(sessionId: String, messageIds: List<String>, status: String) = withContextMutation(sessionId) {
         for (msgId in messageIds) {
             try {
                 // 向量化状态独立于摘要归档；isArchived 只由摘要成功提交设置。
-                messageRepository.updatePartial(msgId, mapOf("vectorizationStatus" to status))
+                messageRepository.updateArchiveVectorizationStatus(msgId, status)
             } catch (_: Exception) {
             }
         }
@@ -968,7 +1079,7 @@ class MessageManager(
                     if (s.id == sessionId) {
                         s.copy(
                             messages = s.messages.map { m ->
-                                if (idSet.contains(m.id)) {
+                                if (idSet.contains(m.id) && m.turnMemory == null) {
                                     m.copy(vectorizationStatus = status)
                                 } else m
                             }

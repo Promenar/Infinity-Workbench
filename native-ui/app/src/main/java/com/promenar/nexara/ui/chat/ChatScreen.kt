@@ -213,6 +213,8 @@ data class ChatScreenActions(
     val onDeleteMessage: (String) -> Unit = {},
     val onRegenerateMessage: (String) -> Unit = {},
     val onBranchMessage: (String) -> Unit = {},
+    /** 打开某轮回复的“本轮记忆”面板，参数为记忆状态所在的助手消息 ID。 */
+    val onOpenTurnMemory: (String) -> Unit = {},
     val onApprove: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onApproveAll: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onAlwaysAllowTarget: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
@@ -599,6 +601,7 @@ fun ChatScreenContent(
                         onDelete = actions.onDeleteMessage,
                         onRegenerate = actions.onRegenerateMessage,
                         onBranch = actions.onBranchMessage,
+                        onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.ragOptions?.enableMemory == true },
                     )
                 }
 

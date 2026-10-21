@@ -3,6 +3,7 @@ package com.promenar.nexara.data.generation
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.dao.MessageDao
+import com.promenar.nexara.data.local.db.dao.stubUpdateWith
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
@@ -172,7 +173,7 @@ class DefaultChatGenerationRuntimeRagTraceTest {
         assertThat(provider.calls).isEqualTo(1)
         val reloaded = fixture.repository.getBySession("session")
         assertThat(reloaded.filter { it.hasRagArtifacts() }.map { it.id }).containsExactly("assistant")
-        assertThat(reloaded.single { it.id == "assistant" }.ragMetadata?.trace).isEqualTo(trace)
+        assertThat(reloaded.single { it.id == "assistant" }.ragMetadata?.trace).isEqualTo(trace.withSessionScopes())
         assertThat(reloaded.single { it.id == continuationId }.ragMetadata).isNull()
         assertThat(selectRagActiveMessage(reloaded.filter { it.role == MessageRole.ASSISTANT })?.id)
             .isEqualTo("assistant")
@@ -235,7 +236,8 @@ class DefaultChatGenerationRuntimeRagTraceTest {
             assertThat(store.getSession("session")?.messages?.last()?.hasRagArtifacts()).isFalse()
         }
 
-        suspend fun assertPersistedTrace(expected: RagRetrievalTrace) {
+        suspend fun assertPersistedTrace(provided: RagRetrievalTrace) {
+            val expected = provided.withSessionScopes()
             val reloaded = requireNotNull(repository.getById("assistant"))
             assertThat(reloaded.ragMetadata?.trace).isEqualTo(expected)
             assertThat(reloaded.hasRagArtifacts()).isTrue()
@@ -280,6 +282,7 @@ class DefaultChatGenerationRuntimeRagTraceTest {
                 1
             } else 0
         }
+        dao.stubUpdateWith()
         val repository = MessageRepository(dao)
         val sessionRepository = object : ISessionRepository {
             override suspend fun create(session: Session) = Unit
@@ -342,3 +345,9 @@ class DefaultChatGenerationRuntimeRagTraceTest {
         return Fixture(runtime, request, repository, store, networkEntries)
     }
 }
+
+/** 轨迹另记录本次实际执行的档位；测试会话按默认选项检索记忆与文档、未开启图谱。 */
+private fun RagRetrievalTrace.withSessionScopes() = copy(
+    memoryScope = com.promenar.nexara.data.model.ConversationScope.SESSION,
+    documentScope = com.promenar.nexara.data.model.DocumentScope.KNOWLEDGE_BASE,
+)

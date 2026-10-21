@@ -177,6 +177,16 @@ data class RagRetrievalTrace(
     val rerankTimeMs: Long = 0,
     val memoryCount: Int = 0,
     val documentCount: Int = 0,
+    /** 本次实际执行的档位（已按助手上限收紧）；对应资源未参与检索时为 null。 */
+    val memoryScope: ConversationScope? = null,
+    val graphScope: ConversationScope? = null,
+    val documentScope: DocumentScope? = null,
+    /** 对话记忆范围覆盖的会话数与助手数；未检索对话记忆时为 null。 */
+    val memorySessionCount: Int? = null,
+    val memoryAgentCount: Int? = null,
+    /** 图谱覆盖不足时临时抽取（JIT）的次数与所用模型。 */
+    val jitExtractionCount: Int = 0,
+    val jitModel: String? = null,
 ) {
     companion object {
         const val OUTCOME_HIT = "hit"

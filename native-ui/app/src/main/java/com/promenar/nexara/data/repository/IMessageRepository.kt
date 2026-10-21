@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.repository
 
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.TurnMemoryState
 
 class MessagePersistenceException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
@@ -28,4 +29,23 @@ interface IMessageRepository {
     suspend fun getById(messageId: String): Message?
     suspend fun getBySession(sessionId: String): List<Message>
     suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?)
+
+    /** 只改写一轮的记忆写入状态列，不覆盖同一行的其它字段。 */
+    suspend fun updateTurnMemoryState(messageId: String, encoded: String?) {
+        updatePartial(messageId, mapOf("vectorizationStatus" to encoded))
+    }
+
+    /** 仅当状态列仍为 [expected] 时改写一轮的记忆状态；返回是否改写。 */
+    suspend fun compareAndSetTurnMemoryState(messageId: String, expected: String?, encoded: String?): Boolean {
+        if (getById(messageId)?.vectorizationStatus != expected) return false
+        updateTurnMemoryState(messageId, encoded)
+        return true
+    }
+
+    /** 摘要归档的纯文本向量化状态；不覆盖该列已有的一轮记忆状态。 */
+    suspend fun updateArchiveVectorizationStatus(messageId: String, status: String) {
+        if (TurnMemoryState.decode(getById(messageId)?.vectorizationStatus) == null) {
+            updatePartial(messageId, mapOf("vectorizationStatus" to status))
+        }
+    }
 }

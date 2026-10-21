@@ -34,6 +34,9 @@ sealed interface DocumentReach {
     data class Scoped(val workspaceRootUuids: Set<String>, val documentIds: Set<String>) : DocumentReach
 }
 
+/** 一个对话范围覆盖的会话数与助手数，用于在界面上说明检索可达的范围。 */
+data class ConversationReachStats(val sessionCount: Int, val agentCount: Int)
+
 data class ResolvedRetrievalScope(
     val sessionId: String,
     val memory: ConversationReach,
@@ -76,6 +79,21 @@ class RetrievalScopeResolver(private val database: NexaraDatabase) {
             graph = reach(options.effectiveGraphScope),
             documents = documents,
         )
+    }
+
+    /** 统计 [reach] 覆盖的会话与助手，条件与 VectorDao 的会话范围一致。 */
+    suspend fun stats(reach: ConversationReach): ConversationReachStats = withContext(Dispatchers.IO) {
+        val (where, args) = when (reach) {
+            is ConversationReach.Session -> "id = ?" to listOf(reach.sessionId)
+            is ConversationReach.Agent -> "agent_id = ?" to listOf(reach.agentId)
+            is ConversationReach.SharedAgents -> if (reach.privateAgentIds.isEmpty()) "1" to emptyList() else
+                "(agent_id = ? OR agent_id NOT IN (${reach.privateAgentIds.joinToString { "?" }}))" to
+                    listOf(reach.agentId) + reach.privateAgentIds
+        }
+        database.query(SimpleSQLiteQuery("SELECT COUNT(*), COUNT(DISTINCT agent_id) FROM sessions WHERE $where", args.toTypedArray()))
+            .use { cursor ->
+                if (cursor.moveToFirst()) ConversationReachStats(cursor.getInt(0), cursor.getInt(1)) else ConversationReachStats(0, 0)
+            }
     }
 
     private fun knowledgeBaseRoots(): List<String> = database.query(

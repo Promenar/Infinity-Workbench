@@ -41,10 +41,9 @@ open class MessageRepository(
     }
 
     override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
-        val existing = messageDao.getById(messageId)
-            ?: throw MessagePersistenceException("消息不存在，无法持久化更新：$messageId")
-        val updated = applyPartialUpdates(existing, updates)
-        checkUpdated(messageId, messageDao.update(updated))
+        val affected = messageDao.updateWith(messageId) { applyPartialUpdates(it, updates) }
+        if (affected == -1) throw MessagePersistenceException("消息不存在，无法持久化更新：$messageId")
+        checkUpdated(messageId, affected)
     }
 
     override suspend fun editContentInSession(sessionId: String, messageId: String, content: String) {
@@ -81,6 +80,17 @@ open class MessageRepository(
 
     override suspend fun updateVectorizationStatus(messageId: String, status: String, isArchived: Boolean?) {
         messageDao.updateVectorizationStatus(messageId, status, isArchived?.let { if (it) 1 else 0 })
+    }
+
+    override suspend fun updateTurnMemoryState(messageId: String, encoded: String?) {
+        messageDao.updateTurnMemoryState(messageId, encoded)
+    }
+
+    override suspend fun compareAndSetTurnMemoryState(messageId: String, expected: String?, encoded: String?): Boolean =
+        messageDao.compareAndSetTurnMemoryState(messageId, expected, encoded) == 1
+
+    override suspend fun updateArchiveVectorizationStatus(messageId: String, status: String) {
+        messageDao.updateArchiveVectorizationStatus(messageId, status)
     }
 
     private fun applyPartialUpdates(
@@ -143,8 +153,8 @@ open class MessageRepository(
     }
 
     override suspend fun appendContent(messageId: String, chunk: String) {
-        val existing = messageDao.getById(messageId) ?: return
-        checkUpdated(messageId, messageDao.update(existing.copy(content = existing.content + chunk)))
+        val affected = messageDao.updateWith(messageId) { it.copy(content = it.content + chunk) }
+        if (affected != -1) checkUpdated(messageId, affected)
     }
 
     private fun checkUpdated(messageId: String, affectedRows: Int) {

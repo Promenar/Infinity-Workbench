@@ -1,0 +1,56 @@
+<resources>
+    <string name="turn_memory_status_writing">Saving to memory</string>
+    <string name="turn_memory_status_stored">In memory</string>
+    <string name="turn_memory_status_failed">Memory not saved</string>
+    <string name="turn_memory_status_removed">Removed from memory</string>
+    <string name="turn_memory_open">Open this turn\'s memory</string>
+    <string name="turn_memory_title">This turn\'s memory</string>
+    <plurals name="turn_memory_chunk_count">
+        <item quantity="one">%d memory chunk</item>
+        <item quantity="other">%d memory chunks</item>
+    </plurals>
+    <string name="turn_memory_visibility_title">Who can retrieve it</string>
+    <string name="turn_memory_visibility_session">This session can always retrieve it.</string>
+    <string name="turn_memory_visibility_agent">Other sessions of this assistant can retrieve it when their memory scope is “This assistant” or “All assistants”.</string>
+    <string name="turn_memory_visibility_shared">Other assistants can retrieve it when their memory scope is “All assistants”.</string>
+    <string name="turn_memory_visibility_private">This assistant is private, so other assistants can\'t retrieve it.</string>
+    <string name="turn_memory_chunks_title">Saved chunks</string>
+    <string name="turn_memory_writing_hint">Saving this turn to memory…</string>
+    <string name="turn_memory_removed_hint">This turn is not in memory. Its messages are kept.</string>
+    <string name="turn_memory_failed_hint">This turn couldn\'t be saved to memory. Check the embedding model, then try again.</string>
+    <string name="turn_memory_remove">Remove this turn from memory</string>
+    <string name="turn_memory_remove_hint">Only the memory is removed; the messages stay.</string>
+    <string name="turn_memory_readd">Add back to memory</string>
+    <string name="turn_memory_retry">Try again</string>
+    <string name="turn_memory_remove_failed">Couldn\'t remove this turn from memory</string>
+    <plurals name="chat_undo_delete_count">
+        <item quantity="one">Deleted %d message</item>
+        <item quantity="other">Deleted %d messages</item>
+    </plurals>
+    <plurals name="chat_undo_delete_with_memory">
+        <item quantity="one">Deleted %d message and its memory</item>
+        <item quantity="other">Deleted %d messages and their memory</item>
+    </plurals>
+    <string name="chat_rag_scope_segment">Scope: %1$s</string>
+    <string name="chat_rag_breakdown_memory">Memory %1$d</string>
+    <string name="chat_rag_breakdown_documents">Documents %1$d</string>
+    <string name="chat_rag_breakdown_graph">Graph paths %1$d</string>
+    <string name="chat_rag_breakdown_jit">Instant extraction ×%1$d</string>
+    <string name="rag_trace_scope_memory">Memory: %1$s</string>
+    <string name="rag_trace_scope_graph">Graph evidence: %1$s</string>
+    <string name="rag_trace_scope_documents">Documents: %1$s</string>
+    <plurals name="rag_trace_reach_sessions">
+        <item quantity="one">%d session</item>
+        <item quantity="other">%d sessions</item>
+    </plurals>
+    <plurals name="rag_trace_reach_agents">
+        <item quantity="one">%d assistant</item>
+        <item quantity="other">%d assistants</item>
+    </plurals>
+    <string name="rag_trace_jit">Instant graph extraction ×%1$d</string>
+    <string name="rag_trace_jit_model">Model %1$s</string>
+    <plurals name="memory_scope_reach_sessions">
+        <item quantity="one">Searchable: %d session</item>
+        <item quantity="other">Searchable: %d sessions</item>
+    </plurals>
+</resources>

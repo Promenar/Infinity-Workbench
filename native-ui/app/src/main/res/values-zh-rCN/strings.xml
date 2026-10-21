@@ -477,7 +477,6 @@
     <string name="chat_confirm_truncate_title">确认抛弃后续内容？</string>
     <string name="chat_confirm_truncate_message">此操作将永久删除当前位置之后的所有对话记录。确认继续吗？</string>
     <string name="chat_undo_truncate">已抛弃后续内容</string>
-    <string name="chat_undo_delete">消息已删除</string>
     <string name="chat_btn_undo">撤销</string>
     <string name="chat_context_usage_title">上下文用量</string>
     <string name="chat_context_label_system">系统指令</string>

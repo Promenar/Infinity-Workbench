@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat.components
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.ConversationScope
+import com.promenar.nexara.data.model.DocumentScope
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
@@ -85,6 +87,62 @@ class RagTracePresentationTest {
                 RagText(R.string.rag_details_score_fused, listOf(60)),
                 RagText(R.string.rag_details_rank_unchanged),
             )
+    }
+
+    @Test
+    fun `详情说明列出实际执行的范围、覆盖的会话与助手，以及临时抽取`() {
+        val scoped = hit.copy(
+            memoryScope = ConversationScope.ALL_AGENTS,
+            graphScope = ConversationScope.AGENT,
+            documentScope = DocumentScope.KNOWLEDGE_BASE,
+            memorySessionCount = 12,
+            memoryAgentCount = 3,
+            jitExtractionCount = 1,
+            jitModel = "provider::glm-flash",
+        )
+        val lines = ragTraceLines(scoped)
+        assertThat(lines).containsAtLeast(
+            listOf(
+                RagText(R.string.rag_trace_scope_memory, listOf(RagText(R.string.memory_scope_all_agents))),
+                RagText(R.plurals.rag_trace_reach_sessions, listOf(12), quantity = 12),
+                RagText(R.plurals.rag_trace_reach_agents, listOf(3), quantity = 3),
+            ),
+            listOf(RagText(R.string.rag_trace_scope_graph, listOf(RagText(R.string.graph_scope_agent)))),
+            listOf(RagText(R.string.rag_trace_scope_documents, listOf(RagText(R.string.document_scope_knowledge_base)))),
+            listOf(RagText(R.string.rag_trace_jit, listOf(1)), RagText(R.string.rag_trace_jit_model, listOf("glm-flash"))),
+        ).inOrder()
+        // 本助手档只涉及一个助手，不重复说明助手数；未参与的资源与未调用的临时抽取不出现。
+        val agentOnly = ragTraceLines(hit.copy(memoryScope = ConversationScope.AGENT, memorySessionCount = 4, memoryAgentCount = 1))
+        assertThat(agentOnly).contains(listOf(
+            RagText(R.string.rag_trace_scope_memory, listOf(RagText(R.string.memory_scope_agent))),
+            RagText(R.plurals.rag_trace_reach_sessions, listOf(4), quantity = 4),
+        ))
+        assertThat(agentOnly.flatten().map { it.resId }).containsNoneOf(
+            R.string.rag_trace_scope_graph, R.string.rag_trace_scope_documents, R.string.rag_trace_jit,
+        )
+    }
+
+    @Test
+    fun `检索卡摘要显示范围档位，下一行按来源计数并标出临时抽取`() {
+        assertThat(ragScopeSegment(hit.copy(memoryScope = ConversationScope.SESSION, documentScope = DocumentScope.WORKSPACE)))
+            .isEqualTo(RagText(R.string.chat_rag_scope_segment, listOf(RagText(R.string.memory_scope_session))))
+        assertThat(ragScopeSegment(hit.copy(documentScope = DocumentScope.ALL_INDEXED)))
+            .isEqualTo(RagText(R.string.chat_rag_scope_segment, listOf(RagText(R.string.document_scope_all))))
+        assertThat(ragScopeSegment(hit)).isNull()
+
+        val references = listOf(
+            RagReference(id = "m1", kind = RagReferenceKind.MEMORY),
+            RagReference(id = "s1", kind = RagReferenceKind.SUMMARY),
+            RagReference(id = "d1", documentId = "doc", kind = RagReferenceKind.DOCUMENT),
+            RagReference(id = "legacy-doc", documentId = "doc-2"),
+        )
+        assertThat(ragSourceBreakdown(references, kgPathCount = 3, trace = hit.copy(jitExtractionCount = 1))).containsExactly(
+            RagText(R.string.chat_rag_breakdown_memory, listOf(2)),
+            RagText(R.string.chat_rag_breakdown_documents, listOf(2)),
+            RagText(R.string.chat_rag_breakdown_graph, listOf(3)),
+            RagText(R.string.chat_rag_breakdown_jit, listOf(1)),
+        ).inOrder()
+        assertThat(ragSourceBreakdown(emptyList(), kgPathCount = 0, trace = hit)).isEmpty()
     }
 
     @Test

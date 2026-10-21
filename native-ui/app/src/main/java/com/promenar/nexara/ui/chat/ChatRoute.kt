@@ -54,6 +54,8 @@ import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.testing.UiTags
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.res.pluralStringResource
+import com.promenar.nexara.data.model.turnMemory
 import kotlinx.coroutines.launch
 
 internal sealed interface ChatOverlay {
@@ -64,6 +66,7 @@ internal sealed interface ChatOverlay {
     data object DeleteSession : ChatOverlay
     data object RenameSession : ChatOverlay
     data class Truncate(val messageId: String) : ChatOverlay
+    data class TurnMemory(val messageId: String) : ChatOverlay
 }
 
 internal data class ChatOverlayQueueState(
@@ -94,6 +97,7 @@ internal fun advanceChatOverlay(
 }
 
 private const val TRUNCATE_OVERLAY_PREFIX = "truncate:"
+private const val TURN_MEMORY_OVERLAY_PREFIX = "turn_memory:"
 
 internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
@@ -104,6 +108,7 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     ChatOverlay.DeleteSession -> "delete_session"
     ChatOverlay.RenameSession -> "rename_session"
     is ChatOverlay.Truncate -> TRUNCATE_OVERLAY_PREFIX + overlay.messageId
+    is ChatOverlay.TurnMemory -> TURN_MEMORY_OVERLAY_PREFIX + overlay.messageId
 }
 
 internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
@@ -115,6 +120,8 @@ internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     token == "rename_session" -> ChatOverlay.RenameSession
     token?.startsWith(TRUNCATE_OVERLAY_PREFIX) == true ->
         ChatOverlay.Truncate(token.removePrefix(TRUNCATE_OVERLAY_PREFIX))
+    token?.startsWith(TURN_MEMORY_OVERLAY_PREFIX) == true ->
+        ChatOverlay.TurnMemory(token.removePrefix(TURN_MEMORY_OVERLAY_PREFIX))
     else -> null
 }
 
@@ -477,8 +484,14 @@ fun ChatRoute(
         )
     }
 
-    val deletedLabel = stringResource(R.string.chat_undo_delete)
     val undoLabel = stringResource(R.string.chat_btn_undo)
+    val deletedLabel = deletionUndo?.let { undo ->
+        pluralStringResource(
+            if (undo.withMemory) R.plurals.chat_undo_delete_with_memory else R.plurals.chat_undo_delete_count,
+            undo.count,
+            undo.count,
+        )
+    }.orEmpty()
     LaunchedEffect(deletionUndo) {
         val undo = deletionUndo ?: return@LaunchedEffect
         snackbarAction = chatViewModel::undoLastDeletion
@@ -547,6 +560,7 @@ fun ChatRoute(
             },
             onDeleteMessage = chatViewModel::deleteMessage,
             onRegenerateMessage = { requestOverlay(ChatOverlay.Truncate(it)) },
+            onOpenTurnMemory = { requestOverlay(ChatOverlay.TurnMemory(it)) },
             onBranchMessage = { messageId ->
                 scope.launch {
                     when (val result = chatViewModel.branchFromMessage(messageId)) {
@@ -671,6 +685,22 @@ fun ChatRoute(
             onDismiss = { activeOverlayToken = null },
             onConfirm = { chatViewModel.renameSession(it); activeOverlayToken = null },
         )
+    }
+    (activeOverlay as? ChatOverlay.TurnMemory)?.let { overlay ->
+        // 状态随消息实时更新；消息被删除或状态被清空时关闭面板。进程重建后会话尚未载入时保持打开。
+        val session = uiState.session
+        val state = session?.messages?.firstOrNull { it.id == overlay.messageId }?.turnMemory
+        if (state == null) {
+            if (session != null) LaunchedEffect(overlay) { activeOverlayToken = null }
+        } else {
+            TurnMemorySheet(
+                state = state,
+                loadDetails = { chatViewModel.loadTurnMemory(overlay.messageId) },
+                onRemove = { chatViewModel.removeTurnMemory(overlay.messageId) },
+                onRewrite = { chatViewModel.rewriteTurnMemory(overlay.messageId) },
+                onDismiss = { activeOverlayToken = null },
+            )
+        }
     }
     (activeOverlay as? ChatOverlay.Truncate)?.let { truncate ->
         Dialog(onDismissRequest = { activeOverlayToken = null }) {

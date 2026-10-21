@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.generation
 
+import com.promenar.nexara.data.model.TurnMemoryState
 import android.content.SharedPreferences
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.document.ContextBudgetDecision
@@ -900,21 +901,20 @@ internal class DefaultChatGenerationRuntime(
                 ),
             )
             val memory = memoryManager
+            // 未配置嵌入模型时不写入也不显示写入状态，由嵌入模型设置提示引导用户。
             if (rag?.enableMemory == true && request.userContent.isNotBlank() &&
-                snapshot.content.isNotBlank() && memory != null
+                snapshot.content.isNotBlank() && memory != null && memory.canEmbed
             ) {
-                try {
-                    memory.addTurnToMemory(
+                val turnMessageId = assistantMessageId(request)
+                messageManager.writeTurnMemory(request.sessionId, turnMessageId, previous = null) {
+                    val written = memory.addTurnToMemory(
                         request.sessionId,
                         request.userContent,
                         snapshot.content,
                         userMessageId,
-                        assistantMessageId(request),
+                        turnMessageId,
                     )
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    NexaraLogger.logError("[GenerationRuntime] addTurnToMemory failed", error)
+                    if (written > 0) TurnMemoryState(TurnMemoryState.Status.STORED, written, System.currentTimeMillis()) else null
                 }
             }
             // 轮后按下一次请求实际发送的未摘要历史估算，不使用累计账单 token 触发摘要。

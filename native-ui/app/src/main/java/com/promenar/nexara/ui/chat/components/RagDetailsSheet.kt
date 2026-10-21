@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -344,7 +345,7 @@ private fun RetrievalTraceSummary(trace: RagRetrievalTrace) {
             )
             ragTraceLines(trace).forEach { line ->
                 NexaraMetaLine(
-                    segments = line.map { stringResource(it.resId, *it.args.toTypedArray()) },
+                    segments = line.map { it.resolve() },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -399,7 +400,7 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int, scoring: 
                             )
                         }
                         NexaraMetaLine(
-                            segments = parts.map { stringResource(it.resId, *it.args.toTypedArray()) },
+                            segments = parts.map { it.resolve() },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -715,4 +716,11 @@ private fun EmptyDetailsState() {
             )
         }
     }
+}
+
+/** 解析 [RagText]：复数资源按数量取文案，参数中的 [RagText] 先行本地化。 */
+@Composable
+internal fun RagText.resolve(): String {
+    val resolvedArgs = args.map { if (it is RagText) it.resolve() else it }.toTypedArray()
+    return quantity?.let { pluralStringResource(resId, it, *resolvedArgs) } ?: stringResource(resId, *resolvedArgs)
 }

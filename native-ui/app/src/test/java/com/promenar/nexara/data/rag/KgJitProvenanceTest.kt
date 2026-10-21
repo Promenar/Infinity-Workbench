@@ -39,7 +39,7 @@ class KgJitProvenanceTest {
     @After fun close() { extractors.forEach { it.close() }; db.close() }
 
     @Test fun `适配器保留已知文档标识`() = runTest {
-        val extractor = mockk<MicroGraphExtractor>()
+        val extractor = mockk<MicroGraphExtractor> { every { modelId } returns null }
         val refs = slot<List<SearchResult>>()
         coEvery { extractor.extract(capture(refs), any(), any(), any(), any()) } returns
             MicroGraphResult(emptyList(), emptyList(), "", emptyList(), "q", 1)

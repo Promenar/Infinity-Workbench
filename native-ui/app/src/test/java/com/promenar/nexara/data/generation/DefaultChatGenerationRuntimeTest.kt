@@ -55,6 +55,7 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
+import com.promenar.nexara.data.model.TurnMemoryState
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -516,6 +517,8 @@ class DefaultChatGenerationRuntimeTest {
         )
         val cancellation = CancellationException("memory-cancel")
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        every { memory.canEmbed } returns true
+        fixture.messageManager.runTurnMemoryWrites()
         coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } throws cancellation
 
         val result = runCatching {
@@ -523,6 +526,56 @@ class DefaultChatGenerationRuntimeTest {
         }.exceptionOrNull()
 
         assertThat(result).isSameInstanceAs(cancellation)
+    }
+
+    @Test
+    fun `postProcess经writeTurnMemory写入本轮，按写入片段数给出最终状态`() = runTest {
+        val memory = mockk<MemoryManager>()
+        every { memory.canEmbed } returns true
+        val fixture = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory)
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        val results = fixture.messageManager.runTurnMemoryWrites()
+
+        coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } returns 2
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+        coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } returns 0
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        assertThat(results.map { it?.status to it?.chunkCount }).containsExactly(
+            TurnMemoryState.Status.STORED to 2,
+            null to null,
+        ).inOrder()
+        // 新的一轮没有旧状态可恢复。
+        coVerify(exactly = 2) { fixture.messageManager.writeTurnMemory("session", "assistant", null, any()) }
+        coVerify { memory.addTurnToMemory("session", "question", "answer", "user", "assistant") }
+    }
+
+    @Test
+    fun `postProcess未配置嵌入模型或会话关闭记忆时不写入也不记录状态`() = runTest {
+        val memory = mockk<MemoryManager>()
+        every { memory.canEmbed } returns false
+        val unavailable = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory)
+        coEvery { unavailable.postProcessor.updateStats(any()) } returns Unit
+        unavailable.runtime.postProcess(unavailable.request, GenerationSnapshot(content = "answer"))
+
+        val disabled = postProcessFixture(ragOptions = RagOptions(enableMemory = false, enableDocs = false), memoryManager = memory)
+        coEvery { disabled.postProcessor.updateStats(any()) } returns Unit
+        disabled.runtime.postProcess(disabled.request, GenerationSnapshot(content = "answer"))
+
+        coVerify(exactly = 0) { memory.addTurnToMemory(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { unavailable.messageManager.writeTurnMemory(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { disabled.messageManager.writeTurnMemory(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { unavailable.messageManager.setTurnMemoryState(any(), any(), any()) }
+    }
+
+    /** 让模拟的 MessageManager 执行交给它的写入块，并记录写入块给出的最终状态。 */
+    private fun MessageManager.runTurnMemoryWrites(): MutableList<TurnMemoryState?> {
+        val results = mutableListOf<TurnMemoryState?>()
+        val manager = this
+        coEvery { manager.writeTurnMemory(any(), any(), any(), any()) } coAnswers {
+            results += arg<suspend () -> TurnMemoryState?>(3).invoke()
+        }
+        return results
     }
 
     @Test

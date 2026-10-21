@@ -40,13 +40,13 @@ class PersistentGraphKgProvider(
         val instant = if (config.kgJitFallbackEnabled && needsJit && visibleReferences.isNotEmpty()) {
             try {
                 jit.extractContext(query, sessionId, visibleReferences)?.takeIf { it.status == KgExtractionStatus.SUCCESS && it.error == null }
-                    ?.paths.orEmpty()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { emptyList() }
-        } else emptyList()
-        val paths = KgContextBudget.prune(KgContextBudget.fuse(persistent.paths, instant), config.kgMaxNodes, config.kgMaxEdges)
+            catch (_: Exception) { null }
+        } else null
+        val paths = KgContextBudget.prune(KgContextBudget.fuse(persistent.paths, instant?.paths.orEmpty()), config.kgMaxNodes, config.kgMaxEdges)
         val context = KgContextBudget.fit(paths, config.kgContextMaxTokens.coerceIn(0, 16384))
         return KgContextResult(context.context, context.paths, canonicalPaths = true,
-            maxContextTokens = config.kgContextMaxTokens.coerceIn(0, 16384))
+            maxContextTokens = config.kgContextMaxTokens.coerceIn(0, 16384),
+            jitExtractionCount = instant?.jitExtractionCount ?: 0, jitModel = instant?.jitModel)
     }
 }

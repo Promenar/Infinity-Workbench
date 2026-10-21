@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
 import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 
 class MemoryManager(
     private val vectorStore: VectorStore,
@@ -92,6 +93,15 @@ class MemoryManager(
             ),
         )
         val documentReach = scope.documents
+        // 覆盖范围计数只用于展示，失败时不影响检索本身。
+        val memoryStats = if (!canSearchMemory) null else try {
+            scopeResolver.stats(scope.memory)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NexaraLogger.logError("[MemoryManager] 统计记忆覆盖范围失败", error)
+            null
+        }
         // 空的限定范围按零文档处理，禁止解释为“搜索全部文档”。
         val canSearchDocs = options.enableDocs && (documentReach !is DocumentReach.Scoped ||
             documentReach.workspaceRootUuids.isNotEmpty() || documentReach.documentIds.isNotEmpty())
@@ -225,7 +235,7 @@ class MemoryManager(
         onProgress?.invoke("Ranking results", 90, "${finalResults.size} candidates found")
         if (finalResults.isEmpty()) {
             NexaraLogger.log("[$TAG] No results after fusion, returning empty")
-            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_EMPTY)
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_EMPTY, memoryStats)
         }
 
         val uniqueResults = finalResults
@@ -344,9 +354,15 @@ class MemoryManager(
                 rerankTimeMs = actualRerankTimeMs,
                 memoryCount = memoryCount,
                 documentCount = documentCount,
+                memorySessionCount = memoryStats?.sessionCount,
+                memoryAgentCount = memoryStats?.agentCount,
             ),
         )
     }
+
+    /** 嵌入模型可用（远程已配置或有本地模型）时才能写入对话记忆。 */
+    val canEmbed: Boolean
+        get() = embeddingClient.isConfigured || embeddingClient.hasLocalFallback
 
     suspend fun addTurnToMemory(
         sessionId: String,
@@ -354,10 +370,10 @@ class MemoryManager(
         aiContent: String,
         userMessageId: String,
         assistantMessageId: String
-    ) {
+    ): Int {
         if (userContent.isBlank() || aiContent.isBlank()) {
             NexaraLogger.log("[MemoryManager] addTurnToMemory skipped: empty content for session=$sessionId")
-            return
+            return 0
         }
 
         val startTime = System.currentTimeMillis()
@@ -372,7 +388,7 @@ class MemoryManager(
         val chunks = splitter.splitText(turnText)
         if (chunks.isEmpty()) {
             NexaraLogger.log("[MemoryManager] addTurnToMemory: 0 chunks after split, session=$sessionId")
-            return
+            return 0
         }
 
         NexaraLogger.log("[MemoryManager] addTurnToMemory: chunking=${chunks.size} chunks, session=$sessionId, chunkSize=${ragConfig.memoryChunkSize}")
@@ -393,6 +409,7 @@ class MemoryManager(
         vectorStore.addVectorRecords(vectors)
         val totalMs = System.currentTimeMillis() - startTime
         NexaraLogger.log("[MemoryManager] addTurnToMemory done: ${vectors.size} vectors stored, session=$sessionId, total=${totalMs}ms")
+        return vectors.size
     }
 
     private fun rrfFusion(
@@ -475,10 +492,15 @@ class MemoryManager(
         return if (type == "document") "doc" else type
     }
 
-    private fun emptyResult(searchTimeMs: Long, outcome: String) = RetrieveResult(
+    private fun emptyResult(searchTimeMs: Long, outcome: String, memoryStats: ConversationReachStats? = null) = RetrieveResult(
         context = "",
         references = emptyList(),
         metadata = RetrieveMetadata(searchTimeMs = searchTimeMs),
-        trace = RagRetrievalTrace(outcome = outcome, searchTimeMs = searchTimeMs),
+        trace = RagRetrievalTrace(
+            outcome = outcome,
+            searchTimeMs = searchTimeMs,
+            memorySessionCount = memoryStats?.sessionCount,
+            memoryAgentCount = memoryStats?.agentCount,
+        ),
     )
 }
