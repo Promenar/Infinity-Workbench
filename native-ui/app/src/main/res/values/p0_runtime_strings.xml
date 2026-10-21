@@ -16,5 +16,5 @@
     <string name="p0_loop_body">The same tool and arguments have repeated consecutively. Continue to reset detection and run this batch, or stop the task.</string>
     <string name="p0_continue">Continue</string>
     <string name="p0_progress">Round %1$d, %2$d calls, %3$d tokens%4$s</string>
-    <string name="p0_estimated"> (estimated)</string>
+    <string name="p0_estimated">" (estimated)"</string>
 </resources>

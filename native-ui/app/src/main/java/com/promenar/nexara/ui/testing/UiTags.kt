@@ -35,6 +35,7 @@ object UiTags {
     const val CHAT_INPUT_ISLAND = "chat_input_island"
     const val CHAT_INPUT_BAR_SURFACE = "chat_input_bar_surface"
     const val CHAT_OPTIONS = "chat_options"
+    const val CHAT_GENERATION_PROGRESS = "chat_generation_progress"
     const val CHAT_SESSION_SETTINGS = "chat_session_settings"
     const val CHAT_INPUT = "chat_input"
     const val CHAT_ADD_ATTACHMENT = "chat_add_attachment"
