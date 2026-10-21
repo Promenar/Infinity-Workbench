@@ -59,6 +59,20 @@ internal fun KgRetrievalSettings(
         }
 
         NexaraSettingsSection(
+            title = stringResource(R.string.kg_session_section),
+            footer = stringResource(R.string.kg_session_extraction_footer),
+        ) {
+            SettingsToggle(
+                title = stringResource(R.string.kg_session_extraction_title),
+                description = stringResource(R.string.kg_session_extraction_desc),
+                checked = config.kgSessionExtractionEnabled,
+                onCheckedChange = { value -> onChanged { copy(kgSessionExtractionEnabled = value) } },
+                modifier = Modifier.testTag("kg_session_extraction_toggle"),
+                switchModifier = Modifier.testTag("kg_session_extraction_switch"),
+            )
+        }
+
+        NexaraSettingsSection(
             title = stringResource(R.string.kg_extraction_budget_section),
             footer = stringResource(R.string.kg_budget_partial_hint),
         ) {

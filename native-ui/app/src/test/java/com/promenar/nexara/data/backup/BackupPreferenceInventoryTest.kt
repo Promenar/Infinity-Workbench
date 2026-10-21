@@ -45,6 +45,7 @@ class BackupPreferenceInventoryTest {
             "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
             "data/rag/KgAdvancedSettings.kt#preferences" to "rag_settings",
             "data/rag/KgUsageStore.kt#preferences" to "kg_usage",
+            "data/rag/SessionGraphExtraction.kt#preferences" to "session_graph_stats",
             "data/rag/EmbeddingSetupHint.kt#prefs" to "nexara_settings",
             "data/repository/RolledBackSummaryUsageStore.kt#preferences" to "nexara_settings",
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
@@ -219,7 +220,7 @@ class BackupPreferenceInventoryTest {
 
     @Test fun `KG数字预算可备份且本机用量与认证令牌不可迁移`() {
         listOf("kg_retrieval_hops", "kg_max_seeds", "kg_max_nodes", "kg_max_edges", "kg_context_max_tokens",
-            "kg_jit_fallback", "kg_jit_min_seeds", "kg_max_calls", "kg_max_output_tokens", "kg_request_max_output_tokens",
+            "kg_jit_fallback", "kg_session_extraction", "kg_jit_min_seeds", "kg_max_calls", "kg_max_output_tokens", "kg_request_max_output_tokens",
             "kg_max_duration_seconds", "kg_large_document_confirm_calls").forEach { key ->
             assertWithMessage(key).that(BackupPreferencePolicy.isAllowed("rag", key)).isTrue()
         }
@@ -228,6 +229,10 @@ class BackupPreferenceInventoryTest {
         }
         assertThat(BackupPreferencePolicy.isKnown("kg_usage", "kg_usage_ledger_v1")).isTrue()
         assertThat(BackupPreferencePolicy.isAllowed("kg_usage", "kg_usage_ledger_v1")).isFalse()
+        listOf("day", "turns", "calls").forEach { key ->
+            assertThat(BackupPreferencePolicy.isKnown("session_graph_stats", key)).isTrue()
+            assertThat(BackupPreferencePolicy.isAllowed("session_graph_stats", key)).isFalse()
+        }
     }
 
     @Test

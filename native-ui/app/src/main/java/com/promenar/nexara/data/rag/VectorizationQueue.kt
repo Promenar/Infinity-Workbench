@@ -31,6 +31,7 @@ class VectorizationQueue(
     private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null,
     private val documentIndexService: DocumentIndexService? = null,
     private val executionGate: SessionExecutionGate? = null,
+    private val sessionGraph: SessionGraphTaskProcessor? = null,
 ) : FileIndexEventSink {
     private val queue = mutableListOf<VectorizationTask>()
     private val retainedAttention = mutableListOf<VectorizationTask>()
@@ -170,6 +171,43 @@ class VectorizationQueue(
 
         saveTaskToDb(task)
         synchronized(queueLock) { queue.add(task) }
+        notifyStateChange()
+
+        startProcessorIfNeeded()
+        }
+    }
+
+    /**
+     * 为一轮对话排入会话图谱抽取。任务 id 由助手消息决定：重试或重新抽取替换同一轮的旧任务（含失败行）。
+     */
+    suspend fun enqueueSessionGraph(
+        sessionId: String,
+        userMessageId: String,
+        assistantMessageId: String,
+        userContent: String,
+        aiContent: String,
+    ) = withSessionAdmission(sessionId) {
+        enqueueMutex.withLock {
+        ensureSessionNotFenced(sessionId)
+        val task = VectorizationTask(
+            id = sessionGraphTaskId(assistantMessageId),
+            type = TYPE_SESSION_GRAPH,
+            sessionId = sessionId,
+            userContent = userContent,
+            aiContent = aiContent,
+            userMessageId = userMessageId,
+            assistantMessageId = assistantMessageId,
+            status = "pending",
+        )
+        val processing = synchronized(queueLock) { processingTask?.id == task.id }
+        // 正在抽取的同一轮不打断，结束后由调用方再次重试。
+        if (processing) return@withLock
+        saveTaskToDb(task)
+        synchronized(queueLock) {
+            queue.removeAll { it.id == task.id }
+            retainedAttention.removeAll { it.id == task.id }
+            queue.add(task)
+        }
         notifyStateChange()
 
         startProcessorIfNeeded()
@@ -325,6 +363,8 @@ class VectorizationQueue(
                 "memory" -> processMemoryTask(task)
                 "document" -> processDocumentTask(task)
                 TYPE_DOCUMENT_REFERENCE -> processDocumentReferenceTask(task)
+                TYPE_SESSION_GRAPH -> processSessionGraphTask(task)
+                else -> throw IllegalStateException("未知的向量化任务类型: ${task.type}")
             }
 
             val graphPartial = task.status == "partial"
@@ -443,6 +483,21 @@ class VectorizationQueue(
                 notifyStateChange()
                 if (shouldCleanup && !processingCancelled) cleanupCompletedTasks()
             }
+        }
+    }
+
+    private suspend fun processSessionGraphTask(task: VectorizationTask) {
+        val processor = sessionGraph ?: throw IllegalStateException("会话图谱抽取未配置")
+        task.status = "extracting"
+        task.subStatus = "正在抽取本轮图谱"
+        saveTaskToDb(task)
+        notifyStateChange()
+        val incomplete = processor.process(task)
+        if (incomplete != null) {
+            // 预算耗尽：已抽取的部分照常写入，任务保留为部分完成，供界面提示与重试。
+            task.status = "partial"
+            task.error = incomplete
+            task.subStatus = incomplete
         }
     }
 
@@ -842,7 +897,7 @@ class VectorizationQueue(
         docId = docId,
         docTitle = docTitle,
         workspaceRootUuid = workspaceRootUuid,
-        sessionId = if (type == "memory") sessionId else null,
+        sessionId = if (type == "memory" || type == TYPE_SESSION_GRAPH) sessionId else null,
         userContent = userContent,
         aiContent = aiContent,
         userMessageId = userMessageId,
@@ -1394,12 +1449,20 @@ class VectorizationQueue(
         val currentTask: VectorizationTask?,
         val isProcessing: Boolean,
         val restored: Boolean = false,
-    )
+    ) {
+        /** 知识库页只关心文档任务；会话图谱等对话任务在后台进行时不显示为索引中。 */
+        val isDocumentIndexing: Boolean
+            get() = isProcessing && currentTask?.type !in CONVERSATION_TASK_TYPES
+    }
 
     companion object {
         const val KG_CONFIRMATION_REQUIRED = "kg.confirmation_required"
         private const val MAX_RETRIES = 3
         const val TYPE_DOCUMENT_REFERENCE = "document_reference"
+        const val TYPE_SESSION_GRAPH = "session_graph"
+        val CONVERSATION_TASK_TYPES = setOf("memory", TYPE_SESSION_GRAPH)
+
+        fun sessionGraphTaskId(assistantMessageId: String) = "session-graph-$assistantMessageId"
         private const val LEGACY_DOCUMENT_TASK_TYPE = "document"
         private val PROCESSING_STATUSES = setOf(
             "processing", "extracting_source", "chunking", "vectorizing", "saving", "extracting",

@@ -18,7 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** 从导出的 v21 真实结构经 Room 前进迁移到 v22；Room 打开时按实体校验迁移结果。 */
+/** 从导出的 v21 真实结构经 Room 前进迁移到当前版本；Room 打开时按实体校验迁移结果。 */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class WorkspaceBindingMigrationTest {
@@ -38,12 +38,12 @@ class WorkspaceBindingMigrationTest {
                 seed(database, "ssh_hosts", mapOf("id" to "host", "alias" to "fnos", "hostname" to "fnos.local", "username" to "root"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_21_22)
+                .addMigrations(MIGRATION_21_22, MIGRATION_22_23)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val sqlite = room.openHelper.writableDatabase
-                sqlite.query("PRAGMA user_version").use { check(it.moveToFirst()); assertThat(it.getInt(0)).isEqualTo(22) }
+                sqlite.query("PRAGMA user_version").use { check(it.moveToFirst()); assertThat(it.getInt(0)).isEqualTo(23) }
                 val agent = room.agentDao().getById("agent")!!
                 assertThat(agent.name).isEqualTo("保留中文😀")
                 assertThat(agent.systemPrompt).isEqualTo("你是助手")
@@ -62,7 +62,7 @@ class WorkspaceBindingMigrationTest {
                 }
                 sqlite.query("PRAGMA foreign_key_check").use { assertThat(it.count).isEqualTo(0) }
                 assertThat(SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use {
-                    it.hasCompleteCurrentRoomSchema(22, NEXARA_SCHEMA_V22_IDENTITY_HASH)
+                    it.hasCompleteCurrentRoomSchema(23, NEXARA_SCHEMA_V23_IDENTITY_HASH)
                 }).isTrue()
             } finally {
                 room.close()

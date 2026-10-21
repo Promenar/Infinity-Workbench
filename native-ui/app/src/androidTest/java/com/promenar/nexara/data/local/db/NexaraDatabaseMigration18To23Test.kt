@@ -6,11 +6,11 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Rule
 import org.junit.Test
 
-/** 使用已导出的 v18 结构和真实 Android SQLite，校验全部前进迁移及 v21 身份。 */
-class NexaraDatabaseMigration18To22Test {
+/** 使用已导出的 v18 结构和真实 Android SQLite，校验全部前进迁移及当前版本身份。 */
+class NexaraDatabaseMigration18To23Test {
     @get:Rule val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), NexaraDatabase::class.java)
 
-    @Test fun migration18To22PreservesBusinessRowsAndCreatesWorkspaceAndRuleContracts() {
+    @Test fun migration18To23PreservesBusinessRowsAndCreatesWorkspaceRuleAndTurnGraphContracts() {
         val name = "device-migration-18-21"
         helper.createDatabase(name, 18).apply {
             execSQL("""INSERT INTO agents(id,name,description,name_customized,description_customized,system_prompt,
@@ -20,7 +20,7 @@ class NexaraDatabaseMigration18To22Test {
             execSQL("INSERT INTO messages(id,session_id,role,content,created_at) VALUES('device-message','device-session','user','中文消息😀',4)")
             close()
         }
-        helper.runMigrationsAndValidate(name, 22, true, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22).use { database ->
+        helper.runMigrationsAndValidate(name, 23, true, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23).use { database ->
             database.query("SELECT name FROM agents WHERE id='device-agent'").use { cursor ->
                 check(cursor.moveToFirst()); assertThat(cursor.getString(0)).isEqualTo("迁移保留😀")
             }
@@ -43,8 +43,16 @@ class NexaraDatabaseMigration18To22Test {
             database.query("SELECT workspace_id FROM sessions WHERE id='device-session'").use { cursor ->
                 check(cursor.moveToFirst()); assertThat(cursor.isNull(0)).isTrue()
             }
+            database.query("PRAGMA index_list(kg_evidence)").use { cursor ->
+                val names = buildSet { while (cursor.moveToNext()) add(cursor.getString(1)) }
+                assertThat(names).contains("index_kg_evidence_message_id")
+            }
+            database.query("PRAGMA index_list(sessions)").use { cursor ->
+                val names = buildSet { while (cursor.moveToNext()) add(cursor.getString(1)) }
+                assertThat(names).contains("index_sessions_agent_id")
+            }
             database.query("PRAGMA foreign_key_check").use { assertThat(it.count).isEqualTo(0) }
-            database.query("PRAGMA user_version").use { cursor -> check(cursor.moveToFirst()); assertThat(cursor.getInt(0)).isEqualTo(22) }
+            database.query("PRAGMA user_version").use { cursor -> check(cursor.moveToFirst()); assertThat(cursor.getInt(0)).isEqualTo(23) }
         }
     }
 }

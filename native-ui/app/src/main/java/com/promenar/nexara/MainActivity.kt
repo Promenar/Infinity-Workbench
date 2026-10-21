@@ -185,13 +185,14 @@ open class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
-                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels ->
+                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph ->
                                 ChatRoute(
                                     sessionId = sessionId,
                                     onNavigateBack = onNavigateBack,
                                     onNavigateToSession = onNavigateToSession,
                                     dependencies = chatRouteDependencies,
                                     onOpenDefaultModels = onOpenDefaultModels,
+                                    onOpenKnowledgeGraph = onOpenKnowledgeGraph,
                                 )
                             },
                             openGenerationRequest = openGenerationRequest,

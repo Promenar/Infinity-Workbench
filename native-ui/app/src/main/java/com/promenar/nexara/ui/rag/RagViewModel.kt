@@ -330,9 +330,13 @@ class RagViewModel(
             queueStateObservation?.close()
             queueStateObservation = null
             this.observedQueue = observedQueue
-            queueStateObservation = observedQueue.setOnStateChange { queue, currentTask ->
+            queueStateObservation = observedQueue.setOnStateChange { allTasks, runningTask ->
                 if (this.observedQueue !== observedQueue) return@setOnStateChange
-                val isProcessing = observedQueue.state.value.isProcessing
+                // 会话记忆与会话图谱抽取在聊天界面展示状态，不进入资料库的索引卡片与重试。
+                val conversationTypes = com.promenar.nexara.data.rag.VectorizationQueue.CONVERSATION_TASK_TYPES
+                val queue = allTasks.filter { it.type !in conversationTypes }
+                val currentTask = runningTask?.takeIf { it.type !in conversationTypes }
+                val isProcessing = observedQueue.state.value.isDocumentIndexing
                 _isIndexing.value = isProcessing
                 // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
                 _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
@@ -947,7 +951,7 @@ class RagViewModel(
 
     private fun recomputeIndexingVisibility() {
         _isIndexing.value = _pendingRenameIndexTargets.value.isNotEmpty() ||
-            observedQueue?.state?.value?.isProcessing == true ||
+            observedQueue?.state?.value?.isDocumentIndexing == true ||
             shouldKeepNotice(_indexingNotice.value) ||
             _canRetryLastFailedIndex.value
     }
@@ -1025,7 +1029,7 @@ class RagViewModel(
             val imported = mutableListOf<ShareImportItem>()
             val failures = mutableListOf<String>()
             _indexingNotice.value = null
-            _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
+            _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
 
             for (uri in uris.distinct()) {
                 try {
@@ -1052,7 +1056,7 @@ class RagViewModel(
                 )
                 _isIndexing.value = true
             } else {
-                _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
+                _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
             }
             if (imported.isNotEmpty()) {
                 loadStats()
@@ -1180,7 +1184,7 @@ class RagViewModel(
                     )
                 }
                 if (failed.isEmpty()) {
-                    _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
+                    _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
                 }
                 if (moved > 0) {
                     loadStats()

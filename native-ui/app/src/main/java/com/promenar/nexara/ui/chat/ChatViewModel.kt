@@ -84,7 +84,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -307,6 +312,8 @@ class ChatViewModel(
         com.promenar.nexara.data.workspace.WorkspaceLabel,
         com.promenar.nexara.data.workspace.WorkspaceLabel,
     ) -> String)? = null,
+    /** 会话图谱抽取状态；为 null 时读取应用实例。 */
+    private val sessionGraphPortOverride: com.promenar.nexara.data.rag.SessionGraphPort? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -1874,6 +1881,46 @@ class ChatViewModel(
         val resolver = RetrievalScopeResolver((application as NexaraApplication).database)
         return ConversationScope.entries.associateWith { scope ->
             resolver.stats(resolver.resolve(sessionId, RagOptions(memoryScope = scope)).memory)
+        }
+    }
+
+    private val sessionGraphPort by lazy { sessionGraphPortOverride ?: (application as NexaraApplication).sessionGraphPort }
+
+    /** 当前会话每轮的图谱抽取状态，键为该轮最后一条助手消息。只在界面订阅时读取数据库。 */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val turnGraphStates: StateFlow<Map<String, com.promenar.nexara.data.rag.TurnGraphState>> = _currentSessionId
+        .flatMapLatest { sessionId ->
+            if (sessionId == null) flowOf(emptyMap()) else sessionGraphPort.observeTurns(sessionId)
+        }
+        .catch { error ->
+            NexaraLogger.logError("[ChatViewModel] 读取会话图谱状态失败", error)
+            emit(emptyMap())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** 会话设置中的后台抽取队列；开关关闭时为 null。 */
+    val sessionGraphQueue: StateFlow<com.promenar.nexara.data.rag.SessionGraphQueueStatus?> =
+        flow { emitAll(sessionGraphPort.observeQueue()) }
+            .catch { error ->
+                NexaraLogger.logError("[ChatViewModel] 读取会话图谱队列失败", error)
+                emit(null)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    suspend fun loadTurnGraph(assistantMessageId: String): com.promenar.nexara.data.rag.TurnGraphDetails =
+        sessionGraphPort.turnDetails(assistantMessageId)
+
+    /** 按当前正文重新排入这一轮的图谱抽取。 */
+    fun retryTurnGraph(assistantMessageId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            try {
+                sessionGraphPort.retry(sessionId, assistantMessageId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("[ChatViewModel] 重新排入会话图谱抽取失败", error)
+            }
         }
     }
 

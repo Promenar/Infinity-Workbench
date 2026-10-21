@@ -25,16 +25,16 @@ class SshHostMigrationTest {
     fun `v18迁移保留中文业务数据并创建不含凭据的SSH表`() = verifyMigration(18)
 
     @Test
-    fun `v5经18前进到22并保留中文业务数据`() = verifyMigration(5)
+    fun `v5经18前进到23并保留中文业务数据`() = verifyMigration(5)
 
     @Test
-    fun `公开v17经18前进到22并保留中文业务数据`() = verifyMigration(17)
+    fun `公开v17经18前进到23并保留中文业务数据`() = verifyMigration(17)
 
     @Test
-    fun `v19前进到22保留知识图谱并创建SSH表`() = verifyMigration(19)
+    fun `v19前进到23保留知识图谱并创建SSH表`() = verifyMigration(19)
 
     @Test
-    fun `v20前进到22保留知识图谱和外部挂载并创建SSH表`() = verifyMigration(20)
+    fun `v20前进到23保留知识图谱和外部挂载并创建SSH表`() = verifyMigration(20)
 
     private fun verifyMigration(version: Int) {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -52,14 +52,14 @@ class SshHostMigrationTest {
                     "alias" to "docs", "source_type" to "saf_tree", "source_id" to "content://test/tree/docs"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                .addMigrations(MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val database = room.openHelper.writableDatabase
                 database.query("PRAGMA user_version").use { cursor ->
                     check(cursor.moveToFirst())
-                    assertThat(cursor.getInt(0)).isEqualTo(22)
+                    assertThat(cursor.getInt(0)).isEqualTo(23)
                 }
                 database.query("SELECT name FROM agents WHERE id='ssh-migration-agent'").use { cursor ->
                     check(cursor.moveToFirst())

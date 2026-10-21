@@ -154,6 +154,8 @@ internal class DefaultChatGenerationRuntime(
     private val sessionWorkspace: (suspend (String) -> com.promenar.nexara.data.workspace.SessionWorkspace)? = null,
     /** 构建工具表的调度器；工具注册表会同步扫描技能目录，不能落在主线程。 */
     private val mediaContextLoader: ViewedMediaContextLoader? = null,
+    /** 会话图谱抽取排队；为空或全局开关关闭时不抽取。 */
+    private val sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
@@ -915,6 +917,19 @@ internal class DefaultChatGenerationRuntime(
                         turnMessageId,
                     )
                     if (written > 0) TurnMemoryState(TurnMemoryState.Status.STORED, written, System.currentTimeMillis()) else null
+                }
+            }
+            // 图谱抽取只需要抽取模型，不依赖嵌入模型；会话关闭记忆时同样不抽取对话内容。
+            val graph = sessionGraph
+            if (graph != null && snapshot.failure == null && memoryEnabled(session) &&
+                request.userContent.isNotBlank() && snapshot.content.isNotBlank()
+            ) {
+                try {
+                    graph.schedule(request.sessionId, assistantMessageId(request), userMessageId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    NexaraLogger.logError("[GenerationRuntime] 会话图谱抽取排队失败", error)
                 }
             }
             // 轮后按下一次请求实际发送的未摘要历史估算，不使用累计账单 token 触发摘要。

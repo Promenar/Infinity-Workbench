@@ -1,0 +1,24 @@
+<resources>
+    <string name="kg_session_section">Chat graph</string>
+    <string name="kg_session_extraction_footer">Extracts entities and relations in the background after each reply, using the extraction model and budget from the document extraction settings below. Who can see the results follows the graph scope in session settings.</string>
+    <string name="kg_session_extraction_title">Extract knowledge graph from chats</string>
+    <string name="kg_session_extraction_desc">One extra model call per turn</string>
+    <string name="turn_graph_status_queued">Graph extraction queued</string>
+    <string name="turn_graph_status_running">Extracting graph</string>
+    <string name="turn_graph_status_done">Graph +%1$d entities +%2$d relations</string>
+    <string name="turn_graph_status_partial">Graph +%1$d · Incomplete</string>
+    <string name="turn_graph_status_failed">Graph extraction failed · Retry</string>
+    <string name="turn_graph_failed_title">Graph extraction failed</string>
+    <string name="turn_graph_title">Knowledge graph for this turn</string>
+    <string name="turn_graph_entities_title">Entities</string>
+    <string name="turn_graph_relations_title">Relations</string>
+    <string name="turn_graph_relation">%1$s → %2$s → %3$s</string>
+    <string name="turn_graph_empty">No entities or relations were extracted from this turn.</string>
+    <string name="turn_graph_pending_hint">This turn is queued for extraction. Entities and relations appear here when it finishes.</string>
+    <string name="turn_graph_partial_hint">The extraction budget was reached, so only part of this turn was extracted.</string>
+    <string name="turn_graph_failed_hint">Reason: %1$s</string>
+    <string name="turn_graph_retry">Extract again</string>
+    <string name="turn_graph_open_graph">View in graph</string>
+    <string name="session_graph_queue_title">Background extraction</string>
+    <string name="session_graph_queue_summary">%1$d pending · %2$d failed · Today %3$d turns, %4$d calls</string>
+</resources>

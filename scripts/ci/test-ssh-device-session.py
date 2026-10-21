@@ -177,7 +177,7 @@ elif a[:2] in [['shell','dumpsys'],['shell','cat']]: print('safe-dump '+password
         result, calls, artifacts = self.run_script_fixture("full", 35, ssh=True)
         self.assertEqual(result.returncode, 0, result.stdout)
         classes = [call[call.index("class")+1] for call in calls if "class" in call]
-        for name in ["data.storage.RealPathExternalFolderDeviceTest", "data.local.db.NexaraDatabaseMigration18To22Test", "data.local.db.LegacyDatabasePromoterInstrumentedTest"]:
+        for name in ["data.storage.RealPathExternalFolderDeviceTest", "data.local.db.NexaraDatabaseMigration18To23Test", "data.local.db.LegacyDatabasePromoterInstrumentedTest"]:
             self.assertIn("com.promenar.nexara."+name, classes)
         self.assertIn(["reverse", "--no-rebind", "tcp:2222", "tcp:2222"], calls)
         self.assertIn(["reverse", "--remove", "tcp:2222"], calls)

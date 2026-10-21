@@ -27,6 +27,9 @@ interface KgNodeDao {
     @Query("SELECT * FROM kg_nodes WHERE EXISTS (SELECT 1 FROM kg_evidence p WHERE p.node_id = kg_nodes.id AND p.session_id = :sessionId AND " + ACTIVE_KG_EVIDENCE + ")")
     suspend fun getBySessionId(sessionId: String): List<KgNodeEntity>
 
+    @Query("SELECT * FROM kg_nodes WHERE EXISTS (SELECT 1 FROM kg_evidence p WHERE p.node_id = kg_nodes.id AND p.message_id = :messageId AND " + ACTIVE_KG_EVIDENCE + ") ORDER BY name LIMIT :limit")
+    suspend fun getForMessage(messageId: String, limit: Int): List<KgNodeEntity>
+
     @Query("SELECT * FROM kg_nodes WHERE " + ACTIVE_KG_NODE + " ORDER BY id")
     suspend fun getAll(): List<KgNodeEntity>
 

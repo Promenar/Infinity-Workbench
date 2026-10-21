@@ -193,6 +193,8 @@ fun ChatRoute(
     onNavigateToSession: (String) -> Unit = {},
     dependencies: ChatRouteDependencies? = null,
     onOpenDefaultModels: () -> Unit = {},
+    /** 打开知识图谱页并搜索给定实体（“本轮记忆”面板的“在图谱中查看”）。 */
+    onOpenKnowledgeGraph: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
@@ -201,6 +203,7 @@ fun ChatRoute(
     }
     val chatViewModel: ChatViewModel = viewModel(factory = resolvedDependencies.viewModelFactory)
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val turnGraphStates by chatViewModel.turnGraphStates.collectAsStateWithLifecycle()
     val interaction by application.generationInteractions.pending.collectAsStateWithLifecycle()
     val generationProgress by remember(sessionId) {
         application.generationCoordinator.observe(sessionId)
@@ -536,6 +539,7 @@ fun ChatRoute(
                 taskPanel = taskPanel,
                 generationProgress = generationProgress?.progress,
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
+                turnGraphStates = turnGraphStates,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
@@ -691,8 +695,10 @@ fun ChatRoute(
     (activeOverlay as? ChatOverlay.TurnMemory)?.let { overlay ->
         // 状态随消息实时更新；消息被删除或状态被清空时关闭面板。进程重建后会话尚未载入时保持打开。
         val session = uiState.session
-        val state = session?.messages?.firstOrNull { it.id == overlay.messageId }?.turnMemory
-        if (state == null) {
+        val message = session?.messages?.firstOrNull { it.id == overlay.messageId }
+        val state = message?.turnMemory
+        val graph = message?.let { turnGraphStates[it.id] }
+        if (state == null && graph == null) {
             if (session != null) LaunchedEffect(overlay) { activeOverlayToken = null }
         } else {
             TurnMemorySheet(
@@ -701,6 +707,12 @@ fun ChatRoute(
                 onRemove = { chatViewModel.removeTurnMemory(overlay.messageId) },
                 onRewrite = { chatViewModel.rewriteTurnMemory(overlay.messageId) },
                 onDismiss = { activeOverlayToken = null },
+                graph = graph,
+                loadGraph = { chatViewModel.loadTurnGraph(overlay.messageId) },
+                onRetryGraph = { chatViewModel.retryTurnGraph(overlay.messageId) },
+                onOpenGraph = onOpenKnowledgeGraph?.let { open ->
+                    { query: String -> activeOverlayToken = null; open(query) }
+                },
             )
         }
     }

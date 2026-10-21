@@ -5,11 +5,13 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 import com.promenar.nexara.data.local.db.entity.KgEvidenceEntity
 import com.promenar.nexara.data.local.db.entity.KgJitCacheSourceEntity
 
-// 已知工作区文档必须存活且版本相符；legacy 没有版本时按来源存活状态读取。
-internal const val ACTIVE_KG_EVIDENCE = "((p.workspace_document = 0 OR EXISTS (SELECT 1 FROM workspace_files w WHERE w.uuid = p.doc_id AND w.in_recycle_bin = 0 AND (p.content_hash = '' OR p.content_hash = w.hash))) AND (p.source_type != 'jit' OR NOT EXISTS (SELECT 1 FROM kg_evidence dependency WHERE dependency.source_type = 'jit' AND dependency.task_id = p.task_id AND dependency.workspace_document = 1 AND NOT EXISTS (SELECT 1 FROM workspace_files input WHERE input.uuid = dependency.doc_id AND input.in_recycle_bin = 0 AND (dependency.content_hash = '' OR input.hash = dependency.content_hash)))))"
+// 已知工作区文档必须存活且版本相符；legacy 没有版本时按来源存活状态读取；
+// 会话图谱抽取的证据要求所属助手消息仍存在，删除聊天记录即不可见，撤销后恢复。
+internal const val ACTIVE_KG_EVIDENCE = "((p.message_id IS NULL OR EXISTS (SELECT 1 FROM messages m WHERE m.id = p.message_id)) AND (p.workspace_document = 0 OR EXISTS (SELECT 1 FROM workspace_files w WHERE w.uuid = p.doc_id AND w.in_recycle_bin = 0 AND (p.content_hash = '' OR p.content_hash = w.hash))) AND (p.source_type != 'jit' OR NOT EXISTS (SELECT 1 FROM kg_evidence dependency WHERE dependency.source_type = 'jit' AND dependency.task_id = p.task_id AND dependency.workspace_document = 1 AND NOT EXISTS (SELECT 1 FROM workspace_files input WHERE input.uuid = dependency.doc_id AND input.in_recycle_bin = 0 AND (dependency.content_hash = '' OR input.hash = dependency.content_hash)))))"
 
 @Dao
 interface KgEvidenceDao {
@@ -113,6 +115,40 @@ interface KgEvidenceDao {
         return collectAffected(affected)
     }
 
+    @Query("SELECT * FROM kg_evidence WHERE message_id = :messageId")
+    suspend fun affectedByMessage(messageId: String): List<KgEvidenceEntity>
+
+    @Query("DELETE FROM kg_evidence WHERE message_id = :messageId")
+    suspend fun deleteMessageEvidence(messageId: String): Int
+
+    /** 删除一轮会话图谱证据并回收不再有证据的实体与关系。 */
+    @Transaction
+    suspend fun clearMessage(messageId: String): Pair<Int, Int> {
+        val affected = affectedByMessage(messageId)
+        if (affected.isEmpty()) return 0 to 0
+        deleteMessageEvidence(messageId)
+        return collectAffected(affected)
+    }
+
+    // 撤销窗口内的消息仍有记忆片段引用（stale 标记后保留 24 小时），这里只清理两者都已不存在的轮次。
+    @Query("SELECT * FROM kg_evidence WHERE message_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = kg_evidence.message_id) AND NOT EXISTS (SELECT 1 FROM vectors v WHERE v.end_message_id = kg_evidence.message_id)")
+    suspend fun orphanTurnEvidence(): List<KgEvidenceEntity>
+
+    @Query("DELETE FROM kg_evidence WHERE message_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = kg_evidence.message_id) AND NOT EXISTS (SELECT 1 FROM vectors v WHERE v.end_message_id = kg_evidence.message_id)")
+    suspend fun deleteOrphanTurnEvidence(): Int
+
+    @Transaction
+    suspend fun purgeOrphanTurns(): Pair<Int, Int> {
+        val affected = orphanTurnEvidence()
+        if (affected.isEmpty()) return 0 to 0
+        deleteOrphanTurnEvidence()
+        return collectAffected(affected)
+    }
+
+    /** 本会话每轮会话图谱证据涉及的实体与关系数。 */
+    @Query("SELECT p.message_id AS messageId, COUNT(DISTINCT p.node_id) AS entities, COUNT(DISTINCT p.edge_id) AS relations FROM kg_evidence p WHERE p.session_id = :sessionId AND p.message_id IS NOT NULL AND " + ACTIVE_KG_EVIDENCE + " GROUP BY p.message_id")
+    fun observeTurnCounts(sessionId: String): Flow<List<KgTurnCount>>
+
     @Transaction
     suspend fun pruneSessions(activeIds: List<String>) {
         val affected = orphanSessionEvidence(activeIds)
@@ -138,3 +174,5 @@ interface KgEvidenceDao {
     @Query("DELETE FROM kg_evidence WHERE node_id = :nodeId")
     suspend fun deleteForNode(nodeId: String)
 }
+
+data class KgTurnCount(val messageId: String, val entities: Int, val relations: Int)

@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
         ForeignKey(entity = KgNodeEntity::class, parentColumns = ["id"], childColumns = ["node_id"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = KgEdgeEntity::class, parentColumns = ["id"], childColumns = ["edge_id"], onDelete = ForeignKey.CASCADE),
     ],
-    indices = [Index("node_id"), Index("edge_id"), Index("doc_id"), Index("session_id"), Index("task_id")],
+    indices = [Index("node_id"), Index("edge_id"), Index("doc_id"), Index("session_id"), Index("task_id"), Index("message_id")],
 )
 data class KgEvidenceEntity(
     @PrimaryKey val id: String,
@@ -28,6 +28,8 @@ data class KgEvidenceEntity(
     @ColumnInfo(name = "workspace_document") val workspaceDocument: Boolean = false,
     /** 关系置信度按当前作用域的存活来源聚合；节点证据为空。 */
     val weight: Double? = null,
+    /** 会话图谱抽取的证据所属轮次（该轮最后一条助手消息）；消息不存在时证据不可见。 */
+    @ColumnInfo(name = "message_id") val messageId: String? = null,
 )
 
 /** 缓存依赖独立登记，合法空图也能随文档删除失效。 */

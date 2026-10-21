@@ -178,6 +178,8 @@ fun PipelineBubble(
     initialProcessExpanded: Boolean = false,
     /** 点按记忆写入状态时以该轮记忆所在的助手消息 ID 回调；为 null 时不显示记忆状态（会话关闭了记忆）。 */
     onOpenTurnMemory: ((String) -> Unit)? = null,
+    /** 本会话各轮的图谱抽取状态，键为该轮最后一条助手消息。 */
+    turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
     ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isNotice) {
@@ -311,12 +313,13 @@ fun PipelineBubble(
                     }
                 }
                 val memoryOwner = if (onOpenTurnMemory == null) null
-                    else group.assistantMessages.lastOrNull { it.turnMemory != null }
+                    else group.assistantMessages.lastOrNull { it.turnMemory != null || it.id in turnGraphStates }
                 AssistantActionRow(
                     modelDisplayName = modelDisplayName,
                     timestamp = timestamp,
                     isGenerating = isGenerating,
                     memoryState = memoryOwner?.turnMemory,
+                    graphState = memoryOwner?.let { turnGraphStates[it.id] },
                     onOpenMemory = memoryOwner?.let { owner -> onOpenTurnMemory?.let { open -> { open(owner.id) } } },
                     stats = statsFactory,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
@@ -697,6 +700,8 @@ internal fun AssistantActionRow(
     stats: (() -> GenerationStatsCardModel)? = null,
     /** 本轮的记忆写入状态，显示在模型名之前；为 null 时不显示。 */
     memoryState: TurnMemoryState? = null,
+    /** 本轮的图谱抽取状态；记忆已记入或未写入记忆时取代记忆状态显示。 */
+    graphState: com.promenar.nexara.data.rag.TurnGraphState? = null,
     onOpenMemory: (() -> Unit)? = null,
 ) {
     if (isGenerating) return
@@ -757,15 +762,16 @@ internal fun AssistantActionRow(
                 }
             }
             BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                val memoryLabel = memoryState?.let { stringResource(it.status.labelRes()) }
+                val footerStatus = TurnFooterStatus(memoryState, graphState)
+                val memoryLabel = footerStatus.label()
                 // 宽度不足时记忆状态只保留图标：时间始终完整，模型名其次，最后才是状态文字。
                 val memoryTextFits = memoryLabel != null && turnMemoryTextFits(
                     maxWidth = maxWidth, style = metaStyle, memoryLabel = memoryLabel,
                     modelDisplayName = modelDisplayName, timestamp = timestamp,
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    if (memoryState != null && onOpenMemory != null) {
-                        TurnMemoryStatusLabel(memoryState, onOpenMemory, showText = memoryTextFits)
+                    if (!footerStatus.isEmpty && onOpenMemory != null) {
+                        TurnMemoryStatusLabel(footerStatus, onOpenMemory, showText = memoryTextFits)
                         Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(end = 4.dp).clearAndSetSemantics {})
                     }
                     val statsLabel = stringResource(R.string.generation_stats_open_action)

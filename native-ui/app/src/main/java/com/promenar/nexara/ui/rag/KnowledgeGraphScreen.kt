@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,6 +79,8 @@ import com.promenar.nexara.ui.theme.forInput
 @Composable
 fun KnowledgeGraphScreen(
     viewModel: KnowledgeGraphViewModel = viewModel(factory = KnowledgeGraphViewModel.factory(LocalContext.current.applicationContext as Application)),
+    /** 从“本轮记忆”面板进入时预填的实体搜索，图谱首次加载完成后执行一次。 */
+    initialQuery: String? = null,
     onNavigateBack: () -> Unit
 ) {
     val nodes by viewModel.nodes.collectAsState()
@@ -105,6 +108,14 @@ fun KnowledgeGraphScreen(
     val simulator = remember(scope) { GraphPhysicsSimulator(scope) }
 
     // 动态同步数据流至力导向模拟器
+    var initialQueryApplied by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialQuery, isLoading) {
+        if (!initialQueryApplied && !isLoading && !initialQuery.isNullOrBlank()) {
+            initialQueryApplied = true
+            viewModel.searchEntities(initialQuery)
+        }
+    }
+
     LaunchedEffect(nodes, edges) {
         simulator.setData(nodes, edges)
     }

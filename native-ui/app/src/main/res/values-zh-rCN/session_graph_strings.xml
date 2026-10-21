@@ -1,0 +1,24 @@
+<resources>
+    <string name="kg_session_section">对话图谱</string>
+    <string name="kg_session_extraction_footer">每轮回复后在后台抽取实体与关系。抽取模型与预算沿用下方的文档抽取设置；可见范围由会话设置的图谱档位决定。</string>
+    <string name="kg_session_extraction_title">从对话抽取知识图谱</string>
+    <string name="kg_session_extraction_desc">每轮额外调用一次模型</string>
+    <string name="turn_graph_status_queued">等待图谱抽取</string>
+    <string name="turn_graph_status_running">图谱抽取中</string>
+    <string name="turn_graph_status_done">图谱 +%1$d 实体 +%2$d 关系</string>
+    <string name="turn_graph_status_partial">图谱 +%1$d 实体 · 未完成</string>
+    <string name="turn_graph_status_failed">图谱抽取失败 · 重试</string>
+    <string name="turn_graph_failed_title">图谱抽取失败</string>
+    <string name="turn_graph_title">本轮知识图谱</string>
+    <string name="turn_graph_entities_title">实体</string>
+    <string name="turn_graph_relations_title">关系</string>
+    <string name="turn_graph_relation">%1$s → %2$s → %3$s</string>
+    <string name="turn_graph_empty">本轮没有抽取到实体或关系。</string>
+    <string name="turn_graph_pending_hint">本轮正在后台排队抽取，完成后在这里显示实体与关系。</string>
+    <string name="turn_graph_partial_hint">已达到抽取预算上限，本轮只抽取了一部分。</string>
+    <string name="turn_graph_failed_hint">原因：%1$s</string>
+    <string name="turn_graph_retry">重新抽取</string>
+    <string name="turn_graph_open_graph">在图谱中查看</string>
+    <string name="session_graph_queue_title">后台抽取</string>
+    <string name="session_graph_queue_summary">待处理 %1$d · 失败 %2$d · 今日 %3$d 轮、%4$d 次调用</string>
+</resources>

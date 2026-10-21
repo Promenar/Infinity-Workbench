@@ -2,11 +2,13 @@ package com.promenar.nexara.data.local.db.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
-@Entity(tableName = "sessions")
+// 按助手筛选会话用于“本助手 / 全部助手”检索范围。
+@Entity(tableName = "sessions", indices = [Index("agent_id")])
 data class SessionEntity(
     @PrimaryKey
     val id: String,

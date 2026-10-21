@@ -70,6 +70,7 @@ object NavDestinations {
     const val AGENT_ADVANCED_RETRIEVAL = "agent_advanced_retrieval/{agentId}"
     const val DOC_EDITOR = "doc_editor/{workspaceRootUuid}/{docId}"
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
+    const val KNOWLEDGE_GRAPH_ROUTE = "knowledge_graph?query={query}"
     const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
     const val RAG_GLOBAL_CONFIG = "rag_global_config"
@@ -100,6 +101,7 @@ object NavDestinations {
     fun docEditor(workspaceRootUuid: String, docId: String) = "doc_editor/$workspaceRootUuid/$docId"
     @Suppress("UNUSED_PARAMETER")
     fun ragFolder(folderId: String) = "rag_folder/$folderId"
+    fun knowledgeGraph(query: String) = "knowledge_graph?query=${android.net.Uri.encode(query)}"
 }
 
 typealias ChatDestination = @Composable (
@@ -107,6 +109,7 @@ typealias ChatDestination = @Composable (
     onNavigateBack: () -> Unit,
     onNavigateToSession: (String) -> Unit,
     onOpenDefaultModels: () -> Unit,
+    onOpenKnowledgeGraph: (String) -> Unit,
 ) -> Unit
 
 @Composable
@@ -118,12 +121,13 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
-    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels ->
+    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph ->
         ChatRoute(
             sessionId = sessionId,
             onNavigateBack = onNavigateBack,
             onNavigateToSession = onNavigateToSession,
             onOpenDefaultModels = onOpenDefaultModels,
+            onOpenKnowledgeGraph = onOpenKnowledgeGraph,
         )
     },
 ) {
@@ -358,6 +362,7 @@ fun NexaraNavGraph(
                         launchSingleTop = true
                     }
                 },
+                { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
             )
         }
 
@@ -414,8 +419,12 @@ fun NexaraNavGraph(
             )
         }
 
-        composable(NavDestinations.KNOWLEDGE_GRAPH) {
+        composable(
+            route = NavDestinations.KNOWLEDGE_GRAPH_ROUTE,
+            arguments = listOf(navArgument("query") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { backStackEntry ->
             KnowledgeGraphScreen(
+                initialQuery = backStackEntry.arguments?.getString("query"),
                 onNavigateBack = { navController.popBackStack() }
             )
         }

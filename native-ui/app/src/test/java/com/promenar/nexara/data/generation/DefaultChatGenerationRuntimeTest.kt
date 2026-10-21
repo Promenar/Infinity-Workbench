@@ -568,6 +568,45 @@ class DefaultChatGenerationRuntimeTest {
         coVerify(exactly = 0) { unavailable.messageManager.setTurnMemoryState(any(), any(), any()) }
     }
 
+    @Test
+    fun `postProcess在会话开启记忆且本轮成功时排入图谱抽取，与嵌入模型无关`() = runTest {
+        val scheduled = mutableListOf<Triple<String, String, String?>>()
+        val graph = com.promenar.nexara.data.rag.SessionGraphScheduler { sessionId, assistantId, userId ->
+            scheduled += Triple(sessionId, assistantId, userId); true
+        }
+        val enabled = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false), sessionGraph = graph)
+        coEvery { enabled.postProcessor.updateStats(any()) } returns Unit
+        enabled.runtime.postProcess(enabled.request, GenerationSnapshot(content = "answer"))
+        enabled.runtime.postProcess(enabled.request, GenerationSnapshot(content = "partial", failure = GenerationFailure(GenerationFailureCode.RATE_LIMIT)))
+
+        val disabled = postProcessFixture(ragOptions = RagOptions(enableMemory = false, enableDocs = false), sessionGraph = graph)
+        coEvery { disabled.postProcessor.updateStats(any()) } returns Unit
+        disabled.runtime.postProcess(disabled.request, GenerationSnapshot(content = "answer"))
+
+        assertThat(scheduled).containsExactly(Triple("session", "assistant", "user"))
+    }
+
+    @Test
+    fun `postProcess图谱排队失败不影响本轮，取消照常传播`() = runTest {
+        val failing = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            sessionGraph = { _, _, _ -> error("queue down") },
+        )
+        coEvery { failing.postProcessor.updateStats(any()) } returns Unit
+        failing.runtime.postProcess(failing.request, GenerationSnapshot(content = "answer"))
+
+        val cancellation = CancellationException("graph-cancel")
+        val cancelled = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            sessionGraph = { _, _, _ -> throw cancellation },
+        )
+        coEvery { cancelled.postProcessor.updateStats(any()) } returns Unit
+        val result = runCatching {
+            cancelled.runtime.postProcess(cancelled.request, GenerationSnapshot(content = "answer"))
+        }.exceptionOrNull()
+        assertThat(result).isSameInstanceAs(cancellation)
+    }
+
     /** 让模拟的 MessageManager 执行交给它的写入块，并记录写入块给出的最终状态。 */
     private fun MessageManager.runTurnMemoryWrites(): MutableList<TurnMemoryState?> {
         val results = mutableListOf<TurnMemoryState?>()
@@ -798,6 +837,7 @@ class DefaultChatGenerationRuntimeTest {
         messageCount: Int = 1,
         memoryManager: MemoryManager? = null,
         sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
+        sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
     ): PostProcessFixture {
         val messages = (0 until messageCount).map { index ->
             Message(
@@ -855,6 +895,7 @@ class DefaultChatGenerationRuntimeTest {
             contentStrategy = contentStrategy,
             ui = ui,
             sshRuntime = sshRuntime,
+            sessionGraph = sessionGraph,
         )
         DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedContext").apply {
             isAccessible = true

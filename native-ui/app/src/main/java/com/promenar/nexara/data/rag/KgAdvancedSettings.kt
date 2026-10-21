@@ -11,6 +11,7 @@ object KgAdvancedSettings {
         kgMaxEdges = preferences.getInt("kg_max_edges", 24).coerceIn(1, 32),
         kgContextMaxTokens = preferences.getInt("kg_context_max_tokens", 2048).coerceIn(128, 16384),
         kgJitFallbackEnabled = preferences.getBoolean("kg_jit_fallback", true),
+        kgSessionExtractionEnabled = preferences.getBoolean("kg_session_extraction", false),
         kgJitMinSeeds = preferences.getInt("kg_jit_min_seeds", 2).coerceIn(1, 32),
         kgMaxCalls = preferences.getInt("kg_max_calls", 32).coerceIn(1, 1024),
         kgMaxOutputTokens = preferences.getInt("kg_max_output_tokens", 32768).coerceIn(256, 1048576),
@@ -27,6 +28,7 @@ object KgAdvancedSettings {
             .putInt("kg_max_edges", config.kgMaxEdges)
             .putInt("kg_context_max_tokens", config.kgContextMaxTokens)
             .putBoolean("kg_jit_fallback", config.kgJitFallbackEnabled)
+            .putBoolean("kg_session_extraction", config.kgSessionExtractionEnabled)
             .putInt("kg_jit_min_seeds", config.kgJitMinSeeds)
             .putInt("kg_max_calls", config.kgMaxCalls)
             .putInt("kg_max_output_tokens", config.kgMaxOutputTokens)

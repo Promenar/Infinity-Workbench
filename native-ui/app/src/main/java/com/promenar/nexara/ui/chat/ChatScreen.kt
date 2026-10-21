@@ -197,6 +197,8 @@ data class ChatScreenState(
     val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
     /** 外观页“完成后折叠过程”，由路由层从外观偏好读取后传入。 */
     val collapseFinishedTurns: Boolean = true,
+    /** 当前会话各轮的图谱抽取状态，键为该轮最后一条助手消息。 */
+    val turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
 )
 
 data class ChatScreenActions(
@@ -603,6 +605,7 @@ fun ChatScreenContent(
                         onRegenerate = actions.onRegenerateMessage,
                         onBranch = actions.onBranchMessage,
                         onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.let { (it.ragOptions ?: RagOptions()).enableMemory } == true },
+                        turnGraphStates = state.turnGraphStates,
                     )
                 }
 

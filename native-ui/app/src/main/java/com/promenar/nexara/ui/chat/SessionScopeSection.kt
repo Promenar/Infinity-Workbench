@@ -15,6 +15,8 @@ import com.promenar.nexara.data.model.ConversationScope
 import com.promenar.nexara.data.model.DocumentScope
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.rag.ConversationReachStats
+import com.promenar.nexara.data.rag.SessionGraphQueueStatus
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.ScopePickerSheet
@@ -34,6 +36,7 @@ internal fun SessionScopeSection(
     policy: AgentMemoryPolicy,
     onRagOptionsChange: ((RagOptions) -> RagOptions) -> Unit,
     reachStats: Map<ConversationScope, ConversationReachStats> = emptyMap(),
+    graphQueue: SessionGraphQueueStatus? = null,
 ) {
     var picking by remember { mutableStateOf<ScopeResource?>(null) }
     NexaraSettingsSection(
@@ -71,6 +74,7 @@ internal fun SessionScopeSection(
                 onClick = { picking = resource },
                 modifier = Modifier.testTag("session_scope_${resource.name.lowercase()}"),
             )
+            if (resource == ScopeResource.Graph && graphQueue != null) SessionGraphQueueRow(graphQueue)
         }
     }
     picking?.let { resource ->
@@ -94,6 +98,17 @@ internal fun SessionScopeSection(
             testTagPrefix = "session_scope_option_${resource.name.lowercase()}",
         )
     }
+}
+
+/** 会话图谱后台抽取队列：待处理、失败与今日用量，只读。 */
+@Composable
+private fun SessionGraphQueueRow(queue: SessionGraphQueueStatus) {
+    NexaraSettingsRowLayout(
+        title = stringResource(R.string.session_graph_queue_title),
+        subtitle = stringResource(R.string.session_graph_queue_summary, queue.pending, queue.failed, queue.todayTurns, queue.todayCalls),
+        modifier = Modifier.testTag("session_graph_queue"),
+        subtitleMaxLines = 2,
+    )
 }
 
 private fun scopeOrdinals(resource: ScopeResource, options: RagOptions, policy: AgentMemoryPolicy): Pair<Int, Int> = when (resource) {

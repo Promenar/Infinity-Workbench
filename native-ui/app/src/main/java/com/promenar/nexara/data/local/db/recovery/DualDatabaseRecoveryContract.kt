@@ -23,6 +23,7 @@ internal const val CURRENT_V18_IDENTITY = "c32f59706ea482fd5697681569c6fdb5"
 internal const val CURRENT_V20_IDENTITY = "4cbc9d57e418ec09a3469f1fcdc6bac6"
 internal const val CURRENT_V21_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
 internal const val CURRENT_V22_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V22_IDENTITY_HASH
+internal const val CURRENT_V23_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V23_IDENTITY_HASH
 internal const val DUAL_DATABASE_RECOVERY_INDEX_HOLD = "dual-database-recovery-hold-v1"
 internal const val RAG_WORKSPACE_SESSION_ID = "__nexara_rag_workspace__"
 internal const val RAG_SYSTEM_AGENT_ID = "__system__"
@@ -32,7 +33,8 @@ internal fun isTrustedCurrentRoomSchema(version: Int, identity: String): Boolean
         (version == 19 && identity == CURRENT_V19_IDENTITY) ||
         (version == 20 && identity == CURRENT_V20_IDENTITY) ||
         (version == 21 && identity == CURRENT_V21_IDENTITY) ||
-        (version == 22 && identity == CURRENT_V22_IDENTITY)
+        (version == 22 && identity == CURRENT_V22_IDENTITY) ||
+        (version == 23 && identity == CURRENT_V23_IDENTITY)
 
 @Serializable
 enum class DualDatabaseRecoveryStage {

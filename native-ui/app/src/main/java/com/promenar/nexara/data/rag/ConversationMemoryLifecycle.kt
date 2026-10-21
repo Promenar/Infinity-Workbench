@@ -56,6 +56,8 @@ class RoomConversationMemoryLifecycle(
     private val turnWriter: MemoryTurnWriter,
     private val clock: () -> Long = System::currentTimeMillis,
     private val undoWindowMillis: Long = 24.hours.inWholeMilliseconds,
+    /** 编辑助手消息后按新正文重新排入会话图谱抽取；为空时只清除旧证据。 */
+    private val sessionGraph: SessionGraphScheduler? = null,
 ) : ConversationMemoryLifecycle {
     // 编辑重写先读旧行再写新行，并发执行会留下重复记忆；所有操作串行。
     private val mutex = Mutex()
@@ -80,6 +82,7 @@ class RoomConversationMemoryLifecycle(
         if (message.sessionId != sessionId) return@withContext emptyMap()
         val vectors = database.vectorDao()
         database.withTransaction { invalidateSessionJit(database, sessionId) }
+        editTurnGraph(database, sessionId, message)
         when (MessageRole.fromSerializedName(message.role)) {
             // 用户消息变化后该轮问答已不成立；随后的重新生成会写入新的一轮。
             MessageRole.USER -> {
@@ -156,13 +159,59 @@ class RoomConversationMemoryLifecycle(
     )
 
     override suspend fun purgeExpired() = mutex.withLock { withContext(Dispatchers.IO) {
-        val vectors = databaseProvider().vectorDao()
+        val database = databaseProvider()
+        val vectors = database.vectorDao()
         val now = clock()
         vectors.reviveRestoredMemory()
         vectors.markOrphanMemory(now)
         vectors.purgeOrphanMemory(now - undoWindowMillis)
+        // 撤销缓冲只在进程内；记忆片段过窗删除后，同一轮的图谱证据随之物理删除。
+        val (edges, nodes) = database.kgEvidenceDao().purgeOrphanTurns()
+        val tasks = database.vectorizationTaskDao().deleteOrphanSessionGraphTasks()
+        if (edges > 0 || nodes > 0 || tasks > 0) {
+            NexaraLogger.log("[ConversationMemory] 回收会话图谱关系 $edges、实体 $nodes、任务 $tasks")
+        }
         Unit
     } }
+
+    /**
+     * 编辑后旧正文抽取的实体与关系不再代表这轮：编辑用户消息时清除该轮各条助手消息的证据，
+     * 编辑助手消息时清除后按新正文重新排入抽取。失败只记录，不影响记忆维护。
+     */
+    private suspend fun editTurnGraph(
+        database: NexaraDatabase,
+        sessionId: String,
+        message: com.promenar.nexara.data.local.db.entity.MessageEntity,
+    ) {
+        try {
+            val evidence = database.kgEvidenceDao()
+            when (MessageRole.fromSerializedName(message.role)) {
+                MessageRole.USER -> turnAssistantIds(database, sessionId, message.id).forEach { evidence.clearMessage(it) }
+                MessageRole.ASSISTANT -> {
+                    val (edges, nodes) = evidence.clearMessage(message.id)
+                    val hadGraph = edges > 0 || nodes > 0 || database.vectorizationTaskDao()
+                        .getById(VectorizationQueue.sessionGraphTaskId(message.id)) != null
+                    if (hadGraph) sessionGraph?.schedule(sessionId, message.id, userMessageId = null)
+                }
+                else -> Unit
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NexaraLogger.logError("[ConversationMemory] 编辑后更新会话图谱失败", error)
+        }
+    }
+
+    /** 用户消息之后、下一条用户消息之前的助手消息。 */
+    private suspend fun turnAssistantIds(database: NexaraDatabase, sessionId: String, userMessageId: String): List<String> {
+        val messages = database.messageDao().getBySession(sessionId).sortedBy { it.createdAt }
+        val start = messages.indexOfFirst { it.id == userMessageId }
+        if (start < 0) return emptyList()
+        return messages.drop(start + 1)
+            .takeWhile { MessageRole.fromSerializedName(it.role) != MessageRole.USER }
+            .filter { MessageRole.fromSerializedName(it.role) == MessageRole.ASSISTANT }
+            .map { it.id }
+    }
 
     private suspend fun invalidateSessionJit(database: NexaraDatabase, sessionId: String) {
         val (edges, nodes) = database.kgEvidenceDao().clearSessionMemoryJit(sessionId)

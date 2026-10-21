@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface VectorizationTaskDao {
@@ -108,6 +109,16 @@ interface VectorizationTaskDao {
 
     @Query("SELECT * FROM vectorization_tasks WHERE session_id = :sessionId")
     suspend fun getBySessionId(sessionId: String): List<VectorizationTaskEntity>
+
+    @Query("SELECT assistant_message_id AS messageId, status, error FROM vectorization_tasks WHERE type = 'session_graph' AND session_id = :sessionId")
+    fun observeSessionGraphTasks(sessionId: String): Flow<List<SessionGraphTaskRow>>
+
+    @Query("SELECT COALESCE(SUM(CASE WHEN status IN ('failed', 'partial') THEN 0 ELSE 1 END), 0) AS pending, COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed FROM vectorization_tasks WHERE type = 'session_graph'")
+    fun observeSessionGraphQueue(): Flow<SessionGraphQueueRow>
+
+    /** 所属助手消息已不存在的会话图谱任务（含失败行）不再有展示或重试意义。 */
+    @Query("DELETE FROM vectorization_tasks WHERE type = 'session_graph' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = vectorization_tasks.assistant_message_id)")
+    suspend fun deleteOrphanSessionGraphTasks(): Int
 
     @Query("UPDATE vectorization_tasks SET status = :status, updated_at = :updatedAt WHERE id = :taskId")
     suspend fun updateStatus(taskId: String, status: String, updatedAt: Long)
@@ -420,3 +431,6 @@ enum class VectorizationTaskTargetUpsertOutcome {
     IDEMPOTENT,
     IGNORED_OLDER,
 }
+
+data class SessionGraphTaskRow(val messageId: String?, val status: String, val error: String?)
+data class SessionGraphQueueRow(val pending: Int, val failed: Int)

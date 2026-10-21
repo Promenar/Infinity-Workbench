@@ -22,6 +22,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_18_19
 import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
+import com.promenar.nexara.data.local.db.MIGRATION_22_23
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -253,7 +254,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -536,6 +537,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             turnWriter = { sessionId, userContent, assistantContent, userMessageId, assistantMessageId ->
                 memoryManager.addTurnToMemory(sessionId, userContent, assistantContent, userMessageId, assistantMessageId)
             },
+            sessionGraph = sessionGraphScheduler,
         )
     }
     private val generationContextBuilder by lazy {
@@ -620,6 +622,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             compactionService = contextCompactionService,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             mediaContextLoader = com.promenar.nexara.data.generation.ViewedMediaContextLoader(workspaceMediaViewer, ::resolveMediaViewTarget),
+            sessionGraph = sessionGraphScheduler,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1670,8 +1673,23 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 fileEntryDao = database.fileEntryDao(),
                 documentIndexService = createDocumentIndexService(config),
                 executionGate = sessionExecutionGate,
+                sessionGraph = com.promenar.nexara.data.rag.RoomSessionGraphProcessor({ database }, { graphExtractor }, sessionGraphStats),
             )
         }
+
+    val sessionGraphStats: com.promenar.nexara.data.rag.SessionGraphStats by lazy {
+        com.promenar.nexara.data.rag.SessionGraphStats(getSharedPreferences("session_graph_stats", MODE_PRIVATE))
+    }
+
+    private fun sessionGraphEnabled(): Boolean = ragConfigPersistence.loadFullConfig().kgSessionExtractionEnabled
+
+    val sessionGraphScheduler: com.promenar.nexara.data.rag.SessionGraphScheduler by lazy {
+        com.promenar.nexara.data.rag.RoomSessionGraphScheduler({ database }, ::sessionGraphEnabled) { vectorizationQueue }
+    }
+
+    val sessionGraphPort: com.promenar.nexara.data.rag.SessionGraphPort by lazy {
+        com.promenar.nexara.data.rag.RoomSessionGraphPort({ database }, sessionGraphScheduler, sessionGraphStats, ::sessionGraphEnabled)
+    }
 
     fun observeVectorizationQueueInstances(
         observer: (com.promenar.nexara.data.rag.VectorizationQueue) -> Unit,

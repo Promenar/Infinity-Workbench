@@ -97,7 +97,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         WorkspaceEntity::class,
         AgentRuleRevisionEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -133,6 +133,7 @@ abstract class NexaraDatabase : RoomDatabase() {
 
 internal const val NEXARA_SCHEMA_V21_IDENTITY_HASH = "b59d4265cdf25db536fb91226cd85ab3"
 internal const val NEXARA_SCHEMA_V22_IDENTITY_HASH = "44c225495bedbde35d20c36ffbddf6a4"
+internal const val NEXARA_SCHEMA_V23_IDENTITY_HASH = "7d4eb1523842672010345f378c8b7bd9"
 
 internal fun SQLiteDatabase.hasSshHostContract(): Boolean {
     val expectedColumns = mapOf(

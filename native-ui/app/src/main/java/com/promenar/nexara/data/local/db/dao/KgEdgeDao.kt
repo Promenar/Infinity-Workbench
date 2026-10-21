@@ -46,6 +46,9 @@ interface KgEdgeDao {
     @Query("SELECT COUNT(*) FROM kg_edges WHERE EXISTS (SELECT 1 FROM kg_evidence p WHERE p.edge_id = kg_edges.id AND p.doc_id IN (:docIds) AND " + ACTIVE_KG_EVIDENCE + ")")
     suspend fun countByDocIds(docIds: List<String>): Int
 
+    @Query("SELECT e.id AS id, s.name AS source, e.relation AS relation, t.name AS target FROM kg_edges e JOIN kg_nodes s ON s.id = e.source_id JOIN kg_nodes t ON t.id = e.target_id WHERE EXISTS (SELECT 1 FROM kg_evidence p WHERE p.edge_id = e.id AND p.message_id = :messageId AND " + ACTIVE_KG_EVIDENCE + ") ORDER BY e.weight DESC, e.id LIMIT :limit")
+    suspend fun getRelationsForMessage(messageId: String, limit: Int): List<KgTurnRelation>
+
     @Query("SELECT COUNT(*) FROM kg_edges WHERE " + ACTIVE_KG_EDGE)
     suspend fun getCount(): Int
 
@@ -73,3 +76,5 @@ interface KgEdgeDao {
 
     data class DocumentOptionRow(val docId: String, val title: String)
 }
+
+data class KgTurnRelation(val id: String, val source: String, val relation: String, val target: String)

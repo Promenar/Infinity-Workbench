@@ -224,6 +224,18 @@ val MIGRATION_21_22 = object : Migration(21, 22) {
 }
 
 /**
+ * 会话图谱抽取：证据记录所属轮次的助手消息 id，并为按助手筛选会话加索引。
+ * 既有证据的 message_id 为空，可见性不变。
+ */
+val MIGRATION_22_23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `kg_evidence` ADD COLUMN `message_id` TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_kg_evidence_message_id` ON `kg_evidence` (`message_id`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sessions_agent_id` ON `sessions` (`agent_id`)")
+    }
+}
+
+/**
  * 公开 v0.1 实际发布库为 v17。该迁移保留其业务数据，并补齐当前工具链、工作区与消息树契约。
  */
 val MIGRATION_17_18 = object : Migration(17, 18) {

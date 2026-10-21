@@ -66,6 +66,22 @@ class GraphStore(internal val database: NexaraDatabase) {
         }
     }
 
+    /**
+     * 以一轮会话图谱抽取结果替换该轮已有证据。所属助手消息已不存在（抽取期间被删除）时不写入并返回 false。
+     */
+    suspend fun replaceTurn(sessionId: String, messageId: String, contentHash: String, graph: ValidatedGraph): Boolean =
+        database.withTransaction {
+            val message = database.messageDao().getById(messageId)
+            if (message == null || message.sessionId != sessionId) return@withTransaction false
+            val previous = evidence.affectedByMessage(messageId)
+            evidence.deleteMessageEvidence(messageId)
+            val source = KgSource("session", sessionId = sessionId, contentHash = contentHash, messageId = messageId)
+            val ids = graph.nodes.associate { it.name to putNode(it.name, it.type, it.metadata, source) }
+            graph.edges.forEach { putEdge(ids.getValue(it.source), ids.getValue(it.target), it.relation, it.weight, source) }
+            evidence.collectAffected(previous)
+            true
+        }
+
     suspend fun captureJitSources(results: List<SearchResult>): List<KgJitSource> = database.withTransaction {
         results.groupBy { it.docId }.map { (docId, chunks) ->
             if (docId == null) KgJitSource(null, kgSha256(chunks.joinToString("\u0000") { it.content }), null)
@@ -146,7 +162,7 @@ class GraphStore(internal val database: NexaraDatabase) {
     }
 
     private suspend fun copyEvidence(row: KgEvidenceEntity, nodeId: String? = null, edgeId: String? = null) {
-        addEvidence(KgSource(row.sourceType, row.docId, row.sessionId, row.contentHash, row.taskId, row.workspaceDocument), nodeId, edgeId, row.createdAt, row.weight)
+        addEvidence(KgSource(row.sourceType, row.docId, row.sessionId, row.contentHash, row.taskId, row.workspaceDocument, row.messageId), nodeId, edgeId, row.createdAt, row.weight)
     }
 
     suspend fun deleteNode(id: String) = database.withTransaction {
@@ -204,17 +220,19 @@ class GraphStore(internal val database: NexaraDatabase) {
 
     private suspend fun addEvidence(source: KgSource, nodeId: String? = null, edgeId: String? = null, createdAt: Long = System.currentTimeMillis(), weight: Double? = null) {
         require((nodeId == null) != (edgeId == null))
+        // 消息 id 只在存在时参与证据身份，既有证据的 id 保持不变。
         val key = Json.encodeToString(ListSerializer(), listOf(nodeId.orEmpty(), edgeId.orEmpty(), source.type,
-            source.docId.orEmpty(), source.sessionId.orEmpty(), source.contentHash, source.taskId))
+            source.docId.orEmpty(), source.sessionId.orEmpty(), source.contentHash, source.taskId) + listOfNotNull(source.messageId))
         evidence.insert(KgEvidenceEntity(kgSha256(key), nodeId, edgeId, source.type, source.docId, source.sessionId,
-            source.contentHash, source.taskId, createdAt, source.workspaceDocument, weight))
+            source.contentHash, source.taskId, createdAt, source.workspaceDocument, weight, source.messageId))
         if (weight != null) evidence.increaseWeight(kgSha256(key), weight)
     }
 
     private fun source(scope: KgScope?, docId: String?, type: String): KgSource {
         val document = docId ?: scope?.docId
         return KgSource(when { type == "jit" -> "jit"; document != null -> "document"; scope?.sessionId != null -> "session"; else -> "legacy" },
-            document, scope?.sessionId, scope?.contentHash.orEmpty(), scope?.taskId.orEmpty(), scope?.workspaceDocument ?: false)
+            document, scope?.sessionId, scope?.contentHash.orEmpty(), scope?.taskId.orEmpty(), scope?.workspaceDocument ?: false,
+            scope?.messageId.takeIf { document == null })
     }
 
     private fun mergeMetadata(old: String?, added: String?): String {
@@ -228,7 +246,9 @@ class GraphStore(internal val database: NexaraDatabase) {
 
 data class KgDocumentOption(val docId: String, val title: String)
 data class KgSource(val type: String, val docId: String? = null, val sessionId: String? = null,
-    val contentHash: String = "", val taskId: String = "", val workspaceDocument: Boolean = false)
+    val contentHash: String = "", val taskId: String = "", val workspaceDocument: Boolean = false,
+    /** 会话证据所属轮次的助手消息；消息删除后证据不可见。 */
+    val messageId: String? = null)
 data class KgJitSource(val docId: String?, val contentHash: String, val epoch: Long?)
 data class KgScope(val sessionId: String? = null, val agentId: String? = null, val messageId: String? = null,
     val docId: String? = null, val contentHash: String = "", val taskId: String = "", val workspaceDocument: Boolean = false)
