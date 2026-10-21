@@ -11,10 +11,11 @@ import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
-import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -42,7 +43,9 @@ class PostProcessor(
     private val messageManager: MessageManager,
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
-    private val textSplitter: RecursiveCharacterTextSplitter? = null
+    private val textSplitter: RecursiveCharacterTextSplitter? = null,
+    /** 模型标题在此异步生成，不拖住本轮收尾；为 null 时就地等待。 */
+    private val titleScope: CoroutineScope? = null,
 ) {
     private var onGenerateTitle: (suspend (params: PostProcessorParams) -> String?)? = null
 
@@ -80,22 +83,23 @@ class PostProcessor(
                 params.session.title.startsWith("New Chat")
 
         if (params.session.messages.size <= 2 || isDefaultTitle) {
-            val titleGenerator = onGenerateTitle
-            val generatedTitle = if (titleGenerator != null) {
-                try {
-                    titleGenerator(params)
+            val fallback = fallbackTitle(params.userContent)
+            sessionManager.updateSessionTitle(params.sessionId, fallback)
+            val titleGenerator = onGenerateTitle ?: return
+            val generate: suspend () -> Unit = {
+                val generated = try {
+                    titleGenerator(params)?.trim()?.takeIf { it.isNotBlank() }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
                     null
                 }
-            } else null
-
-            val finalTitle = generatedTitle?.takeIf { it.isNotBlank() } ?: run {
-                val fallback = params.userContent.trim().replace(Regex("""[\n\r\t]+"""), " ")
-                fallback.take(MAX_TITLE_LENGTH).ifBlank { "会话" }
+                // 生成期间用户已改名时保留用户的标题。
+                if (generated != null && store.getSession(params.sessionId)?.title == fallback) {
+                    sessionManager.updateSessionTitle(params.sessionId, generated)
+                }
             }
-            sessionManager.updateSessionTitle(params.sessionId, finalTitle)
+            titleScope?.launch { generate() } ?: generate()
         }
     }
 
@@ -185,72 +189,83 @@ class PostProcessor(
         private const val TAG = "PostProcessor"
         const val MAX_TITLE_LENGTH = 10
 
+        /** 标题字数上限：含中日韩文字时按字计，否则按字符计并在单词边界截断。 */
+        const val MAX_LATIN_TITLE_LENGTH = 40
+
+        /**
+         * 依次用快速模型、当前会话模型生成标题；[send] 按稳定模型 ID 经精确路由发送并返回正文。
+         * 都没有可用标题时返回 null，由调用方保留回退标题。
+         */
         suspend fun generateTitleWithFallback(
             params: PostProcessorParams,
             quickModelId: String?,
-            provider: LlmProvider?
-        ): String {
-            val prompt = """请为以下对话生成一个简短标题，概括其核心主题。
-严格要求：
-1. 字数控制在8到10个汉字以内（绝不可超过10个字）；
-2. 纯文字，绝对不要包含标点符号、引号、书名号；
-3. 直接输出标题内容，不要有任何多余的解释。
+            send: suspend (PromptRequest) -> String?,
+        ): String? {
+            val prompt = """为下面这段对话写一个简短标题，概括核心主题。
+要求：
+1. 使用对话所用的语言；中文不超过 10 个字，英文等其它语言不超过 6 个词；
+2. 不要标点符号、引号或书名号；
+3. 只输出标题本身，不要解释。
 
 用户：${params.userContent.take(200)}
 助手：${params.assistantContent.take(200)}"""
-
             val quickModel = quickModelId?.takeIf { it.isNotBlank() }
             val sessionModel = params.modelId.takeIf { it.isNotBlank() }
                 ?: params.session.modelId?.takeIf { it.isNotBlank() }
-
-            // 1. 优先使用设置中预设的“快速模型”
-            if (!quickModel.isNullOrBlank() && provider != null) {
-                val title = callTitleLlm(quickModel, prompt, provider)
-                if (!title.isNullOrBlank()) return title
+            // 优先使用设置中的“快速模型”，没有标题时降级为当前会话模型。
+            return listOfNotNull(quickModel, sessionModel.takeIf { it != quickModel }).firstNotNullOfOrNull { model ->
+                callTitleLlm(model, prompt, send)
             }
-
-            // 2. 故障或未设置时降级为当前会话模型
-            if (!sessionModel.isNullOrBlank() && sessionModel != quickModel && provider != null) {
-                val title = callTitleLlm(sessionModel, prompt, provider)
-                if (!title.isNullOrBlank()) return title
-            }
-
-            // 3. 当前模型也故障时降级为第一条用户消息的前几个字（限制 10 字以内）
-            val fallback = params.userContent.trim().replace(Regex("""[\n\r\t]+"""), " ")
-            return fallback.take(MAX_TITLE_LENGTH).ifBlank { "会话" }
         }
 
         private suspend fun callTitleLlm(
             modelId: String,
             prompt: String,
-            provider: LlmProvider
+            send: suspend (PromptRequest) -> String?,
         ): String? = try {
-            withTimeout(8000L) {
-                val response = provider.sendPromptSync(
-                    PromptRequest(
-                        messages = listOf(ProtocolMessage(role = "user", content = prompt)),
-                        model = modelId,
-                        stream = false,
+            withTimeout(TITLE_TIMEOUT_MS) {
+                cleanTitle(
+                    send(
+                        PromptRequest(
+                            messages = listOf(ProtocolMessage(role = "user", content = prompt)),
+                            model = modelId,
+                            // 思考型模型的推理也计入输出上限。
+                            maxTokens = 2048,
+                            stream = false,
+                        )
                     )
                 )
-                cleanTitle(response.content)
             }
         } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
             NexaraLogger.logError(TAG, e)
             null
         }
+
+        private const val TITLE_TIMEOUT_MS = 20_000L
 
         internal fun cleanTitle(raw: String?): String? {
             if (raw.isNullOrBlank()) return null
             val firstLine = raw.lines().firstOrNull { it.isNotBlank() } ?: return null
             val stripped = firstLine
-                .replace(Regex("""^(?:[#*\s\-:："“'《（【]|标题|会话标题|主题|Topic|Title)+"""), "")
-                .replace(Regex("""[#*\s\-:："”'》）】]+$"""), "")
-                .replace(Regex("""[《》"“'”：:，,。！？!?·\n\r\t]"""), "")
+                .replace(Regex("""^(?:[#*\s\-:："“'《（【]|(?:会话标题|标题|主题|Topic|Title)\s*[:：])+"""), "")
+                .replace(Regex("""[#*\s\-:："”'》）】.。]+$"""), "")
+                .replace(Regex("""[《》"“”：:，,。！？!?·\n\r\t]"""), "")
+                .replace(Regex("""\s+"""), " ")
                 .trim()
             if (stripped.isBlank()) return null
-            return stripped.take(MAX_TITLE_LENGTH)
+            return limitTitle(stripped)
+        }
+
+        /** 模型标题不可用时取用户首条消息。 */
+        fun fallbackTitle(userContent: String): String =
+            cleanTitle(userContent.trim().replace(Regex("""[\n\r\t]+"""), " ")) ?: "会话"
+
+        private fun limitTitle(title: String): String {
+            if (title.any { isCjkCodePoint(it.code) }) return title.take(MAX_TITLE_LENGTH).trim()
+            if (title.length <= MAX_LATIN_TITLE_LENGTH) return title
+            val cut = title.take(MAX_LATIN_TITLE_LENGTH + 1).substringBeforeLast(' ').trimEnd(' ', '.', ';', '-')
+            return cut.ifBlank { title.take(MAX_LATIN_TITLE_LENGTH) }
         }
 
         fun estimateTokens(text: String): Int {

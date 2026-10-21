@@ -647,7 +647,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
     private val generationPostProcessor by lazy {
         val settings = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        val provider = llmProvider
+        // 快速模型与会话模型都是稳定模型 ID，必须按其所属提供商精确路由，不能发给默认提供商。
+        val titleRouter = com.promenar.nexara.data.generation.RoutedToolResultSummarizer(
+            com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
+        ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) }
         com.promenar.nexara.ui.chat.manager.PostProcessor(
             chatStore,
             generationSessionManager,
@@ -655,14 +658,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             embeddingClient,
             vectorStore,
             textSplitter,
+            titleScope = generationScope,
         ).apply {
             setTitleGenerator { params ->
                 val quickModelId = settings.getString("preset_summary_model", "")
                 com.promenar.nexara.ui.chat.manager.PostProcessor.generateTitleWithFallback(
                     params = params,
                     quickModelId = quickModelId,
-                    provider = provider,
-                )
+                ) { request -> titleRouter.summarizePrompt(request)?.content }
             }
         }
     }

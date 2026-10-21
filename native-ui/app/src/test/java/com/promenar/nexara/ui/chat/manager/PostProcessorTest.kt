@@ -11,10 +11,6 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import com.promenar.nexara.data.remote.protocol.PromptRequest
-import com.promenar.nexara.data.remote.protocol.PromptResponse
-import com.promenar.nexara.data.remote.provider.LlmProvider
-import io.mockk.coEvery
-import io.mockk.mockk
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PostProcessorTest {
@@ -110,7 +106,7 @@ class PostProcessorTest {
         testScope.advanceUntilIdle()
 
         val updatedSession = store.getSession("s1")!!
-        assertThat(updatedSession.title).isEqualTo("What is th")
+        assertThat(updatedSession.title).isEqualTo("What is the weather")
     }
 
     @Test
@@ -155,34 +151,76 @@ class PostProcessorTest {
     }
 
     @Test
-    fun `标题优先使用快速模型而非当前会话模型`() = runTest {
+    fun `标题按稳定模型 ID 经路由请求，优先快速模型`() = runTest {
         val calls = mutableListOf<String>()
-        val provider = mockk<LlmProvider>()
-        coEvery { provider.sendPromptSync(any()) } answers {
-            calls += firstArg<PromptRequest>().model
-            PromptResponse("快速标题")
-        }
 
-        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model", provider)
+        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model") { request ->
+            calls += request.model
+            "快速标题"
+        }
 
         assertThat(calls).containsExactly("quick::model")
         assertThat(title).isEqualTo("快速标题")
     }
 
     @Test
-    fun `快速模型无标题时沿用会话模型回退`() = runTest {
+    fun `快速模型无标题时沿用会话模型，都失败时返回空`() = runTest {
         val calls = mutableListOf<String>()
-        val provider = mockk<LlmProvider>()
-        coEvery { provider.sendPromptSync(any()) } answers {
-            val model = firstArg<PromptRequest>().model
-            calls += model
-            PromptResponse(if (model == "quick::model") "" else "天气分析")
-        }
 
-        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model", provider)
+        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model") { request ->
+            calls += request.model
+            if (request.model == "quick::model") "" else "天气分析"
+        }
+        val none = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model") { error("offline") }
 
         assertThat(calls).containsExactly("quick::model", "current::model").inOrder()
         assertThat(title).isEqualTo("天气分析")
+        assertThat(none).isNull()
+    }
+
+    @Test
+    fun `英文标题按单词截断且保留撇号`() {
+        assertThat(PostProcessor.cleanTitle("Title: Switching Editors from Vim to VS Code."))
+            .isEqualTo("Switching Editors from Vim to VS Code")
+        assertThat(PostProcessor.cleanTitle("A Practical Guide to Configuring Neovim Plugins for Rust Development"))
+            .isEqualTo("A Practical Guide to Configuring Neovim")
+        assertThat(PostProcessor.cleanTitle("\"What's New in Kotlin 2.3\"")).isEqualTo("What's New in Kotlin 2.3")
+        assertThat(PostProcessor.fallbackTitle("Remember this: I use Vim for coding.\nThanks"))
+            .isEqualTo("Remember this I use Vim for coding")
+        assertThat(PostProcessor.fallbackTitle("  ")).isEqualTo("会话")
+    }
+
+    @Test
+    fun `标题先写回退值，模型标题异步生成后替换，期间用户改名则保留用户标题`() = testScope.runTest {
+        val store = ChatStore()
+        val sessionManager = SessionManager(store, stubSessionRepo)
+        val messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val postProcessor = PostProcessor(store, sessionManager, messageManager, titleScope = this).apply {
+            setTitleGenerator { release.await(); "Weather Check" }
+        }
+        sessionManager.addSession(Session(id = "s1", agentId = "a1", title = "New Chat"))
+        sessionManager.addSession(Session(id = "s2", agentId = "a1", title = "New Chat"))
+        advanceUntilIdle()
+        fun params(id: String) = PostProcessorParams(
+            sessionId = id, assistantMsgId = "m2", userMsgId = "m1",
+            userContent = "What is the weather?", assistantContent = "Sunny.",
+            agent = Agent(id = "a1", name = "Test Agent"), session = store.getSession(id)!!,
+            ragEnabled = false, modelId = "p::m",
+        )
+
+        postProcessor.updateStats(params("s1"))
+        postProcessor.updateStats(params("s2"))
+        advanceUntilIdle()
+        // 生成期间本轮已结束，不等待标题模型。
+        assertThat(store.getSession("s1")!!.title).isEqualTo("What is the weather")
+        sessionManager.updateSessionTitle("s2", "我的会话")
+
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.title).isEqualTo("Weather Check")
+        assertThat(store.getSession("s2")!!.title).isEqualTo("我的会话")
     }
 
     private fun titleParams() = PostProcessorParams(
