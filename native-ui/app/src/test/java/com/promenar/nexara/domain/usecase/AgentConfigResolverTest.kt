@@ -42,7 +42,8 @@ class AgentConfigResolverTest {
             topP = 0.8,
             maxTokens = 2048,
             ragConfig = ragConfig,
-            retrievalConfig = retrievalConfig
+            retrievalConfig = retrievalConfig,
+            useInheritedConfig = false,
         )
 
         val config = resolver.resolve(agent)
@@ -150,5 +151,21 @@ class AgentConfigResolverTest {
         val config = resolver.resolve(agent)
 
         assertEquals("agent-model", config.modelId)
+    }
+
+    @Test
+    fun `继承全局检索参数时只取助手的记忆权限`() {
+        val policy = com.promenar.nexara.data.agent.AgentMemoryPolicy(shareWithOtherAgents = false)
+        val agent = Agent(
+            id = "agent_1",
+            name = "Test",
+            retrievalConfig = AgentRetrievalConfig(memoryLimit = 1, memoryPolicy = policy),
+            useInheritedConfig = true,
+        )
+
+        val config = AgentConfigResolver(createPrefs()).resolve(agent)
+
+        assertEquals(null, config.retrievalConfig)
+        assertEquals(policy, config.memoryPolicy)
     }
 }

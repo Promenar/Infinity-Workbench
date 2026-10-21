@@ -623,9 +623,13 @@ private fun SettingsPanel(
     onCompactNow: () -> Unit,
 ) {
     val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsStateWithLifecycle()
+    val memoryPolicy by androidx.compose.runtime.produceState(
+        initialValue = com.promenar.nexara.data.agent.AgentMemoryPolicy(), session?.agentId,
+    ) { value = chatViewModel.agentMemoryPolicy() }
     SessionContextPanelContent(
         params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams(),
         ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions(),
+        memoryPolicy = memoryPolicy,
         fontSize = session?.options?.fontSize ?: 15,
         isRerankAvailable = presetRerankModel.isNotBlank(), isGenerating = isGenerating, isCompressing = isCompressing,
         onParamsChange = chatViewModel::updateInferenceParams,
@@ -639,6 +643,7 @@ private fun SettingsPanel(
 internal fun SessionContextPanelContent(
     params: com.promenar.nexara.data.model.InferenceParams = com.promenar.nexara.data.model.InferenceParams(),
     ragOptions: com.promenar.nexara.data.model.RagOptions = com.promenar.nexara.data.model.RagOptions(),
+    memoryPolicy: com.promenar.nexara.data.agent.AgentMemoryPolicy = com.promenar.nexara.data.agent.AgentMemoryPolicy(),
     fontSize: Int = 15,
     isRerankAvailable: Boolean = true,
     isGenerating: Boolean = false,
@@ -655,7 +660,7 @@ internal fun SessionContextPanelContent(
         SessionContextSettingsSection(params.autoSummaryThreshold, retainedTurns, isGenerating, isCompressing,
             onThresholdChange = { onParamsChange(params.copy(autoSummaryThreshold = it)) },
             onKeepRecentTurnsChange = { onParamsChange(params.copy(keepRecentTurns = it)) }, onCompactNow = onCompactNow)
-        val fullyDisabled = !ragOptions.enableMemory && !ragOptions.isGlobal && !ragOptions.enableDocs && ragOptions.enableKnowledgeGraph != true
+        val fullyDisabled = !ragOptions.enableMemory && !ragOptions.enableDocs && ragOptions.enableKnowledgeGraph != true
         val retrievalFooter = buildList {
             if (!isRerankAvailable) add(stringResource(R.string.sheet_settings_rerank_unavailable))
             if (fullyDisabled) {
@@ -666,8 +671,6 @@ internal fun SessionContextPanelContent(
         NexaraSettingsSection(title = stringResource(R.string.session_retrieval_section), footer = retrievalFooter) {
             SettingsToggle(stringResource(R.string.sheet_settings_memory), checked = ragOptions.enableMemory, icon = Icons.Rounded.History,
                 onCheckedChange = { onRagOptionsChange { current -> current.withRetrievalToggle(SessionRetrievalToggle.Memory, it) } })
-            SettingsToggle(stringResource(R.string.sheet_settings_global_memory), checked = ragOptions.isGlobal, icon = Icons.Rounded.Share,
-                onCheckedChange = { onRagOptionsChange { current -> current.withRetrievalToggle(SessionRetrievalToggle.GlobalMemory, it) } })
             SettingsToggle(stringResource(R.string.sheet_settings_docs), checked = ragOptions.enableDocs, icon = Icons.Rounded.Description,
                 onCheckedChange = { onRagOptionsChange { current -> current.withRetrievalToggle(SessionRetrievalToggle.Documents, it) } })
             SettingsToggle(stringResource(R.string.sheet_tool_rerank), checked = isRerankAvailable && ragOptions.enableRerank,
@@ -676,18 +679,7 @@ internal fun SessionContextPanelContent(
             SettingsToggle(stringResource(R.string.sheet_settings_kg), checked = ragOptions.enableKnowledgeGraph ?: false, icon = Icons.Rounded.Psychology,
                 onCheckedChange = { onRagOptionsChange { current -> current.withRetrievalToggle(SessionRetrievalToggle.KnowledgeGraph, it) } })
         }
-        val memoryScope = when (ragOptions.memorySource()) {
-            SessionMemorySource.Disabled -> R.string.session_memory_scope_off
-            SessionMemorySource.Global -> R.string.session_memory_scope_both
-            SessionMemorySource.Session -> R.string.sheet_settings_memory
-        }
-        NexaraSettingsSection(title = stringResource(R.string.sheet_settings_section_retrieval),
-            footer = stringResource(R.string.session_settings_memory_desc)) {
-            NexaraSettingsRowLayout(title = stringResource(R.string.session_memory_scope)) {
-                Text(stringResource(memoryScope), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        SessionScopeSection(ragOptions, memoryPolicy, onRagOptionsChange)
         NexaraSettingsSection(title = stringResource(R.string.sheet_settings_ui_title)) {
             NexaraStepperSetting(title = stringResource(R.string.sheet_settings_font_size), value = fontSize.toString(),
                 canDecrease = fontSize > 10, canIncrease = fontSize < 18,

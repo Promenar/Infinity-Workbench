@@ -1,0 +1,37 @@
+<resources>
+    <string name="memory_scope_section">Retrieval scope</string>
+    <string name="memory_scope_section_footer">Assistant settings control the limits and the defaults for new sessions.</string>
+    <string name="memory_scope_row_memory">Conversation memory</string>
+    <string name="memory_scope_row_graph">Graph conversation evidence</string>
+    <string name="memory_scope_row_documents">Documents</string>
+    <string name="memory_scope_feature_off">Off</string>
+    <string name="memory_scope_capped">Limited by assistant: %1$s</string>
+    <string name="memory_scope_above_cap">Above this assistant\'s limit</string>
+    <string name="memory_scope_session">This session only</string>
+    <string name="memory_scope_agent">This assistant</string>
+    <string name="memory_scope_all_agents">All assistants</string>
+    <string name="memory_scope_session_desc">Only memory written in this conversation</string>
+    <string name="memory_scope_agent_desc">Memory from every session of this assistant</string>
+    <string name="memory_scope_all_agents_desc">Also memory shared by other assistants; private assistants are excluded</string>
+    <string name="graph_scope_session">This session only</string>
+    <string name="graph_scope_agent">Across sessions</string>
+    <string name="graph_scope_all_agents">Across assistants</string>
+    <string name="graph_scope_session_desc">The graph only uses evidence extracted from this conversation</string>
+    <string name="graph_scope_agent_desc">Evidence from every session of this assistant</string>
+    <string name="graph_scope_all_agents_desc">Also evidence shared by other assistants; private assistants are excluded</string>
+    <string name="document_scope_workspace">Session workspace</string>
+    <string name="document_scope_knowledge_base">Workspace and knowledge base</string>
+    <string name="document_scope_all">All indexed documents</string>
+    <string name="document_scope_workspace_desc">Files in this session\'s workspace and documents you selected</string>
+    <string name="document_scope_knowledge_base_desc">Also documents in the global knowledge base</string>
+    <string name="document_scope_all_desc">Includes files in other sessions\' workspaces</string>
+    <string name="agent_memory_section">Memory and knowledge</string>
+    <string name="agent_memory_section_footer">The limit is the widest scope a session may choose. Changes apply to retrieval right away; defaults only affect new sessions.</string>
+    <string name="agent_memory_share">Let other assistants read this assistant\'s memory</string>
+    <string name="agent_memory_share_desc">When off, this assistant is private: other assistants never read its memory or graph conversation evidence, even at All assistants.</string>
+    <string name="agent_memory_share_short">Turn off to make this assistant private</string>
+    <string name="agent_memory_default_heading">New session default</string>
+    <string name="agent_memory_cap_heading">Session limit</string>
+    <string name="agent_memory_default_value">Default %1$s</string>
+    <string name="agent_memory_cap_value">Limit %1$s</string>
+</resources>

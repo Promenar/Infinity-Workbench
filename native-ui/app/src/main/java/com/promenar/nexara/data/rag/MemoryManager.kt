@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.model.ConversationScope
+import com.promenar.nexara.data.model.DocumentScope
+import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
 import com.promenar.nexara.data.model.RagRetrievalTrace
@@ -14,13 +17,16 @@ class MemoryManager(
     private val queryRewriter: QueryRewriter? = null,
     val ragConfig: RagConfiguration = RagConfiguration()  // 改为 public 以支持 ContextBuilder 读取全局 KG 开关
 ) {
+    private val scopeResolver by lazy { RetrievalScopeResolver(graphStore.database) }
+
     data class RetrieveOptions(
         val enableMemory: Boolean = true,
         val enableDocs: Boolean = true,
         val activeDocIds: List<String> = emptyList(),
-        /** 当前数据层尚不能安全展开文件夹；保留范围信息，且文件夹本身绝不能触发全库回退。 */
+        /** 由范围解析展开为文件夹下的文件；文件夹本身绝不触发全库回退。 */
         val activeFolderIds: List<String> = emptyList(),
-        val isGlobal: Boolean = false,
+        val memoryScope: ConversationScope = ConversationScope.SESSION,
+        val documentScope: DocumentScope = DocumentScope.WORKSPACE,
         val sessionId: String = "",
         val enableRerank: Boolean = false,  // 从 RagOptions 传递，结合 ragConfig.enableRerank 共同决定
         val configOverride: RagConfiguration? = null
@@ -55,28 +61,18 @@ class MemoryManager(
     ): RetrieveResult {
         val TAG = "MemoryManager"
         NexaraLogger.log("[$TAG] retrieveContext start: query='${query.take(60)}', session=$sessionId, " +
-            "enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, isGlobal=${options.isGlobal}, " +
+            "enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, memoryScope=${options.memoryScope}, documentScope=${options.documentScope}, " +
             "enableRerank=${options.enableRerank}, activeDocIds=${options.activeDocIds.size}")
 
         val startTime = System.currentTimeMillis()
         val effectiveConfig = options.configOverride ?: ragConfig
 
-        val hasSpecificDocs = options.activeDocIds.isNotEmpty()
-        val authorizedDocIds = if (options.enableDocs && !options.isGlobal && hasSpecificDocs) {
-            options.activeDocIds.toSet()
-        } else null
-
-        // 非全局检索必须具有显式文档范围。activeFolderIds 尚未安全展开时按零文档处理，
-        // 禁止把空/未解析范围解释为“搜索全部文档”。
-        val canSearchDocs = options.enableDocs && (options.isGlobal || authorizedDocIds != null)
         val canSearchMemory = options.enableMemory
         // Rerank 决策: 用户开关 (RagOptions.enableRerank) AND 配置门 (ragConfig.enableRerank) 两者都开才执行
         val canRerank = options.enableRerank && effectiveConfig.enableRerank && rerankClient != null
         NexaraLogger.log("[$TAG] canRerank=$canRerank (options.enableRerank=${options.enableRerank} && effectiveConfig.enableRerank=${effectiveConfig.enableRerank} && rerankClient=${if (rerankClient != null) "configured" else "null"})")
 
-        NexaraLogger.log("[$TAG] canSearch: memory=$canSearchMemory docs=$canSearchDocs hasSpecificDocs=$hasSpecificDocs authorizedDocIds=${authorizedDocIds?.size ?: "null"}")
-
-        if (!canSearchMemory && !canSearchDocs) {
+        if (!canSearchMemory && !options.enableDocs) {
             NexaraLogger.log("[$TAG] No search enabled, returning empty")
             return emptyResult(0, RagRetrievalTrace.OUTCOME_NO_SCOPE)
         }
@@ -84,6 +80,25 @@ class MemoryManager(
         if (!embeddingClient.isConfigured && !embeddingClient.hasLocalFallback) {
             NexaraLogger.log("[$TAG] embedding unavailable, skip retrieval: ${embeddingClient.diagnosticMessage().lineSequence().firstOrNull().orEmpty()}")
             return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_UNAVAILABLE)
+        }
+
+        val scope = scopeResolver.resolve(
+            sessionId,
+            RagOptions(
+                activeDocIds = options.activeDocIds,
+                activeFolderIds = options.activeFolderIds,
+                memoryScope = options.memoryScope,
+                documentScope = options.documentScope,
+            ),
+        )
+        val documentReach = scope.documents
+        // 空的限定范围按零文档处理，禁止解释为“搜索全部文档”。
+        val canSearchDocs = options.enableDocs && (documentReach !is DocumentReach.Scoped ||
+            documentReach.workspaceRootUuids.isNotEmpty() || documentReach.documentIds.isNotEmpty())
+        NexaraLogger.log("[$TAG] canSearch: memory=$canSearchMemory docs=$canSearchDocs memoryReach=${scope.memory::class.simpleName} documentReach=${documentReach::class.simpleName}")
+        if (!canSearchMemory && !canSearchDocs) {
+            NexaraLogger.log("[$TAG] No document scope, returning empty")
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_NO_SCOPE)
         }
 
         onProgress?.invoke("Embedding query", 10, "Sending query to embedding model")
@@ -126,14 +141,12 @@ class MemoryManager(
             try {
                 val startMem = System.currentTimeMillis()
                 val memoryResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
-                    vectorStore.search(
+                    vectorStore.searchConversation(
                         queryEmbedding = queryEmbedding,
+                        reach = scope.memory,
+                        type = "memory",
                         limit = effectiveConfig.rerankTopK,
                         threshold = effectiveConfig.memoryThreshold,
-                        filter = VectorStore.SearchFilter(
-                            sessionId = if (options.isGlobal) null else sessionId,
-                            type = "memory"
-                        ),
                         onWarning = { warn -> NexaraLogger.log("[$TAG] memory search warning: $warn") }
                     )
                 }
@@ -146,14 +159,12 @@ class MemoryManager(
 
             try {
                 val summaryResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
-                    vectorStore.search(
+                    vectorStore.searchConversation(
                         queryEmbedding = queryEmbedding,
+                        reach = scope.memory,
+                        type = "summary",
                         limit = if (effectiveConfig.enableRerank) 10 else 5,
                         threshold = effectiveConfig.memoryThreshold - 0.05f,
-                        filter = VectorStore.SearchFilter(
-                            sessionId = if (options.isGlobal) null else sessionId,
-                            type = "summary"
-                        ),
                         onWarning = { warn -> NexaraLogger.log("[$TAG] summary search warning: $warn") }
                     )
                 }
@@ -169,14 +180,11 @@ class MemoryManager(
             try {
                 val startDocs = System.currentTimeMillis()
                 val docResults = queryEmbeddings.flatMap { (_, queryEmbedding) ->
-                    vectorStore.search(
+                    vectorStore.searchDocuments(
                         queryEmbedding = queryEmbedding,
+                        reach = documentReach,
                         limit = effectiveConfig.rerankTopK,
                         threshold = effectiveConfig.docThreshold,
-                        filter = VectorStore.SearchFilter(
-                            type = "document",
-                            docIds = authorizedDocIds?.toList()
-                        )
                     )
                 }
                 val docsMs = System.currentTimeMillis() - startDocs
@@ -195,21 +203,12 @@ class MemoryManager(
         val finalResults = if (effectiveConfig.enableHybridSearch) {
             try {
                 val keywordResults = queryVariants.flatMap { searchQuery ->
-                    keywordSearcher.search(
+                    keywordSearcher.searchScoped(
                         query = searchQuery,
                         limit = effectiveConfig.rerankTopK,
-                        options = KeywordSearcher.SearchOptions(
-                            sessionId = if (options.isGlobal) null else sessionId,
-                            docIds = authorizedDocIds,
-                            excludeDocs = !canSearchDocs
-                        )
+                        memory = scope.memory.takeIf { canSearchMemory },
+                        documents = documentReach.takeIf { canSearchDocs },
                     )
-                }.filter { result ->
-                    if (result.docId != null) {
-                        canSearchDocs && (options.isGlobal || result.docId in authorizedDocIds.orEmpty())
-                    } else {
-                        canSearchMemory && (options.isGlobal || result.sessionId == sessionId)
-                    }
                 }
                 val fused = rrfFusion(results, keywordResults, effectiveConfig)
                 NexaraLogger.log("[$TAG] hybrid fusion: ${results.size} vector + ${keywordResults.size} keyword → ${fused.size} fused")

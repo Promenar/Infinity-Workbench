@@ -340,6 +340,7 @@ internal class DefaultChatGenerationRuntime(
                 ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = config.retrievalConfig,
+            agentMemoryPolicy = config.memoryPolicy,
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
             availableSkills = scanSkills(workspace),
             cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
@@ -439,6 +440,7 @@ internal class DefaultChatGenerationRuntime(
                 ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = agentConfig.retrievalConfig,
+            agentMemoryPolicy = agentConfig.memoryPolicy,
             workspace = sessionWorkspace?.invoke(request.sessionId),
         )
         var routeTools: List<ProtocolTool> = emptyList()

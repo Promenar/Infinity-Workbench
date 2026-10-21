@@ -146,7 +146,7 @@ class RagImportRetrievalPipelineTest {
         val ragOptions = RagOptions(
             enableMemory = false,
             enableDocs = true,
-            isGlobal = true,
+            documentScope = com.promenar.nexara.data.model.DocumentScope.ALL_INDEXED,
             enableRerank = false,
             enableHybridSearch = false,
             docThreshold = 0.1f,

@@ -1,6 +1,7 @@
 package com.promenar.nexara.domain.usecase
 
 import android.content.SharedPreferences
+import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.domain.model.Agent
@@ -15,7 +16,8 @@ class AgentConfigResolver(
         val topP: Double,
         val maxTokens: Int,
         val ragConfig: AgentRagConfig?,
-        val retrievalConfig: AgentRetrievalConfig?
+        val retrievalConfig: AgentRetrievalConfig?,
+        val memoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
     )
 
     fun resolve(agent: Agent?): ResolvedConfig {
@@ -26,7 +28,8 @@ class AgentConfigResolver(
             topP = agent?.topP ?: globalPrefs.getFloat("default_top_p", 0.9f).toDouble(),
             maxTokens = agent?.maxTokens ?: globalPrefs.getInt("default_max_tokens", 4096),
             ragConfig = agent?.ragConfig,
-            retrievalConfig = agent?.retrievalConfig
+            retrievalConfig = agent?.retrievalConfig?.takeUnless { agent.useInheritedConfig },
+            memoryPolicy = agent?.memoryPolicy ?: AgentMemoryPolicy(),
         )
     }
 

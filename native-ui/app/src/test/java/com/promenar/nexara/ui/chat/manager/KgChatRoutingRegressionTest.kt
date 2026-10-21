@@ -22,7 +22,8 @@ class KgChatRoutingRegressionTest {
                 ragOptions = RagOptions(enableDocs = false, enableMemory = false, isGlobal = true, activeDocIds = listOf("d"), enableKnowledgeGraph = true)),
             agentRetrievalConfig = com.promenar.nexara.data.agent.AgentRetrievalConfig(enableKnowledgeGraph = true),
         ))
-        assertThat(captured?.isGlobal).isTrue()
+        assertThat(captured?.graphScope).isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT)
+        assertThat(captured?.memoryScope).isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT)
         assertThat(captured?.activeDocIds).containsExactly("d")
     }
 

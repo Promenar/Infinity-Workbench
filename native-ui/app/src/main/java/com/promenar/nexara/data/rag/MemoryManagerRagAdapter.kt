@@ -21,7 +21,8 @@ class MemoryManagerRagAdapter(
             enableDocs = options.enableDocs,
             activeDocIds = options.activeDocIds,
             activeFolderIds = options.activeFolderIds,
-            isGlobal = options.isGlobal,
+            memoryScope = options.effectiveMemoryScope,
+            documentScope = options.effectiveDocumentScope,
             sessionId = sessionId,
             enableRerank = options.enableRerank,  // 传递用户重排开关
             configOverride = buildConfigOverride(options)

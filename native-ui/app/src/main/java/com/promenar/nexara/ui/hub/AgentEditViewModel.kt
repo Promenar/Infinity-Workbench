@@ -57,6 +57,8 @@ class AgentEditViewModel(
     private val _useInheritedConfig = MutableStateFlow(true)
     private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
     private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
+    /** 记忆权限独立于“继承全局检索参数”：继承时仍按助手单独保存。 */
+    private val _memoryPolicy = MutableStateFlow(com.promenar.nexara.data.agent.AgentMemoryPolicy())
     private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
     private val _defaultWorkspaceId = MutableStateFlow<String?>(null)
 
@@ -73,6 +75,7 @@ class AgentEditViewModel(
     val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
     val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
     val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
+    val memoryPolicy: StateFlow<com.promenar.nexara.data.agent.AgentMemoryPolicy> = _memoryPolicy.asStateFlow()
     val saveError: StateFlow<AgentEditErrorCode?> = _saveError.asStateFlow()
     val defaultWorkspaceId: StateFlow<String?> = _defaultWorkspaceId.asStateFlow()
     /** 默认工作区的登记记录；id 已设置但登记被删除时为 null，界面显示“已删除的工作区”。 */
@@ -93,14 +96,16 @@ class AgentEditViewModel(
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
         combine(_temperature, _topP) { temp, tp -> Pair(temp, tp) },
-        combine(_useInheritedConfig, _ragConfig, _retrievalConfig, _defaultWorkspaceId) { u, r, ret, ws -> InheritanceEditState(u, r, ret, ws) }
-    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr, workspace) ->
+        combine(_useInheritedConfig, _ragConfig, _retrievalConfig, _defaultWorkspaceId, _memoryPolicy) { u, r, ret, ws, policy ->
+            InheritanceEditState(u, r, ret.copy(memoryPolicy = policy), ws, policy)
+        }
+    ) { text, (prompt, model, color), (icon, path, pin), (temp, tp), (useIn, rag, retr, workspace, policy) ->
         val initial = text.initial
         initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
         initial.defaultWorkspaceId != workspace ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
-        initial.useInheritedConfig != useIn ||
+        initial.useInheritedConfig != useIn || initial.memoryPolicy != policy ||
         (!useIn && (initial.ragConfig != rag || initial.retrievalConfig != retr))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -138,6 +143,7 @@ class AgentEditViewModel(
                 _topP.value = agent.topP?.toFloat() ?: 0.9f
                 _useInheritedConfig.value = agent.useInheritedConfig
                 _defaultWorkspaceId.value = agent.defaultWorkspaceId
+                _memoryPolicy.value = agent.memoryPolicy
 
                 if (agent.useInheritedConfig) {
                     _ragConfig.value = getGlobalRagConfig()
@@ -288,6 +294,20 @@ class AgentEditViewModel(
         scheduleSave()
     }
 
+    /** 记忆权限明确提交并立即持久化；上限调低时默认档位随之收紧。只影响之后的检索与新建会话的默认值。 */
+    fun updateMemoryPolicy(
+        transform: (com.promenar.nexara.data.agent.AgentMemoryPolicy) -> com.promenar.nexara.data.agent.AgentMemoryPolicy,
+    ) {
+        _memoryPolicy.update { transform(it).normalized() }
+        val agentId = _initialAgent.value?.id ?: return
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            withContext(NonCancellable) {
+                persistCurrentAgent(agentId)
+            }
+        }
+    }
+
     /** 设置或清除（null）默认工作区：明确提交，立即持久化，离开页面也不取消。只影响之后新建的会话。 */
     fun setDefaultWorkspace(workspaceId: String?) {
         _defaultWorkspaceId.value = workspaceId
@@ -346,7 +366,7 @@ class AgentEditViewModel(
         val value = transform(_ragConfig.value)
         val candidate = buildAgent(initial.id).copy(
             ragConfig = value,
-            retrievalConfig = _retrievalConfig.value,
+            retrievalConfig = _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value),
             useInheritedConfig = false,
         )
         return persistCandidate(candidate) {
@@ -378,7 +398,12 @@ class AgentEditViewModel(
             topP = _topP.value.toDouble(),
             maxTokens = 4096,
             ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
-            retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
+            retrievalConfig = if (_useInheritedConfig.value) {
+                _memoryPolicy.value.takeIf { it != com.promenar.nexara.data.agent.AgentMemoryPolicy() }
+                    ?.let { com.promenar.nexara.data.agent.AgentRetrievalConfig(memoryPolicy = it) }
+            } else {
+                _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
+            },
             useInheritedConfig = _useInheritedConfig.value,
             executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
             skills = initial?.skills ?: emptyList(),
@@ -426,6 +451,7 @@ class AgentEditViewModel(
         val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig,
         val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig,
         val defaultWorkspaceId: String?,
+        val memoryPolicy: com.promenar.nexara.data.agent.AgentMemoryPolicy,
     )
 
     private data class TextEditState(

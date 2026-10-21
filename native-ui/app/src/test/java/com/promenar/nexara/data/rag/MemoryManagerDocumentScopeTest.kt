@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.model.ConversationScope
+import com.promenar.nexara.data.model.DocumentScope
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -103,7 +105,8 @@ class MemoryManagerDocumentScopeTest {
                 enableMemory = true,
                 enableDocs = false,
                 activeDocIds = listOf("doc-a"),
-                isGlobal = true,
+                memoryScope = ConversationScope.ALL_AGENTS,
+                documentScope = DocumentScope.ALL_INDEXED,
                 sessionId = "session-a",
             ),
         )
@@ -114,13 +117,12 @@ class MemoryManagerDocumentScopeTest {
     }
 
     @Test
-    fun `非全局文档检索在活动文档为空时返回零文档`() = runTest {
+    fun `限定文档范围在会话无工作区且无活动文档时返回零文档`() = runTest {
         val result = retrieve(
             MemoryManager.RetrieveOptions(
                 enableMemory = false,
                 enableDocs = true,
                 activeDocIds = emptyList(),
-                isGlobal = false,
                 sessionId = "session-a",
             ),
         )
@@ -136,7 +138,6 @@ class MemoryManagerDocumentScopeTest {
                 enableDocs = true,
                 activeDocIds = emptyList(),
                 activeFolderIds = listOf("folder-a"),
-                isGlobal = false,
                 sessionId = "session-a",
             ),
         )
@@ -153,7 +154,6 @@ class MemoryManagerDocumentScopeTest {
                 enableMemory = true,
                 enableDocs = true,
                 activeDocIds = emptyList(),
-                isGlobal = false,
                 sessionId = "session-a",
             ),
         )
@@ -169,7 +169,6 @@ class MemoryManagerDocumentScopeTest {
                 enableMemory = false,
                 enableDocs = true,
                 activeDocIds = listOf("doc-a"),
-                isGlobal = false,
                 sessionId = "session-a",
             ),
         )
@@ -185,7 +184,8 @@ class MemoryManagerDocumentScopeTest {
                 enableMemory = false,
                 enableDocs = true,
                 activeDocIds = emptyList(),
-                isGlobal = true,
+                memoryScope = ConversationScope.ALL_AGENTS,
+                documentScope = DocumentScope.ALL_INDEXED,
                 sessionId = "session-a",
             ),
         )
@@ -201,7 +201,6 @@ class MemoryManagerDocumentScopeTest {
                 enableMemory = true,
                 enableDocs = true,
                 activeDocIds = listOf("doc-b"),
-                isGlobal = false,
                 sessionId = "session-a",
             ),
         )

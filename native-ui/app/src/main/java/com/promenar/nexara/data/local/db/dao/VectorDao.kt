@@ -19,6 +19,15 @@ private const val MEMORY_VISIBLE = "(NOT ($MEMORY_ROW) OR $MEMORY_TURN_PRESENT)"
 private const val ACTIVE_VECTOR = "($ACTIVE_FILE_VECTOR AND $MEMORY_VISIBLE)"
 private const val ACTIVE_VECTOR_ALIAS = "($ACTIVE_FILE_VECTOR_ALIAS AND $MEMORY_VISIBLE)"
 
+// 检索范围过滤（见 data/rag/RetrievalScope.kt）：对话行按所属会话的助手判定，文档行按工作区根与显式文档判定。
+private const val TYPE_IS = "substr(vectors.metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"'"
+private const val CONVERSATION_ROW = "vectors.doc_id IS NULL AND vectors.stale = 0"
+private const val SESSIONS_OF_AGENT = "vectors.session_id IN (SELECT id FROM sessions WHERE agent_id = :agentId)"
+private const val SESSIONS_OF_SHARED_AGENTS = "vectors.session_id IN (SELECT id FROM sessions WHERE agent_id = :agentId OR agent_id NOT IN (:privateAgentIds))"
+private const val DOCUMENT_ROW = "vectors.doc_id IS NOT NULL AND vectors.stale = 0"
+private const val DOCUMENT_IN_SCOPE = "(vectors.doc_id IN (:documentIds) OR EXISTS (SELECT 1 FROM workspace_files AS scope_file WHERE scope_file.workspace_root_uuid IN (:rootUuids) AND scope_file.in_recycle_bin = 0 AND scope_file.uuid = CASE WHEN vectors.file_uuid IS NOT NULL THEN vectors.file_uuid ELSE vectors.doc_id END))"
+private const val FTS_JOIN = "SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND "
+
 @Dao
 interface VectorDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -162,6 +171,36 @@ interface VectorDao {
 
     @Query("DELETE FROM vectors WHERE stale = 1 AND updated_at < :cutoff AND " + MEMORY_ROW + " AND NOT " + MEMORY_TURN_PRESENT)
     suspend fun purgeOrphanMemory(cutoff: Long): Int
+
+    @Query("SELECT * FROM vectors WHERE $TYPE_IS AND $CONVERSATION_ROW AND vectors.session_id = :sessionId AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun getConversationBySession(type: String, sessionId: String): List<VectorEntity>
+
+    @Query("SELECT * FROM vectors WHERE $TYPE_IS AND $CONVERSATION_ROW AND $SESSIONS_OF_AGENT AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun getConversationByAgent(type: String, agentId: String): List<VectorEntity>
+
+    @Query("SELECT * FROM vectors WHERE $TYPE_IS AND $CONVERSATION_ROW AND $SESSIONS_OF_SHARED_AGENTS AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun getConversationBySharedAgents(type: String, agentId: String, privateAgentIds: List<String>): List<VectorEntity>
+
+    @Query(FTS_JOIN + "$CONVERSATION_ROW AND vectors.session_id = :sessionId AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun searchFtsConversationBySession(query: String, sessionId: String): List<VectorEntity>
+
+    @Query(FTS_JOIN + "$CONVERSATION_ROW AND $SESSIONS_OF_AGENT AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun searchFtsConversationByAgent(query: String, agentId: String): List<VectorEntity>
+
+    @Query(FTS_JOIN + "$CONVERSATION_ROW AND $SESSIONS_OF_SHARED_AGENTS AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun searchFtsConversationBySharedAgents(query: String, agentId: String, privateAgentIds: List<String>): List<VectorEntity>
+
+    @Query("SELECT * FROM vectors WHERE $DOCUMENT_ROW AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun getAllDocuments(): List<VectorEntity>
+
+    @Query("SELECT * FROM vectors WHERE $DOCUMENT_ROW AND $DOCUMENT_IN_SCOPE AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun getDocumentsInScope(rootUuids: List<String>, documentIds: List<String>): List<VectorEntity>
+
+    @Query(FTS_JOIN + "$DOCUMENT_ROW AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun searchFtsDocuments(query: String): List<VectorEntity>
+
+    @Query(FTS_JOIN + "$DOCUMENT_ROW AND $DOCUMENT_IN_SCOPE AND $ACTIVE_VECTOR_ALIAS")
+    suspend fun searchFtsDocumentsInScope(query: String, rootUuids: List<String>, documentIds: List<String>): List<VectorEntity>
 
     data class TypeCount(val type: String, val count: Int)
     data class SessionCount(val session_id: String, val count: Int)

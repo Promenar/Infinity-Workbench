@@ -83,6 +83,7 @@ fun AgentEditScreen(
     val avatarPath by viewModel.avatarPath.collectAsState()
     val defaultWorkspaceId by viewModel.defaultWorkspaceId.collectAsState()
     val defaultWorkspace by viewModel.defaultWorkspace.collectAsState()
+    val memoryPolicy by viewModel.memoryPolicy.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
     val resolver = ModelCatalogRuntime.resolver
@@ -453,6 +454,10 @@ fun AgentEditScreen(
                         showChevron = true,
                     )
                 }
+            }
+
+            item {
+                AgentMemoryPolicySection(memoryPolicy, viewModel::updateMemoryPolicy)
             }
 
             item {

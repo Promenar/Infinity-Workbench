@@ -37,13 +37,16 @@ class MemoryManagerRagAdapterTest {
                 enableDocs = true,
                 activeDocIds = listOf("doc-a"),
                 activeFolderIds = listOf("folder-a"),
-                isGlobal = false,
+                isGlobal = true,
+                documentScope = com.promenar.nexara.data.model.DocumentScope.WORKSPACE,
             ),
             onProgress = null,
         )
 
         assertThat(captured.captured.activeDocIds).containsExactly("doc-a")
         assertThat(captured.captured.activeFolderIds).containsExactly("folder-a")
-        assertThat(captured.captured.isGlobal).isFalse()
+        // 旧字段 isGlobal 只在未设置新字段时参与解析。
+        assertThat(captured.captured.memoryScope).isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT)
+        assertThat(captured.captured.documentScope).isEqualTo(com.promenar.nexara.data.model.DocumentScope.WORKSPACE)
     }
 }

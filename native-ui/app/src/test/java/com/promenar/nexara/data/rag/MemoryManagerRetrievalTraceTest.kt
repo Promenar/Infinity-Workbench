@@ -84,7 +84,7 @@ class MemoryManagerRetrievalTraceTest {
         options = MemoryManager.RetrieveOptions(
             enableMemory = false,
             enableDocs = true,
-            isGlobal = true,
+            documentScope = com.promenar.nexara.data.model.DocumentScope.ALL_INDEXED,
             sessionId = "s1",
             enableRerank = enableRerank,
         ),

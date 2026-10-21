@@ -16,6 +16,7 @@ class PersistentGraphKgProvider(
 ) : KgProvider {
     private val database = graphStore.database
     private val retrieval = GraphRetrievalStore(graphStore.database)
+    private val scopeResolver = RetrievalScopeResolver(graphStore.database)
 
     override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>) =
         retrieveContext(query, sessionId, topKResults, RagOptions(enableKnowledgeGraph = true))
@@ -23,9 +24,10 @@ class PersistentGraphKgProvider(
     override suspend fun retrieveContext(query: String, sessionId: String, topKResults: List<RagReference>, options: RagOptions): KgContextResult {
         if (options.enableKnowledgeGraph != true) return KgContextResult("")
         val config = configProvider()
-        val scope = KgRetrievalScope(sessionId, options.activeDocIds, options.activeFolderIds, options.isGlobal)
+        val scope = KgRetrievalScope.of(scopeResolver.resolve(sessionId, options))
         val documents = retrieval.visibleDocumentIds(scope)
         val visibleReferences = withContext(Dispatchers.IO) {
+            // 即时抽取只用可见文档与本会话记忆：证据归属本会话，删除其他会话的聊天记录时无法据此失效。
             topKResults.filter { reference ->
                 if (reference.documentId != null) reference.documentId in documents
                 else database.vectorDao().getById(reference.id)?.let { vector ->

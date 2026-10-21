@@ -391,13 +391,32 @@ data class ApprovalRequest(
     val type: String? = null
 )
 
+/** 对话记忆与图谱对话证据的可见范围，按声明顺序逐级扩大。 */
+@Serializable
+enum class ConversationScope { SESSION, AGENT, ALL_AGENTS }
+
+/** 文档检索范围，按声明顺序逐级扩大。 */
+@Serializable
+enum class DocumentScope {
+    /** 本会话工作区与显式选择的文档。 */
+    WORKSPACE,
+    /** 再加入全局知识库。 */
+    KNOWLEDGE_BASE,
+    /** 全部已索引文档。 */
+    ALL_INDEXED,
+}
+
 @Serializable
 data class RagOptions(
     val enableMemory: Boolean = true,
     val enableDocs: Boolean = true,  // 默认开启：用户导入文档的意图就是检索，不应要求手动再开开关
     val activeDocIds: List<String> = emptyList(),
     val activeFolderIds: List<String> = emptyList(),
+    /** 仅兼容旧会话解码；范围以下面三个字段为准，见 [effectiveMemoryScope]。 */
     val isGlobal: Boolean = false,
+    val memoryScope: ConversationScope? = null,
+    val graphScope: ConversationScope? = null,
+    val documentScope: DocumentScope? = null,
     val enableKnowledgeGraph: Boolean? = null,
     val enableRerank: Boolean = true,
     val memoryLimit: Int? = null,
@@ -412,7 +431,15 @@ data class RagOptions(
     val enableHybridSearch: Boolean? = null,
     val hybridAlpha: Float? = null,
     val hybridBM25Boost: Float? = null
-)
+) {
+    // 旧会话只有 isGlobal：开启时迁移为“本助手”，关闭时为“仅本会话”；文档统一为“工作区 + 全局知识库”。
+    val effectiveMemoryScope: ConversationScope
+        get() = memoryScope ?: if (isGlobal) ConversationScope.AGENT else ConversationScope.SESSION
+    val effectiveGraphScope: ConversationScope
+        get() = graphScope ?: if (isGlobal) ConversationScope.AGENT else ConversationScope.SESSION
+    val effectiveDocumentScope: DocumentScope
+        get() = documentScope ?: DocumentScope.KNOWLEDGE_BASE
+}
 
 @Serializable
 data class SessionOptions(

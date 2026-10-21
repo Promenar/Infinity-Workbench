@@ -1424,7 +1424,7 @@ class ChatViewModel(
                 if (session != null) {
                     var hydrated = session
                     if (hydrated.ragOptions == null) {
-                        val defaultOptions = getDefaultRagOptions()
+                        val defaultOptions = getDefaultRagOptions(session.agentId)
                         hydrated = hydrated.copy(ragOptions = defaultOptions)
                         sessionManager.updateSession(sessionId, mapOf("ragOptions" to defaultOptions))
                     }
@@ -1511,8 +1511,8 @@ class ChatViewModel(
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
             val sessionId = IdGenerator.session()
-            val defaultOptions = getDefaultRagOptions()
             val agent = agentRepository.getById(agentId)
+            val defaultOptions = getDefaultRagOptions(agentId)
             val defaultModelId = agent?.modelId
                 ?.takeIf { it.isNotBlank() }
                 ?: resolveDefaultModelId()
@@ -1724,7 +1724,7 @@ class ChatViewModel(
     fun updateRagOptions(options: com.promenar.nexara.data.model.RagOptions) {
         val sessionId = _currentSessionId.value ?: return
         _currentRagOptions.value = options  // 立即缓存，绕过 store 异步延迟
-        NexaraLogger.log("[ChatViewModel] updateRagOptions: enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, isGlobal=${options.isGlobal}, enableRerank=${options.enableRerank}, enableKG=${options.enableKnowledgeGraph}")
+        NexaraLogger.log("[ChatViewModel] updateRagOptions: enableMemory=${options.enableMemory}, enableDocs=${options.enableDocs}, scope=${options.memoryScope}/${options.graphScope}/${options.documentScope}, enableRerank=${options.enableRerank}, enableKG=${options.enableKnowledgeGraph}")
         viewModelScope.launch {
             sessionManager.updateSession(sessionId, mapOf("ragOptions" to options))
         }
@@ -1844,6 +1844,12 @@ class ChatViewModel(
     }
 
     /** 当前会话智能体预设的推理参数，供设置面板显示会话未覆盖项的实际取值。 */
+    /** 当前会话所属助手的记忆权限，用于会话设置显示可选档位与上限。 */
+    suspend fun agentMemoryPolicy(): com.promenar.nexara.data.agent.AgentMemoryPolicy {
+        val agentId = _currentSessionId.value?.let(store::getSession)?.agentId
+        return configResolver.resolve(agentId?.let { agentRepository.getById(it) }).memoryPolicy
+    }
+
     suspend fun agentInferenceDefaults(): InferenceParams {
         val agentId = _currentSessionId.value?.let(store::getSession)?.agentId
         val agent = agentId?.let { agentRepository.getById(it) }
@@ -2392,7 +2398,10 @@ class ChatViewModel(
     }
 
 
-    private fun getDefaultRagOptions(): com.promenar.nexara.data.model.RagOptions {
+    /** 新会话的检索选项：开关取全局 RAG 设置，范围档位取助手默认值。 */
+    private suspend fun getDefaultRagOptions(agentId: String): com.promenar.nexara.data.model.RagOptions {
+        val policy = agentRepository.getById(agentId)?.memoryPolicy
+            ?: com.promenar.nexara.data.agent.AgentMemoryPolicy()
         val ragPrefs = application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE)
         val persistence = com.promenar.nexara.domain.usecase.RagConfigPersistence(ragPrefs)
         val fullConfig = persistence.loadFullConfig()
@@ -2401,8 +2410,7 @@ class ChatViewModel(
             enableDocs = fullConfig.enableDocs,
             enableRerank = fullConfig.enableRerank,
             enableKnowledgeGraph = fullConfig.enableKnowledgeGraph,
-            isGlobal = true
-        )
+        ).let(policy::defaultsFor)
     }
 
 }

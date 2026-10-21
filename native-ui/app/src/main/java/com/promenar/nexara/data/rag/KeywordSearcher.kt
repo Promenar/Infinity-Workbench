@@ -52,6 +52,41 @@ class KeywordSearcher(
         }
     }
 
+    /** 按检索范围分别检索对话行与文档行；FTS 不可用时在同一范围内退化为子串匹配。 */
+    suspend fun searchScoped(
+        query: String,
+        limit: Int,
+        memory: ConversationReach?,
+        documents: DocumentReach?,
+    ): List<SearchResult> {
+        if (query.isBlank() || (memory == null && documents == null)) return emptyList()
+        val effectiveQuery = query.take(60)
+        val rows = try {
+            // 两类各自取上限，避免文档命中挤掉记忆命中。
+            buildList {
+                memory?.let { addAll(vectorDao.conversationFts(it, effectiveQuery).take(limit)) }
+                documents?.let { addAll(vectorDao.documentFts(it, effectiveQuery).take(limit)) }
+            }.map { rowToSearchResult(it, 1.0f) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            val keywords = effectiveQuery.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+            if (keywords.isEmpty()) return emptyList()
+            val candidates = buildList {
+                memory?.let { reach -> CONVERSATION_TYPES.forEach { addAll(vectorDao.conversationRows(reach, it)) } }
+                documents?.let { addAll(vectorDao.documentRows(it)) }
+            }
+            candidates.mapNotNull { row ->
+                val content = row.content.lowercase()
+                val score = keywords.count { content.contains(it) }.toFloat()
+                if (score > 0f) rowToSearchResult(row, score) else null
+            }.sortedByDescending { it.similarity }.let { ranked ->
+                ranked.filter { it.docId == null }.take(limit) + ranked.filter { it.docId != null }.take(limit)
+            }
+        }
+        return rows.distinctBy { it.id }
+    }
+
     private suspend fun ftsSearch(
         query: String,
         limit: Int,
@@ -169,6 +204,7 @@ class KeywordSearcher(
     }
 
     private companion object {
+        val CONVERSATION_TYPES = listOf("memory", "summary")
         val TOKEN = Regex("[\\p{L}\\p{N}_]+")
         const val BM25_K1 = 1.2
         const val BM25_B = 0.75

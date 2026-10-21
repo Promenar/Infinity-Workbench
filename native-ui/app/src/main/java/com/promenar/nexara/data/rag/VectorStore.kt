@@ -107,6 +107,24 @@ class VectorStore(
         return searchInMemory(queryEmbedding, rows, threshold, limit, onWarning)
     }
 
+    /** 按检索范围读取对话记忆或摘要后做相似度排序。 */
+    suspend fun searchConversation(
+        queryEmbedding: FloatArray,
+        reach: ConversationReach,
+        type: String,
+        limit: Int,
+        threshold: Float,
+        onWarning: ((String) -> Unit)? = null,
+    ): List<SearchResult> = searchInMemory(queryEmbedding, vectorDao.conversationRows(reach, type), threshold, limit, onWarning)
+
+    suspend fun searchDocuments(
+        queryEmbedding: FloatArray,
+        reach: DocumentReach,
+        limit: Int,
+        threshold: Float,
+        onWarning: ((String) -> Unit)? = null,
+    ): List<SearchResult> = searchInMemory(queryEmbedding, vectorDao.documentRows(reach), threshold, limit, onWarning)
+
     private fun searchInMemory(
         queryEmbedding: FloatArray,
         rows: List<VectorEntity>,

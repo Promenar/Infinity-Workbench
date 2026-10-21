@@ -561,7 +561,6 @@
     <string name="session_settings_label_long">Long</string>
     <string name="session_settings_section_rag">RAG Settings</string>
     <string name="session_settings_memory">Long-term Memory</string>
-    <string name="session_settings_memory_desc">Semantic memory for context across sessions</string>
     <string name="session_settings_kg">Knowledge Graph Extraction</string>
     <string name="session_settings_kg_desc">Extract entities and relationships from conversations</string>
     <string name="session_settings_kb">Knowledge Base</string>
@@ -615,9 +614,7 @@
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
     <string name="sheet_tool_github_server">GitHub Server</string>
-    <string name="sheet_settings_section_retrieval">Long-term Memory</string>
     <string name="sheet_settings_memory">Session RAG</string>
-    <string name="sheet_settings_global_memory">Cross-session Retrieval</string>
     <string name="sheet_settings_docs">Knowledge Base Search</string>
     <string name="sheet_settings_kg">Knowledge Graph Reasoning</string>
     <string name="sheet_tool_rerank">Retrieval Reranking</string>

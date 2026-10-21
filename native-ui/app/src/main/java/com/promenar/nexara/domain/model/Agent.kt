@@ -1,5 +1,6 @@
 package com.promenar.nexara.domain.model
 
+import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 
@@ -27,7 +28,11 @@ data class Agent(
     val defaultWorkspaceId: String? = null,
     val userRules: String = "",
     val createdAt: Long = 0L
-)
+) {
+    /** 继承全局检索参数时 [retrievalConfig] 只承载记忆权限，参数部分不生效。 */
+    val memoryPolicy: AgentMemoryPolicy
+        get() = retrievalConfig?.memoryPolicy ?: AgentMemoryPolicy()
+}
 
 object ExecutionModeCodec {
     fun parseOrSemi(raw: String?): ExecutionMode = when (raw?.trim()?.lowercase()) {

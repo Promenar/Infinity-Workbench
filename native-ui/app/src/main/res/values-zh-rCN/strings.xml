@@ -566,7 +566,6 @@
     <string name="session_settings_label_long">长</string>
     <string name="session_settings_section_rag">RAG 设置</string>
     <string name="session_settings_memory">长期记忆</string>
-    <string name="session_settings_memory_desc">跨会话语义记忆上下文</string>
     <string name="session_settings_kg">知识图谱抽取</string>
     <string name="session_settings_kg_desc">从对话中提取实体和关系</string>
     <string name="session_settings_kb">知识库</string>
@@ -623,7 +622,6 @@
     <string name="sheet_tool_rerank">检索重排序</string>
     <string name="sheet_settings_section_inference">生成参数</string>
     <string name="sheet_settings_section_context">上下文管理</string>
-    <string name="sheet_settings_section_retrieval">长期记忆</string>
     <string name="sheet_settings_summary_threshold">自动压缩阈值</string>
     <string name="sheet_settings_keep_recent_turns">保留最近轮次</string>
     <string name="sheet_settings_turns_value">%1$d 轮</string>
@@ -633,7 +631,6 @@
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">最大 Token 数</string>
     <string name="sheet_settings_memory">会话 RAG</string>
-    <string name="sheet_settings_global_memory">跨会话检索</string>
     <string name="sheet_settings_docs">知识库检索</string>
     <string name="sheet_settings_kg">知识图谱</string>
     <string name="sheet_settings_unlimited">无限制</string>

@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.common
 
+import com.promenar.nexara.data.model.ConversationScope
+import com.promenar.nexara.data.model.DocumentScope
 import com.promenar.nexara.data.model.RagOptions
 import org.junit.Assert.*
 import org.junit.Test
@@ -20,19 +22,26 @@ class SessionRetrievalSettingsTest {
     }
 
     @Test fun eachToggleChangesOnlyItsOwnField() {
-        val before = RagOptions(enableMemory = false, isGlobal = false, enableDocs = false,
+        val before = RagOptions(enableMemory = false, enableDocs = false,
             enableRerank = false, enableKnowledgeGraph = false, queryRewriteCount = 4)
-        val expected = listOf(before.copy(enableMemory = true), before.copy(isGlobal = true),
-            before.copy(enableDocs = true), before.copy(enableRerank = true), before.copy(enableKnowledgeGraph = true))
+        val expected = listOf(before.copy(enableMemory = true), before.copy(enableDocs = true),
+            before.copy(enableRerank = true), before.copy(enableKnowledgeGraph = true))
         SessionRetrievalToggle.entries.forEachIndexed { index, toggle ->
             assertEquals(expected[index], before.withRetrievalToggle(toggle, true))
         }
     }
 
-    @Test fun memoryGateTakesPrecedenceOverGlobalScope() {
-        assertEquals(SessionMemorySource.Disabled, RagOptions(enableMemory = false, isGlobal = true).memorySource())
-        assertEquals(SessionMemorySource.Disabled, RagOptions(enableMemory = false, isGlobal = false).memorySource())
-        assertEquals(SessionMemorySource.Session, RagOptions(enableMemory = true, isGlobal = false).memorySource())
-        assertEquals(SessionMemorySource.Global, RagOptions(enableMemory = true, isGlobal = true).memorySource())
+    @Test fun changingOneScopeFreezesTheOthersFromLegacyGlobalFlag() {
+        val legacy = RagOptions(isGlobal = true)
+        val updated = legacy.withMemoryScope(ConversationScope.ALL_AGENTS)
+        assertFalse(updated.isGlobal)
+        assertEquals(ConversationScope.ALL_AGENTS, updated.memoryScope)
+        // 图谱与文档保持旧字段解析出的档位，不因 isGlobal 清零而回落为“仅本会话”。
+        assertEquals(ConversationScope.AGENT, updated.graphScope)
+        assertEquals(DocumentScope.KNOWLEDGE_BASE, updated.documentScope)
+
+        assertEquals(ConversationScope.SESSION, legacy.withGraphScope(ConversationScope.SESSION).effectiveGraphScope)
+        assertEquals(DocumentScope.ALL_INDEXED, legacy.withDocumentScope(DocumentScope.ALL_INDEXED).effectiveDocumentScope)
+        assertEquals(ConversationScope.AGENT, legacy.withDocumentScope(DocumentScope.ALL_INDEXED).effectiveMemoryScope)
     }
 }

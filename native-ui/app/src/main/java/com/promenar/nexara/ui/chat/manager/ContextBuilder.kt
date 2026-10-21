@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager
 
 import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
+import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagRetrievalTrace
@@ -61,6 +62,8 @@ data class ContextBuilderParams(
     val agentSystemPrompt: String? = null,
     val sessionCustomPrompt: String? = null,
     val agentRetrievalConfig: AgentRetrievalConfig? = null,
+    /** 助手的记忆权限；会话档位超出上限时按上限执行。 */
+    val agentMemoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
     /** 本轮实际广告给模型的工具名；null 表示调用方未提供，按会话开关输出通用工具说明。 */
     val availableToolNames: Set<String>? = null,
     /** 当前会话两级技能扫描结果；提示段落按状态、隐式策略和用户点名筛选。 */
@@ -232,11 +235,13 @@ class ContextBuilder(
             enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
             activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
             activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
-            isGlobal = params.ragOptions?.isGlobal ?: sessionRagOptions.isGlobal,
+            memoryScope = (params.ragOptions ?: sessionRagOptions).effectiveMemoryScope,
+            graphScope = (params.ragOptions ?: sessionRagOptions).effectiveGraphScope,
+            documentScope = (params.ragOptions ?: sessionRagOptions).effectiveDocumentScope,
             enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
             enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
         )
-        return applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig)
+        return params.agentMemoryPolicy.clamp(applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig))
     }
 
     /**
@@ -342,7 +347,7 @@ class ContextBuilder(
             return skipped
         }
 
-        NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, isGlobal=${effectiveRagOptions.isGlobal}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
+        NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, scope=${effectiveRagOptions.memoryScope}/${effectiveRagOptions.graphScope}/${effectiveRagOptions.documentScope}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
 
         return try {
             val result = ragProvider.retrieveContext(

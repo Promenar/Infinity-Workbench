@@ -17,7 +17,19 @@ data class KgRetrievalScope(
     val documentIds: List<String> = emptyList(),
     val folderIds: List<String> = emptyList(),
     val globalKnowledge: Boolean = false,
-)
+    /** 对话证据可见的会话；为空时仅本会话。 */
+    val conversation: ConversationReach? = null,
+    /** 已解析的文档范围；非空时取代上面三个文档字段，与向量检索使用同一范围。 */
+    val documents: DocumentReach? = null,
+) {
+    companion object {
+        fun of(scope: ResolvedRetrievalScope) = KgRetrievalScope(
+            sessionId = scope.sessionId,
+            conversation = scope.graph,
+            documents = scope.documents,
+        )
+    }
+}
 
 data class PersistentGraphResult(val seedCount: Int, val paths: List<KgPath>)
 
@@ -114,26 +126,43 @@ class GraphRetrievalStore(private val database: NexaraDatabase) {
     }
 
     private fun scopeQuery(scope: KgRetrievalScope): Pair<String, List<Any>> {
-        val docs = scope.documentIds.distinct()
-        val folders = scope.folderIds.distinct()
+        val documents = scope.documents
+        val docs = (if (documents is DocumentReach.Scoped) documents.documentIds.toList() else scope.documentIds).distinct()
+        val folders = if (documents == null) scope.folderIds.distinct() else emptyList()
         // 标识符仅转换为十六进制字节常量，不把原始文本作为 SQL 语法，也不消耗绑定参数。
         // 完整来源保留在同一个 CTE 中，联合 JIT 依赖不因分批而被误判不可见。
         val values = if (docs.isEmpty()) "SELECT NULL WHERE 0" else "VALUES " + docs.joinToString { "(${sqlText(it)})" }
         val folderValues = if (folders.isEmpty()) "NULL" else folders.joinToString { sqlText(it) }
+        val liveFiles = "SELECT w.uuid FROM workspace_files w WHERE w.in_recycle_bin=0 AND w.is_directory=0"
+        val visibleDocs = when (documents) {
+            null -> "SELECT id FROM explicit_docs UNION SELECT id FROM folder_tree UNION $liveFiles AND w.workspace_root_uuid IN " +
+                "(SELECT workspace_root_uuid FROM sessions WHERE id=(SELECT session_id FROM ctx)" +
+                (if (scope.globalKnowledge) " OR agent_id='__system__'" else "") + ")"
+            // 与向量检索一致：未登记到工作区的旧文档同样可见。
+            DocumentReach.All -> "$liveFiles UNION SELECT doc_id FROM kg_evidence WHERE doc_id IS NOT NULL AND doc_id NOT IN (SELECT uuid FROM workspace_files)"
+            is DocumentReach.Scoped -> "SELECT id FROM explicit_docs UNION $liveFiles AND w.workspace_root_uuid IN (${sqlList(documents.workspaceRootUuids)})"
+        }
+        val visibleSessions = when (val reach = scope.conversation ?: ConversationReach.Session(scope.sessionId)) {
+            is ConversationReach.Session -> "VALUES (${sqlText(reach.sessionId)})"
+            is ConversationReach.Agent -> "SELECT id FROM sessions WHERE agent_id=${sqlText(reach.agentId)}"
+            is ConversationReach.SharedAgents -> "SELECT id FROM sessions WHERE agent_id=${sqlText(reach.agentId)} " +
+                "OR agent_id NOT IN (${sqlList(reach.privateAgentIds)})"
+        }
         val sql = "WITH RECURSIVE ctx(session_id) AS (VALUES (?)), explicit_docs(id) AS ($values), " +
             "folder_tree(id,root) AS (SELECT uuid,workspace_root_uuid FROM workspace_files WHERE uuid IN ($folderValues) AND in_recycle_bin=0 " +
             "UNION SELECT w.uuid,w.workspace_root_uuid FROM workspace_files w JOIN folder_tree f ON w.parent_uuid=f.id AND w.workspace_root_uuid=f.root WHERE w.in_recycle_bin=0), " +
-            "visible_docs(id) AS (SELECT id FROM explicit_docs UNION SELECT id FROM folder_tree UNION " +
-            "SELECT w.uuid FROM workspace_files w WHERE w.in_recycle_bin=0 AND w.is_directory=0 AND w.workspace_root_uuid IN " +
-            "(SELECT workspace_root_uuid FROM sessions WHERE id=(SELECT session_id FROM ctx)" +
-            (if (scope.globalKnowledge) " OR agent_id='__system__'" else "") + ")) "
+            "visible_docs(id) AS ($visibleDocs), visible_sessions(id) AS ($visibleSessions) "
         return sql to listOf(scope.sessionId)
     }
 
     private fun visibleEvidence(): String = "($ACTIVE_KG_EVIDENCE) AND " +
-        "((p.session_id=(SELECT session_id FROM ctx) AND p.doc_id IS NULL) OR " +
-        "(p.doc_id IN (SELECT id FROM visible_docs) AND (p.source_type IN ('document','legacy') OR p.session_id=(SELECT session_id FROM ctx)))) " +
+        "((p.doc_id IS NULL AND p.session_id IN (SELECT id FROM visible_sessions)) OR " +
+        "(p.doc_id IN (SELECT id FROM visible_docs) AND (p.source_type IN ('document','legacy') OR p.session_id IN (SELECT id FROM visible_sessions)))) " +
         "AND (p.source_type!='jit' OR NOT EXISTS (SELECT 1 FROM kg_evidence d WHERE d.source_type='jit' AND d.task_id=p.task_id AND d.doc_id IS NOT NULL AND d.doc_id NOT IN (SELECT id FROM visible_docs)))"
+
+    /** 空列表写成空子查询：`IN (NULL)` 恒为假，`NOT IN (NULL)` 也恒为假，都不能表达“无元素”。 */
+    private fun sqlList(values: Collection<String>): String =
+        if (values.isEmpty()) "SELECT NULL WHERE 0" else values.joinToString { sqlText(it) }
 
     private fun placeholders(size: Int) = if (size == 0) "NULL" else List(size) { "?" }.joinToString()
 

@@ -19,11 +19,11 @@ class ChatLogicTest {
         val options = RagOptions()
         val sessionRagOnly = options.copy(enableMemory = true, isGlobal = false)
         assertTrue(sessionRagOnly.enableMemory)
-        assertFalse(sessionRagOnly.isGlobal)
+        assertEquals(com.promenar.nexara.data.model.ConversationScope.SESSION, sessionRagOnly.effectiveMemoryScope)
 
         val globalRetrieval = options.copy(enableMemory = true, isGlobal = true)
         assertTrue(globalRetrieval.enableMemory)
-        assertTrue(globalRetrieval.isGlobal)
+        assertEquals(com.promenar.nexara.data.model.ConversationScope.AGENT, globalRetrieval.effectiveMemoryScope)
     }
 
     @Test

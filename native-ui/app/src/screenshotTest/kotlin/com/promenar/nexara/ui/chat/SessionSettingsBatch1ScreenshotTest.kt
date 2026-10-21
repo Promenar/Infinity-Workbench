@@ -109,6 +109,53 @@ private fun previewSkill(
 @Composable
 fun sessionContextBatch1Preview() = SessionFrame(3) { SessionContextPanelContent() }
 
+/** 会话档位超出助手上限（对话记忆存为“全部助手”，助手上限为“本助手”），以及文档检索关闭。 */
+@PreviewTest
+@Preview(name = "会话检索范围 受限 浅中411", widthDp = 411, heightDp = 1180, locale = "zh-rCN")
+@Preview(name = "会话检索范围 受限 浅中360 字号130", widthDp = 360, heightDp = 1500, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun sessionRetrievalScopeCappedPreview() = SessionFrame(3, light = true) {
+    SessionContextPanelContent(
+        ragOptions = com.promenar.nexara.data.model.RagOptions(
+            enableDocs = false,
+            enableKnowledgeGraph = true,
+            memoryScope = com.promenar.nexara.data.model.ConversationScope.ALL_AGENTS,
+            graphScope = com.promenar.nexara.data.model.ConversationScope.AGENT,
+        ),
+        memoryPolicy = com.promenar.nexara.data.agent.AgentMemoryPolicy(
+            memoryCap = com.promenar.nexara.data.model.ConversationScope.AGENT,
+        ),
+    )
+}
+
+/** 档位选择面板内容：超出助手上限的档位不可选并注明原因。 */
+@PreviewTest
+@Preview(name = "检索范围选择 深中411", widthDp = 411, heightDp = 420, locale = "zh-rCN")
+@Preview(name = "检索范围选择 深中360 字号130", widthDp = 360, heightDp = 560, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun retrievalScopeChoicesPreview() = SessionFrame(3) {
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        ScopeChoiceList(ScopeResource.Memory, selectedOrdinal = 1, onSelect = {}, maxOrdinal = 1)
+    }
+}
+
+/** 助手编辑页“记忆与知识”分组：私密助手，对话记忆上限为“本助手”。 */
+@PreviewTest
+@Preview(name = "助手记忆与知识 深中411", widthDp = 411, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "助手记忆与知识 深中360 字号130", widthDp = 360, heightDp = 860, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun agentMemoryPolicyPreview() = SessionFrame(3) {
+    Column(Modifier.padding(16.dp)) {
+        com.promenar.nexara.ui.hub.AgentMemoryPolicySection(
+            policy = com.promenar.nexara.data.agent.AgentMemoryPolicy(
+                memoryCap = com.promenar.nexara.data.model.ConversationScope.AGENT,
+                shareWithOtherAgents = false,
+            ),
+            onPolicyChange = {},
+        )
+    }
+}
+
 @Composable
 private fun SessionFrame(index: Int, light: Boolean = false, content: @Composable () -> Unit) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = if (light) NexaraThemeMode.LIGHT else NexaraThemeMode.DARK, colorSource = NexaraColorSource.NEXARA)) {
