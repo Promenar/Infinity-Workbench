@@ -8,7 +8,8 @@ class TrigramTextSplitter(
         require(chunkOverlap < chunkSize) { "chunkOverlap must be smaller than chunkSize" }
     }
 
-    private val sentenceDelimiters = Regex("([。！？；\n])")
+    /** 一句 = 非分隔符内容 + 其后连续的分隔符（句末标点或换行），分隔符随句保留。 */
+    private val sentencePattern = Regex("[^。！？；\n]+[。！？；\n]*")
 
     fun splitText(text: String): List<String> {
         if (text.isBlank()) return emptyList()
@@ -51,23 +52,8 @@ class TrigramTextSplitter(
         return maxOf(1, Math.ceil(text.length.toDouble() / effectiveChunkSize).toInt())
     }
 
-    private fun splitIntoSentences(text: String): List<String> {
-        val parts = sentenceDelimiters.split(text)
-        val sentences = mutableListOf<String>()
-
-        var i = 0
-        while (i < parts.size) {
-            val content = parts[i]
-            val delimiter = if (i + 1 < parts.size) parts[i + 1] else ""
-            i += 2
-
-            if (content.isNotBlank()) {
-                sentences.add(content + delimiter)
-            }
-        }
-
-        return sentences.filter { it.isNotBlank() }
-    }
+    private fun splitIntoSentences(text: String): List<String> =
+        sentencePattern.findAll(text).map { it.value }.filter { it.isNotBlank() }.toList()
 
     private fun splitLongSentence(sentence: String): List<String> {
         val chunks = mutableListOf<String>()
