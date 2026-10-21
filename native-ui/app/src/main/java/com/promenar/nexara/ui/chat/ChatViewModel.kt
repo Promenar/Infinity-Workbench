@@ -81,7 +81,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -421,6 +424,10 @@ class ChatViewModel(
     private val _isGenerating = MutableStateFlow(false)
     private val _isLoading = MutableStateFlow(false)
     private val _generationStatus = MutableStateFlow(GenerationStatus.IDLE)
+    private val _generationOutcomes = MutableSharedFlow<ChatGenerationOutcome>(extraBufferCapacity = 8)
+    /** 每个生成任务进入终态时发出一次；终态在 [GenerationStatus] 上可能停留不足一帧，状态振动以此为准。 */
+    internal val generationOutcomes: SharedFlow<ChatGenerationOutcome> = _generationOutcomes.asSharedFlow()
+    private var lastOutcomeTaskId: String? = null
     private val _isApprovalSubmitting = MutableStateFlow(false)
 
     data class TokenIndicatorState(
@@ -718,6 +725,12 @@ class ChatViewModel(
                                         it.phase?.let { phase -> phase in TERMINAL_GENERATION_PHASES } == true
                                 }
                                 ?: return@collect
+                            if (lastOutcomeTaskId != task.taskId) {
+                                lastOutcomeTaskId = task.taskId
+                                chatGenerationOutcomeKind(task.phase, terminalPresentation.handledFailure)?.let { kind ->
+                                    _generationOutcomes.tryEmit(ChatGenerationOutcome(sessionId, kind))
+                                }
+                            }
                             terminalPresentation.error?.let {
                                 _generationNotice.value = GenerationFailureNotice.from(it)
                             }

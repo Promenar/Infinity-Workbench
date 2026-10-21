@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -48,6 +49,7 @@ import com.promenar.nexara.background.generation.shouldShowNotificationPermissio
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.common.EditorMode
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SnackbarType
@@ -250,6 +252,17 @@ fun ChatRoute(
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
     val deletionUndo by chatViewModel.deletionUndo.collectAsStateWithLifecycle()
+    val haptics by rememberUpdatedState(LocalNexaraHaptics.current)
+    val statusHaptics = remember(chatViewModel) { ChatStatusHapticTracker() }
+    val hapticSnapshot = ChatHapticSnapshot(uiState.session?.id, uiState.status, uiState.approvalRequest?.hapticKey())
+    LaunchedEffect(statusHaptics, hapticSnapshot) {
+        statusHaptics.next(hapticSnapshot, System.currentTimeMillis())?.let(haptics::perform)
+    }
+    LaunchedEffect(statusHaptics) {
+        chatViewModel.generationOutcomes.collect { outcome ->
+            statusHaptics.onOutcome(outcome, System.currentTimeMillis())?.let(haptics::perform)
+        }
+    }
     val taskCompletionUndo by chatViewModel.taskCompletionUndo.collectAsStateWithLifecycle()
     val providerModels by ProviderManager.getInstance().providerModels.collectAsStateWithLifecycle()
     val modelDisplayNames = remember(providerModels, uiState.session?.modelId, uiState.messages) {

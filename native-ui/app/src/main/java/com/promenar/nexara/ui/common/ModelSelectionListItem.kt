@@ -57,6 +57,7 @@ fun ModelSelectionListItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = LocalNexaraHaptics.current
     val supportedCapabilities = model.capabilityStates
         .filter { it.value == SupportState.SUPPORTED }
         .keys
@@ -90,7 +91,7 @@ fun ModelSelectionListItem(
             .semantics { this.selected = selected }
             .selectable(
                 selected = selected,
-                onClick = onClick,
+                onClick = { haptics.select(selected); onClick() },
                 role = Role.RadioButton,
             )
             .padding(horizontal = 14.dp, vertical = 11.dp),

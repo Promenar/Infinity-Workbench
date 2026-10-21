@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.animation.AnimatedVisibility
@@ -777,11 +778,13 @@ internal fun SearchConfigContent(
 
 @Composable
 internal fun EngineOption(id: String, label: String, isSelected: Boolean, onClick: () -> Unit) {
+    val haptics = LocalNexaraHaptics.current
+    val select = { haptics.select(isSelected); onClick() }
     NexaraSettingsItem(
         title = label,
-        onClick = onClick,
+        onClick = select,
         modifier = Modifier.testTag("search_engine_$id")
-            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick),
+            .selectable(selected = isSelected, role = Role.RadioButton, onClick = select),
         role = Role.RadioButton,
         selected = isSelected,
         trailingContent = { androidx.compose.material3.RadioButton(selected = isSelected, onClick = null) },

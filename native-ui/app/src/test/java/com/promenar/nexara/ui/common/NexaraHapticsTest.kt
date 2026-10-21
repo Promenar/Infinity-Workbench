@@ -1,7 +1,11 @@
 package com.promenar.nexara.ui.common
 
 import android.view.HapticFeedbackConstants
+import android.view.View
 import com.google.common.truth.Truth.assertThat
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.junit.Test
 
 class NexaraHapticsTest {
@@ -44,5 +48,22 @@ class NexaraHapticsTest {
 
         val all = NexaraHaptics(view = null, interaction = true, status = true)
         assertThat(NexaraHapticEvent.entries.all(all::allows)).isTrue()
+    }
+
+    @Test
+    fun `单选只在选中项变化时振动，打开触感的回应不受旧偏好限制`() {
+        val view = mockk<View> { every { performHapticFeedback(any()) } returns true }
+        val haptics = NexaraHaptics(view = view, interaction = true, status = true)
+        haptics.select(alreadySelected = true)
+        verify(exactly = 0) { view.performHapticFeedback(any()) }
+        haptics.select(alreadySelected = false)
+        verify(exactly = 1) { view.performHapticFeedback(any()) }
+
+        val offView = mockk<View> { every { performHapticFeedback(any()) } returns true }
+        val off = NexaraHaptics(view = offView, interaction = false, status = false)
+        off.select(alreadySelected = false)
+        verify(exactly = 0) { offView.performHapticFeedback(any()) }
+        off.confirmEnabled()
+        verify(exactly = 1) { offView.performHapticFeedback(any()) }
     }
 }

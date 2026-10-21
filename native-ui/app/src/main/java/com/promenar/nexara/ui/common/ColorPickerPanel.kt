@@ -95,6 +95,7 @@ fun ColorPickerPanel(
     presetColors: List<Color> = defaultPresetColors,
     showCustomSlider: Boolean = true
 ) {
+    val haptics = LocalNexaraHaptics.current
     Column(modifier = Modifier.fillMaxWidth()) {
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -115,7 +116,7 @@ fun ColorPickerPanel(
                         .semantics { contentDescription = colorDescription; selected = isSelected }
                         .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
                         .clip(CircleShape)
-                        .clickable { onColorSelected(color) },
+                        .clickable { haptics.select(isSelected); onColorSelected(color) },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(

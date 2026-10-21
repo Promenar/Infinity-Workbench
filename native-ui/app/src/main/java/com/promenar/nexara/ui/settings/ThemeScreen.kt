@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraNumericSetting
@@ -198,11 +199,15 @@ fun ThemeScreenContent(
                     title = stringResource(R.string.haptics_settings_section),
                     footer = stringResource(R.string.haptics_settings_footer),
                 ) {
+                    val haptics = LocalNexaraHaptics.current
                     SettingsToggle(
                         title = stringResource(R.string.haptics_setting_title),
                         description = stringResource(R.string.haptics_setting_summary),
                         checked = preferences.hapticsEnabled,
-                        onCheckedChange = onHapticsChange,
+                        onCheckedChange = { enabled ->
+                            if (enabled) haptics.confirmEnabled()
+                            onHapticsChange(enabled)
+                        },
                         modifier = Modifier.testTag("theme_haptics_switch"),
                     )
                     SettingsToggle(
@@ -285,9 +290,10 @@ private fun ColorPaletteRow(
 @Composable
 private fun ColorChoice(color: Color, selected: Boolean, onClick: () -> Unit) {
     val colorLabel = stringResource(R.string.settings_batch1_color_description, "%06X".format(color.toArgb() and 0xFFFFFF))
+    val haptics = LocalNexaraHaptics.current
     Box(
         modifier = Modifier.size(48.dp).semantics { contentDescription = colorLabel }
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+            .selectable(selected = selected, role = Role.RadioButton, onClick = { haptics.select(selected); onClick() }),
         contentAlignment = Alignment.Center,
     ) {
         Box(

@@ -53,6 +53,7 @@ fun NexaraValuePickerContent(
     initialCustomExpanded: Boolean = false,
     initialCustomInput: String? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     var customExpanded by rememberSaveable(title) { mutableStateOf(initialCustomExpanded) }
     val editableValue = value.takeIf { it in spec.min..spec.max }
         ?: spec.defaultValue.takeIf { it in spec.min..spec.max } ?: spec.min
@@ -73,7 +74,10 @@ fun NexaraValuePickerContent(
                     val label = numericValueLabel(spec, preset.value)
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .selectable(selected = spec.selectedPreset(value)?.value == preset.value, role = Role.RadioButton,
-                            onClick = { onValueChange(preset.value); onDismiss() })
+                            onClick = {
+                                haptics.select(spec.selectedPreset(value)?.value == preset.value)
+                                onValueChange(preset.value); onDismiss()
+                            })
                         .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
                             style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),

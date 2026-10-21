@@ -355,6 +355,7 @@ internal fun SessionParamsContent(
         }
         onParamsChange(params.copy(temperature = temperature, topP = topP, topK = topK))
     }
+    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = NexaraSpacing.ScreenHorizontal),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 24.dp)) {
         item {
@@ -375,7 +376,10 @@ internal fun SessionParamsContent(
                                         if (isSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                                         else Modifier
                                     )
-                                    .clickable { onLevelClick(level.id) },
+                                    .clickable {
+                                        haptics.select(isSelected)
+                                        onLevelClick(level.id)
+                                    },
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                                 border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))

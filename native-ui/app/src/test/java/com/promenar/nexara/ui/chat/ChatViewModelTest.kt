@@ -1122,6 +1122,45 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `完成终态即使状态已回到IDLE也只发出一次完成结果`() = runTest {
+        val outcomes = mutableListOf<ChatGenerationOutcome>()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        backgroundScope.launch(testDispatcher) { viewModel.generationOutcomes.collect { outcomes += it } }
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("done"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
+
+        viewModel.sendMessage("test")
+        awaitReal { outcomes.isNotEmpty() && viewModel.uiState.value.status == GenerationStatus.IDLE }
+
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
+        assertThat(outcomes.map { it.kind }).containsExactly(ChatGenerationOutcome.Kind.COMPLETED)
+        assertThat(outcomes.single().sessionId).isEqualTo(viewModel.uiState.value.session?.id)
+    }
+
+    @Test
+    fun `生成失败发出失败结果`() = runTest {
+        val outcomes = mutableListOf<ChatGenerationOutcome>()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        backgroundScope.launch(testDispatcher) { viewModel.generationOutcomes.collect { outcomes += it } }
+        seedSession()
+        advanceUntilIdle()
+        forcedProviderFailure = ProviderResolution.Failure(
+            reason = ProviderResolutionError.API_KEY_MISSING,
+            modelId = "gpt-4o",
+            providerId = "provider-missing-key",
+        )
+
+        viewModel.sendMessage("trigger route failure")
+        awaitReal { outcomes.isNotEmpty() }
+
+        assertThat(outcomes.map { it.kind }).containsExactly(ChatGenerationOutcome.Kind.FAILED)
+    }
+
+    @Test
     fun `Coordinator终态先到时combine仍保留路由Rejected设置入口直至UI消费`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession()

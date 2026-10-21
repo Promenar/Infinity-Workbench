@@ -57,13 +57,24 @@ class NexaraHaptics(
     fun allows(event: NexaraHapticEvent): Boolean = interaction && (!event.status || status)
 
     fun perform(event: NexaraHapticEvent) {
-        val target = view ?: return
-        if (!allows(event)) return
-        // 视图已分离或系统拒绝时不影响调用方的动作本身。
-        runCatching { target.performHapticFeedback(nexaraHapticConstant(event, Build.VERSION.SDK_INT)) }
+        if (allows(event)) play(event)
     }
 
     fun toggle(checked: Boolean) = perform(if (checked) NexaraHapticEvent.TOGGLE_ON else NexaraHapticEvent.TOGGLE_OFF)
+
+    /** 单选项被点击：选中项变化时轻振，点已选中的项不振动。 */
+    fun select(alreadySelected: Boolean) {
+        if (!alreadySelected) perform(NexaraHapticEvent.SELECTION)
+    }
+
+    /** 打开触感反馈的这一下偏好尚未生效，单独回应这次操作。 */
+    fun confirmEnabled() = play(NexaraHapticEvent.TOGGLE_ON)
+
+    private fun play(event: NexaraHapticEvent) {
+        val target = view ?: return
+        // 视图已分离或系统拒绝时不影响调用方的动作本身。
+        runCatching { target.performHapticFeedback(nexaraHapticConstant(event, Build.VERSION.SDK_INT)) }
+    }
 
     companion object {
         val None = NexaraHaptics(view = null, interaction = false, status = false)

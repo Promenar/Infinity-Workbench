@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -286,13 +287,6 @@ fun ChatScreenContent(
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
     val collapseFinishedTurns = state.collapseFinishedTurns
 
-    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
-    val statusHaptics = remember { ChatStatusHapticTracker() }
-    val hapticSnapshot = ChatHapticSnapshot(uiState.session?.id, uiState.status, uiState.approvalRequest?.hapticKey())
-    LaunchedEffect(hapticSnapshot) {
-        statusHaptics.next(hapticSnapshot, System.currentTimeMillis())?.let(haptics::perform)
-    }
-
     val density = LocalDensity.current
     var composerHeightPx by remember { mutableIntStateOf(0) }
     val currentComposerHeightPx by rememberUpdatedState(composerHeightPx)
@@ -530,6 +524,11 @@ fun ChatScreenContent(
                     .imePadding(),
             ) {
             val renderStateTag = chatRenderStateTag(uiState)
+            // 生成中多留一段底部空间：增长中的思考与工具块在跟随校正前也不贴着输入区；结束后平滑收回。
+            val generatingExtraBottom by animateDpAsState(
+                targetValue = if (uiState.isGenerating) ChatGeneratingExtraBottom else 0.dp,
+                label = "chat_generating_bottom",
+            )
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -542,7 +541,7 @@ fun ChatScreenContent(
                 contentPadding = PaddingValues(
                     start = NexaraSpacing.ChatHorizontal,
                     end = NexaraSpacing.ChatHorizontal,
-                    bottom = composerInsets.contentBottom - NexaraSpacing.XLarge,
+                    bottom = composerInsets.contentBottom + generatingExtraBottom,
                 ),
             ) {
                 // pipelineGroups 已在外部通过 remember 计算，此处直接引用

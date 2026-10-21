@@ -81,6 +81,7 @@ fun InferencePresets(
     selected: String,
     onSelect: (InferencePreset) -> Unit
 ) {
+    val haptics = LocalNexaraHaptics.current
     val presets = remember { builtInPresets }
 
     Row(
@@ -103,7 +104,7 @@ fun InferencePresets(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { onSelect(preset) }
+                    .clickable { haptics.select(isSelected); onSelect(preset) }
                     .then(
                         if (isSelected) {
                             Modifier.border(
