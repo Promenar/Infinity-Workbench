@@ -67,6 +67,8 @@
     <string name="params_scheme_save_as">Save as new</string>
     <string name="params_scheme_rename">Rename</string>
     <string name="params_scheme_delete">Delete scheme</string>
+    <string name="params_scheme_delete_title">Delete “%1$s”?</string>
+    <string name="params_scheme_delete_message">Chats and agents using this model can no longer choose it. Those already using it keep their current values.</string>
     <string name="params_scheme_name_title">Scheme name</string>
     <string name="params_scheme_name_placeholder">e.g. Coding</string>
     <string name="params_no_model">Choose a model to save parameter schemes for it.</string>

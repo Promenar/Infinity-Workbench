@@ -91,6 +91,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID
 import com.promenar.nexara.data.model.params.ModelParameterProfile
@@ -101,6 +102,7 @@ import com.promenar.nexara.data.model.params.SamplingParam
 import com.promenar.nexara.data.model.params.SamplingValues
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraStepperButton
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -228,6 +230,7 @@ fun ParameterSchemeSection(
     val selection = state.selection
     val selectedScheme = state.schemes.firstOrNull { it.id == selection.schemeId }
     var naming by remember { mutableStateOf<SchemeNaming?>(null) }
+    var deleting by remember { mutableStateOf<ParameterScheme?>(null) }
     val scope = rememberCoroutineScope()
     // 方案卡自己的操作引起的高度变化不做补偿，用户此时看的就是这张卡。
     var ownActionAt by remember { mutableLongStateOf(0L) }
@@ -297,7 +300,7 @@ fun ParameterSchemeSection(
                                     dismiss(); naming = SchemeNaming.Rename(scheme)
                                 })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.params_scheme_delete), color = MaterialTheme.colorScheme.error) }, onClick = {
-                                    dismiss(); own { actions.onDeleteScheme(scheme) }
+                                    dismiss(); deleting = scheme
                                 })
                             },
                         )
@@ -361,6 +364,22 @@ fun ParameterSchemeSection(
                     }
                 }
             }
+        }
+    }
+    deleting?.let { scheme ->
+        Dialog(onDismissRequest = { deleting = null }) {
+            NexaraConfirmDialog(
+                title = stringResource(R.string.params_scheme_delete_title, scheme.name),
+                message = stringResource(R.string.params_scheme_delete_message),
+                confirmText = stringResource(R.string.params_scheme_delete),
+                isDestructive = true,
+                onConfirm = {
+                    deleting = null
+                    own { actions.onDeleteScheme(scheme) }
+                },
+                onCancel = { deleting = null },
+                confirmButtonModifier = Modifier.testTag("params_scheme_delete_confirm"),
+            )
         }
     }
     naming?.let { current ->

@@ -67,6 +67,8 @@
     <string name="params_scheme_save_as">另存为</string>
     <string name="params_scheme_rename">重命名</string>
     <string name="params_scheme_delete">删除方案</string>
+    <string name="params_scheme_delete_title">删除方案“%1$s”？</string>
+    <string name="params_scheme_delete_message">此模型的所有会话和助手将无法再选用它，已在使用的会保留当前取值。</string>
     <string name="params_scheme_name_title">方案名称</string>
     <string name="params_scheme_name_placeholder">例如：写代码</string>
     <string name="params_no_model">先选择模型，再按模型保存参数方案。</string>
