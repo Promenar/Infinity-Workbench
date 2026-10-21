@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.exec
 
+import com.promenar.nexara.domain.tool.ToolOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -79,9 +80,19 @@ class BuiltinCommandRunner(
     suspend fun run(
         request: BuiltinCommandRequest,
         control: BuiltinCommandControl = BuiltinCommandControl(),
+        /** 读取线程每读到一块输出即回调，只用于展示；不影响结果中的尾部截断。 */
+        onOutput: ((ToolOutputStream, String) -> Unit)? = null,
     ): BuiltinCommandOutput = withContext(Dispatchers.IO) {
         require(request.argv.isNotEmpty()) { "命令不能为空" }
         require(request.timeoutSeconds in 1..MAX_TIMEOUT_SECONDS) { "timeout_seconds 必须为 1–$MAX_TIMEOUT_SECONDS" }
+        // 启动前已请求停止（等待写锁或准备环境期间）则不再启动命令。
+        if (control.stopRequested) {
+            return@withContext BuiltinCommandOutput(
+                exitCode = null, timedOut = false, stdout = "", stderr = "",
+                stdoutOriginalLength = 0, stderrOriginalLength = 0, stdoutTruncated = false, stderrTruncated = false,
+                stoppedByUser = true,
+            )
+        }
         val scratch = File(scratchDirectory(), "exec-${UUID.randomUUID()}").apply { mkdirs() }
         val pidFile = File(scratch, "pgid")
         try {
@@ -90,8 +101,8 @@ class BuiltinCommandRunner(
             builder.environment().clear()
             builder.environment().putAll(request.environment)
             val process = builder.start()
-            val stdout = TailTextCollector(outputLimit)
-            val stderr = TailTextCollector(outputLimit)
+            val stdout = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDOUT, text) } })
+            val stderr = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDERR, text) } })
             val readers = listOf(
                 daemon("nexara-exec-stdout") { stdout.consume(process.inputStream) },
                 daemon("nexara-exec-stderr") { stderr.consume(process.errorStream) },
@@ -206,7 +217,7 @@ class BuiltinCommandRunner(
 }
 
 /** 按 UTF-16 计数并只保留尾部；解码在读取线程完成，多字节字符不会在块边界被拆开。 */
-internal class TailTextCollector(private val limit: Int) {
+internal class TailTextCollector(private val limit: Int, private val listener: ((String) -> Unit)? = null) {
     private val buffer = StringBuilder()
     @Volatile var totalChars: Long = 0L
         private set
@@ -220,6 +231,7 @@ internal class TailTextCollector(private val limit: Int) {
                 val count = reader.read(chunk)
                 if (count < 0) break
                 append(chunk, count)
+                listener?.let { notify -> runCatching { notify(String(chunk, 0, count)) } }
             }
         }
     }

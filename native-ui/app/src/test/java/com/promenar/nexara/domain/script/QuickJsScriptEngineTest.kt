@@ -42,6 +42,18 @@ class QuickJsScriptEngineTest {
         assertThat(execute("console.log('x'.repeat(40000)); 1").logsTruncated).isTrue()
     }
 
+    @Test fun `console 输出逐条转给实时展示，log 为 stdout，warn 与 error 为 stderr`() {
+        val live = java.util.Collections.synchronizedList(mutableListOf<Pair<Int, String>>())
+        val host = object : ScriptCapabilities {
+            override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement = error("未授权能力")
+            override fun output(fd: Int, text: String) { live.add(fd to text) }
+        }
+        val result = execute("console.log('一', {a:1}); console.warn('二'); console.error('三'); 3", host)
+        assertThat(result.errorCode).isNull()
+        assertThat(live).containsExactly(1 to "一 {\"a\":1}\n", 2 to "二\n", 2 to "三\n").inOrder()
+        assertThat(result.logs.map { it.text }).containsExactly("一 {\"a\":1}", "二", "三").inOrder()
+    }
+
     @Test fun `内存上限和引擎中断不依赖主进程执行线程`() = runBlocking {
         val engine = QuickJsScriptEngine()
         val result = withContext(Dispatchers.Default) { engine.execute(ScriptRequest("while(true){}", timeoutSeconds = 1), ScriptCapabilities { _, _ -> JsonNull }) }

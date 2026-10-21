@@ -79,7 +79,9 @@ class PythonSandboxEngine(private val launch: PythonSandboxLaunch?) : ScriptEngi
                         when (frame["t"]?.jsonPrimitive?.contentOrNull) {
                             "out" -> {
                                 val text = frame["d"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                                if (frame["fd"]?.jsonPrimitive?.intOrNull == 2) stderr.append(text) else stdout.append(text)
+                                val fd = if (frame["fd"]?.jsonPrimitive?.intOrNull == 2) 2 else 1
+                                if (fd == 2) stderr.append(text) else stdout.append(text)
+                                capabilities.output(fd, text)
                             }
                             "cap" -> {
                                 val id = frame["id"]?.jsonPrimitive?.intOrNull ?: throw ScriptFailure("PROCESS_DIED", "沙箱控制帧格式错误")

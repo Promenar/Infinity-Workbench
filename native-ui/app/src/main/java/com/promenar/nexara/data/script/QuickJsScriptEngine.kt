@@ -50,7 +50,10 @@ class QuickJsScriptEngine : ScriptEngine {
                 catch (e: ScriptFailure) { capabilityFailure = e; throw e }
             }
             engine.function("__nexaraLog") { args ->
-                output.log(args.getOrNull(0) as? String ?: "log", args.getOrNull(1) as? String ?: "")
+                val level = args.getOrNull(0) as? String ?: "log"
+                val text = args.getOrNull(1) as? String ?: ""
+                capabilities.output(if (level == "log") 1 else 2, text + "\n")
+                output.log(level, text)
             }
             engine.evaluate<Any?>(BOOTSTRAP)
             engine.evaluate<Any?>("globalThis.args = Object.freeze(${request.args});")

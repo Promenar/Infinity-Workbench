@@ -13,9 +13,15 @@ import com.promenar.nexara.ui.chat.manager.skills.ScriptWorkspaceGateway
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import com.promenar.nexara.domain.tool.ToolOutputStream
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
+
+/** 用户在界面停止脚本时取消执行所用的原因，与父协程取消区分。 */
+private class UserStopped : CancellationException("用户停止了脚本")
 
 fun interface ScriptToolRunner {
     suspend fun execute(request: ScriptRequest, context: SkillExecutionContext): ScriptResult
@@ -46,13 +52,29 @@ class AndroidScriptToolRunner(
                 val requests = AtomicInteger()
                 val networkBudget = ScriptNetworkBudget()
                 val http = ScriptHttpClient({ settings.lanHosts })
-                runtime.execute(context.sessionId, loaded, ScriptCapabilities { operation, args ->
-                    if (requests.incrementAndGet() > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
-                    if (operation == "fetch") {
-                        if (!loaded.allowNetwork) throw ScriptFailure("NETWORK_DENIED", "此脚本未启用 allow_network")
-                        http.fetch(args, networkBudget)
-                    } else gateway.invoke(operation, args)
-                })
+                val live = context.liveOutput
+                val capabilities = object : ScriptCapabilities {
+                    override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement {
+                        if (requests.incrementAndGet() > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
+                        return if (operation == "fetch") {
+                            if (!loaded.allowNetwork) throw ScriptFailure("NETWORK_DENIED", "此脚本未启用 allow_network")
+                            http.fetch(arguments, networkBudget)
+                        } else gateway.invoke(operation, arguments)
+                    }
+
+                    override fun output(fd: Int, text: String) =
+                        live.emit(if (fd == 2) ToolOutputStream.STDERR else ToolOutputStream.STDOUT, text)
+                }
+                // 用户停止即取消本次执行；隔离运行时在取消时终止隔离进程。
+                coroutineScope {
+                    val run = async { runtime.execute(context.sessionId, loaded, capabilities) }
+                    live.onStop { run.cancel(UserStopped()) }
+                    try {
+                        run.await()
+                    } catch (stopped: UserStopped) {
+                        ScriptResult(errorCode = "STOPPED", error = "用户在聊天界面停止了脚本，隔离进程已终止；不要自动重试，先询问用户。")
+                    }
+                }
             } ?: ScriptResult(errorCode = "TIMEOUT", error = "脚本准备、执行或审批等待超时；执行中的隔离进程已终止")
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: ScriptFailure) { ScriptResult(errorCode = failure.code, error = failure.message) }

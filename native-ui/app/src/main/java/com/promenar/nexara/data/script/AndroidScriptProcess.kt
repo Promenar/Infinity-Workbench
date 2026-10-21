@@ -44,6 +44,7 @@ class AndroidScriptProcess private constructor(private val context: Context) : S
         val callbacks: ScriptCapabilityDispatcher.Invocation,
         val result: CompletableDeferred<ScriptResult> = CompletableDeferred(),
         val count: AtomicInteger = AtomicInteger(),
+        val outputMessages: AtomicInteger = AtomicInteger(),
     )
 
     override suspend fun execute(request: ScriptRequest, capabilities: ScriptCapabilities): ScriptResult {
@@ -74,6 +75,14 @@ class AndroidScriptProcess private constructor(private val context: Context) : S
             if (message.sendingUid != isolatedUid || message.data.getString("invocation") != call.id) return
             when (message.what) {
                 ScriptWire.RESULT -> call.result.complete(Json.decodeFromString<ScriptResult>(payload))
+                // 实时输出只用于展示：超出条数预算后静默丢弃，不影响脚本结果。
+                ScriptWire.OUTPUT -> if (call.outputMessages.incrementAndGet() <= ScriptLimits.OUTPUT_MESSAGES) {
+                    Json.parseToJsonElement(payload).jsonArray.forEach { item ->
+                        val frame = item.jsonObject
+                        val fd = if (frame["fd"]?.jsonPrimitive?.intOrNull == 2) 2 else 1
+                        call.capabilities.output(fd, frame["d"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                    }
+                }
                 ScriptWire.CAPABILITY -> {
                     if (call.count.incrementAndGet() > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
                     val callId = message.data.getInt("call")

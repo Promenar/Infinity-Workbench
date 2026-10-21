@@ -13,11 +13,13 @@ import java.net.Socket
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.int
@@ -42,6 +44,7 @@ import org.junit.Test
 class SshRuntimeIntegrationTest {
     private val root = Files.createTempDirectory("nexara-ssh-test")
     private val commands = AtomicInteger()
+    private val startedCommands = AtomicInteger()
     private val authentications = AtomicInteger()
     private val createdSessions = AtomicInteger()
     private lateinit var server: SshServer
@@ -59,7 +62,7 @@ class SshRuntimeIntegrationTest {
             publickeyAuthenticator = org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator { _, _, _ -> true }
             subsystemFactories = listOf(SftpSubsystemFactory.Builder().build())
             fileSystemFactory = VirtualFileSystemFactory(root)
-            commandFactory = org.apache.sshd.server.command.CommandFactory { _, command -> TestCommand(command, false, commands) }
+            commandFactory = org.apache.sshd.server.command.CommandFactory { _, command -> startedCommands.incrementAndGet(); TestCommand(command, false, commands) }
             shellFactory = org.apache.sshd.server.shell.ShellFactory { TestCommand("", true, commands) }
             addSessionListener(object : SessionListener {
                 override fun sessionCreated(session: Session) { createdSessions.incrementAndGet() }
@@ -366,6 +369,42 @@ class SshRuntimeIntegrationTest {
         assertThat(runtime.sessionHost("chat", opened.sessionId)).isNull()
     }
 
+    @Test fun `实时输出经凭据遮蔽逐段推送，界面停止时断开通道并标记停止`() = runBlocking {
+        trust()
+        val store = com.promenar.nexara.data.exec.ToolLiveOutputStore()
+        val sink = store.open("step")
+        val started = System.nanoTime()
+        val run = async(Dispatchers.IO) { runtime.exec("chat", "termux", "stream", timeoutSeconds = 60, live = sink) }
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (store.snapshot("step")?.text?.contains("tail") != true && System.nanoTime() < deadline) delay(20)
+        val live = store.snapshot("step")!!
+        assertThat(live.text).startsWith("part-1 ")
+        assertThat(live.text).endsWith("半 tail\n")
+        assertThat(live.text).doesNotContain("synthetic-password")
+        assertThat(live.text).contains("█")
+        assertThat(live.stoppable).isTrue()
+
+        store.requestStop("step")
+        val result = withTimeout(10_000) { run.await() }
+        assertThat(result.stoppedByUser).isTrue()
+        assertThat(result.timedOut).isFalse()
+        assertThat(result.stdout).doesNotContain("synthetic-password")
+        assertThat((System.nanoTime() - started) / 1_000_000).isLessThan(20_000)
+    }
+
+    @Test fun `启动前已在界面停止的命令不在远端启动`() = runBlocking {
+        trust()
+        val store = com.promenar.nexara.data.exec.ToolLiveOutputStore()
+        val sink = store.open("step")
+        store.requestStop("step")
+        val before = startedCommands.get()
+        val result = withTimeout(10_000) { runtime.exec("chat", "termux", "stream", timeoutSeconds = 60, live = sink) }
+        assertThat(result.stoppedByUser).isTrue()
+        assertThat(result.timedOut).isFalse()
+        assertThat(result.stdout).isEmpty()
+        assertThat(startedCommands.get()).isEqualTo(before)
+    }
+
     private suspend fun trust() {
         val key = runtime.probe("termux")
         hostStore.host = hostStore.host.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint)
@@ -491,6 +530,15 @@ private class TestCommand(private val command: String, private val shell: Boolea
                 when {
                     shell -> input.bufferedReader().useLines { lines -> lines.forEach { output.write("echo:$it\n".toByteArray()); output.flush() } }
                     command == "sleep" -> Thread.sleep(30_000)
+                    // 口令跨两次写入，验证实时输出也能遮蔽跨分片的凭据。
+                    command == "stream" -> {
+                        output.write("part-1 synth".toByteArray()); output.flush()
+                        Thread.sleep(100)
+                        output.write("etic-password 半".toByteArray(Charsets.UTF_8).let { it.copyOf(it.size - 1) }); output.flush()
+                        Thread.sleep(100)
+                        output.write(byteArrayOf("半".toByteArray(Charsets.UTF_8).last()) + " tail\n".toByteArray()); output.flush()
+                        Thread.sleep(30_000)
+                    }
                     command == "large" -> output.write("x".repeat(100_000).toByteArray())
                     command == "unicode-secret" -> output.write("合成口令-只用于测试".toByteArray())
                     command == "zero" -> output.write("zero-ok".toByteArray())

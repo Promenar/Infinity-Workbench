@@ -351,6 +351,7 @@ class ChatViewModel(
         toolLedger,
         (application as NexaraApplication).sessionExecutionGate,
         grantVerifier = (application as NexaraApplication)::verifyTargetGrant,
+        liveOutput = (application as NexaraApplication).toolLiveOutputStore,
     )
     private val taskPlanActions = TaskPlanActions((application as NexaraApplication).taskRepository)
     private val approvalManager = ApprovalManager(

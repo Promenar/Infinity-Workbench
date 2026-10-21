@@ -518,108 +518,110 @@ fun ChatRoute(
         if (result == SnackbarResult.Dismissed) chatViewModel.dismissTaskCompletionUndo(undo.token)
     }
 
-    ChatScreenContent(
-        state = ChatScreenState(
-            uiState = uiState,
-            inputText = inputText,
-            tokenState = tokenState,
-            ragPhases = ragPhases,
-            compressionState = compressionState,
-            postProcessTasks = postProcessTasks,
-            generationRetry = generationRetry,
-            selectedImageUris = selectedImageUris,
-            draftDocuments = draftDocuments,
-            isImportingDocument = isImportingDocument,
-            modelDisplayNames = modelDisplayNames,
-            providerDisplayNames = providerDisplayNames,
-            taskPanel = taskPanel,
-            generationProgress = generationProgress?.progress,
-            collapseFinishedTurns = themePreferences.collapseFinishedTurns,
-        ),
-        actions = ChatScreenActions(
-            onNavigateBack = onNavigateBack,
-            onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
-            onLocateWorkspacePath = { path ->
-                workspaceLocatePath = path
-                requestOverlay(ChatOverlay.Workspace)
-            },
-            onOpenSettings = { requestOverlay(ChatOverlay.ModelSettings) },
-            onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
-            onOpenClearDialog = { requestOverlay(ChatOverlay.ClearHistory) },
-            onOpenRenameDialog = { requestOverlay(ChatOverlay.RenameSession) },
-            onOpenDeleteDialog = { requestOverlay(ChatOverlay.DeleteSession) },
-            onContentChange = chatViewModel::updateMessageContentOnly,
-            onCopy = { text ->
-                resolvedDependencies.copyToClipboard(context, text)
-                snackbarAction = null
-                snackbarData = NexaraSnackbarData(copiedLabel, SnackbarType.SUCCESS)
-                scope.launch {
-                    snackbarHostState.currentSnackbarData?.dismiss()
-                    snackbarHostState.showSnackbar(copiedLabel, duration = SnackbarDuration.Short)
-                }
-            },
-            onDeleteMessage = chatViewModel::deleteMessage,
-            onRegenerateMessage = { requestOverlay(ChatOverlay.Truncate(it)) },
-            onOpenTurnMemory = { requestOverlay(ChatOverlay.TurnMemory(it)) },
-            onBranchMessage = { messageId ->
-                scope.launch {
-                    when (val result = chatViewModel.branchFromMessage(messageId)) {
-                        is com.promenar.nexara.data.session.BranchSessionResult.Success ->
-                            onNavigateToSession(result.sessionId)
-                        is com.promenar.nexara.data.session.BranchSessionResult.Rejected -> {
-                            val message = if (
-                                result.reason == com.promenar.nexara.data.session.BranchSessionRejectReason.TargetNotStable
-                            ) branchUnstableLabel else branchFailedLabel
-                            snackbarData = NexaraSnackbarData(message, SnackbarType.ERROR)
-                            snackbarHostState.currentSnackbarData?.dismiss()
-                            snackbarHostState.showSnackbar(
-                                message = message,
-                                duration = SnackbarDuration.Long,
-                            )
+    androidx.compose.runtime.CompositionLocalProvider(LocalToolLiveOutput provides application.toolLiveOutputStore) {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = uiState,
+                inputText = inputText,
+                tokenState = tokenState,
+                ragPhases = ragPhases,
+                compressionState = compressionState,
+                postProcessTasks = postProcessTasks,
+                generationRetry = generationRetry,
+                selectedImageUris = selectedImageUris,
+                draftDocuments = draftDocuments,
+                isImportingDocument = isImportingDocument,
+                modelDisplayNames = modelDisplayNames,
+                providerDisplayNames = providerDisplayNames,
+                taskPanel = taskPanel,
+                generationProgress = generationProgress?.progress,
+                collapseFinishedTurns = themePreferences.collapseFinishedTurns,
+            ),
+            actions = ChatScreenActions(
+                onNavigateBack = onNavigateBack,
+                onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
+                onLocateWorkspacePath = { path ->
+                    workspaceLocatePath = path
+                    requestOverlay(ChatOverlay.Workspace)
+                },
+                onOpenSettings = { requestOverlay(ChatOverlay.ModelSettings) },
+                onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
+                onOpenClearDialog = { requestOverlay(ChatOverlay.ClearHistory) },
+                onOpenRenameDialog = { requestOverlay(ChatOverlay.RenameSession) },
+                onOpenDeleteDialog = { requestOverlay(ChatOverlay.DeleteSession) },
+                onContentChange = chatViewModel::updateMessageContentOnly,
+                onCopy = { text ->
+                    resolvedDependencies.copyToClipboard(context, text)
+                    snackbarAction = null
+                    snackbarData = NexaraSnackbarData(copiedLabel, SnackbarType.SUCCESS)
+                    scope.launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(copiedLabel, duration = SnackbarDuration.Short)
+                    }
+                },
+                onDeleteMessage = chatViewModel::deleteMessage,
+                onRegenerateMessage = { requestOverlay(ChatOverlay.Truncate(it)) },
+                onOpenTurnMemory = { requestOverlay(ChatOverlay.TurnMemory(it)) },
+                onBranchMessage = { messageId ->
+                    scope.launch {
+                        when (val result = chatViewModel.branchFromMessage(messageId)) {
+                            is com.promenar.nexara.data.session.BranchSessionResult.Success ->
+                                onNavigateToSession(result.sessionId)
+                            is com.promenar.nexara.data.session.BranchSessionResult.Rejected -> {
+                                val message = if (
+                                    result.reason == com.promenar.nexara.data.session.BranchSessionRejectReason.TargetNotStable
+                                ) branchUnstableLabel else branchFailedLabel
+                                snackbarData = NexaraSnackbarData(message, SnackbarType.ERROR)
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                snackbarHostState.showSnackbar(
+                                    message = message,
+                                    duration = SnackbarDuration.Long,
+                                )
+                            }
                         }
                     }
-                }
-            },
-            onApprove = { request -> chatViewModel.approveRequest(request) },
-            onApproveAll = chatViewModel::approveAllRequests,
-            onAlwaysAllowTarget = chatViewModel::alwaysAllowTarget,
-            onDecline = chatViewModel::rejectRequest,
-            onRemovePostProcessTask = chatViewModel::removePostProcessTask,
-            onManualSummary = chatViewModel::compactNow,
-            onDismissCompressionResult = chatViewModel::dismissCompressionResult,
-            onTextChange = chatViewModel::updateInputText,
-            onSend = { text, images ->
-                chatViewModel.sendMessage(text, images)
-            },
-            onStop = chatViewModel::stopGeneration,
-            onDismissGenerationError = chatViewModel::acknowledgeGenerationFailure,
-            onPickImages = { imagePickerLauncher.launch("image/*") },
-            onPickDocuments = {
-                documentPickerLauncher.launch(
-                    arrayOf("text/plain", "text/markdown", "text/x-markdown", "application/octet-stream"),
-                )
-            },
-            onRemoveDocument = chatViewModel::removeDraftDocument,
-            onRemoveImage = { index ->
-                selectedImageUriStrings = selectedImageUriStrings.toMutableList().apply {
-                    if (index in indices) removeAt(index)
-                }
-            },
-            onSnackbarAction = {
-                snackbarAction?.invoke()
-                snackbarHostState.currentSnackbarData?.dismiss()
-            },
-            onContinueTask = {
-                if (!uiState.isGenerating) {
-                    chatViewModel.sendMessage(continueTaskPrompt)
-                }
-            },
-            onCompleteTask = chatViewModel::completeActivePlan,
-            onClearCompletedTask = chatViewModel::clearCompletedPlan,
-        ),
-        snackbarHostState = snackbarHostState,
-        snackbarData = snackbarData,
-    )
+                },
+                onApprove = { request -> chatViewModel.approveRequest(request) },
+                onApproveAll = chatViewModel::approveAllRequests,
+                onAlwaysAllowTarget = chatViewModel::alwaysAllowTarget,
+                onDecline = chatViewModel::rejectRequest,
+                onRemovePostProcessTask = chatViewModel::removePostProcessTask,
+                onManualSummary = chatViewModel::compactNow,
+                onDismissCompressionResult = chatViewModel::dismissCompressionResult,
+                onTextChange = chatViewModel::updateInputText,
+                onSend = { text, images ->
+                    chatViewModel.sendMessage(text, images)
+                },
+                onStop = chatViewModel::stopGeneration,
+                onDismissGenerationError = chatViewModel::acknowledgeGenerationFailure,
+                onPickImages = { imagePickerLauncher.launch("image/*") },
+                onPickDocuments = {
+                    documentPickerLauncher.launch(
+                        arrayOf("text/plain", "text/markdown", "text/x-markdown", "application/octet-stream"),
+                    )
+                },
+                onRemoveDocument = chatViewModel::removeDraftDocument,
+                onRemoveImage = { index ->
+                    selectedImageUriStrings = selectedImageUriStrings.toMutableList().apply {
+                        if (index in indices) removeAt(index)
+                    }
+                },
+                onSnackbarAction = {
+                    snackbarAction?.invoke()
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                },
+                onContinueTask = {
+                    if (!uiState.isGenerating) {
+                        chatViewModel.sendMessage(continueTaskPrompt)
+                    }
+                },
+                onCompleteTask = chatViewModel::completeActivePlan,
+                onClearCompletedTask = chatViewModel::clearCompletedPlan,
+            ),
+            snackbarHostState = snackbarHostState,
+            snackbarData = snackbarData,
+        )
+    }
 
     pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
         androidx.compose.material3.AlertDialog(

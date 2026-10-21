@@ -1,0 +1,89 @@
+package com.promenar.nexara.data.exec
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.domain.tool.ToolOutputStream.STDERR
+import com.promenar.nexara.domain.tool.ToolOutputStream.STDOUT
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ToolLiveOutputStoreTest {
+    @Test
+    fun `两路输出按到达顺序合并，只保留尾部且不切开代理对`() {
+        val store = ToolLiveOutputStore(limit = 3)
+        val sink = store.open("a")
+
+        sink.emit(STDOUT, "ab")
+        sink.emit(STDERR, "c")
+        assertThat(store.snapshot("a")?.text).isEqualTo("abc")
+        assertThat(store.snapshot("a")?.truncated).isFalse()
+
+        // 尾部 3 个 UTF-16 单元会从第一个 😀 的低位代理开始，应整字丢弃。
+        sink.emit(STDOUT, "😀😀")
+        assertThat(store.snapshot("a")?.text).isEqualTo("😀")
+        assertThat(store.snapshot("a")?.truncated).isTrue()
+    }
+
+    @Test
+    fun `停止只调用一次；先请求停止后登记的停止动作立即执行`() {
+        val store = ToolLiveOutputStore()
+        val sink = store.open("a")
+        // 执行方尚未使用通道时对界面不可见，非命令类工具不会出现空面板。
+        assertThat(store.snapshot("a")).isNull()
+        var stops = 0
+        sink.onStop { stops++ }
+        assertThat(store.snapshot("a")?.stoppable).isTrue()
+        store.requestStop("a")
+        store.requestStop("a")
+        assertThat(stops).isEqualTo(1)
+        assertThat(sink.stopRequested).isTrue()
+        assertThat(store.snapshot("a")?.stopRequested).isTrue()
+
+        val late = store.open("b")
+        store.requestStop("b")
+        var lateStops = 0
+        late.onStop { lateStops++ }
+        assertThat(lateStops).isEqualTo(1)
+    }
+
+    @Test
+    fun `关闭只移除自己登记的通道`() {
+        val store = ToolLiveOutputStore()
+        val old = store.open("a")
+        val current = store.open("a")
+        current.emit(STDOUT, "new")
+
+        store.close("a", old)
+        assertThat(store.snapshot("a")?.text).isEqualTo("new")
+        store.close("a", current)
+        assertThat(store.snapshot("a")).isNull()
+    }
+
+    @Test
+    fun `观察按节流间隔合并快速输出`() = runTest {
+        val store = ToolLiveOutputStore(throttleMillis = 100, dispatcher = StandardTestDispatcher(testScheduler))
+        val sink = store.open("a")
+        sink.emit(STDOUT, "-")
+        val seen = mutableListOf<String?>()
+        val job = launch { store.observe("a").collect { seen.add(it?.text) } }
+        runCurrent()
+        repeat(10) { sink.emit(STDOUT, "x") }
+        advanceTimeBy(50)
+        runCurrent()
+        assertThat(seen).containsExactly("-")
+        advanceTimeBy(60)
+        runCurrent()
+        assertThat(seen).containsExactly("-", "-xxxxxxxxxx").inOrder()
+        store.close("a", sink)
+        advanceTimeBy(200)
+        runCurrent()
+        assertThat(seen.last()).isNull()
+        job.cancel()
+    }
+}

@@ -53,6 +53,41 @@ class BuiltinCommandRunnerTest {
     }
 
     @Test
+    fun `运行中逐块回调两路输出，结果与不回调时一致`() = runBlocking<Unit> {
+        val chunks = java.util.Collections.synchronizedList(mutableListOf<Pair<com.promenar.nexara.domain.tool.ToolOutputStream, String>>())
+        val firstSeen = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val command = "echo first; echo warn >&2; while [ ! -f go ]; do sleep 0.05; done; echo second"
+        val run = async(kotlinx.coroutines.Dispatchers.IO) {
+            runner.run(request(command), onOutput = { stream, text -> chunks.add(stream to text); if ("first" in text) firstSeen.complete(Unit) })
+        }
+        // 第一行在进程结束前就已回调。
+        withTimeout(10_000) { firstSeen.await() }
+        assertThat(run.isCompleted).isFalse()
+        File(work, "go").createNewFile()
+        val output = run.await()
+
+        val stdout = chunks.filter { it.first == com.promenar.nexara.domain.tool.ToolOutputStream.STDOUT }.joinToString("") { it.second }
+        val stderr = chunks.filter { it.first == com.promenar.nexara.domain.tool.ToolOutputStream.STDERR }.joinToString("") { it.second }
+        assertThat(stdout).isEqualTo("first\nsecond\n")
+        assertThat(stderr).isEqualTo("warn\n")
+        assertThat(output.stdout).isEqualTo(stdout)
+        assertThat(output.stderr).isEqualTo(stderr)
+        File(work, "go").delete()
+        val plain = runner.run(request(command.replace("while [ ! -f go ]; do sleep 0.05; done; ", "")))
+        assertThat(plain.stdout).isEqualTo(output.stdout)
+    }
+
+    @Test
+    fun `启动前已请求停止则不启动命令`() = runBlocking<Unit> {
+        val marker = File(work, "started")
+        val control = BuiltinCommandControl().apply { requestStop() }
+        val output = runner.run(request("touch '${marker.path}'"), control)
+        assertThat(output.stoppedByUser).isTrue()
+        assertThat(output.exitCode).isNull()
+        assertThat(marker.exists()).isFalse()
+    }
+
+    @Test
     fun `环境变量只来自请求且工作目录为指定目录`() = runBlocking<Unit> {
         val output = runner.run(request("env | sort; pwd", env = mapOf("PATH" to "/usr/bin:/bin", "NEXARA_X" to "1")))
         val lines = output.stdout.lines().filter(String::isNotBlank)

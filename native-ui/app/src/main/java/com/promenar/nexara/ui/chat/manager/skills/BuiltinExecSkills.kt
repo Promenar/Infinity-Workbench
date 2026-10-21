@@ -44,7 +44,7 @@ class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition 
             val command = (args.getValue("command") as JsonPrimitive).content
             if (command.isBlank()) return@runBuiltin invalid("command 不能为空")
             if (command.length > MAX_COMMAND_CHARS) return@runBuiltin invalid("command 超过 $MAX_COMMAND_CHARS 字符，请把脚本写入工作区文件后执行")
-            service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout)
+            service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput)
         }
 
     private fun invalid(reason: String?) = CommandToolResult(
@@ -79,7 +79,7 @@ class PythonExecSkill(private val service: BuiltinExecService) : SkillDefinition
                 code.length > MAX_CODE_CHARS -> invalid("code 超过 $MAX_CODE_CHARS 字符，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
                 // 单个 execve 参数上限 128 KiB。
                 code.toByteArray(Charsets.UTF_8).size > MAX_CODE_BYTES -> invalid("code 的 UTF-8 编码超过 $MAX_CODE_BYTES 字节，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
-                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout)
+                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput)
             }
         }
 

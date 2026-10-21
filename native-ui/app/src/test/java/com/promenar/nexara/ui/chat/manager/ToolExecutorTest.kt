@@ -489,6 +489,34 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `运行中的实时输出按调用步骤登记，结束后移除且不进入工具结果`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val live = com.promenar.nexara.data.exec.ToolLiveOutputStore()
+        var seenDuringRun: com.promenar.nexara.data.exec.ToolLiveOutputStore.Snapshot? = null
+        var stepId: String? = null
+        val base = testSkill("shell_like") { ToolResult("result", "final") }
+        val skill = object : SkillDefinition by base {
+            override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+                context.liveOutput.emit(com.promenar.nexara.domain.tool.ToolOutputStream.STDOUT, "progress\n")
+                stepId = live.keys().single()
+                seenDuringRun = live.snapshot(stepId!!)
+                return ToolResult("result", "final")
+            }
+        }
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger(), liveOutput = live)
+
+        executor.executeTools("s1", "m1", listOf(ToolCall("c1", skill.name, "{}")), preparedTools = registry.getAllTools())
+
+        advanceUntilIdle()
+        assertThat(seenDuringRun?.text).isEqualTo("progress\n")
+        assertThat(live.keys()).isEmpty()
+        val steps = store.getSession("s1")!!.messages.first { it.id == "m1" }.executionSteps!!
+        assertThat(stepId).isEqualTo(steps.single { it.type == "tool_call" }.id)
+        assertThat(steps.single { it.type == "tool_result" }.content).isEqualTo("final")
+    }
+
+    @Test
     fun `模型切换后撤销媒体能力必须在查看前拒绝执行`() = testScope.runTest {
         seedSessionWithAssistant()
         var executions = 0

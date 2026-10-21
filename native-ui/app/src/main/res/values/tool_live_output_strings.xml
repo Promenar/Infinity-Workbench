@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_tool_live_output_title">Live output</string>
+    <string name="chat_tool_live_stop">Stop</string>
+    <string name="chat_tool_live_stopping">Stopping…</string>
+    <string name="chat_tool_live_waiting">Waiting for output…</string>
+    <string name="chat_tool_live_unsupported">This backend has no live output; results appear when the command finishes.</string>
+</resources>

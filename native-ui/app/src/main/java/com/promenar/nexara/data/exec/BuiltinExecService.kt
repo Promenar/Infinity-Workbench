@@ -9,6 +9,8 @@ import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.domain.tool.CommandToolResult
 import com.promenar.nexara.domain.tool.CommandTruncation
+import com.promenar.nexara.domain.tool.ToolLiveOutputSink
+import com.promenar.nexara.domain.tool.ToolOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -48,7 +50,8 @@ class BuiltinExecService(
         command: String,
         stdin: String?,
         timeoutSeconds: Int,
-    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command) { root, kind ->
+        live: ToolLiveOutputSink = ToolLiveOutputSink.None,
+    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command, live) { root, kind ->
         BuiltinCommandRequest(
             argv = listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", command),
             workingDirectory = root,
@@ -64,6 +67,7 @@ class BuiltinExecService(
         code: String,
         stdin: String?,
         timeoutSeconds: Int,
+        live: ToolLiveOutputSink = ToolLiveOutputSink.None,
     ): CommandToolResult {
         if (!environment.pythonAvailable) {
             return CommandToolResult(
@@ -72,7 +76,7 @@ class BuiltinExecService(
                     "请改用 termux_exec 或 ssh_exec。shell_exec 仍可使用系统命令。",
             )
         }
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code) { root, kind ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code, live) { root, kind ->
             BuiltinCommandRequest(
                 argv = listOf(environment.pythonLauncher.path, "-c", code),
                 workingDirectory = root,
@@ -89,6 +93,7 @@ class BuiltinExecService(
         timeoutSeconds: Int,
         kind: ExecRunKind,
         source: String,
+        live: ToolLiveOutputSink,
         request: (File, String) -> BuiltinCommandRequest,
     ): CommandToolResult {
         val target = sessionWorkspace(sessionId)
@@ -102,22 +107,28 @@ class BuiltinExecService(
         val workspaceKind = SessionWorkspaceResolver.kindOf(target)
         var physicalRoot: File? = null
         val control = BuiltinCommandControl()
+        live.onStop(control::requestStop)
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
         // 代理不可用时命令照常执行，内置 git 退回直连。
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
         val withRemote: (File, String) -> BuiltinCommandRequest = { root, workspaceKind ->
             request(root, workspaceKind).let { it.copy(environment = it.environment + lease.environment) }
         }
+        suspend fun runCommand(root: File): BuiltinCommandOutput {
+            if (live === ToolLiveOutputSink.None) return runner.run(withRemote(root, workspaceKind), control)
+            val tee = LiveWorkspaceOutput(root, live::emit)
+            return try { runner.run(withRemote(root, workspaceKind), control, tee::accept) } finally { tee.finish() }
+        }
         val held = try {
             keepAlive.hold(run, control::requestStop) {
                 if (directory != null) {
                     physicalRoot = directory.root
-                    val output = try { runner.run(withRemote(directory.root, workspaceKind), control) } catch (_: IOException) { null }
+                    val output = try { runCommand(directory.root) } catch (_: IOException) { null }
                     WorkspaceCommandOutcome(output, changes = null)
                 } else workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
                     physicalRoot = root
                     try {
-                        runner.run(withRemote(root, workspaceKind), control)
+                        runCommand(root)
                     } catch (failure: IOException) {
                         null
                     }
@@ -149,7 +160,7 @@ class BuiltinExecService(
         val settled = if (directory != null) "自选工作区不做对账，可用 git status 查看改动。" else "工作区已按当前磁盘状态对账。"
         val (errorCode, guidance) = when {
             output.stoppedByUser -> "EXEC_STOPPED" to
-                "用户在通知栏停止了命令，已结束整个进程组；${settled}不要自动重试，先询问用户。"
+                "用户停止了命令（通知栏或聊天界面），已结束整个进程组；${settled}不要自动重试，先询问用户。"
             output.timedOut -> "EXEC_TIMEOUT" to
                 "命令在 $timeoutSeconds 秒内未结束，已结束整个进程组；${settled}可增大 timeout_seconds（最多 600）或拆分任务。"
             output.killedExternally -> "EXEC_PROCESS_KILLED" to
@@ -205,13 +216,16 @@ class BuiltinExecService(
         private const val MAX_WARNING_PATHS = 20
 
         /** 输出中的工作区物理路径替换为 `$NEXARA_WORKSPACE`，既不暴露应用目录，也可直接用于下一条命令。 */
-        internal fun virtualize(text: String, root: File): String {
-            var result = text
+        internal fun virtualize(text: String, root: File): String = virtualize(text, workspacePaths(root))
+
+        internal fun virtualize(text: String, paths: List<String>): String =
+            paths.fold(text) { result, path -> result.replace(path, "\$NEXARA_WORKSPACE") }
+
+        /** 工作区的书写路径与规范路径，长的在前，避免短路径先替换掉长路径的一部分。 */
+        internal fun workspacePaths(root: File): List<String> =
             listOf(root.path, runCatching { root.canonicalPath }.getOrDefault(root.path)).distinct()
+                .filter { it.length > 1 }
                 .sortedByDescending { it.length }
-                .forEach { path -> if (path.length > 1) result = result.replace(path, "\$NEXARA_WORKSPACE") }
-            return result
-        }
 
         /** 自选目录工作区不逐次统计改动，只说明工作区类型。 */
         internal fun directoryFields(kind: String): JsonObject = buildJsonObject {
@@ -266,5 +280,37 @@ class BuiltinExecService(
                 }))
             }
         }
+    }
+}
+
+/**
+ * 实时输出逐块替换工作区物理路径。读取块可能恰好切在路径中间，因此块尾若是某条路径的前缀就先暂存，
+ * 与下一块拼接后再替换；命令结束时 [finish] 补发暂存内容。stdout 与 stderr 由两个读取线程并发调用。
+ */
+internal class LiveWorkspaceOutput(root: File, private val emit: (ToolOutputStream, String) -> Unit) {
+    private val paths = BuiltinExecService.workspacePaths(root)
+    private val pending = HashMap<ToolOutputStream, String>()
+
+    @Synchronized
+    fun accept(stream: ToolOutputStream, text: String) {
+        val replaced = BuiltinExecService.virtualize(pending.remove(stream).orEmpty() + text, paths)
+        val hold = heldSuffixLength(replaced)
+        if (hold > 0) pending[stream] = replaced.takeLast(hold)
+        replaced.dropLast(hold).takeIf(String::isNotEmpty)?.let { emit(stream, it) }
+    }
+
+    @Synchronized
+    fun finish() {
+        pending.forEach { (stream, text) -> emit(stream, text) }
+        pending.clear()
+    }
+
+    /** 块尾与某条路径开头重合的最长长度（不含整条路径，整条已被替换）。 */
+    private fun heldSuffixLength(text: String): Int {
+        for (length in minOf(text.length, (paths.maxOfOrNull { it.length } ?: 1) - 1) downTo 1) {
+            val suffix = text.substring(text.length - length)
+            if (paths.any { it.length > length && it.startsWith(suffix) }) return length
+        }
+        return 0
     }
 }

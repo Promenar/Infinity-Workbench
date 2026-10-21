@@ -32,12 +32,16 @@ class TermuxExecSkill(
                 !enabled() -> TermuxCommandResult(errorCode = "TERMUX_INTEGRATION_DISABLED", guidance = "请先在工具设置中启用 Termux 集成。")
                 else -> when (val validation = validator.validate(parametersSchema, args)) {
                     is ToolSchemaValidation.Invalid -> invalidArguments("${validation.error.path}：${validation.error.message}")
-                    else -> runner(TermuxCommandRequest(
-                        command = (args.getValue("command") as JsonPrimitive).content,
-                        workdir = normalizeWorkdir((args["workdir"] as? JsonPrimitive)?.content),
-                        timeoutSeconds = (args["timeout_seconds"] as? JsonPrimitive)?.intOrNull ?: 60,
-                        stdin = (args["stdin"] as? JsonPrimitive)?.content,
-                    ))
+                    // Termux 结果由广播一次性回传，没有增量输出。
+                    else -> {
+                        context.liveOutput.unsupported()
+                        runner(TermuxCommandRequest(
+                            command = (args.getValue("command") as JsonPrimitive).content,
+                            workdir = normalizeWorkdir((args["workdir"] as? JsonPrimitive)?.content),
+                            timeoutSeconds = (args["timeout_seconds"] as? JsonPrimitive)?.intOrNull ?: 60,
+                            stdin = (args["stdin"] as? JsonPrimitive)?.content,
+                        ))
+                    }
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled

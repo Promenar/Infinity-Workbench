@@ -58,6 +58,37 @@ class ScriptToolRunnerTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun `运行中输出转给聊天界面，界面停止时取消执行并返回 STOPPED`() = runBlocking {
+        val mounts = mockk<ExternalWorkspaceAccess> { coEvery { workspaceMount(any()) } returns null }
+        coEvery { mounts.visible(context.sessionId) } returns emptyList()
+        val directory = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".nexara-workspace-script-runner").toFile()
+        val store = com.promenar.nexara.data.exec.ToolLiveOutputStore()
+        val sink = store.open("step")
+        val liveContext = object : SkillExecutionContext by context {
+            override val liveOutput = sink
+        }
+        val started = CompletableDeferred<Unit>()
+        var runtimeCancelled = false
+        try {
+            val runtime = ScriptRuntime { _, _, capabilities ->
+                capabilities.output(1, "tick\n")
+                capabilities.output(2, "warn\n")
+                started.complete(Unit)
+                try { awaitCancellation() } finally { runtimeCancelled = true }
+            }
+            val pending = async { runner(mounts, directory, runtime).execute(ScriptRequest("1"), liveContext) }
+            withTimeout(5_000) { started.await() }
+            assertThat(store.snapshot("step")?.text).isEqualTo("tick\nwarn\n")
+            assertThat(store.snapshot("step")?.stoppable).isTrue()
+
+            store.requestStop("step")
+            val result = withTimeout(5_000) { pending.await() }
+            assertThat(result.errorCode).isEqualTo("STOPPED")
+            assertThat(result.error).contains("不要自动重试")
+            assertThat(runtimeCancelled).isTrue()
+        } finally { directory.deleteRecursively() }
+    }
+
     private fun runner(mounts: ExternalWorkspaceAccess, directory: java.io.File, runtime: ScriptRuntime) = AndroidScriptToolRunner(
         runtime, mockk<IWorkspaceRepository>(), mounts, mockk<IFileOperationRepository>(), FileIndexEventSink.None,
         ScriptFileApprovalBroker(), ToolAllowlistStore(directory), ScriptSettings(mockk<SharedPreferences>(relaxed = true)),

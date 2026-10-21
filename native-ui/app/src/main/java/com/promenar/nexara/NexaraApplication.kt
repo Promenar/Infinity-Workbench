@@ -507,6 +507,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val generationPresentationStore by lazy {
         com.promenar.nexara.data.generation.GenerationPresentationStore()
     }
+    /** 运行中命令的实时输出，只存内存。 */
+    val toolLiveOutputStore by lazy { com.promenar.nexara.data.exec.ToolLiveOutputStore() }
     val generationForegroundController:
         com.promenar.nexara.background.generation.GenerationForegroundController by lazy {
         com.promenar.nexara.background.generation.AndroidGenerationForegroundController(this)
@@ -558,6 +560,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             toolExecutionLedger,
             sessionExecutionGate,
             grantVerifier = this::verifyTargetGrant,
+            liveOutput = toolLiveOutputStore,
         )
     }
     private val generationPostProcessor by lazy {

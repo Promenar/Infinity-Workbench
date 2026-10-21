@@ -39,6 +39,9 @@ data class ScriptResult(
 
 fun interface ScriptCapabilities {
     suspend fun invoke(operation: String, arguments: JsonObject): JsonElement
+
+    /** 脚本运行中的输出（[fd] 1 为 stdout，2 为 stderr），只用于实时展示；可在任意线程调用。 */
+    fun output(fd: Int, text: String) = Unit
 }
 
 /** 引擎只能访问显式注入的能力，不持有 Android Context 或任何仓库。 */
@@ -74,6 +77,8 @@ object ScriptLimits {
     const val NETWORK_REQUESTS = 20
     const val CAPABILITY_CALLS = 128
     const val IPC_BYTES = 256 * 1024
+    /** 宿主每次运行最多接收的实时输出消息数（约为最长运行时长按 100ms 合并的条数），超出后只丢弃实时展示。 */
+    const val OUTPUT_MESSAGES = 4_000
     const val MAX_STDIN_CHARS = 32_000
     /** Python 子进程启动与输出收尾的余量：沙箱先按 timeoutSeconds 自行终止并带回已有输出，主进程再兜底。 */
     const val PYTHON_HOST_GRACE_MILLIS = 3_000L

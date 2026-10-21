@@ -20,6 +20,7 @@ import com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -296,6 +297,25 @@ class BuiltinExecServiceTest {
     }
 
     @Test
+    fun `实时输出中被读取块切开的工作区路径仍被替换，结束时补发暂存的块尾`() {
+        val root = File(work, "ws")
+        val seen = mutableListOf<Pair<com.promenar.nexara.domain.tool.ToolOutputStream, String>>()
+        val tee = LiveWorkspaceOutput(root) { stream, text -> seen.add(stream to text) }
+        val out = com.promenar.nexara.domain.tool.ToolOutputStream.STDOUT
+        val err = com.promenar.nexara.domain.tool.ToolOutputStream.STDERR
+        val split = root.path.length / 2
+        tee.accept(out, "see ${root.path.take(split)}")
+        tee.accept(err, "e1\n")
+        tee.accept(out, "${root.path.drop(split)}/a.txt\n")
+        tee.accept(out, "tail /")
+        tee.finish()
+        assertThat(seen.filter { it.first == out }.joinToString("") { it.second })
+            .isEqualTo("see \$NEXARA_WORKSPACE/a.txt\ntail /")
+        assertThat(seen.filter { it.first == err }.map { it.second }).containsExactly("e1\n")
+        assertThat(seen.joinToString("") { it.second }).doesNotContain(root.path)
+    }
+
+    @Test
     fun `通知停止结束命令并返回 EXEC_STOPPED，保活登记命令摘要`() = runBlocking<Unit> {
         val keepAlive = RecordingKeepAlive(ExecForegroundState.STARTED, stopOnStart = true)
         val started = System.nanoTime()
@@ -310,6 +330,28 @@ class BuiltinExecServiceTest {
         assertThat(keepAlive.runs.single().summary).isEqualTo("sleep 30 …")
         assertThat(keepAlive.runs.single().timeoutSeconds).isEqualTo(60)
         assertThat(keepAlive.released).isTrue()
+    }
+
+    @Test
+    fun `实时输出隐去工作区物理路径，聊天界面停止返回 EXEC_STOPPED`() = runBlocking<Unit> {
+        val store = ToolLiveOutputStore()
+        val sink = store.open("step")
+        val printed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val watcher = launch(kotlinx.coroutines.Dispatchers.IO) {
+            while (store.snapshot("step")?.text?.contains("ready") != true) kotlinx.coroutines.delay(20)
+            printed.complete(Unit)
+        }
+        val run = async(kotlinx.coroutines.Dispatchers.IO) { service().runShell("root", "s", "pwd; echo ready; sleep 30; echo never", null, 60, sink) }
+        kotlinx.coroutines.withTimeout(10_000) { printed.await() }
+        watcher.join()
+        assertThat(store.snapshot("step")?.stoppable).isTrue()
+        assertThat(store.snapshot("step")?.text).isEqualTo("\$NEXARA_WORKSPACE\nready\n")
+
+        store.requestStop("step")
+        val value = json(kotlinx.coroutines.withTimeout(10_000) { run.await() }.toJson().toString())
+        assertThat(value.getValue("error_code").jsonPrimitive.content).isEqualTo("EXEC_STOPPED")
+        assertThat(value.getValue("guidance").jsonPrimitive.content).contains("聊天界面")
+        assertThat(value.getValue("stdout").jsonPrimitive.content).isEqualTo("\$NEXARA_WORKSPACE\nready\n")
     }
 
     @Test

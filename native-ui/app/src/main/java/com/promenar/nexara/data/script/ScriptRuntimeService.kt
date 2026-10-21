@@ -57,18 +57,30 @@ class ScriptRuntimeService : Service() {
                             QuickJsScriptEngine()
                         }
                         engine = currentEngine
-                        val result = currentEngine.execute(request, ScriptCapabilities { operation, arguments ->
-                            val call = nextCall.incrementAndGet()
-                            if (call > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
-                            val response = CompletableDeferred<JsonElement>()
-                            calls[call] = response
-                            try {
-                                ScriptWire.send(host, ScriptWire.CAPABILITY, id, call, buildJsonObject {
-                                    put("operation", operation); put("arguments", arguments)
-                                }.toString())
-                                response.await()
-                            } finally { calls.remove(call) }
-                        })
+                        val forwarder = ScriptOutputForwarder { payload -> runCatching { ScriptWire.send(host, ScriptWire.OUTPUT, id, payload = payload) } }
+                        val flusher = launch { while (isActive) { delay(ScriptOutputForwarder.INTERVAL_MILLIS); forwarder.flush() } }
+                        val result = try {
+                            currentEngine.execute(request, object : ScriptCapabilities {
+                                override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement {
+                                    val call = nextCall.incrementAndGet()
+                                    if (call > ScriptLimits.CAPABILITY_CALLS) throw ScriptFailure("CAPABILITY_LIMIT", "能力调用次数超过限制")
+                                    val response = CompletableDeferred<JsonElement>()
+                                    calls[call] = response
+                                    return try {
+                                        ScriptWire.send(host, ScriptWire.CAPABILITY, id, call, buildJsonObject {
+                                            put("operation", operation); put("arguments", arguments)
+                                        }.toString())
+                                        response.await()
+                                    } finally { calls.remove(call) }
+                                }
+
+                                override fun output(fd: Int, text: String) = forwarder.add(fd, text)
+                            })
+                        } finally {
+                            // 先等定时刷新退出，再补发剩余输出，保证顺序且不并发发送。
+                            withContext(NonCancellable) { flusher.cancelAndJoin() }
+                            forwarder.flush()
+                        }
                         ScriptWire.send(host, ScriptWire.RESULT, id, payload = Json.encodeToString(result))
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Throwable) {

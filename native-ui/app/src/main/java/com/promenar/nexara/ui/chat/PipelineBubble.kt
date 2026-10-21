@@ -523,6 +523,9 @@ private fun extractSyntheticExecutionSteps(content: String): List<ExecutionStep>
 }
 
 /** 消息只在展示副本中限定作用域，避免跨工具轮次复用调用 ID 时混淆真实调用。 */
+/** 界面按消息限定的步骤 id 还原为执行时登记的原始 id；消息 id 不含 `::`。 */
+internal fun unscopedStepId(id: String): String = id.substringAfter("::", id)
+
 private fun scopedToolSteps(messageId: String, steps: List<ExecutionStep>): List<ExecutionStep> =
     toolInvocations(steps).flatMapIndexed { index, invocation ->
         invocation.steps.map { step ->
@@ -963,6 +966,12 @@ internal fun InlineToolRow(
             failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )
+        if (isExecuting) {
+            // 运行中的命令在摘要下方显示实时输出，结束后由结果展示接替。
+            invocations.filterNot { it.complete }.forEach { invocation ->
+                invocation.call?.id?.let { stepId -> key(stepId) { RunningToolLiveOutput(unscopedStepId(stepId)) } }
+            }
+        }
         if (isExpanded) {
             // 展开内容底部 8dp，与流水线块间 8dp 合计 16dp，与段落间距一致。
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = ExpandedStepBottomPadding).testTag("CHAT_TOOL_DETAILS"), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -110,6 +110,19 @@ class PythonSandboxEngineTest {
         assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(6_000)
     }
 
+    @Test fun outputFramesAreForwardedLiveWhileFinalOutputStaysTheSame() {
+        val live = java.util.Collections.synchronizedList(mutableListOf<Pair<Int, String>>())
+        val capabilities = object : ScriptCapabilities {
+            override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement = throw ScriptFailure("CAPABILITY_DENIED", "此用例未提供能力")
+            override fun output(fd: Int, text: String) { live.add(fd to text) }
+        }
+        val result = run("import sys\nprint('一', flush=True)\nsys.stderr.write('warn\\n')\nsys.stderr.flush()\nprint('二')", capabilities = capabilities)
+        assertThat(result.errorCode).isNull()
+        assertThat(live.filter { it.first == 1 }.joinToString("") { it.second }).isEqualTo(result.text("stdout"))
+        assertThat(live.filter { it.first == 2 }.joinToString("") { it.second }).isEqualTo(result.text("stderr"))
+        assertThat(result.text("stdout")).isEqualTo("一\n二\n")
+    }
+
     @Test fun longOutputKeepsTailWithinServiceLimit() {
         val result = run("for i in range(20000):\n    print('第', i, '行')")
         assertThat(result.text("stdout")).endsWith("第 19999 行\n")

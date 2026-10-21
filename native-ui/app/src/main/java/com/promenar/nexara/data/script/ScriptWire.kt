@@ -14,6 +14,8 @@ internal object ScriptWire {
     const val CAPABILITY = 5
     const val CAPABILITY_RESULT = 6
     const val TERMINATE = 7
+    /** 隔离进程 → 主进程：合并后的运行中输出，payload 为 `[{"fd":1,"d":"..."}]`，只用于展示。 */
+    const val OUTPUT = 8
 
     fun send(to: Messenger, type: Int, invocation: String = "", call: Int = 0, payload: String = "", replyTo: Messenger? = null) {
         checkPayload(payload)

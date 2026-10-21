@@ -5,6 +5,8 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.Session
+import com.promenar.nexara.domain.tool.ToolLiveOutputSink
+import com.promenar.nexara.domain.tool.ToolOutputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
@@ -47,6 +49,8 @@ data class SshExecOutput(
     /** 遮蔽后的原始长度（UTF-16）；字节采集已截断时无法得知，为 null。 */
     val stdoutOriginalLength: Long? = stdout.length.toLong(),
     val stderrOriginalLength: Long? = stderr.length.toLong(),
+    /** 用户在命令结束前停止并断开了通道；远端进程可能仍在运行。 */
+    val stoppedByUser: Boolean = false,
 )
 
 /**
@@ -155,30 +159,55 @@ class SshRuntime(
         } finally { withContext(NonCancellable + Dispatchers.IO) { session.disconnect() } }
     }
 
-    suspend fun exec(owner: String, alias: String, command: String, timeoutSeconds: Int = 60, maxOutputChars: Int = 32_000): SshExecOutput {
+    /**
+     * 执行一条非交互命令。[live] 收到按连接凭据遮蔽后的增量输出，只用于展示；用户经 [live] 停止时断开通道，
+     * 结果标记 [SshExecOutput.stoppedByUser]。
+     */
+    suspend fun exec(
+        owner: String,
+        alias: String,
+        command: String,
+        timeoutSeconds: Int = 60,
+        maxOutputChars: Int = 32_000,
+        live: ToolLiveOutputSink = ToolLiveOutputSink.None,
+    ): SshExecOutput {
         SshPolicy.timeout(timeoutSeconds); SshPolicy.outputLimit(maxOutputChars)
         if (command.isBlank() || command.length > 65_536 || '\u0000' in command) throw SshFailure("INVALID_COMMAND")
         val stdout = ByteCapture(maxOutputChars * 4)
         val stderr = ByteCapture(maxOutputChars * 4)
         val ref = AtomicReference<ChannelExec?>()
         val usedConnection = AtomicReference<Connection?>()
+        // 停止只置位，由轮询线程断开通道，界面线程不做网络 IO。
+        val stopRequested = AtomicBoolean(false)
+        val stoppedByUser = AtomicBoolean(false)
+        live.onStop { stopRequested.set(true) }
+        val tees = mutableListOf<LiveTee>()
         val exit = try {
             withTimeoutOrNull(timeoutSeconds * 1000L) {
                 val connection = connection(owner, alias).also(usedConnection::set)
                 connection.lock.withLock {
                     verifyCurrentConnection(connection)
+                    // 排队等待连接锁期间已请求停止，则不再在远端启动命令。
+                    if (stopRequested.get()) { stoppedByUser.set(true); return@withLock -1 }
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
                         try {
                             channel.setCommand(command)
                             channel.setInputStream(null)
-                            channel.setOutputStream(stdout, true)
-                            channel.setErrStream(stderr, true)
+                            fun sink(capture: ByteCapture, stream: ToolOutputStream): OutputStream =
+                                if (live === ToolLiveOutputSink.None) capture
+                                else LiveTee(capture, connection.filter.stream(), stream, live).also(tees::add)
+                            channel.setOutputStream(sink(stdout, ToolOutputStream.STDOUT), true)
+                            channel.setErrStream(sink(stderr, ToolOutputStream.STDERR), true)
                             channel.connect(CONNECT_TIMEOUT)
-                            while (!channel.isClosed) { if (stopped.get()) throw SshFailure("RUNTIME_CLOSED"); Thread.sleep(10) }
+                            while (!channel.isClosed) {
+                                if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
+                                if (stopRequested.get()) { stoppedByUser.set(true); break }
+                                Thread.sleep(10)
+                            }
                             connection.used = now()
                             channel.exitStatus
-                        } finally { channel.disconnect() }
+                        } finally { channel.disconnect(); tees.forEach(LiveTee::finish) }
                     }
                 }
             }
@@ -200,6 +229,7 @@ class SshRuntime(
                     exit == null,
                     stdoutOriginalLength = cleanOut.length.toLong().takeUnless { stdout.truncated },
                     stderrOriginalLength = cleanErr.length.toLong().takeUnless { stderr.truncated },
+                    stoppedByUser = stoppedByUser.get(),
                 )
             } finally { stdout.wipe(); stderr.wipe() }
         }
@@ -692,6 +722,48 @@ private class ByteCapture(private val limit: Int) : OutputStream() {
         .onMalformedInput(CodingErrorAction.IGNORE).onUnmappableCharacter(CodingErrorAction.IGNORE)
         .decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString()
     @Synchronized fun wipe() = bytes.wipe()
+}
+
+/**
+ * 通道输出同时写入采集缓冲，并按连接凭据遮蔽后推送到界面；跨分片的 UTF-8 字节与可能的凭据前缀留到下一片。
+ * 推送失败不影响采集。
+ */
+private class LiveTee(
+    private val capture: ByteCapture,
+    private val filter: SshOutputFilter.Stream,
+    private val stream: ToolOutputStream,
+    private val sink: ToolLiveOutputSink,
+) : OutputStream() {
+    private val decoder = Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPLACE).onUnmappableCharacter(CodingErrorAction.REPLACE)
+    private var pending = ByteArray(0)
+    private var finished = false
+
+    override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+
+    @Synchronized override fun write(value: ByteArray, offset: Int, length: Int) {
+        capture.write(value, offset, length)
+        if (finished) return
+        val input = java.nio.ByteBuffer.wrap(pending + value.copyOfRange(offset, offset + length))
+        val chars = java.nio.CharBuffer.allocate(input.remaining() + 1)
+        decoder.decode(input, chars, false)
+        pending.fill(0)
+        pending = ByteArray(input.remaining()).also(input::get)
+        input.array().fill(0)
+        chars.flip()
+        publish(filter.feed(chars.toString()))
+    }
+
+    @Synchronized fun finish() {
+        if (finished) return
+        finished = true
+        publish(filter.feed("", end = true))
+        pending.fill(0)
+    }
+
+    private fun publish(text: String) {
+        if (text.isNotEmpty()) runCatching { sink.emit(stream, text) }
+    }
 }
 
 private class TextRing(private val limit: Int) {

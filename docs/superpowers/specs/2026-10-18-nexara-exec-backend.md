@@ -83,7 +83,7 @@ ToolExecutor
 
 各后端的差异：
 
-- 内置后端（`shell_exec`、`python_exec`）：stdout、stderr 各保留尾部 32,000 UTF-16 字符（`head_removed`），原始长度按完整解码计数。命令本身运行（无论退出码）时 `error_code` 为 null；后端错误码为 `EXEC_INVALID_ARGUMENTS`、`EXEC_PYTHON_UNAVAILABLE`、`EXEC_WORKSPACE_UNAVAILABLE`、`EXEC_START_FAILED`、`EXEC_TIMEOUT`（`exit_code` 为 null）、`EXEC_STOPPED`（用户在通知栏停止，`exit_code` 为 null，指引要求不自动重试）、`EXEC_PROCESS_KILLED`（退出码 137 且不是本端发出的 SIGKILL）与 `WORKSPACE_RECONCILE_FAILED`（命令已执行但索引未更新，`exit_code` 照常给出）。只有警告时 `guidance` 说明警告含义，状态不受影响；出现 `paused_ms` 时 `guidance` 追加冻结原因与“完全允许后台行为”设置指引。
+- 内置后端（`shell_exec`、`python_exec`）：stdout、stderr 各保留尾部 32,000 UTF-16 字符（`head_removed`），原始长度按完整解码计数。命令本身运行（无论退出码）时 `error_code` 为 null；后端错误码为 `EXEC_INVALID_ARGUMENTS`、`EXEC_PYTHON_UNAVAILABLE`、`EXEC_WORKSPACE_UNAVAILABLE`、`EXEC_START_FAILED`、`EXEC_TIMEOUT`（`exit_code` 为 null）、`EXEC_STOPPED`（用户在通知栏或聊天界面停止，`exit_code` 为 null，指引要求不自动重试）、`EXEC_PROCESS_KILLED`（退出码 137 且不是本端发出的 SIGKILL）与 `WORKSPACE_RECONCILE_FAILED`（命令已执行但索引未更新，`exit_code` 照常给出）。只有警告时 `guidance` 说明警告含义，状态不受影响；出现 `paused_ms` 时 `guidance` 追加冻结原因与“完全允许后台行为”设置指引。
 - `termux_exec`：输出由 Termux 截断并保留尾部（`head_removed`），专有字段 `err`、`errmsg`、`errmsg_original_length`、`errmsg_truncation_possible` 排在共有字段之后。
 - `ssh_exec`：凭据与私钥块遮蔽需要完整前文，输出在遮蔽之后截断并保留开头（`tail_removed`）。stdout 与 stderr 合计超过 `max_output_chars` 时按 `splitOutputBudget` 分配：一方不足一半时余量让给另一方，双方都超过一半时各取一半。字节采集上限（`max_output_chars × 4` 字节）被触发时原始长度未知，对应字段为 null。超时返回 `error_code` = `SSH_TIMEOUT`、`exit_code` = null。
 - SSH 其余失败（参数、主机、凭据、指纹、连接、会话上限、SFTP 冲突等）返回 `{"error_code":"SSH_<码>","guidance":"..."}`，指引按错误码给出，不含主机地址、用户名或凭据。
@@ -161,7 +161,8 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 - 生成任务自身的前台服务在等待审批时退出；半自动与手动模式下批准后的命令在界面协程中执行，正是这里的命令前台服务提供保活与停止入口。全自动模式下两者可能同时显示，各自的停止分别作用于生成与命令。
 - Play 渠道不声明命令前台服务与 `FOREGROUND_SERVICE_SPECIAL_USE`（政策待评审），只持有唤醒锁；`scripts/ci/check-distribution-manifests.py` 校验该渠道差异。
 - 系统拒绝启动前台服务（应用在后台且无豁免）时命令照常运行，只有唤醒锁。
-- 停止：通知按钮经 `BuiltinCommandControl` 请求停止，等待循环（250 ms 步长）发现后 SIGTERM→2 秒→SIGKILL 整个进程组，返回 `EXEC_STOPPED` 并照常对账；模型据此继续本轮，而不是整轮生成被取消。
+- 停止：通知按钮或聊天界面实时输出区的“停止”经 `BuiltinCommandControl` 请求停止，等待循环（250 ms 步长）发现后 SIGTERM→2 秒→SIGKILL 整个进程组，返回 `EXEC_STOPPED` 并照常对账；模型据此继续本轮，而不是整轮生成被取消。
+- 实时输出：读取线程每读到一块输出即经 `SkillExecutionContext.liveOutput` 推送到内存中的 `ToolLiveOutputStore`（按工具调用步骤 id 登记，命令结束即移除，每条命令保留尾部 16 KB，不写数据库），推送前同样把工作区物理路径替换为 `$NEXARA_WORKSPACE`（块尾若是被切开的路径前缀则暂存到下一块，命令结束时补发）；只有执行方实际使用过的通道才在界面显示，其它工具不出现空终端区。启动前已请求停止的命令不再启动。聊天界面在运行中的工具行下方显示最后 12 行，每 100 ms 刷新一次。交给模型的结果与上述截断规则不变。`ssh_exec` 把通道输出同时写入采集缓冲与按连接凭据遮蔽的流式过滤器，聊天界面停止时断开通道并返回 `SSH_STOPPED`；沙箱 Python 与 `exec_js` 的输出由隔离进程每 100 ms 合并为一条 `OUTPUT` 消息（每个窗口只保留尾部 16 K 字符，相邻同一路输出合并、片段数不超过 256）回传，宿主每次运行最多处理 4000 条，超出只丢弃实时展示，停止时取消执行并终止隔离进程，返回 `STOPPED`；`termux_exec` 结果一次性回传，界面注明不提供实时输出。
 - 冻结检测：等待循环的时钟为 `SystemClock.elapsedRealtimeNanos`（含深度休眠）。相邻两次轮询间隔超出步长 2 秒以上即视为本进程被暂停，超出部分计入 `paused_ms` 而不消耗超时；累计达到 3 秒时 `guidance` 说明暂停时长、前台服务状态，并提示在应用耗电管理中设为“完全允许后台行为”。
 - 进程被系统结束时返回 `error_code = EXEC_PROCESS_KILLED`，对账照常执行。
 
@@ -225,7 +226,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 沙箱模式单个文件只支持不超过 64 KiB 的 UTF-8 文本（与 JavaScript 脚本相同，受 Binder 消息上限约束） | 已知限制；大文件与二进制改用 `python_exec` |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
-| 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒（被系统暂停的时间另计） | 已知限制；侧载渠道可从通知停止，Play 渠道只能在界面停止生成 |
+| 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒（被系统暂停的时间另计） | 已知限制；侧载渠道可从通知停止，两个渠道都可在聊天界面实时输出区停止该命令 |
 | 命令自行 `setsid`/守护化的进程不在进程组内，结束后可能继续改动工作区 | 未处理；对账只反映结束时刻的磁盘状态 |
 | 对账重算大文件哈希的耗时（数 GB 文件需数秒）与 inode 复用导致的误判移动（要求文件 size 与 mtime 同时未变） | 已知限制 |
 | 命令在对账之后才写入的文件、或进程被杀后到下一次修改之间的磁盘变化 | 由 `.nexara_command_pending` 恢复对账收敛；根身份标记若在进程被杀前已被删除则无法自动恢复 |

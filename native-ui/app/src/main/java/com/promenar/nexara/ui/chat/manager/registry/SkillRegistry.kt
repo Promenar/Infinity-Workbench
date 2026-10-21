@@ -48,4 +48,7 @@ interface SkillExecutionContext {
     /** 执行底座已核验的审批目标，供技能固定来源身份。 */
     val approvedExecutionTarget: String? get() = null
     val isApprovalBoundExecution: Boolean get() = false
+    /** 运行中输出推送到界面的通道；只用于展示。 */
+    val liveOutput: com.promenar.nexara.domain.tool.ToolLiveOutputSink
+        get() = com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
 }

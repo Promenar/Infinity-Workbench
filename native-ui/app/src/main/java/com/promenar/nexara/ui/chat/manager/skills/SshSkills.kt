@@ -75,11 +75,19 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
             val result = runtime.withHostSnapshot(snapshot) { when (operation) {
                 SshOperation.EXEC -> {
                     val timeout = args.integer("timeout_seconds", 60)
-                    val value = runtime.exec(owner, args.text("host"), args.text("command"), timeout, args.integer("max_output_chars", 32_000))
+                    val value = runtime.exec(owner, args.text("host"), args.text("command"), timeout, args.integer("max_output_chars", 32_000), context.liveOutput)
                     val command = CommandToolResult(
-                        errorCode = if (value.timedOut) "SSH_TIMEOUT" else null,
-                        guidance = if (value.timedOut) "命令在 $timeout 秒内未结束，已断开通道；远端进程可能仍在运行，重试前请先检查。" else null,
-                        exitCode = value.exitCode.takeUnless { value.timedOut },
+                        errorCode = when {
+                            value.stoppedByUser -> "SSH_STOPPED"
+                            value.timedOut -> "SSH_TIMEOUT"
+                            else -> null
+                        },
+                        guidance = when {
+                            value.stoppedByUser -> "用户在聊天界面停止了命令，已断开通道；远端进程可能仍在运行。不要自动重试，先询问用户。"
+                            value.timedOut -> "命令在 $timeout 秒内未结束，已断开通道；远端进程可能仍在运行，重试前请先检查。"
+                            else -> null
+                        },
+                        exitCode = value.exitCode.takeUnless { value.timedOut || value.stoppedByUser },
                         timedOut = value.timedOut,
                         stdout = value.stdout,
                         stderr = value.stderr,

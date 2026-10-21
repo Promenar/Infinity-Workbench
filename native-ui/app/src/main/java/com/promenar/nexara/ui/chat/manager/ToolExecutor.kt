@@ -57,6 +57,8 @@ class ToolExecutor internal constructor(
     private val executionGate: SessionExecutionGate? = null,
     private val hooks: ToolExecutorHooks = ToolExecutorHooks(),
     private val grantVerifier: (suspend (Session, SkillDefinition, JsonObject, String) -> Boolean)? = null,
+    /** 运行中命令的实时输出，按工具调用步骤 id 登记。 */
+    private val liveOutput: com.promenar.nexara.data.exec.ToolLiveOutputStore? = null,
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -289,7 +291,7 @@ class ToolExecutor internal constructor(
             }
         val approvedTarget = expectedGrantTargets[call.id] ?: approvedCall?.executionTarget
         val approvalBound = call.id in expectedGrantTargets || expectedIdentity.requiresApproval || approvedCall != null
-        val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound)
+        val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound, stepId)
         hooks.afterSkillExecution()
         val failed = result.status != "success"
         val safeResultData = sanitizeResultData(result.data, failed)
@@ -378,7 +380,9 @@ class ToolExecutor internal constructor(
         session: com.promenar.nexara.data.model.Session,
         approvedTarget: String?,
         approvalBound: Boolean,
+        stepId: String,
     ): ToolResult {
+        val sink = liveOutput?.open(stepId) ?: com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
         return try {
             skill.execute(
                 arguments,
@@ -388,6 +392,7 @@ class ToolExecutor internal constructor(
                     override val workspacePath = session.workspacePath
                     override val approvedExecutionTarget = approvedTarget
                     override val isApprovalBoundExecution = approvalBound
+                    override val liveOutput = sink
                     override val workspaceRootUuid = session.workspaceRootUuid
                         ?: throw SecurityException("Session workspace root is missing")
                 }
@@ -400,6 +405,8 @@ class ToolExecutor internal constructor(
             ToolResult(id = tc.id, content = executionFailureDetail(invalid), status = "error")
         } catch (error: Exception) {
             ToolResult(id = tc.id, content = "工具内部错误（${error::class.java.simpleName}）", status = "error")
+        } finally {
+            liveOutput?.close(stepId, sink)
         }
     }
 

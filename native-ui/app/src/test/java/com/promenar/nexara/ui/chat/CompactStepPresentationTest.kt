@@ -46,6 +46,20 @@ class CompactStepPresentationTest {
     }
 
     @Test
+    fun `运行中工具按执行时登记的步骤 id 读取实时输出`() {
+        val message = toolMessage("ai_1", "shell_exec", "call_1").copy(
+            executionSteps = listOf(ExecutionStep("step_1000_call_1", "tool_call", "shell_exec", toolCallId = "call_1", timestamp = 1000)),
+        )
+        val tool = buildPipelineRenderPlan(listOf(message), true, false).steps
+            .filterIsInstance<PipelineStep.ToolExec>().single()
+        val running = toolInvocations(tool.steps).single { !it.complete }
+        // 界面步骤 id 带消息前缀，实时输出存储按 ToolExecutor 的原始步骤 id 登记。
+        assertThat(running.call?.id).isEqualTo("ai_1::step_1000_call_1")
+        assertThat(unscopedStepId(running.call!!.id)).isEqualTo("step_1000_call_1")
+        assertThat(unscopedStepId("step_1000_call_1")).isEqualTo("step_1000_call_1")
+    }
+
+    @Test
     fun `历史正文合成的工具步骤没有虚构耗时且结果保留全文`() {
         val result = "资料".repeat(400)
         val message = Message(
