@@ -940,7 +940,11 @@ internal fun InlineToolRow(
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val invocations = remember(steps) { toolInvocations(steps) }
-    val summary = remember(invocations, isExecuting) { toolGroupDisplaySummary(invocations, isExecuting) }
+    // 审批通过后的调用不在生成任务内执行，以实时输出通道判断它是否正在运行。
+    val liveKeys = LocalToolLiveOutput.current?.activeKeys?.collectAsState()?.value.orEmpty()
+    val liveRunning = invocations.any { invocation -> !invocation.complete && invocation.call?.id?.let(::unscopedStepId) in liveKeys }
+    val executing = isExecuting || liveRunning
+    val summary = remember(invocations, executing) { toolGroupDisplaySummary(invocations, executing) }
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
     var openedChange by remember { mutableStateOf<com.promenar.nexara.data.model.FileChangeSummary?>(null) }
     val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
@@ -966,7 +970,7 @@ internal fun InlineToolRow(
             failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )
-        if (isExecuting) {
+        if (executing) {
             // 运行中的命令在摘要下方显示实时输出，结束后由结果展示接替。
             invocations.filterNot { it.complete }.forEach { invocation ->
                 invocation.call?.id?.let { stepId -> key(stepId) { RunningToolLiveOutput(unscopedStepId(stepId)) } }

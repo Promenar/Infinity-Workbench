@@ -53,6 +53,25 @@ class ToolLiveOutputStoreTest {
     }
 
     @Test
+    fun `执行方使用过的通道登记为活动，关闭或替换后移除`() {
+        val store = ToolLiveOutputStore()
+        val first = store.open("a")
+        assertThat(store.activeKeys.value).isEmpty()
+        first.emit(STDOUT, "x")
+        assertThat(store.activeKeys.value).containsExactly("a")
+
+        val replacement = store.open("a")
+        assertThat(store.activeKeys.value).isEmpty()
+        // 被替换的旧通道继续输出也不会重新登记。
+        first.emit(STDOUT, "late")
+        assertThat(store.activeKeys.value).isEmpty()
+        replacement.onStop {}
+        assertThat(store.activeKeys.value).containsExactly("a")
+        store.close("a", replacement)
+        assertThat(store.activeKeys.value).isEmpty()
+    }
+
+    @Test
     fun `关闭只移除自己登记的通道`() {
         val store = ToolLiveOutputStore()
         val old = store.open("a")

@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -35,13 +37,27 @@ class ToolLiveOutputStore(
 
     private val entries = ConcurrentHashMap<String, Entry>()
     private val version = MutableStateFlow(0L)
+    private val _activeKeys = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * 执行方已使用的通道 key。审批通过后的工具由审批流程直接执行、不在生成任务内，
+     * 界面据此仍把这些调用显示为运行中。
+     */
+    val activeKeys: StateFlow<Set<String>> = _activeKeys.asStateFlow()
 
     /** 为一次工具调用打开通道；同一 key 再次打开时替换旧通道。 */
-    fun open(key: String): ToolLiveOutputSink = Entry().also { entries[key] = it; bump() }
+    fun open(key: String): ToolLiveOutputSink = Entry(key).also {
+        entries[key] = it
+        _activeKeys.update { keys -> keys - key }
+        bump()
+    }
 
     /** 只移除 [sink] 本身登记的通道，避免旧调用的收尾移除新调用。 */
     fun close(key: String, sink: ToolLiveOutputSink) {
-        if (entries.remove(key, sink)) bump()
+        if (entries.remove(key, sink)) {
+            _activeKeys.update { keys -> keys - key }
+            bump()
+        }
     }
 
     fun snapshot(key: String): Snapshot? = entries[key]?.takeIf { it.active }?.snapshot()
@@ -62,7 +78,7 @@ class ToolLiveOutputStore(
 
     private fun bump() = version.update { it + 1 }
 
-    private inner class Entry : ToolLiveOutputSink {
+    private inner class Entry(private val key: String) : ToolLiveOutputSink {
         private val buffer = StringBuilder()
         private var dropped = false
         @Volatile private var stop: (() -> Unit)? = null
@@ -75,7 +91,7 @@ class ToolLiveOutputStore(
         override fun emit(stream: ToolOutputStream, text: String) {
             if (text.isEmpty()) return
             synchronized(this) {
-                active = true
+                markActive()
                 buffer.append(text)
                 if (buffer.length > limit) {
                     var start = buffer.length - limit
@@ -90,15 +106,22 @@ class ToolLiveOutputStore(
 
         override fun onStop(stop: () -> Unit) {
             this.stop = stop
-            active = true
+            markActive()
             bump()
             if (stopRequested) stop()
         }
 
         override fun unsupported() {
             unsupportedBackend = true
-            active = true
+            markActive()
             bump()
+        }
+
+        private fun markActive() {
+            if (active) return
+            active = true
+            // 已被关闭或替换的通道不再登记。
+            if (entries[key] === this) _activeKeys.update { keys -> keys + key }
         }
 
         fun requestStop() {

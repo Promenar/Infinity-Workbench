@@ -32,7 +32,8 @@ fun toolLiveOutputRunningPreview() = LiveOutputFrame {
         }
     }
     CompositionLocalProvider(LocalToolLiveOutput provides store) {
-        InlineToolRow(steps = runningSteps, isExecuting = true, fontSize = 16)
+        // 审批通过后的调用不在生成任务内（isExecuting 为假），仍按实时输出通道显示为运行中。
+        InlineToolRow(steps = runningSteps, isExecuting = false, fontSize = 16)
     }
 }
 
