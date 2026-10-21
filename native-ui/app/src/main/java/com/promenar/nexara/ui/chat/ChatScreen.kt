@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -484,10 +485,13 @@ fun ChatScreenContent(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-              Column(Modifier.statusBarsPadding()) {
+              val progress = state.generationProgress?.takeIf { uiState.isGenerating }
+              // 顶部区域与页面同色不透明：进度行属于固定页头，不能让滚动正文透出来。
+              Column(Modifier.background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
                 ChatTopBar(
                     title = sessionTitle,
-                    showDivider = showTopBarDivider,
+                    // 有进度行时分隔线移到进度行下方，页头与正文的分界始终在最底部。
+                    showDivider = showTopBarDivider && progress == null,
                     onBack = actions.onNavigateBack,
                     onWorkspace = actions.onOpenWorkspace,
                     onSettings = actions.onOpenSettings,
@@ -496,14 +500,7 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                 )
-                if (uiState.isGenerating) state.generationProgress?.let { p ->
-                    Text(
-                        stringResource(R.string.p0_progress, p.rounds, p.calls, p.tokens,
-                            if (p.estimated) stringResource(R.string.p0_estimated) else ""),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
+                if (progress != null) ChatGenerationProgressBar(progress)
               }
             },
             snackbarHost = {
@@ -1282,6 +1279,29 @@ private fun TokenDetailRow(label: String, value: Int) {
     ) {
         Text(label, modifier = Modifier.weight(1f), style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** 生成中的轮次进度行：固定在标题栏下方，自带页面底色与底部分隔线，正文从分隔线下开始滚动。 */
+@Composable
+internal fun ChatGenerationProgressBar(progress: com.promenar.nexara.domain.generation.GenerationProgress) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .testTag(UiTags.CHAT_GENERATION_PROGRESS),
+    ) {
+        Text(
+            stringResource(R.string.p0_progress, progress.rounds, progress.calls, progress.tokens,
+                if (progress.estimated) stringResource(R.string.p0_estimated) else ""),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+        )
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
