@@ -380,6 +380,8 @@ class VectorizationQueueReferenceTest {
         coEvery { taskDao.getCompletedDocumentReferenceTasks() } returns emptyList()
         coJustRun { taskDao.deleteCompletedNonReferenceTasks() }
         coJustRun { taskDao.markStaleAsInterrupted(any()) }
+        coEvery { taskDao.deleteOrphanSessionStateTasks() } returns 0
+        coEvery { taskDao.recoverSessionStateProcessing(any()) } returns 0
         coEvery { taskDao.getRecoverableTasks() } returns emptyList()
         coEvery { taskDao.getAttentionTasks() } returns listOf(failed)
         val fileDao = mockk<FileEntryDao>()
@@ -421,6 +423,8 @@ class VectorizationQueueReferenceTest {
         coEvery { taskDao.getCompletedDocumentReferenceTasks() } returns emptyList()
         coJustRun { taskDao.deleteCompletedNonReferenceTasks() }
         coJustRun { taskDao.markStaleAsInterrupted(any()) }
+        coEvery { taskDao.deleteOrphanSessionStateTasks() } returns 0
+        coEvery { taskDao.recoverSessionStateProcessing(any()) } returns 0
         coEvery { taskDao.getRecoverableTasks() } returns emptyList()
         coEvery { taskDao.getAttentionTasks() } returns listOf(failed)
         coJustRun { taskDao.delete(failed) }

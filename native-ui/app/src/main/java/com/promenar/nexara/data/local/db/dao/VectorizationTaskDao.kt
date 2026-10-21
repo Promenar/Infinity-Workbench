@@ -120,6 +120,34 @@ interface VectorizationTaskDao {
     @Query("DELETE FROM vectorization_tasks WHERE type = 'session_graph' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = vectorization_tasks.assistant_message_id)")
     suspend fun deleteOrphanSessionGraphTasks(): Int
 
+    /** 任一所属消息消失的状态任务不可执行，失败行也在启动时清理。 */
+    @Query("DELETE FROM vectorization_tasks WHERE type = 'session_state' AND (status = 'failed' OR NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = vectorization_tasks.assistant_message_id AND m.session_id = vectorization_tasks.session_id) OR NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = vectorization_tasks.user_message_id AND m.session_id = vectorization_tasks.session_id))")
+    suspend fun deleteOrphanSessionStateTasks(): Int
+
+    @Query("DELETE FROM vectorization_tasks WHERE type = 'session_state' AND session_id = :sessionId AND (user_message_id = :messageId OR assistant_message_id = :messageId)")
+    suspend fun deleteSessionStateTasksForMessage(sessionId: String, messageId: String): Int
+
+    /** 快照条件避免旧任务的完成或失败覆盖同轮重新排入的任务。 */
+    @Query("UPDATE vectorization_tasks SET status = :status, updated_at = :updatedAt, error = :error, sub_status = :subStatus, progress = :progress WHERE id = :id AND type = 'session_state' AND created_at = :createdAt AND user_content IS :userContent AND ai_content IS :aiContent")
+    suspend fun updateSessionStateSnapshot(id: String, createdAt: Long, userContent: String?, aiContent: String?, status: String, updatedAt: Long, error: String?, subStatus: String?, progress: Double): Int
+
+    @Query("DELETE FROM vectorization_tasks WHERE id = :id AND type = 'session_state' AND created_at = :createdAt")
+    suspend fun deleteSessionStateSnapshot(id: String, createdAt: Long): Int
+
+    @Query("SELECT EXISTS(SELECT 1 FROM messages u JOIN messages a ON a.session_id = u.session_id WHERE u.id = :userId AND a.id = :assistantId AND u.session_id = :sessionId AND u.role = 'user' AND a.role = 'assistant' AND u.content = :userContent AND a.content = :aiContent)")
+    suspend fun hasSessionStateSource(sessionId: String?, userId: String?, assistantId: String?, userContent: String?, aiContent: String?): Boolean
+
+    /** 验证正文与入队同属一个事务，过期调度不能替换编辑后的新任务。 */
+    @Transaction
+    suspend fun insertSessionStateIfCurrent(task: VectorizationTaskEntity): Boolean {
+        if (!hasSessionStateSource(task.sessionId, task.userMessageId, task.assistantMessageId, task.userContent, task.aiContent)) return false
+        insert(task)
+        return true
+    }
+
+    @Query("UPDATE vectorization_tasks SET status = 'interrupted' WHERE type = 'session_state' AND status IN ('processing', 'extracting', 'vectorizing', 'saving') AND (:activeTaskId IS NULL OR id != :activeTaskId)")
+    suspend fun recoverSessionStateProcessing(activeTaskId: String?): Int
+
     @Query("UPDATE vectorization_tasks SET status = :status, updated_at = :updatedAt WHERE id = :taskId")
     suspend fun updateStatus(taskId: String, status: String, updatedAt: Long)
 

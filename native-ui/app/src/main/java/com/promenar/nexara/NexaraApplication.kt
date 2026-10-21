@@ -617,6 +617,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 memoryManager.addTurnToMemory(sessionId, userContent, assistantContent, userMessageId, assistantMessageId)
             },
             sessionGraph = sessionGraphScheduler,
+            sessionState = sessionStateScheduler,
         )
     }
     private val generationContextBuilder by lazy {
@@ -702,6 +703,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             mediaContextLoader = com.promenar.nexara.data.generation.ViewedMediaContextLoader(workspaceMediaViewer, ::resolveMediaViewTarget),
             sessionGraph = sessionGraphScheduler,
+            sessionState = sessionStateScheduler,
             subagentUsage = subagentRunStore,
         )
     }
@@ -1755,6 +1757,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 documentIndexService = createDocumentIndexService(config),
                 executionGate = sessionExecutionGate,
                 sessionGraph = com.promenar.nexara.data.rag.RoomSessionGraphProcessor({ database }, { graphExtractor }, sessionGraphStats),
+                sessionState = com.promenar.nexara.data.rag.RoomSessionStateProcessor(
+                    databaseProvider = { database },
+                    requestClient = ::createKgRequestClient,
+                    embeddingClient = { embeddingClient },
+                    settings = { kgExtractionSettings(ragConfigPersistence.loadFullConfig().copy(kgExtractionModel = null)) },
+                    timeoutMs = { ragConfigPersistence.loadFullConfig().kgExtractionTimeoutSeconds.toLong() * 1000 },
+                    executionGate = sessionExecutionGate,
+                    enabled = { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled },
+                ),
             )
         }
 
@@ -1770,6 +1781,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     val sessionGraphPort: com.promenar.nexara.data.rag.SessionGraphPort by lazy {
         com.promenar.nexara.data.rag.RoomSessionGraphPort({ database }, sessionGraphScheduler, sessionGraphStats, ::sessionGraphEnabled)
+    }
+
+    val sessionStateScheduler: com.promenar.nexara.data.rag.SessionStateScheduler by lazy {
+        com.promenar.nexara.data.rag.RoomSessionStateScheduler(
+            { database }, { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled }, { vectorizationQueue },
+        )
     }
 
     fun observeVectorizationQueueInstances(

@@ -53,6 +53,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
     private val subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -91,6 +92,7 @@ internal class DefaultChatGenerationRunnerFactory(
             toolBuildDispatcher = toolBuildDispatcher,
             mediaContextLoader = mediaContextLoader,
             sessionGraph = sessionGraph,
+            sessionState = sessionState,
             subagentUsage = subagentUsage,
         )
     }

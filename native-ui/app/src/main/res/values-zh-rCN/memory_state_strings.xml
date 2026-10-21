@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_state_section">对话记忆</string>
+    <string name="memory_state_title">提取事件与状态</string>
+    <string name="memory_state_desc">每轮额外调用一次模型</string>
+    <string name="memory_state_footer">每轮回复后在后台把这一轮整理成一句事件，以及“对象 · 属性 = 当前值”形式的状态；同一状态以最新一次为准。检索对话记忆时，当前状态会一并提供给模型。需要开启对话记忆并配置嵌入模型；使用摘要模型，未设置时使用主模型。</string>
+</resources>

@@ -260,7 +260,19 @@ interface MessageDao {
         ORDER BY day ASC
     """)
     suspend fun getDailyTokenTrend(sinceTimestamp: Long): List<DailyTokenRow>
+
+    /** 对话记忆的时间线按所属消息的发生时间排列。 */
+    @Query("SELECT id, created_at FROM messages WHERE id IN (:ids)")
+    suspend fun getCreatedAt(ids: List<String>): List<MessageTimeRow>
+
+    @Query("SELECT id FROM messages WHERE created_at >= :from AND created_at < :to")
+    suspend fun getIdsCreatedBetween(from: Long, to: Long): List<String>
 }
+
+data class MessageTimeRow(
+    val id: String,
+    val created_at: Long,
+)
 
 data class TokenTotalRow(
     val total_input: Long,

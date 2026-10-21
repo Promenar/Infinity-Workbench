@@ -100,6 +100,16 @@ class RagTracePresentationTest {
     }
 
     @Test
+    fun `对话状态与带时间的记录在类型后标出时间`() {
+        val state = RagReference(id = "st", content = "用户 · 编辑器: VS Code", kind = RagReferenceKind.STATE, occurredAt = 1_700_000_000_000L)
+
+        assertThat(ragReferenceParts(state, RagRetrievalTrace.SCORING_VECTOR)).containsExactly(
+            RagText(R.string.rag_details_kind_state),
+            RagText(R.string.rag_details_occurred_at, listOf(1_700_000_000_000L)),
+        ).inOrder()
+    }
+
+    @Test
     fun `详情说明列出实际执行的范围、覆盖的会话与助手，以及临时抽取`() {
         val scoped = hit.copy(
             memoryScope = ConversationScope.ALL_AGENTS,

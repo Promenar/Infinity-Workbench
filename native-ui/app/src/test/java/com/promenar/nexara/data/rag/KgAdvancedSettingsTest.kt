@@ -13,6 +13,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class KgAdvancedSettingsTest {
+    @Test fun `状态记忆抽取默认关闭且开关经真实持久层双向恢复`() {
+        val prefs = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("state-memory-settings-test", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        assertThat(RagConfigPersistence(prefs).loadFullConfig().memoryStateExtractionEnabled).isFalse()
+
+        KgAdvancedSettings.save(RagConfiguration(memoryStateExtractionEnabled = true), prefs)
+        assertThat(prefs.getBoolean("memory_state_extraction", false)).isTrue()
+        assertThat(RagConfigPersistence(prefs).loadFullConfig().memoryStateExtractionEnabled).isTrue()
+
+        KgAdvancedSettings.save(RagConfiguration(memoryStateExtractionEnabled = false), prefs)
+        assertThat(RagConfigPersistence(prefs).loadFullConfig().memoryStateExtractionEnabled).isFalse()
+        prefs.edit().clear().commit()
+    }
+
     @Test fun `高级设置经真实持久层恢复检索与抽取预算`() {
         val prefs = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("kg-advanced-test", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()

@@ -157,12 +157,17 @@ data class RagReference(
     /** 来源类型，取值见 [RagReferenceKind]。 */
     val kind: String? = null,
     val documentContentHash: String? = null,
+    /** 对话记录所属消息的发生时间，状态为其最近一次更新的时间；文档为 null。 */
+    val occurredAt: Long? = null,
 )
 
 object RagReferenceKind {
     const val MEMORY = "memory"
     const val DOCUMENT = "document"
+    /** 对话事件摘要。 */
     const val SUMMARY = "summary"
+    /** 对话状态（对象 · 属性的当前值）。 */
+    const val STATE = "state"
 }
 
 /**

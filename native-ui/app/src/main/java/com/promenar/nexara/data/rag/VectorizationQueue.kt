@@ -32,6 +32,7 @@ class VectorizationQueue(
     private val documentIndexService: DocumentIndexService? = null,
     private val executionGate: SessionExecutionGate? = null,
     private val sessionGraph: SessionGraphTaskProcessor? = null,
+    private val sessionState: SessionStateTaskProcessor? = null,
 ) : FileIndexEventSink {
     private val queue = mutableListOf<VectorizationTask>()
     private val retainedAttention = mutableListOf<VectorizationTask>()
@@ -214,6 +215,43 @@ class VectorizationQueue(
         }
     }
 
+    /** 同轮任务以助手消息定位；重新排入时取消旧快照，防止编辑后仍写回旧正文。 */
+    suspend fun enqueueSessionState(
+        sessionId: String,
+        userMessageId: String,
+        assistantMessageId: String,
+        userContent: String,
+        aiContent: String,
+    ): Boolean = withSessionAdmission(sessionId) {
+        enqueueMutex.withLock {
+            ensureSessionNotFenced(sessionId)
+            val id = sessionStateTaskId(assistantMessageId)
+            val previous = vectorizationTaskDao.getById(id)
+            val queuedRevision = synchronized(queueLock) {
+                (queue + listOfNotNull(processingTask)).filter { it.id == id }.maxOfOrNull { it.createdAt } ?: 0
+            }
+            val task = VectorizationTask(
+                id = id, type = TYPE_SESSION_STATE, sessionId = sessionId,
+                userMessageId = userMessageId, assistantMessageId = assistantMessageId,
+                userContent = userContent, aiContent = aiContent, status = "pending",
+                createdAt = maxOf(System.currentTimeMillis(), maxOf(previous?.createdAt ?: 0, queuedRevision) + 1),
+            )
+            if (!vectorizationTaskDao.insertSessionStateIfCurrent(task.toEntity())) return@withLock false
+            val active = synchronized(queueLock) {
+                processingTask?.takeIf { it.id == id }?.let { processingJob to it.targetKey() }
+            }
+            active?.first?.cancel(TargetSupersededCancellation(active.second))
+            synchronized(queueLock) {
+                queue.removeAll { it.id == id }
+                retainedAttention.removeAll { it.id == id }
+                queue.add(task)
+            }
+            notifyStateChange()
+            startProcessorIfNeeded()
+            true
+        }
+    }
+
     /** 先持久化文件引用任务，再进入内存队列；返回即表示进程死亡后可恢复。 */
     suspend fun enqueueDocumentReference(
         workspaceRootUuid: String,
@@ -364,6 +402,13 @@ class VectorizationQueue(
                 "document" -> processDocumentTask(task)
                 TYPE_DOCUMENT_REFERENCE -> processDocumentReferenceTask(task)
                 TYPE_SESSION_GRAPH -> processSessionGraphTask(task)
+                TYPE_SESSION_STATE -> {
+                    task.status = "extracting"
+                    task.subStatus = "正在抽取本轮状态记忆"
+                    saveTaskToDb(task)
+                    notifyStateChange()
+                    (sessionState ?: error("会话状态抽取未配置")).process(task)
+                }
                 else -> throw IllegalStateException("未知的向量化任务类型: ${task.type}")
             }
 
@@ -446,6 +491,7 @@ class VectorizationQueue(
                     // 失败后暂停 2 秒再移除，让用户看清错误信息
                     beforeFailureDisplayDelayForTest()
                     delay(2000)
+                    if (task.type == TYPE_SESSION_STATE) removeTaskFromDb(task)
                 } catch (_: TargetSuperseded) {
                     superseded = true
                     retryCountMap.remove(retryKey)
@@ -464,7 +510,7 @@ class VectorizationQueue(
                 var nextJob: Job? = null
                 var shouldCleanup = false
                 synchronized(queueLock) {
-                    if (!superseded && task.status in setOf("failed", "partial") &&
+                    if (!superseded && task.type != TYPE_SESSION_STATE && task.status in setOf("failed", "partial") &&
                         retainedAttention.none { it.targetKey() == task.targetKey() }
                     ) {
                         retainedAttention.add(task)
@@ -873,7 +919,10 @@ class VectorizationQueue(
             }
             task.updatedAt = System.currentTimeMillis()
             val entity = task.toEntity()
-            if (task.type == TYPE_DOCUMENT_REFERENCE) {
+            if (task.type == TYPE_SESSION_STATE) {
+                if (vectorizationTaskDao.updateSessionStateSnapshot(task.id, task.createdAt, task.userContent, task.aiContent,
+                    task.status, task.updatedAt, task.error, task.subStatus, task.progress) != 1) throw TargetSuperseded(task.targetKey())
+            } else if (task.type == TYPE_DOCUMENT_REFERENCE) {
                 if (vectorizationTaskDao.updateForTarget(entity) != 1) {
                     throw TargetSuperseded(task.targetKey())
                 }
@@ -897,7 +946,7 @@ class VectorizationQueue(
         docId = docId,
         docTitle = docTitle,
         workspaceRootUuid = workspaceRootUuid,
-        sessionId = if (type == "memory" || type == TYPE_SESSION_GRAPH) sessionId else null,
+        sessionId = if (type in CONVERSATION_TASK_TYPES) sessionId else null,
         userContent = userContent,
         aiContent = aiContent,
         userMessageId = userMessageId,
@@ -918,7 +967,9 @@ class VectorizationQueue(
     )
 
     private suspend fun removeTaskFromDb(task: VectorizationTask) {
-        if (task.type == TYPE_DOCUMENT_REFERENCE) {
+        if (task.type == TYPE_SESSION_STATE) {
+            if (vectorizationTaskDao.deleteSessionStateSnapshot(task.id, task.createdAt) != 1) throw TargetSuperseded(task.targetKey())
+        } else if (task.type == TYPE_DOCUMENT_REFERENCE) {
             val targetContentHash = task.targetContentHash ?: throw TargetSuperseded(task.targetKey())
             if (vectorizationTaskDao.deleteForTarget(
                     task.id,
@@ -952,7 +1003,9 @@ class VectorizationQueue(
         var recovered = false
         try {
             cleanupCompletedTasks()
+            vectorizationTaskDao.deleteOrphanSessionStateTasks()
             vectorizationTaskDao.markStaleAsInterrupted(System.currentTimeMillis() - 30_000)
+            vectorizationTaskDao.recoverSessionStateProcessing(synchronized(queueLock) { processingTask?.id })
             val interruptedTasks = normalizeRecoverableTasks(
                 vectorizationTaskDao.getRecoverableTasks(),
             )
@@ -1460,9 +1513,11 @@ class VectorizationQueue(
         private const val MAX_RETRIES = 3
         const val TYPE_DOCUMENT_REFERENCE = "document_reference"
         const val TYPE_SESSION_GRAPH = "session_graph"
-        val CONVERSATION_TASK_TYPES = setOf("memory", TYPE_SESSION_GRAPH)
+        const val TYPE_SESSION_STATE = "session_state"
+        val CONVERSATION_TASK_TYPES = setOf("memory", TYPE_SESSION_GRAPH, TYPE_SESSION_STATE)
 
         fun sessionGraphTaskId(assistantMessageId: String) = "session-graph-$assistantMessageId"
+        fun sessionStateTaskId(assistantMessageId: String) = "session-state-$assistantMessageId"
         private const val LEGACY_DOCUMENT_TASK_TYPE = "document"
         private val PROCESSING_STATUSES = setOf(
             "processing", "extracting_source", "chunking", "vectorizing", "saving", "extracting",

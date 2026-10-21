@@ -107,7 +107,7 @@ class VectorStore(
         return searchInMemory(queryEmbedding, rows, threshold, limit, onWarning)
     }
 
-    /** 按检索范围读取对话记忆或摘要后做相似度排序。 */
+    /** 按检索范围读取对话记忆或摘要后做相似度排序；[rowFilter] 在相似度过滤与截断之前筛选行。 */
     suspend fun searchConversation(
         queryEmbedding: FloatArray,
         reach: ConversationReach,
@@ -115,7 +115,24 @@ class VectorStore(
         limit: Int,
         threshold: Float,
         onWarning: ((String) -> Unit)? = null,
-    ): List<SearchResult> = searchInMemory(queryEmbedding, vectorDao.conversationRows(reach, type), threshold, limit, onWarning)
+        rowFilter: ((VectorEntity) -> Boolean)? = null,
+    ): List<SearchResult> {
+        val rows = vectorDao.conversationRows(reach, type).let { rows -> rowFilter?.let(rows::filter) ?: rows }
+        return searchInMemory(queryEmbedding, rows, threshold, limit, onWarning)
+    }
+
+    /** 按范围读取一类对话行的全部可见行，附与查询向量的相似度；维度不符的行记为 0。 */
+    suspend fun conversationRowsScored(
+        queryEmbedding: FloatArray,
+        reach: ConversationReach,
+        type: String,
+    ): List<Pair<VectorEntity, Float>> {
+        val queryMag = magnitude(queryEmbedding)
+        return vectorDao.conversationRows(reach, type).map { row ->
+            val vec = fromBlob(row.embedding)
+            row to if (vec.size == queryEmbedding.size) cosineSimilarity(queryEmbedding, vec, queryMag) else 0f
+        }
+    }
 
     suspend fun searchDocuments(
         queryEmbedding: FloatArray,

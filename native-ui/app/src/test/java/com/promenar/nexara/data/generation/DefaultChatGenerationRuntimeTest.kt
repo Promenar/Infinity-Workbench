@@ -609,6 +609,61 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `postProcess仅在成功且可嵌入的记忆轮次于图谱之后排入状态抽取`() = runTest {
+        val scheduled = mutableListOf<String>()
+        val memory = mockk<MemoryManager> { every { canEmbed } returns true }
+        val state = com.promenar.nexara.data.rag.SessionStateScheduler { sessionId, assistantId, userId ->
+            scheduled += "state:$sessionId:$assistantId:$userId"; true
+        }
+        val enabled = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            memoryManager = memory,
+            sessionGraph = { _, _, _ -> scheduled += "graph"; true },
+            sessionState = state,
+        )
+        coEvery { enabled.postProcessor.updateStats(any()) } returns Unit
+
+        enabled.runtime.postProcess(enabled.request, GenerationSnapshot(content = "answer"))
+        enabled.runtime.postProcess(enabled.request, GenerationSnapshot(content = "partial", failure = GenerationFailure(GenerationFailureCode.RATE_LIMIT)))
+        enabled.runtime.postProcess(enabled.request.copy(userContent = " "), GenerationSnapshot(content = "answer"))
+        enabled.runtime.postProcess(enabled.request, GenerationSnapshot(content = " "))
+
+        val noEmbedding = mockk<MemoryManager> { every { canEmbed } returns false }
+        for ((options, manager) in listOf(
+            RagOptions(enableMemory = false, enableDocs = false) to memory,
+            RagOptions(enableMemory = true, enableDocs = false) to noEmbedding,
+            RagOptions(enableMemory = true, enableDocs = false) to null,
+        )) {
+            val excluded = postProcessFixture(ragOptions = options, memoryManager = manager, sessionState = state)
+            coEvery { excluded.postProcessor.updateStats(any()) } returns Unit
+            excluded.runtime.postProcess(excluded.request, GenerationSnapshot(content = "answer"))
+        }
+
+        assertThat(scheduled).containsExactly("graph", "state:session:assistant:user").inOrder()
+    }
+
+    @Test
+    fun `postProcess状态排队异常不影响本轮且取消照常传播`() = runTest {
+        val memory = mockk<MemoryManager> { every { canEmbed } returns true }
+        val failing = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory,
+            sessionState = { _, _, _ -> error("状态队列不可用") },
+        )
+        coEvery { failing.postProcessor.updateStats(any()) } returns Unit
+        failing.runtime.postProcess(failing.request, GenerationSnapshot(content = "answer"))
+
+        val cancellation = CancellationException("state-cancel")
+        val cancelled = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory,
+            sessionState = { _, _, _ -> throw cancellation },
+        )
+        coEvery { cancelled.postProcessor.updateStats(any()) } returns Unit
+        assertThat(runCatching {
+            cancelled.runtime.postProcess(cancelled.request, GenerationSnapshot(content = "answer"))
+        }.exceptionOrNull()).isSameInstanceAs(cancellation)
+    }
+
+    @Test
     fun `postProcess把子代理用量并入本轮助手消息的附加用量，只汇入一次`() = runTest {
         val ledger = object : com.promenar.nexara.data.subagent.SubagentUsageLedger {
             var pending: TokenUsage? = TokenUsage(input = 30, output = 12, total = 42, estimated = true)
@@ -864,6 +919,7 @@ class DefaultChatGenerationRuntimeTest {
         sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
         sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
         subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
+        sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
     ): PostProcessFixture {
         val messages = (0 until messageCount).map { index ->
             Message(
@@ -923,6 +979,7 @@ class DefaultChatGenerationRuntimeTest {
             sshRuntime = sshRuntime,
             sessionGraph = sessionGraph,
             subagentUsage = subagentUsage,
+            sessionState = sessionState,
         )
         DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedContext").apply {
             isAccessible = true

@@ -14,8 +14,10 @@ private const val ACTIVE_FILE_VECTOR_ALIAS = "((vectors.file_uuid IS NOT NULL AN
 // 对话记忆按一轮写入，start/end_message_id 是该轮的用户消息与助手消息；任一消息被删除、丢弃或回退后该轮记忆不可见。
 // 撤销删除以原 id 恢复消息，记忆随之可见；物理删除由孤儿清理在撤销窗口后执行。文档向量的这两列存放文档 id，不受此约束。
 private const val MEMORY_ROW = "substr(COALESCE(vectors.metadata, ''), 1, 16) = '{\"type\":\"memory\"'"
+private const val STATE_MEMORY_ROW = "(substr(COALESCE(vectors.metadata, ''), 1, 17) = '{\"type\":\"summary\"' OR substr(COALESCE(vectors.metadata, ''), 1, 15) = '{\"type\":\"state\"')"
+private const val TURN_MEMORY_ROW = "($MEMORY_ROW OR $STATE_MEMORY_ROW)"
 private const val MEMORY_TURN_PRESENT = "((vectors.start_message_id IS NULL OR EXISTS (SELECT 1 FROM messages turn_message WHERE turn_message.id = vectors.start_message_id)) AND (vectors.end_message_id IS NULL OR EXISTS (SELECT 1 FROM messages turn_message WHERE turn_message.id = vectors.end_message_id)))"
-private const val MEMORY_VISIBLE = "(NOT ($MEMORY_ROW) OR $MEMORY_TURN_PRESENT)"
+private const val MEMORY_VISIBLE = "(NOT ($TURN_MEMORY_ROW) OR $MEMORY_TURN_PRESENT)"
 private const val ACTIVE_VECTOR = "($ACTIVE_FILE_VECTOR AND $MEMORY_VISIBLE)"
 private const val ACTIVE_VECTOR_ALIAS = "($ACTIVE_FILE_VECTOR_ALIAS AND $MEMORY_VISIBLE)"
 
@@ -158,18 +160,27 @@ interface VectorDao {
     @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND end_message_id = :messageId AND " + MEMORY_ROW)
     suspend fun getMemoryByAssistantMessage(sessionId: String, messageId: String): List<VectorEntity>
 
+    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND end_message_id = :messageId AND " + STATE_MEMORY_ROW)
+    suspend fun getStateMemoryByAssistantMessage(sessionId: String, messageId: String): List<VectorEntity>
+
+    @Query("DELETE FROM vectors WHERE session_id = :sessionId AND end_message_id = :messageId AND " + STATE_MEMORY_ROW)
+    suspend fun deleteStateMemoryByAssistantMessage(sessionId: String, messageId: String): Int
+
+    @Query("DELETE FROM vectors WHERE session_id = :sessionId AND start_message_id = :messageId AND " + STATE_MEMORY_ROW)
+    suspend fun deleteStateMemoryByUserMessage(sessionId: String, messageId: String): Int
+
     @Query("DELETE FROM vectors WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>): Int
 
     /** 恢复的消息重新使对应记忆生效，撤销孤儿标记。 */
-    @Query("UPDATE vectors SET stale = 0 WHERE stale = 1 AND " + MEMORY_ROW + " AND " + MEMORY_TURN_PRESENT)
+    @Query("UPDATE vectors SET stale = 0 WHERE stale = 1 AND " + TURN_MEMORY_ROW + " AND " + MEMORY_TURN_PRESENT)
     suspend fun reviveRestoredMemory(): Int
 
     /** 以 stale 与 updated_at 记录记忆失去所属消息的时间，作为撤销窗口起点。 */
-    @Query("UPDATE vectors SET stale = 1, updated_at = :now WHERE stale = 0 AND " + MEMORY_ROW + " AND NOT " + MEMORY_TURN_PRESENT)
+    @Query("UPDATE vectors SET stale = 1, updated_at = :now WHERE stale = 0 AND " + TURN_MEMORY_ROW + " AND NOT " + MEMORY_TURN_PRESENT)
     suspend fun markOrphanMemory(now: Long): Int
 
-    @Query("DELETE FROM vectors WHERE stale = 1 AND updated_at < :cutoff AND " + MEMORY_ROW + " AND NOT " + MEMORY_TURN_PRESENT)
+    @Query("DELETE FROM vectors WHERE stale = 1 AND updated_at < :cutoff AND " + TURN_MEMORY_ROW + " AND NOT " + MEMORY_TURN_PRESENT)
     suspend fun purgeOrphanMemory(cutoff: Long): Int
 
     @Query("SELECT * FROM vectors WHERE $TYPE_IS AND $CONVERSATION_ROW AND vectors.session_id = :sessionId AND $ACTIVE_VECTOR_ALIAS")

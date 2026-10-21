@@ -1452,7 +1452,9 @@
     <string name="rag_trace_failed_hint">The knowledge base search hit an error (embedding request or search failed). The reply was generated without it.</string>
     <string name="rag_details_kind_memory">Memory</string>
     <string name="rag_details_kind_document">Document</string>
-    <string name="rag_details_kind_summary">Summary</string>
+    <string name="rag_details_kind_summary">Event</string>
+    <string name="rag_details_kind_state">State</string>
+    <string name="rag_details_occurred_at">%1$tm-%1$td %1$tH:%1$tM</string>
     <string name="rag_details_score_similarity">Similarity %1$d%%</string>
     <string name="rag_details_score_fused">Hybrid score %1$d%%</string>
     <string name="rag_details_score_rerank_value">Rerank %1$d%%</string>

@@ -58,6 +58,7 @@ class RoomConversationMemoryLifecycle(
     private val undoWindowMillis: Long = 24.hours.inWholeMilliseconds,
     /** 编辑助手消息后按新正文重新排入会话图谱抽取；为空时只清除旧证据。 */
     private val sessionGraph: SessionGraphScheduler? = null,
+    private val sessionState: SessionStateScheduler? = null,
 ) : ConversationMemoryLifecycle {
     // 编辑重写先读旧行再写新行，并发执行会留下重复记忆；所有操作串行。
     private val mutex = Mutex()
@@ -83,6 +84,7 @@ class RoomConversationMemoryLifecycle(
         val vectors = database.vectorDao()
         database.withTransaction { invalidateSessionJit(database, sessionId) }
         editTurnGraph(database, sessionId, message)
+        editTurnState(database, sessionId, message)
         when (MessageRole.fromSerializedName(message.role)) {
             // 用户消息变化后该轮问答已不成立；随后的重新生成会写入新的一轮。
             MessageRole.USER -> {
@@ -120,6 +122,8 @@ class RoomConversationMemoryLifecycle(
         val ids = database.vectorDao().getMemoryByAssistantMessage(sessionId, assistantMessageId).map { it.id }
         database.withTransaction {
             if (ids.isNotEmpty()) database.vectorDao().deleteByIds(ids)
+            database.vectorDao().deleteStateMemoryByAssistantMessage(sessionId, assistantMessageId)
+            database.vectorizationTaskDao().deleteSessionStateTasksForMessage(sessionId, assistantMessageId)
             invalidateSessionJit(database, sessionId)
         }
         ids.size
@@ -139,7 +143,12 @@ class RoomConversationMemoryLifecycle(
         val previous = vectors.getMemoryByAssistantMessage(sessionId, assistantMessageId).map { it.id }
         val written = turnWriter.write(sessionId, userMessage.content, message.content, userMessage.id, message.id)
         if (previous.isNotEmpty()) withContext(NonCancellable) { vectors.deleteByIds(previous) }
-        database.withTransaction { invalidateSessionJit(database, sessionId) }
+        database.withTransaction {
+            invalidateSessionJit(database, sessionId)
+            vectors.deleteStateMemoryByAssistantMessage(sessionId, assistantMessageId)
+            database.vectorizationTaskDao().deleteSessionStateTasksForMessage(sessionId, assistantMessageId)
+        }
+        scheduleState(sessionId, assistantMessageId, userMessage.id)
         written
     } }
 
@@ -168,6 +177,7 @@ class RoomConversationMemoryLifecycle(
         // 撤销缓冲只在进程内；记忆片段过窗删除后，同一轮的图谱证据随之物理删除。
         val (edges, nodes) = database.kgEvidenceDao().purgeOrphanTurns()
         val tasks = database.vectorizationTaskDao().deleteOrphanSessionGraphTasks()
+        database.vectorizationTaskDao().deleteOrphanSessionStateTasks()
         if (edges > 0 || nodes > 0 || tasks > 0) {
             NexaraLogger.log("[ConversationMemory] 回收会话图谱关系 $edges、实体 $nodes、任务 $tasks")
         }
@@ -199,6 +209,40 @@ class RoomConversationMemoryLifecycle(
             throw cancelled
         } catch (error: Exception) {
             NexaraLogger.logError("[ConversationMemory] 编辑后更新会话图谱失败", error)
+        }
+    }
+
+    private suspend fun editTurnState(
+        database: NexaraDatabase,
+        sessionId: String,
+        message: com.promenar.nexara.data.local.db.entity.MessageEntity,
+    ) {
+        val vectors = database.vectorDao()
+        val tasks = database.vectorizationTaskDao()
+        when (MessageRole.fromSerializedName(message.role)) {
+            MessageRole.USER -> database.withTransaction {
+                vectors.deleteStateMemoryByUserMessage(sessionId, message.id)
+                tasks.deleteSessionStateTasksForMessage(sessionId, message.id)
+            }
+            MessageRole.ASSISTANT -> {
+                val hadState = database.withTransaction {
+                    val rows = vectors.deleteStateMemoryByAssistantMessage(sessionId, message.id)
+                    val pending = tasks.deleteSessionStateTasksForMessage(sessionId, message.id)
+                    rows > 0 || pending > 0
+                }
+                if (hadState) scheduleState(sessionId, message.id, null)
+            }
+            else -> Unit
+        }
+    }
+
+    private suspend fun scheduleState(sessionId: String, assistantMessageId: String, userMessageId: String?) {
+        try {
+            sessionState?.schedule(sessionId, assistantMessageId, userMessageId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            NexaraLogger.logError("[ConversationMemory] 状态记忆抽取排队失败", error)
         }
     }
 

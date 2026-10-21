@@ -37,6 +37,7 @@ class KgRequestClient(
     suspend fun extract(
         modelId: String?, systemPrompt: String, text: String, timeoutMs: Long,
         maxOutputTokens: Int = defaultMaxOutputTokens,
+        responseParser: (String) -> ExtractionResult = KgGraphValidation::parse,
     ): ExtractionResult =
         withContext(dispatcher) {
             require(maxOutputTokens > 0) { "知识图谱请求输出上限必须大于 0" }
@@ -73,7 +74,7 @@ class KgRequestClient(
                         outputTokens = (response.content.length.toLong() + 1) / 2,
                         estimated = true,
                     )
-                    KgGraphValidation.parse(response.content).copy(usage = reportedUsage!!)
+                    responseParser(response.content).copy(usage = reportedUsage!!)
                 } ?: ExtractionResult.failure(KgExtractionStatus.TIMEOUT, "知识图谱抽取超时")
             } catch (cancelled: CancellationException) {
                 throw cancelled

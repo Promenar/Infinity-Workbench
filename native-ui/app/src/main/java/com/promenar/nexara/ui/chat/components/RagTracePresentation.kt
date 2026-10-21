@@ -144,13 +144,15 @@ private fun rerankValue(trace: RagRetrievalTrace): List<RagText> = when (trace.r
     else -> listOf(RagText(R.string.rag_trace_rerank_value_off))
 }
 
-/** 单条引用的分数与名次说明：来源类型、召回分、重排分，以及重排前后的名次。 */
+/** 单条引用的分数与名次说明：来源类型、对话记录的时间、召回分、重排分，以及重排前后的名次。 */
 internal fun ragReferenceParts(reference: RagReference, scoring: String?): List<RagText> = buildList {
     when (reference.kind) {
         RagReferenceKind.MEMORY -> add(RagText(R.string.rag_details_kind_memory))
         RagReferenceKind.DOCUMENT -> add(RagText(R.string.rag_details_kind_document))
         RagReferenceKind.SUMMARY -> add(RagText(R.string.rag_details_kind_summary))
+        RagReferenceKind.STATE -> add(RagText(R.string.rag_details_kind_state))
     }
+    reference.occurredAt?.let { add(RagText(R.string.rag_details_occurred_at, listOf(it))) }
     if (reference.score > 0f) {
         add(
             RagText(

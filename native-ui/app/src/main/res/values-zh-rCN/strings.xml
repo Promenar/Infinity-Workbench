@@ -1451,7 +1451,9 @@
     <string name="rag_trace_failed_hint">知识库检索出错（嵌入请求失败或检索异常），本次回复未使用知识库。</string>
     <string name="rag_details_kind_memory">记忆</string>
     <string name="rag_details_kind_document">文档</string>
-    <string name="rag_details_kind_summary">摘要</string>
+    <string name="rag_details_kind_summary">事件</string>
+    <string name="rag_details_kind_state">状态</string>
+    <string name="rag_details_occurred_at">%1$tm-%1$td %1$tH:%1$tM</string>
     <string name="rag_details_score_similarity">相似度 %1$d%%</string>
     <string name="rag_details_score_fused">融合分 %1$d%%</string>
     <string name="rag_details_score_rerank_value">重排分 %1$d%%</string>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="memory_state_section">Chat memory</string>
+    <string name="memory_state_title">Extract events and states</string>
+    <string name="memory_state_desc">One extra model call per turn</string>
+    <string name="memory_state_footer">After each reply, condenses the turn in the background into one event and states in the form “subject · attribute = current value”. A newer value of the same state replaces the older one, and current states are given to the model whenever chat memory is searched. Requires chat memory and an embedding model; uses the summary model, or the main model when none is set.</string>
+</resources>

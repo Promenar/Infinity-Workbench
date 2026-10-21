@@ -6,8 +6,11 @@ import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
 import com.promenar.nexara.data.model.RagRetrievalTrace
+import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
+import java.time.Instant
+import java.time.ZoneId
 
 class MemoryManager(
     private val vectorStore: VectorStore,
@@ -16,7 +19,9 @@ class MemoryManager(
     private val embeddingClient: EmbeddingClient,
     private val rerankClient: RerankClient? = null,
     private val queryRewriter: QueryRewriter? = null,
-    val ragConfig: RagConfiguration = RagConfiguration()  // 改为 public 以支持 ContextBuilder 读取全局 KG 开关
+    val ragConfig: RagConfiguration = RagConfiguration(),  // 改为 public 以支持 ContextBuilder 读取全局 KG 开关
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val scopeResolver by lazy { RetrievalScopeResolver(graphStore.database) }
 
@@ -185,6 +190,30 @@ class MemoryManager(
             }
         }
 
+        val now = clock()
+        val zoneId = zone()
+        // 问题回顾某段时间的对话时，该时段的记录不受相似度阈值限制，并优先进入结果。
+        val recallRange = if (canSearchMemory) parseRecallTimeRange(query, Instant.ofEpochMilli(now).atZone(zoneId)) else null
+        val inRangeResults = recallRange?.let { range ->
+            try {
+                searchConversationInRange(range, scope.memory, queryEmbeddings, effectiveConfig.memoryLimit + EVENT_LIMIT)
+                    .also { NexaraLogger.log("[$TAG] recall range search: ${it.size} results in [${range.from}, ${range.to})") }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                NexaraLogger.logError("[$TAG] recall range search failed", e)
+                null
+            }
+        }.orEmpty()
+        val states = if (!canSearchMemory) emptyList() else try {
+            currentStates(scope.memory, queryEmbeddings.first().second)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            NexaraLogger.logError("[$TAG] load states failed", e)
+            emptyList()
+        }
+
         if (canSearchDocs) {
             onProgress?.invoke("Searching documents", 50, "Scanning all indexed documents")
             try {
@@ -233,7 +262,7 @@ class MemoryManager(
         }
 
         onProgress?.invoke("Ranking results", 90, "${finalResults.size} candidates found")
-        if (finalResults.isEmpty()) {
+        if (finalResults.isEmpty() && inRangeResults.isEmpty() && states.isEmpty()) {
             NexaraLogger.log("[$TAG] No results after fusion, returning empty")
             return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_EMPTY, memoryStats)
         }
@@ -268,21 +297,31 @@ class MemoryManager(
         val finalCap = if (canRerank) effectiveConfig.rerankFinalK
             else effectiveConfig.memoryLimit + effectiveConfig.docLimit
 
-        val topMemories = rerankedResults
+        // 对话记录：时段内的记录优先，其余按相关度加新近度排序；同一记录以重排后的分数为准。
+        val rerankedById = rerankedResults.associateBy { it.id }
+        val inRange = inRangeResults.map { rerankedById[it.id] ?: it }
+        val inRangeIds = inRange.mapTo(HashSet()) { it.id }
+        val conversationCandidates = rerankedResults.filter { parseTypeFromMetadata(it.metadata) in CONVERSATION_RECORD_TYPES }
+        val occurredAt = occurredAt(conversationCandidates + inRange)
+        val bonus = MemoryTimeline.recencyBonus(conversationCandidates.associate { it.id to occurredAt.getValue(it.id) })
+        val priority = compareByDescending<SearchResult> { it.id in inRangeIds }
+            .thenByDescending { it.similarity + (bonus[it.id] ?: 0f) }
+        val conversation = (inRange + conversationCandidates.filterNot { it.id in inRangeIds }).sortedWith(priority)
+        val topMemories = conversation
             .filter { parseTypeFromMetadata(it.metadata) == "memory" }
             .take(effectiveConfig.memoryLimit)
+        val topEvents = conversation
+            .filter { parseTypeFromMetadata(it.metadata) == "summary" }
+            .take(EVENT_LIMIT)
         val topDocs = rerankedResults
             .filter { parseTypeFromMetadata(it.metadata) == "doc" }
             .take(effectiveConfig.docLimit)
-        val combinedResults = (topMemories + topDocs)
-            .sortedByDescending { it.similarity }
+        val combinedResults = (topMemories + topEvents + topDocs)
+            .sortedWith(priority)
             .take(finalCap)
 
         val endTime = System.currentTimeMillis()
-        val retrievedChunks = combinedResults.joinToString("\n\n") { r ->
-            val typeLabel = if (parseTypeFromMetadata(r.metadata) == "memory") "Memory" else "Document"
-            "[$typeLabel]: ${r.content}"
-        }
+        val retrievedChunks = formatRetrievedChunks(combinedResults, states, occurredAt, now, zoneId)
         val contextBlock = if (effectiveConfig.summaryTemplate.isNotBlank()) {
             effectiveConfig.summaryTemplate
                 .replace("{retrieved_chunks}", retrievedChunks)
@@ -294,10 +333,10 @@ class MemoryManager(
         val recallRanks = uniqueResults.withIndex().associate { (index, result) -> result.id to index + 1 }
         val references = combinedResults.mapIndexed { finalIndex, r ->
             val type = parseTypeFromMetadata(r.metadata)
-            val isMemory = type == "memory"
             val recallRank = recallRanks[r.id]
             val sourceLabel = when {
-                isMemory -> "对话记忆"
+                type == "memory" -> "对话记忆"
+                type == "summary" -> "对话事件"
                 r.docId != null -> {
                     documentReferenceSource(r.metadata, r.docId)
                 }
@@ -319,11 +358,20 @@ class MemoryManager(
                     "summary" -> RagReferenceKind.SUMMARY
                     else -> null
                 },
+                occurredAt = occurredAt[r.id],
+            )
+        } + states.map { state ->
+            RagReference(
+                id = state.fact.rowId,
+                content = state.fact.content,
+                source = "对话状态",
+                // 当前状态不按相关度入选，不显示相似度。
+                kind = RagReferenceKind.STATE,
+                occurredAt = state.fact.occurredAt,
             )
         }
-        val memoryCount = combinedResults.count { parseTypeFromMetadata(it.metadata) == "memory" }
+        val memoryCount = combinedResults.count { parseTypeFromMetadata(it.metadata) in CONVERSATION_RECORD_TYPES } + states.size
         val documentCount = combinedResults.count { parseTypeFromMetadata(it.metadata) == "doc" }
-
         return RetrieveResult(
             context = "relevant_context_block (参考上下文):\n$contextBlock",
             references = references,
@@ -331,16 +379,16 @@ class MemoryManager(
                 searchTimeMs = endTime - startTime,
                 rerankTimeMs = actualRerankTimeMs,
                 recallCount = uniqueResults.size,
-                finalCount = combinedResults.size,
+                finalCount = references.size,
                 sourceDistribution = SourceDistribution(
                     memory = memoryCount,
                     documents = documentCount,
                 )
             ),
             trace = RagRetrievalTrace(
-                outcome = if (combinedResults.isEmpty()) RagRetrievalTrace.OUTCOME_EMPTY else RagRetrievalTrace.OUTCOME_HIT,
+                outcome = if (references.isEmpty()) RagRetrievalTrace.OUTCOME_EMPTY else RagRetrievalTrace.OUTCOME_HIT,
                 recallCount = uniqueResults.size,
-                selectedCount = combinedResults.size,
+                selectedCount = references.size,
                 scoring = if (hybridApplied) RagRetrievalTrace.SCORING_HYBRID else RagRetrievalTrace.SCORING_VECTOR,
                 rerank = when (rerankOutcome?.method) {
                     null -> RagRetrievalTrace.RERANK_OFF
@@ -410,6 +458,89 @@ class MemoryManager(
         val totalMs = System.currentTimeMillis() - startTime
         NexaraLogger.log("[MemoryManager] addTurnToMemory done: ${vectors.size} vectors stored, session=$sessionId, total=${totalMs}ms")
         return vectors.size
+    }
+
+    /** 时段内的对话记录：按所属消息的发生时间筛选，不设相似度阈值，按相似度取前 [limit] 条。 */
+    private suspend fun searchConversationInRange(
+        range: MemoryTimeRange,
+        reach: ConversationReach,
+        queryEmbeddings: List<Pair<String, FloatArray>>,
+        limit: Int,
+    ): List<SearchResult> {
+        val messageIds = graphStore.database.messageDao().getIdsCreatedBetween(range.from, range.to).toHashSet()
+        val inRange = { row: VectorEntity ->
+            val owner = row.startMessageId ?: row.endMessageId
+            if (owner != null) owner in messageIds else row.createdAt in range
+        }
+        return CONVERSATION_RECORD_TYPES.flatMap { type ->
+            queryEmbeddings.flatMap { (_, embedding) ->
+                vectorStore.searchConversation(embedding, reach, type, limit, threshold = -1f, rowFilter = inRange)
+            }
+        }.sortedByDescending { it.similarity }.distinctBy { it.id }.take(limit)
+    }
+
+    private data class ScoredState(val fact: SessionStateFact, val similarity: Float)
+
+    /**
+     * 范围内每个“对象 · 属性”的最新值，较新的覆盖较早的。不超过 [STATE_LIMIT] 条时全部注入；
+     * 超过时一半取与问题最相关的，其余取最近更新的。按更新时间先后返回。
+     */
+    private suspend fun currentStates(reach: ConversationReach, queryEmbedding: FloatArray): List<ScoredState> {
+        val scored = vectorStore.conversationRowsScored(queryEmbedding, reach, "state")
+            .mapNotNull { (row, similarity) -> parseStateRow(row)?.let { ScoredState(it, similarity) } }
+        val similarityById = scored.associate { it.fact.rowId to it.similarity }
+        val latest = latestStates(scored.map { it.fact }).map { ScoredState(it, similarityById[it.rowId] ?: 0f) }
+        if (latest.size <= STATE_LIMIT) return latest
+        val relevant = latest.sortedByDescending { it.similarity }.take(STATE_LIMIT / 2)
+        val recent = latest.asReversed().filterNot { it in relevant }.take(STATE_LIMIT - relevant.size)
+        return (relevant + recent).sortedBy { it.fact.occurredAt }
+    }
+
+    /** 记录 id 到所属轮次用户消息（缺失时为助手消息）的发生时间；消息查不到时用写入时间。 */
+    private suspend fun occurredAt(results: List<SearchResult>): Map<String, Long> {
+        val owners = results.associate { it.id to (it.startMessageId ?: it.endMessageId) }
+        val ids = owners.values.filterNotNull().distinct()
+        val messageTimes = HashMap<String, Long>()
+        ids.chunked(500).forEach { chunk ->
+            graphStore.database.messageDao().getCreatedAt(chunk).forEach { messageTimes[it.id] = it.created_at }
+        }
+        return results.associate { it.id to (owners[it.id]?.let(messageTimes::get) ?: it.createdAt) }
+    }
+
+    /**
+     * 注入正文：先写当前时间与先后规则，再写当前状态与按时间先后排列的对话记录，最后是按相关度排列的文档。
+     * 时间只出现在这里，不进入向量正文。
+     */
+    private fun formatRetrievedChunks(
+        results: List<SearchResult>,
+        states: List<ScoredState>,
+        occurredAt: Map<String, Long>,
+        now: Long,
+        zone: ZoneId,
+    ): String {
+        val conversation = results.filter { parseTypeFromMetadata(it.metadata) in CONVERSATION_RECORD_TYPES }
+            .sortedWith(compareBy({ occurredAt[it.id] ?: it.createdAt }, { it.id }))
+        val documents = results.filter { parseTypeFromMetadata(it.metadata) !in CONVERSATION_RECORD_TYPES }
+        val blocks = buildList {
+            if (states.isNotEmpty() || conversation.isNotEmpty()) {
+                add(
+                    "Current time: ${MemoryTimeline.currentTime(now, zone)}\n" +
+                        "Conversation records carry the time they were said and are listed oldest first. " +
+                        "When records conflict, the newer one reflects the current state.",
+                )
+            }
+            if (states.isNotEmpty()) {
+                add(states.joinToString("\n") { state ->
+                    "[State · updated ${MemoryTimeline.stamp(state.fact.occurredAt, now, zone)}]: ${state.fact.content}"
+                })
+            }
+            conversation.forEach { r ->
+                val label = if (parseTypeFromMetadata(r.metadata) == "summary") "Event" else "Memory"
+                add("[$label · ${MemoryTimeline.stamp(occurredAt[r.id] ?: r.createdAt, now, zone)}]: ${r.content}")
+            }
+            documents.forEach { r -> add("[Document]: ${r.content}") }
+        }
+        return blocks.joinToString("\n\n")
     }
 
     private fun rrfFusion(
@@ -485,6 +616,13 @@ class MemoryManager(
 
     private fun sanitizeContent(text: String): String {
         return text.replace(Regex("!\\[.*?\\]\\(data:image/.*?;base64,.*?\\)"), "[Image]")
+    }
+
+    private companion object {
+        /** 按时间线注入的对话记录：逐轮记忆片段与事件摘要。 */
+        val CONVERSATION_RECORD_TYPES = setOf("memory", "summary")
+        const val EVENT_LIMIT = 3
+        const val STATE_LIMIT = 24
     }
 
     private fun parseTypeFromMetadata(metadata: String?): String? {

@@ -52,6 +52,7 @@ import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -160,6 +161,20 @@ internal fun GlobalRagConfigScreenContent(
                     spec = RetrievalSettingSpecs.globalChunkOverlap,
                     onValueChange = { value -> actions.onConfigChanged { copy(chunkOverlap = value.toInt()) } },
                     modifier = Modifier.testTag("rag_global_chunk_overlap_slider"),
+                )
+            }
+
+            NexaraSettingsSection(
+                title = stringResource(R.string.memory_state_section),
+                footer = stringResource(R.string.memory_state_footer),
+            ) {
+                SettingsToggle(
+                    title = stringResource(R.string.memory_state_title),
+                    description = stringResource(R.string.memory_state_desc),
+                    checked = config.memoryStateExtractionEnabled,
+                    onCheckedChange = { value -> actions.onConfigChanged { copy(memoryStateExtractionEnabled = value) } },
+                    modifier = Modifier.testTag("memory_state_toggle"),
+                    switchModifier = Modifier.testTag("memory_state_switch"),
                 )
             }
 

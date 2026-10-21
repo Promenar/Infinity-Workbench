@@ -102,6 +102,8 @@ data class RagConfiguration(
     val kgJitFallbackEnabled: Boolean = true,
     /** 每轮回复后从本轮问答抽取知识图谱；每轮额外调用一次模型，默认关闭。 */
     val kgSessionExtractionEnabled: Boolean = false,
+    /** 每轮后台抽取事件与可变状态，默认关闭。 */
+    val memoryStateExtractionEnabled: Boolean = false,
     val kgJitMinSeeds: Int = 2,
     val kgMaxCalls: Int = 32,
     val kgMaxOutputTokens: Int = 32768,

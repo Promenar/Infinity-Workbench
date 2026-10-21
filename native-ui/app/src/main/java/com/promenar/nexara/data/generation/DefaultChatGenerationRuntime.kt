@@ -159,6 +159,7 @@ internal class DefaultChatGenerationRuntime(
     private val sessionGraph: com.promenar.nexara.data.rag.SessionGraphScheduler? = null,
     private val subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
+    private val sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -952,6 +953,17 @@ internal class DefaultChatGenerationRuntime(
                     throw cancelled
                 } catch (error: Exception) {
                     NexaraLogger.logError("[GenerationRuntime] 会话图谱抽取排队失败", error)
+                }
+            }
+            if (sessionState != null && snapshot.failure == null && memoryEnabled(session) &&
+                request.userContent.isNotBlank() && snapshot.content.isNotBlank() && memory?.canEmbed == true
+            ) {
+                try {
+                    sessionState.schedule(request.sessionId, assistantMessageId(request), userMessageId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    NexaraLogger.logError("[GenerationRuntime] 状态记忆抽取排队失败", error)
                 }
             }
             // 轮后按下一次请求实际发送的未摘要历史估算，不使用累计账单 token 触发摘要。
