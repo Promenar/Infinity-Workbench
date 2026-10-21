@@ -16,7 +16,7 @@
     <plurals name="chat_step_web_read_done"><item quantity="one">Read %1$d page</item><item quantity="other">Read %1$d pages</item></plurals>
     <plurals name="chat_step_file_read_done"><item quantity="one">Read %1$d file</item><item quantity="other">Read %1$d files</item></plurals>
     <plurals name="chat_step_file_edit_done"><item quantity="one">Edited %1$d file</item><item quantity="other">Edited %1$d files</item></plurals>
-    <plurals name="chat_step_knowledge_done"><item quantity="one">Searched knowledge</item><item quantity="other">Searched knowledge %1$d times</item></plurals>
+    <plurals name="chat_step_knowledge_done"><item quantity="one">Searched Library</item><item quantity="other">Searched Library %1$d times</item></plurals>
     <plurals name="chat_step_memory_done"><item quantity="one">Searched memory</item><item quantity="other">Searched memory %1$d times</item></plurals>
     <plurals name="chat_step_image_done"><item quantity="one">Generated %1$d image</item><item quantity="other">Generated %1$d images</item></plurals>
     <plurals name="chat_step_plan_done"><item quantity="one">Updated the plan</item><item quantity="other">Updated the plan %1$d times</item></plurals>
@@ -29,7 +29,7 @@
     <string name="chat_step_web_read_running">Reading a webpage…</string>
     <string name="chat_step_file_read_running">Reading files…</string>
     <string name="chat_step_file_edit_running">Editing files…</string>
-    <string name="chat_step_knowledge_running">Searching knowledge…</string>
+    <string name="chat_step_knowledge_running">Searching Library…</string>
     <string name="chat_step_memory_running">Searching memory…</string>
     <string name="chat_step_image_running">Generating an image…</string>
     <string name="chat_step_plan_running">Updating the plan…</string>
@@ -42,7 +42,7 @@
     <string name="chat_step_web_read_name">Webpage</string>
     <string name="chat_step_file_read_name">Read files</string>
     <string name="chat_step_file_edit_name">Edit files</string>
-    <string name="chat_step_knowledge_name">Knowledge search</string>
+    <string name="chat_step_knowledge_name">Library search</string>
     <string name="chat_step_memory_name">Memory search</string>
     <string name="chat_step_image_name">Image generation</string>
     <string name="chat_step_plan_name">Task plan</string>

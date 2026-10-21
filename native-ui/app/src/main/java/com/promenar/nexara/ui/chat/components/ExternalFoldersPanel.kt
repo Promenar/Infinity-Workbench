@@ -113,9 +113,11 @@ internal fun ExternalFoldersPanel(
     manager: IExternalFolderManager,
     onReindex: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
+    // true 时入口行不自带分组面，由调用方放进共享分组。
+    grouped: Boolean = false,
 ) {
     key(sessionId) {
-        ExternalFoldersPanelContent(sessionId, workspaceRootUuid, manager, onReindex, modifier)
+        ExternalFoldersPanelContent(sessionId, workspaceRootUuid, manager, onReindex, modifier, grouped)
     }
 }
 
@@ -126,6 +128,7 @@ private fun ExternalFoldersPanelContent(
     manager: IExternalFolderManager,
     onReindex: ((String) -> Unit)?,
     modifier: Modifier,
+    grouped: Boolean,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -279,7 +282,7 @@ private fun ExternalFoldersPanelContent(
     ListItem(
         modifier = modifier
             .fillMaxWidth()
-            .bettboxListGroup()
+            .let { if (grouped) it else it.bettboxListGroup() }
             .testTag("external_folders_entry")
             .clickable(role = Role.Button) { managerOpen = true },
         headlineContent = { Text(stringResource(R.string.mount_title)) },

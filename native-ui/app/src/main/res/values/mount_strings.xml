@@ -37,11 +37,11 @@
     <string name="mount_directory_empty">This folder is empty</string>
     <string name="mount_load_error">Unable to load this folder. Check its authorization or storage device, then retry.</string>
     <string name="mount_operation_error">The operation failed. Check the mount, its permissions, and the entered values.</string>
-    <string name="mount_source_changed">The source file has changed since its knowledge base snapshot. Import it again to update the index.</string>
-    <string name="mount_import_to_kb">Add to knowledge base</string>
+    <string name="mount_source_changed">The source file has changed since it was imported to the Library. Import it again to update the index.</string>
+    <string name="mount_import_to_kb">Add to Library</string>
     <string name="mount_reimport_to_kb">Import snapshot again</string>
     <string name="mount_imported">Snapshot imported and indexing requested.</string>
-    <string name="mount_snapshot_info">Knowledge base imports use a snapshot. Source changes are not synchronized automatically.</string>
+    <string name="mount_snapshot_info">Library imports use a snapshot. Source changes are not synchronized automatically.</string>
     <string name="mount_preview_binary">Text preview is unavailable for this file type. Open a read-only copy in another app.</string>
     <string name="mount_preview_too_large">Text preview supports files up to 256 KB. You can import a snapshot or open a read-only copy.</string>
     <string name="mount_preview_failed">Unable to preview this file. Check its authorization or storage device.</string>

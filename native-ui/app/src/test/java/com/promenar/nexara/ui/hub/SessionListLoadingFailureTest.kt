@@ -6,14 +6,10 @@ import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.ui.chat.ChatStore
 import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -34,7 +30,6 @@ class SessionListLoadingFailureTest {
     @BeforeEach
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        every { agents.observeById("agent") } returns flowOf(null)
     }
 
     @AfterEach
@@ -47,37 +42,12 @@ class SessionListLoadingFailureTest {
         coEvery { sessions.getAll() } throws IllegalStateException("合成异常正文不应输出")
         val vm = SessionListViewModel(store, sessions, agents)
 
-        val log = captureErrors { vm.loadSessions("agent") }
+        val log = captureErrors { vm.loadSessions() }
 
         assertThat(store.get().sessions).containsExactly(existing)
         assertThat(log).contains("SessionListViewModel.loadSessions")
         assertThat(log).contains("IllegalStateException")
         assertThat(log).doesNotContain("合成异常正文不应输出")
-    }
-
-    @Test
-    fun `智能体元数据加载失败记录日志但会话仍可加载`() = runTest {
-        every { agents.observeById("agent") } returns flow { throw IllegalStateException("元数据异常正文") }
-        val loaded = Session(id = "loaded", agentId = "agent")
-        coEvery { sessions.getAll() } returns listOf(loaded)
-        val vm = SessionListViewModel(store, sessions, agents)
-
-        val log = captureErrors { vm.loadSessions("agent") }
-
-        assertThat(store.get().sessions).containsExactly(loaded)
-        assertThat(log).contains("SessionListViewModel.loadAgent")
-        assertThat(log).doesNotContain("元数据异常正文")
-    }
-
-    @Test
-    fun `智能体加载取消后不继续查询会话或记录错误`() = runTest {
-        every { agents.observeById("agent") } returns flow { throw CancellationException("取消测试") }
-        val vm = SessionListViewModel(store, sessions, agents)
-
-        val log = captureErrors { vm.loadSessions("agent") }
-
-        coVerify(exactly = 0) { sessions.getAll() }
-        assertThat(log).isEmpty()
     }
 
     @Test
@@ -87,7 +57,7 @@ class SessionListLoadingFailureTest {
         coEvery { sessions.getAll() } throws CancellationException("取消测试")
         val vm = SessionListViewModel(store, sessions, agents)
 
-        val log = captureErrors { vm.loadSessions("agent") }
+        val log = captureErrors { vm.loadSessions() }
 
         assertThat(store.get().sessions).containsExactly(existing)
         assertThat(log).isEmpty()

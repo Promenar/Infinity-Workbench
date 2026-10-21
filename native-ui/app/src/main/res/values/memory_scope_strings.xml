@@ -20,10 +20,10 @@
     <string name="graph_scope_agent_desc">Evidence from every session of this assistant</string>
     <string name="graph_scope_all_agents_desc">Also evidence shared by other assistants; private assistants are excluded</string>
     <string name="document_scope_workspace">Session workspace</string>
-    <string name="document_scope_knowledge_base">Workspace and knowledge base</string>
+    <string name="document_scope_knowledge_base">Workspace and Library</string>
     <string name="document_scope_all">All indexed documents</string>
     <string name="document_scope_workspace_desc">Files in this session\'s workspace and documents you selected</string>
-    <string name="document_scope_knowledge_base_desc">Also documents in the global knowledge base</string>
+    <string name="document_scope_knowledge_base_desc">Also documents in the Library</string>
     <string name="document_scope_all_desc">Includes files in other sessions\' workspaces</string>
     <string name="agent_memory_section">Memory and knowledge</string>
     <string name="agent_memory_section_footer">The value on the right is the widest scope a session can choose. Changes apply to retrieval right away; new-session defaults only affect sessions created later.</string>

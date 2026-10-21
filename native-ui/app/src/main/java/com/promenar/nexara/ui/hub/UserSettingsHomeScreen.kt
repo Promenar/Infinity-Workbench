@@ -70,6 +70,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraTabHeader
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraBottomSheet
@@ -212,7 +213,7 @@ internal fun UserSettingsHomeScreenContent(
         title = stringResource(R.string.settings_title),
         modifier = Modifier.testTag(UiTags.SETTINGS_ROOT),
         horizontalContentPadding = 0.dp,
-        showTopBar = false,
+        header = { NexaraTabHeader(title = stringResource(R.string.settings_title)) },
     ) { contentPadding ->
         LazyColumn(
             modifier = Modifier
@@ -223,8 +224,10 @@ internal fun UserSettingsHomeScreenContent(
             item {
                 BettboxListGroup(
                     modifier = Modifier.padding(
-                        horizontal = NexaraSpacing.ScreenHorizontal,
-                        vertical = NexaraSpacing.Small,
+                        start = NexaraSpacing.ScreenHorizontal,
+                        top = NexaraSpacing.Small,
+                        end = NexaraSpacing.ScreenHorizontal,
+                        bottom = NexaraSpacing.SectionGap,
                     ),
                 ) {
                     UserProfileListItem(

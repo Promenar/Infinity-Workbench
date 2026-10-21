@@ -56,7 +56,7 @@
         <item quantity="other">%1$d 个已登记的自选目录</item>
     </plurals>
     <string name="workspace_kb_entry_empty">尚未登记自选目录</string>
-    <string name="workspace_kb_desc">只读浏览已登记的自选目录，可把单个文件加入知识库；不会自动索引整个目录。</string>
+    <string name="workspace_kb_desc">只读浏览已登记的自选目录，可把单个文件加入资料；不会自动索引整个目录。</string>
     <string name="workspace_kb_empty">还没有登记的工作区。可在会话资源管理器或 Agent 编辑页选择工作区。</string>
     <string name="workspace_kb_more">更多操作：%1$s</string>
     <string name="workspace_kb_rename">重命名</string>
@@ -67,10 +67,10 @@
     <string name="workspace_kb_delete_referenced">仍有 %1$d 个会话、%2$d 个 Agent 使用此工作区，无法删除登记。</string>
     <string name="workspace_kb_operation_failed">操作失败，请重试</string>
     <string name="workspace_kb_folder_empty">这个文件夹是空的</string>
-    <string name="workspace_kb_import">加入知识库</string>
-    <string name="workspace_kb_imported">已加入知识库，正在索引</string>
-    <string name="workspace_kb_import_failed">加入知识库失败：%1$s</string>
-    <string name="workspace_kb_import_info">加入知识库会复制文件当前内容；之后目录中的修改不会自动同步。</string>
+    <string name="workspace_kb_import">加入资料</string>
+    <string name="workspace_kb_imported">已加入资料，正在索引</string>
+    <string name="workspace_kb_import_failed">加入资料失败：%1$s</string>
+    <string name="workspace_kb_import_info">加入资料会复制文件当前内容；之后目录中的修改不会自动同步。</string>
     <string name="workspace_kb_preview_binary">此类型无法进行文本预览。</string>
     <string name="workspace_kb_preview_too_large">文本预览上限为 256 KB。</string>
     <string name="workspace_kb_preview_failed">无法预览文件：%1$s</string>

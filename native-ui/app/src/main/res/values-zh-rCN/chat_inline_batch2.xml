@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="chat_inline_retrieval_knowledge_running">正在检索知识库…</string>
-    <string name="chat_inline_retrieval_knowledge_completed">检索了知识库</string>
-    <string name="chat_inline_retrieval_knowledge_failed">未能检索知识库</string>
+    <string name="chat_inline_retrieval_knowledge_running">正在检索资料…</string>
+    <string name="chat_inline_retrieval_knowledge_completed">检索了资料</string>
+    <string name="chat_inline_retrieval_knowledge_failed">未能检索资料</string>
     <string name="chat_inline_retrieval_web_running">正在搜索网页…</string>
     <string name="chat_inline_retrieval_web_completed">搜索了网页</string>
     <string name="chat_inline_retrieval_web_failed">未能搜索网页</string>

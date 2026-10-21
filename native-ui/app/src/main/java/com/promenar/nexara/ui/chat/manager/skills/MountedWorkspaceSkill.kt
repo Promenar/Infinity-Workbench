@@ -174,7 +174,7 @@ class MountedWorkspaceSkill(
                     val workspaceFile = aliasOf(sourcePath) == ExternalMountPaths.WORKSPACE_ALIAS
                     if (original.id in setOf("write_file", "patch_file")) ToolResult(result.id,
                         if (workspaceFile) "已保存：$sourcePath\nsha256: $hash"
-                        else "外部文件已保存：$sourcePath\nsha256: $hash\n知识库快照可在文件面板重新导入。")
+                        else "外部文件已保存：$sourcePath\nsha256: $hash\n资料快照可在文件面板重新导入。")
                     else result.copy(content = result.content + "\nsha256: $hash")
                 } else result)
             }

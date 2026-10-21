@@ -37,11 +37,11 @@
     <string name="mount_directory_empty">这个文件夹是空的</string>
     <string name="mount_load_error">无法读取文件夹，请检查授权或存储设备后重试。</string>
     <string name="mount_operation_error">操作失败，请检查挂载状态、权限和输入内容。</string>
-    <string name="mount_source_changed">源文件在知识库快照导入后发生了变化，可重新导入以更新索引。</string>
-    <string name="mount_import_to_kb">加入知识库</string>
+    <string name="mount_source_changed">源文件在导入资料后发生了变化，可重新导入以更新索引。</string>
+    <string name="mount_import_to_kb">加入资料</string>
     <string name="mount_reimport_to_kb">重新导入快照</string>
     <string name="mount_imported">快照已导入并已请求索引。</string>
-    <string name="mount_snapshot_info">知识库使用导入时的快照，源文件变化不会自动同步。</string>
+    <string name="mount_snapshot_info">资料使用导入时的快照，源文件变化不会自动同步。</string>
     <string name="mount_preview_binary">此类型无法进行文本预览，可使用其它应用打开只读副本。</string>
     <string name="mount_preview_too_large">文本预览上限为 256 KB，可导入快照或打开只读副本。</string>
     <string name="mount_preview_failed">无法预览文件，请检查授权或存储设备。</string>

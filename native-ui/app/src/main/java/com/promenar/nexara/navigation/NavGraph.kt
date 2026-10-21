@@ -34,7 +34,6 @@ import com.promenar.nexara.ui.chat.ChatRoute
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
 import com.promenar.nexara.ui.hub.AgentRagConfigScreen
-import com.promenar.nexara.ui.hub.AgentSessionsScreen
 import com.promenar.nexara.ui.rag.DocEditorScreen
 import com.promenar.nexara.ui.rag.GlobalRagConfigScreen
 import com.promenar.nexara.ui.rag.KnowledgeGraphScreen
@@ -63,7 +62,6 @@ import kotlinx.coroutines.launch
 object NavDestinations {
     const val WELCOME = "welcome"
     const val MAIN_TAB_SCAFFOLD = "main_tab_scaffold"
-    const val SESSION_LIST = "session_list/{agentId}"
     const val CHAT_HERO = "chat_hero/{sessionId}"
     const val PROVIDER_FORM = "provider_form?providerId={providerId}"
     const val PROVIDER_MODELS = "provider_models/{providerId}"
@@ -93,7 +91,6 @@ object NavDestinations {
     const val PROVIDER_LIST = "provider_list"
     const val DEFAULT_MODELS = "default_models"
 
-    fun sessionList(agentId: String) = "session_list/$agentId"
     fun chatHero(sessionId: String) = "chat_hero/$sessionId"
     fun agentEdit(agentId: String) = "agent_edit/$agentId"
     fun agentRagConfig(agentId: String) = "agent_rag_config/$agentId"
@@ -320,31 +317,11 @@ fun NexaraNavGraph(
                 onNavigateToSecondary = { route ->
                     navController.navigate(route)
                 },
-                onNavigateToSessionList = { agentId ->
-                    navController.navigate(NavDestinations.sessionList(agentId))
-                },
                 onNavigateToAgentEdit = { agentId ->
                     navController.navigate(NavDestinations.agentEdit(agentId))
                 },
                 onNavigateToChat = { sessionId ->
                     navController.navigate(NavDestinations.chatHero(sessionId))
-                }
-            )
-        }
-
-        composable(
-            route = NavDestinations.SESSION_LIST,
-            arguments = listOf(navArgument("agentId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val agentId = backStackEntry.arguments?.getString("agentId") ?: ""
-            AgentSessionsScreen(
-                agentId = agentId,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToChat = { sessionId ->
-                    navController.navigate(NavDestinations.chatHero(sessionId))
-                },
-                onNavigateToAgentEdit = {
-                    navController.navigate(NavDestinations.agentEdit(agentId))
                 }
             )
         }

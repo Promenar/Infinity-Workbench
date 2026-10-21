@@ -85,11 +85,11 @@ private const val TEXT_PREVIEW_BYTES = 256 * 1024
 
 /** 知识库文件页根目录下的“工作区”分组入口；点开后列出已登记的自选工作区。 */
 @Composable
-fun KnowledgeWorkspacesEntry(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun KnowledgeWorkspacesEntry(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier, grouped: Boolean = false) {
     ListItem(
         modifier = modifier
             .fillMaxWidth()
-            .bettboxListGroup()
+            .let { if (grouped) it else it.bettboxListGroup() }
             .testTag("knowledge_workspaces_entry")
             .clickable(role = Role.Button, onClick = onClick),
         headlineContent = { Text(stringResource(R.string.workspace_kb_entry)) },
@@ -106,19 +106,21 @@ fun KnowledgeWorkspacesEntry(count: Int, onClick: () -> Unit, modifier: Modifier
     )
 }
 
-/** 入口与面板的组合：入口显示登记数量，面板只读浏览、预览与加入知识库。 */
+/** 入口与面板的组合：入口显示登记数量，面板只读浏览、预览与加入资料。 */
 @Composable
 fun KnowledgeWorkspacesGroup(
     knowledgeRootUuid: String?,
     onImported: (String) -> Unit,
     modifier: Modifier = Modifier,
+    // true 时只渲染行本身，由调用方放进共享分组面。
+    grouped: Boolean = false,
 ) {
     val app = LocalContext.current.applicationContext as? NexaraApplication ?: return
     val library = app.workspaceLibrary
     val workspacesFlow = remember(library) { runCatching { library.observe() }.getOrElse { flowOf(emptyList()) } }
     val workspaces by workspacesFlow.collectAsState(initial = emptyList())
     var open by remember { mutableStateOf(false) }
-    KnowledgeWorkspacesEntry(count = workspaces.size, onClick = { open = true }, modifier = modifier)
+    KnowledgeWorkspacesEntry(count = workspaces.size, onClick = { open = true }, modifier = modifier, grouped = grouped)
     KnowledgeWorkspacesSheet(
         show = open,
         onDismiss = { open = false },

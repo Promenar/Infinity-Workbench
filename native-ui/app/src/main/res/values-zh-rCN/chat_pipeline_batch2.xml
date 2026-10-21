@@ -16,7 +16,7 @@
     <plurals name="chat_step_web_read_done"><item quantity="other">读取了 %1$d 个网页</item></plurals>
     <plurals name="chat_step_file_read_done"><item quantity="other">查看了 %1$d 个文件</item></plurals>
     <plurals name="chat_step_file_edit_done"><item quantity="other">修改了 %1$d 个文件</item></plurals>
-    <plurals name="chat_step_knowledge_done"><item quantity="other">检索了知识库</item></plurals>
+    <plurals name="chat_step_knowledge_done"><item quantity="other">检索了资料</item></plurals>
     <plurals name="chat_step_memory_done"><item quantity="other">检索了记忆</item></plurals>
     <plurals name="chat_step_image_done"><item quantity="other">生成了 %1$d 张图片</item></plurals>
     <plurals name="chat_step_plan_done"><item quantity="other">更新了任务计划</item></plurals>
@@ -29,7 +29,7 @@
     <string name="chat_step_web_read_running">正在读取网页…</string>
     <string name="chat_step_file_read_running">正在查看文件…</string>
     <string name="chat_step_file_edit_running">正在修改文件…</string>
-    <string name="chat_step_knowledge_running">正在检索知识库…</string>
+    <string name="chat_step_knowledge_running">正在检索资料…</string>
     <string name="chat_step_memory_running">正在检索记忆…</string>
     <string name="chat_step_image_running">正在生成图片…</string>
     <string name="chat_step_plan_running">正在更新任务计划…</string>
@@ -42,7 +42,7 @@
     <string name="chat_step_web_read_name">读取网页</string>
     <string name="chat_step_file_read_name">查看文件</string>
     <string name="chat_step_file_edit_name">修改文件</string>
-    <string name="chat_step_knowledge_name">知识库检索</string>
+    <string name="chat_step_knowledge_name">资料检索</string>
     <string name="chat_step_memory_name">记忆检索</string>
     <string name="chat_step_image_name">生成图片</string>
     <string name="chat_step_plan_name">任务计划</string>

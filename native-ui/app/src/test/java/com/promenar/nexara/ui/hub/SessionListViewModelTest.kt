@@ -47,36 +47,6 @@ class SessionListViewModelTest {
     }
 
     @Test
-    fun `loadSessions sets agent metadata from repository`() = runTest {
-        val agent = Agent(
-            id = "agent-1",
-            name = "My Agent",
-            color = "#FF0000",
-            executionMode = ExecutionMode.SEMI
-        )
-        every { agentRepo.observeById("agent-1") } returns flowOf(agent)
-        coEvery { sessionRepo.getAll() } returns emptyList()
-
-        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
-        vm.loadSessions("agent-1")
-
-        assertThat(vm.agentName.value).isEqualTo("My Agent")
-        assertThat(vm.agentColor.value).isEqualTo("#FF0000")
-    }
-
-    @Test
-    fun `loadSessions defaults agent metadata when agent not found`() = runTest {
-        every { agentRepo.observeById("missing") } returns flowOf(null)
-        coEvery { sessionRepo.getAll() } returns emptyList()
-
-        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
-        vm.loadSessions("missing")
-
-        assertThat(vm.agentName.value).isEqualTo("Agent")
-        assertThat(vm.agentColor.value).isEqualTo("#C0C1FF")
-    }
-
-    @Test
     fun `loadSessions loads sessions into store`() = runTest {
         every { agentRepo.observeById("a1") } returns flowOf(null)
         val sessions = listOf(
@@ -86,7 +56,7 @@ class SessionListViewModelTest {
         coEvery { sessionRepo.getAll() } returns sessions
 
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
-        vm.loadSessions("a1")
+        vm.loadSessions()
 
         assertThat(store.get().sessions).hasSize(2)
     }
@@ -163,7 +133,7 @@ class SessionListViewModelTest {
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
         var createdSessionId: String? = null
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
         loadStarted.await()
         vm.createSession("a1") { createdSessionId = it }
         releaseLoad.complete(Unit)
@@ -186,7 +156,7 @@ class SessionListViewModelTest {
         }
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
         loadStarted.await()
         vm.deleteSession("s1")
         releaseLoad.complete(Unit)
@@ -213,7 +183,7 @@ class SessionListViewModelTest {
         }
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
         loadStarted.await()
         store.update { it.copy(sessions = listOf(external)) }
         releaseFirstLoad.complete(Unit)
@@ -241,7 +211,7 @@ class SessionListViewModelTest {
         }
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
         loadStarted.await()
         store.update { it.copy(sessions = emptyList()) }
         releaseFirstLoad.complete(Unit)
@@ -269,7 +239,7 @@ class SessionListViewModelTest {
         }
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
         loadStarted.await()
         store.updateSession("s1") {
             it.copy(title = "Streaming now", lastMessage = "new content")
@@ -293,7 +263,7 @@ class SessionListViewModelTest {
         }
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
+        vm.loadSessions()
 
         assertThat(calls.get()).isEqualTo(2)
         assertThat(store.get().sessions.map { it.id })
@@ -302,66 +272,20 @@ class SessionListViewModelTest {
     }
 
     @Test
-    fun `searchSessions updates query state`() = runTest {
-        every { agentRepo.observeById(any()) } returns flowOf(null)
-        coEvery { sessionRepo.getAll() } returns emptyList()
-
-        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
-        vm.searchSessions("test")
-
-        assertThat(vm.searchQuery.value).isEqualTo("test")
-    }
-
-    @Test
-    fun `searchSessions filters current agent sessions by title or preview`() = runTest {
-        val titleMatch = Session(
-            id = "title-match",
-            agentId = "a1",
-            title = "Release checklist",
-            lastMessage = "No preview match",
-        )
-        val previewMatch = Session(
-            id = "preview-match",
-            agentId = "a1",
-            title = "General chat",
-            lastMessage = "Review the release candidate",
-        )
-        val otherAgent = Session(
-            id = "other-agent",
-            agentId = "a2",
-            title = "Release notes",
-        )
-        store.update {
-            it.copy(sessions = listOf(titleMatch, previewMatch, otherAgent))
-        }
-        every { agentRepo.observeById("a1") } returns flowOf(null)
-        coEvery { sessionRepo.getAll() } returns listOf(titleMatch, previewMatch, otherAgent)
-        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
-
-        vm.loadSessions("a1")
-        vm.searchSessions("release")
-
-        assertThat(vm.sessions.value.map { it.id })
-            .containsExactly("title-match", "preview-match")
-    }
-
-    @Test
-    fun `clearing search restores all sessions for current agent`() = runTest {
+    fun `会话目录收录全部助手，置顶在前其余按更新时间倒序`() = runTest {
         val sessions = listOf(
-            Session(id = "s1", agentId = "a1", title = "Alpha"),
-            Session(id = "s2", agentId = "a1", title = "Beta"),
+            Session(id = "old", agentId = "a1", updatedAt = 10),
+            Session(id = "pinned", agentId = "a2", isPinned = true, updatedAt = 1),
+            Session(id = "new", agentId = "a2", updatedAt = 30),
+            Session(id = "mid", agentId = "a1", updatedAt = 20),
         )
-        store.update { it.copy(sessions = sessions) }
-        every { agentRepo.observeById("a1") } returns flowOf(null)
         coEvery { sessionRepo.getAll() } returns sessions
         val vm = SessionListViewModel(store, sessionRepo, agentRepo)
 
-        vm.loadSessions("a1")
-        vm.searchSessions("Alpha")
-        assertThat(vm.sessions.value.map { it.id }).containsExactly("s1")
+        vm.loadSessions()
 
-        vm.searchSessions("")
-
-        assertThat(vm.sessions.value.map { it.id }).containsExactly("s1", "s2")
+        assertThat(vm.sessions.value.map { it.id })
+            .containsExactly("pinned", "new", "mid", "old")
+            .inOrder()
     }
 }

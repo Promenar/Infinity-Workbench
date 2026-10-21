@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="chat_inline_retrieval_knowledge_running">Searching knowledge…</string>
-    <string name="chat_inline_retrieval_knowledge_completed">Searched knowledge</string>
-    <string name="chat_inline_retrieval_knowledge_failed">Could not search knowledge</string>
+    <string name="chat_inline_retrieval_knowledge_running">Searching Library…</string>
+    <string name="chat_inline_retrieval_knowledge_completed">Searched Library</string>
+    <string name="chat_inline_retrieval_knowledge_failed">Could not search Library</string>
     <string name="chat_inline_retrieval_web_running">Searching the web…</string>
     <string name="chat_inline_retrieval_web_completed">Searched the web</string>
     <string name="chat_inline_retrieval_web_failed">Could not search the web</string>

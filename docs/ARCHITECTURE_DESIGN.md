@@ -519,8 +519,7 @@ CREATE INDEX idx_edges_target ON kg_edges(target_id);
 Welcome（一次性引导）
   └─→ MainTabScaffold
         ├─ Tab 0: CHAT（对话中枢）
-        │     ├─ agent_hub              Agent 列表 + 搜索
-        │     ├─ session_list/{aId}     Agent 的会话列表
+        │     ├─ agent_hub              会话与助手分组 + 搜索（助手就地展开会话）
         │     ├─ chat_hero/{sId}        对话详情
         │     ├─ agent_edit/{aId}       Agent 编辑
         │     ├─ agent_rag/{aId}        Agent RAG 配置
@@ -556,7 +555,6 @@ Welcome（一次性引导）
 // 使用密封类模式确保编译期类型安全
 sealed class NavRoute(val route: String) {
     object AgentHub : NavRoute("agent_hub")
-    data class SessionList(val agentId: String) : NavRoute("session_list/$agentId")
     data class ChatHero(val sessionId: String) : NavRoute("chat_hero/$sessionId")
     // ... 所有路由
 }

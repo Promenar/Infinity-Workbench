@@ -57,7 +57,7 @@
         <item quantity="other">%1$d registered folders</item>
     </plurals>
     <string name="workspace_kb_entry_empty">No registered folders</string>
-    <string name="workspace_kb_desc">Browse registered folders read-only and add single files to the knowledge base. Folders are never indexed automatically.</string>
+    <string name="workspace_kb_desc">Browse registered folders read-only and add single files to the Library. Folders are never indexed automatically.</string>
     <string name="workspace_kb_empty">No registered workspaces yet. Choose one in the session resource explorer or on the agent edit page.</string>
     <string name="workspace_kb_more">More actions: %1$s</string>
     <string name="workspace_kb_rename">Rename</string>
@@ -68,9 +68,9 @@
     <string name="workspace_kb_delete_referenced">Still in use (sessions: %1$d, agents: %2$d), so the registration cannot be removed.</string>
     <string name="workspace_kb_operation_failed">The operation failed. Try again</string>
     <string name="workspace_kb_folder_empty">This folder is empty</string>
-    <string name="workspace_kb_import">Add to knowledge base</string>
-    <string name="workspace_kb_imported">Added to the knowledge base; indexing</string>
-    <string name="workspace_kb_import_failed">Could not add to the knowledge base: %1$s</string>
+    <string name="workspace_kb_import">Add to Library</string>
+    <string name="workspace_kb_imported">Added to the Library; indexing</string>
+    <string name="workspace_kb_import_failed">Could not add to the Library: %1$s</string>
     <string name="workspace_kb_import_info">Adding copies the current content. Later changes in the folder are not synced automatically.</string>
     <string name="workspace_kb_preview_binary">This file type cannot be previewed as text.</string>
     <string name="workspace_kb_preview_too_large">Text preview is limited to 256 KB.</string>

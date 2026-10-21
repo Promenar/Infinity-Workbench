@@ -140,7 +140,7 @@
 
     <!-- ============ Navigation ============ -->
     <string name="nav_tab_chat">对话</string>
-    <string name="nav_tab_library">知识库</string>
+    <string name="nav_tab_library">资料</string>
     <string name="nav_tab_settings">设置</string>
 
     <!-- ============ Welcome ============ -->
@@ -182,8 +182,8 @@
     <string name="share_intent_already_pending">该文件已在待导入队列中</string>
     <string name="share_import_title">导入分享文件</string>
     <string name="share_import_target_label">导入到</string>
-    <string name="share_import_knowledge_base">知识库</string>
-    <string name="share_import_no_target">暂无可用工作区，请先打开聊天或知识库。</string>
+    <string name="share_import_knowledge_base">资料</string>
+    <string name="share_import_no_target">暂无可用工作区，请先打开聊天或资料页。</string>
     <string name="share_import_close">关闭</string>
     <string name="share_import_later">稍后处理</string>
     <string name="share_import_cancel">取消导入</string>
@@ -243,7 +243,7 @@
     <string name="files_view_folder_graph">查看目录图谱</string>
     <string name="files_rename">重命名</string>
     <string name="files_move_to">移动到…</string>
-    <string name="files_transfer_to_knowledge_base">转存到知识库</string>
+    <string name="files_transfer_to_knowledge_base">转存到资料</string>
     <string name="files_tag_system">系统</string>
     <string name="files_tag_session">会话</string>
     <string name="files_session_workspaces_title">会话工作区</string>
@@ -270,7 +270,7 @@
     <string name="hub_search_placeholder">搜索助手…</string>
     <string name="hub_btn_add_agent">添加助手</string>
     <string name="hub_empty_title">还没有助手</string>
-    <string name="hub_empty_subtitle">点击 + 创建你的第一个 AI 助手</string>
+    <string name="hub_empty_subtitle">创建一个助手，开始第一段对话</string>
     <string name="hub_dialog_add_title">创建新助手</string>
     <string name="hub_dialog_label_name">名称</string>
     <string name="hub_dialog_label_desc">描述</string>
@@ -292,12 +292,8 @@
 
     <!-- Sessions -->
     <string name="sessions_search_placeholder">搜索会话…</string>
-    <string name="sessions_empty_title">还没有对话</string>
-    <string name="sessions_empty_subtitle">开始第一个吧</string>
     <string name="sessions_btn_new">新建会话</string>
     <string name="sessions_count_format">%1$d 个会话</string>
-    <string name="sessions_cd_settings">助手设置</string>
-    <string name="sessions_cd_new">新建会话</string>
     <string name="sessions_tag_session">会话</string>
     <string name="sessions_tag_pinned">已置顶</string>
 
@@ -510,7 +506,7 @@
     <string name="chat_document_error_read">无法读取所选文档，请重新选择。</string>
     <string name="chat_document_error_unknown_capacity">当前模型的上下文容量未知，无法安全发送完整文档。请先配置模型容量。</string>
     <string name="chat_document_error_invalid_estimate">无法计算完整文档所需的上下文容量，请移除文档后重试。</string>
-    <string name="chat_document_error_over_capacity">完整上下文需要 %1$d Token，当前可用 %2$d。请移除部分文档，或将参考资料加入知识库后使用检索。</string>
+    <string name="chat_document_error_over_capacity">完整上下文需要 %1$d Token，当前可用 %2$d。请移除部分文档，或将参考文档加入资料后使用检索。</string>
     <string name="chat_session_prompt_title">会话提示词</string>
     <string name="chat_session_prompt_placeholder">添加仅适用于当前会话的指令…</string>
     <string name="chat_approval_arguments">参数</string>
@@ -613,7 +609,7 @@
     <string name="session_settings_memory">长期记忆</string>
     <string name="session_settings_kg">知识图谱抽取</string>
     <string name="session_settings_kg_desc">从对话中提取实体和关系</string>
-    <string name="session_settings_kb">知识库</string>
+    <string name="session_settings_kb">资料</string>
     <string name="session_settings_kb_desc">为此会话启用文档检索</string>
     <string name="session_settings_section_prompt">自定义提示词</string>
     <string name="session_settings_prompt_editor_title">自定义提示词</string>
@@ -668,7 +664,7 @@
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">最大 Token 数</string>
     <string name="sheet_settings_memory">会话 RAG</string>
-    <string name="sheet_settings_docs">知识库检索</string>
+    <string name="sheet_settings_docs">资料检索</string>
     <string name="sheet_settings_kg">知识图谱</string>
     <string name="sheet_settings_unlimited">无限制</string>
     <string name="sheet_settings_top_k">Top K</string>
@@ -703,7 +699,7 @@
     <string name="chat_task_step_done">已完成</string>
     <string name="chat_task_step_dropped">已放弃</string>
     <string name="chat_task_marked_completed">剩余步骤已标记为完成</string>
-    <string name="chat_embedding_setup_hint">未选择嵌入模型，记忆与知识库检索已跳过</string>
+    <string name="chat_embedding_setup_hint">未选择嵌入模型，记忆与资料检索已跳过</string>
     <string name="chat_embedding_setup_action">去设置</string>
     <string name="chat_task_continue_prompt">继续处理当前计划中的未完成任务。</string>
     <string name="workspace_sprint_pipeline">Sprint 流水线</string>
@@ -729,7 +725,7 @@
     <string name="backup_core_content_summary">核心数据固定包含，密钥可选；本机个人头像与 Agent 头像不随备份迁移。</string>
     <string name="backup_core_content_fixed">始终包含</string>
     <string name="backup_content_sessions">会话</string>
-    <string name="backup_content_library">知识库</string>
+    <string name="backup_content_library">资料</string>
     <string name="backup_content_files">文件</string>
     <string name="backup_content_settings">设置</string>
     <string name="backup_content_keys">密钥</string>
@@ -1066,8 +1062,8 @@
     <!-- ============ RAG Module ============ -->
 
     <!-- RagHomeScreen -->
-    <string name="rag_home_title">知识库</string>
-    <string name="rag_home_subtitle">集中式智能知识库与向量存储。</string>
+    <string name="rag_home_title">资料</string>
+    <string name="rag_home_subtitle">文档、文件夹与对话记忆，可在对话中检索。</string>
     <string name="rag_home_search">搜索文档…</string>
     <string name="rag_home_memory_search">搜索记忆碎片与事实…</string>
     <string name="rag_home_memory_search_empty">未找到匹配的记忆碎片</string>
@@ -1124,7 +1120,7 @@
     <string name="rag_folder_select_all">全选</string>
     <string name="rag_folder_deselect">取消全选</string>
     <string name="rag_folder_empty">暂无文档</string>
-    <string name="rag_folder_empty_subtitle">上传文档以开始构建知识库。</string>
+    <string name="rag_folder_empty_subtitle">上传文档后即可在对话中检索。</string>
     <string name="rag_folder_upload">上传文档</string>
     <string name="rag_folder_cd_open_document">打开 %1$s</string>
     <string name="rag_folder_delete_confirm_title">将 %1$d 个文档移入回收站？</string>
@@ -1310,7 +1306,7 @@
     <string name="retrieval_enable_memory">记忆检索</string>
     <string name="retrieval_enable_memory_desc">在搜索结果中包含对话记忆向量</string>
     <string name="retrieval_enable_docs">文档检索</string>
-    <string name="retrieval_enable_docs_desc">在搜索结果中包含知识库文档</string>
+    <string name="retrieval_enable_docs_desc">在搜索结果中包含资料中的文档</string>
     <string name="rag_config_clear_vectors">清除向量数据</string>
     <string name="rag_config_clean_orphans">清理孤立数据</string>
     <string name="rag_config_clear_message">这将删除所有已索引的向量数据。知识图谱数据和原始文档不受影响。</string>
@@ -1446,9 +1442,9 @@
     <string name="chat_rag_summary_reranked">已重排</string>
     <string name="chat_rag_summary_rerank_failed">重排失败</string>
     <string name="rag_trace_empty_hint">检索过的记忆和文档里，没有与这个问题足够相似的内容。</string>
-    <string name="rag_trace_unavailable_hint">未选择嵌入模型，本次没有检索记忆与知识库。可在 设置 → 默认模型 中选择。</string>
+    <string name="rag_trace_unavailable_hint">未选择嵌入模型，本次没有检索记忆与资料。可在 设置 → 默认模型 中选择。</string>
     <string name="rag_trace_no_scope_hint">本会话未开启记忆，也没有选择可检索的文档。</string>
-    <string name="rag_trace_failed_hint">知识库检索出错（嵌入请求失败或检索异常），本次回复未使用知识库。</string>
+    <string name="rag_trace_failed_hint">资料检索出错（嵌入请求失败或检索异常），本次回复未使用资料。</string>
     <string name="rag_details_kind_memory">记忆</string>
     <string name="rag_details_kind_document">文档</string>
     <string name="rag_details_kind_summary">事件</string>

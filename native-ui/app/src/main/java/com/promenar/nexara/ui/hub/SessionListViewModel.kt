@@ -10,7 +10,6 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.usecase.IdGenerator
-import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
@@ -19,10 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -38,57 +36,19 @@ class SessionListViewModel(
     private val sessionManager = SessionManager(store, sessionRepository, coordinatedDelete)
     private val sessionMutationMutex = Mutex()
 
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery
-
-    private val _currentAgentId = MutableStateFlow("")
-
-    private val _agentName = MutableStateFlow("")
-    val agentName: StateFlow<String> = _agentName
-
-    private val _agentColor = MutableStateFlow(Agent(id = "", name = "").color)
-    val agentColor: StateFlow<String> = _agentColor
-
     private val _operationFailed = MutableStateFlow(false)
     val operationFailed: StateFlow<Boolean> = _operationFailed.asStateFlow()
 
-    val sessions: StateFlow<List<Session>> = combine(
-        store.state,
-        _currentAgentId,
-        _searchQuery
-    ) { state, agentId, query ->
-        val forAgent = if (agentId.isNotEmpty()) {
-            state.sessions.filter { it.agentId == agentId }
-        } else {
-            state.sessions
-        }
-        val filtered = if (query.isBlank()) {
-            forAgent
-        } else {
-            forAgent.filter {
-                it.title.contains(query, ignoreCase = true) ||
-                it.lastMessage?.contains(query, ignoreCase = true) == true
-            }
-        }
-        filtered.sortedWith(
+    /** 全部助手的会话目录，置顶在前，其余按更新时间倒序；对话页据此分组。 */
+    val sessions: StateFlow<List<Session>> = store.state.map { state ->
+        state.sessions.sortedWith(
             compareByDescending<Session> { it.isPinned }
                 .thenByDescending { it.updatedAt }
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun loadSessions(agentId: String) {
-        _currentAgentId.value = agentId
+    fun loadSessions() {
         viewModelScope.launch {
-            try {
-                val agent = agentRepository.observeById(agentId).first()
-                _agentName.value = agent?.name ?: "Agent"
-                _agentColor.value = agent?.color ?: Agent(id = agentId, name = "").color
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                NexaraLogger.logError("SessionListViewModel.loadAgent", failure)
-            }
-
             try {
                 sessionMutationMutex.withLock {
                     refreshSessionsFromRepository()
@@ -147,10 +107,6 @@ class SessionListViewModel(
         }
     }
 
-    fun searchSessions(query: String) {
-        _searchQuery.update { query }
-    }
-
     fun pinSession(id: String) {
         viewModelScope.launch {
             runSessionOperation { sessionManager.toggleSessionPin(id) }
@@ -159,12 +115,6 @@ class SessionListViewModel(
 
     fun dismissOperationFailure() {
         _operationFailed.value = false
-    }
-
-    fun selectSession(sessionId: String) {
-        store.update { state ->
-            state.copy()
-        }
     }
 
     private fun resolveDefaultModelId(): String? {

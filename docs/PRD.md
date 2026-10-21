@@ -78,16 +78,15 @@ LobeHub 的 WebApp 可在移动端使用，但纯网页架构的性能牺牲过�
 Welcome（首次引导）
   └─→ MainTabScaffold（主框架）
         ├─ Tab: Chat（对话中枢）
-        │     ├─ AgentHubScreen（助手列表 + 搜索）
-        │     │     └─→ AgentSessionsScreen（某助手的会话列表）
-        │     │           └─→ ChatScreen（对话详情）
-        │     │                 ├─→ SessionSettingsScreen（会话设置）
-        │     │                 └─→ SpaSettingsScreen（默认助手全局设置）
+        │     ├─ AgentHubScreen（置顶 / 最近 / 助手分组 + 搜索；助手行就地展开其会话）
+        │     │     └─→ ChatScreen（对话详情）
+        │     │           ├─→ SessionSettingsScreen（会话设置）
+        │     │           └─→ SpaSettingsScreen（默认助手全局设置）
         │     └─→ AgentEditScreen（助手编辑）
         │           ├─→ AgentRagConfigScreen（RAG 配置）
         │           └─→ AgentAdvancedRetrievalScreen（高级检索）
         │
-        ├─ Tab: Library（知识库）
+        ├─ Tab: Library（资料）
         │     ├─→ RagFolderScreen（文件夹详情）
         │     ├─→ DocEditorScreen（文档编辑）
         │     ├─→ KnowledgeGraphScreen（知识图谱可视化）

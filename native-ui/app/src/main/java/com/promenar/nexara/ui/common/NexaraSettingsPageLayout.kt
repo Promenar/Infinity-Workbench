@@ -37,6 +37,8 @@ fun NexaraSettingsPageLayout(
     horizontalContentPadding: Dp = NexaraSpacing.ScreenHorizontal,
     showTopBar: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
+    // 主标签页用自定义页头（如 [NexaraTabHeader]）替换标准顶栏；页头自行处理状态栏内边距。
+    header: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -44,7 +46,7 @@ fun NexaraSettingsPageLayout(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
-            if (showTopBar) TopAppBar(
+            if (header != null) header() else if (showTopBar) TopAppBar(
                 title = {
                     Text(
                         text = title,

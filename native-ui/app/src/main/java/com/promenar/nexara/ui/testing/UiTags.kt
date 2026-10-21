@@ -85,11 +85,11 @@ object UiTags {
     // ============ Agent Hub ==========
     const val HUB_ROOT = "hub_root"
     const val HUB_ADD_AGENT = "hub_add_agent"
+    const val HUB_NEW_CHAT = "hub_new_chat"
     const val HUB_SEARCH = "hub_search"
     const val HUB_EMPTY_STATE = "hub_empty_state"
     const val HUB_EMPTY_ADD_AGENT = "hub_empty_add_agent"
     const val HUB_AGENT_LIST = "hub_agent_list"
-    const val HUB_AGENT_ACTIONS = "hub_agent_actions"
     const val HUB_AGENT_MENU_PIN = "hub_agent_menu_pin"
     const val HUB_AGENT_MENU_EDIT = "hub_agent_menu_edit"
     const val HUB_AGENT_MENU_DELETE = "hub_agent_menu_delete"
@@ -97,8 +97,11 @@ object UiTags {
     private const val HUB_AGENT_CUSTOM_AVATAR_PREFIX = "hub_agent_custom_avatar:"
 
     fun hubAgentCard(agentId: String): String = HUB_AGENT_CARD_PREFIX + agentId
-    fun hubAgentActions(agentId: String): String = "$HUB_AGENT_ACTIONS:$agentId"
     fun hubAgentCustomAvatar(agentId: String): String = HUB_AGENT_CUSTOM_AVATAR_PREFIX + agentId
+    fun hubNewChatAgent(agentId: String): String = "hub_new_chat_agent:$agentId"
+    fun hubSession(sessionId: String): String = "hub_session:$sessionId"
+    fun hubAgentSession(sessionId: String): String = "hub_agent_session:$sessionId"
+    fun hubAgentNewSession(agentId: String): String = "hub_agent_new_session:$agentId"
     const val AGENT_AVATAR_ACTION = "agent_avatar_action"
 
     // ============ User Settings Home ==========
@@ -209,6 +212,7 @@ object UiTags {
     const val RAG_HOME_CONFIG = "RAG_HOME_CONFIG"
     const val RAG_HOME_NEW_FOLDER = "RAG_HOME_NEW_FOLDER"
     const val RAG_HOME_UPLOAD = "RAG_HOME_UPLOAD"
+    const val RAG_HOME_ADD = "RAG_HOME_ADD"
     const val RAG_HOME_DOCUMENTS_CONTENT = "RAG_HOME_DOCUMENTS_CONTENT"
     const val RAG_HOME_MEMORY_CONTENT = "RAG_HOME_MEMORY_CONTENT"
     const val RAG_HOME_INDEXING_NOTICE = "RAG_HOME_INDEXING_NOTICE"

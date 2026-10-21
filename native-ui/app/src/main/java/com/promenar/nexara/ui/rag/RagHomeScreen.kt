@@ -1,5 +1,14 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ChevronRight
+import com.promenar.nexara.ui.common.NexaraTabHeader
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.bettboxListGroupItem
+import com.promenar.nexara.ui.chat.components.ExternalFoldersPanel
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.ui.common.NexaraSheetHeight
@@ -48,7 +57,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -82,7 +90,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -132,7 +139,6 @@ import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
-import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
@@ -429,73 +435,96 @@ fun RagHomeScreen(
                 folderStack = folderStack.dropLast(1)
             }
 
-            Column(modifier = modifier) {
-                if (searchQuery.isBlank()) {
-                    FolderBreadcrumbsBar(
-                        folderStack = folderStack,
-                        rootTitle = stringResource(R.string.rag_root_all_files),
-                        onNavigateBack = { folderStack = folderStack.dropLast(1) },
-                        onNavigateToCrumb = { index ->
-                            folderStack = if (index == 0) emptyList() else folderStack.take(index)
-                        },
-                    )
-
-                    // 自选工作区不进 Room 树：根目录额外列出“工作区”分组，只读浏览并按文件加入知识库。
+            if (searchQuery.isBlank()) {
+                val folderSessionId = selectedWorkspaceSessionId?.takeUnless {
+                    it == CompositeWorkspaceConstants.GLOBAL_KNOWLEDGE_SESSION_ID
+                }
+                Column(
+                    modifier = modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = NexaraSpacing.XLarge),
+                ) {
+                    // 根目录先列出“浏览”分组：自选工作区（不进 Room 树，只读浏览并按文件加入资料）、外部文件夹与知识图谱。
                     if (folderStack.isEmpty()) {
-                        com.promenar.nexara.ui.workspace.KnowledgeWorkspacesGroup(
-                            knowledgeRootUuid = workspaceRootUuid,
-                            onImported = { actions.onReindexFile(it) },
-                            modifier = Modifier.padding(bottom = NexaraSpacing.Small),
+                        NexaraSettingsSection(title = stringResource(R.string.rag_home_section_browse)) {
+                            com.promenar.nexara.ui.workspace.KnowledgeWorkspacesGroup(
+                                knowledgeRootUuid = workspaceRootUuid,
+                                onImported = { actions.onReindexFile(it) },
+                                grouped = true,
+                            )
+                            externalFolderManager?.let { manager ->
+                                ExternalFoldersPanel(
+                                    sessionId = folderSessionId,
+                                    workspaceRootUuid = workspaceRootUuid,
+                                    manager = manager,
+                                    onReindex = { actions.onReindexFile(it) },
+                                    grouped = true,
+                                )
+                            }
+                            RagGraphEntry(onClick = actions.onOpenGraph)
+                        }
+                        SettingsSectionHeader(
+                            title = stringResource(R.string.rag_root_all_files),
+                            titleStyle = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(
+                                start = NexaraSpacing.RowHorizontal,
+                                end = NexaraSpacing.RowHorizontal,
+                            ),
+                        )
+                    } else {
+                        FolderBreadcrumbsBar(
+                            folderStack = folderStack,
+                            rootTitle = stringResource(R.string.rag_root_all_files),
+                            onNavigateBack = { folderStack = folderStack.dropLast(1) },
+                            onNavigateToCrumb = { index ->
+                                folderStack = if (index == 0) emptyList() else folderStack.take(index)
+                            },
                         )
                     }
 
-                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        key(workspaceRootUuid, activeFolderId) {
-                            FilesPanel(
-                                workspaceRootUuid = workspaceRootUuid,
-                                workspaceRepo = viewModel.getWorkspaceRepo(),
-                                sessionId = selectedWorkspaceSessionId?.takeUnless {
-                                    it == CompositeWorkspaceConstants.GLOBAL_KNOWLEDGE_SESSION_ID
-                                },
-                                externalFolderManager = externalFolderManager,
-                                currentParentUuid = activeFolderId,
-                                searchQuery = "",
-                                useScroll = true,
-                                onReindex = { actions.onReindexFile(it) },
-                                onDelete = requestDelete,
-                                onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
-                                onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
-                                onExtractKG = actions.onExtractKG,
-                                onViewKG = { onNavigateToGraph() },
-                                onCopy = actions.onCopyFile,
-                                indexingFileIds = indexingFileIds,
-                                kgExtractionStates = kgExtractionStates,
-                                externalSelectedIds = selectedDocumentIds,
-                                showSelectionOverlay = false,
-                                allowTreeExpansion = false,
-                                onFolderClick = { folderId, folderName ->
-                                    // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
-                                    folderStack = folderStack + FolderCrumb(folderId, folderName)
-                                },
-                                onFileClick = { docId ->
-                                    workspaceRootUuid?.let { root ->
-                                        actions.onNavigateToDocEditor(root, docId)
-                                    }
-                                },
-                            )
-                        }
+                    key(workspaceRootUuid, activeFolderId) {
+                        FilesPanel(
+                            workspaceRootUuid = workspaceRootUuid,
+                            workspaceRepo = viewModel.getWorkspaceRepo(),
+                            sessionId = folderSessionId,
+                            currentParentUuid = activeFolderId,
+                            searchQuery = "",
+                            // 整页随外层一起滚动，文件分组按内容高度收拢，不再撑满剩余空间。
+                            useScroll = false,
+                            onReindex = { actions.onReindexFile(it) },
+                            onDelete = requestDelete,
+                            onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
+                            onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
+                            onExtractKG = actions.onExtractKG,
+                            onViewKG = { onNavigateToGraph() },
+                            onCopy = actions.onCopyFile,
+                            indexingFileIds = indexingFileIds,
+                            kgExtractionStates = kgExtractionStates,
+                            externalSelectedIds = selectedDocumentIds,
+                            showSelectionOverlay = false,
+                            allowTreeExpansion = false,
+                            onFolderClick = { folderId, folderName ->
+                                // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
+                                folderStack = folderStack + FolderCrumb(folderId, folderName)
+                            },
+                            onFileClick = { docId ->
+                                workspaceRootUuid?.let { root ->
+                                    actions.onNavigateToDocEditor(root, docId)
+                                }
+                            },
+                        )
                     }
-                } else {
-                    RagSearchResults(
-                        state = searchState,
-                        onOpenDocument = { docId ->
-                            workspaceRootUuid?.let { root ->
-                                actions.onNavigateToDocEditor(root, docId)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
                 }
+            } else {
+                RagSearchResults(
+                    state = searchState,
+                    onOpenDocument = { docId ->
+                        workspaceRootUuid?.let { root ->
+                            actions.onNavigateToDocEditor(root, docId)
+                        }
+                    },
+                    modifier = modifier,
+                )
             }
         }
     }
@@ -505,6 +534,73 @@ fun RagHomeScreen(
         actions = actions,
         documentsContent = documentsContent,
     )
+}
+
+/** “浏览”分组里的知识图谱入口，行样式与工作区、外部文件夹入口一致。 */
+@Composable
+private fun RagGraphEntry(onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.RAG_HOME_TAB_GRAPH)
+            .clickable(role = Role.Button, onClick = onClick),
+        headlineContent = { Text(stringResource(R.string.rag_details_tab_knowledge_graph)) },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.rag_home_graph_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = { Icon(Icons.Rounded.Hub, contentDescription = null) },
+        trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+/** 页头“添加”：上传文档或在当前目录新建文件夹。 */
+@Composable
+private fun RagAddAction(
+    onUpload: () -> Unit,
+    onNewFolder: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(NexaraSpacing.MinimumTouchTarget)
+                .testTag(UiTags.RAG_HOME_ADD),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = stringResource(R.string.rag_home_add),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        NexaraDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                leadingIcon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
+                text = { Text(stringResource(R.string.rag_folder_upload), style = NexaraTypography.labelLarge) },
+                onClick = {
+                    expanded = false
+                    onUpload()
+                },
+                modifier = Modifier.testTag(UiTags.RAG_HOME_UPLOAD),
+            )
+            DropdownMenuItem(
+                leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null, modifier = Modifier.size(20.dp)) },
+                text = { Text(stringResource(R.string.rag_home_new_folder_title), style = NexaraTypography.labelLarge) },
+                onClick = {
+                    expanded = false
+                    onNewFolder()
+                },
+                modifier = Modifier.testTag(UiTags.RAG_HOME_NEW_FOLDER),
+            )
+        }
+    }
 }
 
 internal object RecoveryRagUiTags {
@@ -619,10 +715,39 @@ internal fun RagHomeScreenContent(
         if (state.currentTab == PortalTab.MEMORY) actions.onLoadMemory()
     }
 
+    var searchActive by rememberSaveable { mutableStateOf(state.searchQuery.isNotBlank()) }
+
     Scaffold(
         modifier = Modifier.testTag(UiTags.RAG_HOME_ROOT),
         containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.statusBars,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            NexaraTabHeader(
+                title = stringResource(R.string.rag_home_title),
+                searchActive = searchActive,
+                query = state.searchQuery,
+                onQueryChange = { query ->
+                    applyRagSearchSelectionPolicy(state.selectedIds, query)
+                    actions.onSearch(query)
+                },
+                onSearchActiveChange = { searchActive = it },
+                searchPlaceholder = stringResource(
+                    if (state.currentTab == PortalTab.DOCUMENTS) {
+                        R.string.rag_home_search
+                    } else {
+                        R.string.rag_home_memory_search
+                    }
+                ),
+                searchFieldTag = UiTags.RAG_HOME_SEARCH,
+            ) {
+                if (state.currentTab == PortalTab.DOCUMENTS) {
+                    RagAddAction(
+                        onUpload = actions.onOpenFilePicker,
+                        onNewFolder = { showNewFolderDialog = true },
+                    )
+                }
+            }
+        },
         floatingActionButton = {
             RagStatusFab(state = state, actions = actions)
         },
@@ -662,90 +787,18 @@ internal fun RagHomeScreenContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .widthIn(max = 720.dp)
-                    .padding(horizontal = NexaraSpacing.ScreenHorizontal)
-                    .padding(top = NexaraSpacing.Large),
+                    .padding(horizontal = NexaraSpacing.ScreenHorizontal),
             ) {
                 RagPortalTabSwitcher(
                     selectedTab = state.currentTab,
                     onTabSelected = actions.onChangeTab,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = NexaraSpacing.Small),
-                )
-
-                NexaraSearchBar(
-                    value = state.searchQuery,
-                    onValueChange = { query ->
-                        applyRagSearchSelectionPolicy(state.selectedIds, query)
-                        actions.onSearch(query)
-                    },
-                    placeholder = stringResource(
-                        if (state.currentTab == PortalTab.DOCUMENTS) {
-                            R.string.rag_home_search
-                        } else {
-                            R.string.rag_home_memory_search
-                        }
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = NexaraSpacing.Small)
-                        .testTag(UiTags.RAG_HOME_SEARCH),
+                        .padding(top = NexaraSpacing.XSmall, bottom = NexaraSpacing.Large),
                 )
 
                 when (state.currentTab) {
                     PortalTab.DOCUMENTS -> {
-                        FlowRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = NexaraSpacing.Small),
-                            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                        ) {
-                            val buttonPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                            FilledTonalButton(
-                                onClick = actions.onOpenFilePicker,
-                                contentPadding = buttonPadding,
-                                modifier = Modifier
-                                    .sizeIn(
-                                        minWidth = NexaraSpacing.MinimumTouchTarget,
-                                        minHeight = NexaraSpacing.MinimumTouchTarget,
-                                    )
-                                    .testTag(UiTags.RAG_HOME_UPLOAD),
-                            ) {
-                                Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text(stringResource(R.string.rag_folder_upload))
-                            }
-                            FilledTonalButton(
-                                onClick = { showNewFolderDialog = true },
-                                contentPadding = buttonPadding,
-                                modifier = Modifier
-                                    .sizeIn(
-                                        minWidth = NexaraSpacing.MinimumTouchTarget,
-                                        minHeight = NexaraSpacing.MinimumTouchTarget,
-                                    )
-                                    .testTag(UiTags.RAG_HOME_NEW_FOLDER),
-                            ) {
-                                Icon(Icons.Rounded.CreateNewFolder, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text(stringResource(R.string.rag_home_new_folder_title))
-                            }
-                            FilledTonalButton(
-                                onClick = actions.onOpenGraph,
-                                contentPadding = buttonPadding,
-                                modifier = Modifier
-                                    .sizeIn(
-                                        minWidth = NexaraSpacing.MinimumTouchTarget,
-                                        minHeight = NexaraSpacing.MinimumTouchTarget,
-                                    )
-                                    .testTag(UiTags.RAG_HOME_TAB_GRAPH),
-                            ) {
-                                Icon(Icons.Rounded.Hub, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text(stringResource(R.string.rag_details_tab_knowledge_graph))
-                            }
-                        }
-
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -778,7 +831,6 @@ internal fun RagHomeScreenContent(
                                 .fillMaxWidth()
                                 .testTag(UiTags.RAG_HOME_MEMORY_CONTENT),
                             contentPadding = PaddingValues(bottom = NexaraSpacing.XLarge),
-                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                         ) {
                             if (state.memoryVectors.isEmpty()) {
                                 item {
@@ -861,12 +913,13 @@ internal fun RagHomeScreenContent(
                                     }
                                 }
                             } else {
-                                items(filteredMemories, key = { it.id }) { memory ->
+                                itemsIndexed(filteredMemories, key = { _, memory -> memory.id }) { index, memory ->
                                     val isExpanded = expandedMemoryId == memory.id
+                                    // 记忆逐条拼成一个连续分组，与设置页的分组面一致。
                                     ListItem(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(MaterialTheme.shapes.medium)
+                                            .bettboxListGroupItem(index, filteredMemories.size)
                                             .testTag("memory-item-${memory.id}"),
                                         headlineContent = {
                                             Text(
@@ -941,7 +994,7 @@ internal fun RagHomeScreenContent(
                                             }
                                         },
                                         colors = ListItemDefaults.colors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            containerColor = Color.Transparent,
                                         ),
                                     )
                                 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hub_section_recent">Recent</string>
+    <string name="hub_section_pinned">Pinned</string>
+    <string name="hub_section_agents">Agents</string>
+    <string name="hub_section_sessions">Sessions</string>
+    <string name="hub_new_chat">New chat</string>
+    <string name="hub_cd_session_actions">Session actions</string>
+    <plurals name="hub_agent_session_count">
+        <item quantity="one">%1$d session</item>
+        <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <string name="rag_home_add">Add</string>
+    <string name="rag_home_section_browse">Browse</string>
+    <string name="rag_home_graph_desc">Entities and relations extracted from documents and chats</string>
+</resources>

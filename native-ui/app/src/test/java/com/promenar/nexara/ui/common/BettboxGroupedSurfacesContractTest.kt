@@ -68,16 +68,14 @@ class BettboxGroupedSurfacesContractTest {
     }
 
     @Test
-    fun `Agent 列表改为独立折叠卡片后不再使用分组面`() {
+    fun `对话页与资料页按设置页的分组面组织`() {
         val agentHub = source("hub/AgentHubScreen.kt")
-        val sessions = source("hub/AgentSessionsScreen.kt")
+        val ragHome = source("rag/RagHomeScreen.kt")
 
-        // 首页改为手风琴折叠卡片（每 Agent 一张 surfaceContainerLow 卡片），不再使用统一分组面
-        assertThat(agentHub).doesNotContain(".bettboxListGroup()")
-        assertThat(agentHub).contains("color = MaterialTheme.colorScheme.surfaceContainerLow")
-        assertThat(agentHub).contains("NexaraSpacing.ScreenHorizontal")
-        // 二级会话列表页保留旧样式（入口已从首页移除，仅作回滚兜底）
-        assertThat(sessions).contains(".bettboxListGroup()")
+        assertThat(agentHub).contains("NexaraSettingsSection(")
+        assertThat(agentHub).contains("headerStartPadding = NexaraSpacing.ScreenHorizontal")
+        assertThat(ragHome).contains("NexaraSettingsSection(")
+        assertThat(ragHome).contains("bettboxListGroupItem(index, filteredMemories.size)")
     }
 
     @Test

@@ -6,10 +6,10 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -26,6 +26,7 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class AgentHubScreenContentTest {
     @get:Rule
@@ -34,14 +35,20 @@ class AgentHubScreenContentTest {
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
 
+    private val coder = AgentDisplayItem(
+        agent = previewAgent("agent-coder", "Coding Expert", "Full-stack development"),
+        title = "Coding Expert",
+        subtitle = "Full-stack development",
+    )
+
     @Test
-    fun hubFloatingAddDispatchesWithoutOpeningSession() {
+    fun addAgentRowDispatchesWithoutOpeningSession() {
         val add = AtomicBoolean(false)
         val open = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
-                    state = AgentHubScreenState(),
+                    state = AgentHubScreenState(displayAgents = listOf(coder)),
                     actions = AgentHubScreenActions(
                         onRequestAdd = { add.set(true) },
                         onOpenChat = { open.set(true) },
@@ -55,7 +62,7 @@ class AgentHubScreenContentTest {
     }
 
     @Test
-    fun expandingAndCollapsingAgentPreservesScrolledRow() {
+    fun agentRowExpandsInPlaceAfterScrollingAndOpensItsSession() {
         val agents = (0 until 24).map { index ->
             AgentDisplayItem(
                 agent = previewAgent("agent-$index", "Agent $index", "Description $index"),
@@ -63,16 +70,54 @@ class AgentHubScreenContentTest {
                 subtitle = "Description $index",
             )
         }
+        val opened = AtomicReference<String>()
         rule.setContent {
             NexaraTheme {
-                AgentHubScreenContent(AgentHubScreenState(displayAgents = agents), AgentHubScreenActions())
+                AgentHubScreenContent(
+                    AgentHubScreenState(
+                        displayAgents = agents,
+                        sessionsByAgent = mapOf("agent-18" to listOf(
+                            Session(id = "session-18", agentId = "agent-18", title = "Agent 18 chat"),
+                        )),
+                    ),
+                    AgentHubScreenActions(onOpenChat = { opened.set(it) }),
+                )
             }
         }
-        rule.onNode(hasScrollAction()).performScrollToNode(hasText("Agent 18"))
-        rule.onNode(hasText("Agent 18") and hasClickAction()).performClick()
+        rule.onNode(hasScrollAction()).performScrollToNode(hasTestTag(UiTags.hubAgentCard("agent-18")))
+        rule.onNodeWithTag(UiTags.hubAgentSession("session-18")).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-18")).assertIsDisplayed().performClick()
+        assertThat(opened.get()).isNull()
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-18")).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                resources.getString(R.string.common_state_expanded),
+            ),
+        )
+        rule.onNode(hasScrollAction()).performScrollToNode(hasTestTag(UiTags.hubAgentSession("session-18")))
+        rule.onNodeWithTag(UiTags.hubAgentSession("session-18")).performClick()
+        assertThat(opened.get()).isEqualTo("session-18")
+    }
+
+    @Test
+    fun expandedAgentWithoutSessionsCreatesOneInPlace() {
+        val created = AtomicReference<String>()
+        rule.setContent {
+            NexaraTheme {
+                AgentHubScreenContent(
+                    state = AgentHubScreenState(displayAgents = listOf(coder)),
+                    actions = AgentHubScreenActions(onCreateSession = { created.set(it) }),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder")).performClick()
         rule.onNodeWithText(resources.getString(R.string.hub_sessions_empty)).assertIsDisplayed()
-        rule.onNode(hasText("Agent 18") and hasClickAction()).performClick()
-        rule.onNodeWithText("Agent 18").assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.hubAgentNewSession("agent-coder")).assertHasClickAction().performClick()
+        assertThat(created.get()).isEqualTo("agent-coder")
+
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder")).performClick()
+        rule.onNodeWithTag(UiTags.hubAgentNewSession("agent-coder")).assertDoesNotExist()
     }
 
     private fun previewAgent(
@@ -122,88 +167,37 @@ class AgentHubScreenContentTest {
     }
 
     @Test
-    fun cardActionsEntryOpensLocalizedMenu() {
+    fun agentLongPressOpensLocalizedMenuWithoutNavigating() {
+        val opened = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        displayAgents = listOf(
-                            AgentDisplayItem(
-                                agent = previewAgent(
-                                    id = "agent-coder",
-                                    name = "Coding Expert",
-                                    description = "Full-stack development",
-                                    isPinned = false,
-                                ),
-                                title = "Coding Expert",
-                                subtitle = "Full-stack development",
-                            ),
-                        ),
+                    state = AgentHubScreenState(displayAgents = listOf(coder)),
+                    actions = AgentHubScreenActions(
+                        onOpenChat = { opened.set(true) },
+                        onCreateSession = { opened.set(true) },
                     ),
-                    actions = AgentHubScreenActions(),
                 )
             }
         }
 
-        rule.onNodeWithTag(UiTags.hubAgentActions("agent-coder"))
-            .assertHasClickAction()
-            .performClick()
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder")).performTouchInput { longClick() }
 
-        rule.onNodeWithText(resources.getString(R.string.common_cd_pin)).assertExists()
+        rule.onNodeWithTag(UiTags.HUB_AGENT_MENU_PIN).assertExists()
         rule.onNodeWithText(resources.getString(R.string.shared_btn_edit)).assertExists()
         rule.onNodeWithText(resources.getString(R.string.shared_btn_delete)).assertExists()
+        rule.onNodeWithTag(UiTags.hubAgentNewSession("agent-coder")).assertDoesNotExist()
+        assertThat(opened.get()).isFalse()
     }
 
     @Test
-    fun rowClickExpandsSessionsAndCreateDispatchesAgent() {
-        val openSession = AtomicBoolean(false)
-        val createSession = AtomicBoolean(false)
+    fun recentSessionClickDispatchesExactSessionId() {
+        val opened = AtomicReference<String>()
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
                     state = AgentHubScreenState(
-                        displayAgents = listOf(
-                            AgentDisplayItem(
-                                agent = previewAgent(
-                                    id = "agent-coder",
-                                    name = "Coding Expert",
-                                    description = "Full-stack development",
-                                ),
-                                title = "Coding Expert",
-                                subtitle = "Full-stack development",
-                            ),
-                        ),
-                    ),
-                    actions = AgentHubScreenActions(
-                        onOpenChat = { openSession.set(true) },
-                        onCreateSession = { agentId -> createSession.set(agentId == "agent-coder") },
-                    ),
-                )
-            }
-        }
-
-        rule.onNode(hasText("Coding Expert") and hasClickAction())
-            .assertHasClickAction()
-            .performClick()
-
-        rule.onNodeWithText(resources.getString(R.string.hub_sessions_empty)).assertIsDisplayed()
-        assertThat(openSession.get()).isFalse()
-        rule.onNodeWithText(resources.getString(R.string.sessions_btn_new)).performClick()
-        assertThat(createSession.get()).isTrue()
-    }
-
-    @Test
-    fun expandedSessionClickDispatchesExactSessionId() {
-        val opened = java.util.concurrent.atomic.AtomicReference<String>()
-        rule.setContent {
-            NexaraTheme {
-                AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        displayAgents = listOf(AgentDisplayItem(
-                            agent = previewAgent("agent-coder", "Coding Expert", "Development"),
-                            title = "Coding Expert",
-                            subtitle = "Development",
-                        )),
+                        displayAgents = listOf(coder),
                         sessionsByAgent = mapOf("agent-coder" to listOf(
                             Session(id = "session-exact", agentId = "agent-coder", title = "Existing conversation"),
                         )),
@@ -212,44 +206,26 @@ class AgentHubScreenContentTest {
                 )
             }
         }
-        rule.onNode(hasText("Coding Expert") and hasClickAction()).performClick()
-        assertThat(opened.get()).isNull()
-        rule.onNodeWithText("Existing conversation").performClick()
+        rule.onNodeWithText(resources.getString(R.string.hub_section_recent)).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.hubSession("session-exact")).assertHasClickAction().performClick()
         assertThat(opened.get()).isEqualTo("session-exact")
     }
 
     @Test
-    fun menuClickDoesNotNavigateToSession() {
-        val openSession = AtomicBoolean(false)
+    fun newChatMenuCreatesSessionForChosenAgent() {
+        val created = AtomicReference<String>()
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        displayAgents = listOf(
-                            AgentDisplayItem(
-                                agent = previewAgent(
-                                    id = "agent-coder",
-                                    name = "Coding Expert",
-                                    description = "Full-stack development",
-                                ),
-                                title = "Coding Expert",
-                                subtitle = "Full-stack development",
-                            ),
-                        ),
-                    ),
-                    actions = AgentHubScreenActions(
-                        onOpenChat = { openSession.set(true) },
-                    ),
+                    state = AgentHubScreenState(displayAgents = listOf(coder)),
+                    actions = AgentHubScreenActions(onCreateSession = { created.set(it) }),
                 )
             }
         }
 
-        rule.onNodeWithTag(UiTags.hubAgentActions("agent-coder"))
-            .assertHasClickAction()
-            .performClick()
-
-        rule.onNodeWithText(resources.getString(R.string.common_cd_pin)).assertExists()
-        assertThat(openSession.get()).isFalse()
+        rule.onNodeWithTag(UiTags.HUB_NEW_CHAT).assertHasClickAction().performClick()
+        rule.onNodeWithTag(UiTags.hubNewChatAgent("agent-coder")).performClick()
+        assertThat(created.get()).isEqualTo("agent-coder")
     }
 
     @Test
@@ -280,7 +256,8 @@ class AgentHubScreenContentTest {
             .assert(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
-                    resources.getString(R.string.sessions_tag_pinned),
+                    resources.getString(R.string.sessions_tag_pinned) + ", " +
+                        resources.getString(R.string.common_state_collapsed),
                 ),
             )
     }
@@ -288,32 +265,20 @@ class AgentHubScreenContentTest {
     @Test
     fun shortSwipeDoesNotTriggerDeleteOrNavigationOnHighDensityDevice() {
         val deleteRequested = AtomicBoolean(false)
-        val openSession = AtomicBoolean(false)
+        val opened = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        displayAgents = listOf(
-                            AgentDisplayItem(
-                                agent = previewAgent(
-                                    id = "agent-swipe",
-                                    name = "Swipe Agent",
-                                    description = "Swipe threshold regression",
-                                ),
-                                title = "Swipe Agent",
-                                subtitle = "Swipe threshold regression",
-                            ),
-                        ),
-                    ),
+                    state = AgentHubScreenState(displayAgents = listOf(coder)),
                     actions = AgentHubScreenActions(
                         onRequestDelete = { deleteRequested.set(true) },
-                        onOpenChat = { openSession.set(true) },
+                        onOpenChat = { opened.set(true) },
                     ),
                 )
             }
         }
 
-        rule.onNodeWithTag(UiTags.hubAgentCard("agent-swipe"))
+        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder"))
             .performTouchInput {
                 swipe(
                     start = center,
@@ -324,7 +289,7 @@ class AgentHubScreenContentTest {
         rule.waitForIdle()
 
         assertThat(deleteRequested.get()).isFalse()
-        assertThat(openSession.get()).isFalse()
+        assertThat(opened.get()).isFalse()
     }
 
     @Test

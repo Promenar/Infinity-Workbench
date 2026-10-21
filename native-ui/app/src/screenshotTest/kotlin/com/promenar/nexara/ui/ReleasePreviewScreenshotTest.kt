@@ -90,9 +90,6 @@ import com.promenar.nexara.ui.hub.AgentDisplayItem
 import com.promenar.nexara.ui.hub.AgentHubScreenActions
 import com.promenar.nexara.ui.hub.AgentHubScreenContent
 import com.promenar.nexara.ui.hub.AgentHubScreenState
-import com.promenar.nexara.ui.hub.AgentSessionsScreenActions
-import com.promenar.nexara.ui.hub.AgentSessionsScreenContent
-import com.promenar.nexara.ui.hub.AgentSessionsScreenState
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenState
@@ -1543,6 +1540,16 @@ fun agentHubReleasePreview() {
                         subtitle = "General AI assistant with streaming chat and knowledge retrieval",
                     ),
                 ),
+                // 预览时间固定在过去的年份，时间列稳定显示为“年/月/日”。
+                sessionsByAgent = mapOf(
+                    "agent-coder" to listOf(
+                        Session(id = "hub-s1", agentId = "agent-coder", title = "Kotlin coroutine cancellation", updatedAt = 1_750_075_200_000L),
+                        Session(id = "hub-s2", agentId = "agent-coder", title = "Release checklist for 0.2.2", isPinned = true, updatedAt = 1_749_988_800_000L),
+                    ),
+                    "agent-writer" to listOf(
+                        Session(id = "hub-s3", agentId = "agent-writer", title = "Polish the product announcement", updatedAt = 1_749_902_400_000L),
+                    ),
+                ),
             ),
             actions = AgentHubScreenActions(),
         )
@@ -1615,119 +1622,87 @@ fun agentHubEmptyLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
-    name = "Agent sessions long titles English",
+    name = "Agent hub expanded long titles English",
     widthDp = PHONE_WIDTH_DP,
     heightDp = PHONE_HEIGHT_DP,
     locale = "en",
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
 @Composable
-fun agentSessionsLongTitlesReleasePreview() {
+fun agentHubExpandedLongTitlesReleasePreview() {
     ReleasePreviewSurface {
-        AgentSessionsScreenContent(
-            state = AgentSessionsScreenState(
-                agentName = "Release and architecture assistant with a long display name",
-                sessions = listOf(
-                    Session(
-                        id = "session-long-title",
-                        agentId = "agent-preview",
-                        title = "A very long conversation title that must remain readable without covering its timestamp",
-                        lastMessage = "The list remains continuous while retaining preview content and pin state.",
-                        isPinned = true,
-                        updatedAt = PREVIEW_RAG_NOW_MILLIS,
+        AgentHubScreenContent(
+            state = AgentHubScreenState(
+                displayAgents = listOf(
+                    AgentDisplayItem(
+                        agent = Agent(id = "agent-preview", name = "Release and architecture assistant with a long display name", icon = "A", color = "#5B8DEF"),
+                        title = "Release and architecture assistant with a long display name",
+                        subtitle = "Reviews architecture and release readiness",
                     ),
-                    Session(
-                        id = "session-second-title",
-                        agentId = "agent-preview",
-                        title = "Second long session title for the Material list layout",
-                        lastMessage = "Preview text wraps conservatively and never changes row navigation.",
-                        updatedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+                ),
+                sessionsByAgent = mapOf(
+                    "agent-preview" to listOf(
+                        Session(
+                            id = "session-long-title",
+                            agentId = "agent-preview",
+                            title = "A very long conversation title that must remain readable without covering its timestamp",
+                            isPinned = true,
+                            updatedAt = 1_750_075_200_000L,
+                        ),
+                        Session(
+                            id = "session-second-title",
+                            agentId = "agent-preview",
+                            title = "Second long session title for the grouped list layout",
+                            updatedAt = 1_749_988_800_000L,
+                        ),
                     ),
                 ),
             ),
-            actions = AgentSessionsScreenActions(),
+            actions = AgentHubScreenActions(),
+            initialExpandedAgentId = "agent-preview",
         )
     }
 }
 
 @PreviewTest
 @Preview(
-    name = "Agent sessions Chinese font scale 2",
+    name = "Agent hub expanded empty agent Chinese font scale 2",
     widthDp = 360,
-    heightDp = 640,
+    heightDp = 1280,
     locale = "zh-rCN",
     fontScale = 2f,
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
 @Composable
-fun agentSessionsLargeFontReleasePreview() {
+fun agentHubExpandedEmptyAgentLargeFontReleasePreview() {
     ReleasePreviewSurface {
-        AgentSessionsScreenContent(
-            state = AgentSessionsScreenState(
-                agentName = "超长名称发布与架构验收助手",
-                sessions = listOf(
-                    Session(
-                        id = "session-large-font",
-                        agentId = "agent-preview",
-                        title = "长名称会话在大字体下仍应完整保持可点击和可读",
-                        lastMessage = "预览文本不应遮挡时间或置顶状态。",
-                        isPinned = true,
-                        updatedAt = PREVIEW_RAG_NOW_MILLIS,
+        AgentHubScreenContent(
+            state = AgentHubScreenState(
+                displayAgents = listOf(
+                    AgentDisplayItem(
+                        agent = Agent(id = "agent-release", name = "发布与架构助手", icon = "A", color = "#5B8DEF"),
+                        title = "发布与架构助手",
+                        subtitle = "",
                     ),
-                    Session(
-                        id = "session-large-font-second",
-                        agentId = "agent-preview",
-                        title = "第二个会话",
-                        lastMessage = "用于验证连续列表的分隔线和间距。",
-                        updatedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+                    AgentDisplayItem(
+                        agent = Agent(id = "agent-empty", name = "破限助手", icon = "A", color = "#C0C1FF"),
+                        title = "破限助手",
+                        subtitle = "",
+                    ),
+                ),
+                sessionsByAgent = mapOf(
+                    "agent-release" to listOf(
+                        Session(
+                            id = "session-large-font",
+                            agentId = "agent-release",
+                            title = "长名称会话在大字体下仍应完整保持可点击和可读",
+                            updatedAt = 1_750_075_200_000L,
+                        ),
                     ),
                 ),
             ),
-            actions = AgentSessionsScreenActions(),
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Agent sessions search active",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "en",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun agentSessionsSearchActiveReleasePreview() {
-    ReleasePreviewSurface {
-        AgentSessionsScreenContent(
-            state = AgentSessionsScreenState(
-                agentName = "Preview agent",
-                sessions = emptyList(),
-                searchQuery = "release candidate",
-                searchActive = true,
-            ),
-            actions = AgentSessionsScreenActions(),
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Agent sessions empty Chinese",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "zh-rCN",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun agentSessionsEmptyReleasePreview() {
-    ReleasePreviewSurface {
-        AgentSessionsScreenContent(
-            state = AgentSessionsScreenState(
-                agentName = "发布与架构助手",
-                sessions = emptyList(),
-            ),
-            actions = AgentSessionsScreenActions(),
+            actions = AgentHubScreenActions(),
+            initialExpandedAgentId = "agent-empty",
         )
     }
 }

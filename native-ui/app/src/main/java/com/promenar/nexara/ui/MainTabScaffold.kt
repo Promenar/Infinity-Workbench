@@ -59,7 +59,6 @@ internal fun bottomNavigationTabWeight(selected: Boolean): Float = if (selected)
 @Composable
 fun MainTabScaffold(
     onNavigateToSecondary: (String) -> Unit,
-    onNavigateToSessionList: (String) -> Unit,
     onNavigateToAgentEdit: (String) -> Unit,
     onNavigateToChat: (String) -> Unit
 ) {

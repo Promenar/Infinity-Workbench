@@ -44,7 +44,9 @@ fun NexaraSearchBar(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = stringResource(R.string.common_search_placeholder),
-    onSearch: (() -> Unit)? = null
+    onSearch: (() -> Unit)? = null,
+    // 作用于输入框本身，供调用方挂接焦点请求等。
+    fieldModifier: Modifier = Modifier,
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val borderColor = if (isFocused) {
@@ -92,7 +94,7 @@ fun NexaraSearchBar(
                     keyboardActions = KeyboardActions(
                         onSearch = { onSearch?.invoke() }
                     ),
-                    modifier = Modifier
+                    modifier = fieldModifier
                         .fillMaxWidth()
                         .onFocusChanged { isFocused = it.isFocused }
                         .semantics { contentDescription = placeholder }

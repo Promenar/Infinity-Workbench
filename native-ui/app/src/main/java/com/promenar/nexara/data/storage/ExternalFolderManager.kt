@@ -255,9 +255,9 @@ class ExternalFolderManager(
         val (mount, relative) = resolve(sessionId, virtualPath)
         withContext(ExternalMountOperationBindings(mapOf(mount.alias to mount.id))) {
             val original = entry(sessionId, virtualPath) ?: fail("NOT_FOUND", "源文件不可用")
-            if (original.isDirectory) fail("IS_DIRECTORY", "请选择单个文件加入知识库")
+            if (original.isDirectory) fail("IS_DIRECTORY", "请选择单个文件加入资料")
             val mime = externalSnapshotMime(original.name)
-            if (mime !in com.promenar.nexara.share.core.SharedFileImporter.SUPPORTED_MIME_TYPES) fail("UNSUPPORTED", "知识库支持 TXT、Markdown、CSV、JSON、HTML、PDF 和 DOCX")
+            if (mime !in com.promenar.nexara.share.core.SharedFileImporter.SUPPORTED_MIME_TYPES) fail("UNSUPPORTED", "资料支持 TXT、Markdown、CSV、JSON、HTML、PDF 和 DOCX")
             val bytes = read(sessionId, virtualPath, 8L * 1024 * 1024)
             val after = entry(sessionId, virtualPath) ?: fail("UNAVAILABLE", "读取后来源不可用")
             if (after.uuid != original.uuid || after.updatedAt != original.updatedAt || after.sizeBytes != original.sizeBytes || after.hash.isNotEmpty() && after.hash != externalSha256(bytes)) fail("CONFLICT", "读取期间源文件发生变化，请重试")

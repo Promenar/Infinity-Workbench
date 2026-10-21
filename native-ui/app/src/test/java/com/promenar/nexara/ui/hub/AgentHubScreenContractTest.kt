@@ -38,40 +38,63 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `agent card exposes always visible dropdown menu entry with localized items`() {
+    fun `hub uses tab header and settings style grouped sections instead of fab and cards`() {
         val source = hubSource.readText()
-        assertThat(source).contains("MoreVert")
-        assertThat(source).contains("DropdownMenu")
-        assertThat(source).contains("DropdownMenuItem")
+        val content = source.substringAfter("internal fun AgentHubScreenContent(")
+
+        assertThat(content).contains("NexaraTabHeader(")
+        assertThat(content).contains("NexaraSettingsSection(")
+        assertThat(content).contains("R.string.hub_section_recent")
+        assertThat(content).contains("R.string.hub_section_agents")
+        assertThat(source).doesNotContain("FloatingActionButton")
+        assertThat(source).doesNotContain("AgentExpandableCard")
+        assertThat(source).doesNotContain("HorizontalDivider")
     }
 
     @Test
-    fun `agent card renders collapsible surface with expand indicator instead of list item`() {
+    fun `agent and session rows expose long press menus with accessibility actions`() {
         val source = hubSource.readText()
-        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
+        val agentRow = source.substringAfter("private fun HubAgentRow(").substringBefore("private fun HubAddAgentRow(")
+        val sessionRow = source.substringAfter("private fun HubSessionRow(").substringBefore("private fun HubAgentRow(")
 
-        assertThat(card).contains("Surface")
-        assertThat(card).contains("surfaceContainerLow")
-        assertThat(card).contains("Icons.Rounded.ExpandMore")
-        assertThat(card).doesNotContain("NexaraGlassCard")
-        assertThat(card).doesNotContain("ChevronRight")
+        listOf(agentRow, sessionRow).forEach { row ->
+            assertThat(row).contains("combinedClickable(")
+            assertThat(row).contains("onLongClick")
+            assertThat(row).contains("CustomAccessibilityAction(")
+            assertThat(row).contains("NexaraDropdownMenu(")
+        }
+        assertThat(agentRow).contains("UiTags.HUB_AGENT_MENU_EDIT")
     }
 
     @Test
-    fun `agent list spaces independent collapsible cards`() {
+    fun `agent rows expand in place to list sessions and create one instead of opening another page`() {
         val source = hubSource.readText()
-        val lazyColumn = source.substringAfter("LazyColumn(").substringBefore("items(state.displayAgents")
+        val content = source.substringAfter("internal fun AgentHubScreenContent(")
+        val agentRow = source.substringAfter("private fun HubAgentRow(").substringBefore("/** 头像宽度加间距")
+        val expandedArea = source.substringAfter("private fun HubAgentSessions(").substringBefore("private fun HubAddAgentRow(")
 
-        assertThat(lazyColumn).contains("verticalArrangement = Arrangement.spacedBy(10.dp)")
+        assertThat(content).contains("var expandedAgentId by rememberSaveable")
+        assertThat(content).contains("AnimatedVisibility(visible = expanded)")
+        assertThat(agentRow).contains("onClick = onToggleExpand")
+        assertThat(agentRow).contains("Icons.Rounded.ExpandMore")
+        assertThat(agentRow).contains("R.string.common_state_expanded")
+        assertThat(expandedArea).contains("R.string.sessions_btn_new")
+        assertThat(expandedArea).contains("actions.onCreateSession(agentId)")
+        assertThat(expandedArea).contains("R.string.hub_sessions_empty")
+        assertThat(source).doesNotContain("onOpenAgentSessions")
+        assertThat(source).doesNotContain("onNavigateToSessionList")
     }
 
     @Test
-    fun `agent rows rely on spacing and group fill without decorative dividers`() {
+    fun `session create pin and delete failures surface as a snackbar on the hub`() {
         val source = hubSource.readText()
-        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
+        val route = source.substringAfter("fun AgentHubScreen(").substringBefore("private fun AddAgentDialog(")
+        val content = source.substringAfter("internal fun AgentHubScreenContent(")
 
-        assertThat(card).doesNotContain("showDivider")
-        assertThat(card).doesNotContain("HorizontalDivider")
+        assertThat(route).contains("sessionListViewModel.operationFailed.collectAsState()")
+        assertThat(route).contains("R.string.sessions_operation_failed")
+        assertThat(route).contains("sessionListViewModel.dismissOperationFailure()")
+        assertThat(content).contains("snackbarHost = { SnackbarHost(snackbarHostState) }")
     }
 
     @Test
@@ -84,8 +107,10 @@ class AgentHubScreenContractTest {
         assertThat(source).contains("HUB_EMPTY_ADD_AGENT")
         assertThat(source).contains("HUB_AGENT_LIST")
         assertThat(source).contains("HUB_AGENT_CARD")
-        assertThat(source).contains("HUB_AGENT_ACTIONS")
-        assertThat(source).contains("hubAgentActions")
+        assertThat(source).contains("HUB_NEW_CHAT")
+        assertThat(source).contains("hubSession")
+        assertThat(source).contains("hubAgentSession")
+        assertThat(source).contains("hubAgentNewSession")
     }
 
     @Test
@@ -112,13 +137,11 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `agent card exposes pinned marker and expand collapse state`() {
+    fun `pinned agents and sessions keep a visible marker and state description`() {
         val source = hubSource.readText()
-        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
 
-        assertThat(card).contains("isPinned")
-        assertThat(card).contains("PushPin")
-        assertThat(card).contains("expanded")
-        assertThat(card).contains("AnimatedVisibility")
+        assertThat(source).contains("PushPin")
+        assertThat(source).contains("stateDescription = pinnedState")
+        assertThat(source).contains("R.string.sessions_tag_pinned).takeIf { agent.isPinned }")
     }
 }
