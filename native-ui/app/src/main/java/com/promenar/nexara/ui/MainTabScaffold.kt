@@ -1,7 +1,5 @@
 package com.promenar.nexara.ui
 
-import android.os.Build
-import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -41,8 +39,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.R
 
 enum class AppTab(@StringRes val titleRes: Int, val icon: ImageVector) {
@@ -57,16 +55,6 @@ internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): andro
     minOf(available, 960.dp)
 
 internal fun bottomNavigationTabWeight(selected: Boolean): Float = if (selected) 1.45f else 1f
-
-internal fun shouldPerformNavigationHaptic(
-    current: AppTab,
-    target: AppTab,
-    enabled: Boolean,
-): Boolean = enabled && current != target
-
-internal fun navigationHapticConstant(sdkInt: Int): Int =
-    if (sdkInt >= 34) HapticFeedbackConstants.SEGMENT_TICK
-    else HapticFeedbackConstants.CLOCK_TICK
 
 @Composable
 fun MainTabScaffold(
@@ -226,8 +214,7 @@ private fun BettboxNavigationContent(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
 ) {
-    val view = LocalView.current
-    val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
+    val haptics = LocalNexaraHaptics.current
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -252,16 +239,7 @@ private fun BettboxNavigationContent(
                     .selectable(
                         selected = selected,
                         onClick = {
-                            if (shouldPerformNavigationHaptic(
-                                    current = selectedTab,
-                                    target = tab,
-                                    enabled = app?.hapticEnabled == true,
-                                )
-                            ) {
-                                view.performHapticFeedback(
-                                    navigationHapticConstant(Build.VERSION.SDK_INT),
-                                )
-                            }
+                            if (selectedTab != tab) haptics.perform(NexaraHapticEvent.SELECTION)
                             onTabSelected(tab)
                         },
                         role = Role.Tab,

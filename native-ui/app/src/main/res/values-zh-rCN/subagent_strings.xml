@@ -5,8 +5,6 @@
     <string name="subagent_approval_notification_title">子代理等待审批</string>
     <string name="subagent_approval_notification_text">请求使用 %1$s，10 分钟内未处理将停止</string>
     <string name="subagent_approval_title">来自子代理 · %1$s</string>
-    <string name="subagent_approval_task">任务：%1$s</string>
-    <string name="subagent_approval_tool">请求使用：%1$s</string>
     <string name="subagent_approval_remember">以后允许此目标</string>
     <string name="subagent_approval_allow">允许</string>
     <string name="subagent_approval_deny">拒绝</string>
@@ -35,19 +33,20 @@
     <string name="subagent_viewer_timeline_empty">尚无步骤</string>
     <string name="subagent_viewer_result">交回主 Agent 的结果</string>
     <string name="subagent_viewer_no_result">尚无结果</string>
-    <string name="subagent_viewer_footer">仅供查看 · 子代理只与主 Agent 通信，不接收你的输入</string>
+    <string name="subagent_viewer_footer">子代理只与主 Agent 通信，不接收你的输入。</string>
     <string name="subagent_viewer_missing">该子代理记录已不存在。</string>
-    <string name="subagent_event_tool_call">调用 %1$s</string>
-    <string name="subagent_event_tool_result">%1$s 返回</string>
-    <string name="subagent_event_tool_failed">%1$s 失败</string>
-    <string name="subagent_event_approval">请求审批 · %1$s</string>
-    <string name="subagent_event_error">错误</string>
     <string name="chat_step_subagent_name">子代理</string>
     <string name="chat_step_subagent_running">子代理运行中…</string>
     <plurals name="chat_step_subagent_done"><item quantity="other">派生了 %1$d 个子代理</item></plurals>
     <string name="subagent_elapsed_seconds">%1$d 秒</string>
     <string name="subagent_elapsed_minutes">%1$d 分 %2$d 秒</string>
-    <string name="subagent_tokens">%1$d tokens</string>
+    <string name="subagent_tokens">%1$s Token</string>
     <string name="skill_agent_task">子代理</string>
     <string name="skill_agent_task_desc">允许 Agent 把至多 3 个并行子任务交给独立上下文的子代理；审批沿用本会话规则，每个子代理会额外调用模型</string>
+    <string name="subagent_approval_session_label">会话</string>
+    <string name="subagent_approval_task_label">任务</string>
+    <string name="subagent_status_failed_elapsed">失败 · %1$s</string>
+    <string name="subagent_viewer_footer_title">仅供查看</string>
+    <string name="subagent_event_waiting_approval">等待你审批</string>
+    <string name="subagent_event_needed_approval">需要审批</string>
 </resources>

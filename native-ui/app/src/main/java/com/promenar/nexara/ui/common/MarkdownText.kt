@@ -769,6 +769,7 @@ private fun ReadingCodeBlock(
     onCodeChange: ((String) -> Unit)?,
     codeContent: @Composable () -> Unit,
 ) {
+    val haptics = LocalNexaraHaptics.current
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var editing by remember { mutableStateOf(false) }
@@ -809,7 +810,7 @@ private fun ReadingCodeBlock(
             ) {
                 Icon(if (editing) Icons.Rounded.Check else Icons.Rounded.Edit, editDescription, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { clipboard.setText(AnnotatedString(code)); copied = true }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { clipboard.setText(AnnotatedString(code)); copied = true; haptics.perform(NexaraHapticEvent.CONFIRM) }, modifier = Modifier.size(48.dp)) {
                 Icon(if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy, copyDescription, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

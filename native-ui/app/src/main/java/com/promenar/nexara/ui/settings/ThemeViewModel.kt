@@ -70,6 +70,14 @@ class ThemeViewModel(
         store.setCollapseFinishedTurns(enabled)
     }
 
+    fun setHapticsEnabled(enabled: Boolean) {
+        store.setHapticsEnabled(enabled)
+    }
+
+    fun setStatusHapticsEnabled(enabled: Boolean) {
+        store.setStatusHapticsEnabled(enabled)
+    }
+
     companion object {
         fun provideFactory(store: ThemePreferenceStore): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

@@ -1,7 +1,5 @@
 package com.promenar.nexara.ui.common
 
-import android.os.Build
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -35,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +80,7 @@ fun NexaraTabSwitcher(
 ) {
     if (itemCount <= 0) return
 
-    val view = LocalView.current
+    val haptics = LocalNexaraHaptics.current
     val safeSelectedIndex = selectedIndex.coerceIn(0, itemCount - 1)
 
     BoxWithConstraints(
@@ -149,14 +146,7 @@ fun NexaraTabSwitcher(
                             role = Role.Tab,
                             onClick = {
                                 if (safeSelectedIndex != index) {
-                                    runCatching {
-                                        val hapticConstant = if (Build.VERSION.SDK_INT >= 34) {
-                                            HapticFeedbackConstants.SEGMENT_TICK
-                                        } else {
-                                            HapticFeedbackConstants.CLOCK_TICK
-                                        }
-                                        view.performHapticFeedback(hapticConstant)
-                                    }
+                                    haptics.perform(NexaraHapticEvent.SELECTION)
                                     onTabSelected(index)
                                 }
                             },

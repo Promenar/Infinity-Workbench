@@ -1,10 +1,10 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
-import android.os.Build
 import com.promenar.nexara.ui.theme.forReading
-import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -113,7 +113,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import kotlinx.coroutines.delay
@@ -1301,7 +1300,7 @@ internal fun RagPortalTabSwitcher(
     onTabSelected: (PortalTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val view = LocalView.current
+    val haptics = LocalNexaraHaptics.current
     val tabs = remember { listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY) }
     val selectedIndex = if (selectedTab == PortalTab.MEMORY) 1 else 0
 
@@ -1366,12 +1365,7 @@ internal fun RagPortalTabSwitcher(
                             role = Role.Tab,
                             onClick = {
                                 if (selectedTab != tab) {
-                                    val hapticConstant = if (Build.VERSION.SDK_INT >= 34) {
-                                        HapticFeedbackConstants.SEGMENT_TICK
-                                    } else {
-                                        HapticFeedbackConstants.CLOCK_TICK
-                                    }
-                                    view.performHapticFeedback(hapticConstant)
+                                    haptics.perform(NexaraHapticEvent.SELECTION)
                                     onTabSelected(tab)
                                 }
                             },

@@ -15,6 +15,8 @@ class ThemePreferenceStore(context: Context) {
         const val TEXT_SCALE_ENABLED_KEY = "theme_text_scale_enabled"
         const val TEXT_SCALE_KEY = "theme_text_scale"
         const val COLLAPSE_FINISHED_TURNS_KEY = "theme_collapse_finished_turns"
+        const val HAPTICS_KEY = "haptic_enabled"
+        const val STATUS_HAPTICS_KEY = "haptic_status_enabled"
         private const val PREFERENCES_NAME = "nexara_settings"
         private val THEME_KEYS = setOf(
             MODE_KEY,
@@ -24,6 +26,8 @@ class ThemePreferenceStore(context: Context) {
             TEXT_SCALE_ENABLED_KEY,
             TEXT_SCALE_KEY,
             COLLAPSE_FINISHED_TURNS_KEY,
+            HAPTICS_KEY,
+            STATUS_HAPTICS_KEY,
         )
     }
 
@@ -80,6 +84,16 @@ class ThemePreferenceStore(context: Context) {
         preferences.edit().putBoolean(COLLAPSE_FINISHED_TURNS_KEY, enabled).apply()
     }
 
+    fun setHapticsEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(hapticsEnabled = enabled)
+        preferences.edit().putBoolean(HAPTICS_KEY, enabled).apply()
+    }
+
+    fun setStatusHapticsEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(statusHapticsEnabled = enabled)
+        preferences.edit().putBoolean(STATUS_HAPTICS_KEY, enabled).apply()
+    }
+
     private fun readPreferences(): NexaraThemePreferences = NexaraThemePreferences(
         mode = NexaraThemeMode.fromPreferenceValue(preferences.getString(MODE_KEY, null)),
         colorSource = NexaraColorSource.fromPreferenceValue(
@@ -103,6 +117,9 @@ class ThemePreferenceStore(context: Context) {
         } else {
             true
         },
+        // 触感与状态提醒同样缺省开启。
+        hapticsEnabled = !preferences.contains(HAPTICS_KEY) || preferences.getBoolean(HAPTICS_KEY, true),
+        statusHapticsEnabled = !preferences.contains(STATUS_HAPTICS_KEY) || preferences.getBoolean(STATUS_HAPTICS_KEY, true),
     )
 }
 

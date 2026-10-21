@@ -1,5 +1,15 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -177,6 +187,7 @@ internal fun TurnMemorySheet(
 }
 
 /** 本轮抽取的实体与关系，抽取失败或未完成时提供重新抽取。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TurnGraphSheetContent(
     state: TurnGraphState,
@@ -186,16 +197,10 @@ internal fun TurnGraphSheetContent(
     showTitle: Boolean = true,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (showTitle) {
-            Text(
-                text = stringResource(R.string.turn_graph_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+        if (showTitle) SectionTitle(stringResource(R.string.turn_graph_title))
         val failed = state.status == TurnGraphState.Status.FAILED
         Text(
-            text = if (failed) stringResource(R.string.turn_graph_failed_title) else state.label(),
+            text = if (failed) stringResource(R.string.turn_graph_failed_title) else turnGraphSheetHeadline(state),
             style = MaterialTheme.typography.titleSmall,
             color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         )
@@ -213,29 +218,41 @@ internal fun TurnGraphSheetContent(
             Hint(stringResource(R.string.turn_graph_empty))
         }
         if (entities.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.turn_graph_entities_title),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = entities.joinToString(stringResource(R.string.chat_step_summary_separator)) { it.name },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            SubsectionTitle(stringResource(R.string.turn_graph_entities_title))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                entities.forEach { entity ->
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        Text(
+                            entity.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
+                    }
+                }
+            }
         }
         if (relations.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.turn_graph_relations_title),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            SubsectionTitle(stringResource(R.string.turn_graph_relations_title))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.medium)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val emphasis = MaterialTheme.colorScheme.onSurface
+                val muted = MaterialTheme.colorScheme.onSurfaceVariant
                 relations.forEach { relation ->
                     Text(
-                        text = stringResource(R.string.turn_graph_relation, relation.source, relation.relation, relation.target),
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(color = emphasis, fontWeight = FontWeight.Medium)) { append(relation.source) }
+                            withStyle(SpanStyle(color = muted)) { append("  ${readableRelation(relation.relation)}  →  ") }
+                            withStyle(SpanStyle(color = emphasis, fontWeight = FontWeight.Medium)) { append(relation.target) }
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -264,6 +281,24 @@ internal fun TurnGraphSheetContent(
     }
 }
 
+/** 面板标题行用完整句子；页脚的“图谱 +N 实体”只适合紧凑状态行。 */
+@Composable
+private fun turnGraphSheetHeadline(state: TurnGraphState): String {
+    val entities = pluralStringResource(R.plurals.turn_graph_sheet_entities, state.entities, state.entities)
+    return when (state.status) {
+        TurnGraphState.Status.DONE -> stringResource(
+            R.string.turn_graph_sheet_done,
+            entities,
+            pluralStringResource(R.plurals.turn_graph_sheet_relations, state.relations, state.relations),
+        )
+        TurnGraphState.Status.PARTIAL -> stringResource(R.string.turn_graph_sheet_partial, entities)
+        else -> state.label()
+    }
+}
+
+/** 抽取模型常给出 `developed_by` 这类谓词，展示时换成空格分隔。 */
+internal fun readableRelation(relation: String): String = relation.replace('_', ' ').trim()
+
 @Composable
 internal fun TurnMemorySheetContent(
     state: TurnMemoryState,
@@ -275,42 +310,44 @@ internal fun TurnMemorySheetContent(
         modifier = Modifier.fillMaxWidth().testTag(TURN_MEMORY_SHEET_TAG),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        val statusLine = buildList {
-            add(stringResource(state.status.labelRes()))
-            if (state.status == TurnMemoryState.Status.STORED && state.chunkCount > 0) {
-                add(pluralStringResource(R.plurals.turn_memory_chunk_count, state.chunkCount, state.chunkCount))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(state.status.labelRes()),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (state.status == TurnMemoryState.Status.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            when (state.status) {
+                TurnMemoryState.Status.WRITING -> Hint(stringResource(R.string.turn_memory_writing_hint))
+                TurnMemoryState.Status.REMOVED -> Hint(stringResource(R.string.turn_memory_removed_hint))
+                TurnMemoryState.Status.FAILED -> Hint(stringResource(R.string.turn_memory_failed_hint))
+                TurnMemoryState.Status.STORED -> if (state.chunkCount > 0) {
+                    Hint(pluralStringResource(R.plurals.turn_memory_chunk_count, state.chunkCount, state.chunkCount))
+                }
             }
-        }.joinToString(stringResource(R.string.chat_step_summary_separator))
-        Text(
-            text = statusLine,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (state.status == TurnMemoryState.Status.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        )
-        when (state.status) {
-            TurnMemoryState.Status.WRITING -> Hint(stringResource(R.string.turn_memory_writing_hint))
-            TurnMemoryState.Status.REMOVED -> Hint(stringResource(R.string.turn_memory_removed_hint))
-            TurnMemoryState.Status.FAILED -> Hint(stringResource(R.string.turn_memory_failed_hint))
-            TurnMemoryState.Status.STORED -> Unit
         }
 
-        Text(
-            text = stringResource(R.string.turn_memory_visibility_title),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Hint(stringResource(R.string.turn_memory_visibility_session))
-            Hint(stringResource(R.string.turn_memory_visibility_agent))
-            Hint(stringResource(if (details?.shareWithOtherAgents != false) R.string.turn_memory_visibility_shared else R.string.turn_memory_visibility_private))
+        SectionTitle(stringResource(R.string.turn_memory_visibility_title))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.medium)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            VisibilityRow(stringResource(R.string.turn_memory_visibility_label_session), stringResource(R.string.turn_memory_visibility_session))
+            VisibilityRow(stringResource(R.string.turn_memory_visibility_label_agent), stringResource(R.string.turn_memory_visibility_agent))
+            VisibilityRow(
+                stringResource(R.string.turn_memory_visibility_label_others),
+                stringResource(if (details?.shareWithOtherAgents != false) R.string.turn_memory_visibility_shared else R.string.turn_memory_visibility_private),
+            )
         }
 
         val chunks = details?.chunks.orEmpty()
         if (state.status == TurnMemoryState.Status.STORED && chunks.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.turn_memory_chunks_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            SectionTitle(stringResource(R.string.turn_memory_chunks_title))
+            val userLabel = stringResource(R.string.turn_memory_role_user)
+            val assistantLabel = stringResource(R.string.turn_memory_role_assistant)
+            val roleColor = MaterialTheme.colorScheme.primary
             chunks.forEach { chunk ->
                 Surface(
                     shape = MaterialTheme.shapes.medium,
@@ -318,12 +355,25 @@ internal fun TurnMemorySheetContent(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = chunk,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = remember(chunk, userLabel, assistantLabel, roleColor) {
+                            buildAnnotatedString {
+                                memoryChunkParts(chunk).forEachIndexed { index, part ->
+                                    if (index > 0) append("\n")
+                                    part.role?.let { role ->
+                                        withStyle(SpanStyle(color = roleColor, fontWeight = FontWeight.Medium)) {
+                                            append(if (role == MemoryChunkRole.USER) userLabel else assistantLabel)
+                                        }
+                                        append("  ")
+                                    }
+                                    append(part.text)
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall.forReading(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 6,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     )
                 }
             }
@@ -349,6 +399,62 @@ internal fun TurnMemorySheetContent(
             TurnMemoryState.Status.WRITING -> Unit
         }
     }
+}
+
+internal enum class MemoryChunkRole { USER, ASSISTANT }
+
+internal data class MemoryChunkPart(val role: MemoryChunkRole?, val text: String)
+
+/** 记忆片段按“User: / Assistant:”行首标记拆成发言；片段从半句开始时，开头部分没有角色。 */
+internal fun memoryChunkParts(chunk: String): List<MemoryChunkPart> {
+    val parts = mutableListOf<MemoryChunkPart>()
+    var role: MemoryChunkRole? = null
+    val buffer = StringBuilder()
+    fun flush() {
+        val text = buffer.toString().trim()
+        if (text.isNotEmpty()) parts += MemoryChunkPart(role, text)
+        buffer.clear()
+    }
+    chunk.lineSequence().forEach { line ->
+        val marker = MEMORY_ROLE_MARKERS.entries.firstOrNull { line.startsWith(it.key) }
+        if (marker != null) {
+            flush()
+            role = marker.value
+            buffer.append(line.removePrefix(marker.key))
+        } else {
+            if (buffer.isNotEmpty()) buffer.append('\n')
+            buffer.append(line)
+        }
+    }
+    flush()
+    return parts
+}
+
+private val MEMORY_ROLE_MARKERS = linkedMapOf("User:" to MemoryChunkRole.USER, "Assistant:" to MemoryChunkRole.ASSISTANT)
+
+@Composable
+private fun VisibilityRow(label: String, value: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(VisibilityLabelWidth).padding(top = 1.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodySmall.forReading(), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+    }
+}
+
+private val VisibilityLabelWidth = 96.dp
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text = text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun SubsectionTitle(text: String) {
+    Text(text = text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

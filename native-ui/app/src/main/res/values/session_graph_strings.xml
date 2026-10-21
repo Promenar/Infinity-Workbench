@@ -21,4 +21,14 @@
     <string name="turn_graph_open_graph">View in graph</string>
     <string name="session_graph_queue_title">Background extraction</string>
     <string name="session_graph_queue_summary">%1$d pending · %2$d failed · Today %3$d turns, %4$d calls</string>
+    <string name="turn_graph_sheet_done">Added %1$s and %2$s</string>
+    <string name="turn_graph_sheet_partial">Added %1$s, extraction incomplete</string>
+    <plurals name="turn_graph_sheet_entities">
+        <item quantity="one">%d entity</item>
+        <item quantity="other">%d entities</item>
+    </plurals>
+    <plurals name="turn_graph_sheet_relations">
+        <item quantity="one">%d relation</item>
+        <item quantity="other">%d relations</item>
+    </plurals>
 </resources>

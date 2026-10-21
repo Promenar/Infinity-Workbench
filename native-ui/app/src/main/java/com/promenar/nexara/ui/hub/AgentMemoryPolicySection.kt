@@ -52,7 +52,7 @@ internal fun AgentMemoryPolicySection(
             val (default, cap) = policy.ordinals(resource)
             NexaraValueRow(
                 title = stringResource(resource.titleRes),
-                value = stringResource(R.string.agent_memory_cap_value, stringResource(scopeLabelRes(resource, cap))),
+                value = stringResource(scopeLabelRes(resource, cap)),
                 subtitle = stringResource(R.string.agent_memory_default_value, stringResource(scopeLabelRes(resource, default))),
                 onClick = { editing = resource },
                 modifier = Modifier.testTag("agent_memory_${resource.name.lowercase()}"),

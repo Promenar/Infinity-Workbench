@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import androidx.compose.animation.*
 import com.promenar.nexara.ui.theme.forReading
@@ -704,6 +706,7 @@ internal fun AssistantActionRow(
     graphState: com.promenar.nexara.data.rag.TurnGraphState? = null,
     onOpenMemory: (() -> Unit)? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     if (isGenerating) return
     var showMore by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
@@ -719,7 +722,7 @@ internal fun AssistantActionRow(
             }.fillMaxWidth().wrapContentHeight(unbounded = true).height(48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onCopy, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_COPY")) {
+            IconButton(onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopy() }, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_COPY")) {
                 Icon(Icons.Rounded.ContentCopy, stringResource(R.string.chat_action_copy), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
             if (onRegenerate != null) {
@@ -741,7 +744,7 @@ internal fun AssistantActionRow(
                             text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
                             leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
                             modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
-                            onClick = { onCopyAllProcess(); showMore = false },
+                            onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopyAllProcess(); showMore = false },
                         )
                     }
                     if (onBranch != null) {
@@ -1401,6 +1404,7 @@ fun MessageContextMenu(
     offset: DpOffset = DpOffset.Zero,
     timestamp: String? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     NexaraDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -1420,6 +1424,7 @@ fun MessageContextMenu(
             },
             text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelLarge) },
             onClick = {
+                haptics.perform(NexaraHapticEvent.CONFIRM)
                 onCopy()
                 onDismiss()
             }

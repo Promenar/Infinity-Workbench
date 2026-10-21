@@ -14,7 +14,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,9 +60,16 @@ fun NexaraSlider(
         label = "thumbSize"
     )
 
+    // 有刻度的滑块在跨过刻度时振动；连续滑块不振动。
+    val haptics = LocalNexaraHaptics.current
+    var lastTick by remember { mutableStateOf(value) }
     Slider(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { next ->
+            if (steps > 0 && next != lastTick) haptics.perform(NexaraHapticEvent.STEP)
+            lastTick = next
+            onValueChange(next)
+        },
         modifier = modifier,
         enabled = enabled,
         valueRange = valueRange,

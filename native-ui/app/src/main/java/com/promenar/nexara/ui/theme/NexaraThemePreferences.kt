@@ -30,4 +30,8 @@ data class NexaraThemePreferences(
     val textScale: Float = 1f,
     /** 一轮回复完成后把思考与工具过程收为一行摘要，只单独显示最终正文。 */
     val collapseFinishedTurns: Boolean = true,
+    /** 点按、开关、发送与审批等交互的触感反馈；关闭后状态提醒也不振动。 */
+    val hapticsEnabled: Boolean = true,
+    /** 等待审批、较长生成完成或失败时振动一次。 */
+    val statusHapticsEnabled: Boolean = true,
 )

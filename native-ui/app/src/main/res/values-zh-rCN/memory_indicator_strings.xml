@@ -9,10 +9,10 @@
         <item quantity="other">%d 个记忆片段</item>
     </plurals>
     <string name="turn_memory_visibility_title">可检索范围</string>
-    <string name="turn_memory_visibility_session">本会话始终可检索。</string>
-    <string name="turn_memory_visibility_agent">本助手的其他会话在对话记忆范围为“本助手”或“全部助手”时可检索。</string>
-    <string name="turn_memory_visibility_shared">其他助手在对话记忆范围为“全部助手”时也可检索。</string>
-    <string name="turn_memory_visibility_private">本助手为私密助手，其他助手不可检索。</string>
+    <string name="turn_memory_visibility_session">始终可检索</string>
+    <string name="turn_memory_visibility_agent">对话记忆范围为“本助手”或“全部助手”时可检索</string>
+    <string name="turn_memory_visibility_shared">对话记忆范围为“全部助手”时可检索</string>
+    <string name="turn_memory_visibility_private">不可检索，本助手为私密助手</string>
     <string name="turn_memory_chunks_title">已写入的片段</string>
     <string name="turn_memory_writing_hint">正在把本轮写入记忆…</string>
     <string name="turn_memory_removed_hint">本轮不在记忆中，聊天记录保留。</string>
@@ -28,10 +28,10 @@
     <plurals name="chat_undo_delete_with_memory">
         <item quantity="other">已删除 %d 条消息及其记忆</item>
     </plurals>
-    <string name="chat_rag_scope_segment">范围 %1$s</string>
-    <string name="chat_rag_breakdown_memory">记忆 %1$d</string>
-    <string name="chat_rag_breakdown_documents">文档 %1$d</string>
-    <string name="chat_rag_breakdown_graph">图谱路径 %1$d</string>
+    <string name="chat_rag_scope_segment">范围：%1$s</string>
+    <string name="chat_rag_breakdown_memory">记忆 %1$d 条</string>
+    <string name="chat_rag_breakdown_documents">文档 %1$d 条</string>
+    <string name="chat_rag_breakdown_graph">图谱路径 %1$d 条</string>
     <string name="chat_rag_breakdown_jit">临时抽取 %1$d 次</string>
     <string name="rag_trace_scope_memory">对话记忆</string>
     <string name="rag_trace_scope_graph">图谱对话证据</string>
@@ -65,4 +65,9 @@
     <string name="rag_trace_rerank_value_failed">失败，保持原有顺序</string>
     <string name="rag_trace_rerank_value_off">未开启</string>
     <string name="rag_trace_duration">%1$d 毫秒</string>
+    <string name="turn_memory_visibility_label_session">本会话</string>
+    <string name="turn_memory_visibility_label_agent">本助手其他会话</string>
+    <string name="turn_memory_visibility_label_others">其他助手</string>
+    <string name="turn_memory_role_user">你</string>
+    <string name="turn_memory_role_assistant">助手</string>
 </resources>

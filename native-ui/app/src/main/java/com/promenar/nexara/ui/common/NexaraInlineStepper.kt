@@ -61,7 +61,13 @@ fun NexaraInlineStepper(
 
 @Composable
 private fun StepperButton(icon: ImageVector, label: String, enabled: Boolean, onStep: () -> Unit) {
-    val currentStep by rememberUpdatedState(onStep)
+    val haptics = LocalNexaraHaptics.current
+    val tickingStep: () -> Unit = {
+        haptics.perform(NexaraHapticEvent.STEP)
+        onStep()
+    }
+    val currentStep by rememberUpdatedState(tickingStep)
+    val silentStep by rememberUpdatedState(onStep)
     val currentEnabled by rememberUpdatedState(enabled)
     Box(
         Modifier.width(48.dp).requiredHeight(48.dp).minimumInteractiveComponentSize()
@@ -80,9 +86,12 @@ private fun StepperButton(icon: ImageVector, label: String, enabled: Boolean, on
                         coroutineScope {
                             val repeat = launch {
                                 delay(400)
+                                var count = 0
                                 while (currentEnabled) {
                                     repeated = true
-                                    currentStep()
+                                    // 长按连续调整时每 4 步振动一次，避免持续嗡鸣。
+                                    if (count % 4 == 0) currentStep() else silentStep()
+                                    count++
                                     delay(80)
                                 }
                             }

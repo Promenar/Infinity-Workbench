@@ -286,6 +286,13 @@ fun ChatScreenContent(
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
     val collapseFinishedTurns = state.collapseFinishedTurns
 
+    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
+    val statusHaptics = remember { ChatStatusHapticTracker() }
+    val hapticSnapshot = ChatHapticSnapshot(uiState.session?.id, uiState.status, uiState.approvalRequest?.hapticKey())
+    LaunchedEffect(hapticSnapshot) {
+        statusHaptics.next(hapticSnapshot, System.currentTimeMillis())?.let(haptics::perform)
+    }
+
     val density = LocalDensity.current
     var composerHeightPx by remember { mutableIntStateOf(0) }
     val currentComposerHeightPx by rememberUpdatedState(composerHeightPx)
@@ -891,7 +898,7 @@ fun ChatScreenContent(
 }
 
 @Composable
-private fun approvalRiskLabel(risk: String): String = stringResource(
+internal fun approvalRiskLabel(risk: String): String = stringResource(
     when (risk) {
         "safe_read" -> R.string.chat_approval_risk_safe_read
         "session_state" -> R.string.chat_approval_risk_session_state
@@ -1729,13 +1736,20 @@ private fun GenerationStatusButton(
         GenerationStatus.ERROR -> statusDescription
     }
 
+    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
     ChatCompactIconButton(
         onClick = {
             when (status) {
-                GenerationStatus.IDLE -> onSend()
+                GenerationStatus.IDLE -> {
+                    if (canSend) haptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.CONFIRM)
+                    onSend()
+                }
                 GenerationStatus.ERROR -> onDismissError()
                 GenerationStatus.COMPLETED -> Unit
-                else -> onStop()
+                else -> {
+                    haptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.SELECTION)
+                    onStop()
+                }
             }
         },
         modifier = Modifier

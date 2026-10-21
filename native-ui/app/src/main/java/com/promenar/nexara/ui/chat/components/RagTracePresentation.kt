@@ -115,16 +115,19 @@ internal fun ragScopeSegment(trace: RagRetrievalTrace?): RagText? {
 
 /**
  * 检索卡摘要下一行：按来源计数（对话记忆、文档、图谱路径），并标出图谱临时抽取次数。
- * 引用按是否关联文档区分来源，会话摘要计入记忆。没有任何条目时为空。
+ * 引用按是否关联文档区分来源，会话摘要计入记忆。没有任何条目，或只有一类引用（数目已在摘要的结果数中）时为空。
  */
-internal fun ragSourceBreakdown(references: List<RagReference>, kgPathCount: Int, trace: RagRetrievalTrace?): List<RagText> = buildList {
+internal fun ragSourceBreakdown(references: List<RagReference>, kgPathCount: Int, trace: RagRetrievalTrace?): List<RagText> {
     val documents = references.count { it.documentId != null || it.kind == RagReferenceKind.DOCUMENT }
     val memory = references.size - documents
-    if (memory > 0) add(RagText(R.string.chat_rag_breakdown_memory, listOf(memory)))
-    if (documents > 0) add(RagText(R.string.chat_rag_breakdown_documents, listOf(documents)))
-    if (kgPathCount > 0) add(RagText(R.string.chat_rag_breakdown_graph, listOf(kgPathCount)))
     val jit = trace?.jitExtractionCount ?: 0
-    if (jit > 0) add(RagText(R.string.chat_rag_breakdown_jit, listOf(jit)))
+    val parts = buildList {
+        if (memory > 0) add(RagText(R.string.chat_rag_breakdown_memory, listOf(memory)))
+        if (documents > 0) add(RagText(R.string.chat_rag_breakdown_documents, listOf(documents)))
+        if (kgPathCount > 0) add(RagText(R.string.chat_rag_breakdown_graph, listOf(kgPathCount)))
+        if (jit > 0) add(RagText(R.string.chat_rag_breakdown_jit, listOf(jit)))
+    }
+    return if (parts.size == 1 && kgPathCount == 0 && jit == 0) emptyList() else parts
 }
 
 private fun rerankValue(trace: RagRetrievalTrace): List<RagText> = when (trace.rerank) {

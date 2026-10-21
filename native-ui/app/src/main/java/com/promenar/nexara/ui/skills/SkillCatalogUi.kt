@@ -18,7 +18,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
 import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillScope
@@ -138,7 +138,7 @@ private fun SkillRow(
             when (skill.status) {
                 SkillStatus.ENABLED, SkillStatus.DISABLED -> {
                     val label = stringResource(R.string.skills_runtime_toggle_cd, title)
-                    Switch(
+                    NexaraSwitch(
                         checked = checked,
                         onCheckedChange = { checked = it; onToggle(it) },
                         modifier = Modifier.semantics { contentDescription = label },

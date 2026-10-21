@@ -39,6 +39,7 @@ fun NexaraCommandBlock(
     enabled: Boolean = true,
     onCopy: ((String) -> Unit)? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     val clipboard = LocalClipboardManager.current
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -63,6 +64,7 @@ fun NexaraCommandBlock(
                     IconButton(
                         enabled = enabled,
                         onClick = {
+                            haptics.perform(NexaraHapticEvent.CONFIRM)
                             if (onCopy != null) onCopy(command)
                             else {
                                 clipboard.setText(AnnotatedString(command))

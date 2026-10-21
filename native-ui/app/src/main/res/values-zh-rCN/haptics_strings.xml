@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="haptics_settings_section">触感</string>
+    <string name="haptics_setting_title">触感反馈</string>
+    <string name="haptics_setting_summary">切换、发送、审批与复制时振动</string>
+    <string name="haptics_status_setting_title">状态提醒</string>
+    <string name="haptics_status_setting_summary">待审批、长回复完成或失败时振动</string>
+    <string name="haptics_settings_footer">跟随系统的触摸振动设置。状态提醒只在超过 10 秒的回复完成时振动，流式输出过程中不振动。</string>
+</resources>

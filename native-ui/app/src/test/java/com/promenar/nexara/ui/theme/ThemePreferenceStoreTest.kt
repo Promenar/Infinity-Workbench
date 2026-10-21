@@ -152,4 +152,35 @@ class ThemePreferenceStoreTest {
         // 进程重建后从同一偏好文件读回关闭状态。
         assertThat(ThemePreferenceStore(contextFor(prefs)).state.value.collapseFinishedTurns).isFalse()
     }
+
+    @Test
+    fun `触感反馈与状态提醒缺省开启并分别持久化`() {
+        val booleans = mutableMapOf<String, Boolean>()
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putBoolean(any(), any()) } answers {
+            booleans[firstArg()] = secondArg()
+            editor
+        }
+        every { editor.apply() } returns Unit
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { contains(any()) } answers { firstArg<String>() in booleans }
+            every { getBoolean(any(), any()) } answers { booleans[firstArg()] ?: secondArg() }
+            every { edit() } returns editor
+        }
+
+        val store = ThemePreferenceStore(contextFor(prefs))
+        assertThat(store.state.value.hapticsEnabled).isTrue()
+        assertThat(store.state.value.statusHapticsEnabled).isTrue()
+
+        store.setStatusHapticsEnabled(false)
+        assertThat(store.state.value.hapticsEnabled).isTrue()
+        assertThat(store.state.value.statusHapticsEnabled).isFalse()
+        store.setHapticsEnabled(false)
+        // 沿用旧设置项 haptic_enabled，备份恢复的值直接生效。
+        verify { editor.putBoolean("haptic_enabled", false) }
+        verify { editor.putBoolean("haptic_status_enabled", false) }
+        val reloaded = ThemePreferenceStore(contextFor(prefs)).state.value
+        assertThat(reloaded.hapticsEnabled).isFalse()
+        assertThat(reloaded.statusHapticsEnabled).isFalse()
+    }
 }

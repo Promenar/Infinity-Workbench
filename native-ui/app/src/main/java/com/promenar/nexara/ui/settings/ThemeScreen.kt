@@ -79,6 +79,8 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onTextScaleEnabledChange = viewModel::setTextScaleEnabled,
         onTextScaleChange = viewModel::setTextScale,
         onCollapseFinishedTurnsChange = viewModel::setCollapseFinishedTurns,
+        onHapticsChange = viewModel::setHapticsEnabled,
+        onStatusHapticsChange = viewModel::setStatusHapticsEnabled,
     )
 }
 
@@ -93,6 +95,8 @@ fun ThemeScreenContent(
     onTextScaleEnabledChange: (Boolean) -> Unit = {},
     onTextScaleChange: (Float) -> Unit = {},
     onCollapseFinishedTurnsChange: (Boolean) -> Unit = {},
+    onHapticsChange: (Boolean) -> Unit = {},
+    onStatusHapticsChange: (Boolean) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -186,6 +190,28 @@ fun ThemeScreenContent(
                         checked = preferences.collapseFinishedTurns,
                         onCheckedChange = onCollapseFinishedTurnsChange,
                         modifier = Modifier.testTag("theme_collapse_finished_turns_switch"),
+                    )
+                }
+            }
+            item("haptics") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.haptics_settings_section),
+                    footer = stringResource(R.string.haptics_settings_footer),
+                ) {
+                    SettingsToggle(
+                        title = stringResource(R.string.haptics_setting_title),
+                        description = stringResource(R.string.haptics_setting_summary),
+                        checked = preferences.hapticsEnabled,
+                        onCheckedChange = onHapticsChange,
+                        modifier = Modifier.testTag("theme_haptics_switch"),
+                    )
+                    SettingsToggle(
+                        title = stringResource(R.string.haptics_status_setting_title),
+                        description = stringResource(R.string.haptics_status_setting_summary),
+                        checked = preferences.hapticsEnabled && preferences.statusHapticsEnabled,
+                        enabled = preferences.hapticsEnabled,
+                        onCheckedChange = onStatusHapticsChange,
+                        modifier = Modifier.testTag("theme_status_haptics_switch"),
                     )
                 }
             }

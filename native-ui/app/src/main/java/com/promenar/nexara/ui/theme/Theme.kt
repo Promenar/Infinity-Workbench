@@ -116,9 +116,20 @@ fun NexaraTheme(
         Density(currentDensity.density, currentDensity.fontScale * textScale)
     }
 
+    val hapticsEnabled = preferences?.hapticsEnabled ?: false
+    val statusHapticsEnabled = preferences?.statusHapticsEnabled ?: false
+    val haptics = remember(view, hapticsEnabled, statusHapticsEnabled) {
+        if (view.isInEditMode) com.promenar.nexara.ui.common.NexaraHaptics.None
+        else com.promenar.nexara.ui.common.NexaraHaptics(view, hapticsEnabled, statusHapticsEnabled)
+    }
+
     CompositionLocalProvider(
         LocalNexaraDomainColors provides domainColors,
         LocalDensity provides scaledDensity,
+        com.promenar.nexara.ui.common.LocalNexaraHaptics provides haptics,
+        // 长按菜单、文本选择等组件内置的触感同样服从应用开关。
+        androidx.compose.ui.platform.LocalHapticFeedback provides
+            if (preferences != null && !hapticsEnabled) SilentHapticFeedback else androidx.compose.ui.platform.LocalHapticFeedback.current,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -127,4 +138,8 @@ fun NexaraTheme(
             content = content
         )
     }
+}
+
+private object SilentHapticFeedback : androidx.compose.ui.hapticfeedback.HapticFeedback {
+    override fun performHapticFeedback(hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType) = Unit
 }

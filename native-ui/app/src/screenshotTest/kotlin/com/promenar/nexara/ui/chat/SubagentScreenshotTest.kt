@@ -75,6 +75,33 @@ fun subagentViewerFailedEnglishPreview() = SubagentFrame(dark = false) {
 }
 
 @PreviewTest
+@Preview(name = "子代理查看页 等待审批 浅色", widthDp = 411, heightDp = 1100, locale = "zh-rCN")
+@Composable
+fun subagentViewerWaitingLightPreview() = SubagentFrame(dark = false) {
+    Column(modifier = Modifier.weight(1f)) {
+        SubagentViewerContent(
+            viewerRun().copy(
+                description = "检查构建脚本",
+                prompt = "运行 app 模块的依赖报告，列出重复引入的库。",
+                toolProfile = SubagentToolProfile.INHERIT,
+                status = SubagentStatus.WAITING_APPROVAL,
+                currentTool = "shell_exec",
+                endedAt = null,
+                events = listOf(
+                    SubagentEvent(SubagentEvent.Kind.TEXT, text = "先看依赖报告。", at = NOW - 20_000),
+                    SubagentEvent(SubagentEvent.Kind.TOOL_CALL, text = "{\"command\":\"./gradlew :app:dependencies --configuration sideloadDebugRuntimeClasspath\",\"timeout_seconds\":120}", toolName = "shell_exec", at = NOW - 19_000),
+                    SubagentEvent(SubagentEvent.Kind.APPROVAL, text = "./gradlew :app:dependencies", toolName = "shell_exec", at = NOW - 18_000),
+                ),
+                result = null,
+            ),
+            modelName = "DeepSeek V3.2",
+            now = NOW,
+        )
+    }
+    SubagentViewerFooter()
+}
+
+@PreviewTest
 @Preview(name = "子代理审批 深色", widthDp = 411, heightDp = 560, locale = "zh-rCN")
 @Composable
 fun subagentApprovalDarkPreview() = SubagentFrame {

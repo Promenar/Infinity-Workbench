@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.layout.heightIn
@@ -56,7 +57,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -671,7 +671,7 @@ internal fun ProviderModelsModelRow(
             subtitleModifier = Modifier.testTag(UiTags.providerModelsRemoteId(model.id))
                 .semantics { contentDescription = remoteModelId },
             trailingContent = {
-                Switch(
+                NexaraSwitch(
                     checked = model.enabled,
                     onCheckedChange = { onToggle() },
                     modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),

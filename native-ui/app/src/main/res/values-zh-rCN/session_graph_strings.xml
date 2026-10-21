@@ -21,4 +21,12 @@
     <string name="turn_graph_open_graph">在图谱中查看</string>
     <string name="session_graph_queue_title">后台抽取</string>
     <string name="session_graph_queue_summary">待处理 %1$d · 失败 %2$d · 今日 %3$d 轮、%4$d 次调用</string>
+    <string name="turn_graph_sheet_done">新增 %1$s、%2$s</string>
+    <string name="turn_graph_sheet_partial">新增 %1$s，抽取未完成</string>
+    <plurals name="turn_graph_sheet_entities">
+        <item quantity="other">%d 个实体</item>
+    </plurals>
+    <plurals name="turn_graph_sheet_relations">
+        <item quantity="other">%d 条关系</item>
+    </plurals>
 </resources>

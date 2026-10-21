@@ -18,7 +18,6 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
 import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -83,7 +83,7 @@ private fun BuiltinToolRow(
                         Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.common_cd_config), modifier = Modifier.size(20.dp))
                     }
                 }
-                Switch(checked = enabled, onCheckedChange = { enabled = it; onToggle() })
+                NexaraSwitch(checked = enabled, onCheckedChange = { enabled = it; onToggle() })
             }
         },
     )
@@ -116,7 +116,7 @@ internal fun LegacyUserToolsSection(
                         IconButton(onClick = { onDelete(tool.id) }) {
                             Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.shared_btn_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                         }
-                        Switch(checked = enabled, onCheckedChange = { enabled = it; onToggle(tool.id) })
+                        NexaraSwitch(checked = enabled, onCheckedChange = { enabled = it; onToggle(tool.id) })
                     }
                 },
             )
@@ -193,7 +193,7 @@ private fun McpServerRow(
                     IconButton(onClick = onDelete) {
                         Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                     }
-                    Switch(
+                    NexaraSwitch(
                         checked = server.isEnabled,
                         onCheckedChange = onToggleEnabled,
                         modifier = Modifier.semantics { contentDescription = "${server.name}: $enabledLabel" },

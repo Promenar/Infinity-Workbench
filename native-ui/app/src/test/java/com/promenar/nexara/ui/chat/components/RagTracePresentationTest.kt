@@ -154,6 +154,12 @@ class RagTracePresentationTest {
             RagText(R.string.chat_rag_breakdown_jit, listOf(1)),
         ).inOrder()
         assertThat(ragSourceBreakdown(emptyList(), kgPathCount = 0, trace = hit)).isEmpty()
+        // 只有一类引用时，数目已在摘要的结果数里，不再单独占一行。
+        assertThat(ragSourceBreakdown(references.take(2), kgPathCount = 0, trace = hit)).isEmpty()
+        assertThat(ragSourceBreakdown(references.take(2), kgPathCount = 1, trace = hit)).containsExactly(
+            RagText(R.string.chat_rag_breakdown_memory, listOf(2)),
+            RagText(R.string.chat_rag_breakdown_graph, listOf(1)),
+        ).inOrder()
     }
 
     @Test

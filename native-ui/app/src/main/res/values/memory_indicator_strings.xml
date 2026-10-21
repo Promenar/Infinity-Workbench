@@ -10,10 +10,10 @@
         <item quantity="other">%d memory chunks</item>
     </plurals>
     <string name="turn_memory_visibility_title">Who can retrieve it</string>
-    <string name="turn_memory_visibility_session">This session can always retrieve it.</string>
-    <string name="turn_memory_visibility_agent">Other sessions of this assistant can retrieve it when their memory scope is “This assistant” or “All assistants”.</string>
-    <string name="turn_memory_visibility_shared">Other assistants can retrieve it when their memory scope is “All assistants”.</string>
-    <string name="turn_memory_visibility_private">This assistant is private, so other assistants can\'t retrieve it.</string>
+    <string name="turn_memory_visibility_session">Always</string>
+    <string name="turn_memory_visibility_agent">When their memory scope is “This assistant” or “All assistants”</string>
+    <string name="turn_memory_visibility_shared">When their memory scope is “All assistants”</string>
+    <string name="turn_memory_visibility_private">Never, because this assistant is private</string>
     <string name="turn_memory_chunks_title">Saved chunks</string>
     <string name="turn_memory_writing_hint">Saving this turn to memory…</string>
     <string name="turn_memory_removed_hint">This turn is not in memory. Its messages are kept.</string>
@@ -71,4 +71,9 @@
     <string name="rag_trace_rerank_value_failed">Failed; original order kept</string>
     <string name="rag_trace_rerank_value_off">Off</string>
     <string name="rag_trace_duration">%1$d ms</string>
+    <string name="turn_memory_visibility_label_session">This session</string>
+    <string name="turn_memory_visibility_label_agent">Other sessions</string>
+    <string name="turn_memory_visibility_label_others">Other assistants</string>
+    <string name="turn_memory_role_user">You</string>
+    <string name="turn_memory_role_assistant">Assistant</string>
 </resources>

@@ -5,8 +5,6 @@
     <string name="subagent_approval_notification_title">A subagent needs approval</string>
     <string name="subagent_approval_notification_text">Requests %1$s. It stops if not handled within 10 minutes.</string>
     <string name="subagent_approval_title">From subagent · %1$s</string>
-    <string name="subagent_approval_task">Task: %1$s</string>
-    <string name="subagent_approval_tool">Requests: %1$s</string>
     <string name="subagent_approval_remember">Always allow this target</string>
     <string name="subagent_approval_allow">Allow</string>
     <string name="subagent_approval_deny">Deny</string>
@@ -35,19 +33,20 @@
     <string name="subagent_viewer_timeline_empty">No steps yet</string>
     <string name="subagent_viewer_result">Result returned to the main agent</string>
     <string name="subagent_viewer_no_result">No result yet</string>
-    <string name="subagent_viewer_footer">View only · Subagents talk only to the main agent and don’t take your input</string>
+    <string name="subagent_viewer_footer">Subagents report only to the main agent and don’t take your input.</string>
     <string name="subagent_viewer_missing">This subagent record is no longer available.</string>
-    <string name="subagent_event_tool_call">Called %1$s</string>
-    <string name="subagent_event_tool_result">%1$s returned</string>
-    <string name="subagent_event_tool_failed">%1$s failed</string>
-    <string name="subagent_event_approval">Asked approval for %1$s</string>
-    <string name="subagent_event_error">Error</string>
     <string name="chat_step_subagent_name">Subagent</string>
     <string name="chat_step_subagent_running">Running subagents…</string>
     <plurals name="chat_step_subagent_done"><item quantity="one">Ran %1$d subagent</item><item quantity="other">Ran %1$d subagents</item></plurals>
     <string name="subagent_elapsed_seconds">%1$ds</string>
     <string name="subagent_elapsed_minutes">%1$dm %2$ds</string>
-    <string name="subagent_tokens">%1$d tokens</string>
+    <string name="subagent_tokens">%1$s tokens</string>
     <string name="skill_agent_task">Subagents</string>
     <string name="skill_agent_task_desc">Let the agent delegate up to 3 parallel subtasks to subagents with fresh context; they follow this session\'s approval rules and each uses extra model calls</string>
+    <string name="subagent_approval_session_label">Session</string>
+    <string name="subagent_approval_task_label">Task</string>
+    <string name="subagent_status_failed_elapsed">Failed · %1$s</string>
+    <string name="subagent_viewer_footer_title">View only</string>
+    <string name="subagent_event_waiting_approval">Waiting for your approval</string>
+    <string name="subagent_event_needed_approval">Needed approval</string>
 </resources>

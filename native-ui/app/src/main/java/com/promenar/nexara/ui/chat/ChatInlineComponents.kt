@@ -4,6 +4,8 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.*
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -876,7 +878,7 @@ internal fun approvalHeaderTarget(name: String, target: String?): String? =
 
 /** 标题行：动作名后跟风险类别；下一行是可复制的原始工具 ID 与执行位置。 */
 @Composable
-private fun ApprovalCallHeader(
+internal fun ApprovalCallHeader(
     name: String,
     riskLabel: String,
     highRisk: Boolean,
@@ -926,7 +928,7 @@ private fun ApprovalCallHeader(
 
 /** 风险事实只占一行图标加文字，不使用整块红底。 */
 @Composable
-private fun ApprovalRiskLine(text: String) {
+internal fun ApprovalRiskLine(text: String) {
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(
             imageVector = Icons.Rounded.Warning,
@@ -1228,6 +1230,8 @@ private fun ApprovalActionBar(
     onApproveAll: (() -> Unit)?,
     alwaysAllow: Pair<() -> Unit, String>?,
 ) {
+    val haptics = LocalNexaraHaptics.current
+    val confirm: (() -> Unit) -> () -> Unit = { action -> { haptics.perform(NexaraHapticEvent.CONFIRM); action() } }
     FlowRow(
         modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -1237,7 +1241,7 @@ private fun ApprovalActionBar(
         alwaysAllow?.let { (handler, a11y) ->
             ApprovalSecondaryAction(
                 label = stringResource(R.string.chat_inline_approval_always_allow),
-                onClick = handler,
+                onClick = confirm(handler),
                 enabled = enabled,
                 modifier = Modifier.semantics { contentDescription = a11y },
             )
@@ -1245,7 +1249,7 @@ private fun ApprovalActionBar(
         onApproveAll?.let { handler ->
             ApprovalSecondaryAction(
                 label = stringResource(R.string.chat_approval_approve_all, totalCount),
-                onClick = handler,
+                onClick = confirm(handler),
                 enabled = enabled,
                 modifier = Modifier.testTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
             )
@@ -1253,12 +1257,12 @@ private fun ApprovalActionBar(
         if (alwaysAllow != null || onApproveAll != null) Spacer(Modifier.weight(1f))
         ChatCompactApprovalButton(
             label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_reject_current else R.string.chat_inline_approval_reject),
-            onClick = onDecline, outlined = true, enabled = enabled,
+            onClick = { haptics.perform(NexaraHapticEvent.REJECT); onDecline() }, outlined = true, enabled = enabled,
             modifier = Modifier.semantics { contentDescription = declineA11y }.testTag(UiTags.CHAT_APPROVAL_DECLINE),
         )
         ChatCompactApprovalButton(
             label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_approve_current else R.string.chat_inline_approval_approve),
-            onClick = onApprove, outlined = false, enabled = enabled,
+            onClick = confirm(onApprove), outlined = false, enabled = enabled,
             modifier = Modifier.semantics { contentDescription = approveA11y }.testTag(UiTags.CHAT_APPROVAL_APPROVE),
         )
     }
