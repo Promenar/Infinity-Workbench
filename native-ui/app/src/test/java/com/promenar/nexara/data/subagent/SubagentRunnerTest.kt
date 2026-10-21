@@ -42,7 +42,7 @@ class SubagentRunnerTest {
     @Test
     fun `调用工具后给出结论，模型只看到受限工具集，用量逐轮累计`() = runTest {
         val models = ScriptedModels(
-            listOf(toolCall("c1", "read_file", """{"path":"/a.txt"}"""), usage(100, 20)),
+            listOf(text("先读文件"), toolCall("c1", "read_file", """{"path":"/a.txt"}"""), usage(100, 20)),
             listOf(text("结论：a.txt 内容是 hello"), usage(150, 30)),
         )
         val host = FakeHost(listOf(read, shell, agentTask, plan))
@@ -56,7 +56,9 @@ class SubagentRunnerTest {
         assertThat(models.requests.last().messages.map { it.role }).containsExactly("system", "user", "assistant", "tool").inOrder()
         assertThat(models.requests.last().messages.last().content).isEqualTo("read:/a.txt")
         assertThat(result.totalTokens).isEqualTo(300)
-        assertThat(result.events.map { it.kind }).containsAtLeast(SubagentEvent.Kind.TOOL_CALL, SubagentEvent.Kind.TOOL_RESULT, SubagentEvent.Kind.TEXT)
+        assertThat(result.events.map { it.kind }).containsExactly(SubagentEvent.Kind.TEXT, SubagentEvent.Kind.TOOL_CALL, SubagentEvent.Kind.TOOL_RESULT).inOrder()
+        // 最终正文只出现在结果区，不在时间线重复。
+        assertThat(result.events.first().text).isEqualTo("先读文件")
         assertThat(published.last()).isEqualTo(result)
     }
 

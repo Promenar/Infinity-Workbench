@@ -11,7 +11,7 @@
     <string name="subagent_approval_allow">允许</string>
     <string name="subagent_approval_deny">拒绝</string>
     <string name="subagent_approval_timeout_hint">10 分钟内未处理，子代理会停止并以失败交回主 Agent。</string>
-    <string name="subagent_preset_explorer">探索者</string>
+    <string name="subagent_preset_explorer">探索者 %1$d</string>
     <string name="subagent_default_name">子代理 %1$d</string>
     <string name="subagent_group_single">子代理</string>
     <plurals name="subagent_group_parallel"><item quantity="other">%1$d 个子代理并行</item></plurals>

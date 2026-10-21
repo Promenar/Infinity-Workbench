@@ -88,7 +88,8 @@ val LocalSubagentRuns = staticCompositionLocalOf<SubagentRunsAccess?> { null }
 
 @Composable
 internal fun subagentName(preset: String?, index: Int): String = when (SubagentPreset.parse(preset)) {
-    SubagentPreset.EXPLORER -> stringResource(R.string.subagent_preset_explorer)
+    // 同批可能有多个同类子代理，名称始终带序号以便区分。
+    SubagentPreset.EXPLORER -> stringResource(R.string.subagent_preset_explorer, index + 1)
     null -> stringResource(R.string.subagent_default_name, index + 1)
 }
 
@@ -200,12 +201,19 @@ private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit) {
     }
 }
 
-/** 卡片上的一行结论：跳过 Markdown 标题取第一行正文，全文只有标题时退回标题。 */
+/** 卡片上的一行结论：跳过 Markdown 标题取第一行正文，全文只有标题时退回标题；去掉列表符号与行内强调标记。 */
 internal fun subagentResultSummary(result: String): String? {
     val lines = result.lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
     val line = lines.firstOrNull { !it.startsWith("#") } ?: lines.firstOrNull() ?: return null
-    return line.trimStart('#', ' ').takeIf(String::isNotEmpty)
+    return line.trimStart('#', ' ')
+        .replace(LIST_MARKER, "")
+        .replace(INLINE_MARKUP, "")
+        .trim()
+        .takeIf(String::isNotEmpty)
 }
+
+private val LIST_MARKER = Regex("""^([-*+]|\d+[.)])\s+""")
+private val INLINE_MARKUP = Regex("""\*\*|__|`|~~""")
 
 @Composable
 private fun SubagentStatusIcon(status: SubagentStatus) {

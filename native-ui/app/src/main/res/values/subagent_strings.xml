@@ -11,7 +11,7 @@
     <string name="subagent_approval_allow">Allow</string>
     <string name="subagent_approval_deny">Deny</string>
     <string name="subagent_approval_timeout_hint">If not handled within 10 minutes, the subagent stops and reports a failure to the main agent.</string>
-    <string name="subagent_preset_explorer">Explorer</string>
+    <string name="subagent_preset_explorer">Explorer %1$d</string>
     <string name="subagent_default_name">Subagent %1$d</string>
     <string name="subagent_group_single">Subagent</string>
     <plurals name="subagent_group_parallel"><item quantity="one">%1$d subagent</item><item quantity="other">%1$d subagents in parallel</item></plurals>

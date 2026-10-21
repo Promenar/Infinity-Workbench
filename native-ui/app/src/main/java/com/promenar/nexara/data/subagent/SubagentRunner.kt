@@ -107,8 +107,9 @@ class SubagentRunner(
                     event(SubagentEvent.Kind.ERROR, failure, failed = true)
                     return finish(run, SubagentStatus.FAILED, error = failure, publish = ::update)
                 }
-                if (response.content.isNotBlank()) event(SubagentEvent.Kind.TEXT, response.content, persist = false)
                 val calls = if (finalRound) emptyList() else response.toolCalls
+                // 最终正文放在结果区，时间线只记录调用工具前的中间说明。
+                if (calls.isNotEmpty() && response.content.isNotBlank()) event(SubagentEvent.Kind.TEXT, response.content, persist = false)
                 messages += ProtocolMessage(
                     role = "assistant",
                     content = response.content,

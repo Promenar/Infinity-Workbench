@@ -134,6 +134,9 @@ class SubagentRunStoreTest {
         assertThat(subagentResultSummary("# 只有标题")).isEqualTo("只有标题")
         assertThat(subagentResultSummary("  \n ")).isNull()
         assertThat(subagentResultSummary("###")).isNull()
+        assertThat(subagentResultSummary("**未找到任何 Markdown 文件。**")).isEqualTo("未找到任何 Markdown 文件。")
+        assertThat(subagentResultSummary("- [DIR] `/media`")).isEqualTo("[DIR] /media")
+        assertThat(subagentResultSummary("1. 共 3 项")).isEqualTo("共 3 项")
     }
 
     @Test
