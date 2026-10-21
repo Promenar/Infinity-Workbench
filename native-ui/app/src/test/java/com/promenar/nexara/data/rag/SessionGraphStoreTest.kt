@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.KgIdentity
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.dao.KgTurnCount
+import com.promenar.nexara.data.local.db.dao.KgTurnRelation
 import com.promenar.nexara.data.local.db.dao.SessionGraphTaskRow
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
@@ -172,6 +173,18 @@ class SessionGraphStoreTest {
         val text = SessionGraphTurn.text("问题".repeat(10), "回复".repeat(10_000))!!
         assertThat(text).startsWith("User: 问题")
         assertThat(text.length).isEqualTo(SessionGraphTurn.MAX_CHARS)
+    }
+
+    @Test
+    fun `打开图谱定位到关系中出现最多的实体`() {
+        val entities = listOf(TurnGraphEntity("Android", "platform"), TurnGraphEntity("Kotlin", "language"), TurnGraphEntity("JetBrains", "organization"))
+        val relations = listOf(
+            KgTurnRelation("e1", "Kotlin", "developed_by", "JetBrains"),
+            KgTurnRelation("e2", "Android", "officially_supports", "Kotlin"),
+        )
+        assertThat(TurnGraphDetails(entities, relations).focusEntity).isEqualTo("Kotlin")
+        assertThat(TurnGraphDetails(entities, emptyList()).focusEntity).isEqualTo("Android")
+        assertThat(TurnGraphDetails(emptyList(), emptyList()).focusEntity).isNull()
     }
 
     private suspend fun counts() = database.kgEvidenceDao().observeTurnCounts("s1").first()

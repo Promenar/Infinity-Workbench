@@ -143,7 +143,13 @@ data class TurnGraphState(val status: Status, val entities: Int = 0, val relatio
     enum class Status { QUEUED, RUNNING, DONE, PARTIAL, FAILED }
 }
 
-data class TurnGraphDetails(val entities: List<TurnGraphEntity>, val relations: List<KgTurnRelation>)
+data class TurnGraphDetails(val entities: List<TurnGraphEntity>, val relations: List<KgTurnRelation>) {
+    /** 打开图谱时的定位实体：关系中出现最多者，并列取先出现的；没有关系时退回第一个实体。 */
+    val focusEntity: String?
+        get() = relations.flatMap { listOf(it.source, it.target) }
+            .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+            ?: entities.firstOrNull()?.name
+}
 data class TurnGraphEntity(val name: String, val type: String)
 
 /** 会话设置中展示的后台抽取队列；开关关闭时为 null。 */

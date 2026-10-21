@@ -242,13 +242,13 @@ internal fun TurnGraphSheetContent(
                 }
             }
         }
-        val firstEntity = entities.firstOrNull()?.name
-        if (onOpenGraph != null && firstEntity != null) {
+        val focusEntity = details?.focusEntity
+        if (onOpenGraph != null && focusEntity != null) {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Hub,
                 title = stringResource(R.string.turn_graph_open_graph),
                 horizontalPadding = 0.dp,
-                onClick = { onOpenGraph(firstEntity) },
+                onClick = { onOpenGraph(focusEntity) },
                 modifier = Modifier.testTag(TURN_GRAPH_OPEN_TAG),
             )
         }
