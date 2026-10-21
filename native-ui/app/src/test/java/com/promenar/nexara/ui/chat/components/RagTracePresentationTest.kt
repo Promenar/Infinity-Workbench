@@ -47,22 +47,32 @@ class RagTracePresentationTest {
     }
 
     @Test
-    fun `详情说明列出召回采用、排序依据、重排方式与用时`() {
-        assertThat(ragTraceLines(hit)).containsExactly(
-            listOf(
-                RagText(R.string.rag_trace_recall, listOf(12)),
-                RagText(R.string.rag_trace_selected, listOf(5)),
-                RagText(R.string.rag_trace_sources, listOf(2, 3)),
-            ),
-            listOf(RagText(R.string.rag_trace_scoring_hybrid)),
-            listOf(
-                RagText(R.string.rag_trace_rerank_api, listOf("bge-reranker")),
-                RagText(R.string.rag_trace_rerank_time, listOf(320L)),
-            ),
-            listOf(RagText(R.string.rag_trace_time, listOf(850L))),
+    fun `检索过程先给结论，再按来源、排序、重排与用时分行`() {
+        val summary = ragTraceSummary(hit)
+        assertThat(summary.headline).isEqualTo(RagText(R.string.rag_trace_headline_hit, listOf(12, 5)))
+        assertThat(summary.hint).isNull()
+        assertThat(summary.rows).containsExactly(
+            RagTraceRow(R.string.rag_trace_label_sources, listOf(listOf(
+                RagText(R.string.rag_trace_source_memory, listOf(2)),
+                RagText(R.string.rag_trace_source_documents, listOf(3)),
+            ))),
+            RagTraceRow(R.string.rag_trace_label_ranking, listOf(listOf(RagText(R.string.rag_trace_ranking_hybrid)))),
+            RagTraceRow(R.string.rag_trace_label_rerank, listOf(listOf(
+                RagText(R.string.rag_trace_rerank_value_api, listOf("bge-reranker")),
+                RagText(R.string.rag_trace_duration, listOf(320L)),
+            ))),
+            RagTraceRow(R.string.rag_trace_label_time, listOf(listOf(RagText(R.string.rag_trace_duration, listOf(850L))))),
         ).inOrder()
-        assertThat(ragTraceLines(hit.copy(outcome = RagRetrievalTrace.OUTCOME_EMPTY)))
-            .contains(listOf(RagText(R.string.rag_trace_empty_hint)))
+
+        // 未命中：结论与原因分开，不列全为零的来源行。
+        val empty = ragTraceSummary(hit.copy(outcome = RagRetrievalTrace.OUTCOME_EMPTY, recallCount = 0, selectedCount = 0))
+        assertThat(empty.headline.resId).isEqualTo(R.string.rag_trace_headline_empty)
+        assertThat(empty.hint?.resId).isEqualTo(R.string.rag_trace_empty_hint)
+        assertThat(empty.rows.map { it.label }).doesNotContain(R.string.rag_trace_label_sources)
+        // 未能检索：只给结论与处理提示，不列排序与重排。
+        val unavailable = ragTraceSummary(hit.copy(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE))
+        assertThat(unavailable.hint?.resId).isEqualTo(R.string.rag_trace_unavailable_hint)
+        assertThat(unavailable.rows.map { it.label }).containsNoneOf(R.string.rag_trace_label_ranking, R.string.rag_trace_label_rerank)
     }
 
     @Test
@@ -100,26 +110,27 @@ class RagTracePresentationTest {
             jitExtractionCount = 1,
             jitModel = "provider::glm-flash",
         )
-        val lines = ragTraceLines(scoped)
-        assertThat(lines).containsAtLeast(
+        val rows = ragTraceSummary(scoped).rows
+        assertThat(rows.first { it.label == R.string.rag_trace_label_scope }.lines).containsExactly(
             listOf(
-                RagText(R.string.rag_trace_scope_memory, listOf(RagText(R.string.memory_scope_all_agents))),
+                RagText(R.string.rag_trace_scope_memory),
+                RagText(R.string.memory_scope_all_agents),
                 RagText(R.plurals.rag_trace_reach_sessions, listOf(12), quantity = 12),
                 RagText(R.plurals.rag_trace_reach_agents, listOf(3), quantity = 3),
             ),
-            listOf(RagText(R.string.rag_trace_scope_graph, listOf(RagText(R.string.graph_scope_agent)))),
-            listOf(RagText(R.string.rag_trace_scope_documents, listOf(RagText(R.string.document_scope_knowledge_base)))),
-            listOf(RagText(R.string.rag_trace_jit, listOf(1)), RagText(R.string.rag_trace_jit_model, listOf("glm-flash"))),
+            listOf(RagText(R.string.rag_trace_scope_graph), RagText(R.string.graph_scope_agent)),
+            listOf(RagText(R.string.rag_trace_scope_documents), RagText(R.string.document_scope_knowledge_base)),
         ).inOrder()
+        assertThat(rows.first { it.label == R.string.rag_trace_label_graph }.lines.single())
+            .containsExactly(RagText(R.string.rag_trace_jit, listOf(1)), RagText(R.string.rag_trace_jit_model, listOf("glm-flash"))).inOrder()
         // 本助手档只涉及一个助手，不重复说明助手数；未参与的资源与未调用的临时抽取不出现。
-        val agentOnly = ragTraceLines(hit.copy(memoryScope = ConversationScope.AGENT, memorySessionCount = 4, memoryAgentCount = 1))
-        assertThat(agentOnly).contains(listOf(
-            RagText(R.string.rag_trace_scope_memory, listOf(RagText(R.string.memory_scope_agent))),
+        val agentOnly = ragTraceSummary(hit.copy(memoryScope = ConversationScope.AGENT, memorySessionCount = 4, memoryAgentCount = 1)).rows
+        assertThat(agentOnly.first { it.label == R.string.rag_trace_label_scope }.lines).containsExactly(listOf(
+            RagText(R.string.rag_trace_scope_memory),
+            RagText(R.string.memory_scope_agent),
             RagText(R.plurals.rag_trace_reach_sessions, listOf(4), quantity = 4),
         ))
-        assertThat(agentOnly.flatten().map { it.resId }).containsNoneOf(
-            R.string.rag_trace_scope_graph, R.string.rag_trace_scope_documents, R.string.rag_trace_jit,
-        )
+        assertThat(agentOnly.map { it.label }).doesNotContain(R.string.rag_trace_label_graph)
     }
 
     @Test

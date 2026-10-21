@@ -237,7 +237,7 @@ internal class DefaultChatGenerationRuntime(
                     val estimatedInput = 128L + ApproximateTokenEstimator.estimate(previous.summary.orEmpty()) +
                         messages.sumOf { ApproximateTokenEstimator.estimate(it.content.take(2000)).toLong() + 8 }
                     if (!canSpendOnSummary(request, estimatedInput + 1024)) null else {
-                        if (session.ragOptions?.enableMemory == true) {
+                        if (memoryEnabled(session)) {
                             archiveMessages(request, preparedRoute?.modelId ?: prompt.model, messages)
                         }
                         if (!summarize(request, previous, messages)) null else {
@@ -902,7 +902,7 @@ internal class DefaultChatGenerationRuntime(
             )
             val memory = memoryManager
             // 未配置嵌入模型时不写入也不显示写入状态，由嵌入模型设置提示引导用户。
-            if (rag?.enableMemory == true && request.userContent.isNotBlank() &&
+            if (memoryEnabled(session) && request.userContent.isNotBlank() &&
                 snapshot.content.isNotBlank() && memory != null && memory.canEmbed
             ) {
                 val turnMessageId = assistantMessageId(request)
@@ -983,6 +983,13 @@ internal class DefaultChatGenerationRuntime(
         }
         replacementCommitted = true
     }
+
+    /**
+     * 本轮是否使用对话记忆：按检索时实际生效的选项判断；会话未保存检索选项（null）时即为默认选项，记忆开启。
+     */
+    private fun memoryEnabled(session: com.promenar.nexara.data.model.Session): Boolean =
+        preparedContext?.retrieval?.effectiveRagOptions?.enableMemory
+            ?: (session.ragOptions ?: RagOptions()).enableMemory
 
     private fun assistantMessageId(request: GenerationRequest): String =
         currentAssistantMessageId ?: request.assistantMessageId

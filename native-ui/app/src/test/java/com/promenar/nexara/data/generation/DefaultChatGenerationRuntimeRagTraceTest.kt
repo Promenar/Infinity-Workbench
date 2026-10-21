@@ -36,6 +36,7 @@ import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.domain.generation.GenerationSnapshot
+import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.repository.IAgentRepository
@@ -62,6 +63,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import com.promenar.nexara.data.model.TurnMemoryState
+import com.promenar.nexara.data.model.turnMemory
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultChatGenerationRuntimeRagTraceTest {
@@ -83,6 +86,35 @@ class DefaultChatGenerationRuntimeRagTraceTest {
 
         fixture.assertNoRetrievalStep()
         assertThat(fixture.networkEntries.single().last().ragMetadata).isNull()
+    }
+
+    @Test
+    fun `回复完成后本轮记忆写入状态记在助手消息上并可从数据库重载`() = runTest {
+        assertTurnMemoryStored(savedOptions = true)
+    }
+
+    @Test
+    fun `会话未保存检索选项时按默认选项写入记忆`() = runTest {
+        // 检索按默认选项开启了记忆，轮后写入必须与之一致，不能把未保存的选项当作关闭。
+        assertTurnMemoryStored(savedOptions = false)
+    }
+
+    private suspend fun TestScope.assertTurnMemoryStored(savedOptions: Boolean) {
+        val memory = mockk<MemoryManager>()
+        every { memory.canEmbed } returns true
+        coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } returns 2
+        val fixture = fixture(RecordingRagProvider(), memoryManager = memory, savedOptions = savedOptions)
+
+        fixture.buildAndEnterProvider()
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "回答"))
+        // 与运行器一致：后处理之后写入终态并落盘。
+        fixture.runtime.markTerminal(fixture.request, GenerationTerminalStatus.SUCCESS, GenerationSnapshot(content = "回答"), null)
+        fixture.runtime.flush(fixture.request)
+
+        val expected = TurnMemoryState.Status.STORED to 2
+        assertThat(fixture.store.getSession("session")?.messages?.first { it.id == "assistant" }?.turnMemory
+            ?.let { it.status to it.chunkCount }).isEqualTo(expected)
+        assertThat(fixture.repository.getById("assistant")?.turnMemory?.let { it.status to it.chunkCount }).isEqualTo(expected)
     }
 
     @Test
@@ -246,7 +278,12 @@ class DefaultChatGenerationRuntimeRagTraceTest {
         }
     }
 
-    private fun TestScope.fixture(provider: RagProvider?, enabled: Boolean = true): Fixture {
+    private fun TestScope.fixture(
+        provider: RagProvider?,
+        enabled: Boolean = true,
+        memoryManager: MemoryManager? = null,
+        savedOptions: Boolean = true,
+    ): Fixture {
         val settings = mockk<SharedPreferences>()
         every { settings.getStringSet(any(), any()) } returns emptySet()
         every { settings.getString(any(), any()) } returns ""
@@ -257,7 +294,7 @@ class DefaultChatGenerationRuntimeRagTraceTest {
             agentId = "agent",
             modelId = "local::model",
             executionMode = "auto",
-            ragOptions = RagOptions(enableMemory = enabled, enableDocs = enabled),
+            ragOptions = RagOptions(enableMemory = enabled, enableDocs = enabled).takeIf { savedOptions },
             messages = listOf(
                 Message("user", MessageRole.USER, "问题"),
                 Message("assistant", MessageRole.ASSISTANT, "", parentMessageId = "user"),
@@ -283,6 +320,16 @@ class DefaultChatGenerationRuntimeRagTraceTest {
             } else 0
         }
         dao.stubUpdateWith()
+        coEvery { dao.updateTurnMemoryState(any(), any()) } answers {
+            entities[firstArg()]?.let { entities[it.id] = it.copy(vectorizationStatus = secondArg()) }
+        }
+        coEvery { dao.compareAndSetTurnMemoryState(any(), any(), any()) } answers {
+            val row = entities[firstArg()]
+            if (row != null && row.vectorizationStatus == secondArg<String?>()) {
+                entities[row.id] = row.copy(vectorizationStatus = thirdArg())
+                1
+            } else 0
+        }
         val repository = MessageRepository(dao)
         val sessionRepository = object : ISessionRepository {
             override suspend fun create(session: Session) = Unit
@@ -333,7 +380,7 @@ class DefaultChatGenerationRuntimeRagTraceTest {
             toolLedger = mockk(relaxed = true),
             toolExecutor = mockk(relaxed = true),
             postProcessor = mockk(relaxed = true),
-            memoryManager = null,
+            memoryManager = memoryManager,
             summaryManager = mockk(relaxed = true),
             sessionManager = SessionManager(store, sessionRepository),
             contentStrategy = DefaultChatGenerationContentStrategy(settings, null, SessionToolResolver { listOf(calculator) }),

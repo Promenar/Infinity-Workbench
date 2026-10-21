@@ -8,6 +8,9 @@ import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -325,7 +328,8 @@ private fun RetrievedReferencesList(references: List<RagReference>, trace: RagRe
 }
 
 @Composable
-private fun RetrievalTraceSummary(trace: RagRetrievalTrace) {
+internal fun RetrievalTraceSummary(trace: RagRetrievalTrace) {
+    val summary = ragTraceSummary(trace)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -340,15 +344,59 @@ private fun RetrievalTraceSummary(trace: RagRetrievalTrace) {
         ) {
             Text(
                 text = stringResource(R.string.rag_trace_title),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = summary.headline.resolve(),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            ragTraceLines(trace).forEach { line ->
-                NexaraMetaLine(
-                    segments = line.map { it.resolve() },
+            summary.hint?.let {
+                Text(
+                    text = it.resolve(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (summary.rows.isNotEmpty()) {
+                RetrievalTraceRows(summary.rows, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+/** 标签列按最宽的标签对齐，取值可多行；标签过宽时（大字号、长译文）以三分之一宽度为上限换行。 */
+@Composable
+private fun RetrievalTraceRows(rows: List<RagTraceRow>, modifier: Modifier = Modifier) {
+    val labelStyle = MaterialTheme.typography.labelMedium
+    val labels = rows.map { stringResource(it.label) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val widest = with(density) {
+        labels.maxOf { measurer.measure(it, labelStyle, maxLines = 1).size.width }.toDp()
+    }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val labelWidth = widest.coerceAtMost(maxWidth / 3)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            rows.forEachIndexed { index, row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = labels[index],
+                        style = labelStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(labelWidth).alignByBaseline(),
+                    )
+                    Column(modifier = Modifier.weight(1f).alignByBaseline(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        row.lines.forEach { line ->
+                            NexaraMetaLine(
+                                segments = line.map { it.resolve() },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

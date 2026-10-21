@@ -33,18 +33,36 @@
     <string name="chat_rag_breakdown_documents">文档 %1$d</string>
     <string name="chat_rag_breakdown_graph">图谱路径 %1$d</string>
     <string name="chat_rag_breakdown_jit">临时抽取 %1$d 次</string>
-    <string name="rag_trace_scope_memory">对话记忆：%1$s</string>
-    <string name="rag_trace_scope_graph">图谱对话证据：%1$s</string>
-    <string name="rag_trace_scope_documents">文档：%1$s</string>
+    <string name="rag_trace_scope_memory">对话记忆</string>
+    <string name="rag_trace_scope_graph">图谱对话证据</string>
+    <string name="rag_trace_scope_documents">文档</string>
     <plurals name="rag_trace_reach_sessions">
         <item quantity="other">%d 个会话</item>
     </plurals>
     <plurals name="rag_trace_reach_agents">
         <item quantity="other">%d 个助手</item>
     </plurals>
-    <string name="rag_trace_jit">图谱临时抽取 %1$d 次</string>
-    <string name="rag_trace_jit_model">模型 %1$s</string>
+    <string name="rag_trace_jit">临时抽取 %1$d 次</string>
+    <string name="rag_trace_jit_model">%1$s</string>
     <plurals name="memory_scope_reach_sessions">
         <item quantity="other">可检索 %d 个会话</item>
     </plurals>
+    <string name="rag_trace_headline_hit">找到 %1$d 条相关内容，采用 %2$d 条</string>
+    <string name="rag_trace_headline_empty">没有找到相关内容</string>
+    <string name="rag_trace_label_sources">来源</string>
+    <string name="rag_trace_label_scope">范围</string>
+    <string name="rag_trace_label_ranking">排序</string>
+    <string name="rag_trace_label_rerank">重排</string>
+    <string name="rag_trace_label_graph">图谱</string>
+    <string name="rag_trace_label_time">用时</string>
+    <string name="rag_trace_source_memory">记忆 %1$d 条</string>
+    <string name="rag_trace_source_documents">文档 %1$d 条</string>
+    <string name="rag_trace_ranking_vector">向量相似度</string>
+    <string name="rag_trace_ranking_hybrid">向量与关键词混合</string>
+    <string name="rag_trace_rerank_value_api">%1$s</string>
+    <string name="rag_trace_rerank_value_llm">大模型打分（%1$s）</string>
+    <string name="rag_trace_rerank_value_skipped">候选不足两条，未重排</string>
+    <string name="rag_trace_rerank_value_failed">失败，保持原有顺序</string>
+    <string name="rag_trace_rerank_value_off">未开启</string>
+    <string name="rag_trace_duration">%1$d 毫秒</string>
 </resources>

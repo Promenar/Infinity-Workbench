@@ -22,6 +22,7 @@ import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagReferenceKind
 import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.data.model.TurnMemoryState
+import com.promenar.nexara.ui.chat.components.RetrievalTraceSummary
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -90,6 +91,51 @@ fun ragCardScopeBreakdownPreview() = MemoryIndicatorFrame { ScopedRagCard() }
 @Preview(name = "RAG card scope English 360dp font130", widthDp = 360, heightDp = 220, locale = "en", fontScale = 1.3f)
 @Composable
 fun ragCardScopeBreakdownNarrowEnglishPreview() = MemoryIndicatorFrame { ScopedRagCard() }
+
+@PreviewTest
+@Preview(name = "检索过程 命中 深色", widthDp = 411, heightDp = 360, locale = "zh-rCN")
+@Composable
+fun ragTraceHitPreview() = MemoryIndicatorFrame { RetrievalTraceSummary(scopedHitTrace) }
+
+@PreviewTest
+@Preview(name = "检索过程 未命中 浅色", widthDp = 411, heightDp = 320, locale = "zh-rCN")
+@Composable
+fun ragTraceEmptyPreview() = MemoryIndicatorFrame(dark = false) {
+    RetrievalTraceSummary(
+        RagRetrievalTrace(
+            outcome = RagRetrievalTrace.OUTCOME_EMPTY,
+            memoryScope = ConversationScope.SESSION,
+            documentScope = DocumentScope.KNOWLEDGE_BASE,
+            memorySessionCount = 1,
+            searchTimeMs = 2792,
+        ),
+    )
+}
+
+@PreviewTest
+@Preview(name = "Retrieval trace English 360dp font130", widthDp = 360, heightDp = 460, locale = "en", fontScale = 1.3f)
+@Composable
+fun ragTraceNarrowEnglishPreview() = MemoryIndicatorFrame { RetrievalTraceSummary(scopedHitTrace) }
+
+private val scopedHitTrace = RagRetrievalTrace(
+    outcome = RagRetrievalTrace.OUTCOME_HIT,
+    recallCount = 12,
+    selectedCount = 5,
+    scoring = RagRetrievalTrace.SCORING_HYBRID,
+    rerank = RagRetrievalTrace.RERANK_API,
+    rerankModel = "BAAI/bge-reranker-v2-m3",
+    rerankTimeMs = 320,
+    searchTimeMs = 850,
+    memoryCount = 2,
+    documentCount = 3,
+    memoryScope = ConversationScope.ALL_AGENTS,
+    graphScope = ConversationScope.SESSION,
+    documentScope = DocumentScope.KNOWLEDGE_BASE,
+    memorySessionCount = 12,
+    memoryAgentCount = 3,
+    jitExtractionCount = 1,
+    jitModel = "provider::glm-4-flash",
+)
 
 @Composable
 private fun FooterStates() {

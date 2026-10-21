@@ -49,6 +49,8 @@ data class ContextRetrieval(
     val kgContext: String,
     val kgPaths: List<com.promenar.nexara.data.model.KgPath>,
     val ragTrace: RagRetrievalTrace? = null,
+    /** 本轮实际生效的检索选项（会话、临时选项与助手配置合并后）；轮后写入记忆按它判断。 */
+    val effectiveRagOptions: com.promenar.nexara.data.model.RagOptions? = null,
 )
 
 data class ContextBuilderParams(
@@ -231,6 +233,7 @@ class ContextBuilder(
                 jitExtractionCount = jitExtractionCount,
                 jitModel = jitModel,
             ),
+            effectiveRagOptions = effectiveRagOptions,
         )
     }
 

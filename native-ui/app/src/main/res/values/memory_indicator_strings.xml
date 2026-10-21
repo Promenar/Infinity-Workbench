@@ -36,9 +36,9 @@
     <string name="chat_rag_breakdown_documents">Documents %1$d</string>
     <string name="chat_rag_breakdown_graph">Graph paths %1$d</string>
     <string name="chat_rag_breakdown_jit">Instant extraction ×%1$d</string>
-    <string name="rag_trace_scope_memory">Memory: %1$s</string>
-    <string name="rag_trace_scope_graph">Graph evidence: %1$s</string>
-    <string name="rag_trace_scope_documents">Documents: %1$s</string>
+    <string name="rag_trace_scope_memory">Memory</string>
+    <string name="rag_trace_scope_graph">Graph evidence</string>
+    <string name="rag_trace_scope_documents">Documents</string>
     <plurals name="rag_trace_reach_sessions">
         <item quantity="one">%d session</item>
         <item quantity="other">%d sessions</item>
@@ -47,10 +47,28 @@
         <item quantity="one">%d assistant</item>
         <item quantity="other">%d assistants</item>
     </plurals>
-    <string name="rag_trace_jit">Instant graph extraction ×%1$d</string>
-    <string name="rag_trace_jit_model">Model %1$s</string>
+    <string name="rag_trace_jit">Instant extraction ×%1$d</string>
+    <string name="rag_trace_jit_model">%1$s</string>
     <plurals name="memory_scope_reach_sessions">
         <item quantity="one">Searchable: %d session</item>
         <item quantity="other">Searchable: %d sessions</item>
     </plurals>
+    <string name="rag_trace_headline_hit">Found %1$d relevant, used %2$d</string>
+    <string name="rag_trace_headline_empty">Nothing relevant found</string>
+    <string name="rag_trace_label_sources">Sources</string>
+    <string name="rag_trace_label_scope">Scope</string>
+    <string name="rag_trace_label_ranking">Ranking</string>
+    <string name="rag_trace_label_rerank">Rerank</string>
+    <string name="rag_trace_label_graph">Graph</string>
+    <string name="rag_trace_label_time">Time</string>
+    <string name="rag_trace_source_memory">Memory %1$d</string>
+    <string name="rag_trace_source_documents">Documents %1$d</string>
+    <string name="rag_trace_ranking_vector">Vector similarity</string>
+    <string name="rag_trace_ranking_hybrid">Vector + keyword</string>
+    <string name="rag_trace_rerank_value_api">%1$s</string>
+    <string name="rag_trace_rerank_value_llm">LLM scoring (%1$s)</string>
+    <string name="rag_trace_rerank_value_skipped">Skipped: fewer than two candidates</string>
+    <string name="rag_trace_rerank_value_failed">Failed; original order kept</string>
+    <string name="rag_trace_rerank_value_off">Off</string>
+    <string name="rag_trace_duration">%1$d ms</string>
 </resources>

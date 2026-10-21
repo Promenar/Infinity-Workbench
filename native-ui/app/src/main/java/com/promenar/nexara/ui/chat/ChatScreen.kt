@@ -144,6 +144,7 @@ import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
+import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.chat.components.TaskPanelSizeSpring
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
@@ -601,7 +602,7 @@ fun ChatScreenContent(
                         onDelete = actions.onDeleteMessage,
                         onRegenerate = actions.onRegenerateMessage,
                         onBranch = actions.onBranchMessage,
-                        onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.ragOptions?.enableMemory == true },
+                        onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.let { (it.ragOptions ?: RagOptions()).enableMemory } == true },
                     )
                 }
 

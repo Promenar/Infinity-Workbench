@@ -47,52 +47,64 @@ internal fun ragCardSummary(trace: RagRetrievalTrace, referenceCount: Int): List
     else -> listOf(RagText(R.string.chat_rag_summary_failed))
 }
 
-/** 详情页顶部的检索过程说明；每个元素是一行，行内为分段。 */
-internal fun ragTraceLines(trace: RagRetrievalTrace): List<List<RagText>> = buildList {
-    when (trace.outcome) {
-        RagRetrievalTrace.OUTCOME_HIT, RagRetrievalTrace.OUTCOME_EMPTY -> {
-            add(
-                listOf(
-                    RagText(R.string.rag_trace_recall, listOf(trace.recallCount)),
-                    RagText(R.string.rag_trace_selected, listOf(trace.selectedCount)),
-                    RagText(R.string.rag_trace_sources, listOf(trace.memoryCount, trace.documentCount)),
-                ),
-            )
-            add(
-                listOf(
-                    RagText(
-                        if (trace.scoring == RagRetrievalTrace.SCORING_HYBRID) {
-                            R.string.rag_trace_scoring_hybrid
-                        } else {
-                            R.string.rag_trace_scoring_vector
-                        },
-                    ),
-                ),
-            )
-            add(rerankLine(trace))
-            if (trace.outcome == RagRetrievalTrace.OUTCOME_EMPTY) add(listOf(RagText(R.string.rag_trace_empty_hint)))
+/** 检索过程说明中的一行：左侧标签，右侧一至多行取值，每行内为分段。 */
+internal data class RagTraceRow(val label: Int, val lines: List<List<RagText>>)
+
+/** 详情页的检索过程：先给结论与补充说明，再按来源、范围、排序、重排、图谱、用时分行列出。 */
+internal data class RagTraceSummary(val headline: RagText, val hint: RagText?, val rows: List<RagTraceRow>)
+
+internal fun ragTraceSummary(trace: RagRetrievalTrace): RagTraceSummary {
+    val searched = trace.outcome == RagRetrievalTrace.OUTCOME_HIT || trace.outcome == RagRetrievalTrace.OUTCOME_EMPTY
+    val headline = when (trace.outcome) {
+        RagRetrievalTrace.OUTCOME_HIT -> RagText(R.string.rag_trace_headline_hit, listOf(trace.recallCount.coerceAtLeast(trace.selectedCount), trace.selectedCount))
+        RagRetrievalTrace.OUTCOME_EMPTY -> RagText(R.string.rag_trace_headline_empty)
+        RagRetrievalTrace.OUTCOME_UNAVAILABLE -> RagText(R.string.chat_rag_summary_unavailable)
+        else -> RagText(R.string.chat_rag_summary_failed)
+    }
+    val hint = when (trace.outcome) {
+        RagRetrievalTrace.OUTCOME_HIT -> null
+        RagRetrievalTrace.OUTCOME_EMPTY -> RagText(R.string.rag_trace_empty_hint)
+        RagRetrievalTrace.OUTCOME_UNAVAILABLE -> RagText(R.string.rag_trace_unavailable_hint)
+        RagRetrievalTrace.OUTCOME_NO_SCOPE -> RagText(R.string.rag_trace_no_scope_hint)
+        else -> RagText(R.string.rag_trace_failed_hint)
+    }
+    val rows = buildList {
+        if (trace.outcome == RagRetrievalTrace.OUTCOME_HIT) {
+            val sources = buildList {
+                if (trace.memoryCount > 0) add(RagText(R.string.rag_trace_source_memory, listOf(trace.memoryCount)))
+                if (trace.documentCount > 0) add(RagText(R.string.rag_trace_source_documents, listOf(trace.documentCount)))
+            }
+            if (sources.isNotEmpty()) add(RagTraceRow(R.string.rag_trace_label_sources, listOf(sources)))
         }
-        RagRetrievalTrace.OUTCOME_UNAVAILABLE -> add(listOf(RagText(R.string.rag_trace_unavailable_hint)))
-        RagRetrievalTrace.OUTCOME_NO_SCOPE -> add(listOf(RagText(R.string.rag_trace_no_scope_hint)))
-        else -> add(listOf(RagText(R.string.rag_trace_failed_hint)))
+        val scopes = buildList {
+            trace.memoryScope?.let { scope ->
+                add(buildList {
+                    add(RagText(R.string.rag_trace_scope_memory))
+                    add(RagText(scope.labelRes(ScopeResource.Memory)))
+                    trace.memorySessionCount?.let { add(plural(R.plurals.rag_trace_reach_sessions, it)) }
+                    // 跨助手档才需要说明助手数；其余档位只涉及本助手。
+                    if (scope == ConversationScope.ALL_AGENTS) trace.memoryAgentCount?.let { add(plural(R.plurals.rag_trace_reach_agents, it)) }
+                })
+            }
+            trace.graphScope?.let { add(listOf(RagText(R.string.rag_trace_scope_graph), RagText(it.labelRes(ScopeResource.Graph)))) }
+            trace.documentScope?.let { add(listOf(RagText(R.string.rag_trace_scope_documents), RagText(it.labelRes()))) }
+        }
+        if (scopes.isNotEmpty()) add(RagTraceRow(R.string.rag_trace_label_scope, scopes))
+        if (searched) {
+            add(RagTraceRow(R.string.rag_trace_label_ranking, listOf(listOf(RagText(
+                if (trace.scoring == RagRetrievalTrace.SCORING_HYBRID) R.string.rag_trace_ranking_hybrid else R.string.rag_trace_ranking_vector,
+            )))))
+            add(RagTraceRow(R.string.rag_trace_label_rerank, listOf(rerankValue(trace))))
+        }
+        if (trace.jitExtractionCount > 0) {
+            add(RagTraceRow(R.string.rag_trace_label_graph, listOf(buildList {
+                add(RagText(R.string.rag_trace_jit, listOf(trace.jitExtractionCount)))
+                trace.jitModel?.takeIf(String::isNotBlank)?.let { add(RagText(R.string.rag_trace_jit_model, listOf(it.substringAfter("::", it)))) }
+            })))
+        }
+        if (trace.searchTimeMs > 0) add(RagTraceRow(R.string.rag_trace_label_time, listOf(listOf(RagText(R.string.rag_trace_duration, listOf(trace.searchTimeMs))))))
     }
-    trace.memoryScope?.let { scope ->
-        add(buildList {
-            add(RagText(R.string.rag_trace_scope_memory, listOf(RagText(scope.labelRes(ScopeResource.Memory)))))
-            trace.memorySessionCount?.let { add(plural(R.plurals.rag_trace_reach_sessions, it)) }
-            // 跨助手档才需要说明助手数；其余档位只涉及本助手。
-            if (scope == ConversationScope.ALL_AGENTS) trace.memoryAgentCount?.let { add(plural(R.plurals.rag_trace_reach_agents, it)) }
-        })
-    }
-    trace.graphScope?.let { add(listOf(RagText(R.string.rag_trace_scope_graph, listOf(RagText(it.labelRes(ScopeResource.Graph)))))) }
-    trace.documentScope?.let { add(listOf(RagText(R.string.rag_trace_scope_documents, listOf(RagText(it.labelRes()))))) }
-    if (trace.jitExtractionCount > 0) {
-        add(buildList {
-            add(RagText(R.string.rag_trace_jit, listOf(trace.jitExtractionCount)))
-            trace.jitModel?.takeIf(String::isNotBlank)?.let { add(RagText(R.string.rag_trace_jit_model, listOf(it.substringAfter("::", it)))) }
-        })
-    }
-    if (trace.searchTimeMs > 0) add(listOf(RagText(R.string.rag_trace_time, listOf(trace.searchTimeMs))))
+    return RagTraceSummary(headline, hint, rows)
 }
 
 /** 检索卡摘要中的范围段：优先说明对话记忆档位，未检索记忆时说明文档档位。 */
@@ -115,18 +127,18 @@ internal fun ragSourceBreakdown(references: List<RagReference>, kgPathCount: Int
     if (jit > 0) add(RagText(R.string.chat_rag_breakdown_jit, listOf(jit)))
 }
 
-private fun rerankLine(trace: RagRetrievalTrace): List<RagText> = when (trace.rerank) {
+private fun rerankValue(trace: RagRetrievalTrace): List<RagText> = when (trace.rerank) {
     RagRetrievalTrace.RERANK_API -> listOf(
-        RagText(R.string.rag_trace_rerank_api, listOf(trace.rerankModel ?: "—")),
-        RagText(R.string.rag_trace_rerank_time, listOf(trace.rerankTimeMs)),
+        RagText(R.string.rag_trace_rerank_value_api, listOf(trace.rerankModel ?: "—")),
+        RagText(R.string.rag_trace_duration, listOf(trace.rerankTimeMs)),
     )
     RagRetrievalTrace.RERANK_LLM -> listOf(
-        RagText(R.string.rag_trace_rerank_llm, listOf(trace.rerankModel ?: "—")),
-        RagText(R.string.rag_trace_rerank_time, listOf(trace.rerankTimeMs)),
+        RagText(R.string.rag_trace_rerank_value_llm, listOf(trace.rerankModel ?: "—")),
+        RagText(R.string.rag_trace_duration, listOf(trace.rerankTimeMs)),
     )
-    RagRetrievalTrace.RERANK_SKIPPED -> listOf(RagText(R.string.rag_trace_rerank_skipped))
-    RagRetrievalTrace.RERANK_FAILED -> listOf(RagText(R.string.rag_trace_rerank_failed))
-    else -> listOf(RagText(R.string.rag_trace_rerank_off))
+    RagRetrievalTrace.RERANK_SKIPPED -> listOf(RagText(R.string.rag_trace_rerank_value_skipped))
+    RagRetrievalTrace.RERANK_FAILED -> listOf(RagText(R.string.rag_trace_rerank_value_failed))
+    else -> listOf(RagText(R.string.rag_trace_rerank_value_off))
 }
 
 /** 单条引用的分数与名次说明：来源类型、召回分、重排分，以及重排前后的名次。 */
