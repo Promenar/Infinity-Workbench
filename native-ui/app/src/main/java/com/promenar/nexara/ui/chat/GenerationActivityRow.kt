@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -96,17 +97,22 @@ internal fun GenerationActivityContent(
     }
 }
 
-/** 没有计划时的独立活动栏：一行活动内容，下方一条与输入文字对齐的分隔线。 */
+/**
+ * 没有计划时的独立活动栏：一行活动内容，下方一条与输入文字对齐的分隔线。
+ * 内容在行内垂直居中，与浮岛上边和分隔线等距，不贴向 24dp 圆角的左上角。
+ */
 @Composable
 internal fun GenerationActivityRow(progress: GenerationProgress, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
-        GenerationActivityContent(
-            progress = progress,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 40.dp)
-                .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-        )
+                .heightIn(min = 44.dp)
+                .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            GenerationActivityContent(progress = progress, modifier = Modifier.fillMaxWidth())
+        }
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = 16.dp),
             thickness = 1.dp,
