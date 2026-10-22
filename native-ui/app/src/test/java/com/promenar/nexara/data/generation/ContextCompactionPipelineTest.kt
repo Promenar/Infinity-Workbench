@@ -130,7 +130,8 @@ class ContextCompactionPipelineTest {
         val summarized = mutableListOf<String>()
 
         val result = ContextCompactionPipeline().compact(
-            input(session, context = 3_000, threshold = 0.9), ::prompt,
+            // 窗口足够大，使阈值（2700）而非安全余量决定预算。
+            input(session, context = 27_000, threshold = 0.1), ::prompt,
             summarizeTool = { summarized += it; "保留事实" },
             summarizeHistory = { _, _ -> error("预算已足够，不应摘要") },
         )

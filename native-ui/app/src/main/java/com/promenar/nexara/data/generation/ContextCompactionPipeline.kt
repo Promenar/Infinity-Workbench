@@ -241,7 +241,8 @@ class ContextCompactionPipeline(private val folds: ContextFoldCache? = null) {
         val context = input.window.modelContextTokens?.takeIf { it > 0 } ?: 128_000
         val threshold = input.threshold.takeIf(Double::isFinite)?.coerceIn(0.0, 1.0) ?: 0.8
         val thresholdBudget = floor(threshold * context).toLong()
-        val available = (context.toLong() - input.window.outputReserveTokens.coerceAtLeast(0)).coerceAtLeast(0)
+        // 与发送门禁共用同一可用输入上限（含安全余量），保证门禁拒绝前自动压缩已先触发。
+        val available = input.window.copy(modelContextTokens = context).inputBudgetTokens ?: 0
         return minOf(thresholdBudget, available).toInt()
     }
 

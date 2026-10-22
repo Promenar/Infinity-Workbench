@@ -555,6 +555,7 @@ internal class DefaultChatGenerationRuntime(
                 formatArgs = mapOf(
                     GenerationFailure.KEY_REQUIRED_TOKENS to budgetDecision.requiredTokens.toString(),
                     GenerationFailure.KEY_AVAILABLE_TOKENS to budgetDecision.availableTokens.toString(),
+                    GenerationFailure.KEY_FULL_CONTEXT_DOCUMENTS to hasFullContextDocuments.toString(),
                 ),
                 technical = "full-context budget blocked: reason=${budgetDecision.reason}, " +
                     "required=${budgetDecision.requiredTokens}, available=${budgetDecision.availableTokens}",

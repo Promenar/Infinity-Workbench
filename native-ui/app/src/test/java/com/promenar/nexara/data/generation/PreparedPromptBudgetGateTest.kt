@@ -8,6 +8,14 @@ import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.model.catalog.MetadataSource
+import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.data.model.catalog.ModelMetadataRecord
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.model.catalog.SupportState
+import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.Test
@@ -107,11 +115,82 @@ class PreparedPromptBudgetGateTest {
         assertThat(decision).isInstanceOf(ContextBudgetDecision.Allowed::class.java)
     }
 
-    private fun session(modelId: String = "test-model") = Session(
+    // 复现：262K 窗口、目录最大输出 131072 的模型，在约 34K 实际上下文的多轮工具对话中被误判“需要 127352，可用 125830”。
+    @Test fun `未显式限制输出时长工具对话不因最大输出预留和字节计量被误拒`() = withLargeOutputModel {
+        val rounds = (1..30).flatMap { round ->
+            listOf(
+                ProtocolMessage(
+                    role = "assistant",
+                    content = "",
+                    reasoning = "我需要先确认加法结果，再检查第${round}步的输出是否一致。".repeat(12),
+                    toolCalls = listOf(ProtocolToolCall(id = "call_$round", name = "run_command",
+                        arguments = """{"command":"python3 -c 'print(1+$round)'","timeout":30}""")),
+                ),
+                ProtocolMessage(role = "tool", toolCallId = "call_$round",
+                    content = "命令执行完成，标准输出如下：${round + 1}\n退出码 0。".repeat(20)),
+            )
+        }
+        val longSession = PromptRequest(
+            messages = listOf(
+                ProtocolMessage(role = "system", content = "你是一个严谨的助手，回答前先核对工具结果。".repeat(450)),
+                ProtocolMessage(role = "user", content = "1+1 等于几？请用命令验证。"),
+            ) + rounds,
+            model = LARGE_OUTPUT_MODEL,
+        )
+        val approximate = ApproximateTokenEstimator.estimate(longSession)
+        assertThat(approximate).isLessThan(40_000)
+
+        val window = PreparedPromptBudgetGate.resolveWindow(
+            session(modelId = LARGE_OUTPUT_MODEL, maxTokens = null), longSession, settings(262_144),
+        )
+        assertThat(window.outputReserveTokens).isAtMost(32_768)
+
+        val decision = PreparedPromptBudgetGate.evaluate(
+            session(modelId = LARGE_OUTPUT_MODEL, maxTokens = null), longSession, settings(262_144), false,
+        )
+        assertThat(decision).isInstanceOf(ContextBudgetDecision.Allowed::class.java)
+        assertThat((decision as ContextBudgetDecision.Allowed).requiredTokens).isEqualTo(approximate.toLong())
+        assertThat(decision.availableTokens).isEqualTo(window.inputBudgetTokens)
+    }
+
+    @Test fun `显式输出上限仍按设置完整预留`() = withLargeOutputModel {
+        val explicit = prompt("问".repeat(60_000), modelId = LARGE_OUTPUT_MODEL, maxTokens = 200_000)
+        val decision = PreparedPromptBudgetGate.evaluate(
+            session(modelId = LARGE_OUTPUT_MODEL, maxTokens = null), explicit, settings(262_144), false,
+        )
+        assertThat(decision).isInstanceOf(ContextBudgetDecision.Blocked::class.java)
+        assertThat((decision as ContextBudgetDecision.Blocked).availableTokens).isEqualTo(262_144L - 200_000 - 5_242)
+    }
+
+    @Test fun `自动压缩预算不高于发送门禁可用量`() {
+        val window = PromptWindow(modelContextTokens = 131_072, outputReserveTokens = 32_768)
+        // 压缩阈值设为 100% 时，压缩目标也必须留出与门禁相同的安全余量，否则会出现“不压缩却被拒”的空档。
+        assertThat(window.inputBudgetTokens).isEqualTo(131_072L - 32_768 - 2_621)
+        assertThat(PromptWindow(modelContextTokens = null, outputReserveTokens = 4_096).inputBudgetTokens).isNull()
+    }
+
+    private fun <T> withLargeOutputModel(block: () -> T): T = ModelCatalogRuntime.withTestResolver(
+        ModelMetadataResolver(listOf(ModelMetadataRecord(
+            canonicalModelId = "test/$LARGE_OUTPUT_MODEL",
+            exactAliases = setOf(LARGE_OUTPUT_MODEL),
+            displayName = "Large Output Model",
+            familyName = null,
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            capabilities = mapOf(ModelCapability.REASONING to SupportState.SUPPORTED),
+            contextTokens = 1_000_000,
+            inputTokens = null,
+            outputTokens = 131_072,
+            knowledgeCutoff = null,
+            source = MetadataSource.NEXARA_OVERRIDE,
+        ))),
+        block,
+    )
+
+    private fun session(modelId: String = "test-model", maxTokens: Int? = 1_024) = Session(
         id = "session",
         agentId = "agent",
         modelId = modelId,
-        inferenceParams = InferenceParams(maxTokens = 1_024),
+        inferenceParams = InferenceParams(maxTokens = maxTokens),
     )
 
     private fun prompt(
@@ -126,5 +205,9 @@ class PreparedPromptBudgetGateTest {
 
     private fun settings(context: Int): SharedPreferences = mockk {
         every { getInt(any(), any()) } returns context
+    }
+
+    private companion object {
+        const val LARGE_OUTPUT_MODEL = "large-output-model"
     }
 }

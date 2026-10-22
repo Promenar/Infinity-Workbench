@@ -503,6 +503,7 @@
     <string name="chat_document_error_unknown_capacity">This model\'s context capacity is unknown. Configure its capacity before sending full documents.</string>
     <string name="chat_document_error_invalid_estimate">The full-document context size could not be calculated. Remove the document and try again.</string>
     <string name="chat_document_error_over_capacity">Full context requires %1$d tokens, but only %2$d are available. Remove documents or add reference material to the Library for retrieval.</string>
+    <string name="chat_context_error_over_capacity">Context requires %1$d tokens, but only %2$d are available. Compact the context now or start a new chat.</string>
     <string name="chat_session_prompt_title">Session Prompt</string>
     <string name="chat_session_prompt_placeholder">Add session-specific instructions…</string>
     <string name="chat_approval_arguments">Arguments</string>

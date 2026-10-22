@@ -60,6 +60,8 @@ data class GenerationFailure(
         const val KEY_RETRY_AFTER_SECONDS = "retryAfterSeconds"
         const val KEY_REQUIRED_TOKENS = "requiredTokens"
         const val KEY_AVAILABLE_TOKENS = "availableTokens"
+        /** 上下文超限时本轮是否携带完整上下文文档："false" 表示仅对话本身超限，提示应引导压缩而非移除文档。 */
+        const val KEY_FULL_CONTEXT_DOCUMENTS = "fullContextDocuments"
 
         fun of(
             code: GenerationFailureCode,

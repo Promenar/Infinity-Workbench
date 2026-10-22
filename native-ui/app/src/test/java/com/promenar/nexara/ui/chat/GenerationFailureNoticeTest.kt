@@ -56,6 +56,27 @@ class GenerationFailureNoticeTest {
     }
 
     @Test
+    fun `未携带完整文档的上下文超限引导压缩而不是移除文档`() {
+        fun resolve(documents: String) = GenerationFailureNotice.template(
+            GenerationFailureNotice.from(
+                GenerationFailure(
+                    GenerationFailureCode.CONTEXT_LIMIT,
+                    mapOf(
+                        GenerationFailure.KEY_REQUIRED_TOKENS to "230000",
+                        GenerationFailure.KEY_AVAILABLE_TOKENS to "224134",
+                        GenerationFailure.KEY_FULL_CONTEXT_DOCUMENTS to documents,
+                    ),
+                ),
+            ),
+        )
+
+        val conversation = resolve("false")
+        assertThat(conversation.resourceId).isEqualTo(R.string.chat_context_error_over_capacity)
+        assertThat(conversation.args).containsExactly(230000L, 224134L).inOrder()
+        assertThat(resolve("true").resourceId).isEqualTo(R.string.chat_document_error_over_capacity)
+    }
+
+    @Test
     fun `限流只在正数重试秒数存在时使用带参数资源`() {
         val withRetry = GenerationFailureNotice.template(
             GenerationFailureNotice.from(GenerationFailure.rateLimited(37)),

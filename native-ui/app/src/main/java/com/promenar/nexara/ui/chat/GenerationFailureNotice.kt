@@ -23,6 +23,7 @@ object GenerationFailureNotice {
     private const val CODE_TIMEOUT = "generation.failure.timeout"
     private const val CODE_INVALID_REQUEST = "generation.failure.invalid_request"
     private const val CODE_CONTEXT_LIMIT = "generation.failure.context_limit"
+    private const val CODE_CONTEXT_LIMIT_CONVERSATION = "generation.failure.context_limit_conversation"
     private const val CODE_SERVER = "generation.failure.server"
     private const val CODE_BUSY = "generation.failure.busy"
     private const val CODE_PERSISTENCE = "generation.failure.persistence"
@@ -39,7 +40,12 @@ object GenerationFailureNotice {
             GenerationFailureCode.QUOTA -> CODE_QUOTA
             GenerationFailureCode.TIMEOUT -> CODE_TIMEOUT
             GenerationFailureCode.INVALID_REQUEST -> CODE_INVALID_REQUEST
-            GenerationFailureCode.CONTEXT_LIMIT -> CODE_CONTEXT_LIMIT
+            GenerationFailureCode.CONTEXT_LIMIT ->
+                if (failure.formatArgs[GenerationFailure.KEY_FULL_CONTEXT_DOCUMENTS] == "false") {
+                    CODE_CONTEXT_LIMIT_CONVERSATION
+                } else {
+                    CODE_CONTEXT_LIMIT
+                }
             GenerationFailureCode.SERVER -> CODE_SERVER
             GenerationFailureCode.BUSY -> CODE_BUSY
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
@@ -85,6 +91,11 @@ object GenerationFailureNotice {
         CODE_INVALID_REQUEST -> ResolvedStatus(R.string.generation_failure_invalid_request)
         CODE_CONTEXT_LIMIT -> if (notice.formatArgs.size == 2) {
             ResolvedStatus(R.string.chat_document_error_over_capacity, notice.formatArgs)
+        } else {
+            ResolvedStatus(R.string.chat_document_error_invalid_estimate)
+        }
+        CODE_CONTEXT_LIMIT_CONVERSATION -> if (notice.formatArgs.size == 2) {
+            ResolvedStatus(R.string.chat_context_error_over_capacity, notice.formatArgs)
         } else {
             ResolvedStatus(R.string.chat_document_error_invalid_estimate)
         }
