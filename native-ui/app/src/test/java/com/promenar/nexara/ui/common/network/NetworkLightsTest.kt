@@ -35,8 +35,8 @@ class NetworkLightsTest {
     @Test
     fun `只有接口在 tailnet 内的提供商的模型带小灯`() {
         val providers = listOf(
-            ProviderListItem(id = "gateway", baseUrl = "https://gpu-box.tail3f9c.ts.net/v1"),
-            ProviderListItem(id = "deepseek", baseUrl = "https://api.deepseek.com/v1"),
+            ProviderListItem(id = "gateway", baseUrl = "https://gpu-box.tail3f9c.ts.net/v1", hasApiKey = true),
+            ProviderListItem(id = "deepseek", baseUrl = "https://api.deepseek.com/v1", hasApiKey = true),
         )
         val state = networkLightsState(PublicNetworkStatus.CONNECTED, TailnetState(TailnetPhase.DISABLED), providers)
         assertThat(state.tailnetProviderIds).containsExactly("gateway")
@@ -47,6 +47,17 @@ class NetworkLightsTest {
         val publicOnly = networkLightsState(PublicNetworkStatus.LIMITED, TailnetState(TailnetPhase.DISABLED), providers.drop(1))
         assertThat(publicOnly.tailscale).isNull()
         assertThat(publicOnly.public).isEqualTo(PublicNetworkStatus.LIMITED)
+    }
+
+    @Test
+    fun `未配置凭据的 tailnet 提供商不可用，不计入内网模型`() {
+        val providers = listOf(
+            ProviderListItem(id = "draft", baseUrl = "https://gpu-box.tail3f9c.ts.net/v1"),
+            ProviderListItem(id = "deepseek", baseUrl = "https://api.deepseek.com/v1", hasApiKey = true),
+        )
+        val state = networkLightsState(PublicNetworkStatus.CONNECTED, TailnetState(TailnetPhase.DISABLED), providers)
+        assertThat(state.tailnetProviderIds).isEmpty()
+        assertThat(state.tailscale).isNull()
     }
 
     private fun model(providerId: String) = ModelSelectionUiModel(

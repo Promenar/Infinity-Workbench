@@ -88,8 +88,9 @@ fun networkLightsState(
     tailnet: TailnetState,
     providers: List<ProviderListItem>,
 ): NetworkLightsState {
+    // 未配置凭据的提供商不可用，其模型不会出现在选择器里，不计入内网模型。
     val tailnetProviderIds = providers
-        .filter { TailnetEndpoints.isTailnetEndpoint(it.baseUrl, tailnet) }
+        .filter { (it.hasApiKey || it.hasVertexCredentials) && TailnetEndpoints.isTailnetEndpoint(it.baseUrl, tailnet) }
         .mapTo(mutableSetOf()) { it.id }
     return NetworkLightsState(
         public = public,
