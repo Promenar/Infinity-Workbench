@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -102,6 +103,24 @@ class ChatScreenContentStateTest {
             .assertContentDescriptionEquals(resource(R.string.chat_cd_stop))
             .performClick()
         rule.runOnIdle { assertThat(stopped).isTrue() }
+    }
+
+    @Test
+    fun openingNonEmptySession_neverComposesEmptyWordmark() {
+        // 进入会话的首帧会话尚未就位（session 为空、消息为空、未在加载），此时不得把它当成空会话。
+        var uiState by mutableStateOf(ChatUiState())
+        rule.setContent {
+            NexaraTheme {
+                ChatScreenContent(state = ChatScreenState(uiState = uiState), actions = ChatScreenActions())
+            }
+        }
+        val wordmarkSeen = rule.onAllNodesWithTag(UiTags.CHAT_EMPTY_WORDMARK).fetchSemanticsNodes().isNotEmpty()
+        rule.runOnIdle {
+            uiState = ChatUiState(session = session, messages = listOf(Message("user-1", MessageRole.USER, "你好", createdAt = 1L)))
+        }
+        rule.onNodeWithText("你好").assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_EMPTY_WORDMARK).assertDoesNotExist()
+        assertThat(wordmarkSeen).isFalse()
     }
 
     @Test

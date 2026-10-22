@@ -189,6 +189,15 @@ internal fun chatRenderStateTag(uiState: ChatUiState): String = when {
     else -> UiTags.CHAT_STATE_READY
 }
 
+/**
+ * 空会话粒子字标的显示条件：会话已就位，且没有任何消息、审批、加载或生成。
+ * 进入会话的首帧会话对象尚未载入（消息同样为空、也未标记加载），必须排除，
+ * 否则非空会话打开时字标会先淡入再随消息到达淡出。
+ */
+internal fun shouldShowEmptyWordmark(uiState: ChatUiState): Boolean =
+    uiState.session != null && !uiState.isLoading && uiState.messages.isEmpty() &&
+        uiState.approvalRequest == null && !uiState.isGenerating
+
 data class ChatScreenState(
     val uiState: ChatUiState = ChatUiState(),
     val inputText: String = "",
@@ -531,9 +540,7 @@ fun ChatScreenContent(
             }
         ) { padding ->
             val wordmarkPointer = remember { WordmarkPointer() }
-            // 空会话：只有还没有任何消息、审批或生成时才显示粒子字标。
-            val showWordmark = !uiState.isLoading && uiState.messages.isEmpty() &&
-                uiState.approvalRequest == null && !uiState.isGenerating
+            val showWordmark = shouldShowEmptyWordmark(uiState)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
