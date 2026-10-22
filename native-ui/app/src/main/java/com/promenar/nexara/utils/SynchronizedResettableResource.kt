@@ -1,5 +1,8 @@
 package com.promenar.nexara.utils
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
+
 /** 并发安全的可替换单例持有器；旧资源停止完成前不会发布或构造新实例。 */
 class SynchronizedResettableResource<T>(
     private val dispose: (T) -> Unit,
@@ -63,6 +66,13 @@ class SynchronizedResettableResource<T>(
     }
 
     fun peek(): T? = value
+
+    /**
+     * [getOrCreate] 的挂起版本：在 [dispatcher] 上等待替换完成或构造实例，不阻塞调用线程。
+     * 主线程必须用它取资源：替换流程可能在等主线程上挂起的协程释放屏障，阻塞主线程会互相等待。
+     */
+    suspend fun awaitOrCreate(dispatcher: CoroutineDispatcher, factory: () -> T): T =
+        withContext(dispatcher) { getOrCreate(factory) }
 
     fun reset() {
         val handle = beginReset() ?: return

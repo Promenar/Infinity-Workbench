@@ -106,9 +106,9 @@ open class MainActivity : ComponentActivity() {
                     knowledgeBaseLabel = getString(R.string.share_import_knowledge_base),
                 )
             },
-            indexQueueState = (application as NexaraApplication).vectorizationQueue.state,
+            indexQueueState = (application as NexaraApplication).vectorizationQueueState,
             retryIndex = { root, fileUuid ->
-                (application as NexaraApplication).vectorizationQueue.retryDocumentReference(root, fileUuid)
+                (application as NexaraApplication).awaitVectorizationQueue().retryDocumentReference(root, fileUuid)
             },
         )
     }

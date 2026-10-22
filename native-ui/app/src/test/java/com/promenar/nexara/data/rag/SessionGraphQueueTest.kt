@@ -46,7 +46,7 @@ class SessionGraphQueueTest {
     @Test
     fun `开关关闭或轮次过短时不排入任务`() = runTest {
         seedTurn(assistantContent = "Kotlin 由 JetBrains 开发，最早发布于 2011 年。")
-        val failingQueue: () -> VectorizationQueue = { error("不应排入") }
+        val failingQueue: suspend () -> VectorizationQueue = { error("不应排入") }
 
         assertThat(RoomSessionGraphScheduler({ database }, { false }, failingQueue).schedule("s1", "a1", "u1")).isFalse()
 

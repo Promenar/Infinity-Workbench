@@ -444,7 +444,7 @@ class RagViewModel(
         if (_isRetryingLastFailedIndex.value) return
         val target = lastFailedIndexTarget ?: return
         if (target is FailedIndexTarget.DocumentReference &&
-            app.vectorizationQueue.state.value.queue.any {
+            app.vectorizationQueueState.value.queue.any {
                 it.workspaceRootUuid == target.workspaceRootUuid && it.docId == target.docId &&
                     it.error == com.promenar.nexara.data.rag.VectorizationQueue.KG_CONFIRMATION_REQUIRED
             }
@@ -457,7 +457,7 @@ class RagViewModel(
             try {
                 val submitted = when (target) {
                     is FailedIndexTarget.Document -> retryDocument(target)
-                    is FailedIndexTarget.DocumentReference -> app.vectorizationQueue.retryDocumentReference(
+                    is FailedIndexTarget.DocumentReference -> app.awaitVectorizationQueue().retryDocumentReference(
                         target.workspaceRootUuid,
                         target.docId,
                     )
@@ -483,7 +483,7 @@ class RagViewModel(
 
     private suspend fun retryDocument(target: FailedIndexTarget.Document): Boolean {
         val entry = workspaceRepository.getByUuid(target.workspaceRootUuid, target.docId) ?: return false
-        app.vectorizationQueue.cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
+        app.awaitVectorizationQueue().cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
         enqueueCurrentDocumentReference(target.workspaceRootUuid, entry)
         return true
     }
@@ -492,7 +492,7 @@ class RagViewModel(
         workspaceRootUuid: String,
         entry: FileEntry,
     ) {
-        app.vectorizationQueue.enqueueDocumentReference(
+        app.awaitVectorizationQueue().enqueueDocumentReference(
             workspaceRootUuid = workspaceRootUuid,
             docId = entry.uuid,
             docTitle = entry.name,
@@ -513,7 +513,7 @@ class RagViewModel(
         clearRetryTarget()
         discardedTarget?.let { target ->
             viewModelScope.launch {
-                app.vectorizationQueue.cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
+                app.awaitVectorizationQueue().cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
             }
         }
     }
@@ -818,7 +818,7 @@ class RagViewModel(
                                 if (pendingIndexCoordinator != null) {
                                     pendingIndexCoordinator.publish(event)
                                 } else {
-                                    app.vectorizationQueue.publish(event)
+                                    app.awaitVectorizationQueue().publish(event)
                                     removePendingRenameTarget(target)
                                 }
                             } catch (cancelled: CancellationException) {
@@ -868,7 +868,7 @@ class RagViewModel(
         workspaceRootUuid: String,
         target: RenameIndexTarget,
     ) {
-        app.vectorizationQueue.publish(
+        app.awaitVectorizationQueue().publish(
             com.promenar.nexara.data.rag.FileIndexEvent.Changed(
                 workspaceRootUuid = workspaceRootUuid,
                 fileUuid = target.fileUuid,
@@ -1029,7 +1029,7 @@ class RagViewModel(
             val imported = mutableListOf<ShareImportItem>()
             val failures = mutableListOf<String>()
             _indexingNotice.value = null
-            _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
+            _isIndexing.value = app.vectorizationQueueState.value.isDocumentIndexing
 
             for (uri in uris.distinct()) {
                 try {
@@ -1056,7 +1056,7 @@ class RagViewModel(
                 )
                 _isIndexing.value = true
             } else {
-                _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
+                _isIndexing.value = app.vectorizationQueueState.value.isDocumentIndexing
             }
             if (imported.isNotEmpty()) {
                 loadStats()
@@ -1184,7 +1184,7 @@ class RagViewModel(
                     )
                 }
                 if (failed.isEmpty()) {
-                    _isIndexing.value = app.vectorizationQueue.state.value.isDocumentIndexing
+                    _isIndexing.value = app.vectorizationQueueState.value.isDocumentIndexing
                 }
                 if (moved > 0) {
                     loadStats()
@@ -1249,7 +1249,7 @@ class RagViewModel(
                     return@launch
                 }
                 _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.IN_PROGRESS)
-                app.vectorizationQueue.enqueueDocumentReference(
+                app.awaitVectorizationQueue().enqueueDocumentReference(
                     workspaceRootUuid = rootUuid,
                     docId = uuid,
                     docTitle = entry.name,

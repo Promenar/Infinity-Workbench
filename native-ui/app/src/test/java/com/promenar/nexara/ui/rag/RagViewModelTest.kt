@@ -98,6 +98,8 @@ class RagViewModelTest {
             )
         )
         every { app.vectorizationQueue } returns vectorizationQueue
+        every { app.vectorizationQueueState } answers { vectorizationQueue.state }
+        coEvery { app.awaitVectorizationQueue() } answers { vectorizationQueue }
         every { app.observeVectorizationQueueInstances(any()) } answers {
             firstArg<(com.promenar.nexara.data.rag.VectorizationQueue) -> Unit>().invoke(vectorizationQueue)
             AutoCloseable { }

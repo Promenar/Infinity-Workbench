@@ -161,7 +161,7 @@ private suspend fun loadStateTurn(database: NexaraDatabase, sessionId: String, a
 class RoomSessionStateScheduler(
     private val databaseProvider: () -> NexaraDatabase,
     private val enabled: () -> Boolean,
-    private val queue: () -> VectorizationQueue,
+    private val queue: suspend () -> VectorizationQueue,
 ) : SessionStateScheduler {
     override suspend fun schedule(sessionId: String, assistantMessageId: String, userMessageId: String?): Boolean = withContext(Dispatchers.IO) {
         if (!enabled()) return@withContext false

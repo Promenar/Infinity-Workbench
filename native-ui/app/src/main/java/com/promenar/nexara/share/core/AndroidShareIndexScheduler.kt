@@ -20,7 +20,7 @@ class AndroidShareIndexScheduler(
         if (vectorCurrent && graphCurrent) {
             return ShareIndexReceipt(taskId = "completed-${entry.uuid}", fileUuid = entry.uuid)
         }
-        val taskId = app.vectorizationQueue.enqueueDocumentReference(
+        val taskId = app.awaitVectorizationQueue().enqueueDocumentReference(
             workspaceRootUuid = workspaceRootUuid,
             docId = entry.uuid,
             docTitle = entry.name,

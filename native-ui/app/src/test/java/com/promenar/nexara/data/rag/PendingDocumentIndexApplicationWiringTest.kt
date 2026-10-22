@@ -18,7 +18,7 @@ class PendingDocumentIndexApplicationWiringTest {
             .substringBefore("val taskRepository")
 
         assertThat(coordinatorBlock).contains("PendingDocumentIndexCoordinator(")
-        assertThat(coordinatorBlock).contains("vectorizationQueue.publish(event)")
+        assertThat(coordinatorBlock).contains("awaitVectorizationQueue().publish(event)")
         assertThat(coordinatorBlock).contains("resolveCurrentTarget")
         assertThat(coordinatorBlock).contains("database.fileEntryDao().getActiveByUuid")
         assertThat(coordinatorBlock).doesNotContain("database.fileEntryDao().getByUuid")
@@ -26,7 +26,7 @@ class PendingDocumentIndexApplicationWiringTest {
         assertThat(coordinatorBlock).contains("contentHash = entry.hash")
         assertThat(coordinatorBlock).contains("targetEpoch = entry.updatedAt")
         assertThat(repositoryBlock).contains("indexEventSink = pendingDocumentIndexCoordinator")
-        assertThat(repositoryBlock).doesNotContain("vectorizationQueue.publish(event)")
+        assertThat(repositoryBlock).doesNotContain("awaitVectorizationQueue().publish(event)")
     }
 
     @Test

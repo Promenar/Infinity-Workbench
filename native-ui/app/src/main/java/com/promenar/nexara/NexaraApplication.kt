@@ -482,7 +482,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 )
             },
             acquireVectorBarrier = { target ->
-                val lease = vectorizationQueue.acquireSessionDeleteBarrier(
+                val lease = awaitVectorizationQueue().acquireSessionDeleteBarrier(
                     target.sessionId,
                     target.workspaceRootUuid,
                     target.fileUuids,
@@ -756,7 +756,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             File(filesDir, "session_workspaces"),
             deleteCommitter = com.promenar.nexara.data.repository.WorkspaceDeletionTransaction(database)::delete,
             beforeDeleteCommitted = { workspaceRootUuid, ids ->
-                vectorizationQueue.acquireDeleteBarrier(workspaceRootUuid, ids)
+                awaitVectorizationQueue().acquireDeleteBarrier(workspaceRootUuid, ids)
             },
             afterDeleteCommitted = { workspaceRootUuid, ids ->
                 pendingDocumentIndexCoordinator.clearCommitted(workspaceRootUuid, ids)
@@ -764,7 +764,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             recycleCommitter = lifecycle::recycle,
             restoreCommitter = lifecycle::restore,
             beforeRecycleCommitted = { workspaceRootUuid, ids ->
-                vectorizationQueue.acquireDeleteBarrier(workspaceRootUuid, ids)
+                awaitVectorizationQueue().acquireDeleteBarrier(workspaceRootUuid, ids)
             },
             afterRecycleCommitted = { workspaceRootUuid, ids ->
                 pendingDocumentIndexCoordinator.clearForRecycle(workspaceRootUuid, ids)
@@ -774,7 +774,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     workspaceRootUuid,
                     targets.map { it.fileUuid },
                 )
-                vectorizationQueue.resumeInterruptedTasks().getOrThrow()
+                awaitVectorizationQueue().resumeInterruptedTasks().getOrThrow()
             },
             executionGate = sessionExecutionGate,
             mutationJournal = workspaceFileMutationJournal,
@@ -887,7 +887,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {
         PendingDocumentIndexCoordinator(
-            downstream = FileIndexEventSink { event -> vectorizationQueue.publish(event) },
+            downstream = FileIndexEventSink { event -> awaitVectorizationQueue().publish(event) },
             resolveCurrentTarget = { target ->
                 val entry = database.fileEntryDao().getActiveByUuid(
                     target.workspaceRootUuid,
@@ -1039,11 +1039,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     )
                 }.resolve(session)
 
-            override suspend fun resolveForExecution(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> {
-                val target = resolveMediaViewTarget(session)
-                return if (target.modelId.isBlank()) resolve(session).filterNot { it.runtimeToolId == "view_media" }
+            // 审批后的执行路径从主线程调用；技能注册表会同步扫描磁盘，必须切到 IO。
+            override suspend fun resolveForExecution(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> =
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val target = resolveMediaViewTarget(session)
+                    if (target.modelId.isBlank()) resolve(session).filterNot { it.runtimeToolId == "view_media" }
                     else resolve(session.copy(modelId = target.modelId))
-            }
+                }
         }
     }
 
@@ -1760,31 +1762,61 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             ),
         )
 
+    /**
+     * 当前向量化队列。替换进行中时会阻塞调用线程直到旧队列停止，只供后台线程使用；
+     * 主线程请用 [awaitVectorizationQueue] 取队列、用 [vectorizationQueueState] 读状态。
+     */
     val vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
-        get() = vectorizationQueueResource.getOrCreate {
-            val config = ragConfigPersistence.loadFullConfig()
-            com.promenar.nexara.data.rag.VectorizationQueue(
-                vectorStore = vectorStore,
-                embeddingClient = embeddingClient,
-                graphExtractor = graphExtractor,
-                vectorDao = database.vectorDao(),
-                vectorizationTaskDao = database.vectorizationTaskDao(),
-                ragConfig = config,
-                fileEntryDao = database.fileEntryDao(),
-                documentIndexService = createDocumentIndexService(config),
-                executionGate = sessionExecutionGate,
-                sessionGraph = com.promenar.nexara.data.rag.RoomSessionGraphProcessor({ database }, { graphExtractor }, sessionGraphStats),
-                sessionState = com.promenar.nexara.data.rag.RoomSessionStateProcessor(
-                    databaseProvider = { database },
-                    requestClient = ::createKgRequestClient,
-                    embeddingClient = { embeddingClient },
-                    settings = { kgExtractionSettings(ragConfigPersistence.loadFullConfig().copy(kgExtractionModel = null)) },
-                    timeoutMs = { ragConfigPersistence.loadFullConfig().kgExtractionTimeoutSeconds.toLong() * 1000 },
-                    executionGate = sessionExecutionGate,
-                    enabled = { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled },
-                ),
-            )
+        get() = vectorizationQueueResource.getOrCreate(::createVectorizationQueue)
+
+    /** 在 IO 线程取得当前向量化队列，替换进行中时挂起等待而不阻塞调用线程。 */
+    suspend fun awaitVectorizationQueue(): com.promenar.nexara.data.rag.VectorizationQueue =
+        vectorizationQueueResource.awaitOrCreate(Dispatchers.IO, ::createVectorizationQueue)
+
+    private val _vectorizationQueueState = kotlinx.coroutines.flow.MutableStateFlow(
+        com.promenar.nexara.data.rag.VectorizationQueue.QueueState(emptyList(), null, false),
+    )
+    private val vectorizationQueueStateLock = Any()
+    private var vectorizationQueueStateForwarding: kotlinx.coroutines.Job? = null
+
+    /** 当前向量化队列的状态，队列被替换后自动跟随新实例；读取不会阻塞，也不会触发队列创建。 */
+    val vectorizationQueueState: kotlinx.coroutines.flow.StateFlow<com.promenar.nexara.data.rag.VectorizationQueue.QueueState> =
+        _vectorizationQueueState.asStateFlow()
+
+    @Suppress("unused")
+    private val vectorizationQueueStateSubscription = vectorizationQueueResource.observeInstances { queue ->
+        synchronized(vectorizationQueueStateLock) {
+            vectorizationQueueStateForwarding?.cancel()
+            vectorizationQueueStateForwarding = startupScope.launch {
+                queue.state.collect { _vectorizationQueueState.value = it }
+            }
         }
+    }
+
+    private fun createVectorizationQueue(): com.promenar.nexara.data.rag.VectorizationQueue {
+        val config = ragConfigPersistence.loadFullConfig()
+        return com.promenar.nexara.data.rag.VectorizationQueue(
+            vectorStore = vectorStore,
+            embeddingClient = embeddingClient,
+            graphExtractor = graphExtractor,
+            vectorDao = database.vectorDao(),
+            vectorizationTaskDao = database.vectorizationTaskDao(),
+            ragConfig = config,
+            fileEntryDao = database.fileEntryDao(),
+            documentIndexService = createDocumentIndexService(config),
+            executionGate = sessionExecutionGate,
+            sessionGraph = com.promenar.nexara.data.rag.RoomSessionGraphProcessor({ database }, { graphExtractor }, sessionGraphStats),
+            sessionState = com.promenar.nexara.data.rag.RoomSessionStateProcessor(
+                databaseProvider = { database },
+                requestClient = ::createKgRequestClient,
+                embeddingClient = { embeddingClient },
+                settings = { kgExtractionSettings(ragConfigPersistence.loadFullConfig().copy(kgExtractionModel = null)) },
+                timeoutMs = { ragConfigPersistence.loadFullConfig().kgExtractionTimeoutSeconds.toLong() * 1000 },
+                executionGate = sessionExecutionGate,
+                enabled = { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled },
+            ),
+        )
+    }
 
     val sessionGraphStats: com.promenar.nexara.data.rag.SessionGraphStats by lazy {
         com.promenar.nexara.data.rag.SessionGraphStats(getSharedPreferences("session_graph_stats", MODE_PRIVATE))
@@ -1793,7 +1825,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private fun sessionGraphEnabled(): Boolean = ragConfigPersistence.loadFullConfig().kgSessionExtractionEnabled
 
     val sessionGraphScheduler: com.promenar.nexara.data.rag.SessionGraphScheduler by lazy {
-        com.promenar.nexara.data.rag.RoomSessionGraphScheduler({ database }, ::sessionGraphEnabled) { vectorizationQueue }
+        com.promenar.nexara.data.rag.RoomSessionGraphScheduler({ database }, ::sessionGraphEnabled) { awaitVectorizationQueue() }
     }
 
     val sessionGraphPort: com.promenar.nexara.data.rag.SessionGraphPort by lazy {
@@ -1802,7 +1834,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     val sessionStateScheduler: com.promenar.nexara.data.rag.SessionStateScheduler by lazy {
         com.promenar.nexara.data.rag.RoomSessionStateScheduler(
-            { database }, { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled }, { vectorizationQueue },
+            { database }, { ragConfigPersistence.loadFullConfig().memoryStateExtractionEnabled }, { awaitVectorizationQueue() },
         )
     }
 

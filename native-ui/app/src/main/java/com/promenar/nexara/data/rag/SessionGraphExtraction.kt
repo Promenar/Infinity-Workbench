@@ -51,7 +51,7 @@ fun interface SessionGraphTaskProcessor {
 class RoomSessionGraphScheduler(
     private val databaseProvider: () -> NexaraDatabase,
     private val enabled: () -> Boolean,
-    private val queue: () -> VectorizationQueue,
+    private val queue: suspend () -> VectorizationQueue,
 ) : SessionGraphScheduler {
     override suspend fun schedule(sessionId: String, assistantMessageId: String, userMessageId: String?): Boolean {
         if (!enabled()) return false

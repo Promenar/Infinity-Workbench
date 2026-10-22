@@ -22,7 +22,7 @@ class AndroidShareIndexSchedulerTest {
         val app = mockk<NexaraApplication>()
         val queue = mockk<VectorizationQueue>()
         val preferences = mockk<SharedPreferences>(relaxed = true)
-        every { app.vectorizationQueue } returns queue
+        coEvery { app.awaitVectorizationQueue() } returns queue
         every { app.getSharedPreferences("rag_settings", Context.MODE_PRIVATE) } returns preferences
         coEvery {
             queue.enqueueDocumentReference(
@@ -69,7 +69,7 @@ class AndroidShareIndexSchedulerTest {
         val app = mockk<NexaraApplication>()
         val queue = mockk<VectorizationQueue>()
         val preferences = mockk<SharedPreferences>(relaxed = true)
-        every { app.vectorizationQueue } returns queue
+        coEvery { app.awaitVectorizationQueue() } returns queue
         every { app.getSharedPreferences("rag_settings", Context.MODE_PRIVATE) } returns preferences
         coEvery { queue.enqueueDocumentReference(any(), any(), any(), any(), any(), any(), any(), any()) } returns TASK
         val entry = entry().copy(vectorizedAt = EPOCH - 1)
@@ -86,7 +86,7 @@ class AndroidShareIndexSchedulerTest {
         val queue = mockk<VectorizationQueue>()
         val preferences = mockk<SharedPreferences>(relaxed = true)
         every { preferences.getBoolean("enable_kg", false) } returns true
-        every { app.vectorizationQueue } returns queue
+        coEvery { app.awaitVectorizationQueue() } returns queue
         every { app.getSharedPreferences("rag_settings", Context.MODE_PRIVATE) } returns preferences
         coEvery { queue.enqueueDocumentReference(any(), any(), any(), any(), any(), any(), any(), any()) } returns TASK
         val entry = entry().copy(vectorizedAt = EPOCH, kgExtractedAt = null)

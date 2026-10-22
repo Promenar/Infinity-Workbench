@@ -2,6 +2,15 @@ package com.promenar.nexara.utils
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -52,7 +61,7 @@ class SynchronizedResettableResourceTest {
         assertThat(creating.await()).isEqualTo(1)
         resetting.await()
         assertThat(disposed).containsExactly(1)
-        assertThat(resource.getOrCreate { 2 }).isEqualTo(2)
+        assertThat(resource.awaitOrCreate(Dispatchers.IO) { 2 }).isEqualTo(2)
     }
 
     @Test
@@ -145,5 +154,42 @@ class SynchronizedResettableResourceTest {
         resource.getOrCreate { 2 }
 
         assertThat(calls.get()).isEqualTo(1)
+    }
+
+    /**
+     * 复现向量化队列替换的三方等待：主线程协程持删除屏障并挂起到 IO，替换流程等屏障，
+     * 主线程此时再取资源。阻塞式 getOrCreate 会把主线程卡在 latch 上，持屏障的续体永远排不上主线程。
+     */
+    @Test
+    fun `替换进行中在主线程取资源改用挂起等待，不会与持屏障的主线程协程互相等待`() {
+        val mainThread = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it).apply { isDaemon = true } }
+        val main = mainThread.asCoroutineDispatcher()
+        val barrier = Mutex()
+        val resource = SynchronizedResettableResource<Int> { }
+        resource.getOrCreate { 1 }
+        val holderSuspended = CountDownLatch(1)
+        val resolved = CountDownLatch(1)
+        val scope = CoroutineScope(SupervisorJob())
+
+        scope.launch(main) {
+            barrier.withLock {
+                holderSuspended.countDown()
+                withContext(Dispatchers.IO) { delay(100) }
+            }
+        }
+        assertThat(holderSuspended.await(2, TimeUnit.SECONDS)).isTrue()
+        val handle = checkNotNull(resource.beginReset())
+        scope.launch(Dispatchers.IO) {
+            barrier.withLock { }
+            resource.completeReset(handle)
+        }
+        scope.launch(main) {
+            assertThat(resource.awaitOrCreate(Dispatchers.IO) { 2 }).isEqualTo(2)
+            resolved.countDown()
+        }
+
+        assertThat(resolved.await(3, TimeUnit.SECONDS)).isTrue()
+        scope.cancel()
+        mainThread.shutdownNow()
     }
 }
