@@ -61,8 +61,10 @@ class ProviderModelsAccessibilityTest {
 
     @After
     fun closeImeAfterTest() {
+        // 返回键收键盘由输入法决定；API 35 模拟器的 Gboard 会同时把返回交给页面并结束 Activity，
+        // 清理阶段改走 IMM 收起，不让下一个测试继承键盘状态。
         if (imeVisible()) {
-            Espresso.pressBack()
+            Espresso.closeSoftKeyboard()
             awaitImeClosed()
         }
     }
@@ -636,6 +638,7 @@ class ProviderModelsAccessibilityTest {
         rule.onNodeWithTag("model_editor_type_picker").performScrollTo().performClick()
         rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performClick()
         rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
+        scrollEditorTo(modelId, UiTags.providerModelsContextField(modelId))
         val contextField = rule.onNode(
             matcher = hasSetTextAction() and
                 (hasTestTag(UiTags.providerModelsContextField(modelId)) or
@@ -752,6 +755,7 @@ class ProviderModelsAccessibilityTest {
 
         onModelCard(modelId).performClick()
         rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        scrollEditorTo(modelId, editorDeleteTag(modelId))
         rule.onNodeWithTag(editorDeleteTag(modelId)).performClick()
         rule.onNodeWithTag(editorDeleteConfirmDialogTag(modelId)).assertExists()
         assertThat(deleteCount.get()).isEqualTo(0)
@@ -811,6 +815,7 @@ class ProviderModelsAccessibilityTest {
         rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).assertDoesNotExist()
         onModelCard(modelId).performClick()
         rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        scrollEditorTo(modelId, editorTestActionTag(modelId))
         rule.onNodeWithTag(editorTestActionTag(modelId)).assertExists()
         rule.onNodeWithTag(editorTestActionTag(modelId)).performClick()
         assertThat(cancelTestCount.get()).isEqualTo(1)
@@ -989,6 +994,11 @@ class ProviderModelsAccessibilityTest {
 
     private fun onModelCard(modelId: String) =
         rule.onNodeWithTag(UiTags.providerModelsModelCard(modelId))
+
+    /** 编辑器是 LazyColumn，视口外的字段与操作未组合，交互前先滚到目标。 */
+    private fun scrollEditorTo(modelId: String, tag: String) {
+        rule.onNodeWithTag(UiTags.providerModelsEditorList(modelId)).performScrollToNode(hasTestTag(tag))
+    }
 
     private fun editorSheetTag(modelId: String) = "provider_models_editor_sheet:$modelId"
 

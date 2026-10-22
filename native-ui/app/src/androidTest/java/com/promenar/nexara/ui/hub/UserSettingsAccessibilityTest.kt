@@ -19,11 +19,13 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
@@ -55,6 +57,7 @@ import com.promenar.nexara.ui.common.AgentAvatar
 import com.promenar.nexara.ui.settings.ProviderListScreenActions
 import com.promenar.nexara.ui.settings.ProviderListScreenContent
 import com.promenar.nexara.ui.settings.ProviderListScreenState
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.testing.UiTags
 import org.junit.Rule
@@ -102,10 +105,14 @@ class UserSettingsAccessibilityTest {
         rule.setContent {
             NexaraTheme {
                 androidx.compose.foundation.layout.Column {
-                    UserSettingsHomeScreenContent(
-                        state = UserSettingsHomeScreenState(userName = "Nexara"),
-                        actions = UserSettingsHomeScreenActions(),
-                    )
+                    // 设置首页是 fillMaxSize 的 Scaffold；限制在剩余空间内，
+                    // 否则同列的助手头像只剩 0 高度，测到的是测试布局而非产品触控目标。
+                    Box(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                        UserSettingsHomeScreenContent(
+                            state = UserSettingsHomeScreenState(userName = "Nexara"),
+                            actions = UserSettingsHomeScreenActions(),
+                        )
+                    }
                     AgentAvatar(
                         icon = Icons.Rounded.Person,
                         backgroundColor = androidx.compose.ui.graphics.Color.Gray,
@@ -311,7 +318,7 @@ class UserSettingsAccessibilityTest {
     }
 
     @Test
-    fun settingsSectionDividerSpansPastTheFixedIconColumnAt2xScale() {
+    fun settingsSectionGroupSpansPastTheFixedIconColumnAt2xScale() {
         val rowTitle = "Aligned settings row"
         rule.setContent {
             val currentDensity = LocalDensity.current
@@ -338,16 +345,25 @@ class UserSettingsAccessibilityTest {
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
 
+        // 分组以统一圆角色面划定边界（不再使用分隔线）：可点击行铺满分组面，
+        // 起点必须越过固定图标列，标题则在 2x 字号下仍对齐图标列之后。
+        val rowBounds = rule.onNodeWithText(rowTitle)
+            .fetchSemanticsNode()
+            .boundsInRoot
         val rowTextLeft = rule.onNodeWithText(rowTitle, useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
             .left
-        val dividerLeft = rule.onNodeWithTag("nexara_settings_section_divider")
-            .fetchSemanticsNode()
-            .boundsInRoot
-            .left
-        com.google.common.truth.Truth.assertThat(dividerLeft)
+        val iconColumnPx = with(rule.density) {
+            (NexaraSpacing.RowHorizontal + NexaraSpacing.RowIconSize + NexaraSpacing.RowIconGap).toPx()
+        }
+        val sectionWidthPx = with(rule.density) { 360.dp.toPx() }
+        com.google.common.truth.Truth.assertThat(rowBounds.left)
             .isLessThan(rowTextLeft)
+        com.google.common.truth.Truth.assertThat(rowTextLeft - rowBounds.left)
+            .isAtLeast(iconColumnPx - 1f)
+        com.google.common.truth.Truth.assertThat(rowBounds.width)
+            .isAtLeast(sectionWidthPx - 1f)
     }
 
     @Test
@@ -578,16 +594,43 @@ class UserSettingsAccessibilityTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assertHeightIsAtLeast(48.dp)
             .assertWidthIsAtLeast(48.dp)
-        rule.onNodeWithText(apiConfiguredSummary, useUnmergedTree = true)
-            .assertIsDisplayed()
-        rule.onNodeWithText(apiMissingSummary, useUnmergedTree = true)
-            .assertIsDisplayed()
+        // 可见副标题按“协议 · [停用状态] · 凭据状态”展示，已启用不重复显示；
+        // 完整的“启用状态 · 凭据状态”只作为 TalkBack 的 StateDescription。
+        assertProviderSubtitleShows(
+            "provider-alpha",
+            resources.getString(R.string.settings_provider_api_key_configured),
+        )
+        assertProviderSubtitleShows(
+            "provider-beta",
+            resources.getString(R.string.settings_provider_state_disabled),
+            resources.getString(R.string.settings_provider_api_key_not_configured),
+        )
+    }
+
+    /** 断言某个提供商行的可见副标题（未合并树中的文本节点）包含全部给定片段。 */
+    private fun assertProviderSubtitleShows(providerId: String, vararg fragments: String) {
+        val inCard = hasAnyAncestor(hasTestTag(UiTags.settingsProviderCard(providerId)))
+        fragments.forEach { fragment ->
+            rule.onNode(inCard and hasText(fragment, substring = true), useUnmergedTree = true)
+                .assertIsDisplayed()
+        }
+    }
+
+    /** 断言某个提供商行的可见文本不含给定片段（防止凭据状态误标）。 */
+    private fun assertProviderSubtitleOmits(providerId: String, vararg fragments: String) {
+        val inCard = hasAnyAncestor(hasTestTag(UiTags.settingsProviderCard(providerId)))
+        fragments.forEach { fragment ->
+            rule.onAllNodes(inCard and hasText(fragment, substring = true), useUnmergedTree = true)
+                .assertCountEquals(0)
+        }
     }
 
     @Test
-    fun unsupportedProviderRowIsVisibleDisabledAndOffersDeleteOnly() {
+    fun unsupportedProviderRowOpensRepairEditNeverModelsAndOverflowOffersDeleteOnly() {
         val providerId = "provider-unsupported"
         val deleteRequested = AtomicReference<String>()
+        val editRequested = AtomicReference<String>()
+        val modelsRequested = AtomicReference<String>()
         val unsupportedDescription = resources.getString(R.string.settings_provider_protocol_unsupported)
 
         rule.setContent {
@@ -607,27 +650,33 @@ class UserSettingsAccessibilityTest {
                     ),
                     actions = ProviderListScreenActions(
                         onRequestDeleteProvider = deleteRequested::set,
+                        onEditProvider = editRequested::set,
+                        onProviderModels = modelsRequested::set,
                     ),
                 )
             }
         }
 
+        // 未知协议行可见、标明不受支持，点击只进入安全修复（编辑）流程，
+        // 不得进入模型列表或连通性探测；联网禁用由修复表单负责。
         rule.onNodeWithTag(UiTags.settingsProviderCard(providerId))
             .assertIsDisplayed()
-            .assertIsNotEnabled()
-            .assert(
-                SemanticsMatcher("未知协议行不可进入模型、探测或编辑") { node ->
-                    SemanticsActions.OnClick !in node.config
-                },
-            )
+            .assertIsEnabled()
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assert(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
                     unsupportedDescription,
                 ),
             )
-        rule.onNodeWithText("Future_Unknown_Protocol", useUnmergedTree = true)
-            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        assertProviderSubtitleShows(providerId, unsupportedDescription, "Future_Unknown_Protocol")
+
+        rule.onNodeWithTag(UiTags.settingsProviderCard(providerId)).performClick()
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(editRequested.get()).isEqualTo(providerId)
+        com.google.common.truth.Truth.assertThat(modelsRequested.get()).isNull()
 
         rule.onNodeWithTag(
             UiTags.settingsProviderActions(providerId),
@@ -699,14 +748,14 @@ class UserSettingsAccessibilityTest {
             }
         }
 
+        // 可见副标题只在停用时显示启用状态；完整摘要由 StateDescription 提供给 TalkBack。
         listOf(
-            "provider-vertex-configured" to configuredSummary,
-            "provider-vertex-missing" to missingSummary,
-        ).forEach { (providerId, summary) ->
+            Triple("provider-vertex-configured", configuredSummary, listOf(vertexConfigured)),
+            Triple("provider-vertex-missing", missingSummary, listOf(disabled, vertexMissing)),
+        ).forEach { (providerId, summary, visibleFragments) ->
             rule.onNodeWithTag(UiTags.SETTINGS_PROVIDER_LIST)
-                .performScrollToNode(hasText(summary))
-            rule.onNodeWithText(summary, useUnmergedTree = true)
-                .assertIsDisplayed()
+                .performScrollToNode(hasTestTag(UiTags.settingsProviderCard(providerId)))
+            assertProviderSubtitleShows(providerId, *visibleFragments.toTypedArray())
             rule.onNodeWithTag(UiTags.settingsProviderCard(providerId))
                 .assertHasClickAction()
                 .assert(
@@ -754,8 +803,18 @@ class UserSettingsAccessibilityTest {
             }
         }
 
-        rule.onNodeWithText(expectedSummary, useUnmergedTree = true)
-            .assertIsDisplayed()
+        // 本地推理即使历史数据残留 API Key / Vertex 凭据，也只显示“无需凭证”。
+        assertProviderSubtitleShows(
+            "provider-local",
+            resources.getString(R.string.settings_provider_credentials_not_required),
+        )
+        assertProviderSubtitleOmits(
+            "provider-local",
+            resources.getString(R.string.settings_provider_api_key_configured),
+            resources.getString(R.string.settings_provider_api_key_not_configured),
+            resources.getString(R.string.settings_provider_vertex_credentials_configured),
+            resources.getString(R.string.settings_provider_vertex_credentials_not_configured),
+        )
         rule.onNodeWithTag(UiTags.settingsProviderCard("provider-local"))
             .assertHasClickAction()
             .assert(
@@ -887,9 +946,30 @@ class UserSettingsAccessibilityTest {
             }
         }
 
-        rule.onNodeWithText(longName, useUnmergedTree = true)
-            .assertWidthIsAtLeast(220.dp)
+        // 行内依次是固定图标列、可伸缩标题列和 48dp 溢出按钮；长名称应占满标题列并换行，
+        // 而不是被截断或挤压溢出按钮。宽度按行内几何关系断言，不绑定某一版分组内边距。
+        val titleBounds = rule.onNodeWithText(longName, useUnmergedTree = true)
             .assertHeightIsAtLeast(96.dp)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val cardBounds = rule.onNodeWithTag(UiTags.settingsProviderCard("provider-long-name"))
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val actionBounds = rule.onNodeWithTag(
+            UiTags.settingsProviderActions("provider-long-name"),
+            useUnmergedTree = true,
+        )
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val maxTitleToActionGapPx = with(rule.density) { 16.dp.toPx() }
+        com.google.common.truth.Truth.assertThat(titleBounds.width)
+            .isAtLeast(cardBounds.width * 0.5f)
+        com.google.common.truth.Truth.assertThat(titleBounds.right)
+            .isAtMost(actionBounds.left)
+        com.google.common.truth.Truth.assertThat(actionBounds.left - titleBounds.right)
+            .isAtMost(maxTitleToActionGapPx)
     }
 
     @Test

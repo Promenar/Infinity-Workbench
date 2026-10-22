@@ -1,9 +1,9 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import io.ktor.client.*
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -15,7 +15,7 @@ class EmbeddingClient(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String = "text-embedding-3-small",
-    private val httpClient: HttpClient = HttpClient(OkHttp) {
+    private val httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000

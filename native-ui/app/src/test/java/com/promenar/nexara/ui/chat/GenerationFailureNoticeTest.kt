@@ -25,6 +25,7 @@ class GenerationFailureNoticeTest {
             GenerationFailureCode.BUSY to R.string.generation_failure_busy,
             GenerationFailureCode.PERSISTENCE to R.string.generation_failure_persistence,
             GenerationFailureCode.TOOL_BUDGET_EXHAUSTED to R.string.generation_failure_tool_budget,
+            GenerationFailureCode.TAILNET_UNAVAILABLE to R.string.generation_failure_tailnet_failed,
             GenerationFailureCode.UNKNOWN to R.string.generation_failure_unknown,
         )
 
@@ -187,6 +188,34 @@ class GenerationFailureNoticeTest {
         assertThat(chineseKeys).containsExactlyElementsIn(englishKeys)
     }
 
+    @Test
+    fun `tailnet 不可用按原因映射登录、超时与连接失败说明`() {
+        fun resource(reason: String?) = GenerationFailureNotice.template(
+            GenerationFailureNotice.from(
+                GenerationFailure(
+                    GenerationFailureCode.TAILNET_UNAVAILABLE,
+                    formatArgs = reason?.let { mapOf(GenerationFailure.KEY_TAILNET_REASON to it) }.orEmpty(),
+                ),
+            ),
+        ).resourceId
+        assertThat(resource("NEEDS_LOGIN")).isEqualTo(R.string.generation_failure_tailnet_needs_login)
+        assertThat(resource("TIMEOUT")).isEqualTo(R.string.generation_failure_tailnet_timeout)
+        assertThat(resource("FAILED")).isEqualTo(R.string.generation_failure_tailnet_failed)
+        assertThat(resource("unexpected")).isEqualTo(R.string.generation_failure_tailnet_failed)
+    }
+
+    @Test
+    fun `历史消息中的 tailnet 失败还原出登录或重试入口，其它失败没有入口`() {
+        fun kind(raw: String?) = GenerationFailureNotice.tailnetKind(GenerationFailureNotice.fromPersisted(raw))
+        assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=NEEDS_LOGIN"))
+            .isEqualTo(TailnetFailureKind.NEEDS_LOGIN)
+        assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=TIMEOUT"))
+            .isEqualTo(TailnetFailureKind.UNREACHABLE)
+        assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE")).isEqualTo(TailnetFailureKind.UNREACHABLE)
+        assertThat(kind("@nexara/failure:NETWORK")).isNull()
+        assertThat(kind("raw provider text")).isNull()
+    }
+
     private fun resourceFile(relativePath: String): File {
         val root = File(System.getProperty("user.dir") ?: ".")
         val appRoot = if (root.resolve("src/main").isDirectory) root else root.resolve("app")
@@ -206,6 +235,9 @@ class GenerationFailureNoticeTest {
             "generation_failure_busy",
             "generation_failure_persistence",
             "generation_failure_tool_budget",
+            "generation_failure_tailnet_needs_login",
+            "generation_failure_tailnet_failed",
+            "generation_failure_tailnet_timeout",
             "generation_failure_unknown",
         )
     }

@@ -209,4 +209,22 @@ class TailnetManagerTest {
         assertThat(store.current.hasAuthKey).isFalse()
         assertThat(secrets.values).isEmpty()
     }
+
+    @Test
+    fun `发送关口按需拉起子进程：未登录立即提示登录，上线后放行`(): Unit = runBlocking {
+        val disabled = manager()
+        assertThat(disabled.ensureStarted(force = true, timeoutMillis = 1_000)).isFalse()
+        assertThat(TailnetConnectGate(disabled).await("nas.tail1.ts.net")).isEqualTo(TailnetConnectResult.NotRequired)
+
+        store.setEnabled(true)
+        val manager = manager()
+        val gate = TailnetConnectGate(manager, timeoutMillis = 5_000)
+        assertThat(gate.await("nas.tail1.ts.net", force = true))
+            .isEqualTo(TailnetConnectResult.Unavailable(TailnetUnavailableReason.NEEDS_LOGIN))
+        assertThat(children).hasSize(1)
+        children.single().goOnline()
+        manager.awaitPhase(TailnetPhase.RUNNING)
+        assertThat(gate.await("nas.tail1.ts.net")).isEqualTo(TailnetConnectResult.Ready(waited = false))
+        assertThat(children).hasSize(1)
+    }
 }

@@ -466,6 +466,9 @@ class ChatViewModel(
     private val _generationRetry = MutableStateFlow<com.promenar.nexara.domain.generation.GenerationRetry?>(null)
     /** 当前正在等待的自动重试；为 null 时不显示重试提示。 */
     val generationRetry: StateFlow<com.promenar.nexara.domain.generation.GenerationRetry?> = _generationRetry
+    private val _tailnetWait = MutableStateFlow<com.promenar.nexara.data.generation.TailnetWaitState?>(null)
+    /** 发送到 tailnet 内的模型时，等待内置 Tailscale 接入的进度；为 null 时不显示连接浮窗。 */
+    val tailnetWait: StateFlow<com.promenar.nexara.data.generation.TailnetWaitState?> = _tailnetWait
 
     fun addPostProcessTask(type: PostProcessType, status: PostProcessStatus = PostProcessStatus.RUNNING, progress: Float = 0f, detail: String = ""): String {
         val sessionId = _currentSessionId.value ?: return ""
@@ -586,6 +589,7 @@ class ChatViewModel(
                             _streamingContent.value = ""
                             _postProcessTasks.value = emptyList()
                             _generationRetry.value = null
+                            _tailnetWait.value = null
                             _ragPhases.value = emptyList()
                             if (_generationStatus.value != GenerationStatus.ERROR) {
                                 _error.value = null
@@ -637,6 +641,7 @@ class ChatViewModel(
                         _isGenerating.value = presentation.generating
                         _postProcessTasks.value = presentation.postProcessTasks
                         _generationRetry.value = presentation.retry
+                        _tailnetWait.value = presentation.tailnetWait
                         _generationStatus.value = when {
                             presentation.handledFailure ->
                                 if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR

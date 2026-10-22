@@ -188,6 +188,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         ).also { com.promenar.nexara.data.tailnet.InstalledTailnetRouting.routing = it }
     }
+    /** 模型请求发往 tailnet 时等待内置 Tailscale 接入的关口。 */
+    val tailnetConnectGate: com.promenar.nexara.data.tailnet.TailnetConnectGate by lazy {
+        com.promenar.nexara.data.tailnet.TailnetConnectGate(tailnetManager)
+    }
+    /** 手机当前网络能否访问互联网，供模型选择器的“公网”指示灯使用；首次读取时注册系统网络回调。 */
+    val publicNetworkMonitor: com.promenar.nexara.data.network.PublicNetworkMonitor by lazy {
+        com.promenar.nexara.data.network.PublicNetworkMonitor(this)
+    }
     val themePreferenceStore: ThemePreferenceStore by lazy { ThemePreferenceStore(this) }
 
     /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
@@ -708,6 +716,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionGraph = sessionGraphScheduler,
             sessionState = sessionStateScheduler,
             subagentUsage = subagentRunStore,
+            tailnetGate = tailnetConnectGate,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1138,6 +1147,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             }.onFailure { NexaraLogger.log("[ToolAllowlist] 旧会话授权清理失败：${it::class.java.simpleName}") }
         }
         startBackupRecovery()
+        // 模型调用在请求线程上首次读取路由，内置 Tailscale 无需在主线程创建。
+        com.promenar.nexara.data.remote.ModelHttp.install(routing = { tailnetManager }, gate = { tailnetConnectGate })
         // 内置 Tailscale 启用时随 App 启动拉起子进程；App 进程结束时子进程随 stdin 关闭退出。
         startupScope.launch(Dispatchers.IO) { tailnetManager.start() }
     }

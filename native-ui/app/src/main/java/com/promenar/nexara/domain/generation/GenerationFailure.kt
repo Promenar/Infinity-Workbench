@@ -20,6 +20,8 @@ enum class GenerationFailureCode {
     PERSISTENCE,
     /** 工具预算已用尽且模型在收尾轮仍未给出正文。 */
     TOOL_BUDGET_EXHAUSTED,
+    /** 接口在 tailnet 内，内置 Tailscale 未能接入（需要登录、启动失败或等待超时）；请求未发出。 */
+    TAILNET_UNAVAILABLE,
     UNKNOWN,
 }
 
@@ -62,6 +64,10 @@ data class GenerationFailure(
         const val KEY_AVAILABLE_TOKENS = "availableTokens"
         /** 上下文超限时本轮是否携带完整上下文文档："false" 表示仅对话本身超限，提示应引导压缩而非移除文档。 */
         const val KEY_FULL_CONTEXT_DOCUMENTS = "fullContextDocuments"
+        /** [GenerationFailureCode.TAILNET_UNAVAILABLE] 的原因，取值为 TailnetUnavailableReason 的名称。 */
+        const val KEY_TAILNET_REASON = "tailnetReason"
+        /** [KEY_TAILNET_REASON] 允许的取值；持久化信封只接受这些名称。 */
+        val TAILNET_REASONS = setOf("NEEDS_LOGIN", "FAILED", "TIMEOUT")
 
         fun of(
             code: GenerationFailureCode,

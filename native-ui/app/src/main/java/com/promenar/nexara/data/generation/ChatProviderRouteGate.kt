@@ -15,6 +15,8 @@ internal data class ChatProviderRoute(
     val useLocalProvider: Boolean = false,
     val modelId: String? = null,
     val supportsToolCalls: Boolean = true,
+    /** 云端接口的主机名，用于判断请求是否发往 tailnet；本地模型为 null。 */
+    val endpointHost: String? = null,
 )
 
 internal sealed interface ChatRoutePreparation<out T> {
@@ -39,6 +41,7 @@ internal class ChatProviderRouteGate(
                 failure = null,
                 useLocalProvider = local,
                 modelId = resolved.modelId,
+                endpointHost = if (local) null else runCatching { java.net.URI(resolved.config.baseUrl).host }.getOrNull(),
             )
         }
     }

@@ -32,6 +32,11 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.ModelWorkload
 import com.promenar.nexara.data.model.catalog.SupportState
+import com.promenar.nexara.ui.common.network.NetworkLightsRow
+import com.promenar.nexara.ui.common.network.NetworkLightsState
+import com.promenar.nexara.ui.common.network.badgeFor
+import com.promenar.nexara.ui.common.network.rememberNetworkLightsState
+import com.promenar.nexara.ui.common.network.rememberTailscaleRetry
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,9 +48,12 @@ fun ModelPicker(
     currentModelId: String = "",
     models: List<ModelSelectionUiModel> = emptyList(),
     title: String? = null,
-    filterTag: String? = null
+    filterTag: String? = null,
+    /** 所在页面能跳转 Tailscale 设置时传入；为 null 时 Tailscale 灯只在失败时可点（重试）。 */
+    onOpenTailscaleSettings: (() -> Unit)? = null,
 ) {
     if (!show) return
+    val networkLights = rememberNetworkLightsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
@@ -74,6 +82,8 @@ fun ModelPicker(
             models = filteredModels,
             currentModelId = currentModelId,
             onSelect = onSelect,
+            networkLights = networkLights,
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -90,6 +100,9 @@ internal fun ModelPickerSheetContent(
     currentModelId: String,
     onSelect: (modelId: String, modelName: String) -> Unit,
     modifier: Modifier = Modifier,
+    networkLights: NetworkLightsState? = null,
+    onOpenTailscaleSettings: (() -> Unit)? = null,
+    onRetryTailscale: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -111,7 +124,16 @@ internal fun ModelPickerSheetContent(
             placeholder = stringResource(R.string.common_model_picker_search),
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        if (networkLights != null) {
+            NetworkLightsRow(
+                state = networkLights,
+                onOpenTailscaleSettings = onOpenTailscaleSettings,
+                onRetryTailscale = onRetryTailscale ?: rememberTailscaleRetry(),
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else {
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         if (models.isEmpty()) {
             Box(
@@ -150,6 +172,7 @@ internal fun ModelPickerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("model_picker_item:${model.selectionId}"),
+                        tailnetBadge = networkLights?.badgeFor(model),
                     )
                 }
             }

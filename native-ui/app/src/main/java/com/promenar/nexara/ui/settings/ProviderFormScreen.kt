@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,6 +120,9 @@ internal data class ProviderFormUiState(
     val saveFailed: Boolean = false,
     val localConnectionFailed: Boolean = false,
     val onboardingMode: Boolean = false,
+    /** 云端提供商的 API 源（公网或 Tailscale 内网）；本地推理为 null。 */
+    val apiSource: ProviderApiSourceState? = null,
+    val tailnetInfo: ProviderTailnetInfo = ProviderTailnetInfo(),
 )
 
 internal data class ProviderFormActions(
@@ -136,6 +140,9 @@ internal data class ProviderFormActions(
     val onSave: () -> Unit = {},
     val onLocalPrimaryAction: () -> Unit = {},
     val onOpenLocalModels: () -> Unit = {},
+    val onApiSourceSelected: (ProviderApiSource) -> Unit = {},
+    val onTailnetPeerSelected: (com.promenar.nexara.data.tailnet.TailnetPeer) -> Unit = {},
+    val onOpenTailscaleSettings: () -> Unit = {},
 )
 
 internal suspend fun persistVerifiedProviderConnection(
@@ -200,6 +207,7 @@ fun ProviderFormScreen(
     providerId: String? = null,
     forceLocalProbeFailureForTesting: Boolean = false,
     onNavigateBack: () -> Unit,
+    onOpenTailscaleSettings: () -> Unit = {},
     onNavigateToModels: () -> Unit = {},
     onNavigateToLocalModels: () -> Unit = {},
     onboardingMode: Boolean = false,
@@ -236,6 +244,9 @@ fun ProviderFormScreen(
     var connectionTestFailureMessage by remember { mutableStateOf<String?>(null) }
     var legacyUnsupportedProtocol by remember { mutableStateOf<ProtocolType?>(null) }
     var recoveringUnknownProtocol by remember { mutableStateOf(false) }
+    // API 源不保存：未手动切换时跟随地址自动识别。
+    var manualApiSource by remember { mutableStateOf<ProviderApiSource?>(null) }
+    val tailnetState by app.tailnetManager.state.collectAsStateWithLifecycle()
     val connectionProbe = ProviderConnectionProbe.processScoped
     val scope = rememberCoroutineScope()
 
@@ -308,6 +319,21 @@ fun ProviderFormScreen(
         credentialUpdate = credentialUpdate,
     )
     val selectedUsesVertex = effectiveProtocol is ProtocolType.Google_VertexAI
+    val apiSource = if (effectiveProtocol is ProtocolType.Local) null
+        else providerApiSourceState(baseUrl, manualApiSource, tailnetState)
+    val showsTailnet = apiSource?.selected == ProviderApiSource.TAILNET
+    LaunchedEffect(showsTailnet, tailnetState.phase) {
+        // 设备列表在设置页之外不会主动刷新；切到 Tailscale 内网时取一次最新节点。
+        if (showsTailnet && tailnetState.phase == com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING) {
+            // 刷新失败只是沿用旧列表；离开页面时的取消必须继续向上传递。
+            try {
+                app.tailnetManager.refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+            }
+        }
+    }
     val credentialKindMismatch = hasCredential && credentialUpdate is CredentialUpdate.Preserve &&
         originalUsesVertex != null && originalUsesVertex != selectedUsesVertex
 
@@ -536,6 +562,12 @@ fun ProviderFormScreen(
             saveFailed = saveFailed,
             localConnectionFailed = localConnectionFailed,
             onboardingMode = onboardingMode,
+            apiSource = apiSource,
+            tailnetInfo = ProviderTailnetInfo(
+                selfName = tailnetState.summary?.selfName,
+                tailnetName = tailnetState.summary?.tailnetName,
+                peers = tailnetState.peers,
+            ),
         ),
         actions = ProviderFormActions(
             onBack = onNavigateBack,
@@ -546,6 +578,7 @@ fun ProviderFormScreen(
                     name = preset.name
                     baseUrl = preset.defaultBaseUrl
                 }
+                manualApiSource = null
                 presetMenuExpanded = false
                 connectionTestState = ProviderConnectionTestState.Idle
                 connectionTestFailureMessage = null
@@ -588,6 +621,15 @@ fun ProviderFormScreen(
             onSave = launchSave,
             onLocalPrimaryAction = launchLocalPrimary,
             onOpenLocalModels = onNavigateToLocalModels,
+            onApiSourceSelected = { manualApiSource = it },
+            onTailnetPeerSelected = { peer ->
+                com.promenar.nexara.data.tailnet.TailnetEndpoints.addressForPeer(peer, baseUrl)?.let { address ->
+                    baseUrl = address
+                    connectionTestState = ProviderConnectionTestState.Idle
+                    connectionTestFailureMessage = null
+                }
+            },
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
         ),
     )
 }
@@ -647,6 +689,16 @@ internal fun ProviderFormContent(
                         LocalProviderSection(state = state, actions = actions)
                     }
                 } else {
+                    state.apiSource?.let { source ->
+                        animatedFormItem("api-source") {
+                            ProviderApiSourceSection(
+                                source = source,
+                                tailnet = state.tailnetInfo,
+                                onSourceSelected = actions.onApiSourceSelected,
+                                onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
+                            )
+                        }
+                    }
                     animatedFormItem("cloud-section") {
                         CloudProviderSection(state = state, actions = actions)
                     }
@@ -816,10 +868,11 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
                 {
                     ProviderFormErrorText(
                         stringResource(
-                            if (state.protocolUnsupported) {
-                                R.string.provider_form_protocol_unsupported
-                            } else {
-                                R.string.provider_form_https_required
+                            when {
+                                state.protocolUnsupported -> R.string.provider_form_protocol_unsupported
+                                state.apiSource?.hint == ProviderApiSourceHint.TAILNET_NEEDS_HTTPS ->
+                                    R.string.provider_form_tailnet_https_required
+                                else -> R.string.provider_form_https_required
                             },
                         ),
                     )
@@ -828,6 +881,14 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
                 null
             },
         )
+        ProviderAddressHint(hint = state.apiSource?.hint, onSourceSelected = actions.onApiSourceSelected)
+        if (state.apiSource?.selected == ProviderApiSource.TAILNET) {
+            TailnetPeerChips(
+                peers = state.tailnetInfo.peers,
+                baseUrl = state.baseUrl,
+                onPeerSelected = actions.onTailnetPeerSelected,
+            )
+        }
         SecretField(
             value = state.secretInput,
             onValueChange = actions.onSecretChange,

@@ -24,6 +24,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.horizontalScroll
@@ -183,6 +185,8 @@ fun PipelineBubble(
     onOpenTurnMemory: ((String) -> Unit)? = null,
     /** 本会话各轮的图谱抽取状态，键为该轮最后一条助手消息。 */
     turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
+    /** 最新一轮的失败入口；只传给最后一组，历史失败不提供操作。 */
+    failureActions: GenerationFailureActions? = null,
     ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isNotice) {
@@ -346,11 +350,16 @@ fun PipelineBubble(
                     historicalGenerationFailureNotice(lastMsg.errorMessage),
                 )
             }
+            val tailnetKind = remember(lastMsg.errorMessage) {
+                GenerationFailureNotice.tailnetKind(historicalGenerationFailureNotice(lastMsg.errorMessage))
+            }
             ErrorMessageSegment(
                 messageId = lastMsg.id,
                 text = stringResource(resolved.resourceId, *resolved.args.toTypedArray()),
                 fontSize = fontSize,
                 onDelete = onDelete,
+                tailnetKind = tailnetKind,
+                actions = failureActions,
             )
         }
     }
@@ -363,6 +372,8 @@ private fun ErrorMessageSegment(
     text: String,
     fontSize: Int,
     onDelete: ((String) -> Unit)?,
+    tailnetKind: TailnetFailureKind? = null,
+    actions: GenerationFailureActions? = null,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -383,12 +394,17 @@ private fun ErrorMessageSegment(
                     .padding(horizontal = NexaraSpacing.Large, vertical = 6.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Text(
-                    text = text,
-                    style = NexaraTypography.bodyMedium.copy(
-                        fontSize = (fontSize - 2).coerceAtLeast(10).sp,
-                    ),
-                )
+                Column {
+                    Text(
+                        text = text,
+                        style = NexaraTypography.bodyMedium.copy(
+                            fontSize = (fontSize - 2).coerceAtLeast(10).sp,
+                        ),
+                    )
+                    if (tailnetKind != null && actions != null) {
+                        TailnetFailureActionRow(tailnetKind, actions)
+                    }
+                }
             }
         }
         MessageContextMenu(
@@ -400,6 +416,47 @@ private fun ErrorMessageSegment(
                 showMenu = false
             },
         )
+    }
+}
+
+/** 失败消息下方的操作；由聊天页提供，预览与历史组为 null。 */
+data class GenerationFailureActions(
+    val onRetry: () -> Unit,
+    val onSwitchModel: () -> Unit,
+    val onOpenTailscaleSettings: (() -> Unit)?,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TailnetFailureActionRow(kind: TailnetFailureKind, actions: GenerationFailureActions) {
+    val contentColor = MaterialTheme.colorScheme.onErrorContainer
+    val buttonColors = ButtonDefaults.textButtonColors(contentColor = contentColor)
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .testTag(UiTags.CHAT_TAILNET_FAILURE_ACTIONS),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        @Composable
+        fun Action(label: Int, tag: String, onClick: () -> Unit) {
+            TextButton(
+                onClick = onClick,
+                colors = buttonColors,
+                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(tag),
+            ) { Text(stringResource(label), fontWeight = FontWeight.Medium) }
+        }
+        when (kind) {
+            TailnetFailureKind.NEEDS_LOGIN -> {
+                actions.onOpenTailscaleSettings?.let { Action(R.string.tailnet_failure_action_login, UiTags.CHAT_TAILNET_FAILURE_LOGIN, it) }
+                Action(R.string.tailnet_failure_action_switch_model, UiTags.CHAT_TAILNET_FAILURE_SWITCH, actions.onSwitchModel)
+            }
+            TailnetFailureKind.UNREACHABLE -> {
+                Action(R.string.tailnet_failure_action_retry, UiTags.CHAT_TAILNET_FAILURE_RETRY, actions.onRetry)
+                Action(R.string.tailnet_failure_action_switch_model, UiTags.CHAT_TAILNET_FAILURE_SWITCH, actions.onSwitchModel)
+                actions.onOpenTailscaleSettings?.let { Action(R.string.tailnet_failure_action_settings, UiTags.CHAT_TAILNET_FAILURE_SETTINGS, it) }
+            }
+        }
     }
 }
 

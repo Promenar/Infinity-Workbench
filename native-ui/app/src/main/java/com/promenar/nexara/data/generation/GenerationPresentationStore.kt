@@ -35,6 +35,8 @@ data class GenerationPresentationState(
     val postProcessTasks: List<PostProcessTask> = emptyList(),
     /** 正在等待自动重发的请求；新一轮开始输出或生成结束时清除。 */
     val retry: GenerationRetry? = null,
+    /** 发送前等待内置 Tailscale 接入的状态；接入后的确认在首个输出到达时清除。 */
+    val tailnetWait: TailnetWaitState? = null,
 ) {
     override fun toString(): String =
         "GenerationPresentationState(taskId=$taskId, sessionId=$sessionId, " +
@@ -42,7 +44,8 @@ data class GenerationPresentationState(
             "errorCode=${error?.code}, providerFailureReason=${providerFailure?.reason}, " +
             "generating=$generating, handledFailure=$handledFailure, phase=$phase, " +
             "promptAccepted=$promptAccepted, " +
-            "postProcessTaskCount=${postProcessTasks.size}, retryAttempt=${retry?.attempt})"
+            "postProcessTaskCount=${postProcessTasks.size}, retryAttempt=${retry?.attempt}, " +
+            "tailnetWait=${tailnetWait?.let { it::class.simpleName }})"
 }
 
 /** 重发前仍在连接或等待首个输出的阶段；进入其它阶段即说明重试已有结果。 */
@@ -99,6 +102,7 @@ class GenerationPresentationStore {
                     ),
                 )
                 is GenerationEvent.SnapshotChanged -> current.copy(
+                    tailnetWait = current.tailnetWait.takeUnless { it == TailnetWaitState.Connected },
                     streamingContent = event.snapshot.content,
                     error = event.snapshot.failure,
                     failureSurface = if (event.snapshot.failure != null) {
@@ -223,5 +227,7 @@ class GenerationPresentationStore {
         override fun removePostProcessTask(id: String) = update(sessionId, taskId) {
             it.copy(postProcessTasks = it.postProcessTasks.filterNot { task -> task.id == id })
         }
+
+        override fun setTailnetWait(state: TailnetWaitState?) = update(sessionId, taskId) { it.copy(tailnetWait = state) }
     }
 }

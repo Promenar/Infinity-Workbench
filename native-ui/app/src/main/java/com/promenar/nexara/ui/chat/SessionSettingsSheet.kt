@@ -104,6 +104,11 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.network.NetworkLightsRow
+import com.promenar.nexara.ui.common.network.NetworkLightsState
+import com.promenar.nexara.ui.common.network.badgeFor
+import com.promenar.nexara.ui.common.network.rememberNetworkLightsState
+import com.promenar.nexara.ui.common.network.rememberTailscaleRetry
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -126,6 +131,7 @@ fun SessionSettingsSheet(
     show: Boolean,
     onDismiss: () -> Unit,
     chatViewModel: ChatViewModel,
+    onOpenTailscaleSettings: (() -> Unit)? = null,
 ) {
     if (!show) return
 
@@ -194,6 +200,8 @@ fun SessionSettingsSheet(
                             onDismiss()
                         },
                         allModels = visibleProviderModels,
+                        networkLights = rememberNetworkLightsState(),
+                        onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
                     )
                     1 -> ParamsPanel(
                         session = session,
@@ -221,6 +229,9 @@ internal fun ModelPanel(
     selectedModelId: String,
     onSelect: (String) -> Unit,
     allModels: List<ModelInfo>,
+    networkLights: NetworkLightsState? = null,
+    onOpenTailscaleSettings: (() -> Unit)? = null,
+    onRetryTailscale: (() -> Unit)? = null,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val modelItems = remember(allModels, selectedModelId) {
@@ -239,7 +250,16 @@ internal fun ModelPanel(
             placeholder = stringResource(R.string.common_model_picker_search)
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        if (networkLights != null) {
+            NetworkLightsRow(
+                state = networkLights,
+                onOpenTailscaleSettings = onOpenTailscaleSettings,
+                onRetryTailscale = onRetryTailscale ?: rememberTailscaleRetry(),
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else {
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         val filtered = remember(searchQuery, modelItems) {
             if (searchQuery.isBlank()) modelItems else modelItems.filter {
@@ -261,7 +281,8 @@ internal fun ModelPanel(
                     onClick = { onSelect(model.selectionId) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(UiTags.chatModelOption(model.selectionId))
+                        .testTag(UiTags.chatModelOption(model.selectionId)),
+                    tailnetBadge = networkLights?.badgeFor(model),
                 )
             }
         }

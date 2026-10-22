@@ -301,8 +301,8 @@ class ChatScreenContentStateTest {
             modelDisplayNames = mapOf(modelId to displayName),
         )
 
-        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA)
-        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA)
+        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA, useUnmergedTree = true)
+        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA, useUnmergedTree = true)
         val readyRoot = rule.onNodeWithTag(UiTags.CHAT_STATE_READY)
 
         modelMetadata.assertIsDisplayed()
@@ -347,8 +347,8 @@ class ChatScreenContentStateTest {
             modelDisplayNames = mapOf(modelId to displayName),
         )
 
-        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA)
-        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA)
+        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA, useUnmergedTree = true)
+        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA, useUnmergedTree = true)
         val readyBounds = rule.onNodeWithTag(UiTags.CHAT_STATE_READY).fetchSemanticsNode().boundsInRoot
 
         modelMetadata.assertIsDisplayed()

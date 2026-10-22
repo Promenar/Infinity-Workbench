@@ -1,8 +1,8 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.remote.ModelHttp
 import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -23,7 +23,7 @@ class ImageGenClient(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String,
-    private val httpClient: HttpClient = HttpClient(OkHttp) {
+    private val httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000  // 图像生成可能较慢
             connectTimeoutMillis = 15_000

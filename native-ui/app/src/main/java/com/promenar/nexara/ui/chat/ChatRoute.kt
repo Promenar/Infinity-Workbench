@@ -199,6 +199,8 @@ fun ChatRoute(
     onOpenKnowledgeGraph: ((String) -> Unit)? = null,
     /** 打开子代理只读查看页。 */
     onOpenSubagent: ((sessionId: String, stepId: String, index: Int) -> Unit)? = null,
+    /** 打开 Tailscale 设置（模型选择器的 Tailscale 灯、tailnet 失败提示的“Tailscale 设置”与“去登录”）。 */
+    onOpenTailscaleSettings: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
@@ -247,6 +249,7 @@ fun ChatRoute(
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
     val generationRetry by chatViewModel.generationRetry.collectAsStateWithLifecycle()
+    val tailnetWait by chatViewModel.tailnetWait.collectAsStateWithLifecycle()
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
     val themePreferences by application.themePreferenceStore.state.collectAsStateWithLifecycle()
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
@@ -561,6 +564,7 @@ fun ChatRoute(
                 compressionState = compressionState,
                 postProcessTasks = postProcessTasks,
                 generationRetry = generationRetry,
+                tailnetWait = tailnetWait,
                 selectedImageUris = selectedImageUris,
                 draftDocuments = draftDocuments,
                 isImportingDocument = isImportingDocument,
@@ -596,6 +600,8 @@ fun ChatRoute(
                 },
                 onDeleteMessage = chatViewModel::deleteMessage,
                 onRegenerateMessage = { requestOverlay(ChatOverlay.Truncate(it)) },
+                onRetryLastMessage = chatViewModel::retryLastMessage,
+                onOpenTailscaleSettings = onOpenTailscaleSettings,
                 onOpenTurnMemory = { requestOverlay(ChatOverlay.TurnMemory(it)) },
                 onBranchMessage = { messageId ->
                     scope.launch {
@@ -778,6 +784,7 @@ fun ChatRoute(
         show = activeOverlay == ChatOverlay.ModelSettings,
         onDismiss = { activeOverlayToken = null },
         chatViewModel = chatViewModel,
+        onOpenTailscaleSettings = onOpenTailscaleSettings,
     )
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,

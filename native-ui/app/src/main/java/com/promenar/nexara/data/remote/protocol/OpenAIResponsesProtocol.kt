@@ -1,10 +1,10 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -57,7 +57,7 @@ class OpenAIResponsesProtocol(
 
     override val protocolType: ProtocolType = ProtocolType.OpenAI_Responses
 
-    private val httpClient: HttpClient = httpClient ?: HttpClient(OkHttp) {
+    private val httpClient: HttpClient = httpClient ?: ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000

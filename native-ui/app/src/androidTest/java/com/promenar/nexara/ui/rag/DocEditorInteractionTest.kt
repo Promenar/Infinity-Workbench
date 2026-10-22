@@ -67,8 +67,10 @@ class DocEditorInteractionTest {
 
     @After
     fun closeImeAfterTest() {
+        // 返回键收键盘由输入法决定；API 35 模拟器的 Gboard 会同时把返回交给页面并结束 Activity，
+        // 清理阶段改走 IMM 收起，不让下一个测试继承键盘状态。
         if (imeVisible()) {
-            Espresso.pressBack()
+            Espresso.closeSoftKeyboard()
             awaitImeClosed()
         }
         rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -930,7 +932,7 @@ class DocEditorInteractionTest {
         assertThat(input.bottom).isAtMost(visibleBottomPx + tolerancePx)
         assertThat(save.bottom).isAtMost(visibleBottomPx + tolerancePx)
 
-        Espresso.pressBack()
+        Espresso.closeSoftKeyboard()
         assertThat(awaitImeClosed()).isTrue()
         settleLayout()
 

@@ -1,11 +1,11 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import io.ktor.client.*
 import io.ktor.client.call.body
-import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -32,7 +32,7 @@ class RerankClient(
     private val maxPerCall: Int = 100  // P1: 单次最多重排文档数，超过分批
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val httpClient = HttpClient(OkHttp) {
+    private val httpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000

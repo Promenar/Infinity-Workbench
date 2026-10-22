@@ -130,7 +130,14 @@ import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -147,6 +154,7 @@ import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
+import com.promenar.nexara.ui.rag.components.resolveIndexingProgressAccessibility
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.testing.UiTags
@@ -1566,6 +1574,9 @@ internal fun RagStatusFab(
         else -> stringResource(R.string.rag_status_ready)
     }
 
+    val fabStatus = noticeText?.takeIf { it.isNotBlank() } ?: titleText
+    val fabAccessibility = resolveIndexingProgressAccessibility(state.indexingProgress, isError)
+
     val indexAction = resolveRagHomeIndexAction(
         noticeCode = state.indexingNotice?.code,
         canRetryLastFailedIndex = state.canRetryLastFailedIndex,
@@ -1636,7 +1647,8 @@ internal fun RagStatusFab(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .clearAndSetSemantics {},
                             )
                         }
 
@@ -1748,7 +1760,8 @@ internal fun RagStatusFab(
             ) {
                 if (isRunning) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(54.dp),
+                        // 进度与状态由下方按钮统一发布，这里只是视觉圈。
+                        modifier = Modifier.size(54.dp).clearAndSetSemantics {},
                         strokeWidth = 3.dp,
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
@@ -1761,7 +1774,14 @@ internal fun RagStatusFab(
                     color = containerColor,
                     tonalElevation = 6.dp,
                     shadowElevation = 4.dp,
-                    modifier = Modifier.size(46.dp),
+                    // 折叠时浮钮是唯一的无障碍事实来源：状态、实时播报与确定进度都发布在这里。
+                    modifier = Modifier.size(46.dp).semantics {
+                        stateDescription = fabStatus
+                        liveRegion = if (fabAccessibility.assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
+                        if (isVectorizing && state.indexingProgress >= 0f && fabAccessibility.showProgress) {
+                            progressBarRangeInfo = ProgressBarRangeInfo(current = fabAccessibility.progress, range = 0f..1f)
+                        }
+                    },
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),

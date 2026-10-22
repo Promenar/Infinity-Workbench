@@ -95,6 +95,15 @@ interface GenerationUiPort {
         detail: String? = null,
     )
     fun removePostProcessTask(id: String)
+    /** 发送前等待内置 Tailscale 的状态；null 表示没有在等待。 */
+    fun setTailnetWait(state: TailnetWaitState?) {}
+}
+
+/** 请求发往 tailnet 而内置 Tailscale 尚未接入时，界面展示的等待状态。 */
+sealed interface TailnetWaitState {
+    data class Waiting(val progress: com.promenar.nexara.data.tailnet.TailnetConnectProgress) : TailnetWaitState
+    /** 等待后接入成功，请求随即发出。 */
+    data object Connected : TailnetWaitState
 }
 
 // 检索轨迹本身也是需要持久化的结果：未命中、嵌入不可用等情形没有引用，但检索指示器仍要显示。
@@ -160,6 +169,8 @@ internal class DefaultChatGenerationRuntime(
     private val subagentUsage: com.promenar.nexara.data.subagent.SubagentUsageLedger? = null,
     private val toolBuildDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
     private val sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
+    /** 接口在 tailnet 内时，请求前等待内置 Tailscale 接入；为空时不等待。 */
+    private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -576,6 +587,9 @@ internal class DefaultChatGenerationRuntime(
                 ?: com.promenar.nexara.data.model.Session(request.sessionId, "")
             prepared.copy(messages = mediaContextLoader.attach(currentSession, prepared.messages, route.modelId))
         }
+        if (!route.useLocalProvider) {
+            awaitTailnet(route)?.let { failure -> return kotlinx.coroutines.flow.flowOf(GenerationChunk.Failure(failure)) }
+        }
         val source = if (route.useLocalProvider) {
             localProviderFactory(prompt.model).sendPrompt(prompt)
         } else {
@@ -602,6 +616,42 @@ internal class DefaultChatGenerationRuntime(
             )
         }
         return source.mapNotNull(::toGenerationChunk)
+    }
+
+    /**
+     * 接口在 tailnet 内且内置 Tailscale 未接入时等待接入（用户发送视为主动重试，忽略失败退避）；
+     * 等待期间通过 [GenerationUiPort.setTailnetWait] 展示进度。接入失败返回失败，请求不发出。
+     */
+    private suspend fun awaitTailnet(route: ChatProviderRoute): GenerationFailure? {
+        val gate = tailnetGate ?: return null
+        var waited = false
+        val result = try {
+            gate.await(route.endpointHost, force = true) { progress ->
+                waited = true
+                ui.setTailnetWait(TailnetWaitState.Waiting(progress))
+            }
+        } catch (error: Throwable) {
+            if (waited) ui.setTailnetWait(null)
+            throw error
+        }
+        when (result) {
+            is com.promenar.nexara.data.tailnet.TailnetConnectResult.Ready -> {
+                if (waited) ui.setTailnetWait(if (result.waited) TailnetWaitState.Connected else null)
+                return null
+            }
+            com.promenar.nexara.data.tailnet.TailnetConnectResult.NotRequired -> {
+                if (waited) ui.setTailnetWait(null)
+                return null
+            }
+            is com.promenar.nexara.data.tailnet.TailnetConnectResult.Unavailable -> {
+                if (waited) ui.setTailnetWait(null)
+                return GenerationFailure(
+                    code = GenerationFailureCode.TAILNET_UNAVAILABLE,
+                    formatArgs = mapOf(GenerationFailure.KEY_TAILNET_REASON to result.reason.name),
+                    technical = "tailnet unavailable before request: reason=${result.reason}",
+                )
+            }
+        }
     }
 
     override fun knownToolNames(request: GenerationRequest): Set<String> =

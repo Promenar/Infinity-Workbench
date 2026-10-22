@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.remote.provider
 
+import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.UnifiedProviderConfig
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointOperation
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointResolver
@@ -12,7 +13,6 @@ import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolExcep
 import com.promenar.nexara.data.remote.protocol.UnsupportedPersistedProtocolException
 import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -57,7 +57,7 @@ sealed interface ProviderConnectionProbeResult {
  * 唯一 Provider 连接探测入口。只访问权威无推理成本端点；不发送 prompt，也不调用 generation。
  */
 class ProviderConnectionProbe(
-    private val httpClient: HttpClient = HttpClient(OkHttp) {
+    private val httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 15_000

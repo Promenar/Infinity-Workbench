@@ -186,7 +186,7 @@ open class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
-                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent ->
+                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent, onOpenTailscaleSettings ->
                                 ChatRoute(
                                     sessionId = sessionId,
                                     onNavigateBack = onNavigateBack,
@@ -195,6 +195,7 @@ open class MainActivity : ComponentActivity() {
                                     onOpenDefaultModels = onOpenDefaultModels,
                                     onOpenKnowledgeGraph = onOpenKnowledgeGraph,
                                     onOpenSubagent = onOpenSubagent,
+                                    onOpenTailscaleSettings = onOpenTailscaleSettings,
                                 )
                             },
                             openGenerationRequest = openGenerationRequest,

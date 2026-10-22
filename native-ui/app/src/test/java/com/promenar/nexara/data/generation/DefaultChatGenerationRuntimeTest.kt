@@ -1786,3 +1786,119 @@ class DefaultChatGenerationRuntimeTest {
         return Triple(prompts, searches, executorPreparedSnapshots)
     }
 }
+
+class DefaultChatGenerationRuntimeTailnetTest {
+    private class OfflineConnector(private val starts: Boolean) : com.promenar.nexara.data.tailnet.TailnetConnector {
+        val mutableState = kotlinx.coroutines.flow.MutableStateFlow(
+            com.promenar.nexara.data.tailnet.TailnetState(com.promenar.nexara.data.tailnet.TailnetPhase.STOPPED),
+        )
+        override val state: kotlinx.coroutines.flow.StateFlow<com.promenar.nexara.data.tailnet.TailnetState> = mutableState
+        override fun isTailnetHost(host: String): Boolean = host.endsWith(".ts.net")
+        override suspend fun ensureStarted(force: Boolean, timeoutMillis: Long): Boolean {
+            if (starts) mutableState.value = com.promenar.nexara.data.tailnet.TailnetState(com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING)
+            return starts
+        }
+    }
+
+    private fun kotlinx.coroutines.test.TestScope.runtime(
+        connector: com.promenar.nexara.data.tailnet.TailnetConnector,
+        ui: GenerationUiPort,
+        sent: MutableList<PromptRequest>,
+    ): DefaultChatGenerationRuntime {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getString(any(), any()) } returns ""
+        every { settings.getFloat(any(), any()) } answers { secondArg() }
+        every { settings.getInt(any(), any()) } answers { secondArg() }
+        val store = ChatStore().apply {
+            update {
+                ChatState(sessions = listOf(Session(
+                    id = "s-tailnet", agentId = "agent", modelId = "gateway::qwen",
+                    messages = listOf(Message("u", MessageRole.USER, "question"), Message("a-tailnet", MessageRole.ASSISTANT, "")),
+                )))
+            }
+        }
+        val contextBuilder = mockk<ContextBuilder>()
+        coEvery { contextBuilder.buildContext(any()) } returns ContextBuilderResult(
+            searchContext = "", ragContext = "", citations = emptyList(), ragReferences = emptyList(), ragUsage = null, finalSystemPrompt = "system",
+        )
+        val protocol = object : LlmProtocol {
+            override val protocolType = ProtocolType.Generic_OpenAI_Compat
+            override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
+                sent += request
+                emit(StreamChunk.TextDelta("ok"))
+                emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+            }
+            override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
+            override fun cancel() = Unit
+        }
+        val config = UnifiedProviderConfig(ProtocolType.Generic_OpenAI_Compat, "https://gpu.tail1.ts.net/v1", "k", "qwen")
+        val router = object : ProviderRequestRouter {
+            override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+                ResolvedProviderModel(modelId, "qwen", "gateway", "Gateway", config),
+            )
+            override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient =
+                UnifiedLlmClient({ config }, protocolFactory = { protocol })
+        }
+        return DefaultChatGenerationRuntime(
+            settings = settings,
+            applicationScope = this,
+            store = store,
+            agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            configResolver = AgentConfigResolver(settings),
+            routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
+            contextBuilder = contextBuilder,
+            messageManager = mockk(relaxed = true),
+            localProviderFactory = { error("cloud") },
+            provider = LlmProvider(protocol),
+            toolLedger = mockk(relaxed = true),
+            toolExecutor = mockk(relaxed = true),
+            postProcessor = mockk(relaxed = true),
+            memoryManager = null,
+            summaryManager = mockk(relaxed = true),
+            sessionManager = mockk(relaxed = true),
+            contentStrategy = mockk(relaxed = true),
+            ui = ui,
+            tailnetGate = com.promenar.nexara.data.tailnet.TailnetConnectGate(connector, clock = { testScheduler.currentTime }),
+        )
+    }
+
+    private val request = GenerationRequest("s-tailnet", "a-tailnet", "u", "question", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED)
+
+    @Test
+    fun `tailnet 接口在内置 Tailscale 起不来时不发请求并给出专用失败`() = runTest {
+        val waits = mutableListOf<TailnetWaitState?>()
+        val ui = mockk<GenerationUiPort>(relaxed = true)
+        every { ui.setTailnetWait(any()) } answers { waits += firstArg<TailnetWaitState?>() }
+        val sent = mutableListOf<PromptRequest>()
+        val runtime = runtime(OfflineConnector(starts = false), ui, sent)
+        runtime.prepare(request)
+        assertThat(runtime.buildContext(request)).isEqualTo(GenerationPreparationOutcome.Ready)
+
+        val chunk = runtime.stream(request, attempt = 0).toList().single() as GenerationChunk.Failure
+
+        assertThat(chunk.failure.code).isEqualTo(GenerationFailureCode.TAILNET_UNAVAILABLE)
+        assertThat(chunk.failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]).isEqualTo("FAILED")
+        assertThat(chunk.failure.retryable).isFalse()
+        assertThat(sent).isEmpty()
+        assertThat(waits.first()).isInstanceOf(TailnetWaitState.Waiting::class.java)
+        assertThat(waits.last()).isNull()
+    }
+
+    @Test
+    fun `等到内置 Tailscale 接入后继续发送并提示已连接`() = runTest {
+        val waits = mutableListOf<TailnetWaitState?>()
+        val ui = mockk<GenerationUiPort>(relaxed = true)
+        every { ui.setTailnetWait(any()) } answers { waits += firstArg<TailnetWaitState?>() }
+        val sent = mutableListOf<PromptRequest>()
+        val runtime = runtime(OfflineConnector(starts = true), ui, sent)
+        runtime.prepare(request)
+        assertThat(runtime.buildContext(request)).isEqualTo(GenerationPreparationOutcome.Ready)
+
+        val chunks = runtime.stream(request, attempt = 0).toList()
+
+        assertThat(chunks.filterIsInstance<GenerationChunk.Failure>()).isEmpty()
+        assertThat(sent).hasSize(1)
+        assertThat(waits.last()).isEqualTo(TailnetWaitState.Connected)
+    }
+}

@@ -2,9 +2,11 @@ package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.SupportState
+import com.promenar.nexara.ui.common.network.TailnetModelBadge
+import com.promenar.nexara.ui.common.network.TailscaleLightStatus
 
 @Composable
 private fun ModelCapability.selectionLabel(): String? = when (this) {
@@ -55,7 +59,9 @@ fun ModelSelectionListItem(
     model: ModelSelectionUiModel,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 模型经 Tailscale 内网访问时，品牌图标右下角显示同状态的小灯。 */
+    tailnetBadge: TailscaleLightStatus? = null,
 ) {
     val haptics = LocalNexaraHaptics.current
     val supportedCapabilities = model.capabilityStates
@@ -98,10 +104,19 @@ fun ModelSelectionListItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ModelBrandTile(
-            modelId = model.remoteModelId,
-            size = 30.dp,
-        )
+        Box {
+            ModelBrandTile(
+                modelId = model.remoteModelId,
+                size = 30.dp,
+            )
+            tailnetBadge?.let { status ->
+                TailnetModelBadge(
+                    status = status,
+                    ringColor = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp),
+                )
+            }
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(1.dp),

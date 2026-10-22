@@ -30,6 +30,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.TouchInjectionScope
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -63,8 +65,10 @@ class AttachmentActionMenuTest {
 
     @After
     fun closeImeAfterTest() {
+        // 返回键收键盘由输入法决定；API 35 模拟器的 Gboard 会同时把返回交给页面并结束 Activity，
+        // 清理阶段改走 IMM 收起，不让下一个测试继承键盘状态。
         if (imeVisible()) {
-            Espresso.pressBack()
+            Espresso.closeSoftKeyboard()
             awaitImeClosed()
         }
     }
@@ -321,17 +325,25 @@ class AttachmentActionMenuTest {
         }
 
         rule.mainClock.autoAdvance = false
-        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_DISMISS_LAYER).performTouchInput { click() }
-        rule.onNodeWithTag("attachment_underlying_action").performTouchInput { click() }
+        // 菜单锚在左下并覆盖盒子中心，点按落在右上角才是菜单之外的区域。
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_DISMISS_LAYER).performTouchInput { click(outsideMenu()) }
+        // 时钟暂停时点按要推进一帧才会被手势检测处理；此后菜单进入退出动画。
+        rule.mainClock.advanceTimeByFrame()
+        rule.runOnIdle { assertThat(expanded).isFalse() }
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_DISMISS_LAYER).assertExists()
+        rule.onNodeWithTag("attachment_underlying_action").performTouchInput { click(outsideMenu()) }
+        rule.mainClock.advanceTimeByFrame()
         rule.runOnIdle { assertThat(underlyingClicks).isEqualTo(0) }
 
         rule.mainClock.advanceTimeBy(200)
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
         rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_DISMISS_LAYER).assertDoesNotExist()
-        rule.onNodeWithTag("attachment_underlying_action").performTouchInput { click() }
+        rule.onNodeWithTag("attachment_underlying_action").performTouchInput { click(outsideMenu()) }
         rule.runOnIdle { assertThat(underlyingClicks).isEqualTo(1) }
     }
+
+    private fun TouchInjectionScope.outsideMenu(): Offset = Offset(width - 16f, 16f)
 
     @Test
     fun shortWindowAtLargeFont_constrainsMenuAboveMaximumBottom() {

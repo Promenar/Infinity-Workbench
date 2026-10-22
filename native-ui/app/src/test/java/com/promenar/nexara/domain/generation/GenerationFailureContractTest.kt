@@ -33,12 +33,37 @@ class GenerationFailureContractTest {
             "@nexara/failure:SERVER?retryAfterSeconds=5",
             "@nexara/failure:RATE_LIMIT?retryAfterSeconds=5&extra=1",
             "@nexara/failure:RATE_LIMIT?" + "retryAfterSeconds=1&".repeat(40) + "x=1",
+            "@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=",
+            "@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=needs_login",
+            "@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=SECRET",
+            "@nexara/failure:TAILNET_UNAVAILABLE?retryAfterSeconds=5",
+            "@nexara/failure:NETWORK?tailnetReason=TIMEOUT",
         )
 
         malformed.forEach { raw ->
             assertThat(GenerationFailureCodec.decode(raw)).isNull()
             assertThat(GenerationFailureCodec.isFailureEnvelope(raw)).isFalse()
         }
+    }
+
+    @Test
+    fun `tailnet 原因随信封持久化，历史消息可还原登录或重试入口`() {
+        GenerationFailure.TAILNET_REASONS.forEach { reason ->
+            val failure = GenerationFailure(
+                code = GenerationFailureCode.TAILNET_UNAVAILABLE,
+                formatArgs = mapOf(GenerationFailure.KEY_TAILNET_REASON to reason, "host" to "gpu.tail1.ts.net"),
+                technical = "proxy detail",
+            )
+            val encoded = GenerationFailureCodec.encode(failure)
+            assertThat(encoded).isEqualTo("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=$reason")
+            assertThat(GenerationFailureCodec.decode(encoded)?.formatArgs)
+                .containsExactly(GenerationFailure.KEY_TAILNET_REASON, reason)
+        }
+        val unknownReason = GenerationFailure(
+            code = GenerationFailureCode.TAILNET_UNAVAILABLE,
+            formatArgs = mapOf(GenerationFailure.KEY_TAILNET_REASON to "gpu.tail1.ts.net"),
+        )
+        assertThat(GenerationFailureCodec.encode(unknownReason)).isEqualTo("@nexara/failure:TAILNET_UNAVAILABLE")
     }
 
     @Test

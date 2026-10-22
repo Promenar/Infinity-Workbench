@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -20,6 +21,7 @@ import java.security.SecureRandom
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 /** 内置 Tailscale 所处阶段。 */
 enum class TailnetPhase {
@@ -88,7 +90,7 @@ class TailnetManager(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = System::currentTimeMillis,
-) : TailnetRouting, TailnetController, TailnetEndpointSource {
+) : TailnetRouting, TailnetController, TailnetEndpointSource, TailnetConnector {
 
     private inner class Session(val config: LaunchConfig) {
         @Volatile var client: TailnetClient? = null
@@ -156,6 +158,21 @@ class TailnetManager(
         currentEndpoint()?.let { return it }
         val future = requestStart() ?: return null
         return runCatching { future.get(timeoutMillis, TimeUnit.MILLISECONDS) }.getOrNull()
+    }
+
+    // ---- TailnetConnector ----
+
+    override suspend fun ensureStarted(force: Boolean, timeoutMillis: Long): Boolean {
+        if (!enabled) return false
+        currentEndpoint()?.let { return true }
+        if (force) lastFailureAt = Long.MIN_VALUE / 2
+        val future = requestStart() ?: return false
+        // 只挂起等待，不取消共享的启动 future：其它等待方与路由选择器仍依赖它。
+        return withTimeoutOrNull(timeoutMillis) {
+            suspendCancellableCoroutine { continuation ->
+                future.whenComplete { endpoint, _ -> if (continuation.isActive) continuation.resume(endpoint != null) }
+            }
+        } ?: false
     }
 
     /** 返回正在进行或新发起的启动；退避期内或已停用返回 null。 */

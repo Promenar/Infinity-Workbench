@@ -14,15 +14,20 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -474,8 +479,6 @@ class RagReleaseAccessibilityTest {
 
     @Test
     fun releaseNavigationAndPrimaryActionsUseStableTags() {
-        val configClicks = AtomicInteger(0)
-        val graphClicks = AtomicInteger(0)
         val memoryLoads = AtomicInteger(0)
         val uploadClicks = AtomicInteger(0)
 
@@ -487,7 +490,6 @@ class RagReleaseAccessibilityTest {
                     actions = RagHomeScreenActions(
                         onChangeTab = { state = state.copy(currentTab = it) },
                         onLoadMemory = { memoryLoads.incrementAndGet() },
-                        onOpenGraph = { graphClicks.incrementAndGet() },
                         onOpenFilePicker = { uploadClicks.incrementAndGet() },
                     ),
                     documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
@@ -495,23 +497,34 @@ class RagReleaseAccessibilityTest {
             }
         }
 
+        // 上传与新建文件夹收进页头“添加”菜单，仅文档标签页提供。
+        rule.onNodeWithTag(UiTags.RAG_HOME_ADD)
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_UPLOAD).assertHasClickAction().performClick()
+        rule.runOnIdle { assertThat(uploadClicks.get()).isEqualTo(1) }
+
         rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY).assertHasClickAction().performClick()
         rule.waitForIdle()
         rule.onNodeWithTag(UiTags.RAG_HOME_MEMORY_CONTENT).assertExists()
-        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).assertHasClickAction().performClick()
+        rule.onNodeWithTag(UiTags.RAG_HOME_ADD).assertDoesNotExist()
+
         rule.onNodeWithTag(UiTags.RAG_HOME_TAB_DOCUMENTS).assertHasClickAction().performClick()
+        rule.onNodeWithTag(UiTags.RAG_HOME_ADD).performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_NEW_FOLDER).assertHasClickAction().performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_NEW_FOLDER_DIALOG).assertExists()
 
         assertThat(uploadClicks.get()).isEqualTo(1)
         assertThat(memoryLoads.get()).isEqualTo(1)
-        assertThat(graphClicks.get()).isEqualTo(1)
     }
 
     @Test
-    fun searchIsOnlyShownForDocumentsAndGraphDoesNotChangeTab() {
-        val graphClicks = AtomicInteger(0)
+    fun headerSearchExpandsOnDemandFollowsCurrentTabAndGraphIsNotATab() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val documentsSearch = resources.getString(R.string.rag_home_search)
+        val memorySearch = resources.getString(R.string.rag_home_memory_search)
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
                 var state by remember { mutableStateOf(releaseState()) }
@@ -519,22 +532,31 @@ class RagReleaseAccessibilityTest {
                     state = state,
                     actions = RagHomeScreenActions(
                         onChangeTab = { state = state.copy(currentTab = it) },
-                        onOpenGraph = { graphClicks.incrementAndGet() },
                     ),
                     documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
                 )
             }
         }
 
+        // 知识图谱入口属于文档页“浏览”分组，不再是标签或页头操作；切换器只有文档与记忆。
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_DOCUMENTS).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY).assertIsDisplayed()
+
+        // 搜索框默认收起，页头搜索按钮按当前标签页给出无障碍名称。
+        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertDoesNotExist()
+        rule.onNodeWithContentDescription(documentsSearch)
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).performClick()
-        rule.runOnIdle { assertThat(graphClicks.get()).isEqualTo(1) }
+        rule.onNode(ragHomeSearchField()).assert(hasContentDescription(documentsSearch))
         rule.onNodeWithTag(UiTags.RAG_HOME_DOCUMENTS_CONTENT).assertExists()
-        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertIsDisplayed()
 
         rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY).performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_MEMORY_CONTENT).assertExists()
-        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertDoesNotExist()
+        rule.onNode(ragHomeSearchField()).assert(hasContentDescription(memorySearch))
     }
 
     @Test
@@ -629,23 +651,53 @@ class RagReleaseAccessibilityTest {
     }
 
     @Test
-    fun largeFontKeepsGraphAndConfigActionsVisible() {
+    fun largeFontKeepsHeaderSearchAddAndTabsReachable() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val documentsSearch = resources.getString(R.string.rag_home_search)
+        val memorySearch = resources.getString(R.string.rag_home_memory_search)
         rule.setContent {
             val systemDensity = LocalDensity.current
             CompositionLocalProvider(
                 LocalDensity provides Density(systemDensity.density, fontScale = 2f),
             ) {
                 NexaraTheme(dynamicColor = false) {
+                    var state by remember { mutableStateOf(releaseState()) }
                     RagHomeScreenContent(
-                        state = releaseState().copy(currentTab = PortalTab.MEMORY),
-                        actions = RagHomeScreenActions(),
+                        state = state,
+                        actions = RagHomeScreenActions(
+                            onChangeTab = { state = state.copy(currentTab = it) },
+                        ),
                         documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
                     )
                 }
             }
         }
 
-        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).assertIsDisplayed()
+        // 2x 字号下大标题可以截断，但页头搜索、添加（48dp 目标）与两个标签必须保持可见可点。
+        rule.onNodeWithContentDescription(documentsSearch)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.RAG_HOME_ADD)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_MEMORY_CONTENT).assertExists()
+        rule.onNodeWithContentDescription(memorySearch)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test
@@ -717,8 +769,13 @@ class RagReleaseAccessibilityTest {
             }
         }
 
+        val documentsSearch = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.rag_home_search)
+
         rule.onNodeWithTag(UiTags.RAG_HOME_SELECTION_BAR).assertExists()
-        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).performTextInput("needle")
+        // 搜索框由页头搜索按钮展开；RAG_HOME_SEARCH 标在搜索框外层，输入落到其内部可编辑节点。
+        rule.onNodeWithContentDescription(documentsSearch).performClick()
+        rule.onNode(ragHomeSearchField()).performTextInput("needle")
 
         rule.runOnIdle {
             assertThat(selections).isEmpty()
@@ -853,6 +910,10 @@ class RagReleaseAccessibilityTest {
             assertThat(completion.get()?.failedIds).isEmpty()
         }
     }
+
+    /** 资料页页头搜索框内的可编辑节点。 */
+    private fun ragHomeSearchField(): SemanticsMatcher =
+        hasSetTextAction() and hasAnyAncestor(hasTestTag(UiTags.RAG_HOME_SEARCH))
 
     private fun releaseState() = RagHomeScreenState(
         currentTab = PortalTab.DOCUMENTS,

@@ -9,7 +9,7 @@ package com.promenar.nexara.domain.generation
  *
  *   `@nexara/failure:CODE?k1=v1&k2=v2`
  *
- * - 仅写入 [GenerationFailure.code] 与 [GenerationFailure.formatArgs]；
+ * - 仅写入 [GenerationFailure.code] 与白名单内的 [GenerationFailure.formatArgs]（限流秒数、tailnet 原因）；
  * - 严禁写入 [GenerationFailure.technical] / [GenerationFailure.cause]（仅诊断，不入库展示列）；
  * - 下一批次的 UI mapper 识别该前缀后映射资源，未识别或未知串一律回落到通用安全文案。
  */
@@ -63,19 +63,32 @@ object GenerationFailureCodec {
             val query = withoutPrefix.substring(questionIdx + 1)
             if (query.isEmpty() || query.contains('&') || query.count { it == '=' } != 1) return null
             val (key, value) = query.split('=', limit = 2)
-            if (key != GenerationFailure.KEY_RETRY_AFTER_SECONDS) return null
-            if (code != GenerationFailureCode.RATE_LIMIT) return null
-            if (value.isEmpty() || value.any { !it.isDigit() }) return null
-            val seconds = value.toIntOrNull()?.takeIf { it > 0 } ?: return null
-            if (seconds.toString() != value) return null
-            GenerationFailure.rateLimited(seconds)
+            when {
+                key == GenerationFailure.KEY_TAILNET_REASON && code == GenerationFailureCode.TAILNET_UNAVAILABLE -> {
+                    if (value !in GenerationFailure.TAILNET_REASONS) return null
+                    GenerationFailure(code = code, formatArgs = mapOf(key to value))
+                }
+                key == GenerationFailure.KEY_RETRY_AFTER_SECONDS && code == GenerationFailureCode.RATE_LIMIT -> {
+                    if (value.isEmpty() || value.any { !it.isDigit() }) return null
+                    val seconds = value.toIntOrNull()?.takeIf { it > 0 } ?: return null
+                    if (seconds.toString() != value) return null
+                    GenerationFailure.rateLimited(seconds)
+                }
+                else -> return null
+            }
         }
         return decoded.takeIf { encode(it) == raw }
     }
 
-    private fun allowedArgs(failure: GenerationFailure): Map<String, String> {
-        if (failure.code != GenerationFailureCode.RATE_LIMIT) return emptyMap()
-        val seconds = failure.retryAfterSeconds?.takeIf { it > 0 } ?: return emptyMap()
-        return mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to seconds.toString())
+    private fun allowedArgs(failure: GenerationFailure): Map<String, String> = when (failure.code) {
+        GenerationFailureCode.RATE_LIMIT -> failure.retryAfterSeconds?.takeIf { it > 0 }
+            ?.let { mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to it.toString()) }
+            .orEmpty()
+        // tailnet 原因决定提示与入口（去登录或重试），历史消息也要能还原。
+        GenerationFailureCode.TAILNET_UNAVAILABLE -> failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]
+            ?.takeIf { it in GenerationFailure.TAILNET_REASONS }
+            ?.let { mapOf(GenerationFailure.KEY_TAILNET_REASON to it) }
+            .orEmpty()
+        else -> emptyMap()
     }
 }

@@ -110,6 +110,7 @@ typealias ChatDestination = @Composable (
     onOpenDefaultModels: () -> Unit,
     onOpenKnowledgeGraph: (String) -> Unit,
     onOpenSubagent: (sessionId: String, stepId: String, index: Int) -> Unit,
+    onOpenTailscaleSettings: () -> Unit,
 ) -> Unit
 
 @Composable
@@ -121,7 +122,7 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
-    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent ->
+    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels, onOpenKnowledgeGraph, onOpenSubagent, onOpenTailscaleSettings ->
         ChatRoute(
             sessionId = sessionId,
             onNavigateBack = onNavigateBack,
@@ -129,6 +130,7 @@ fun NexaraNavGraph(
             onOpenDefaultModels = onOpenDefaultModels,
             onOpenKnowledgeGraph = onOpenKnowledgeGraph,
             onOpenSubagent = onOpenSubagent,
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
         )
     },
 ) {
@@ -318,6 +320,7 @@ fun NexaraNavGraph(
                 },
                 { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
                 { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
+                { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
             )
         }
 
@@ -474,6 +477,7 @@ fun NexaraNavGraph(
                 providerId = providerId,
                 forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
                 onNavigateBack = { navController.popBackStack() },
+                onOpenTailscaleSettings = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
                 onNavigateToModels = {
                     val pid = providerId ?: ""
                     navController.navigate(NavDestinations.providerModels(pid)) {

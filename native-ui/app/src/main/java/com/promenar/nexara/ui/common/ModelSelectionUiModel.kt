@@ -17,6 +17,8 @@ data class ModelSelectionUiModel(
     val workload: ModelWorkload,
     val capabilityStates: Map<ModelCapability, SupportState>,
     val chatEndpointCompatible: SupportState,
+    /** 所属提供商；判断模型是否经 Tailscale 内网访问。 */
+    val providerId: String = "",
 )
 
 private fun ModelCapability.toLegacyName(): String? = when (this) {
@@ -118,7 +120,7 @@ fun ModelInfo.toModelSelectionUiModel(
     val userOverride = toModelSelectionUserOverride()
     val resolved = resolver.resolve(
         remoteModelId = remoteModelId,
-        providerId = providerId,
+        providerId = providerId.orEmpty(),
         sourceProviderId = sourceProviderId,
         ownedBy = providerOwnedBy,
         providerMetadata = providerMetadata ?: toModelSelectionProviderMetadata(),
@@ -135,6 +137,7 @@ fun ModelInfo.toModelSelectionUiModel(
         contextTokens = resolved.contextTokens,
         workload = resolved.workload,
         capabilityStates = capabilityStates,
-        chatEndpointCompatible = chatEndpointCompatible
+        chatEndpointCompatible = chatEndpointCompatible,
+        providerId = providerId.orEmpty(),
     )
 }

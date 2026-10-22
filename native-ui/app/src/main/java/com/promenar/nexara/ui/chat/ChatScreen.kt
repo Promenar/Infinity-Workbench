@@ -196,6 +196,8 @@ data class ChatScreenState(
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
     val postProcessTasks: List<PostProcessTask> = emptyList(),
     val generationRetry: com.promenar.nexara.domain.generation.GenerationRetry? = null,
+    /** 等待内置 Tailscale 接入时的连接浮窗内容。 */
+    val tailnetWait: com.promenar.nexara.data.generation.TailnetWaitState? = null,
     val selectedImageUris: List<android.net.Uri> = emptyList(),
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     val isImportingDocument: Boolean = false,
@@ -226,6 +228,10 @@ data class ChatScreenActions(
     val onCopy: (String) -> Unit = {},
     val onDeleteMessage: (String) -> Unit = {},
     val onRegenerateMessage: (String) -> Unit = {},
+    /** 最新一轮失败后直接重发（tailnet 失败的“重试”）。 */
+    val onRetryLastMessage: () -> Unit = {},
+    /** 打开 Tailscale 设置；为 null 时失败提示不显示设置与登录入口。 */
+    val onOpenTailscaleSettings: (() -> Unit)? = null,
     val onBranchMessage: (String) -> Unit = {},
     /** 打开某轮回复的“本轮记忆”面板，参数为记忆状态所在的助手消息 ID。 */
     val onOpenTurnMemory: (String) -> Unit = {},
@@ -627,6 +633,15 @@ fun ChatScreenContent(
                         onBranch = actions.onBranchMessage,
                         onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.let { (it.ragOptions ?: RagOptions()).enableMemory } == true },
                         turnGraphStates = state.turnGraphStates,
+                        failureActions = if (idx == pipelineGroups.lastIndex && !uiState.isGenerating) {
+                            GenerationFailureActions(
+                                onRetry = actions.onRetryLastMessage,
+                                onSwitchModel = actions.onOpenSettings,
+                                onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
+                            )
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -706,6 +721,12 @@ fun ChatScreenContent(
             ) {
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
             }
+
+            TailnetConnectOverlay(
+                wait = state.tailnetWait,
+                onCancel = actions.onStop,
+                bottomInset = with(density) { composerHeightPx.toDp() },
+            )
 
             Column(
                 modifier = Modifier
