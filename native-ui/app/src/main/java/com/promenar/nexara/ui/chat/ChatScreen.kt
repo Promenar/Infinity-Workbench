@@ -16,7 +16,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
@@ -222,6 +224,8 @@ data class ChatScreenState(
     val collapseFinishedTurns: Boolean = true,
     /** 当前会话各轮的图谱抽取状态，键为该轮最后一条助手消息。 */
     val turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
+    /** 生成中按发送键排队的后续消息。 */
+    val composerQueue: ComposerQueueUiState = ComposerQueueUiState(),
 )
 
 data class ChatScreenActions(
@@ -265,6 +269,11 @@ data class ChatScreenActions(
     val onContinueTask: () -> Unit = {},
     val onCompleteTask: () -> Unit = {},
     val onClearCompletedTask: () -> Unit = {},
+    val onSteerQueued: (String) -> Unit = {},
+    val onEditQueued: (String) -> Unit = {},
+    val onMoveQueuedToFront: (String) -> Unit = {},
+    val onRemoveQueued: (String) -> Unit = {},
+    val onResumeQueue: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -298,8 +307,9 @@ fun ChatScreenContent(
         }
     }
 
-    LaunchedEffect(uiState.isGenerating, state.isImportingDocument) {
-        if (uiState.isGenerating || state.isImportingDocument) {
+    // 生成中也可以添加附件（随排队消息一起发出）；只有导入文档期间关闭菜单。
+    LaunchedEffect(state.isImportingDocument) {
+        if (state.isImportingDocument) {
             attachmentMenuExpanded = false
         }
     }
@@ -863,6 +873,27 @@ fun ChatScreenContent(
                                         )
                                     }
                                 }
+                                // 排队托盘紧贴输入区：自下而上是正在写的、排着的、正在运行的。
+                                val queue = state.composerQueue
+                                var lastQueue by remember { mutableStateOf(queue) }
+                                if (queue.items.isNotEmpty()) lastQueue = queue
+                                AnimatedVisibility(
+                                    visible = queue.items.isNotEmpty(),
+                                    enter = fadeIn(tween(220, delayMillis = 60)) +
+                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+                                    exit = fadeOut(tween(160)) +
+                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+                                ) {
+                                    ComposerQueueTray(
+                                        queue = lastQueue,
+                                        canEdit = inputText.isBlank() && selectedImageUris.isEmpty() && draftDocuments.isEmpty(),
+                                        onSteer = actions.onSteerQueued,
+                                        onEdit = actions.onEditQueued,
+                                        onMoveToFront = actions.onMoveQueuedToFront,
+                                        onRemove = actions.onRemoveQueued,
+                                        onResume = actions.onResumeQueue,
+                                    )
+                                }
                             },
                             modelName = modelDisplayName,
                             modelId = uiState.session?.modelId,
@@ -962,7 +993,7 @@ fun ChatScreenContent(
             } else {
                 fallbackMaximumBottom
             },
-            enabled = !uiState.isGenerating && !state.isImportingDocument,
+            enabled = !state.isImportingDocument,
             onDismiss = { attachmentMenuExpanded = false },
             onPickImage = actions.onPickImages,
             onPickDocument = actions.onPickDocuments,
@@ -1764,7 +1795,7 @@ fun ChatInputBar(
                             contentDescription = attachmentContentDescription
                         }
                         .testTag(UiTags.CHAT_ADD_ATTACHMENT),
-                    enabled = !isGenerating && !isImportingDocument,
+                    enabled = !isImportingDocument,
                 ) {
                     if (isImportingDocument) CircularProgressIndicator(Modifier.size(20.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Add, contentDescription = null,
@@ -1783,13 +1814,25 @@ fun ChatInputBar(
                 }
                 TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
                 Spacer(Modifier.width(4.dp))
+                // 生成中写好了下一条：本该显示停止的主按钮变为排队发送，停止退到左侧的次级按钮；完成与出错状态照常播报。
+                val hasDraft = text.isNotBlank() || hasImages || hasDocuments
+                val queueing = isGenerating && hasDraft && status in QueueableStatuses
+                AnimatedVisibility(
+                    visible = queueing,
+                    enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) +
+                        fadeIn(tween(NexaraMotion.DurationMedium)),
+                    exit = shrinkHorizontally(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
+                ) {
+                    QueueStopButton(onStop = onStop, modifier = Modifier.padding(end = 6.dp))
+                }
                 GenerationStatusButton(
-                    status = effectiveStatus,
+                    status = if (queueing) GenerationStatus.IDLE else effectiveStatus,
                     onSend = { if (isModelSelected) onSend() else onModelHint() },
                     onStop = onStop,
                     onDismissError = onDismissError,
-                    enabled = (text.isNotBlank() || hasImages || hasDocuments) && !isImportingDocument,
+                    enabled = hasDraft && !isImportingDocument,
                     isModelSelected = isModelSelected,
+                    sendDescription = if (queueing) stringResource(R.string.chat_queue_send_cd) else null,
                 )
             }
         }
@@ -1798,6 +1841,7 @@ fun ChatInputBar(
 }
 
 private val ReasoningChipCompactBelow = 200.dp
+private val QueueableStatuses = setOf(GenerationStatus.UPLOADING, GenerationStatus.THINKING, GenerationStatus.RECEIVING)
 
 @Composable
 private fun GenerationStatusButton(
@@ -1806,7 +1850,9 @@ private fun GenerationStatusButton(
     onStop: () -> Unit,
     onDismissError: () -> Unit,
     enabled: Boolean,
-    isModelSelected: Boolean = true
+    isModelSelected: Boolean = true,
+    /** 生成中排队时发送键的读屏描述；为 null 时为普通“发送”。 */
+    sendDescription: String? = null,
 ) {
     val active = status == GenerationStatus.UPLOADING || status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING
     val canSend = enabled && isModelSelected
@@ -1839,7 +1885,7 @@ private fun GenerationStatusButton(
         }
     )
     val actionDescription = when (status) {
-        GenerationStatus.IDLE -> stringResource(R.string.chat_cd_send)
+        GenerationStatus.IDLE -> sendDescription ?: stringResource(R.string.chat_cd_send)
         GenerationStatus.UPLOADING,
         GenerationStatus.THINKING,
         GenerationStatus.RECEIVING -> stringResource(R.string.chat_cd_stop)
@@ -1905,6 +1951,25 @@ private fun GenerationStatusButton(
                 )
             }
         }
+    }
+}
+
+/** 排队时的次级停止键：中性底色，与主按钮区分主次。 */
+@Composable
+private fun QueueStopButton(onStop: () -> Unit, modifier: Modifier = Modifier) {
+    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
+    val description = stringResource(R.string.chat_queue_stop_cd)
+    ChatCompactIconButton(
+        onClick = {
+            haptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.SELECTION)
+            onStop()
+        },
+        modifier = modifier
+            .semantics { contentDescription = description }
+            .testTag(UiTags.CHAT_GENERATION_STOP),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurface))
     }
 }
 

@@ -210,6 +210,7 @@ fun ChatRoute(
     val chatViewModel: ChatViewModel = viewModel(factory = resolvedDependencies.viewModelFactory)
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val turnGraphStates by chatViewModel.turnGraphStates.collectAsStateWithLifecycle()
+    val composerQueue by chatViewModel.composerQueue.collectAsStateWithLifecycle()
     val interaction by application.generationInteractions.pending.collectAsStateWithLifecycle()
     val generationProgress by remember(sessionId) {
         application.generationCoordinator.observe(sessionId)
@@ -302,6 +303,7 @@ fun ChatRoute(
         ?.let(::NotificationPermissionRequest)
     val scope = rememberCoroutineScope()
     val continueTaskPrompt = stringResource(R.string.chat_task_continue_prompt)
+    val queueEditBlockedLabel = stringResource(R.string.chat_queue_edit_blocked)
 
     val hasBlockingOverlay = activeOverlay != null || hasGenerationInteraction
     val permissionDialogVisible = shouldShowNotificationPermissionDialog(
@@ -332,6 +334,10 @@ fun ChatRoute(
     ) { uris -> chatViewModel.importFullContextDocuments(uris) }
     LaunchedEffect(draftConsumptionEpoch) {
         if (draftConsumptionEpoch > 0L) selectedImageUriStrings = emptyList()
+    }
+    // 已选图片只在界面持有；同步给 ViewModel，编辑排队消息前据此确认输入区为空。
+    LaunchedEffect(selectedImageUriStrings) {
+        chatViewModel.updateComposerImages(selectedImageUriStrings.map(Uri::parse))
     }
     val restoredDraftImages by chatViewModel.restoredDraftImages.collectAsStateWithLifecycle()
     LaunchedEffect(restoredDraftImages) {
@@ -575,6 +581,7 @@ fun ChatRoute(
                 generationProgress = generationProgress?.progress,
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
                 turnGraphStates = turnGraphStates,
+                composerQueue = composerQueue,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
@@ -659,6 +666,20 @@ fun ChatRoute(
                 },
                 onCompleteTask = chatViewModel::completeActivePlan,
                 onClearCompletedTask = chatViewModel::clearCompletedPlan,
+                onSteerQueued = chatViewModel::steerQueuedMessage,
+                onEditQueued = { id ->
+                    if (!chatViewModel.editQueuedMessage(id)) {
+                        snackbarAction = null
+                        snackbarData = NexaraSnackbarData(queueEditBlockedLabel, SnackbarType.INFO)
+                        scope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            snackbarHostState.showSnackbar(queueEditBlockedLabel, duration = SnackbarDuration.Short)
+                        }
+                    }
+                },
+                onMoveQueuedToFront = chatViewModel::moveQueuedMessageToFront,
+                onRemoveQueued = chatViewModel::removeQueuedMessage,
+                onResumeQueue = chatViewModel::resumeComposerQueue,
             ),
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,

@@ -171,6 +171,7 @@ internal class DefaultChatGenerationRuntime(
     private val sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
     /** 接口在 tailnet 内时，请求前等待内置 Tailscale 接入；为空时不等待。 */
     private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
+    private val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -579,6 +580,8 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> {
+        // 页面已切走或销毁时，仍由应用级运行时结清已接受的队列发送租约。
+        composerQueueStore?.acceptForUser(request.sessionId, request.userMessageId)
         val route = requireNotNull(preparedRoute) { "生成路由尚未准备完成" }
         val prepared = requireNotNull(preparedPrompt) { "生成请求尚未准备完成" }
         // 网络重试不会重建上下文；每次真正发起请求前都要重新校验工作区媒体。
@@ -933,6 +936,11 @@ internal class DefaultChatGenerationRuntime(
         finalAnswerMode = true
     }
 
+    override suspend fun shouldYieldAtRoundBoundary(request: GenerationRequest): Boolean =
+        composerQueueStore?.snapshot(request.sessionId)?.let { state ->
+            state.pauseReason == null && state.items.any { it.steering }
+        } ?: false
+
     override suspend fun prepareContinuation(request: GenerationRequest): String {
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         val nextAssistantMessageId = com.promenar.nexara.domain.usecase.IdGenerator.message("ai")
@@ -1075,8 +1083,17 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
 
     override suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) {
-        val owner = "agent:${request.sessionId}"
-        if (awaitingApproval) sshRuntime?.pauseOwner(owner) else sshRuntime?.closeOwner(owner)
+        try {
+            val userId = request.userMessageId
+            if (store.getSession(request.sessionId)?.messages.orEmpty().any { it.id == userId }) {
+                composerQueueStore?.acceptForUser(request.sessionId, userId)
+            } else {
+                composerQueueStore?.rollbackForUser(request.sessionId, userId)
+            }
+        } finally {
+            val owner = "agent:${request.sessionId}"
+            if (awaitingApproval) sshRuntime?.pauseOwner(owner) else sshRuntime?.closeOwner(owner)
+        }
     }
 
     override fun cancelProvider() = provider.cancel()

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_queue_send_cd">排队发送</string>
+    <string name="chat_queue_stop_cd">停止生成</string>
+    <string name="chat_queue_steer">插队</string>
+    <string name="chat_queue_steer_cd">插队：当前步骤结束后立即发送</string>
+    <string name="chat_queue_steering">当前步骤后发送</string>
+    <string name="chat_queue_more_cd">更多操作</string>
+    <string name="chat_queue_edit">编辑</string>
+    <string name="chat_queue_edit_blocked">请先发送或清空输入框</string>
+    <string name="chat_queue_move_front">移到最前</string>
+    <string name="chat_queue_remove">删除</string>
+    <string name="chat_queue_resume">继续</string>
+    <string name="chat_queue_show_all">展开全部 %d 条</string>
+    <string name="chat_queue_collapse">收起</string>
+    <string name="chat_queue_item_cd">排队第 %1$d 条：%2$s</string>
+    <string name="chat_queue_attachment_only">仅附件</string>
+    <string name="chat_queue_paused_stopped">已暂停 · 生成已停止</string>
+    <string name="chat_queue_paused_failed">已暂停 · 上一条未完成</string>
+    <string name="chat_queue_paused_restored">已暂停 · 从上次恢复</string>
+    <string name="chat_queue_paused_interrupted">已暂停 · 生成结束时不在此会话</string>
+    <string name="chat_queue_paused_busy">已暂停 · 其它会话正在生成</string>
+    <string name="chat_queue_error_load">无法读取排队消息，请重试。</string>
+    <string name="chat_queue_error_enqueue">排队失败，消息已保留。</string>
+    <string name="chat_queue_error_draft_after_enqueue">消息已排队，会话草稿保存失败。</string>
+    <string name="chat_queue_error_draft_after_restore">草稿已恢复，会话草稿保存失败。</string>
+    <string name="chat_queue_error_update">无法更新排队消息，请重试。</string>
+    <string name="chat_queue_error_send">排队消息发送失败，队列已暂停。</string>
+</resources>

@@ -189,7 +189,7 @@ class AttachmentActionMenuTest {
     }
 
     @Test
-    fun generationAndImportDisableTrigger_andCloseAnOpenMenu() {
+    fun generationKeepsMenu_importDisablesTriggerAndClosesMenu() {
         var generating by mutableStateOf(false)
         var importing by mutableStateOf(false)
         render(
@@ -197,16 +197,15 @@ class AttachmentActionMenuTest {
             isImporting = { importing },
         )
 
+        // 生成中附件随排队消息发出：开始生成不关闭已打开的菜单，入口保持可用。
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
         rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertIsDisplayed()
         rule.runOnIdle { generating = true }
-        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertDoesNotExist()
-        rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).assertIsNotEnabled()
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).assertIsEnabled()
 
-        rule.runOnIdle {
-            generating = false
-            importing = true
-        }
+        rule.runOnIdle { importing = true }
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).assertIsNotEnabled()
     }
 

@@ -29,6 +29,27 @@ import org.junit.Test
 
 class DefaultGenerationCoordinatorTest {
     @Test
+    fun `确认成功终态后awaitSessionIdle仍等待资源收尾`() = runTest {
+        val terminal = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val coordinator = coordinator { _, emit ->
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.COMPLETED))
+            terminal.complete(Unit)
+            release.await()
+        }
+        val first = coordinator.start(request("s1", "a1")) as StartGenerationResult.Started
+        terminal.await()
+        coordinator.acknowledgeTerminal(first.taskId)
+        assertThat(coordinator.active.value).isNull()
+        val idle = async { coordinator.awaitSessionIdle("s1") }
+        runCurrent()
+        assertThat(idle.isCompleted).isFalse()
+        release.complete(Unit)
+        idle.await()
+        assertThat(coordinator.start(request("s1", "a2"))).isInstanceOf(StartGenerationResult.Started::class.java)
+    }
+
+    @Test
     fun `deleting gate在runner创建前拒绝新生成`() = runTest {
         val gate = SessionExecutionGate()
         val created = AtomicInteger()

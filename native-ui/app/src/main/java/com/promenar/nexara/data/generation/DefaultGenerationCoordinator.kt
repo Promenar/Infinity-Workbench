@@ -167,6 +167,11 @@ class DefaultGenerationCoordinator(
             ),
         )
 
+    override suspend fun awaitSessionIdle(sessionId: String) {
+        val task = mutex.withLock { running?.takeIf { it.request.sessionId == sessionId } }
+        task?.job?.join()
+    }
+
     override fun cancel(taskId: String, reason: CancellationReason): Boolean {
         val current = running ?: return false
         if (current.taskId != taskId) return false

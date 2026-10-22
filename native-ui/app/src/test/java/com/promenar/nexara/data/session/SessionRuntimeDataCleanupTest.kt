@@ -16,11 +16,12 @@ class SessionRuntimeDataCleanupTest {
                 deleteMounts = { attempted += "mounts" },
                 deleteFolds = { attempted += "folds"; throw IOException("folds failed") },
                 deleteSubagents = { attempted += "subagents" },
+                deleteComposerQueue = { attempted += "queue" },
             )
         }.exceptionOrNull()
         assertThat(failure).isInstanceOf(IOException::class.java)
         // 子代理记录挂在父会话下，前序清理失败也要删除。
-        assertThat(attempted).containsExactly("grants", "outputs", "mounts", "folds", "subagents").inOrder()
+        assertThat(attempted).containsExactly("grants", "outputs", "mounts", "folds", "subagents", "queue").inOrder()
     }
 
     @Test

@@ -497,6 +497,21 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `只有工具调用的让出轮记录用量但不写空记忆或排入抽取`() = runTest {
+        val memory = mockk<MemoryManager>()
+        every { memory.canEmbed } returns true
+        val graph = mockk<com.promenar.nexara.data.rag.SessionGraphScheduler>(relaxed = true)
+        val state = mockk<com.promenar.nexara.data.rag.SessionStateScheduler>(relaxed = true)
+        val fixture = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory, sessionGraph = graph, sessionState = state)
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(toolCalls = listOf(GenerationToolCall("call", "read_file", "{}")), inputTokens = 12, outputTokens = 4, totalTokens = 16))
+        coVerify { fixture.postProcessor.updateStats(match { it.assistantContent.isEmpty() && it.accumulatedUsage?.total == 16 }) }
+        coVerify(exactly = 0) { memory.addTurnToMemory(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { graph.schedule(any(), any(), any()) }
+        coVerify(exactly = 0) { state.schedule(any(), any(), any()) }
+    }
+
+    @Test
     fun `postProcess updateStats取消必须传播`() = runTest {
         val fixture = postProcessFixture()
         val cancellation = CancellationException("stats-cancel")

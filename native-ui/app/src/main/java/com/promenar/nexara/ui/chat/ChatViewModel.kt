@@ -74,11 +74,16 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.data.chat.queue.ComposerQueueStore
+import com.promenar.nexara.data.chat.queue.QueuePauseReason
+import com.promenar.nexara.data.chat.queue.QueuedMessage
+import com.promenar.nexara.domain.generation.GenerationPhase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -90,6 +95,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -320,9 +326,26 @@ class ChatViewModel(
     private val sessionGraphPortOverride: com.promenar.nexara.data.rag.SessionGraphPort? = null,
     /** 参数方案；为 null 时读取应用实例。 */
     private val parameterSchemeRepositoryOverride: com.promenar.nexara.data.repository.ParameterSchemeRepository? = null,
+    composerQueueStoreOverride: ComposerQueueStore? = null,
+    composerDraftRecoveryOverride: com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
+    private val composerQueueStore = composerQueueStoreOverride ?: (application as NexaraApplication).composerQueueStore
+    private val composerDraftRecovery = composerDraftRecoveryOverride ?: (application as NexaraApplication).composerDraftRecovery
+    private val _composerQueue = MutableStateFlow(ComposerQueueUiState())
+    val composerQueue: StateFlow<ComposerQueueUiState> = _composerQueue
+    private val queueMutex = Mutex()
+    private val queueSubmissions = mutableMapOf<String, QueuedMessage>()
+    private val queueUserMessageIds = mutableMapOf<String, String>()
+    private val pendingQueueWrites = mutableMapOf<String, Int>()
+    private val queueTerminalPhases = mutableMapOf<String, GenerationPhase>()
+    private val queuePauseOverrides = mutableMapOf<String, QueuePauseReason>()
+    private var preparingSessionId: String? = null
+    private var queueDispatchJob: Job? = null
+    private var queueDispatchRequested: String? = null
+    private var editingQueueItem = false
+    private var composerImages: List<Uri> = emptyList()
     private val generationCoordinator = generationCoordinatorOverride
         ?: (application as NexaraApplication).generationCoordinator
     private val generationPresentationStore = generationPresentationStoreOverride
@@ -567,6 +590,53 @@ class ChatViewModel(
     init {
         viewModelScope.launch {
             _currentSessionId.collectLatest { sessionId ->
+                _composerQueue.value = ComposerQueueUiState()
+                if (sessionId == null) return@collectLatest
+                try {
+                    val queue = composerQueueStore.observe(sessionId)
+                    if (!isSessionGenerating(sessionId) && queue.value.pauseReason == null) {
+                        queue.value.sending?.let {
+                            composerQueueStore.rollback(sessionId, it.id, QueuePauseReason.INTERRUPTED)
+                            queueSubmissions.remove(sessionId)
+                            queueUserMessageIds.remove(sessionId)
+                        }
+                        composerQueueStore.pause(sessionId, QueuePauseReason.INTERRUPTED)
+                    }
+                    var settledTask: String? = null
+                    combine(queue, generationPresentationStore.observe(sessionId), generationCoordinator.active) { state, presentation, active ->
+                        Triple(state, presentation, active)
+                    }.collect { (state, presentation, active) ->
+                        _composerQueue.value = ComposerQueueUiState(
+                            state.items.map { QueuedMessageUi(it.id, it.text, it.imagePaths.size, it.documents.map { doc -> doc.name }, it.steering) },
+                            state.pauseReason?.let { ComposerQueuePauseReason.valueOf(it.name) },
+                        )
+                        if (presentation?.phase in TERMINAL_GENERATION_PHASES) queueTerminalPhases[sessionId] = requireNotNull(presentation?.phase)
+                        if (presentation?.phase in DRAFT_SETTLING_PHASES && settledTask != presentation?.taskId) {
+                            settledTask = presentation?.taskId
+                            val reason = terminalQueuePauseReason(sessionId, presentation?.phase)
+                            if (state.pauseReason == null) composerQueueStore.pause(sessionId, reason)
+                        }
+                        if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED && active?.sessionId != sessionId &&
+                            state.pauseReason == null && state.items.isNotEmpty() && pendingQueueWrites[sessionId] == null
+                        ) dispatchComposerQueue(sessionId)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    _error.value = stringResourceResolver(R.string.chat_queue_error_load)
+                    _composerQueue.value = _composerQueue.value.copy(pauseReason = ComposerQueuePauseReason.FAILED)
+                } finally {
+                    queueTerminalPhases.remove(sessionId)
+                    withContext(NonCancellable) {
+                        runCatching { composerQueueStore.pauseIfRunningAway(sessionId) }.onFailure {
+                            NexaraLogger.diagnostic("composer_queue.pause_failed", mapOf("reason" to "storage"))
+                        }
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            _currentSessionId.collectLatest { sessionId ->
                 _compressionState.value = CompressionState()
                 if (sessionId != null) contextCompactionService.observe(sessionId).collect { progress ->
                     _compressionState.value = projectCompressionProgress(sessionId, progress)
@@ -581,6 +651,7 @@ class ChatViewModel(
             _currentSessionId.collectLatest { sessionId ->
                 if (sessionId == null) return@collectLatest
                 resetSessionTransientState()
+                restoreFailedComposerDraft(sessionId)
                 restoreHistoricalRagProjection(sessionId)
                 try {
                     generationPresentationStore.observe(sessionId).collect { presentation ->
@@ -735,6 +806,16 @@ class ChatViewModel(
                                 ?: return@collect
                             if (lastOutcomeTaskId != task.taskId) {
                                 lastOutcomeTaskId = task.taskId
+                                queueTerminalPhases[sessionId] = task.phase
+                                if (task.phase == GenerationPhase.COMPLETED && !terminalPresentation.handledFailure) {
+                                    dispatchComposerQueue(sessionId)
+                                } else {
+                                    queueAction {
+                                        val queue = composerQueueStore.snapshot(sessionId)
+                                        if (queue.pauseReason == null) composerQueueStore.pause(sessionId,
+                                            terminalQueuePauseReason(sessionId, task.phase))
+                                    }
+                                }
                                 chatGenerationOutcomeKind(task.phase, terminalPresentation.handledFailure)?.let { kind ->
                                     _generationOutcomes.tryEmit(ChatGenerationOutcome(sessionId, kind))
                                 }
@@ -855,40 +936,315 @@ class ChatViewModel(
 
         if (store.getSession(sessionId) == null) return
 
+        if (isSessionGenerating(sessionId) && store.getSession(sessionId)?.approvalRequest == null) {
+            enqueueComposerDraft(sessionId, text, imageUris, documents)
+            return
+        }
         cancelPendingPreparation()
+        preparingSessionId = sessionId
         takeDraftForSending(sessionId, text, imageUris)
         generationJob = viewModelScope.launch {
-            sendPreparationMutex.withLock {
-                closePendingApprovalBeforeNewTurn(sessionId)
-                val session = store.getSession(sessionId) ?: return@withLock
-                _generationStatus.update { GenerationStatus.UPLOADING }
-                _isGenerating.update { true }
-                _error.update { null }
-                _generationNotice.value = null
-                _backgroundServiceStoppedError.value = null
-                _backgroundWarning.value = null
-                _providerResolutionFailure.value = null
+            try {
+                sendPreparationMutex.withLock {
+                    closePendingApprovalBeforeNewTurn(sessionId)
+                    val session = store.getSession(sessionId) ?: return@withLock
+                    _generationStatus.update { GenerationStatus.UPLOADING }
+                    _isGenerating.update { true }
+                    _error.update { null }
+                    _generationNotice.value = null
+                    _backgroundServiceStoppedError.value = null
+                    _backgroundWarning.value = null
+                    _providerResolutionFailure.value = null
 
-                val imageDataUrls = if (imageUris.isNotEmpty()) {
-                    val converted = withContext(Dispatchers.IO) {
-                        imageUris.map { uri -> uriToDataUrl(uri) }
+                    val imageDataUrls = if (imageUris.isNotEmpty()) {
+                        val converted = withContext(Dispatchers.IO) {
+                            imageUris.map { uri -> uriToDataUrl(uri) }
+                        }
+                        if (converted.any { it == null }) {
+                            restoreSubmittedDraft(sessionId)
+                            _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
+                            _generationStatus.update { GenerationStatus.ERROR }
+                            _isGenerating.update { false }
+                            return@withLock
+                        }
+                        converted.filterNotNull()
+                    } else {
+                        emptyList()
                     }
-                    if (converted.any { it == null }) {
-                        restoreSubmittedDraft(sessionId)
-                        _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
-                        _generationStatus.update { GenerationStatus.ERROR }
-                        _isGenerating.update { false }
-                        return@withLock
-                    }
-                    converted.filterNotNull()
-                } else {
-                    emptyList()
+
+                    applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents)
                 }
-
-                applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents)
+            } finally {
+                if (preparingSessionId == sessionId) preparingSessionId = null
+                if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
             }
         }
     }
+
+
+    private fun isSessionGenerating(sessionId: String): Boolean {
+        if (store.getSession(sessionId)?.approvalRequest != null) return false
+        val active = generationCoordinator.active.value
+        return preparingSessionId == sessionId || pendingPermissionTurn?.sessionId == sessionId ||
+            (active?.sessionId == sessionId && active.phase !in QUEUE_INACTIVE_PHASES) ||
+            generationPresentationStore.observe(sessionId).value?.generating == true ||
+            (_currentSessionId.value == sessionId && generationJob?.isActive == true && _generationStatus.value == GenerationStatus.UPLOADING)
+    }
+
+    private suspend fun ComposerQueueStore.pauseIfRunningAway(sessionId: String) {
+        var state = snapshot(sessionId)
+        if (state.sending != null && generationCoordinator.active.value?.sessionId != sessionId && preparingSessionId != sessionId) {
+            generationCoordinator.awaitSessionIdle(sessionId)
+            state = snapshot(sessionId)
+            state.sending?.let { sending ->
+                rollback(sessionId, sending.id, state.pauseReason ?: queuePauseOverrides[sessionId] ?: QueuePauseReason.INTERRUPTED)
+                queueSubmissions.remove(sessionId)
+                queueUserMessageIds.remove(sessionId)
+                return
+            }
+        }
+        if (state.pauseReason == null && (state.items.isNotEmpty() || state.sending != null)) {
+            pause(sessionId, queuePauseOverrides[sessionId] ?: QueuePauseReason.INTERRUPTED)
+        }
+    }
+
+    private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>) {
+        _inputText.value = ""
+        _draftDocuments.value = emptyList()
+        _restoredDraftImages.value = null
+        composerImages = emptyList()
+        _draftConsumptionEpoch.value += 1
+        pendingQueueWrites[sessionId] = (pendingQueueWrites[sessionId] ?: 0) + 1
+        viewModelScope.launch {
+            var stored = false
+            try {
+                composerQueueStore.enqueue(sessionId, text, imageUris.map(Uri::toString), documents)
+                stored = true
+                composerQueueStore.releaseDraftImages(sessionId, imageUris.mapNotNull { it.path })
+                if (_currentSessionId.value != sessionId || !viewModelScope.isActive) composerQueueStore.pause(sessionId, queuePauseOverrides[sessionId] ?: QueuePauseReason.INTERRUPTED)
+                else if (queueTerminalPhases[sessionId] in DRAFT_SETTLING_PHASES) {
+                    val state = composerQueueStore.snapshot(sessionId)
+                    if (state.pauseReason == null) composerQueueStore.pause(sessionId, queuePauseOverrides[sessionId] ?: QueuePauseReason.FAILED)
+                }
+                sessionManager.updateSessionDraft(sessionId, if (_currentSessionId.value == sessionId) _inputText.value.ifBlank { null } else store.getSession(sessionId)?.draft)
+            } catch (failure: Exception) {
+                withContext(NonCancellable) {
+                    if (stored) {
+                        val state = composerQueueStore.snapshot(sessionId)
+                        composerQueueStore.pause(sessionId, state.pauseReason ?: if (failure is CancellationException) QueuePauseReason.INTERRUPTED else QueuePauseReason.FAILED)
+                        _error.value = stringResourceResolver(R.string.chat_queue_error_draft_after_enqueue)
+                    } else {
+                        composerDraftRecovery.retain(sessionId, com.promenar.nexara.data.chat.queue.RecoverableComposerDraft(text, imageUris.map(Uri::toString), documents))
+                        if (_currentSessionId.value == sessionId && viewModelScope.isActive) restoreFailedComposerDraft(sessionId)
+                        _error.value = stringResourceResolver(R.string.chat_queue_error_enqueue)
+                    }
+                }
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+            } finally {
+                val remaining = (pendingQueueWrites[sessionId] ?: 1) - 1
+                if (remaining == 0) pendingQueueWrites.remove(sessionId) else pendingQueueWrites[sessionId] = remaining
+                if (viewModelScope.isActive && queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+            }
+        }
+    }
+
+    private suspend fun restoreFailedComposerDraft(sessionId: String) {
+        if (_currentSessionId.value != sessionId || !viewModelScope.isActive) return
+        val recovered = composerDraftRecovery.take(sessionId)
+        if (recovered.isEmpty()) return
+        _inputText.value = (recovered.map { it.text } + _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
+        _draftDocuments.value = (recovered.flatMap { it.documents } + _draftDocuments.value).distinctBy { it.id }
+        composerImages = (recovered.flatMap { it.imageUris }.map(Uri::parse) + composerImages).distinct()
+        _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
+        runCatching { sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null }) }
+            .onFailure { _error.value = stringResourceResolver(R.string.chat_queue_error_draft_after_restore) }
+    }
+
+    /**
+     * 本轮未成功结束时队列的暂停原因。用户停止会先同步记下 STOPPED，再异步写盘；
+     * 终态处理可能读到写盘前的快照，取消时必须优先采用它，不能误报成“离开会话”。
+     */
+    private fun terminalQueuePauseReason(sessionId: String, phase: GenerationPhase?): QueuePauseReason =
+        if (phase == GenerationPhase.CANCELLED) queuePauseOverrides[sessionId] ?: QueuePauseReason.INTERRUPTED
+        else QueuePauseReason.FAILED
+
+    /** 界面选图或移除图片时同步，用于编辑队列项前检查输入区是否为空。 */
+    fun updateComposerImages(imageUris: List<Uri>) {
+        composerImages = imageUris.toList()
+    }
+
+    fun steerQueuedMessage(id: String) {
+        val sessionId = _currentSessionId.value ?: return
+        queueAction {
+            if (composerQueueStore.steer(sessionId, id)) {
+                queuePauseOverrides.remove(sessionId)
+                dispatchComposerQueue(sessionId)
+            }
+        }
+    }
+
+    fun removeQueuedMessage(id: String) {
+        val sessionId = _currentSessionId.value ?: return
+        queueAction { composerQueueStore.remove(sessionId, id) }
+    }
+
+    fun moveQueuedMessageToFront(id: String) {
+        val sessionId = _currentSessionId.value ?: return
+        queueAction { composerQueueStore.moveToFront(sessionId, id) }
+    }
+
+    fun editQueuedMessage(id: String): Boolean {
+        val sessionId = _currentSessionId.value ?: return false
+        if (editingQueueItem || _inputText.value.isNotBlank() || _draftDocuments.value.isNotEmpty() ||
+            composerImages.isNotEmpty() || !_restoredDraftImages.value.isNullOrEmpty() || _isImportingDocument.value
+        ) return false
+        if (composerQueue.value.items.none { it.id == id }) return false
+        editingQueueItem = true
+        queueAction {
+            withContext(NonCancellable) {
+                queueMutex.withLock {
+                    var prepared: QueuedMessage? = null
+                    var committed = false
+                    try {
+                        prepared = composerQueueStore.prepareEdit(sessionId, id) ?: return@withLock
+                        // 复制之后重验输入区，确认接受时先同步交接草稿，再提交队列移除。
+                        if (!viewModelScope.isActive || _currentSessionId.value != sessionId || _inputText.value.isNotBlank() ||
+                            _draftDocuments.value.isNotEmpty() || composerImages.isNotEmpty() || !_restoredDraftImages.value.isNullOrEmpty()
+                        ) return@withLock
+                        val item = prepared
+                        _inputText.value = item.text
+                        _draftDocuments.value = item.documents
+                        composerImages = item.imagePaths.map { Uri.fromFile(java.io.File(it)) }
+                        _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
+                        try {
+                            committed = composerQueueStore.completeEdit(sessionId, item)
+                        } catch (failure: Exception) {
+                            releaseUncommittedEditFromComposer(sessionId, item)
+                            throw failure
+                        }
+                        if (!committed) {
+                            releaseUncommittedEditFromComposer(sessionId, item)
+                        } else {
+                            sessionManager.updateSessionDraft(sessionId, if (_currentSessionId.value == sessionId) _inputText.value.ifBlank { null } else item.text.ifBlank { null })
+                            if (_currentSessionId.value != sessionId || !viewModelScope.isActive) {
+                                composerDraftRecovery.retain(sessionId, com.promenar.nexara.data.chat.queue.RecoverableComposerDraft(item.text, item.imagePaths.map { Uri.fromFile(java.io.File(it)).toString() }, item.documents))
+                            }
+                        }
+                    } finally {
+                        if (!committed) prepared?.let { composerQueueStore.cancelEdit(sessionId, it) }
+                        editingQueueItem = false
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    private fun releaseUncommittedEditFromComposer(sessionId: String, item: QueuedMessage) {
+        if (_currentSessionId.value != sessionId) return
+        if (_inputText.value == item.text) _inputText.value = ""
+        _draftDocuments.value = _draftDocuments.value.filterNot { doc -> item.documents.any { it.id == doc.id } }
+        composerImages = composerImages.filterNot { it.path in item.imagePaths }
+        _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
+    }
+
+    fun resumeComposerQueue() {
+        val sessionId = _currentSessionId.value ?: return
+        queuePauseOverrides.remove(sessionId)
+        queueAction {
+            composerQueueStore.pause(sessionId, null)
+            dispatchComposerQueue(sessionId)
+        }
+    }
+
+    private fun queueAction(action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try { action() } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { _error.value = stringResourceResolver(R.string.chat_queue_error_update) }
+        }
+    }
+
+    private fun dispatchComposerQueue(sessionId: String) {
+        if (!viewModelScope.isActive) return
+        if (queueDispatchJob?.isActive == true) {
+            queueDispatchRequested = sessionId
+            return
+        }
+        val dispatch = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                queueMutex.withLock queue@ {
+                    if (_currentSessionId.value != sessionId || isSessionGenerating(sessionId) ||
+                        pendingQueueWrites[sessionId] != null || queueSubmissions.containsKey(sessionId) || pendingDraftClearTaskId != null || submittedDraft?.sessionId == sessionId
+                    ) return@queue
+                    generationCoordinator.awaitSessionIdle(sessionId)
+                    if (_currentSessionId.value != sessionId || isSessionGenerating(sessionId) || pendingQueueWrites[sessionId] != null) return@queue
+                    val state = composerQueueStore.snapshot(sessionId)
+                    if (state.pauseReason != null || state.items.isEmpty()) return@queue
+                    if (generationCoordinator.active.value != null) {
+                        composerQueueStore.pause(sessionId, QueuePauseReason.BUSY)
+                        return@queue
+                    }
+                    val item = composerQueueStore.claimNext(sessionId) ?: return@queue
+                    queueTerminalPhases.remove(sessionId)
+                    queuePauseOverrides.remove(sessionId)
+                    queueSubmissions[sessionId] = item
+                    preparingSessionId = sessionId
+                    try {
+                        sendPreparationMutex.withLock preparation@ {
+                            if (_currentSessionId.value != sessionId) {
+                                restoreSubmittedDraft(sessionId, queueReason = QueuePauseReason.INTERRUPTED)
+                                return@preparation
+                            }
+                            closePendingApprovalBeforeNewTurn(sessionId)
+                            val session = store.getSession(sessionId) ?: error("会话已删除")
+                            _isGenerating.value = true
+                            _generationStatus.value = GenerationStatus.UPLOADING
+                            val images = if (item.imagePaths.isEmpty()) emptyList() else withContext(Dispatchers.IO) {
+                                item.imagePaths.map { uriToDataUrl(Uri.fromFile(java.io.File(it))) ?: error("无法读取排队图片") }
+                            }
+                            if (_currentSessionId.value != sessionId) {
+                                restoreSubmittedDraft(sessionId, queueReason = QueuePauseReason.INTERRUPTED)
+                            } else {
+                                applyBackgroundPolicyGate(sessionId, session, item.text, images, item.documents)
+                            }
+                        }
+                    } catch (failure: Exception) {
+                        withContext(NonCancellable) {
+                            restoreSubmittedDraft(sessionId, queueReason = if (failure is CancellationException) QueuePauseReason.INTERRUPTED else QueuePauseReason.FAILED)
+                        }
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        _error.value = stringResourceResolver(R.string.chat_queue_error_send)
+                        _isGenerating.value = false
+                    } finally {
+                        if (preparingSessionId == sessionId) preparingSessionId = null
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                queueTerminalPhases[sessionId] = GenerationPhase.FAILED
+                _error.value = stringResourceResolver(R.string.chat_queue_error_send)
+                runCatching { composerQueueStore.pause(sessionId, QueuePauseReason.FAILED) }
+                if (_currentSessionId.value == sessionId) _composerQueue.value = _composerQueue.value.copy(pauseReason = ComposerQueuePauseReason.FAILED)
+            } finally {
+                queueDispatchJob = null
+                val requested = queueDispatchRequested
+                queueDispatchRequested = null
+                if (requested != null) dispatchComposerQueue(requested)
+                else if (viewModelScope.isActive && _currentSessionId.value == sessionId &&
+                    queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED &&
+                    !isSessionGenerating(sessionId) && !queueSubmissions.containsKey(sessionId) && pendingQueueWrites[sessionId] == null
+                ) {
+                    val remaining = composerQueueStore.snapshot(sessionId)
+                    if (remaining.items.isNotEmpty() && remaining.pauseReason == null) dispatchComposerQueue(sessionId)
+                }
+            }
+        }
+        queueDispatchJob = dispatch
+        dispatch.start()
+    }
+
 
     private fun currentBackgroundAllowed(): Boolean {
         val snapshot = notificationPermissionGateway?.current() ?: return true
@@ -1088,7 +1444,12 @@ class ChatViewModel(
     ) {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
-        submittedDraft = submittedDraft?.takeIf { it.sessionId == sessionId }?.copy(userMessageId = userMsgId)
+        val queuedSubmission = queueSubmissions[sessionId]
+        if (queuedSubmission == null) submittedDraft = submittedDraft?.takeIf { it.sessionId == sessionId }?.copy(userMessageId = userMsgId)
+        queuedSubmission?.let { item ->
+            queueUserMessageIds[sessionId] = userMsgId
+            composerQueueStore.bindSending(sessionId, item.id, userMsgId)
+        }
 
         try {
             val userMessage = Message(
@@ -1121,12 +1482,21 @@ class ChatViewModel(
                     text,
                     backgroundAllowed,
                     rollbackUserOnPreparationFailure = true,
-                    clearDraftOnConnecting = true,
+                    clearDraftOnConnecting = queuedSubmission == null,
                 )
             ) {
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
-                    if (
+                    if (queuedSubmission != null) {
+                        viewModelScope.launch {
+                            composerQueueStore.observe(sessionId).first { it.sending?.id != queuedSubmission.id }
+                            if (queueSubmissions[sessionId]?.id == queuedSubmission.id) {
+                                queueSubmissions.remove(sessionId)
+                                queueUserMessageIds.remove(sessionId)
+                            }
+                            if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+                        }
+                    } else if (
                         pendingDraftClearTaskId != null &&
                         generationPresentationStore.observe(sessionId).value == null &&
                         generationCoordinator.observe(sessionId).value == null &&
@@ -1144,7 +1514,8 @@ class ChatViewModel(
                         listOf(assistantMsgId, userMsgId),
                     )
                     pendingDraftClearTaskId = null
-                    restoreSubmittedDraft(sessionId, fallbackText = text)
+                    restoreSubmittedDraft(sessionId, fallbackText = text,
+                        queueReason = if (start is com.promenar.nexara.domain.generation.StartGenerationResult.Busy) QueuePauseReason.BUSY else QueuePauseReason.FAILED)
                     _isGenerating.value = false
                     _generationStatus.value = GenerationStatus.ERROR
                     _generationNotice.value = when (start) {
@@ -1440,6 +1811,7 @@ class ChatViewModel(
             if (existing.workspaceRootUuid.isNullOrBlank()) {
                 viewModelScope.launch { ensureSessionWorkspace(sessionId) }
             }
+            _inputText.value = existing.draft.orEmpty()
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
             viewModelScope.launch { messageManager.reconcileTurnMemory(sessionId) }
@@ -1455,10 +1827,7 @@ class ChatViewModel(
                     )
                 }
             }
-            // 恢复未发送的草稿
-            if (!existing.draft.isNullOrBlank()) {
-                _inputText.update { existing.draft!! }
-            }
+            viewModelScope.launch { restoreFailedComposerDraft(sessionId) }
             return
         }
 
@@ -1485,6 +1854,7 @@ class ChatViewModel(
                         if (state.sessions.any { it.id == sessionId }) state
                         else state.copy(sessions = state.sessions + hydrated)
                     }
+                    _inputText.value = hydrated.draft.orEmpty()
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
                     messageManager.reconcileTurnMemory(sessionId)
@@ -1501,9 +1871,7 @@ class ChatViewModel(
                     }
                 }
                 // 从 DB 恢复未发送的草稿
-                    if (!session.draft.isNullOrBlank()) {
-                        _inputText.update { session.draft!! }
-                    }
+                    restoreFailedComposerDraft(sessionId)
                 } else {
                     _error.update { "Session not found: $sessionId" }
                 }
@@ -1616,6 +1984,10 @@ class ChatViewModel(
     }
 
     fun stopGeneration() {
+        _currentSessionId.value?.let { id ->
+            queuePauseOverrides[id] = QueuePauseReason.STOPPED
+            viewModelScope.launch { composerQueueStore.pause(id, QueuePauseReason.STOPPED) }
+        }
         cancelCurrentSessionGeneration()
         val sessionId = _currentSessionId.value
         if (sessionId != null) {
@@ -1628,12 +2000,17 @@ class ChatViewModel(
     }
 
     private fun cancelPendingPreparation() {
+        queueDispatchJob?.cancel()
         generationJob?.cancel()
         generationJob = null
         approvalJob?.cancel()
         approvalJob = null
         if (pendingPermissionTurn != null) {
+            val pendingSession = pendingPermissionTurn?.sessionId
             pendingPermissionTurn = null
+            if (pendingSession != null && queueSubmissions.containsKey(pendingSession)) {
+                queueAction { restoreSubmittedDraft(pendingSession, queueReason = QueuePauseReason.INTERRUPTED) }
+            }
             mutableNotificationPermissionRequest.value = null
             _isGenerating.value = false
             _generationStatus.value = GenerationStatus.IDLE
@@ -2422,6 +2799,8 @@ class ChatViewModel(
 
     /** 点击发送即清空输入框与附件，保留副本直到生成接受或回滚；持久化草稿在接受后才清除。 */
     private fun takeDraftForSending(sessionId: String, text: String, imageUris: List<Uri>) {
+        queueTerminalPhases.remove(sessionId)
+        queuePauseOverrides.remove(sessionId)
         submittedDraft = SubmittedDraft(
             sessionId = sessionId,
             text = _inputText.value.ifBlank { text },
@@ -2431,16 +2810,24 @@ class ChatViewModel(
         _inputText.value = ""
         _draftDocuments.value = emptyList()
         _restoredDraftImages.value = null
+        composerImages = emptyList()
         _draftConsumptionEpoch.value += 1
     }
 
     private fun submittedUserMessageRolledBack(sessionId: String): Boolean {
-        val messageId = submittedDraft?.takeIf { it.sessionId == sessionId }?.userMessageId ?: return true
+        val messageId = queueUserMessageIds[sessionId] ?: submittedDraft?.takeIf { it.sessionId == sessionId }?.userMessageId ?: return true
         return store.getSession(sessionId)?.messages?.none { it.id == messageId } ?: true
     }
 
     /** 只填回仍为空的部分，不覆盖用户在此期间新输入的内容。 */
-    private suspend fun restoreSubmittedDraft(sessionId: String, fallbackText: String = "") {
+    private suspend fun restoreSubmittedDraft(sessionId: String, fallbackText: String = "", queueReason: QueuePauseReason = QueuePauseReason.FAILED) {
+        queueSubmissions[sessionId]?.let { item ->
+            val reason = composerQueueStore.snapshot(sessionId).pauseReason ?: queueReason
+            composerQueueStore.rollback(sessionId, item.id, reason)
+            queueSubmissions.remove(sessionId)
+            queueUserMessageIds.remove(sessionId)
+            return
+        }
         val draft = submittedDraft?.takeIf { it.sessionId == sessionId }
         submittedDraft = null
         val text = draft?.text?.ifBlank { null } ?: fallbackText
@@ -2459,10 +2846,20 @@ class ChatViewModel(
      * 以免吞掉生成期间新输入的文字与附件；没有发送副本的路径仍按原样清空。
      */
     private suspend fun consumeAcceptedDraft(sessionId: String) {
+        queueSubmissions[sessionId]?.let { item ->
+            composerQueueStore.accept(sessionId, item.id)
+            queueSubmissions.remove(sessionId)
+            queueUserMessageIds.remove(sessionId)
+            if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+            return
+        }
+        val draftImages = submittedDraft?.takeIf { it.sessionId == sessionId }?.imageUris.orEmpty()
+        composerQueueStore.releaseDraftImages(sessionId, draftImages.mapNotNull { Uri.parse(it).path })
         val clearedOnSend = submittedDraft?.sessionId == sessionId
         submittedDraft = null
         if (clearedOnSend) {
             sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
+            if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
             return
         }
         _inputText.value = ""
@@ -2480,6 +2877,10 @@ class ChatViewModel(
     )
 
     companion object {
+        private val QUEUE_INACTIVE_PHASES = setOf(
+            GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.PERSISTENCE_FAILED,
+            GenerationPhase.CANCELLED, GenerationPhase.WAITING_APPROVAL,
+        )
         private val DRAFT_SETTLING_PHASES = setOf(
             com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
             com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,

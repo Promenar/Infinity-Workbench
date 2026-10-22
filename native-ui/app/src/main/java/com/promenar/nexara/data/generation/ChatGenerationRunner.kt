@@ -45,6 +45,8 @@ interface ChatGenerationRuntime {
         toolCalls: List<GenerationToolCall>,
     ): GenerationToolDecision
     suspend fun prepareContinuation(request: GenerationRequest): String? = null
+    /** 工具结果落盘后，是否结束本轮并让排队用户指令开始新轮。 */
+    suspend fun shouldYieldAtRoundBoundary(request: GenerationRequest): Boolean = false
     /** 本次生成的工具轮次与调用预算。 */
     fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget()
     fun estimatedInputTokens(request: GenerationRequest): Int = 0
@@ -469,6 +471,7 @@ class ChatGenerationRunner(
                     GenerationToolDecision.CONTINUE -> {
                         attempt++
                         if (!flushRoundBoundaryWithRetry()) return
+                        if (runtime.shouldYieldAtRoundBoundary(request)) break
                         phase(GenerationPhase.BUILDING_CONTEXT)
                         val continuationPreparation = runtime.buildContext(request)
                         if (continuationPreparation is GenerationPreparationOutcome.Handled) {

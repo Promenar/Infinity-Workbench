@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_queue_send_cd">Queue message</string>
+    <string name="chat_queue_stop_cd">Stop generating</string>
+    <string name="chat_queue_steer">Interject</string>
+    <string name="chat_queue_steer_cd">Interject: send after the current step</string>
+    <string name="chat_queue_steering">After this step</string>
+    <string name="chat_queue_more_cd">More actions</string>
+    <string name="chat_queue_edit">Edit</string>
+    <string name="chat_queue_edit_blocked">Send or clear the current draft first</string>
+    <string name="chat_queue_move_front">Move to front</string>
+    <string name="chat_queue_remove">Remove</string>
+    <string name="chat_queue_resume">Resume</string>
+    <string name="chat_queue_show_all">Show all %d</string>
+    <string name="chat_queue_collapse">Show less</string>
+    <string name="chat_queue_item_cd">Queued %1$d: %2$s</string>
+    <string name="chat_queue_attachment_only">Attachments only</string>
+    <string name="chat_queue_paused_stopped">Paused · generation stopped</string>
+    <string name="chat_queue_paused_failed">Paused · last reply didn\'t finish</string>
+    <string name="chat_queue_paused_restored">Paused · restored from last time</string>
+    <string name="chat_queue_paused_interrupted">Paused · you left this chat</string>
+    <string name="chat_queue_paused_busy">Paused · another chat is generating</string>
+    <string name="chat_queue_error_load">Couldn\'t load queued messages. Try again.</string>
+    <string name="chat_queue_error_enqueue">Couldn\'t queue the message. It\'s back in the input box.</string>
+    <string name="chat_queue_error_draft_after_enqueue">Message queued, but the chat draft couldn\'t be saved.</string>
+    <string name="chat_queue_error_draft_after_restore">Draft restored, but the chat draft couldn\'t be saved.</string>
+    <string name="chat_queue_error_update">Couldn\'t update queued messages. Try again.</string>
+    <string name="chat_queue_error_send">Couldn\'t send the queued message. The queue is paused.</string>
+</resources>

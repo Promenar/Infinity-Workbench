@@ -509,6 +509,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
                     deleteFolds = { contextFoldStore.deleteSession(sessionId) },
                     deleteSubagents = { subagentRunStore.deleteSession(sessionId) },
+                    deleteComposerQueue = {
+                        composerDraftRecovery.deleteSession(sessionId)
+                        composerQueueStore.deleteSession(sessionId)
+                    },
                 )
             },
         )
@@ -519,6 +523,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         sessionDeletionCoordinator.delete(sessionId)
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val composerDraftRecovery = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
+    val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore by lazy {
+        com.promenar.nexara.data.chat.queue.FileComposerQueueStore(
+            java.io.File(filesDir, "composer_queue"),
+            { uri -> contentResolver.openInputStream(android.net.Uri.parse(uri)) },
+            isUserPersisted = { _, userId -> messageRepository.getById(userId) != null },
+        )
+    }
     val generationPresentationStore by lazy {
         com.promenar.nexara.data.generation.GenerationPresentationStore()
     }
@@ -717,6 +729,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionState = sessionStateScheduler,
             subagentUsage = subagentRunStore,
             tailnetGate = tailnetConnectGate,
+            composerQueueStore = composerQueueStore,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {

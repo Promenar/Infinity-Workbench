@@ -1,6 +1,7 @@
 package com.promenar.nexara.domain.generation
 
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 
 /**
  * 生成失败的上层可见值。
@@ -75,6 +76,8 @@ enum class CancellationReason { USER, TIMEOUT, REPLACED, SHUTDOWN, BACKGROUND_UN
 interface GenerationCoordinator {
     val active: StateFlow<GenerationTaskSnapshot?>
     fun observe(sessionId: String): StateFlow<GenerationTaskSnapshot?>
+    /** 等待本会话运行任务连同资源收尾完全退出，避免确认终态后的短暂 Busy。 */
+    suspend fun awaitSessionIdle(sessionId: String) { active.first { it?.sessionId != sessionId } }
     suspend fun start(request: GenerationRequest): StartGenerationResult
     fun cancel(taskId: String, reason: CancellationReason = CancellationReason.USER): Boolean
     suspend fun cancelAndJoinSession(

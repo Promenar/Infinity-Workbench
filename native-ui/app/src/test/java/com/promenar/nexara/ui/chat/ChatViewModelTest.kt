@@ -72,6 +72,18 @@ class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var viewModel: ChatViewModel
+    private lateinit var presentationStore: com.promenar.nexara.data.generation.GenerationPresentationStore
+    private lateinit var queueStore: com.promenar.nexara.data.chat.queue.FileComposerQueueStore
+    private var claimFailure: Throwable? = null
+    private var editGate: CompletableDeferred<Unit>? = null
+    private var queueEnqueueGate: CompletableDeferred<Unit>? = null
+    /** 模拟真机写盘时序：停止写入 STOPPED 被推迟到终态处理读过快照之后，终态的暂停写入再晚于它落盘。 */
+    private var stoppedPauseGate: CompletableDeferred<Unit>? = null
+    private var stoppedPauseDone: CompletableDeferred<Unit>? = null
+    private var beforeQueueImageOpen: () -> Unit = {}
+    private lateinit var queuePort: com.promenar.nexara.data.chat.queue.ComposerQueueStore
+    private lateinit var recoveryStore: com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore
+    private var streamGate: CompletableDeferred<List<StreamChunk>>? = null
     private lateinit var generationScope: CoroutineScope
     private lateinit var compactionService: com.promenar.nexara.data.generation.ContextCompactionService
     private var contextEstimateFails = false
@@ -415,10 +427,13 @@ class ChatViewModelTest {
         override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
             protocolRequestCount += 1
             lastPromptRequest = request
+            val chunks = fakeStreamChunks.toList()
+            val gate = streamGate
             return flow {
-                for (chunk in fakeStreamChunks) {
+                for (chunk in chunks) {
                     emit(chunk)
                 }
+                if (gate != null) gate.await().forEach { emit(it) }
                 if (holdStreamOpen) kotlinx.coroutines.awaitCancellation()
             }
         }
@@ -482,6 +497,46 @@ class ChatViewModelTest {
         }
 
         app.chatStore.clear()
+        streamGate = null
+        claimFailure = null; editGate = null; queueEnqueueGate = null; beforeQueueImageOpen = {}
+        stoppedPauseGate = null; stoppedPauseDone = null
+        recoveryStore = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
+        queueStore = com.promenar.nexara.data.chat.queue.FileComposerQueueStore(
+            java.nio.file.Files.createTempDirectory("nexara-vm-queue").toFile(),
+            { beforeQueueImageOpen(); app.contentResolver.openInputStream(android.net.Uri.parse(it)) }, testDispatcher,
+        )
+        queuePort = object : com.promenar.nexara.data.chat.queue.ComposerQueueStore by queueStore {
+            override suspend fun enqueue(sessionId: String, text: String, imageUris: List<String>, documents: List<MessageDocumentAttachment>): com.promenar.nexara.data.chat.queue.QueuedMessage {
+                queueEnqueueGate?.await()
+                return queueStore.enqueue(sessionId, text, imageUris, documents)
+            }
+            override suspend fun claimNext(sessionId: String): com.promenar.nexara.data.chat.queue.QueuedMessage? {
+                claimFailure?.let { throw it }
+                return queueStore.claimNext(sessionId)
+            }
+            override suspend fun pause(sessionId: String, reason: com.promenar.nexara.data.chat.queue.QueuePauseReason?) {
+                val gate = stoppedPauseGate
+                val done = stoppedPauseDone
+                if (gate != null && done != null) {
+                    if (reason == com.promenar.nexara.data.chat.queue.QueuePauseReason.STOPPED && !done.isCompleted) {
+                        gate.await()
+                        queueStore.pause(sessionId, reason)
+                        done.complete(Unit)
+                        return
+                    }
+                    if (!gate.isCompleted) {
+                        gate.complete(Unit)
+                        done.await()
+                    }
+                }
+                queueStore.pause(sessionId, reason)
+            }
+            override suspend fun prepareEdit(sessionId: String, id: String): com.promenar.nexara.data.chat.queue.QueuedMessage? {
+                val prepared = queueStore.prepareEdit(sessionId, id)
+                editGate?.await()
+                return prepared
+            }
+        }
         
         savedSessions.clear()
         savedMessages.clear()
@@ -518,7 +573,7 @@ class ChatViewModelTest {
             app.getSharedPreferences("nexara_settings", 0)
         )
         generationScope = CoroutineScope(SupervisorJob() + testDispatcher)
-        val presentationStore = com.promenar.nexara.data.generation.GenerationPresentationStore()
+        presentationStore = com.promenar.nexara.data.generation.GenerationPresentationStore()
         val generationSessionManager = com.promenar.nexara.ui.chat.manager.SessionManager(app.chatStore, stubSessionRepo)
         val generationMessageManager = com.promenar.nexara.ui.chat.manager.MessageManager(
             app.chatStore,
@@ -527,6 +582,13 @@ class ChatViewModelTest {
             generationScope,
         )
         val generationToolLedger = io.mockk.mockk<com.promenar.nexara.data.repository.ToolExecutionLedger>(relaxed = true)
+        io.mockk.coEvery { generationToolLedger.invocationIdentity(any()) } returns null
+        io.mockk.coEvery { generationToolLedger.register(any(), any()) } returns com.promenar.nexara.data.repository.ToolRegistrationResult.Registered(com.promenar.nexara.data.local.db.entity.ToolLedgerStatus.APPROVED)
+        io.mockk.coEvery { generationToolLedger.claim(any(), any()) } returns true
+        io.mockk.coEvery { generationToolLedger.finishWithResult(any(), any(), any(), any(), any(), any(), any()) } coAnswers {
+            val key = arg<com.promenar.nexara.data.repository.ToolExecutionKey>(0)
+            Message(id = "tool-${key.toolCallId}", role = MessageRole.TOOL, content = arg(2), toolCallId = key.toolCallId, parentMessageId = key.assistantMessageId, name = arg(1)).also { stubMessageRepo.insert(it, key.sessionId) }
+        }
         val generationToolResolver = com.promenar.nexara.data.generation.DefaultSessionToolResolver(
             app.getSharedPreferences("nexara_settings", 0),
             null,
@@ -564,6 +626,7 @@ class ChatViewModelTest {
             toolResolver = generationToolResolver,
             presentationStore = presentationStore,
             toolBuildDispatcher = testDispatcher,
+            composerQueueStore = queuePort,
         )
         val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -586,6 +649,8 @@ class ChatViewModelTest {
             fullContextDocumentReader = documentReader,
             generationCoordinatorOverride = generationCoordinator,
             generationPresentationStoreOverride = presentationStore,
+            composerQueueStoreOverride = queuePort,
+            composerDraftRecoveryOverride = recoveryStore,
             generationForegroundControllerOverride =
                 object : com.promenar.nexara.background.generation.GenerationForegroundController {
                     override val failures = foregroundFailures
@@ -617,6 +682,12 @@ class ChatViewModelTest {
                     com.promenar.nexara.R.string.chat_document_error_invalid_estimate -> "invalid estimate"
                     com.promenar.nexara.R.string.chat_document_error_over_capacity ->
                         "requires %1\$d tokens, %2\$d available"
+                    com.promenar.nexara.R.string.chat_queue_error_load -> "chat_queue_error_load"
+                    com.promenar.nexara.R.string.chat_queue_error_enqueue -> "chat_queue_error_enqueue"
+                    com.promenar.nexara.R.string.chat_queue_error_draft_after_enqueue -> "chat_queue_error_draft_after_enqueue"
+                    com.promenar.nexara.R.string.chat_queue_error_draft_after_restore -> "chat_queue_error_draft_after_restore"
+                    com.promenar.nexara.R.string.chat_queue_error_update -> "chat_queue_error_update"
+                    com.promenar.nexara.R.string.chat_queue_error_send -> "chat_queue_error_send"
                     com.promenar.nexara.R.string.chat_summary_card_progress_preparing -> "preparing"
                     com.promenar.nexara.R.string.chat_context_folding -> "folding"
                     com.promenar.nexara.R.string.chat_context_summarizing -> "summarizing"
@@ -1679,7 +1750,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `同会话并发双击只保留一组消息`() = runTest {
+    fun `生成中再次发送保留当前轮并清空排队草稿`() = runTest {
         seedSession("A")
         advanceUntilIdle()
         fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
@@ -1695,50 +1766,375 @@ class ChatViewModelTest {
             .chatStore.getSession("A")!!
         assertThat(session.messages.map { it.content }).containsExactly("first", "partial").inOrder()
         assertThat(protocolRequestCount).isEqualTo(1)
-        assertThat(viewModel.inputText.value).isEqualTo("second")
+        assertThat(viewModel.inputText.value).isEmpty()
     }
 
     @Test
-    fun `assistant插入已提交但返回前取消时第二click不留下首轮幽灵pair`() = runTest {
-        seedSession("A")
-        advanceUntilIdle()
-        val committedBeforeReturn = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val secondPreparationEntered = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val releaseSecondPreparation = kotlinx.coroutines.CompletableDeferred<Unit>()
-        var suspendOnce = true
+    fun `首轮仍在准备时第二次发送入队且不取消首轮`() = runTest {
+        seedSession("A"); advanceUntilIdle()
+        val inserted = CompletableDeferred<Unit>()
         afterInsert = { message, _ ->
-            if (message.role == MessageRole.ASSISTANT && suspendOnce) {
-                suspendOnce = false
-                committedBeforeReturn.complete(Unit)
-                kotlinx.coroutines.awaitCancellation()
-            } else if (message.role == MessageRole.USER && message.content == "second") {
-                secondPreparationEntered.complete(Unit)
-                releaseSecondPreparation.await()
-            }
+            if (message.role == MessageRole.ASSISTANT) { inserted.complete(Unit); kotlinx.coroutines.awaitCancellation() }
         }
-
-        viewModel.updateInputText("first")
         viewModel.sendMessage("first")
-        committedBeforeReturn.await()
+        inserted.await()
         viewModel.updateInputText("second")
-        holdStreamOpen = true
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("second-response"))
         viewModel.sendMessage("second")
-        secondPreparationEntered.await()
-        assertThat(viewModel.inputText.value).isEmpty()
-        assertThat(savedSessions.single { it.id == "A" }.draft).isEqualTo("second")
-        releaseSecondPreparation.complete(Unit)
         advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.single().text).isEqualTo("second")
+        assertThat(viewModel.inputText.value).isEmpty()
+        assertThat(savedMessages.map { it.first.content }).contains("first")
+        viewModel.stopGeneration(); advanceUntilIdle()
+    }
 
-        val storeMessages = ApplicationProvider.getApplicationContext<NexaraApplication>()
-            .chatStore.getSession("A")!!.messages
-        val repositoryMessages = savedMessages.filter { it.second == "A" }.map { it.first }
-        assertThat(storeMessages.map { it.content })
-            .containsExactly("second", "second-response").inOrder()
-        assertThat(repositoryMessages.map { it.content })
-            .containsExactly("second", "second-response").inOrder()
-        assertThat(storeMessages.none { it.content == "first" }).isTrue()
-        assertThat(repositoryMessages.none { it.content == "first" }).isTrue()
+    @Test
+    fun `成功后自动发送队首且保留生成期间新草稿`() = runTest {
+        seedSession(); advanceUntilIdle()
+        val gate = CompletableDeferred<List<StreamChunk>>()
+        streamGate = gate
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("首轮"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.updateInputText("second"); viewModel.sendMessage("second"); advanceUntilIdle()
+        viewModel.updateInputText("待编辑")
+        streamGate = null
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("次轮"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        gate.complete(listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)))
+        advanceUntilIdle()
+        assertThat(protocolRequestCount).isEqualTo(2)
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+        assertThat(viewModel.inputText.value).isEqualTo("待编辑")
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("first", "second").inOrder()
+    }
+
+    @Test
+    fun `队列未暂停时用户停止，终态取消不把暂停原因改成离开会话`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("queued"); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isNull()
+        stoppedPauseGate = CompletableDeferred()
+        stoppedPauseDone = CompletableDeferred()
+        viewModel.stopGeneration(); advanceUntilIdle()
+        // 终态处理没有再写暂停时放行停止的写入，避免测试悬挂。
+        stoppedPauseGate?.complete(Unit); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.map { it.text }).containsExactly("queued")
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.STOPPED)
+    }
+
+    @Test
+    fun `失败和用户停止分别暂停队列`() = runTest {
+        seedSession(); advanceUntilIdle()
+        val gate = CompletableDeferred<List<StreamChunk>>()
+        streamGate = gate
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("queued"); advanceUntilIdle()
+        gate.complete(emptyList()); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.FAILED)
+        streamGate = null
+        holdStreamOpen = true
+        viewModel.sendMessage("retry"); advanceUntilIdle()
+        viewModel.stopGeneration(); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.STOPPED)
+        assertThat(protocolRequestCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `暂停中插队优先发送且继续发送剩余队列`() = runTest {
+        seedSession(); advanceUntilIdle()
+        queueStore.enqueue("s1", "first")
+        val steer = queueStore.enqueue("s1", "steer")
+        queueStore.pause("s1", com.promenar.nexara.data.chat.queue.QueuePauseReason.FAILED)
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.steerQueuedMessage(steer.id); advanceUntilIdle()
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("steer", "first").inOrder()
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
+    fun `另一会话生成时继续队列暂停BUSY且不写入幽灵消息`() = runTest {
+        seedSession("A"); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial")); holdStreamOpen = true
+        viewModel.sendMessage("running"); advanceUntilIdle()
+        seedSession("B"); advanceUntilIdle()
+        queueStore.enqueue("B", "queued")
+        viewModel.resumeComposerQueue(); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.BUSY)
+        assertThat(savedMessages.none { it.second == "B" }).isTrue()
+    }
+
+    @Test
+    fun `切走生成会话与打开无活动队列均暂停INTERRUPTED`() = runTest {
+        seedSession("A"); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial")); holdStreamOpen = true
+        viewModel.sendMessage("running"); advanceUntilIdle()
+        viewModel.sendMessage("queued"); advanceUntilIdle()
+        seedSession("B"); advanceUntilIdle()
+        assertThat(queueStore.snapshot("A").pauseReason).isEqualTo(com.promenar.nexara.data.chat.queue.QueuePauseReason.INTERRUPTED)
+        queueStore.enqueue("B", "later")
+        viewModel.loadSession("A"); advanceUntilIdle()
+        viewModel.loadSession("B"); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.INTERRUPTED)
+    }
+
+    @Test
+    fun `队列发送准备被拒回到队首且不污染输入框`() = runTest {
+        seedSession(); advanceUntilIdle()
+        val doc = MessageDocumentAttachment("large", "large.txt", "text/plain", "中".repeat(200_000), 600_000, "hash", 200_000)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>().getSharedPreferences("nexara_settings", 0).edit().putInt("model_info_gpt-4o_context", 128_000).commit()
+        queueStore.enqueue("s1", "queued", documents = listOf(doc))
+        queueStore.pause("s1", com.promenar.nexara.data.chat.queue.QueuePauseReason.FAILED)
+        viewModel.updateInputText("保留草稿")
+        viewModel.resumeComposerQueue()
+        awaitReal { viewModel.composerQueue.value.items.isNotEmpty() && viewModel.composerQueue.value.pauseReason == ComposerQueuePauseReason.FAILED }
+        assertThat(viewModel.composerQueue.value.items.single().text).isEqualTo("queued")
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.FAILED)
+        assertThat(viewModel.inputText.value).isEqualTo("保留草稿")
+        assertThat(savedMessages).isEmpty()
+    }
+
+    @Test
+    fun `编辑队列只在无文字文档图片时接受并恢复文档`() = runTest {
+        seedSession(); advanceUntilIdle()
+        val doc = MessageDocumentAttachment("d", "a.txt", "text/plain", "内容", 6, "hash", 2)
+        val item = queueStore.enqueue("s1", "queued", documents = listOf(doc)); advanceUntilIdle()
+        viewModel.updateInputText("draft")
+        assertThat(viewModel.editQueuedMessage(item.id)).isFalse()
+        viewModel.updateInputText("")
+        viewModel.updateComposerImages(listOf(android.net.Uri.parse("content://selected")))
+        assertThat(viewModel.editQueuedMessage(item.id)).isFalse()
+        viewModel.updateComposerImages(emptyList())
+        assertThat(viewModel.editQueuedMessage(item.id)).isTrue()
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("queued")
+        assertThat(viewModel.draftDocuments.value).containsExactly(doc)
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+
+    @Test
+    fun `生成中插队在工具边界让出并用工具结果开始新轮`() = runTest {
+        seedSession(); advanceUntilIdle()
+        val gate = CompletableDeferred<List<StreamChunk>>()
+        streamGate = gate
+        fakeStreamChunks = listOf(StreamChunk.ToolCallDelta("yield-call", "missing_test_tool", "{}", 0))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("普通队列"); advanceUntilIdle()
+        viewModel.sendMessage("优先指令"); advanceUntilIdle()
+        val id = viewModel.composerQueue.value.items.last().id
+        viewModel.steerQueuedMessage(id); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.first().steering).isTrue()
+        streamGate = null
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        gate.complete(listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS, listOf("yield-call"))))
+        awaitReal { protocolRequestCount >= 3 && viewModel.composerQueue.value.items.isEmpty() }
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("first", "优先指令", "普通队列").inOrder()
+        val history = savedMessages.map { it.first }
+        assertThat(history.first { it.role == MessageRole.TOOL }.toolCallId).isEqualTo("yield-call")
+        assertThat(history.count { it.role == MessageRole.ASSISTANT }).isEqualTo(3)
+    }
+
+    @Test
+    fun `等待审批时插队立即关闭审批并发送`() = runTest {
+        val pending = approvedToolTurn().dropLast(1).map {
+            if (it.role == MessageRole.ASSISTANT) it.copy(pendingApprovalToolIds = listOf("call-1")) else it
+        }
+        seedSession(messages = pending, approvalRequest = ApprovalRequest(assistantMessageId = "a1", type = "tool")); advanceUntilIdle()
+        val item = queueStore.enqueue("s1", "插队问题")
+        queueStore.pause("s1", com.promenar.nexara.data.chat.queue.QueuePauseReason.FAILED)
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.steerQueuedMessage(item.id)
+        awaitReal { lastPromptRequest != null }
+        assertThat(viewModel.uiState.value.approvalRequest).isNull()
+        assertThat(lastPromptRequest!!.messages.filterNot { it.role == "system" }.map { it.role }).containsExactly("user", "assistant", "tool", "user").inOrder()
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
+    fun `图片复制失败恢复排队草稿与文档并提示错误`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        val document = MessageDocumentAttachment("d", "a.txt", "text/plain", "内容", 6, "hash", 2)
+        val field = ChatViewModel::class.java.getDeclaredField("_draftDocuments").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        (field.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<List<MessageDocumentAttachment>>).value = listOf(document)
+        viewModel.updateInputText("待排队")
+        viewModel.sendMessage("待排队", listOf(android.net.Uri.parse("content://missing/image")))
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("待排队")
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+        assertThat(viewModel.restoredDraftImages.value).containsExactly("content://missing/image")
+        assertThat(viewModel.uiState.value.error).isNotNull()
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
+    fun `销毁ViewModel时活动队列持久化INTERRUPTED`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("queued"); advanceUntilIdle()
+        ViewModelStore().also { it.put("chat", viewModel) }.clear()
+        advanceUntilIdle()
+        assertThat(queueStore.snapshot("s1").pauseReason).isEqualTo(com.promenar.nexara.data.chat.queue.QueuePauseReason.INTERRUPTED)
+    }
+
+    @Test
+    fun `持久化失败终态暂停队列且不自动发出`() = runTest {
+        seedSession(); advanceUntilIdle()
+        queueStore.enqueue("s1", "queued")
+        presentationStore.begin("s1", "persistence-task")
+        presentationStore.accept("s1", "persistence-task", com.promenar.nexara.domain.generation.GenerationEvent.PhaseChanged(com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED))
+        advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.FAILED)
+        assertThat(protocolRequestCount).isEqualTo(0)
+        assertThat(viewModel.composerQueue.value.items.single().text).isEqualTo("queued")
+    }
+
+    @Test
+    fun `编辑复制期间新输入或切换会话保留队列与新草稿`() = runTest {
+        seedSession("B"); advanceUntilIdle()
+        seedSession("A"); advanceUntilIdle()
+        val item = queueStore.enqueue("A", "queued"); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>(); editGate = gate
+        assertThat(viewModel.editQueuedMessage(item.id)).isTrue(); runCurrent()
+        viewModel.updateInputText("新草稿")
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("新草稿")
+        assertThat(queueStore.snapshot("A").items.single().id).isEqualTo(item.id)
+        viewModel.updateInputText("")
+        val switched = CompletableDeferred<Unit>(); editGate = switched
+        assertThat(viewModel.editQueuedMessage(item.id)).isTrue(); runCurrent()
+        viewModel.loadSession("B"); advanceUntilIdle()
+        switched.complete(Unit); advanceUntilIdle()
+        assertThat(queueStore.snapshot("A").items.single().id).isEqualTo(item.id)
+        assertThat(viewModel.inputText.value).isEmpty()
+    }
+
+    @Test
+    fun `入队图片复制失败切会话后完整恢复原附件`() = runTest {
+        seedSession("B"); advanceUntilIdle()
+        seedSession("A"); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        val doc = MessageDocumentAttachment("d", "a.txt", "text/plain", "内容", 6, "hash", 2)
+        @Suppress("UNCHECKED_CAST")
+        (ChatViewModel::class.java.getDeclaredField("_draftDocuments").apply { isAccessible = true }.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<List<MessageDocumentAttachment>>).value = listOf(doc)
+        val gate = CompletableDeferred<Unit>(); queueEnqueueGate = gate
+        viewModel.sendMessage("queued", listOf(android.net.Uri.parse("content://missing/image"))); advanceUntilIdle()
+        viewModel.loadSession("B"); advanceUntilIdle()
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(viewModel.draftDocuments.value).isEmpty()
+        viewModel.loadSession("A"); advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("queued")
+        assertThat(viewModel.draftDocuments.value).containsExactly(doc)
+        assertThat(viewModel.restoredDraftImages.value).containsExactly("content://missing/image")
+    }
+
+    @Test
+    fun `出队准备切走后台接受后回来能够继续剩余队列`() = runTest {
+        seedSession("B"); advanceUntilIdle()
+        seedSession("A"); advanceUntilIdle()
+        val inserted = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        var suspended = false
+        afterInsert = { message, _ -> if (!suspended && message.role == MessageRole.ASSISTANT) { suspended = true; inserted.complete(Unit); release.await() } }
+        queueStore.enqueue("A", "first"); queueStore.enqueue("A", "second")
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.resumeComposerQueue(); inserted.await()
+        viewModel.loadSession("B"); advanceUntilIdle()
+        release.complete(Unit); advanceUntilIdle()
+        viewModel.loadSession("A"); advanceUntilIdle()
+        viewModel.resumeComposerQueue(); advanceUntilIdle()
+        assertThat(savedMessages.filter { it.second == "A" && it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("first", "second").inOrder()
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
+    fun `权限门等待时切会话回滚发送租约后能够继续`() = runTest {
+        seedSession("B"); advanceUntilIdle()
+        seedSession("A"); advanceUntilIdle()
+        notificationPermissionState = com.promenar.nexara.background.generation.NotificationPermissionPromptState(35, false, false)
+        queueStore.enqueue("A", "queued")
+        viewModel.resumeComposerQueue(); advanceUntilIdle()
+        assertThat(viewModel.notificationPermissionRequests.value).isNotNull()
+        assertThat(queueStore.snapshot("A").sending).isNotNull()
+        viewModel.loadSession("B"); advanceUntilIdle()
+        assertThat(queueStore.snapshot("A").sending).isNull()
+        assertThat(queueStore.snapshot("A").items.single().text).isEqualTo("queued")
+        viewModel.loadSession("A"); advanceUntilIdle()
+        notificationPermissionState = null
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.resumeComposerQueue(); advanceUntilIdle()
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
+    fun `用户停止先于入队写盘仍保存STOPPED暂停原因`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>(); queueEnqueueGate = gate
+        viewModel.sendMessage("queued"); advanceUntilIdle()
+        viewModel.stopGeneration(); advanceUntilIdle()
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.STOPPED)
+        assertThat(viewModel.composerQueue.value.items.single().text).isEqualTo("queued")
+    }
+
+    @Test
+    @org.robolectric.annotation.Config(sdk = [34])
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    fun `排队图片和文档通过原发送链进入下一轮Prompt`() = runTest {
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>().getSharedPreferences("nexara_settings", 0).edit().putInt("model_info_gpt-4o_context", 128_000).commit()
+        seedSession(); advanceUntilIdle()
+        val gate = CompletableDeferred<List<StreamChunk>>(); streamGate = gate
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        val image = java.io.File.createTempFile("nexara-queued-image", ".png")
+        val bitmap = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.rgb(40, 120, 200))
+        image.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        val doc = MessageDocumentAttachment("d", "a.txt", "text/plain", "附件正文", 12, "hash", 4)
+        @Suppress("UNCHECKED_CAST")
+        (ChatViewModel::class.java.getDeclaredField("_draftDocuments").apply { isAccessible = true }.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<List<MessageDocumentAttachment>>).value = listOf(doc)
+        viewModel.sendMessage("带附件", listOf(android.net.Uri.fromFile(image))); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.single().imageCount).isEqualTo(1)
+        assertThat(viewModel.composerQueue.value.items.single().documentNames).containsExactly("a.txt")
+        assertThat(viewModel.editQueuedMessage(viewModel.composerQueue.value.items.single().id)).isTrue(); advanceUntilIdle()
+        val draftImages = viewModel.restoredDraftImages.value!!.map(android.net.Uri::parse)
+        val draftFile = java.io.File(draftImages.single().path!!)
+        assertThat(draftFile.exists()).isTrue()
+        viewModel.sendMessage(viewModel.inputText.value, draftImages); advanceUntilIdle()
+        assertThat(draftFile.exists()).isFalse()
+        val queuedFile = java.io.File(queueStore.snapshot("s1").items.single().imagePaths.single())
+        assertThat(queuedFile.exists()).isTrue()
+        streamGate = null
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        gate.complete(listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)))
+        awaitReal { protocolRequestCount == 2 }
+        assertThat(protocolRequestCount).isEqualTo(2)
+        val sent = lastPromptRequest!!.messages.last { it.role == "user" }
+        assertThat(sent.imageUrls).hasSize(1)
+        assertThat(sent.content).contains("附件正文")
+        assertThat(queuedFile.exists()).isFalse()
+        assertThat(viewModel.draftDocuments.value).isEmpty()
+        image.delete()
+    }
+
+    @Test
+    fun `出队写盘失败保留队列并通过错误通道暂停`() = runTest {
+        seedSession(); advanceUntilIdle()
+        queueStore.enqueue("s1", "queued")
+        claimFailure = java.io.IOException("queue write failed")
+        viewModel.resumeComposerQueue(); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.single().text).isEqualTo("queued")
+        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.FAILED)
+        assertThat(viewModel.uiState.value.error).isNotNull()
+        assertThat(protocolRequestCount).isEqualTo(0)
     }
 
     private fun kotlinx.coroutines.test.TestScope.awaitReal(condition: () -> Boolean) {

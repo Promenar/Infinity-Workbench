@@ -24,6 +24,22 @@ class ChatGenerationContentStrategyTest {
     private val read = ToolCall("call-r", "read_file", "{}")
 
     @Test
+    fun `让出轮无最终回答也保留完整工具结果及随后用户指令`() {
+        val session = Session("s", "agent", messages = listOf(
+            Message("u1", MessageRole.USER, "查文件"),
+            Message("a1", MessageRole.ASSISTANT, "", toolCalls = listOf(read)),
+            Message("t1", MessageRole.TOOL, "真实结果", toolCallId = read.id, name = read.name),
+            Message("u2", MessageRole.USER, "调整方向"),
+            Message("a2", MessageRole.ASSISTANT, ""),
+        ))
+        val prompt = strategy().buildProtocolMessages(session, "system", "u2")
+        assertThat(prompt.map { it.role }).containsExactly("system", "user", "assistant", "tool", "user").inOrder()
+        assertThat(prompt[2].toolCalls!!.single().id).isEqualTo(read.id)
+        assertThat(prompt[3].content).isEqualTo("真实结果")
+        assertThat(prompt[4].content).isEqualTo("调整方向")
+    }
+
+    @Test
     fun `空白助手占位与失败空消息不进入协议历史`() {
         val history = sanitizeProtocolHistory(listOf(
             Message("u1", MessageRole.USER, "第一问"),

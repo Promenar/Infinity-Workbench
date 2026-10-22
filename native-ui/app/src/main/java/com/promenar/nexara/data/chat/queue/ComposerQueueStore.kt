@@ -1,0 +1,56 @@
+package com.promenar.nexara.data.chat.queue
+
+import com.promenar.nexara.data.model.MessageDocumentAttachment
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class QueuePauseReason { STOPPED, FAILED, RESTORED, INTERRUPTED, BUSY }
+
+@Serializable
+data class QueuedMessage(
+    val id: String,
+    val text: String,
+    val imagePaths: List<String> = emptyList(),
+    val documents: List<MessageDocumentAttachment> = emptyList(),
+    val createdAt: Long,
+    val steering: Boolean = false,
+)
+
+@Serializable
+data class ComposerQueueState(
+    val items: List<QueuedMessage> = emptyList(),
+    val pauseReason: QueuePauseReason? = null,
+    /** 出队到生成接受之间的恢复副本；不在托盘展示。 */
+    val sending: QueuedMessage? = null,
+    val sendingUserMessageId: String? = null,
+)
+
+interface ComposerQueueStore {
+    suspend fun observe(sessionId: String): StateFlow<ComposerQueueState>
+    suspend fun snapshot(sessionId: String): ComposerQueueState = observe(sessionId).value
+    suspend fun enqueue(sessionId: String, text: String, imageUris: List<String> = emptyList(), documents: List<MessageDocumentAttachment> = emptyList()): QueuedMessage
+    suspend fun remove(sessionId: String, id: String)
+    suspend fun moveToFront(sessionId: String, id: String)
+    suspend fun steer(sessionId: String, id: String): Boolean
+    suspend fun pause(sessionId: String, reason: QueuePauseReason?)
+    suspend fun claimNext(sessionId: String): QueuedMessage?
+    suspend fun bindSending(sessionId: String, id: String, userMessageId: String)
+    suspend fun acceptForUser(sessionId: String, userMessageId: String?) {
+        val state = snapshot(sessionId)
+        if (userMessageId != null && state.sendingUserMessageId == userMessageId) state.sending?.let { accept(sessionId, it.id) }
+    }
+    suspend fun rollbackForUser(sessionId: String, userMessageId: String?) {
+        val state = snapshot(sessionId)
+        if (userMessageId != null && state.sendingUserMessageId == userMessageId) state.sending?.let {
+            rollback(sessionId, it.id, state.pauseReason ?: QueuePauseReason.FAILED)
+        }
+    }
+    suspend fun accept(sessionId: String, id: String)
+    suspend fun rollback(sessionId: String, id: String, reason: QueuePauseReason)
+    suspend fun prepareEdit(sessionId: String, id: String): QueuedMessage?
+    suspend fun completeEdit(sessionId: String, draft: QueuedMessage): Boolean
+    suspend fun cancelEdit(sessionId: String, draft: QueuedMessage)
+    suspend fun releaseDraftImages(sessionId: String, paths: List<String>)
+    suspend fun deleteSession(sessionId: String)
+}

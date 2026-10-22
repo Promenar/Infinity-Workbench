@@ -32,6 +32,34 @@ import org.junit.Test
 
 class ChatGenerationRunnerTest {
     @Test
+    fun `工具结果提交后插队让出为成功且不创建续写占位`() = runTest {
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.ToolCall("call", "search", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+        ), flowOf(GenerationChunk.Text("不应续写"), GenerationChunk.Completed(CompletionReason.END_TURN))))
+        runtime.toolDecisions += GenerationToolDecision.CONTINUE
+        runtime.yieldAtBoundary = true
+        val events = mutableListOf<GenerationEvent>()
+        ChatGenerationRunner(runtime).run(request(), events::add)
+        assertThat(runtime.streamAttempts).isEqualTo(1)
+        assertThat(runtime.handledToolRounds).isEqualTo(1)
+        assertThat(runtime.nextAssistantId).isEqualTo("assistant-next")
+        assertThat(runtime.persisted.last().toolCalls.single().id).isEqualTo("call")
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+        assertThat(runtime.yieldChecks).isEqualTo(1)
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.COMPLETED)
+    }
+
+    @Test
+    fun `纯文字完成不查询插队边界`() = runTest {
+        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("完成"), GenerationChunk.Completed(CompletionReason.END_TURN))))
+        runtime.yieldAtBoundary = true
+        ChatGenerationRunner(runtime).run(request()) {}
+        assertThat(runtime.yieldChecks).isEqualTo(0)
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+    }
+
+    @Test
     fun `显式完成后上游迟到的失败分片不得污染成功终态`() = runTest {
         val lateFailure = GenerationFailure(
             code = GenerationFailureCode.NETWORK,
@@ -697,6 +725,13 @@ class ChatGenerationRunnerTest {
     ) : ChatGenerationRuntime {
         val persisted = mutableListOf<GenerationSnapshot>()
         val toolDecisions = ArrayDeque<GenerationToolDecision>()
+        var yieldAtBoundary = false
+        var yieldChecks = 0
+        override suspend fun shouldYieldAtRoundBoundary(request: GenerationRequest): Boolean {
+            yieldChecks++
+            check(flushCount > 0)
+            return yieldAtBoundary
+        }
         var streamAttempts = 0
         var flushCount = 0
         var providerCancelCount = 0
