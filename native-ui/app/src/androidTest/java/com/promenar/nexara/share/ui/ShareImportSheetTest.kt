@@ -111,7 +111,7 @@ class ShareImportSheetTest {
             }
         }
 
-        rule.onNodeWithText("Couldn’t open the shared files").assertIsDisplayed()
+        rule.onNodeWithText("Unable to open the shared items. Try again.").assertIsDisplayed()
         rule.onNodeWithText("Retry failed")
             .assertIsDisplayed()
             .assertIsEnabled()
