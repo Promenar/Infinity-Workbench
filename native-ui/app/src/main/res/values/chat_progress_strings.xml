@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_progress_running">Working</string>
+    <string name="chat_progress_separator">", "</string>
+    <plurals name="chat_progress_rounds">
+        <item quantity="one">%d tool round</item>
+        <item quantity="other">%d tool rounds</item>
+    </plurals>
+    <plurals name="chat_progress_calls">
+        <item quantity="one">%d tool call</item>
+        <item quantity="other">%d tool calls</item>
+    </plurals>
+    <plurals name="chat_progress_rounds_unit">
+        <item quantity="one">round</item>
+        <item quantity="other">rounds</item>
+    </plurals>
+    <plurals name="chat_progress_calls_unit">
+        <item quantity="one">call</item>
+        <item quantity="other">calls</item>
+    </plurals>
+    <string name="chat_progress_tokens_unit">tokens</string>
+    <string name="chat_progress_tokens_cd">%s tokens used</string>
+    <string name="chat_progress_tokens_estimated_cd">About %s tokens used (estimated)</string>
+</resources>

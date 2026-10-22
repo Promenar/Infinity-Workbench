@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -202,7 +203,7 @@ private fun McpServerRow(
             },
         )
         if (server.tools.isNotEmpty()) {
-            AnimatedVisibility(visible = isExpanded) {
+            AnimatedVisibility(visible = isExpanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 Column(
                     Modifier.fillMaxWidth().padding(start = SkillTextStart, end = NexaraSpacing.RowHorizontal, bottom = 12.dp),
                 ) {

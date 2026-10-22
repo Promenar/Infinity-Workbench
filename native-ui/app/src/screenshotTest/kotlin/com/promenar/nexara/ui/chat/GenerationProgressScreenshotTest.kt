@@ -1,9 +1,13 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.domain.generation.GenerationProgress
@@ -61,3 +65,29 @@ private fun progressMessages(english: Boolean): List<Message> {
         )
     }
 }
+
+// 进度胶囊的典型状态：刚开始（只有运行指示）、普通对话（只有 Token）、工具循环中、估算 Token 的长任务。
+@Composable
+private fun ProgressCapsuleStates(mode: NexaraThemeMode) {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(vertical = 8.dp)) {
+                ChatGenerationProgressBar(GenerationProgress())
+                ChatGenerationProgressBar(GenerationProgress(tokens = 1_536))
+                ChatGenerationProgressBar(GenerationProgress(rounds = 1, calls = 3, tokens = 4_812))
+                ChatGenerationProgressBar(GenerationProgress(rounds = 12, calls = 48, tokens = 1_284_000, estimated = true))
+            }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "进度胶囊 深中411", widthDp = 411, locale = "zh-rCN")
+@Preview(name = "进度胶囊 深中360 大字", widthDp = 360, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun generationProgressCapsuleDarkPreview() = ProgressCapsuleStates(NexaraThemeMode.DARK)
+
+@PreviewTest
+@Preview(name = "进度胶囊 浅英360 大字", widthDp = 360, locale = "en", fontScale = 1.3f)
+@Composable
+fun generationProgressCapsuleLightPreview() = ProgressCapsuleStates(NexaraThemeMode.LIGHT)

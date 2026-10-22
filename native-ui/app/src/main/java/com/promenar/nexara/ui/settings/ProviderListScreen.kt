@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMotion
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.key
 import androidx.compose.foundation.clickable
 import com.promenar.nexara.ui.common.ModelBrandTile
 import com.promenar.nexara.ui.common.ModelBrandResolver
@@ -170,25 +174,31 @@ internal fun ProviderListScreenContent(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             if (state.providers.isEmpty() && state.unsupportedProviders.isEmpty()) {
-                item {
-                    ProviderEmptyState(compactHeight = compactHeightEmptyState)
+                item("provider-empty") {
+                    Box(Modifier.animateItem()) {
+                        ProviderEmptyState(compactHeight = compactHeightEmptyState)
+                    }
                 }
             } else {
                 item("provider-group") {
                     // 所有提供商放在同一分组内，协议、凭据状态与地址写在行内。
+                    // 新增或删除提供商时分组高度平滑过渡，空态与分组之间淡入淡出。
                     NexaraSettingsSection(
                         title = stringResource(R.string.settings_section_ai_models),
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        modifier = Modifier
+                            .animateItem()
+                            .padding(horizontal = 16.dp)
+                            .animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)),
                     ) {
                         state.providers.forEach { provider ->
-                            ProviderCard(
+                            key(provider.id) { ProviderCard(
                                 provider = provider,
                                 onClick = { actions.onProviderModels(provider.id) },
                                 onEdit = { actions.onEditProvider(provider.id) },
                                 onDelete = if (provider.id == "default") null else {
                                     { actions.onRequestDeleteProvider(provider.id) }
                                 },
-                            )
+                            ) }
                         }
                         state.unsupportedProviders.forEach { provider ->
                             UnsupportedProviderCard(

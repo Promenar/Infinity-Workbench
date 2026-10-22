@@ -106,6 +106,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -578,7 +579,10 @@ fun ChatScreenContent(
                     } == true
                     PipelineBubble(
                         hasRagContent = hasRagContent,
-                        modifier = Modifier.padding(top = spacing.beforeDp.dp),
+                        // 新消息只淡入、不做位移动画：位移会与生成中按像素跟随滚动的逻辑互相拉扯。
+                        modifier = Modifier
+                            .animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)
+                            .padding(top = spacing.beforeDp.dp),
                         ragContent = {
                             val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
@@ -628,16 +632,18 @@ fun ChatScreenContent(
 
                 if (showCompressionFeedback) {
                     item(key = "summary_card") {
-                        ContextCompactionFeedback(
-                            state = compressionState,
-                            onDismiss = actions.onDismissCompressionResult,
-                        )
+                        Box(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
+                            ContextCompactionFeedback(
+                                state = compressionState,
+                                onDismiss = actions.onDismissCompressionResult,
+                            )
+                        }
                     }
                 }
 
                 uiState.approvalRequest?.let { request ->
                     item(key = "approval_request") {
-                        ChatApprovalLiveRegion {
+                        ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
                             ApprovalCard(
                                 toolName = request.calls.firstOrNull()?.toolName
                                     ?: request.toolName
@@ -927,10 +933,14 @@ internal fun approvalRiskLabel(risk: String): String = stringResource(
     },
 )
 
+/** 消息列表条目的淡入淡出；只用于透明度，不参与位移。 */
+private val ChatItemFadeIn = tween<Float>(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)
+private val ChatItemFadeOut = tween<Float>(NexaraMotion.DurationShort)
+
 @Composable
-internal fun ChatApprovalLiveRegion(content: @Composable () -> Unit) {
+internal fun ChatApprovalLiveRegion(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Assertive }
             .testTag("chat_approval_live_region"),
@@ -1015,8 +1025,30 @@ internal fun ChatComposerStatusBar(
     onTaskClick: () -> Unit = {},
     retry: com.promenar.nexara.domain.generation.GenerationRetry? = null,
 ) {
-    val panel = taskPanel?.takeUnless { it.isCompleted }
-    if (panel == null && postProcessTasks.isEmpty() && retry == null) return
+    val livePanel = taskPanel?.takeUnless { it.isCompleted }
+    val visible = livePanel != null || postProcessTasks.isNotEmpty() || retry != null
+    // 整条出现与消失时纵向展开收起；收起期间沿用最后一次的胶囊内容，不在动画中途变空。
+    val shown = remember { arrayOfNulls<ComposerStatusContent>(1) }
+    if (visible) shown[0] = ComposerStatusContent(livePanel, postProcessTasks, retry)
+    AnimatedVisibility(visible = visible, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        val content = shown[0] ?: return@AnimatedVisibility
+        ComposerStatusRow(content, onRemovePostProcessTask, onTaskClick)
+    }
+}
+
+private data class ComposerStatusContent(
+    val panel: TaskPanelUiState?,
+    val postProcessTasks: List<PostProcessTask>,
+    val retry: com.promenar.nexara.domain.generation.GenerationRetry?,
+)
+
+@Composable
+private fun ComposerStatusRow(
+    content: ComposerStatusContent,
+    onRemovePostProcessTask: (String) -> Unit,
+    onTaskClick: () -> Unit,
+) {
+    val panel = content.panel
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             .horizontalScroll(rememberScrollState()).height(28.dp)
@@ -1024,7 +1056,7 @@ internal fun ChatComposerStatusBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        retry?.let { GenerationRetryCapsule(it) }
+        content.retry?.let { GenerationRetryCapsule(it) }
         panel?.let {
             val generating = it.capsuleMode == TaskCapsuleMode.GENERATING
             val description = if (generating) stringResource(R.string.chat_task_generating)
@@ -1050,8 +1082,8 @@ internal fun ChatComposerStatusBar(
                 )
             }
         }
-        postProcessTasks.forEach { task ->
-            PostProcessChip(task = task, onRemove = { onRemovePostProcessTask(task.id) })
+        content.postProcessTasks.forEach { task ->
+            key(task.id) { PostProcessChip(task = task, onRemove = { onRemovePostProcessTask(task.id) }) }
         }
     }
 }
@@ -1304,29 +1336,6 @@ private fun TokenDetailRow(label: String, value: Int) {
     }
 }
 
-/** 生成中的轮次进度行：固定在标题栏下方，自带页面底色与底部分隔线，正文从分隔线下开始滚动。 */
-@Composable
-internal fun ChatGenerationProgressBar(progress: com.promenar.nexara.domain.generation.GenerationProgress) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .testTag(UiTags.CHAT_GENERATION_PROGRESS),
-    ) {
-        Text(
-            stringResource(R.string.p0_progress, progress.rounds, progress.calls, progress.tokens,
-                if (progress.estimated) stringResource(R.string.p0_estimated) else ""),
-            style = NexaraTypography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-        )
-        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatTopBar(
@@ -1539,13 +1548,18 @@ internal fun ChatComposerAttachments(
 ) {
     if (imageUris.isEmpty() && documents.isEmpty() && !isImporting) return
     val removeDescription = stringResource(R.string.chat_cd_remove_document)
+    // 同一张图可能被选两次，按出现次序区分，保证删除一张时其余缩略图平滑补位。
+    val imageKeys = remember(imageUris) {
+        val seen = HashMap<String, Int>()
+        imageUris.map { uri -> uri.toString().let { "image:$it#" + seen.merge(it, 1, Int::plus) } }
+    }
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             .then(if (documents.isNotEmpty() || isImporting) Modifier.testTag(UiTags.CHAT_DOCUMENT_CHIPS) else Modifier),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(imageUris.size) { index ->
-            Box(Modifier.size(56.dp)) {
+        items(imageUris.size, key = { imageKeys[it] }) { index ->
+            Box(Modifier.animateItem().size(56.dp)) {
                 coil3.compose.AsyncImage(
                     model = imageUris[index],
                     contentDescription = stringResource(R.string.chat_cd_selected_image),
@@ -1560,7 +1574,7 @@ internal fun ChatComposerAttachments(
         }
         items(documents, key = MessageDocumentAttachment::id) { document ->
             Box(
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
+                modifier = Modifier.animateItem().size(56.dp).clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .clickable(role = Role.Button, onClickLabel = removeDescription) { onRemoveDocument(document.id) }
                     .testTag(UiTags.chatDocumentChip(document.id)),
@@ -1577,7 +1591,7 @@ internal fun ChatComposerAttachments(
         }
         if (isImporting) {
             item(key = "document_importing") {
-                Box(Modifier.size(56.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), contentAlignment = Alignment.Center) {
+                Box(Modifier.animateItem().size(56.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 }
             }

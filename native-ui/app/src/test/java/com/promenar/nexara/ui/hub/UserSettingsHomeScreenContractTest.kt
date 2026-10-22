@@ -196,7 +196,9 @@ class UserSettingsHomeScreenContractTest {
     @Test
     fun `提供商同处一个分组且地址与状态写在行内`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
-        assertThat(providerListSource).contains("title = stringResource(R.string.settings_section_ai_models),\n                        modifier = Modifier.padding(horizontal = 16.dp),")
+        val section = providerListSource.substringAfter("title = stringResource(R.string.settings_section_ai_models),")
+            .substringBefore(") {")
+        assertThat(section).contains(".padding(horizontal = 16.dp)")
         assertThat(providerListSource).doesNotContain("footer = provider.baseUrl")
         assertThat(providerListSource).contains(".joinToString(\" · \") + \"\\n\" + provider.baseUrl")
         assertThat(providerListSource).contains("R.string.settings_provider_status_summary")

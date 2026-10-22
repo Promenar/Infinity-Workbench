@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.animation.AnimatedContent
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -540,16 +542,24 @@ fun UnifiedPromptEditor(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                when (EditorTab.entries[selectedTab]) {
-                    EditorTab.EDITOR -> {
-                        EditorPane(
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    EditorTab.PREVIEW -> {
-                        PreviewPane(
-                            modifier = Modifier.fillMaxSize()
-                        )
+                // 编辑与预览按标签左右顺序做共享 X 轴切换。
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState > initialState) },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "prompt_editor_tab",
+                ) { tab ->
+                    when (EditorTab.entries[tab]) {
+                        EditorTab.EDITOR -> {
+                            EditorPane(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        EditorTab.PREVIEW -> {
+                            PreviewPane(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }

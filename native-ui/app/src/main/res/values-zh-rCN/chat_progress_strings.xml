@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_progress_running">执行中</string>
+    <string name="chat_progress_separator">，</string>
+    <plurals name="chat_progress_rounds">
+        <item quantity="other">已进行 %d 轮工具调用</item>
+    </plurals>
+    <plurals name="chat_progress_calls">
+        <item quantity="other">共调用工具 %d 次</item>
+    </plurals>
+    <plurals name="chat_progress_rounds_unit">
+        <item quantity="other">轮</item>
+    </plurals>
+    <plurals name="chat_progress_calls_unit">
+        <item quantity="other">次调用</item>
+    </plurals>
+    <string name="chat_progress_tokens_unit">Token</string>
+    <string name="chat_progress_tokens_cd">已用 %s Token</string>
+    <string name="chat_progress_tokens_estimated_cd">约用 %s Token（估算）</string>
+</resources>

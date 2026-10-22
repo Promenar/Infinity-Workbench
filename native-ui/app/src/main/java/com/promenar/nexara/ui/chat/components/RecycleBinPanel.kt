@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.chat.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.foundation.layout.Arrangement
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Box
@@ -89,38 +92,45 @@ fun RecycleBinPanel(
     ) {
         if (operationState !is RecycleOperationState.Idle) {
             item(key = "operation-notice") {
-                RecycleOperationNotice(
-                    state = operationState,
-                    onRetry = onRetryOperation,
-                    onClear = onClearOperationState,
-                )
+                Box(Modifier.animateItem()) {
+                    RecycleOperationNotice(
+                        state = operationState,
+                        onRetry = onRetryOperation,
+                        onClear = onClearOperationState,
+                    )
+                }
             }
         }
 
         if (files.isEmpty()) {
-            item(key = "empty-state") { EmptyRecycleBinState() }
+            item(key = "empty-state") { Box(Modifier.animateItem()) { EmptyRecycleBinState() } }
         } else {
             item(key = "bulk-actions") {
-                ActionBar(
-                    itemCount = files.size,
-                    enabled = !operationRunning,
-                    onRestore = { onRestoreFiles(files) },
-                    onPermanentDelete = { showEmptyConfirm = true },
-                )
+                Box(Modifier.animateItem()) {
+                    ActionBar(
+                        itemCount = files.size,
+                        enabled = !operationRunning,
+                        onRestore = { onRestoreFiles(files) },
+                        onPermanentDelete = { showEmptyConfirm = true },
+                    )
+                }
             }
 
+            // 恢复或彻底删除后条目淡出，其余条目平滑补位。
             items(items = files, key = { it.uuid }) { file ->
-                RecycleBinItem(
-                    file = file,
-                    enabled = !operationRunning,
-                    nowMillis = nowMillis,
-                    onRestore = { onRestoreFiles(listOf(file)) },
-                    onPermanentDelete = { showPermanentDeleteConfirm = file },
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
+                Column(Modifier.animateItem()) {
+                    RecycleBinItem(
+                        file = file,
+                        enabled = !operationRunning,
+                        nowMillis = nowMillis,
+                        onRestore = { onRestoreFiles(listOf(file)) },
+                        onPermanentDelete = { showPermanentDeleteConfirm = file },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
             }
 
             item(key = "cleanup-notice") {
@@ -129,6 +139,7 @@ fun RecycleBinPanel(
                     style = NexaraTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
+                        .animateItem()
                         .fillMaxWidth()
                         .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_CLEANUP_NOTICE)
                         .padding(horizontal = 12.dp, vertical = 16.dp),
@@ -282,22 +293,33 @@ private fun RecycleOperationNotice(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                when {
-                    isRunning -> CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp).clearAndSetSemantics { },
-                        strokeWidth = 2.dp,
-                        color = contentColor,
-                    )
-                    hasFailure -> Icon(
-                        Icons.Rounded.ErrorOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    else -> Icon(
-                        Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                    )
+                // 进行中、失败、完成三种图标之间交叉淡入。
+                AnimatedContent(
+                    targetState = when {
+                        isRunning -> 0
+                        hasFailure -> 1
+                        else -> 2
+                    },
+                    transitionSpec = { NexaraMotion.fadeThrough() },
+                    label = "recycle_operation_icon",
+                ) { phase ->
+                    when (phase) {
+                        0 -> CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp).clearAndSetSemantics { },
+                            strokeWidth = 2.dp,
+                            color = contentColor,
+                        )
+                        1 -> Icon(
+                            Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        else -> Icon(
+                            Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
                 Text(
                     text = message,
@@ -313,7 +335,7 @@ private fun RecycleOperationNotice(
                 )
             }
 
-            if (!isRunning) {
+            AnimatedVisibility(visible = !isRunning, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val stack = maxWidth < 360.dp || LocalDensity.current.fontScale >= 1.5f
                     if (stack) {

@@ -249,20 +249,32 @@ private fun SkillDetailSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
-            when {
-                loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                document == null -> Text(
-                    stringResource(R.string.skills_runtime_document_unavailable),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                else -> SelectionContainer {
-                    Text(
-                        document.orEmpty(),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth(),
+            // 读取中、读取失败与正文之间交叉淡入。
+            val phase = when {
+                loading -> 0
+                document == null -> 1
+                else -> 2
+            }
+            androidx.compose.animation.AnimatedContent(
+                targetState = phase,
+                transitionSpec = { com.promenar.nexara.ui.theme.NexaraMotion.fadeThrough() },
+                label = "skill_document_state",
+            ) { shown ->
+                when (shown) {
+                    0 -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    1 -> Text(
+                        stringResource(R.string.skills_runtime_document_unavailable),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
+                    else -> SelectionContainer {
+                        Text(
+                            document.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

@@ -1,5 +1,14 @@
 package com.promenar.nexara.ui.git
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import com.promenar.nexara.ui.theme.NexaraMotion
+import com.promenar.nexara.ui.theme.hierarchicalTransition
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -146,40 +155,91 @@ fun GitChangesPanel(
 ) {
     Column(modifier = modifier.testTag(GitPanelTags.ROOT)) {
         GitPanelHeader(state, actions)
-        if (state.refreshing) {
+        AnimatedVisibility(visible = state.refreshing, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.XSmall))
         }
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-        val content = Modifier.weight(1f).fillMaxWidth()
-        when (val detail = state.detail) {
-            null -> {
-                NexaraCapsuleTabRow(
-                    tabs = listOf(
-                        NexaraTabItem(
-                            title = stringResource(R.string.git_panel_tab_changes),
-                            badge = (state.status as? GitLoad.Ready)?.value?.takeIf { !it.isClean }?.let { countBadge(it) },
+        // 列表、文件差异、提交详情、提交内文件差异之间按层级做共享 X 轴切换；同一页内的数据刷新不触发切换。
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.detail.pageKey },
+            transitionSpec = { hierarchicalTransition { it.detail.depth } },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            label = "git_panel_page",
+        ) { shown ->
+            when (val detail = shown.detail) {
+                null -> Column(Modifier.fillMaxSize()) {
+                    NexaraCapsuleTabRow(
+                        tabs = listOf(
+                            NexaraTabItem(
+                                title = stringResource(R.string.git_panel_tab_changes),
+                                badge = (shown.status as? GitLoad.Ready)?.value?.takeIf { !it.isClean }?.let { countBadge(it) },
+                            ),
+                            NexaraTabItem(title = stringResource(R.string.git_panel_tab_commits), icon = Icons.Rounded.Commit),
                         ),
-                        NexaraTabItem(title = stringResource(R.string.git_panel_tab_commits), icon = Icons.Rounded.Commit),
-                    ),
-                    selectedIndex = state.tab.ordinal,
-                    onTabSelected = { actions.onSelectTab(GitPanelTab.entries[it]) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-                Box(modifier = content) {
-                    when (state.tab) {
-                        GitPanelTab.CHANGES -> ChangesContent(state.status, actions)
-                        GitPanelTab.COMMITS -> CommitsContent(state.log ?: GitLoad.Loading, actions)
+                        selectedIndex = shown.tab.ordinal,
+                        onTabSelected = { actions.onSelectTab(GitPanelTab.entries[it]) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+                    AnimatedContent(
+                        targetState = shown,
+                        contentKey = { it.tab },
+                        transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState.tab.ordinal > initialState.tab.ordinal) },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        label = "git_panel_tab",
+                    ) { tabState ->
+                        when (tabState.tab) {
+                            GitPanelTab.CHANGES -> ChangesContent(tabState.status, actions)
+                            GitPanelTab.COMMITS -> CommitsContent(tabState.log ?: GitLoad.Loading, actions)
+                        }
                     }
                 }
-            }
-            is GitPanelDetail.Change -> Box(modifier = content) { DiffContent(detail.diff, actions.onRefresh) }
-            is GitPanelDetail.Commit -> Box(modifier = content) {
-                val file = detail.file
-                if (file != null) DiffContent(file.diff, actions.onRefresh) else CommitDetailContent(detail, actions)
+                is GitPanelDetail.Change -> DiffContent(detail.diff, actions.onRefresh)
+                is GitPanelDetail.Commit -> {
+                    val file = detail.file
+                    if (file != null) DiffContent(file.diff, actions.onRefresh) else CommitDetailContent(detail, actions)
+                }
             }
         }
     }
+}
+
+/** 面板页的身份：同一页内数据变化（加载完成、刷新）不算换页。 */
+private val GitPanelDetail?.pageKey: String
+    get() = when (this) {
+        null -> "list"
+        is GitPanelDetail.Change -> "change:${group.name}:${change.path}"
+        is GitPanelDetail.Commit -> "commit:${summary.sha}" + (file?.let { ":${it.change.path}" } ?: "")
+    }
+
+private val GitPanelDetail?.depth: Int
+    get() = when (this) {
+        null -> 0
+        is GitPanelDetail.Change -> 1
+        is GitPanelDetail.Commit -> if (file == null) 1 else 2
+    }
+
+/** 加载、失败、就绪三态之间交叉淡入；就绪后数据刷新原地更新。 */
+@Composable
+private fun <T> GitLoadContent(
+    load: GitLoad<T>,
+    label: String,
+    content: @Composable (GitLoad<T>) -> Unit,
+) {
+    AnimatedContent(
+        targetState = load,
+        contentKey = {
+            when (it) {
+                GitLoad.Loading -> 0
+                is GitLoad.Failed -> 1
+                is GitLoad.Ready -> 2
+            }
+        },
+        transitionSpec = { NexaraMotion.fadeThrough() },
+        modifier = Modifier.fillMaxSize(),
+        label = label,
+    ) { shown -> content(shown) }
 }
 
 private fun countBadge(status: GitStatus): String =
@@ -192,44 +252,60 @@ private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions) {
         modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (detail != null) {
-            NexaraBackButton(onClick = actions.onBack)
-            Spacer(modifier = Modifier.width(NexaraSpacing.XSmall))
+        AnimatedVisibility(
+            visible = detail != null,
+            enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) + fadeIn(),
+            exit = shrinkHorizontally(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraBackButton(onClick = actions.onBack)
+                Spacer(modifier = Modifier.width(NexaraSpacing.XSmall))
+            }
         }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.RowTwoLineGap)) {
-            when (detail) {
-                null -> {
-                    Text(
-                        text = stringResource(R.string.git_panel_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                    (state.status as? GitLoad.Ready)?.value?.let { status ->
-                        BranchLine(status)
-                    }
-                }
-                is GitPanelDetail.Change -> HeaderTitles(
-                    title = detail.change.path,
-                    subtitle = stringResource(
-                        when (detail.group) {
-                            GitChangeGroup.STAGED -> R.string.git_panel_diff_staged
-                            GitChangeGroup.UNSTAGED -> R.string.git_panel_diff_unstaged
-                            GitChangeGroup.UNTRACKED -> R.string.git_panel_diff_untracked
-                        },
-                    ),
-                    identifier = true,
-                )
-                is GitPanelDetail.Commit -> {
-                    val file = detail.file
-                    if (file != null) {
-                        HeaderTitles(
-                            title = file.change.path,
-                            subtitle = stringResource(R.string.git_panel_diff_commit, detail.summary.shortSha),
-                            identifier = true,
+        // 标题随页面纵向替换：进入更深一层自下而上，返回自上而下。
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.detail.pageKey },
+            transitionSpec = { NexaraMotion.sharedAxisY(forward = targetState.detail.depth > initialState.detail.depth) },
+            modifier = Modifier.weight(1f),
+            label = "git_panel_title",
+        ) { shown ->
+            val detail = shown.detail
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.RowTwoLineGap)) {
+                when (detail) {
+                    null -> {
+                        Text(
+                            text = stringResource(R.string.git_panel_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { heading() },
                         )
-                    } else {
-                        HeaderTitles(title = detail.summary.title, subtitle = detail.summary.shortSha, identifier = false)
+                        (shown.status as? GitLoad.Ready)?.value?.let { status ->
+                            BranchLine(status)
+                        }
+                    }
+                    is GitPanelDetail.Change -> HeaderTitles(
+                        title = detail.change.path,
+                        subtitle = stringResource(
+                            when (detail.group) {
+                                GitChangeGroup.STAGED -> R.string.git_panel_diff_staged
+                                GitChangeGroup.UNSTAGED -> R.string.git_panel_diff_unstaged
+                                GitChangeGroup.UNTRACKED -> R.string.git_panel_diff_untracked
+                            },
+                        ),
+                        identifier = true,
+                    )
+                    is GitPanelDetail.Commit -> {
+                        val file = detail.file
+                        if (file != null) {
+                            HeaderTitles(
+                                title = file.change.path,
+                                subtitle = stringResource(R.string.git_panel_diff_commit, detail.summary.shortSha),
+                                identifier = true,
+                            )
+                        } else {
+                            HeaderTitles(title = detail.summary.title, subtitle = detail.summary.shortSha, identifier = false)
+                        }
                     }
                 }
             }
@@ -316,7 +392,7 @@ internal fun changeCountLabel(count: Int, truncated: Boolean): String = when {
 // —— 工作区变更 ——
 
 @Composable
-private fun ChangesContent(status: GitLoad<GitStatus>, actions: GitPanelActions) {
+private fun ChangesContent(load: GitLoad<GitStatus>, actions: GitPanelActions) = GitLoadContent(load, "git_changes_state") { status ->
     when (status) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = status.problem, onRetry = actions.onRefresh)
@@ -494,7 +570,7 @@ private fun ChangeKindBadge(kind: GitChangeKind) {
 // —— 最近提交 ——
 
 @Composable
-private fun CommitsContent(log: GitLoad<GitCommitLog>, actions: GitPanelActions) {
+private fun CommitsContent(load: GitLoad<GitCommitLog>, actions: GitPanelActions) = GitLoadContent(load, "git_commits_state") { log ->
     when (log) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = log.problem, onRetry = actions.onRefresh)
@@ -652,7 +728,7 @@ private fun CommitSummaryCard(summary: GitCommitSummary, detail: GitCommitDetail
 // —— 差异与状态 ——
 
 @Composable
-private fun DiffContent(diff: GitLoad<FileDiffModel>, onRetry: () -> Unit) {
+private fun DiffContent(load: GitLoad<FileDiffModel>, onRetry: () -> Unit) = GitLoadContent(load, "git_diff_state") { diff ->
     when (diff) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = diff.problem, onRetry = onRetry)

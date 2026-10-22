@@ -1,10 +1,7 @@
 package com.promenar.nexara.navigation
 
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -179,38 +176,11 @@ fun NexaraNavGraph(
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        enterTransition = {
-            fadeIn(animationSpec = tween(300)) +
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300),
-                    initialOffset = { it / 10 }
-                )
-        },
-        exitTransition = {
-            fadeOut(animationSpec = tween(300)) +
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300),
-                    targetOffset = { -it / 10 }
-                )
-        },
-        popEnterTransition = {
-            fadeIn(animationSpec = tween(300)) +
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300),
-                    initialOffset = { -it / 10 }
-                )
-        },
-        popExitTransition = {
-            fadeOut(animationSpec = tween(300)) +
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300),
-                    targetOffset = { it / 10 }
-                )
-        }
+        // 页面层级导航统一用共享 X 轴：前进从右侧滑入，返回从左侧滑入，旧页先淡出。
+        enterTransition = { NexaraMotion.sharedAxisXEnter(forward = true) },
+        exitTransition = { NexaraMotion.sharedAxisXExit(forward = true) },
+        popEnterTransition = { NexaraMotion.sharedAxisXEnter(forward = false) },
+        popExitTransition = { NexaraMotion.sharedAxisXExit(forward = false) },
     ) {
         composable(NavDestinations.WELCOME) {
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))

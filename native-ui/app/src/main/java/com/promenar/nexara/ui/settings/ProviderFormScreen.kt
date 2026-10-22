@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMotion
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -614,53 +618,53 @@ internal fun ProviderFormContent(
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 if (state.unavailableLocalConfiguration) {
-                    item {
+                    animatedFormItem("local-unavailable") {
                         ProviderFormErrorText(stringResource(R.string.local_inference_release_unavailable))
                     }
                 }
-                item {
+                animatedFormItem("preset") {
                     NexaraSettingsSection(
                         title = stringResource(R.string.settings_batch1_connection_template),
                         footer = stringResource(R.string.provider_form_desc),
                     ) { ProviderPresetSelector(state = state, actions = actions) }
                 }
                 if (state.legacyMigrationBlocked) {
-                    item {
+                    animatedFormItem("legacy-migration") {
                         ProviderFormErrorText(
                             stringResource(R.string.provider_form_legacy_migration_required),
                         )
                     }
                 }
                 if (state.selectedPreset.name == "Custom") {
-                    item {
+                    animatedFormItem("protocol") {
                         NexaraSettingsSection(title = stringResource(R.string.provider_form_protocol_type)) {
                             ProviderProtocolSelector(state = state, actions = actions)
                         }
                     }
                 }
                 if (state.isLocal) {
-                    item {
+                    animatedFormItem("local-section") {
                         LocalProviderSection(state = state, actions = actions)
                     }
                 } else {
-                    item {
+                    animatedFormItem("cloud-section") {
                         CloudProviderSection(state = state, actions = actions)
                     }
                     when (state.connectionTestState) {
-                        ProviderConnectionTestState.Success -> item {
+                        ProviderConnectionTestState.Success -> animatedFormItem("connection-status") {
                             ProviderFormStatusText(
                                 stringResource(R.string.common_cd_success),
                                 success = true,
                             )
                         }
-                        ProviderConnectionTestState.Error -> item {
+                        ProviderConnectionTestState.Error -> animatedFormItem("connection-status") {
                             ProviderFormStatusText(
                                 state.connectionTestFailureMessage
                                     ?: stringResource(R.string.common_cd_failed),
                                 success = false,
                             )
                         }
-                        ProviderConnectionTestState.Unavailable -> item {
+                        ProviderConnectionTestState.Unavailable -> animatedFormItem("connection-status") {
                             ProviderFormStatusText(
                                 stringResource(R.string.provider_form_connection_unavailable),
                                 success = null,
@@ -670,10 +674,10 @@ internal fun ProviderFormContent(
                     }
                 }
                 if (state.saveFailed) {
-                    item { ProviderFormErrorText(stringResource(R.string.provider_form_save_failed)) }
+                    animatedFormItem("save-failed") { ProviderFormErrorText(stringResource(R.string.provider_form_save_failed)) }
                 }
             }
-            if (!state.isLocal) {
+            AnimatedVisibility(visible = !state.isLocal, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 ProviderFormActionsSection(
                     state = state,
                     actions = actions,
@@ -688,6 +692,10 @@ internal fun ProviderFormContent(
         }
     }
 }
+
+/** 表单中按条件出现的分组与提示：出现时淡入、其余分组平滑让位。 */
+private fun LazyListScope.animatedFormItem(key: String, content: @Composable () -> Unit) =
+    item(key) { Box(Modifier.animateItem()) { content() } }
 
 @Composable
 private fun ProviderProtocolSelector(state: ProviderFormUiState, actions: ProviderFormActions) {

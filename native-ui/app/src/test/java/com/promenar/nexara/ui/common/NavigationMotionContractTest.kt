@@ -114,4 +114,64 @@ class NavigationMotionContractTest {
         assertThat(sheet).contains("sheetState.hide()")
         assertThat(sheet).contains("if (!show && !composed) return")
     }
+
+    @Test
+    fun `页面路由统一使用共享 X 轴基准`() {
+        val nav = Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/navigation/NavGraph.kt")).toString(Charsets.UTF_8)
+
+        assertThat(nav).contains("enterTransition = { NexaraMotion.sharedAxisXEnter(forward = true) }")
+        assertThat(nav).contains("popEnterTransition = { NexaraMotion.sharedAxisXEnter(forward = false) }")
+        assertThat(nav).doesNotContain("tween(300)")
+    }
+
+    @Test
+    fun `聊天消息只淡入不做位移以免干扰跟随滚动`() {
+        val chat = source("chat/ChatScreen.kt")
+
+        assertThat(chat).contains(".animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)")
+        // 压缩卡与审批卡同样不做位移。
+        assertThat(chat.split("placementSpec = null").size - 1).isAtLeast(3)
+        assertThat(chat).doesNotContain("if (panel == null && postProcessTasks.isEmpty() && retry == null) return")
+    }
+
+    @Test
+    fun `生成进度为图标数值胶囊而不是整句纯文本`() {
+        val capsule = source("chat/GenerationProgressCapsule.kt")
+
+        assertThat(capsule).doesNotContain("R.string.p0_progress")
+        // 数值为 0 的段不显示；有数值后只保留呼吸点。
+        assertThat(capsule).contains("visible = progress.rounds > 0")
+        assertThat(capsule).contains("visible = progress.calls > 0")
+        assertThat(capsule).contains("visible = progress.tokens > 0")
+        assertThat(capsule).contains("visible = !hasMetrics")
+        // 读屏读完整一句，而不是逐个图标与数字。
+        assertThat(capsule).contains("clearAndSetSemantics { contentDescription = description }")
+        assertThat(capsule).contains("FlowRow(")
+        assertThat(source("chat/ChatScreen.kt")).doesNotContain("R.string.p0_progress")
+    }
+
+    @Test
+    fun `低频页面的标签、状态与列表增删带过渡`() {
+        mapOf(
+            "git/GitChangesPanel.kt" to listOf("label = \"git_panel_page\"", "label = \"git_panel_tab\"", "label = \"git_panel_title\"", "GitLoadContent("),
+            "chat/components/RagDetailsSheet.kt" to listOf("label = \"rag_details_tab\""),
+            "settings/SkillsScreen.kt" to listOf("label = \"skills_tab\""),
+            "welcome/WelcomeScreen.kt" to listOf("label = \"onboarding_language\"", "label = \"onboarding_step\""),
+            "rag/DocEditorScreen.kt" to listOf("label = \"doc_editor_state\"", "exit = ExitTransition.None"),
+            "rag/KnowledgeGraphScreen.kt" to listOf("label = \"kg_canvas_phase\"", "label = \"kg_search_phase\""),
+            "chat/components/RecycleBinPanel.kt" to listOf("Modifier.animateItem()", "label = \"recycle_operation_icon\""),
+            "chat/ResourceExplorerSheet.kt" to listOf("label = \"resource_explorer_recycle_phase\""),
+            "common/UnifiedPromptEditor.kt" to listOf("label = \"prompt_editor_tab\""),
+            "settings/ProviderModelsScreen.kt" to listOf("Box(Modifier.animateItem())", "label = \"provider_models_sync_icon\""),
+            "settings/ProviderListScreen.kt" to listOf(".animateItem()", ".animateContentSize("),
+            "settings/ProviderFormScreen.kt" to listOf("animatedFormItem(\"cloud-section\")"),
+            "rag/RagFolderScreen.kt" to listOf("Box(Modifier.animateItem())"),
+        ).forEach { (path, markers) ->
+            val text = source(path)
+            markers.forEach { marker -> assertWithMessage(path).that(text).contains(marker) }
+        }
+        // 文档编辑器切换窗格时不得重建编辑面板：两个窗格仍各自只出现一次。
+        val editor = source("rag/DocEditorScreen.kt")
+        assertThat(editor.split("EditorPane(\n").size - editor.split("fun EditorPane(\n").size).isEqualTo(1)
+    }
 }

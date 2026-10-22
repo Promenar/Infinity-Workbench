@@ -1,5 +1,11 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
+import com.promenar.nexara.ui.theme.NexaraMotion
 import android.content.ClipData
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
@@ -506,35 +512,48 @@ fun DocEditorScreenContent(
                     ),
                 verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
-                when (visibleState) {
-                    DocEditorVisibleState.Loading -> LoadingState(Modifier.weight(1f))
-                    DocEditorVisibleState.LoadError -> LoadErrorState(
-                        onRetry = actions.onRetryLoad,
-                        modifier = Modifier.weight(1f),
-                    )
-                    DocEditorVisibleState.NotFoundOnLoad -> NotFoundState(
-                        onRetry = actions.onRetryLoad,
-                        modifier = Modifier.weight(1f),
-                    )
-                    DocEditorVisibleState.MetadataOnly -> MetadataOnlyState(
-                        editor = editor,
-                        onDismissWarning = actions.onDismissWarning,
-                        modifier = Modifier.weight(1f),
-                    )
-                    else -> LoadedDocumentContent(
-                        editor = editor,
-                        visibleState = visibleState,
-                        viewMode = effectiveMode,
-                        splitAvailable = splitAvailable,
-                        compactVertical = compactVertical,
-                        showEditorChrome = showEditorChrome,
-                        showRecoveryNotice = !prioritizeEditorSurface,
-                        actions = actions,
-                        modifier = Modifier.weight(1f),
-                    )
+                // 加载、失败、不存在、仅元数据与正文之间交叉淡入；正文内保存态变化不算切换，编辑面板保持原组合。
+                AnimatedContent(
+                    targetState = visibleState,
+                    contentKey = { it.docEditorPhase },
+                    transitionSpec = { NexaraMotion.fadeThrough() },
+                    modifier = Modifier.weight(1f),
+                    label = "doc_editor_state",
+                ) { shownState ->
+                    when (shownState) {
+                        DocEditorVisibleState.Loading -> LoadingState(Modifier.fillMaxSize())
+                        DocEditorVisibleState.LoadError -> LoadErrorState(
+                            onRetry = actions.onRetryLoad,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        DocEditorVisibleState.NotFoundOnLoad -> NotFoundState(
+                            onRetry = actions.onRetryLoad,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        DocEditorVisibleState.MetadataOnly -> MetadataOnlyState(
+                            editor = editor,
+                            onDismissWarning = actions.onDismissWarning,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        else -> LoadedDocumentContent(
+                            editor = editor,
+                            visibleState = shownState,
+                            viewMode = effectiveMode,
+                            splitAvailable = splitAvailable,
+                            compactVertical = compactVertical,
+                            showEditorChrome = showEditorChrome,
+                            showRecoveryNotice = !prioritizeEditorSurface,
+                            actions = actions,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
-                if (shouldShowDocEditorPendingIndexNotice(editor) && !prioritizeEditorSurface) {
+                AnimatedVisibility(
+                    visible = shouldShowDocEditorPendingIndexNotice(editor) && !prioritizeEditorSurface,
+                    enter = NexaraMotion.expandIn,
+                    exit = NexaraMotion.shrinkOut,
+                ) {
                     PendingIndexNotice(onRetry = actions.onRetryPendingIndex)
                 }
 
@@ -734,16 +753,22 @@ private fun LoadedDocumentContent(
                     )
                 } else Row(Modifier.fillMaxSize()) {
                     // 共享面板保持同一组合位置，切换分栏时保留选区并避免重复初始化。
-                    if (viewMode != DocEditorViewMode.PREVIEW) {
+                    // 新出现的窗格淡入；离开的窗格立即移除，不做宽度动画，避免长文在动画每帧重新排版。
+                    AnimatedVisibility(
+                        visible = viewMode != DocEditorViewMode.PREVIEW,
+                        modifier = Modifier.weight(1f),
+                        enter = PaneEnter,
+                        exit = ExitTransition.None,
+                    ) {
                         EditorPane(
                             content = editor.content,
                             onContentChange = actions.onContentChange,
                             verticalScrollState = editorVerticalScrollState,
                             horizontalScrollState = editorHorizontalScrollState,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    if (viewMode == DocEditorViewMode.SPLIT) {
+                    AnimatedVisibility(visible = viewMode == DocEditorViewMode.SPLIT, enter = PaneEnter, exit = ExitTransition.None) {
                         VerticalDivider(
                             modifier = Modifier
                                 .fillMaxHeight()
@@ -752,12 +777,17 @@ private fun LoadedDocumentContent(
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
-                    if (viewMode != DocEditorViewMode.EDIT) {
+                    AnimatedVisibility(
+                        visible = viewMode != DocEditorViewMode.EDIT,
+                        modifier = Modifier.weight(1f),
+                        enter = PaneEnter,
+                        exit = ExitTransition.None,
+                    ) {
                         PreviewPane(
                             content = previewSnapshot.content,
                             isTruncated = previewSnapshot.isTruncated,
                             verticalScrollState = previewVerticalScrollState,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -765,6 +795,18 @@ private fun LoadedDocumentContent(
         }
     }
 }
+
+private val PaneEnter = fadeIn(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))
+
+/** 正文相关的各种保存态共用一个阶段，切换保存态时不重建编辑面板。 */
+private val DocEditorVisibleState.docEditorPhase: Int
+    get() = when (this) {
+        DocEditorVisibleState.Loading -> 0
+        DocEditorVisibleState.LoadError -> 1
+        DocEditorVisibleState.NotFoundOnLoad -> 2
+        DocEditorVisibleState.MetadataOnly -> 3
+        else -> 4
+    }
 
 @Composable
 private fun DocumentIdentity(

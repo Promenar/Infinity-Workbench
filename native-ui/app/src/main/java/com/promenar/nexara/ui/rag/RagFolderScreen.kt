@@ -464,11 +464,12 @@ internal fun RagFolderScreenContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 when (state.contentState) {
-                    RagFolderContentState.Loading -> item { RagFolderLoadingState() }
-                    RagFolderContentState.Error -> item { RagFolderLoadErrorState(actions.onRetryLoad) }
-                    RagFolderContentState.Empty -> item { RagFolderEmptyState() }
+                    // 加载、失败、空与文档之间淡入淡出；增删文档时其余条目平滑补位。
+                    RagFolderContentState.Loading -> item("loading") { Box(Modifier.animateItem()) { RagFolderLoadingState() } }
+                    RagFolderContentState.Error -> item("error") { Box(Modifier.animateItem()) { RagFolderLoadErrorState(actions.onRetryLoad) } }
+                    RagFolderContentState.Empty -> item("empty") { Box(Modifier.animateItem()) { RagFolderEmptyState() } }
                     RagFolderContentState.Content -> items(state.documents, key = { it.uuid }) { doc ->
-                        RagDocItem(
+                        Box(Modifier.animateItem()) { RagDocItem(
                             title = doc.name.ifBlank { doc.uuid },
                             status = if (doc.vectorizedAt != null) RagStatus.READY else RagStatus.PENDING,
                             isSelected = doc.uuid in state.selectedIds,
@@ -480,7 +481,7 @@ internal fun RagFolderScreenContent(
                             fileSize = formatFileSize(doc.sizeBytes),
                             date = formatDate(doc.updatedAt),
                             onClick = { state.workspaceRootUuid?.let { actions.onOpenDocument(it, doc.uuid) } },
-                        )
+                        ) }
                     }
                 }
             }

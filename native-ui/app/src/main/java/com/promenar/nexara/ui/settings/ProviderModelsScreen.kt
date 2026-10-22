@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.heightIn
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -316,39 +316,49 @@ internal fun ProviderModelsScreenContent(
                 )
             ) {
                 ProviderModelsListState.Loading -> item("loading") {
-                    ProviderModelsListMessage(
-                        message = stringResource(R.string.shared_loading),
-                        tag = UiTags.PROVIDER_MODELS_STATE_LOADING,
-                    )
+                    Box(Modifier.animateItem()) {
+                        ProviderModelsListMessage(
+                            message = stringResource(R.string.shared_loading),
+                            tag = UiTags.PROVIDER_MODELS_STATE_LOADING,
+                        )
+                    }
                 }
 
                 ProviderModelsListState.Error -> item("error") {
-                    ProviderModelsListMessage(
-                        message = stringResource(R.string.provider_models_sync_failed),
-                        tag = UiTags.PROVIDER_MODELS_STATE_ERROR,
-                        assertive = true,
-                    )
+                    Box(Modifier.animateItem()) {
+                        ProviderModelsListMessage(
+                            message = stringResource(R.string.provider_models_sync_failed),
+                            tag = UiTags.PROVIDER_MODELS_STATE_ERROR,
+                            assertive = true,
+                        )
+                    }
                 }
 
                 ProviderModelsListState.Empty -> item("empty") {
-                    ProviderModelsListMessage(
-                        message = stringResource(R.string.provider_models_sync_no_models),
-                        tag = UiTags.PROVIDER_MODELS_STATE_EMPTY,
-                    )
+                    Box(Modifier.animateItem()) {
+                        ProviderModelsListMessage(
+                            message = stringResource(R.string.provider_models_sync_no_models),
+                            tag = UiTags.PROVIDER_MODELS_STATE_EMPTY,
+                        )
+                    }
                 }
 
                 ProviderModelsListState.SearchEmpty -> item("search-empty") {
-                    ProviderModelsListMessage(
-                        message = stringResource(R.string.provider_models_search) +
-                            " · " + stringResource(R.string.common_model_picker_empty), // wrap-check: allow 完整提示句
-                        tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
-                    )
+                    Box(Modifier.animateItem()) {
+                        ProviderModelsListMessage(
+                            message = stringResource(R.string.provider_models_search) +
+                                " · " + stringResource(R.string.common_model_picker_empty), // wrap-check: allow 完整提示句
+                            tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
+                        )
+                    }
                 }
 
                 ProviderModelsListState.Content -> itemsIndexed(
                     filteredModels,
                     key = { _, model -> model.id },
                 ) { index, model ->
+                    // 搜索过滤、启用全部、删除时模型行平滑补位。
+                    Box(Modifier.animateItem()) {
                         ProviderModelsModelRow(
                             model = model,
                             groupIndex = index,
@@ -360,6 +370,7 @@ internal fun ProviderModelsScreenContent(
                             },
                             onToggle = { actions.onToggle(model.id) },
                         )
+                    }
                 }
             }
         }
@@ -545,16 +556,23 @@ internal fun ProviderModelsTopActions(
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .testTag(UiTags.PROVIDER_MODELS_ACTION_SYNC),
         ) {
-            if (isFetching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Rounded.Sync,
-                    contentDescription = null,
-                )
+            androidx.compose.animation.AnimatedContent(
+                targetState = isFetching,
+                transitionSpec = { NexaraMotion.fadeThrough() },
+                contentAlignment = Alignment.Center,
+                label = "provider_models_sync_icon",
+            ) { fetching ->
+                if (fetching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = null,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.provider_models_auto_fetch), maxLines = 2)

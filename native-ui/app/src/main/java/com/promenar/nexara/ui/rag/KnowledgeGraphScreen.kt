@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.theme.NexaraMotion
 import android.app.Application
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.background
@@ -165,7 +168,7 @@ fun KnowledgeGraphScreen(
                 },
                 onRefresh = viewModel::refreshCurrentScope,
             )
-            if (viewMode == KgViewMode.DOCUMENT) {
+            AnimatedVisibility(visible = viewMode == KgViewMode.DOCUMENT, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 NexaraSettingsItem(
                     icon = Icons.Rounded.Description,
                     title = documentOptions.firstOrNull { it.docId == selectedDocumentId }?.title
@@ -186,34 +189,43 @@ fun KnowledgeGraphScreen(
                 enabled = !documentSelectionRequired,
                 modifier = Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.Small),
             )
-            if (searchQuery.isNotBlank()) {
-                when {
-                    isSearching -> Text(stringResource(R.string.kg_graph_searching), style = MaterialTheme.typography.bodySmall)
-                    searchFailed -> Text(stringResource(R.string.kg_graph_search_failed), color = MaterialTheme.colorScheme.error)
-                    searchResults.isEmpty() -> Text(stringResource(R.string.kg_graph_search_empty), style = MaterialTheme.typography.bodySmall)
-                    else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
-                        items(searchResults, key = { it.id }) { entity ->
-                            ListItem(
-                                headlineContent = { Text(entity.name) },
-                                supportingContent = { Text(entity.type) },
-                                trailingContent = {
-                                    TextButton(
-                                        onClick = { viewModel.expandNode(entity.id) },
-                                        enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT,
-                                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
-                                    ) {
-                                        Text(stringResource(R.string.kg_graph_expand_neighbors))
-                                    }
-                                },
-                            )
+            // 搜索结果区随输入展开收起，搜索中、失败、无结果与列表之间交叉淡入。
+            AnimatedVisibility(visible = searchQuery.isNotBlank(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                val searchPhase = when {
+                    isSearching -> KgSearchPhase.Searching
+                    searchFailed -> KgSearchPhase.Failed
+                    searchResults.isEmpty() -> KgSearchPhase.Empty
+                    else -> KgSearchPhase.Results
+                }
+                AnimatedContent(targetState = searchPhase, transitionSpec = { NexaraMotion.fadeThrough() }, label = "kg_search_phase") { shown ->
+                    when (shown) {
+                        KgSearchPhase.Searching -> Text(stringResource(R.string.kg_graph_searching), style = MaterialTheme.typography.bodySmall)
+                        KgSearchPhase.Failed -> Text(stringResource(R.string.kg_graph_search_failed), color = MaterialTheme.colorScheme.error)
+                        KgSearchPhase.Empty -> Text(stringResource(R.string.kg_graph_search_empty), style = MaterialTheme.typography.bodySmall)
+                        KgSearchPhase.Results -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
+                            items(searchResults, key = { it.id }) { entity ->
+                                ListItem(
+                                    headlineContent = { Text(entity.name) },
+                                    supportingContent = { Text(entity.type) },
+                                    trailingContent = {
+                                        TextButton(
+                                            onClick = { viewModel.expandNode(entity.id) },
+                                            enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT,
+                                            modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                                        ) {
+                                            Text(stringResource(R.string.kg_graph_expand_neighbors))
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
-            if (nodes.size >= MAX_GRAPH_NODE_LIMIT) {
+            AnimatedVisibility(visible = nodes.size >= MAX_GRAPH_NODE_LIMIT, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 Text(stringResource(R.string.kg_graph_display_limit), style = MaterialTheme.typography.bodySmall)
             }
-            loadError?.let {
+            AnimatedVisibility(visible = loadError != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -237,7 +249,7 @@ fun KnowledgeGraphScreen(
                     }
                 }
             }
-            if (nodes.isNotEmpty()) {
+            AnimatedVisibility(visible = nodes.isNotEmpty(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                     FilledTonalButton(
                         onClick = { showAccessibilityList = true },
@@ -272,49 +284,52 @@ fun KnowledgeGraphScreen(
                     // 平移缩放后的连线不得画到上方的筛选与搜索控件上。
                     .clipToBounds(),
             ) {
-                if (nodes.isNotEmpty()) {
-                    InteractiveGraphCanvas(
-                        simulator = simulator,
-                        edges = edges,
-                        summary = stringResource(
-                            R.string.kg_canvas_summary,
-                            nodes.size,
-                            edges.size,
-                            when (viewMode) {
-                                KgViewMode.GLOBAL -> stringResource(R.string.kg_view_global)
-                                KgViewMode.DOCUMENT -> stringResource(R.string.kg_view_document)
-                                KgViewMode.CONCEPT -> stringResource(R.string.kg_filter_concepts)
-                            },
-                            stringResource(R.string.kg_canvas_gestures),
-                        ),
-                        modifier = Modifier.fillMaxSize(),
-                        resetKey = resetKey,
-                    )
-                } else if (isLoading) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else if (documentSelectionRequired) {
-                    Text(
-                        text = stringResource(R.string.kg_document_required),
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(horizontal = NexaraSpacing.Large),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.kg_empty_graph),
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(horizontal = NexaraSpacing.Large),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
+                // 图谱画布、加载、需选文档与空图谱之间交叉淡入；画布阶段内数据增长不触发切换。
+                val canvasPhase = when {
+                    nodes.isNotEmpty() -> KgCanvasPhase.Graph
+                    isLoading -> KgCanvasPhase.Loading
+                    documentSelectionRequired -> KgCanvasPhase.DocumentRequired
+                    else -> KgCanvasPhase.Empty
+                }
+                AnimatedContent(
+                    targetState = canvasPhase,
+                    transitionSpec = { NexaraMotion.fadeThrough() },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "kg_canvas_phase",
+                ) { shown ->
+                    when (shown) {
+                        KgCanvasPhase.Graph -> InteractiveGraphCanvas(
+                            simulator = simulator,
+                            edges = edges,
+                            summary = stringResource(
+                                R.string.kg_canvas_summary,
+                                nodes.size,
+                                edges.size,
+                                when (viewMode) {
+                                    KgViewMode.GLOBAL -> stringResource(R.string.kg_view_global)
+                                    KgViewMode.DOCUMENT -> stringResource(R.string.kg_view_document)
+                                    KgViewMode.CONCEPT -> stringResource(R.string.kg_filter_concepts)
+                                },
+                                stringResource(R.string.kg_canvas_gestures),
+                            ),
+                            modifier = Modifier.fillMaxSize(),
+                            resetKey = resetKey,
+                        )
+                        KgCanvasPhase.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            androidx.compose.material3.CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                        KgCanvasPhase.DocumentRequired, KgCanvasPhase.Empty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(
+                                    if (shown == KgCanvasPhase.DocumentRequired) R.string.kg_document_required else R.string.kg_empty_graph,
+                                ),
+                                modifier = Modifier.padding(horizontal = NexaraSpacing.Large),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -486,3 +501,7 @@ internal fun KnowledgeGraphDocumentOptionsContent(
         }
     }
 }
+
+private enum class KgSearchPhase { Searching, Failed, Empty, Results }
+
+private enum class KgCanvasPhase { Graph, Loading, DocumentRequired, Empty }

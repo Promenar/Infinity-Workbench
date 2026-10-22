@@ -3,7 +3,6 @@ package com.promenar.nexara.ui.settings
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,6 +104,7 @@ import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.termux.TermuxAvailability
@@ -262,60 +262,67 @@ fun SkillsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                when (selectedTab) {
-                    0 -> BuiltinToolsSections(
-                        tools = presetSkills,
-                        onToggle = viewModel::toggleSkill,
-                        onConfigureSearch = { showSearchConfig = true },
-                    )
-                    1 -> Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
-                        AgentSkillsSection(
-                            skills = skillCatalogState.snapshot?.user.orEmpty(),
-                            actions = com.promenar.nexara.ui.skills.SkillCatalogActions(
-                                onToggle = { skill, enabled -> skillCatalogViewModel.setEnabled(skill, enabled) },
-                                onAcknowledge = skillCatalogViewModel::acknowledgeModified,
-                                onDelete = skillCatalogViewModel::delete,
-                                loadDocument = skillCatalogViewModel::loadDocument,
-                                onEdit = { skill ->
-                                    agentSkillScope.launch {
-                                        val document = agentSkillsViewModel.loadDocument(skill.name) ?: return@launch
-                                        agentSkillEditor = AgentSkillEditorState(
-                                            name = skill.name,
-                                            description = document.metadata.description,
-                                            body = document.body,
-                                            allowedTools = document.metadata.allowedTools,
-                                        )
-                                    }
-                                },
-                            ),
-                            onImport = {
-                                importSkillLauncher.launch(
-                                    arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
-                                )
-                            },
-                            onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
+                // 同级标签按左右顺序做共享 X 轴切换，高度差由尺寸过渡平滑衔接。
+                androidx.compose.animation.AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState > initialState) },
+                    label = "skills_tab",
+                ) { tab ->
+                    when (tab) {
+                        0 -> BuiltinToolsSections(
+                            tools = presetSkills,
+                            onToggle = viewModel::toggleSkill,
+                            onConfigureSearch = { showSearchConfig = true },
                         )
-                        if (userSkills.isNotEmpty()) {
-                            LegacyUserToolsSection(
-                                tools = userSkills.map { SkillInfo(it.id, it.name, it.description, it.enabled) },
-                                onToggle = viewModel::toggleSkill,
-                                onEdit = { id ->
-                                    selectedSkillForEdit = id
-                                    showCreateSkill = true
+                        1 -> Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
+                            AgentSkillsSection(
+                                skills = skillCatalogState.snapshot?.user.orEmpty(),
+                                actions = com.promenar.nexara.ui.skills.SkillCatalogActions(
+                                    onToggle = { skill, enabled -> skillCatalogViewModel.setEnabled(skill, enabled) },
+                                    onAcknowledge = skillCatalogViewModel::acknowledgeModified,
+                                    onDelete = skillCatalogViewModel::delete,
+                                    loadDocument = skillCatalogViewModel::loadDocument,
+                                    onEdit = { skill ->
+                                        agentSkillScope.launch {
+                                            val document = agentSkillsViewModel.loadDocument(skill.name) ?: return@launch
+                                            agentSkillEditor = AgentSkillEditorState(
+                                                name = skill.name,
+                                                description = document.metadata.description,
+                                                body = document.body,
+                                                allowedTools = document.metadata.allowedTools,
+                                            )
+                                        }
+                                    },
+                                ),
+                                onImport = {
+                                    importSkillLauncher.launch(
+                                        arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
+                                    )
                                 },
-                                onDelete = viewModel::deleteCustomSkill,
+                                onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
                             )
+                            if (userSkills.isNotEmpty()) {
+                                LegacyUserToolsSection(
+                                    tools = userSkills.map { SkillInfo(it.id, it.name, it.description, it.enabled) },
+                                    onToggle = viewModel::toggleSkill,
+                                    onEdit = { id ->
+                                        selectedSkillForEdit = id
+                                        showCreateSkill = true
+                                    },
+                                    onDelete = viewModel::deleteCustomSkill,
+                                )
+                            }
                         }
+                        2 -> McpServersSection(
+                            servers = mcpServers,
+                            expandedServerId = expandedServerId,
+                            onToggleExpand = { id -> expandedServerId = if (expandedServerId == id) null else id },
+                            onToggleEnabled = viewModel::toggleMcpServer,
+                            onDelete = viewModel::deleteMcpServer,
+                            onSync = viewModel::syncMcpServer,
+                            onAdd = { showAddMcp = true },
+                        )
                     }
-                    2 -> McpServersSection(
-                        servers = mcpServers,
-                        expandedServerId = expandedServerId,
-                        onToggleExpand = { id -> expandedServerId = if (expandedServerId == id) null else id },
-                        onToggleEnabled = viewModel::toggleMcpServer,
-                        onDelete = viewModel::deleteMcpServer,
-                        onSync = viewModel::syncMcpServer,
-                        onAdd = { showAddMcp = true },
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

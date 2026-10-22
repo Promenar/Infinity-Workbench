@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.runtime.remember
 import com.promenar.nexara.ui.workspace.WorkspacePickerSheet
@@ -368,15 +371,31 @@ internal fun ResourceExplorerSheetContent(
                     actions = actions,
                     filesContent = filesContent,
                 )
-                ResourceExplorerTab.RecycleBin -> when {
-                    state.workspaceMode is ResourceExplorerWorkspaceMode.Directory ||
-                        state.workspaceMode is ResourceExplorerWorkspaceMode.Unavailable -> DirectoryRecycleInfo()
-                    state.isLoading -> ResourceExplorerSessionState(isLoading = true)
-                    state.hasLoadError -> ResourceExplorerSessionState(
-                        isLoading = false,
-                        onRetry = actions.onRetryLoad,
-                    )
-                    else -> recycleBinContent()
+                ResourceExplorerTab.RecycleBin -> {
+                    // 目录工作区说明、加载、失败与回收站列表之间交叉淡入。
+                    val recyclePhase = when {
+                        state.workspaceMode is ResourceExplorerWorkspaceMode.Directory ||
+                            state.workspaceMode is ResourceExplorerWorkspaceMode.Unavailable -> 0
+                        state.isLoading -> 1
+                        state.hasLoadError -> 2
+                        else -> 3
+                    }
+                    AnimatedContent(
+                        targetState = recyclePhase,
+                        transitionSpec = { NexaraMotion.fadeThrough() },
+                        modifier = Modifier.fillMaxSize(),
+                        label = "resource_explorer_recycle_phase",
+                    ) { phase ->
+                        when (phase) {
+                            0 -> DirectoryRecycleInfo()
+                            1 -> ResourceExplorerSessionState(isLoading = true)
+                            2 -> ResourceExplorerSessionState(
+                                isLoading = false,
+                                onRetry = actions.onRetryLoad,
+                            )
+                            else -> recycleBinContent()
+                        }
+                    }
                 }
             }
         }
@@ -416,9 +435,18 @@ private fun ResourceExplorerGitEntry(
     state: ResourceExplorerSheetState,
     actions: ResourceExplorerSheetActions,
 ) {
-    if (state.gitEntry != GitEntrySummary.Hidden) {
-        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-        GitWorkspaceEntry(summary = state.gitEntry, onClick = actions.onOpenGitPanel)
+    // 收起期间沿用最后一次可见的摘要，避免入口在动画中途变空。
+    val shownEntry = remember { arrayOfNulls<GitEntrySummary>(1) }
+    if (state.gitEntry != GitEntrySummary.Hidden) shownEntry[0] = state.gitEntry
+    AnimatedVisibility(
+        visible = state.gitEntry != GitEntrySummary.Hidden,
+        enter = NexaraMotion.expandIn,
+        exit = NexaraMotion.shrinkOut,
+    ) {
+        Column {
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+            shownEntry[0]?.let { GitWorkspaceEntry(summary = it, onClick = actions.onOpenGitPanel) }
+        }
     }
 }
 
@@ -536,14 +564,18 @@ private fun ResourceExplorerPrivateFilesPage(
             }
         }
 
-        if (state.importItems.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-            ImportStatusList(
-                items = state.importItems,
-                isImporting = state.isImporting,
-                onRetry = actions.onRetryImport,
-                onClear = actions.onClearImportResults,
-            )
+        val shownImports = remember { arrayOfNulls<List<ShareImportItem>>(1) }
+        if (state.importItems.isNotEmpty()) shownImports[0] = state.importItems
+        AnimatedVisibility(visible = state.importItems.isNotEmpty(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+            Column {
+                Spacer(modifier = Modifier.height(NexaraSpacing.Small))
+                ImportStatusList(
+                    items = shownImports[0].orEmpty(),
+                    isImporting = state.isImporting,
+                    onRetry = actions.onRetryImport,
+                    onClear = actions.onClearImportResults,
+                )
+            }
         }
 
         ResourceExplorerGitEntry(state, actions)

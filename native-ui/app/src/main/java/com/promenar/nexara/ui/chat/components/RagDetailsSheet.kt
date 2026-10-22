@@ -6,6 +6,7 @@ import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -269,10 +270,18 @@ fun RagDetailsSheetContent(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(8.dp))
-            when (tabs[selectedTabIndex]) {
-                RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace)
-                RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
-                RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths, references)
+            // 同级标签按左右顺序做共享 X 轴切换。
+            androidx.compose.animation.AnimatedContent(
+                targetState = selectedTabIndex,
+                transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState > initialState) },
+                modifier = Modifier.fillMaxWidth(),
+                label = "rag_details_tab",
+            ) { index ->
+                when (tabs[index.coerceIn(0, tabs.lastIndex)]) {
+                    RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace)
+                    RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
+                    RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths, references)
+                }
             }
         }
     }

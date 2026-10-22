@@ -14,6 +14,7 @@ class ReleaseReachableUiLocalizationContractTest {
         "ui/common/FolderBreadcrumbs.kt",
         "ui/common/FolderEntriesList.kt",
         "ui/chat/components/FileTextPreviewPanel.kt",
+        "ui/chat/GenerationProgressCapsule.kt",
         "ui/chat/components/ExternalFoldersPanel.kt",
         "ui/chat/components/RagDetailsSheet.kt",
         "ui/chat/components/RecycleBinPanel.kt",
