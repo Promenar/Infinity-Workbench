@@ -40,6 +40,17 @@ fun chatGenerationProgressPlanDarkPreview() = GenerationProgressPage(english = f
 @Composable
 fun chatGenerationProgressPlanLightPreview() = GenerationProgressPage(english = true, mode = NexaraThemeMode.LIGHT, withPlan = true)
 
+// 首字到达前：回复位置显示静止的三点（预览中不运行波浪动画），浅深色下主色到第三色的过渡都须清晰可辨。
+@PreviewTest
+@Preview(name = "等待首字 深中411", widthDp = 411, heightDp = 892, locale = "zh-rCN")
+@Composable
+fun chatGenerationWaitingDarkPreview() = GenerationProgressPage(english = false, waiting = true)
+
+@PreviewTest
+@Preview(name = "等待首字 浅英360", widthDp = 360, heightDp = 892, locale = "en")
+@Composable
+fun chatGenerationWaitingLightPreview() = GenerationProgressPage(english = true, mode = NexaraThemeMode.LIGHT, waiting = true)
+
 private fun progressPlan(english: Boolean): TaskPanelUiState = requireNotNull(
     taskPanelUiState(
         listOf(
@@ -52,7 +63,12 @@ private fun progressPlan(english: Boolean): TaskPanelUiState = requireNotNull(
 )
 
 @Composable
-private fun GenerationProgressPage(english: Boolean, mode: NexaraThemeMode = NexaraThemeMode.DARK, withPlan: Boolean = false) {
+private fun GenerationProgressPage(
+    english: Boolean,
+    mode: NexaraThemeMode = NexaraThemeMode.DARK,
+    withPlan: Boolean = false,
+    waiting: Boolean = false,
+) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.background) {
             ChatScreenContent(
@@ -60,7 +76,7 @@ private fun GenerationProgressPage(english: Boolean, mode: NexaraThemeMode = Nex
                     uiState = ChatUiState(
                         session = Session("progress", "assistant", title = if (english) "Media test" else "媒体测试", modelId = "deepseek::v4-flash"),
                         agentName = "Nexara",
-                        messages = progressMessages(english),
+                        messages = progressMessages(english, waiting),
                         isGenerating = true,
                         status = GenerationStatus.RECEIVING,
                     ),
@@ -75,7 +91,7 @@ private fun GenerationProgressPage(english: Boolean, mode: NexaraThemeMode = Nex
     }
 }
 
-private fun progressMessages(english: Boolean): List<Message> {
+private fun progressMessages(english: Boolean, waiting: Boolean = false): List<Message> {
     val answer = if (english) {
         "Both probes are back. The workspace root only holds the media and skills folders. The media test folder contains four files: two MP4 clips, one chart image and one tone recording, and the two MP4 clips are identical copies. There are no Markdown files anywhere in the workspace."
     } else {
@@ -86,12 +102,17 @@ private fun progressMessages(english: Boolean): List<Message> {
     } else {
         "任务一：列出工作区根目录。任务二：查找工作区内所有 Markdown 文件。最后用一句话总结两个结果。"
     }
-    return (1..3).flatMap { round ->
+    val rounds = (1..3).flatMap { round ->
         listOf(
             Message("user-$round", MessageRole.USER, question, createdAt = 1700000000000L + round * 60_000),
             Message("assistant-$round", MessageRole.ASSISTANT, answer, modelId = "deepseek::v4-flash", createdAt = 1700000030000L + round * 60_000),
         )
     }
+    if (!waiting) return rounds
+    return rounds.take(2) + listOf(
+        Message("user-next", MessageRole.USER, question, createdAt = 1700000300000L),
+        Message("assistant-next", MessageRole.ASSISTANT, "", modelId = "deepseek::v4-flash", createdAt = 1700000330000L),
+    )
 }
 
 // 活动栏的典型状态：刚开始（只有运行指示）、普通对话（只有 Token）、工具循环中、估算 Token 的长任务；

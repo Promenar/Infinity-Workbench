@@ -15,10 +15,22 @@ internal data class StreamRevealFrame(
     val hasFadingText: Boolean get() = recentRanges.isNotEmpty()
 }
 
-internal fun streamRevealAlpha(ageNanos: Long): Float = when {
-    ageNanos < 60_000_000L -> 0.3f
-    ageNanos < 120_000_000L -> 0.65f
-    else -> 1f
+/** 新放出的字从出现到完全融入正文的时长。 */
+internal const val StreamRevealFadeNanos = 280_000_000L
+private const val StreamRevealStartAlpha = 0.2f
+
+private fun streamRevealProgress(ageNanos: Long): Float = (ageNanos.toFloat() / StreamRevealFadeNanos).coerceIn(0f, 1f)
+
+/** 新字的不透明度：从 0.2 缓出到 1，前段上升快，高速流式时末尾不会发虚。 */
+internal fun streamRevealAlpha(ageNanos: Long): Float {
+    val remaining = 1f - streamRevealProgress(ageNanos)
+    return StreamRevealStartAlpha + (1f - StreamRevealStartAlpha) * (1f - remaining * remaining * remaining)
+}
+
+/** 新字混入强调色的比例：刚出现时为 1，随后平滑退回正文颜色。 */
+internal fun streamRevealTint(ageNanos: Long): Float {
+    val x = streamRevealProgress(ageNanos)
+    return 1f - x * x * (3f - 2f * x)
 }
 
 /** 时间只由调用方注入；长度以 UTF-16 累加，真正显示的位置对齐到完整字形。 */
@@ -135,7 +147,7 @@ internal class StreamRevealer(initialText: String? = null) {
     }
 
     private fun snapshot(nowNanos: Long): StreamRevealFrame {
-        while (recentRanges.firstOrNull()?.let { nowNanos - it.revealedAtNanos >= 120_000_000L } == true) {
+        while (recentRanges.firstOrNull()?.let { nowNanos - it.revealedAtNanos >= StreamRevealFadeNanos } == true) {
             recentRanges.removeFirst()
         }
         return StreamRevealFrame(visibleText, nowNanos, recentRanges.toList(), sourceText = target)

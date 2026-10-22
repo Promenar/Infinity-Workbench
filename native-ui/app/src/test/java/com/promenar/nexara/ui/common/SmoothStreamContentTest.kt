@@ -199,11 +199,21 @@ class SmoothStreamContentTest {
     }
 
     @Test
-    fun `新文字注解透明度按60和120毫秒分档`() {
-        assertEquals(0.3f, streamRevealAlpha(ageNanos = 0L), 0.001f)
-        assertEquals(0.3f, streamRevealAlpha(ageNanos = 59_999_999L), 0.001f)
-        assertEquals(0.65f, streamRevealAlpha(ageNanos = 60_000_000L), 0.001f)
-        assertEquals(0.65f, streamRevealAlpha(ageNanos = 119_999_999L), 0.001f)
-        assertEquals(1f, streamRevealAlpha(ageNanos = 120_000_000L), 0.001f)
+    fun `新文字从低透明度连续淡入并从强调色退回正文色`() {
+        assertEquals(0.2f, streamRevealAlpha(ageNanos = 0L), 0.001f)
+        assertEquals(1f, streamRevealAlpha(ageNanos = StreamRevealFadeNanos), 0.001f)
+        assertEquals(1f, streamRevealAlpha(ageNanos = StreamRevealFadeNanos * 3), 0.001f)
+        assertEquals(1f, streamRevealTint(ageNanos = 0L), 0.001f)
+        assertEquals(0f, streamRevealTint(ageNanos = StreamRevealFadeNanos), 0.001f)
+        // 缓出：前一半时间内透明度已升到九成左右，强调色还剩一半，渐变途中看得见色彩。
+        assertTrue(streamRevealAlpha(StreamRevealFadeNanos / 2) > 0.85f)
+        assertEquals(0.5f, streamRevealTint(StreamRevealFadeNanos / 2), 0.001f)
+        // 逐帧单调，不再出现分档跳变。
+        val ages = (0..17).map { it * 16_666_667L }
+        ages.zipWithNext().forEach { (a, b) ->
+            assertTrue(streamRevealAlpha(b) >= streamRevealAlpha(a))
+            assertTrue(streamRevealTint(b) <= streamRevealTint(a))
+            assertTrue("相邻帧透明度跳变过大", streamRevealAlpha(b) - streamRevealAlpha(a) < 0.15f)
+        }
     }
 }

@@ -26,6 +26,7 @@ object UiTags {
     const val CHAT_ASSISTANT_STATS_TRIGGER = "chat_assistant_stats_trigger"
     const val CHAT_LOADING_SKELETON = "chat_loading_skeleton"
     const val CHAT_EMPTY_WORDMARK = "chat_empty_wordmark"
+    const val CHAT_GENERATING_INDICATOR = "chat_generating_indicator"
     const val CHAT_GENERATION_ACTION = "chat_generation_action"
     const val CHAT_COMPOSER = "chat_composer"
     const val CHAT_TASK_PANEL_HEADER = "task_floating_panel_header"

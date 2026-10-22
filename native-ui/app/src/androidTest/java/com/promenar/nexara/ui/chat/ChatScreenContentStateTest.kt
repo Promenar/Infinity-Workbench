@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -101,6 +102,33 @@ class ChatScreenContentStateTest {
             .assertContentDescriptionEquals(resource(R.string.chat_cd_stop))
             .performClick()
         rule.runOnIdle { assertThat(stopped).isTrue() }
+    }
+
+    @Test
+    fun waitingForFirstToken_showsGenerationDotsUntilContentArrives() {
+        val question = Message("user-1", MessageRole.USER, "写一首短诗", createdAt = 1L)
+        var uiState by mutableStateOf(
+            ChatUiState(
+                session = session,
+                messages = listOf(question, Message("assistant-1", MessageRole.ASSISTANT, "", createdAt = 2L)),
+                isGenerating = true,
+                status = GenerationStatus.THINKING,
+            ),
+        )
+        rule.setContent {
+            NexaraTheme {
+                ChatScreenContent(state = ChatScreenState(uiState = uiState), actions = ChatScreenActions())
+            }
+        }
+
+        // 首字到达前显示三点波浪；无限动画不阻塞测试空闲，读屏报“正在生成回复”。
+        rule.onNodeWithTag(UiTags.CHAT_GENERATING_INDICATOR, useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithContentDescription(resource(R.string.chat_cd_generating_response), useUnmergedTree = true).assertExists()
+
+        rule.runOnIdle {
+            uiState = uiState.copy(messages = listOf(question, Message("assistant-1", MessageRole.ASSISTANT, "春风", createdAt = 2L)))
+        }
+        rule.onNodeWithTag(UiTags.CHAT_GENERATING_INDICATOR, useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test

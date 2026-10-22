@@ -66,6 +66,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentCodec
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentItem
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentOpenResult
+import com.promenar.nexara.ui.common.GenerationDots
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -292,7 +293,7 @@ fun PipelineBubble(
                 }
             }
         }
-        if (renderPlan.showStandaloneCursor) StreamingCursor()
+        if (renderPlan.showStandaloneCursor) GenerationIndicator()
         if (footerContent != null) {
             pipelineContentOwner(group.messages, footerContent)?.let { lastMsg ->
                 val context = LocalContext.current
@@ -1433,34 +1434,20 @@ private fun formatMessageDocumentBytes(bytes: Long): String = when {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  StreamingCursor — 生成中的闪烁光标
+//  GenerationIndicator — 首字到达前的三点波浪
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StreamingCursor() {
-    val generatingDescription = stringResource(R.string.chat_cd_generating_response)
-    val transition = rememberInfiniteTransition(label = "cursor")
-    val alpha by transition.animateFloat(
-        initialValue = 1f, targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-        label = "cursorAlpha"
-    )
+private fun GenerationIndicator() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 32.dp) // 确保在首字生成前有足够的占位高度
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp)
+            .testTag(UiTags.CHAT_GENERATING_INDICATOR),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 移除 PipelineConnector 以修复光标偏右 Bug，使其与正文左对齐
-        Box(
-            modifier = Modifier
-                .width(10.dp)
-                .height(20.dp)
-                .alpha(alpha)
-                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
-                .semantics { contentDescription = generatingDescription }
-        )
+        GenerationDots()
     }
 }
 

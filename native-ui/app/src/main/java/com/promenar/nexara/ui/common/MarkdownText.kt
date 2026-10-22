@@ -7,11 +7,6 @@ import android.graphics.Typeface
 import android.os.Build
 import android.webkit.WebView
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,7 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -142,6 +136,7 @@ import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.renderer.nexaraSyntaxTheme
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.layout.PaddingValues
 import com.promenar.nexara.ui.renderer.TableMeasurer
 import com.promenar.nexara.ui.renderer.parseMarkdownTable
@@ -451,7 +446,7 @@ fun MarkdownText(
                 }
 
                 if (isStreaming && showCursor) {
-                    StreamingCursor()
+                    GenerationDots(Modifier.padding(start = 2.dp, top = 6.dp), dotSize = 5.dp, gap = 4.dp, lift = 3.dp)
                 }
             }
         }
@@ -524,7 +519,8 @@ internal fun visibleMarkdownNode(node: ASTNode, end: Int): ASTNode {
     }
 }
 
-internal data class ReadingRevealRange(val start: Int, val end: Int, val alpha: Float)
+/** 新字区间的显示样式：[alpha] 为不透明度系数，[tint] 为混入强调色的比例。 */
+internal data class ReadingRevealRange(val start: Int, val end: Int, val alpha: Float, val tint: Float = 0f)
 internal data class ReadingMarkdownAnnotators(val base: MarkdownAnnotator, val tail: MarkdownAnnotator)
 
 @Composable
@@ -533,11 +529,15 @@ internal fun rememberReadingMarkdownAnnotators(
     textColor: Color,
     sourceOffset: Int,
     reveal: StreamRevealFrame?,
+    accent: Color = textColor,
 ): ReadingMarkdownAnnotators {
-    val ranges = reveal?.recentRanges?.map { ReadingRevealRange(it.start, it.end, streamRevealAlpha(reveal.nowNanos - it.revealedAtNanos)) }.orEmpty()
+    val ranges = reveal?.recentRanges?.map {
+        val age = reveal.nowNanos - it.revealedAtNanos
+        ReadingRevealRange(it.start, it.end, streamRevealAlpha(age), streamRevealTint(age))
+    }.orEmpty()
     val base = remember(inlineCodeStyle, textColor) { readingMarkdownAnnotator(inlineCodeStyle, textColor, emptyList(), 0) }
     val tail = remember(base, ranges, sourceOffset) {
-        if (ranges.isEmpty()) base else readingMarkdownAnnotator(inlineCodeStyle, textColor, ranges, sourceOffset)
+        if (ranges.isEmpty()) base else readingMarkdownAnnotator(inlineCodeStyle, textColor, ranges, sourceOffset, accent)
     }
     return ReadingMarkdownAnnotators(base, tail)
 }
@@ -547,18 +547,19 @@ internal fun readingMarkdownAnnotator(
     textColor: Color,
     ranges: List<ReadingRevealRange>,
     sourceOffset: Int,
+    accent: Color = textColor,
 ): MarkdownAnnotator = markdownAnnotator(config = markdownAnnotatorConfig(eolAsNewLine = true)) { source, node ->
     when {
         node.type == MarkdownElementTypes.CODE_SPAN -> {
             pushStyle(inlineCodeStyle)
             appendInlineContent(INLINE_CODE_PADDING_ID, INLINE_CODE_PADDING_ALTERNATE_TEXT)
-            node.children.drop(1).dropLast(1).forEach { child -> appendRevealedLeaf(source, child, ranges, sourceOffset, textColor) }
+            node.children.drop(1).dropLast(1).forEach { child -> appendRevealedLeaf(source, child, ranges, sourceOffset, textColor, accent) }
             appendInlineContent(INLINE_CODE_PADDING_ID, INLINE_CODE_PADDING_ALTERNATE_TEXT)
             pop()
             true
         }
         node.children.isEmpty() && node.type in revealLiteralTypes -> {
-            appendRevealedLeaf(source, node, ranges, sourceOffset, textColor)
+            appendRevealedLeaf(source, node, ranges, sourceOffset, textColor, accent)
             true
         }
         // 真正的公式已在分段时拆为 InlineLatex；GFM 仍会把 `$5 and $` 等货币片段解析为行内数学节点，
@@ -566,7 +567,7 @@ internal fun readingMarkdownAnnotator(
         node.type == GFMElementTypes.INLINE_MATH -> {
             fun appendLiteral(child: ASTNode) {
                 if (child.children.isEmpty()) {
-                    appendRevealedLeaf(source, child, ranges, sourceOffset, textColor)
+                    appendRevealedLeaf(source, child, ranges, sourceOffset, textColor, accent)
                 } else {
                     child.children.forEach(::appendLiteral)
                 }
@@ -584,6 +585,7 @@ private fun AnnotatedString.Builder.appendRevealedLeaf(
     ranges: List<ReadingRevealRange>,
     sourceOffset: Int,
     textColor: Color,
+    accent: Color,
 ) {
     val start = length
     val text = node.getUnescapedTextInNode(source)
@@ -599,7 +601,10 @@ private fun AnnotatedString.Builder.appendRevealedLeaf(
             }
             val from = start + renderedOffset(overlapStart)
             val to = start + renderedOffset(overlapEnd)
-            if (from < to) addStyle(SpanStyle(color = textColor.copy(alpha = textColor.alpha * range.alpha)), from, to)
+            if (from < to) {
+                val color = lerp(textColor, accent.copy(alpha = textColor.alpha), range.tint)
+                addStyle(SpanStyle(color = color.copy(alpha = color.alpha * range.alpha)), from, to)
+            }
         }
     }
 }
@@ -1232,7 +1237,7 @@ private fun MarkdownSafe(
         background = MaterialTheme.colorScheme.surfaceContainerHigh,
         color = textColor,
     )
-    val annotators = rememberReadingMarkdownAnnotators(inlineCodeStyle, textColor, sourceOffset, reveal)
+    val annotators = rememberReadingMarkdownAnnotators(inlineCodeStyle, textColor, sourceOffset, reveal, MaterialTheme.colorScheme.primary)
     val workspaceMedia = com.promenar.nexara.ui.media.LocalWorkspaceMedia.current
     val legacyRoots = rememberLegacyGeneratedRoots()
 
@@ -1575,31 +1580,6 @@ internal fun sanitizeStreamingMarkdown(text: String): String {
     return result
 }
 
-@Composable
-private fun StreamingCursor() {
-    val generatingDescription = stringResource(R.string.chat_cd_generating_response)
-    val transition = rememberInfiniteTransition(label = "cursor")
-    val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cursorAlpha"
-    )
-    Box(
-        modifier = Modifier
-            .padding(start = 4.dp, top = 4.dp)
-            .width(8.dp)
-            .height(16.dp)
-            .alpha(alpha)
-            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
-            .semantics {
-                contentDescription = generatingDescription
-            }
-    )
-}
 
 internal fun slugify(text: String): String {
     return text.trim()
