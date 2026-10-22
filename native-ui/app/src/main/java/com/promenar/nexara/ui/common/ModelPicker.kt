@@ -172,7 +172,7 @@ internal fun ModelPickerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("model_picker_item:${model.selectionId}"),
-                        tailnetBadge = networkLights?.badgeFor(model),
+                        networkBadge = networkLights?.badgeFor(model),
                     )
                 }
             }

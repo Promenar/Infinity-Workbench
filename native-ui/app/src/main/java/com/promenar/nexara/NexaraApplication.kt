@@ -1552,7 +1552,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         rebuildMemoryManager()
     }
 
-    private val providerListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    // 写入方（ProviderManager）可能持锁 apply()，回调推迟到下一条主线程消息，避免重建组件时与后台反向加锁死锁。
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private val providerListener = com.promenar.nexara.utils.DeferredPreferenceChangeListener({ mainHandler.post(it) }) { key ->
         if (key == "base_url" || key == "embedding_base_url") {
             rebuildEmbeddingClient()
             rebuildRerankClient()
@@ -1564,7 +1567,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         }
     }
 
-    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    private val settingsListener = com.promenar.nexara.utils.DeferredPreferenceChangeListener({ mainHandler.post(it) }) { key ->
         if (key == "preset_embedding_model" || key == "all_models" || key == "enabled_models") {
             rebuildEmbeddingClient()
             resetVectorizationQueue()

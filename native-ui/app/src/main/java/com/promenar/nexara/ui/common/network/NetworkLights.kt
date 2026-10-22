@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -76,11 +77,12 @@ enum class TailscaleLightAction { OPEN_SETTINGS, RETRY }
 fun TailscaleLightStatus.action(): TailscaleLightAction =
     if (this == TailscaleLightStatus.FAILED) TailscaleLightAction.RETRY else TailscaleLightAction.OPEN_SETTINGS
 
-/** 模型选择器所需的网络状态：两盏灯与接口在 tailnet 内的提供商。 */
+/** 模型选择器所需的网络状态：两盏灯、接口在 tailnet 内的提供商与本机推理提供商。 */
 data class NetworkLightsState(
     val public: PublicNetworkStatus,
     val tailscale: TailscaleLightStatus?,
     val tailnetProviderIds: Set<String>,
+    val localProviderIds: Set<String> = emptySet(),
 )
 
 fun networkLightsState(
@@ -92,35 +94,67 @@ fun networkLightsState(
     val tailnetProviderIds = providers
         .filter { (it.hasApiKey || it.hasVertexCredentials) && TailnetEndpoints.isTailnetEndpoint(it.baseUrl, tailnet) }
         .mapTo(mutableSetOf()) { it.id }
+    val localProviderIds = providers
+        .filter { it.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local }
+        .mapTo(mutableSetOf()) { it.id }
     return NetworkLightsState(
         public = public,
         tailscale = tailscaleLightStatus(tailnet.phase, tailnetProviderIds.isNotEmpty()),
         tailnetProviderIds = tailnetProviderIds,
+        localProviderIds = localProviderIds,
     )
 }
 
-/** 模型经 Tailscale 内网访问时，行内小灯显示的状态；公网模型为 null。 */
-fun NetworkLightsState.badgeFor(model: com.promenar.nexara.ui.common.ModelSelectionUiModel): TailscaleLightStatus? =
-    tailscale?.takeIf { model.providerId in tailnetProviderIds }
+/** 模型行品牌图标右下角的小灯：显示该模型所走网络的状态。 */
+sealed interface ModelNetworkBadge {
+    data class Public(val status: PublicNetworkStatus) : ModelNetworkBadge
+    data class Tailnet(val status: TailscaleLightStatus) : ModelNetworkBadge
+}
+
+/** 经 Tailscale 内网访问的模型显示 Tailscale 灯，其它经网络访问的模型显示公网灯；本机推理模型不显示。 */
+fun NetworkLightsState.badgeFor(model: com.promenar.nexara.ui.common.ModelSelectionUiModel): ModelNetworkBadge? {
+    if (model.providerId in localProviderIds) return null
+    val tailnet = tailscale?.takeIf { model.providerId in tailnetProviderIds }
+    return if (tailnet != null) ModelNetworkBadge.Tailnet(tailnet) else ModelNetworkBadge.Public(public)
+}
+
+/** 灯色只分三档：已连接为绿，连接中或受限为黄，未连接（离线、需登录、失败、未开启）为红。 */
+enum class SignalTone { ON, PENDING, DOWN }
+
+fun PublicNetworkStatus.tone(): SignalTone = when (this) {
+    PublicNetworkStatus.CONNECTED -> SignalTone.ON
+    PublicNetworkStatus.LIMITED -> SignalTone.PENDING
+    PublicNetworkStatus.OFFLINE -> SignalTone.DOWN
+}
+
+fun TailscaleLightStatus.tone(): SignalTone = when (this) {
+    TailscaleLightStatus.CONNECTED -> SignalTone.ON
+    TailscaleLightStatus.CONNECTING -> SignalTone.PENDING
+    TailscaleLightStatus.NEEDS_LOGIN, TailscaleLightStatus.FAILED, TailscaleLightStatus.OFF -> SignalTone.DOWN
+}
 
 private enum class LightShape { FILLED, HOLLOW, RING, DIAMOND }
 
-private data class LightLook(val shape: LightShape, val color: Color)
+private data class LightLook(val shape: LightShape, val tone: SignalTone)
 
 @Composable
-private fun PublicNetworkStatus.look(): LightLook = when (this) {
-    PublicNetworkStatus.CONNECTED -> LightLook(LightShape.FILLED, MaterialTheme.nexaraDomainColors.success)
-    PublicNetworkStatus.LIMITED -> LightLook(LightShape.FILLED, MaterialTheme.nexaraDomainColors.warning)
-    PublicNetworkStatus.OFFLINE -> LightLook(LightShape.HOLLOW, MaterialTheme.colorScheme.outline)
+private fun SignalTone.color(): Color = when (this) {
+    SignalTone.ON -> MaterialTheme.nexaraDomainColors.signalOn
+    SignalTone.PENDING -> MaterialTheme.nexaraDomainColors.signalPending
+    SignalTone.DOWN -> MaterialTheme.nexaraDomainColors.signalDown
 }
 
-@Composable
+// 形状与颜色同时区分状态，色觉障碍时仍可分辨；红灯之间靠形状区分需登录、失败与未开启。
+private fun PublicNetworkStatus.look(): LightLook = when (this) {
+    PublicNetworkStatus.CONNECTED, PublicNetworkStatus.LIMITED -> LightLook(LightShape.FILLED, tone())
+    PublicNetworkStatus.OFFLINE -> LightLook(LightShape.HOLLOW, tone())
+}
+
 private fun TailscaleLightStatus.look(): LightLook = when (this) {
-    TailscaleLightStatus.CONNECTED -> LightLook(LightShape.FILLED, MaterialTheme.nexaraDomainColors.success)
-    TailscaleLightStatus.CONNECTING -> LightLook(LightShape.RING, MaterialTheme.nexaraDomainColors.warning)
-    TailscaleLightStatus.NEEDS_LOGIN -> LightLook(LightShape.FILLED, MaterialTheme.nexaraDomainColors.warning)
-    TailscaleLightStatus.FAILED -> LightLook(LightShape.DIAMOND, MaterialTheme.colorScheme.error)
-    TailscaleLightStatus.OFF -> LightLook(LightShape.HOLLOW, MaterialTheme.colorScheme.outline)
+    TailscaleLightStatus.CONNECTED, TailscaleLightStatus.NEEDS_LOGIN -> LightLook(LightShape.FILLED, tone())
+    TailscaleLightStatus.CONNECTING -> LightLook(LightShape.RING, tone())
+    TailscaleLightStatus.FAILED -> LightLook(LightShape.DIAMOND, tone())
+    TailscaleLightStatus.OFF -> LightLook(LightShape.HOLLOW, tone())
 }
 
 @Composable
@@ -173,10 +207,10 @@ internal fun rememberAnimationsEnabled(): Boolean {
     }
 }
 
-/** 单盏灯：颜色与形状同时区分状态，颜色变化 300ms 淡入淡出。 */
+/** 单盏灯：颜色与形状同时区分状态，颜色变化 300ms 淡入淡出；实心与菱形的灯带一圈柔光，像点亮的指示灯。 */
 @Composable
 private fun NetworkLightDot(look: LightLook, size: Dp = 8.dp, modifier: Modifier = Modifier) {
-    val color by animateColorAsState(look.color, tween(NexaraMotion.DurationMedium), label = "lightColor")
+    val color by animateColorAsState(look.tone.color(), tween(NexaraMotion.DurationMedium), label = "lightColor")
     val spinning = look.shape == LightShape.RING && rememberAnimationsEnabled()
     val rotation = if (spinning) {
         val transition = rememberInfiniteTransition(label = "lightSpin")
@@ -192,6 +226,18 @@ private fun NetworkLightDot(look: LightLook, size: Dp = 8.dp, modifier: Modifier
     Canvas(modifier.size(size).rotate(rotation)) {
         val stroke = 1.5.dp.toPx()
         val radius = this.size.minDimension / 2f
+        if (look.shape == LightShape.FILLED || look.shape == LightShape.DIAMOND) {
+            val glowRadius = radius * GLOW_SCALE
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0f to color.copy(alpha = 0.7f),
+                    1f to color.copy(alpha = 0f),
+                    center = center,
+                    radius = glowRadius,
+                ),
+                radius = glowRadius,
+            )
+        }
         when (look.shape) {
             LightShape.FILLED -> drawCircle(color, radius)
             LightShape.HOLLOW -> drawCircle(color, radius - stroke / 2f, style = Stroke(stroke))
@@ -310,18 +356,25 @@ private fun LightChip(look: LightLook, label: String, modifier: Modifier = Modif
     }
 }
 
-/** 内网模型行品牌图标右下角的小灯，与“网络”行的 Tailscale 灯同色同形；外圈用 [ringColor] 与图标分开。 */
+/** 模型行品牌图标右下角的小灯，与“网络”行对应的灯同色同形；外圈用 [ringColor] 与图标分开。 */
 @Composable
-fun TailnetModelBadge(status: TailscaleLightStatus, ringColor: Color, modifier: Modifier = Modifier) {
-    val description = stringResource(R.string.network_model_via_tailnet_cd)
+fun ModelNetworkLightBadge(badge: ModelNetworkBadge, ringColor: Color, modifier: Modifier = Modifier) {
+    val (look, description) = when (badge) {
+        is ModelNetworkBadge.Public ->
+            badge.status.look() to stringResource(R.string.network_model_via_public_cd, badge.status.stateText())
+        is ModelNetworkBadge.Tailnet ->
+            badge.status.look() to stringResource(R.string.network_model_via_tailnet_cd, badge.status.stateText())
+    }
     Box(
         modifier = modifier.size(12.dp).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(12.dp)) { drawCircle(ringColor) }
-        NetworkLightDot(status.look(), size = 8.dp)
+        NetworkLightDot(look, size = 8.dp)
     }
 }
+
+private const val GLOW_SCALE = 2.1f
 
 const val NETWORK_LIGHTS_TAG = "network_lights"
 const val NETWORK_LIGHT_PUBLIC_TAG = "network_light_public"

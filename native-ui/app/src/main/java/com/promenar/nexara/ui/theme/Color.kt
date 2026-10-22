@@ -43,7 +43,19 @@ data class NexaraDomainColors(
     val codeFunction: Color,
     val codeString: Color,
     val codeComment: Color,
+    /** 网络指示灯的红黄绿：不随动态取色变化，已连接 / 连接中或受限 / 未连接一眼可辨。 */
+    val signalOn: Color,
+    val signalPending: Color,
+    val signalDown: Color,
 )
+
+// 深色背景用更亮的色阶，浅色背景用饱和度更高的色阶，两种模式下灯都显得“亮着”。
+internal val NexaraDarkSignalOn = Color(0xFF4ADE80)
+internal val NexaraDarkSignalPending = Color(0xFFFACC15)
+internal val NexaraDarkSignalDown = Color(0xFFF87171)
+internal val NexaraLightSignalOn = Color(0xFF22C55E)
+internal val NexaraLightSignalPending = Color(0xFFF59E0B)
+internal val NexaraLightSignalDown = Color(0xFFEF4444)
 
 internal val NexaraDarkDomainColors = NexaraDomainColors(
     success = Color(0xFF4ADE80),
@@ -69,6 +81,9 @@ internal val NexaraDarkDomainColors = NexaraDomainColors(
     codeFunction = Color(0xFF6EE7B7),
     codeString = Color(0xFFBAE6FD),
     codeComment = Color(0xFF9CA3AF),
+    signalOn = NexaraDarkSignalOn,
+    signalPending = NexaraDarkSignalPending,
+    signalDown = NexaraDarkSignalDown,
 )
 
 internal val NexaraLightDomainColors = NexaraDomainColors(
@@ -95,7 +110,11 @@ internal val NexaraLightDomainColors = NexaraDomainColors(
     codeFunction = Color(0xFF047857),
     codeString = Color(0xFF075985),
     codeComment = Color(0xFF5F6368),
+    signalOn = NexaraLightSignalOn,
+    signalPending = NexaraLightSignalPending,
+    signalDown = NexaraLightSignalDown,
 )
+
 
 internal val NexaraDarkColorScheme = darkColorScheme(
     primary = Color(0xFFC0C1FF),

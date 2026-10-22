@@ -1543,7 +1543,8 @@
     <string name="network_light_cd">%1$s: %2$s</string>
     <string name="network_tailscale_action_open">open Tailscale settings</string>
     <string name="network_tailscale_action_retry">reconnect</string>
-    <string name="network_model_via_tailnet_cd">Reached through Tailscale</string>
+    <string name="network_model_via_tailnet_cd">Reached through Tailscale, %1$s</string>
+    <string name="network_model_via_public_cd">Reached over the public network, %1$s</string>
     <string name="tailnet_connect_title">Connecting to Tailscale</string>
     <string name="tailnet_connect_subtitle">Your message is kept and sends once connected</string>
     <string name="tailnet_connect_step_start">Start built-in Tailscale</string>

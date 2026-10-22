@@ -1542,7 +1542,8 @@
     <string name="network_light_cd">%1$s：%2$s</string>
     <string name="network_tailscale_action_open">打开 Tailscale 设置</string>
     <string name="network_tailscale_action_retry">重新连接</string>
-    <string name="network_model_via_tailnet_cd">经 Tailscale 内网访问</string>
+    <string name="network_model_via_tailnet_cd">经 Tailscale 内网访问，%1$s</string>
+    <string name="network_model_via_public_cd">经公网访问，%1$s</string>
     <string name="tailnet_connect_title">正在连接 Tailscale</string>
     <string name="tailnet_connect_subtitle">连上后自动发送，消息已保留</string>
     <string name="tailnet_connect_step_start">启动内置 Tailscale</string>

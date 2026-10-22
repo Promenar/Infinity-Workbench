@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.SupportState
-import com.promenar.nexara.ui.common.network.TailnetModelBadge
-import com.promenar.nexara.ui.common.network.TailscaleLightStatus
+import com.promenar.nexara.ui.common.network.ModelNetworkBadge
+import com.promenar.nexara.ui.common.network.ModelNetworkLightBadge
 
 @Composable
 private fun ModelCapability.selectionLabel(): String? = when (this) {
@@ -60,8 +60,8 @@ fun ModelSelectionListItem(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** 模型经 Tailscale 内网访问时，品牌图标右下角显示同状态的小灯。 */
-    tailnetBadge: TailscaleLightStatus? = null,
+    /** 品牌图标右下角显示该模型所走网络（公网或 Tailscale 内网）的小灯。 */
+    networkBadge: ModelNetworkBadge? = null,
 ) {
     val haptics = LocalNexaraHaptics.current
     val supportedCapabilities = model.capabilityStates
@@ -109,9 +109,9 @@ fun ModelSelectionListItem(
                 modelId = model.remoteModelId,
                 size = 30.dp,
             )
-            tailnetBadge?.let { status ->
-                TailnetModelBadge(
-                    status = status,
+            networkBadge?.let { badge ->
+                ModelNetworkLightBadge(
+                    badge = badge,
                     ringColor = MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp),
                 )

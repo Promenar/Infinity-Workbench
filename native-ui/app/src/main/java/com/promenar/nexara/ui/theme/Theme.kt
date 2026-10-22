@@ -26,7 +26,7 @@ val MaterialTheme.nexaraDomainColors: NexaraDomainColors
     @ReadOnlyComposable
     get() = LocalNexaraDomainColors.current
 
-private fun dynamicDomainColors(colorScheme: ColorScheme): NexaraDomainColors = NexaraDomainColors(
+private fun dynamicDomainColors(colorScheme: ColorScheme, dark: Boolean): NexaraDomainColors = NexaraDomainColors(
     success = colorScheme.tertiary,
     onSuccess = colorScheme.onTertiary,
     successContainer = colorScheme.tertiaryContainer,
@@ -50,6 +50,9 @@ private fun dynamicDomainColors(colorScheme: ColorScheme): NexaraDomainColors = 
     codeFunction = colorScheme.tertiary,
     codeString = colorScheme.primary,
     codeComment = colorScheme.onSurfaceVariant,
+    signalOn = if (dark) NexaraDarkSignalOn else NexaraLightSignalOn,
+    signalPending = if (dark) NexaraDarkSignalPending else NexaraLightSignalPending,
+    signalDown = if (dark) NexaraDarkSignalDown else NexaraLightSignalDown,
 )
 
 @Composable
@@ -84,7 +87,7 @@ fun NexaraTheme(
     val domainColors = remember(colorScheme, useDynamicColor, useDarkTheme) {
         when {
             useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                dynamicDomainColors(colorScheme)
+                dynamicDomainColors(colorScheme, useDarkTheme)
             }
             useDarkTheme -> NexaraDarkDomainColors
             else -> NexaraLightDomainColors

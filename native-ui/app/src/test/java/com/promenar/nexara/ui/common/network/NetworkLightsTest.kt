@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.common.network
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.model.catalog.ModelWorkload
 import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.data.network.PublicNetworkStatus
@@ -41,8 +42,8 @@ class NetworkLightsTest {
         val state = networkLightsState(PublicNetworkStatus.CONNECTED, TailnetState(TailnetPhase.DISABLED), providers)
         assertThat(state.tailnetProviderIds).containsExactly("gateway")
         assertThat(state.tailscale).isEqualTo(TailscaleLightStatus.OFF)
-        assertThat(state.badgeFor(model("gateway"))).isEqualTo(TailscaleLightStatus.OFF)
-        assertThat(state.badgeFor(model("deepseek"))).isNull()
+        assertThat(state.badgeFor(model("gateway"))).isEqualTo(ModelNetworkBadge.Tailnet(TailscaleLightStatus.OFF))
+        assertThat(state.badgeFor(model("deepseek"))).isEqualTo(ModelNetworkBadge.Public(PublicNetworkStatus.CONNECTED))
 
         val publicOnly = networkLightsState(PublicNetworkStatus.LIMITED, TailnetState(TailnetPhase.DISABLED), providers.drop(1))
         assertThat(publicOnly.tailscale).isNull()
@@ -71,4 +72,30 @@ class NetworkLightsTest {
         chatEndpointCompatible = SupportState.SUPPORTED,
         providerId = providerId,
     )
+
+    @Test
+    fun `每个经网络访问的模型都带所走网络的灯，本机推理模型不带`() {
+        val providers = listOf(
+            ProviderListItem(id = "gateway", baseUrl = "https://gpu-box.tail3f9c.ts.net/v1", hasApiKey = true),
+            ProviderListItem(id = "deepseek", baseUrl = "https://api.deepseek.com/v1", hasApiKey = true),
+            ProviderListItem(id = "phone", baseUrl = "", protocolType = ProtocolType.Local),
+        )
+        val state = networkLightsState(PublicNetworkStatus.OFFLINE, TailnetState(TailnetPhase.RUNNING), providers)
+        assertThat(state.badgeFor(model("gateway"))).isEqualTo(ModelNetworkBadge.Tailnet(TailscaleLightStatus.CONNECTED))
+        assertThat(state.badgeFor(model("deepseek"))).isEqualTo(ModelNetworkBadge.Public(PublicNetworkStatus.OFFLINE))
+        assertThat(state.badgeFor(model("phone"))).isNull()
+        assertThat(state.badgeFor(model(""))).isEqualTo(ModelNetworkBadge.Public(PublicNetworkStatus.OFFLINE))
+    }
+
+    @Test
+    fun `灯色只分三档：已连接绿、连接中或受限黄、未连接红`() {
+        assertThat(PublicNetworkStatus.CONNECTED.tone()).isEqualTo(SignalTone.ON)
+        assertThat(PublicNetworkStatus.LIMITED.tone()).isEqualTo(SignalTone.PENDING)
+        assertThat(PublicNetworkStatus.OFFLINE.tone()).isEqualTo(SignalTone.DOWN)
+        assertThat(TailscaleLightStatus.CONNECTED.tone()).isEqualTo(SignalTone.ON)
+        assertThat(TailscaleLightStatus.CONNECTING.tone()).isEqualTo(SignalTone.PENDING)
+        listOf(TailscaleLightStatus.NEEDS_LOGIN, TailscaleLightStatus.FAILED, TailscaleLightStatus.OFF).forEach {
+            assertThat(it.tone()).isEqualTo(SignalTone.DOWN)
+        }
+    }
 }

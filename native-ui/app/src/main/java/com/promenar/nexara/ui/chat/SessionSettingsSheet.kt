@@ -282,7 +282,7 @@ internal fun ModelPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(UiTags.chatModelOption(model.selectionId)),
-                    tailnetBadge = networkLights?.badgeFor(model),
+                    networkBadge = networkLights?.badgeFor(model),
                 )
             }
         }
