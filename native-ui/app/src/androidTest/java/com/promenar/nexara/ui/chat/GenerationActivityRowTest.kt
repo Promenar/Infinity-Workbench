@@ -15,8 +15,8 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import org.junit.Rule
 import org.junit.Test
 
-/** 生成进度胶囊：数值为 0 的段不读不显示，读屏得到一句完整描述，数值变化后描述随之更新。 */
-class GenerationProgressCapsuleTest {
+/** 生成活动栏：数值为 0 的段不读不显示，读屏得到一句完整描述，数值变化后描述随之更新。 */
+class GenerationActivityRowTest {
     @get:Rule val rule = createComposeRule()
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -27,7 +27,7 @@ class GenerationProgressCapsuleTest {
     @Test
     fun describesOnlyNonZeroMetricsAndFollowsUpdates() {
         var progress by mutableStateOf(GenerationProgress())
-        rule.setContent { NexaraTheme { ChatGenerationProgressBar(progress) } }
+        rule.setContent { NexaraTheme { GenerationActivityRow(progress) } }
 
         rule.onNode(hasContentDescription(running)).assertContentDescriptionEquals(running)
 

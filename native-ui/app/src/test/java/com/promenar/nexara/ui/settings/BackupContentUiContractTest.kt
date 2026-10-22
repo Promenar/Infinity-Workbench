@@ -96,8 +96,9 @@ class BackupContentUiContractTest {
         val english = String(Files.readAllBytes(Path.of("app/src/main/res/values/strings.xml")), Charsets.UTF_8)
         val chinese = String(Files.readAllBytes(Path.of("app/src/main/res/values-zh-rCN/strings.xml")), Charsets.UTF_8)
 
-        assertThat(english).contains(">Nexara secure archive<")
-        assertThat(chinese).contains(">Nexara 安全归档<")
+        // 品牌名在资源中以 brand 实体书写，构建时展开。
+        assertThat(english).contains(">&brand; secure archive<")
+        assertThat(chinese).contains(">&brand; 安全归档<")
         assertThat(english).doesNotContain(">JSON Archive<")
         assertThat(chinese).doesNotContain(">JSON 归档<")
         assertThat(english).contains("Backups can be password-encrypted; encryption is required when keys are included.")

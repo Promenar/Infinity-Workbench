@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+]>
 <resources>
     <string name="workspace_picker_title">Choose workspace</string>
     <string name="workspace_picker_registered">Registered workspaces</string>
     <string name="workspace_picker_locations">Browse</string>
     <string name="workspace_picker_root">Locations</string>
-    <string name="workspace_picker_projects">Nexara project folders</string>
+    <string name="workspace_picker_projects">&brand; project folders</string>
     <string name="workspace_picker_projects_desc">Projects in app-private storage. Pick one or create a new one.</string>
     <string name="workspace_picker_shared_volume">Shared storage</string>
     <string name="workspace_picker_shared_volume_named">Shared storage · %1$s</string>
@@ -38,7 +41,7 @@
     <string name="workspace_unavailable_reason">Workspace unavailable: %1$s</string>
 
     <string name="workspace_session_current">Current workspace</string>
-    <string name="workspace_session_private_desc">Visible only to this session and managed by Nexara</string>
+    <string name="workspace_session_private_desc">Visible only to this session and managed by &brand;</string>
     <string name="workspace_session_use_private">Use the session private workspace</string>
     <string name="workspace_session_reselect">Choose again</string>
     <string name="workspace_bar_switch">Switch</string>

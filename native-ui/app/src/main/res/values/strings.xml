@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 品牌名：含品牌名的资源文件各自在顶部声明 brand 实体，改名时一并修改；BrandNameContractTest 校验各文件一致。 -->
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+    <!ENTITY brandWordmark "NEXARA">
+]>
 <resources>
+    <string name="brand_name" translatable="false">&brand;</string>
+    <string name="brand_wordmark" translatable="false">&brandWordmark;</string>
     <!-- ============ Common Components ============ -->
     <!-- ModelPicker -->
     <string name="common_model_picker_title">Select Model</string>
@@ -146,7 +153,6 @@
     <string name="nav_tab_settings">Settings</string>
 
     <!-- ============ Welcome ============ -->
-    <string name="welcome_brand">NEXARA</string>
     <string name="welcome_slogan">INTELLIGENCE REIMAGINED</string>
     <string name="welcome_lang_english">English</string>
     <string name="welcome_lang_chinese">Chinese (Simplified)</string>
@@ -166,12 +172,12 @@
     <string name="shared_btn_done">Done</string>
     <string name="shared_btn_retry">Retry</string>
     <string name="startup_recovering_title">Safe recovery in progress</string>
-    <string name="startup_recovering_message">Nexara is checking interrupted local data operations. Keep this screen open until recovery finishes.</string>
+    <string name="startup_recovering_message">&brand; is checking interrupted local data operations. Keep this screen open until recovery finishes.</string>
     <string name="startup_blocked_title">Safe recovery needs attention</string>
-    <string name="startup_blocked_message">Nexara could not finish restoring local data. Your data remains protected and app features stay locked.</string>
+    <string name="startup_blocked_message">&brand; could not finish restoring local data. Your data remains protected and app features stay locked.</string>
     <string name="startup_blocked_icon_description">Safe recovery blocked</string>
     <string name="restore_not_applied_title">Restore did not complete</string>
-    <string name="restore_not_applied_message">Nexara could not finish restoring the backup and has rolled back every change. Your data is exactly as it was before the restore. You can import the backup again from Settings → Backup.</string>
+    <string name="restore_not_applied_message">&brand; could not finish restoring the backup and has rolled back every change. Your data is exactly as it was before the restore. You can import the backup again from Settings → Backup.</string>
     <string name="restore_not_applied_dismiss">Got it</string>
     <string name="startup_dual_database_title">Two local databases were found</string>
     <string name="startup_dual_database_icon_description">Two local databases need recovery</string>
@@ -214,7 +220,7 @@
     <string name="share_import_error_cancel">Unable to cancel this import. Try again.</string>
     <string name="share_import_reason_mismatch">The file contents do not match its type</string>
     <string name="share_import_reason_name">The file name is unsafe</string>
-    <string name="share_import_reason_permission">Nexara cannot read this file</string>
+    <string name="share_import_reason_permission">&brand; cannot read this file</string>
     <string name="share_import_reason_empty">The file is empty</string>
     <string name="share_import_reason_item_large">The file exceeds 100 MiB</string>
     <string name="share_import_reason_batch_large">The selected batch exceeds 100 MiB</string>
@@ -267,7 +273,7 @@
     <string name="shared_btn_regenerate">Regenerate</string>
 
     <!-- ============ Hub ============ -->
-    <string name="hub_title">Nexara</string>
+    <string name="hub_title">&brand;</string>
     <string name="hub_subtitle">Your AI Assistant Team</string>
     <string name="hub_search_placeholder">Search agents…</string>
     <string name="hub_btn_add_agent">Add Agent</string>
@@ -284,7 +290,7 @@
     <string name="hub_session_untitled">Untitled session</string>
 
     <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
-    <string name="preset_agent_default_name">Nexara Assistant</string>
+    <string name="preset_agent_default_name">&brand; Assistant</string>
     <string name="preset_agent_default_desc">General AI assistant with streaming chat and knowledge retrieval</string>
     <string name="preset_agent_coder_name">Coding Expert</string>
     <string name="preset_agent_coder_desc">Full-stack development and architecture design</string>
@@ -433,7 +439,7 @@
     <string name="settings_export_logs">Export Logs</string>
     <string name="settings_export_logs_desc">Share log files</string>
     <string name="settings_section_about">About</string>
-    <string name="settings_about_nexara">About Nexara</string>
+    <string name="settings_about_nexara">About &brand;</string>
     <string name="settings_about_nexara_desc">Version, licenses, and project information</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_provider_empty">No providers configured yet.\nTap the button above to add one.</string>
@@ -473,6 +479,8 @@
     <string name="chat_menu_export">Export Chat</string>
     <string name="chat_input_placeholder">Message %1$s…</string>
     <string name="chat_input_placeholder_default">Message…</string>
+    <string name="chat_input_placeholder_generating">Draft your next message…</string>
+    <string name="chat_empty_prompt">What would you like to do today?</string>
     <string name="chat_cd_workspace">Workspace</string>
     <string name="chat_cd_options">Options</string>
     <string name="chat_cd_stop">Stop</string>
@@ -729,7 +737,7 @@
     <string name="backup_content_keys">API Keys</string>
     <string name="backup_section_local">Local Storage</string>
     <string name="backup_export_title">Export Backup</string>
-    <string name="backup_export_subtitle">Nexara secure archive</string>
+    <string name="backup_export_subtitle">&brand; secure archive</string>
     <string name="backup_exporting">Exporting…</string>
     <string name="backup_import_title">Import Backup</string>
     <string name="backup_import_subtitle">Restore Data</string>
@@ -1053,7 +1061,7 @@
     <string name="common_cancel">Cancel</string>
 
     <!-- SettingsViewModel defaults -->
-    <string name="settings_default_user_name">Nexara User</string>
+    <string name="settings_default_user_name">&brand; User</string>
 
     <!-- ============ RAG Module ============ -->
 
@@ -1391,7 +1399,7 @@
     <string name="chat_hint_select_model">Select a session model from the controls above</string>
     <string name="generation_notification_channel">Background generation</string>
     <string name="generation_notification_channel_description">Shows active response generation</string>
-    <string name="generation_notification_title">Nexara is generating</string>
+    <string name="generation_notification_title">&brand; is generating</string>
     <string name="generation_notification_preparing">Preparing the response</string>
     <string name="generation_notification_thinking">Thinking</string>
     <string name="generation_notification_executing_tools">Running tools</string>
@@ -1403,7 +1411,7 @@
     <string name="exec_notification_channel_description">Shows running shell_exec / python_exec commands with a stop button</string>
     <string name="exec_notification_title">Running a command</string>
     <string name="exec_notification_title_many">Running %1$d commands</string>
-    <string name="exec_notification_public">Nexara is running a command</string>
+    <string name="exec_notification_public">&brand; is running a command</string>
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
     <string name="exec_notification_stop">Stop</string>
@@ -1716,7 +1724,7 @@
     <string name="tailscale_section_node">Built-in Tailscale</string>
     <string name="tailscale_enable">Enable Tailscale</string>
     <string name="tailscale_enable_desc">Runs alongside other VPNs</string>
-    <string name="tailscale_node_footer">Once signed in, model providers, SSH hosts, shell_exec, python_exec (including built-in git) and app HTTPS requests can reach tailnet devices; web_fetch still only reaches the public internet. The node is online only while Nexara is running.</string>
+    <string name="tailscale_node_footer">Once signed in, model providers, SSH hosts, shell_exec, python_exec (including built-in git) and app HTTPS requests can reach tailnet devices; web_fetch still only reaches the public internet. The node is online only while &brand; is running.</string>
     <string name="tailscale_unavailable_desc">This build does not include built-in Tailscale.</string>
     <string name="tailscale_phase_unavailable">Not included in this build</string>
     <string name="tailscale_phase_disabled">Off</string>
@@ -1749,7 +1757,7 @@
     <string name="tailscale_ephemeral_desc">Removed when offline (from next sign-in)</string>
     <string name="tailscale_section_allowlist">Device allowlist</string>
     <string name="tailscale_allowlist_label">Allowed devices</string>
-    <string name="tailscale_allowlist_desc">Only listed devices are reachable through Nexara. Leave empty to allow every device in the tailnet.</string>
+    <string name="tailscale_allowlist_desc">Only listed devices are reachable through &brand;. Leave empty to allow every device in the tailnet.</string>
     <string name="tailscale_allowlist_invalid">Each entry must be a device name, MagicDNS name or tailnet IP.</string>
     <string name="tailscale_allowlist_too_many">At most 64 entries.</string>
     <string name="tailscale_notice_auth_key_saved">Auth key saved</string>

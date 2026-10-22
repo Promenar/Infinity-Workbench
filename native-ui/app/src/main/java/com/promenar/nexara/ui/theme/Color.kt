@@ -47,6 +47,8 @@ data class NexaraDomainColors(
     val signalOn: Color,
     val signalPending: Color,
     val signalDown: Color,
+    /** 深色模式：浮岛质感与光效在深浅模式下取不同的材质与色阶。 */
+    val isDark: Boolean,
 )
 
 // 深色背景用更亮的色阶，浅色背景用饱和度更高的色阶，两种模式下灯都显得“亮着”。
@@ -84,6 +86,7 @@ internal val NexaraDarkDomainColors = NexaraDomainColors(
     signalOn = NexaraDarkSignalOn,
     signalPending = NexaraDarkSignalPending,
     signalDown = NexaraDarkSignalDown,
+    isDark = true,
 )
 
 internal val NexaraLightDomainColors = NexaraDomainColors(
@@ -113,6 +116,7 @@ internal val NexaraLightDomainColors = NexaraDomainColors(
     signalOn = NexaraLightSignalOn,
     signalPending = NexaraLightSignalPending,
     signalDown = NexaraLightSignalDown,
+    isDark = false,
 )
 
 

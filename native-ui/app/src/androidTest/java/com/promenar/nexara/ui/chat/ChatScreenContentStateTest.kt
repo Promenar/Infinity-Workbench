@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -63,6 +64,9 @@ class ChatScreenContentStateTest {
         titles[0].assertIsDisplayed()
         rule.onNodeWithText("Model E2E").assertIsDisplayed()
         rule.onNodeWithText(resource(R.string.chat_input_placeholder_default)).assertIsDisplayed()
+        // 空会话显示粒子字标与提示语。
+        rule.onNodeWithTag(UiTags.CHAT_EMPTY_WORDMARK).assertExists()
+        rule.onNodeWithText(resource(R.string.chat_empty_prompt)).assertIsDisplayed()
     }
 
     @Test
@@ -88,6 +92,11 @@ class ChatScreenContentStateTest {
         )
 
         rule.onNodeWithTag(UiTags.CHAT_STATE_GENERATING).assertHeightIsAtLeast(100.dp)
+        // 生成中：浮岛顶部展开活动栏，不显示空会话字标，输入框仍可编辑。
+        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertExists()
+        rule.onNodeWithTag(UiTags.CHAT_EMPTY_WORDMARK).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_INPUT).assertIsEnabled()
+        rule.onNodeWithText(resource(R.string.chat_input_placeholder_generating)).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION)
             .assertContentDescriptionEquals(resource(R.string.chat_cd_stop))
             .performClick()

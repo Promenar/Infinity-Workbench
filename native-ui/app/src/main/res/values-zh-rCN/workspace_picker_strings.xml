@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+]>
 <resources>
     <string name="workspace_picker_title">选择工作区</string>
     <string name="workspace_picker_registered">已登记的工作区</string>
     <string name="workspace_picker_locations">浏览位置</string>
     <string name="workspace_picker_root">位置</string>
-    <string name="workspace_picker_projects">Nexara 项目文件夹</string>
+    <string name="workspace_picker_projects">&brand; 项目文件夹</string>
     <string name="workspace_picker_projects_desc">App 私有存储中的项目，选择其中一个或新建</string>
     <string name="workspace_picker_shared_volume">共享存储</string>
     <string name="workspace_picker_shared_volume_named">共享存储 · %1$s</string>
@@ -38,7 +41,7 @@
     <string name="workspace_unavailable_reason">工作区不可用：%1$s</string>
 
     <string name="workspace_session_current">当前工作区</string>
-    <string name="workspace_session_private_desc">仅本会话可见，由 Nexara 管理</string>
+    <string name="workspace_session_private_desc">仅本会话可见，由 &brand; 管理</string>
     <string name="workspace_session_use_private">改用会话私有工作区</string>
     <string name="workspace_session_reselect">重新选择</string>
     <string name="workspace_bar_switch">切换</string>

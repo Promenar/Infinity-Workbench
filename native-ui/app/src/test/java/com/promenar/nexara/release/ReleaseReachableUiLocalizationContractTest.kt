@@ -14,7 +14,8 @@ class ReleaseReachableUiLocalizationContractTest {
         "ui/common/FolderBreadcrumbs.kt",
         "ui/common/FolderEntriesList.kt",
         "ui/chat/components/FileTextPreviewPanel.kt",
-        "ui/chat/GenerationProgressCapsule.kt",
+        "ui/chat/GenerationActivityRow.kt",
+        "ui/chat/EmptyChatWordmark.kt",
         "ui/chat/components/ExternalFoldersPanel.kt",
         "ui/chat/components/RagDetailsSheet.kt",
         "ui/chat/components/RecycleBinPanel.kt",
@@ -230,9 +231,11 @@ class ReleaseReachableUiLocalizationContractTest {
         return pattern.find(xml)?.groupValues?.get(1) ?: error("缺少资源键: $key")
     }
 
+    /** 不参与翻译的条目（如品牌名）只在默认语言中声明，不计入两种语言的键比对。 */
     private fun resourceKeys(xml: String): Set<String> =
-        Regex("<string name=\\\"([^\\\"]+)\\\"")
+        Regex("<string name=\\\"([^\\\"]+)\\\"([^>]*)>")
             .findAll(xml)
+            .filterNot { it.groupValues[2].contains("translatable=\"false\"") }
             .map { it.groupValues[1] }
             .toSet()
 

@@ -100,7 +100,7 @@ class NavigationMotionContractTest {
 
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).contains("label = \"chat_send_icon\"")
-        assertThat(chat).contains("AnimatedVisibility(visible = progress != null")
+        assertThat(chat).contains("visible = activity != null")
 
         val files = source("chat/components/FilesPanel.kt")
         assertThat(files).contains("label = \"files_panel_state\"")
@@ -135,19 +135,27 @@ class NavigationMotionContractTest {
     }
 
     @Test
-    fun `生成进度为图标数值胶囊而不是整句纯文本`() {
-        val capsule = source("chat/GenerationProgressCapsule.kt")
+    fun `生成活动统计并入输入框浮岛顶部而不是标题栏下的胶囊`() {
+        val activity = source("chat/GenerationActivityRow.kt")
 
-        assertThat(capsule).doesNotContain("R.string.p0_progress")
-        // 数值为 0 的段不显示；有数值后只保留呼吸点。
-        assertThat(capsule).contains("visible = progress.rounds > 0")
-        assertThat(capsule).contains("visible = progress.calls > 0")
-        assertThat(capsule).contains("visible = progress.tokens > 0")
-        assertThat(capsule).contains("visible = !hasMetrics")
-        // 读屏读完整一句，而不是逐个图标与数字。
-        assertThat(capsule).contains("clearAndSetSemantics { contentDescription = description }")
-        assertThat(capsule).contains("FlowRow(")
-        assertThat(source("chat/ChatScreen.kt")).doesNotContain("R.string.p0_progress")
+        assertThat(activity).doesNotContain("R.string.p0_progress")
+        // 数值为 0 的段不显示。
+        assertThat(activity).contains("visible = progress.rounds > 0")
+        assertThat(activity).contains("visible = progress.calls > 0")
+        assertThat(activity).contains("visible = progress.tokens > 0")
+        // 读屏读完整一句，而不是逐个图标与数字；窄屏大字号时整段换行。
+        assertThat(activity).contains("clearAndSetSemantics { contentDescription = description }")
+        assertThat(activity).contains("FlowRow(")
+        // 文字与图标按视觉中线对齐。
+        assertThat(activity).contains("LineHeightStyle.Alignment.Center")
+        val chat = source("chat/ChatScreen.kt")
+        assertThat(chat).doesNotContain("R.string.p0_progress")
+        assertThat(chat).doesNotContain("ChatGenerationProgressBar")
+        // 有计划时并入计划面板收起行，没有计划时独立成行。
+        assertThat(chat).contains("generationProgress = activity")
+        assertThat(chat).contains("GenerationActivityRow(")
+        // 生成中输入框仍可编辑。
+        assertThat(chat).contains("enabled = true")
     }
 
     @Test

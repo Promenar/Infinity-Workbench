@@ -60,13 +60,21 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
         factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
         factory.setXIncludeAware(false);
         factory.setExpandEntityReferences(false);
+        // 资源文件用内部 DTD 实体声明品牌名，校验覆盖时允许文件内声明，仍禁止外部实体与外部 DTD。
+        DocumentBuilderFactory resourceFactory = DocumentBuilderFactory.newInstance();
+        resourceFactory.setNamespaceAware(true);
+        resourceFactory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        resourceFactory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        resourceFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        resourceFactory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        resourceFactory.setXIncludeAware(false);
         for (File source : getSourceRoots()) {
             if (!source.exists()) continue;
             List<Path> files;
             try (Stream<Path> walk = Files.walk(source.toPath())) {
                 files = walk.filter(Files::isRegularFile).collect(Collectors.toList());
             }
-            for (Path file : files) validateSource(factory, file);
+            for (Path file : files) validateSource(resourceFactory, file);
         }
 
         Element root = factory.newDocumentBuilder().parse(getMasterSvg().get().getAsFile()).getDocumentElement();

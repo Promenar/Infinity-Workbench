@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+]>
 <resources>
     <!-- ============ Common Components ============ -->
     <!-- ModelPicker -->
@@ -144,7 +147,6 @@
     <string name="nav_tab_settings">设置</string>
 
     <!-- ============ Welcome ============ -->
-    <string name="welcome_brand">NEXARA</string>
     <string name="welcome_slogan">智能重塑</string>
     <string name="welcome_lang_english">English</string>
     <string name="welcome_lang_chinese">中文 (简体)</string>
@@ -164,12 +166,12 @@
     <string name="shared_btn_done">完成</string>
     <string name="shared_btn_retry">重试</string>
     <string name="startup_recovering_title">正在安全恢复数据</string>
-    <string name="startup_recovering_message">Nexara 正在检查未完成的本地数据操作。恢复完成前请保持此页面开启。</string>
+    <string name="startup_recovering_message">&brand; 正在检查未完成的本地数据操作。恢复完成前请保持此页面开启。</string>
     <string name="startup_blocked_title">安全恢复需要处理</string>
-    <string name="startup_blocked_message">Nexara 暂时无法完成本地数据恢复。你的数据仍受保护，应用功能保持锁定。</string>
+    <string name="startup_blocked_message">&brand; 暂时无法完成本地数据恢复。你的数据仍受保护，应用功能保持锁定。</string>
     <string name="startup_blocked_icon_description">安全恢复已阻塞</string>
     <string name="restore_not_applied_title">备份未能恢复</string>
-    <string name="restore_not_applied_message">Nexara 未能完成本次备份恢复，已撤销全部改动，数据保持恢复前的原状。如需再次尝试，可在“设置 → 备份”中重新导入。</string>
+    <string name="restore_not_applied_message">&brand; 未能完成本次备份恢复，已撤销全部改动，数据保持恢复前的原状。如需再次尝试，可在“设置 → 备份”中重新导入。</string>
     <string name="restore_not_applied_dismiss">知道了</string>
     <string name="startup_dual_database_title">发现两份本地数据库</string>
     <string name="startup_dual_database_icon_description">需要合并两份本地数据库</string>
@@ -212,7 +214,7 @@
     <string name="share_import_error_cancel">无法取消导入，请重试。</string>
     <string name="share_import_reason_mismatch">文件内容与声明类型不一致</string>
     <string name="share_import_reason_name">文件名不安全</string>
-    <string name="share_import_reason_permission">Nexara 无法读取此文件</string>
+    <string name="share_import_reason_permission">&brand; 无法读取此文件</string>
     <string name="share_import_reason_empty">文件内容为空</string>
     <string name="share_import_reason_item_large">文件超过 100 MiB</string>
     <string name="share_import_reason_batch_large">本批文件总量超过 100 MiB</string>
@@ -265,7 +267,7 @@
     <string name="shared_btn_regenerate">重新生成</string>
 
     <!-- ============ Hub ============ -->
-    <string name="hub_title">Nexara</string>
+    <string name="hub_title">&brand;</string>
     <string name="hub_subtitle">你的智能助手团队</string>
     <string name="hub_search_placeholder">搜索助手…</string>
     <string name="hub_btn_add_agent">添加助手</string>
@@ -282,7 +284,7 @@
     <string name="hub_session_untitled">未命名会话</string>
 
     <!-- 预置助手（本地化展示；DB 保存种子文本，叠加层解析为资源） -->
-    <string name="preset_agent_default_name">Nexara 助手</string>
+    <string name="preset_agent_default_name">&brand; 助手</string>
     <string name="preset_agent_default_desc">通用 AI 助手，支持流式对话与知识检索</string>
     <string name="preset_agent_coder_name">编程专家</string>
     <string name="preset_agent_coder_desc">精通全栈开发与架构设计</string>
@@ -437,7 +439,7 @@
     <string name="settings_export_logs">导出日志</string>
     <string name="settings_export_logs_desc">分享日志文件</string>
     <string name="settings_section_about">关于</string>
-    <string name="settings_about_nexara">关于 Nexara</string>
+    <string name="settings_about_nexara">关于 &brand;</string>
     <string name="settings_about_nexara_desc">版本、开源许可与项目信息</string>
     <string name="settings_version">版本 %1$s</string>
     <string name="settings_provider_empty">暂无提供商配置\n点击上方按钮添加</string>
@@ -477,6 +479,8 @@
     <string name="chat_menu_export">导出对话</string>
     <string name="chat_input_placeholder">发消息给%1$s…</string>
     <string name="chat_input_placeholder_default">发消息…</string>
+    <string name="chat_input_placeholder_generating">可以先写下一条消息…</string>
+    <string name="chat_empty_prompt">今天想做点什么？</string>
     <string name="chat_cd_workspace">工作区</string>
     <string name="chat_cd_options">选项</string>
     <string name="chat_cd_stop">停止</string>
@@ -732,7 +736,7 @@
     <string name="backup_content_keys">密钥</string>
     <string name="backup_section_local">本地存储</string>
     <string name="backup_export_title">导出备份</string>
-    <string name="backup_export_subtitle">Nexara 安全归档</string>
+    <string name="backup_export_subtitle">&brand; 安全归档</string>
     <string name="backup_exporting">正在导出…</string>
     <string name="backup_import_title">导入备份</string>
     <string name="backup_import_subtitle">恢复数据</string>
@@ -1058,7 +1062,7 @@
     <string name="common_cancel">取消</string>
 
     <!-- SettingsViewModel defaults -->
-    <string name="settings_default_user_name">Nexara 用户</string>
+    <string name="settings_default_user_name">&brand; 用户</string>
 
     <!-- ============ RAG Module ============ -->
 
@@ -1390,7 +1394,7 @@
     <string name="chat_hint_select_model">请先点击顶部配置会话模型</string>
     <string name="generation_notification_channel">后台生成</string>
     <string name="generation_notification_channel_description">显示正在进行的回复生成任务</string>
-    <string name="generation_notification_title">Nexara 正在生成</string>
+    <string name="generation_notification_title">&brand; 正在生成</string>
     <string name="generation_notification_preparing">正在准备回复</string>
     <string name="generation_notification_thinking">正在思考</string>
     <string name="generation_notification_executing_tools">正在执行工具</string>
@@ -1402,7 +1406,7 @@
     <string name="exec_notification_channel_description">显示正在运行的 shell_exec / python_exec 命令与停止按钮</string>
     <string name="exec_notification_title">正在运行命令</string>
     <string name="exec_notification_title_many">正在运行 %1$d 个命令</string>
-    <string name="exec_notification_public">Nexara 正在运行命令</string>
+    <string name="exec_notification_public">&brand; 正在运行命令</string>
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
     <string name="exec_notification_stop">停止</string>
@@ -1713,7 +1717,7 @@
     <string name="tailscale_section_node">内置 Tailscale</string>
     <string name="tailscale_enable">启用 Tailscale</string>
     <string name="tailscale_enable_desc">不占用系统 VPN，可与其它 VPN 同时使用</string>
-    <string name="tailscale_node_footer">登录后，模型提供商、SSH 主机、shell_exec、python_exec（含内置 git）与应用内 HTTPS 请求可访问 tailnet 设备，web_fetch 仍只访问公网。节点只在 Nexara 运行期间在线。</string>
+    <string name="tailscale_node_footer">登录后，模型提供商、SSH 主机、shell_exec、python_exec（含内置 git）与应用内 HTTPS 请求可访问 tailnet 设备，web_fetch 仍只访问公网。节点只在 &brand; 运行期间在线。</string>
     <string name="tailscale_unavailable_desc">当前安装包未包含内置 Tailscale。</string>
     <string name="tailscale_phase_unavailable">当前安装包未包含</string>
     <string name="tailscale_phase_disabled">未启用</string>
@@ -1746,7 +1750,7 @@
     <string name="tailscale_ephemeral_desc">离线后自动从 tailnet 移除，下次登录生效</string>
     <string name="tailscale_section_allowlist">设备白名单</string>
     <string name="tailscale_allowlist_label">允许的设备</string>
-    <string name="tailscale_allowlist_desc">只允许所列设备经 Nexara 访问；留空表示允许 tailnet 内全部设备。</string>
+    <string name="tailscale_allowlist_desc">只允许所列设备经 &brand; 访问；留空表示允许 tailnet 内全部设备。</string>
     <string name="tailscale_allowlist_invalid">每一项须为设备名、MagicDNS 名称或 tailnet IP。</string>
     <string name="tailscale_allowlist_too_many">最多 64 项。</string>
     <string name="tailscale_notice_auth_key_saved">Auth key 已保存</string>

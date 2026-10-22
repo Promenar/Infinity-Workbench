@@ -79,6 +79,8 @@ fun TaskFloatingPanel(
     modifier: Modifier = Modifier,
     onClose: () -> Unit = {},
     initiallyExpanded: Boolean = false,
+    /** 生成中的活动统计；非空时收起行改为活动栏，左侧流光文字显示当前步骤。 */
+    generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
 ) {
     var expanded by rememberSaveable(state.planId) { mutableStateOf(initiallyExpanded) }
     val toggleLabel = stringResource(
@@ -131,35 +133,43 @@ fun TaskFloatingPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                 ) {
-                    if (state.isCompleted) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp),
+                    if (generationProgress != null) {
+                        com.promenar.nexara.ui.chat.GenerationActivityContent(
+                            progress = generationProgress,
+                            label = state.currentStepTitle.takeUnless { state.isCompleted || it.isBlank() },
+                            modifier = Modifier.weight(1f).padding(vertical = NexaraSpacing.XSmall),
                         )
                     } else {
-                        TaskStatusDot(
-                            pulsing = state.shouldPulse,
-                            color = if (state.shouldPulse) {
-                                MaterialTheme.colorScheme.primary
+                        if (state.isCompleted) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        } else {
+                            TaskStatusDot(
+                                pulsing = state.shouldPulse,
+                                color = if (state.shouldPulse) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.tertiary
+                                },
+                            )
+                        }
+                        Text(
+                            text = if (state.isCompleted) {
+                                stringResource(R.string.chat_task_all_completed)
                             } else {
-                                MaterialTheme.colorScheme.tertiary
+                                state.currentStepTitle
                             },
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        text = if (state.isCompleted) {
-                            stringResource(R.string.chat_task_all_completed)
-                        } else {
-                            state.currentStepTitle
-                        },
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                     Text(
                         text = "${state.doneCount}/${state.totalCount}",
                         style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),

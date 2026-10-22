@@ -120,7 +120,7 @@ fun WelcomeScreen(
                     ) {
                         // Logo representation
                         Text(
-                            text = stringResource(R.string.welcome_brand),
+                            text = stringResource(R.string.brand_wordmark),
                             style = NexaraTypography.headlineLarge.copy(
                                 fontSize = 48.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -384,7 +384,7 @@ private fun OnboardingStep.titleResource(): Int = when (this) {
     OnboardingStep.MODEL -> R.string.onboarding_model_title
     OnboardingStep.AGENT -> R.string.onboarding_agent_title
     OnboardingStep.FIRST_CHAT -> R.string.onboarding_first_chat_title
-    OnboardingStep.LANGUAGE, OnboardingStep.COMPLETED -> R.string.welcome_brand
+    OnboardingStep.LANGUAGE, OnboardingStep.COMPLETED -> R.string.brand_wordmark
 }
 
 private fun OnboardingStep.descriptionResource(): Int = when (this) {

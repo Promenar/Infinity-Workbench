@@ -156,6 +156,7 @@ import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.chat.components.TaskPanelSizeSpring
+import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSnackbarData
@@ -502,13 +503,10 @@ fun ChatScreenContent(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-              val progress = state.generationProgress?.takeIf { uiState.isGenerating }
-              // 顶部区域与页面同色不透明：进度行属于固定页头，不能让滚动正文透出来。
               Column(Modifier.background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
                 ChatTopBar(
                     title = sessionTitle,
-                    // 有进度行时分隔线移到进度行下方，页头与正文的分界始终在最底部。
-                    showDivider = showTopBarDivider && progress == null,
+                    showDivider = showTopBarDivider,
                     onBack = actions.onNavigateBack,
                     onWorkspace = actions.onOpenWorkspace,
                     onSettings = actions.onOpenSettings,
@@ -517,12 +515,6 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                 )
-                // 进度行出现与消失时纵向展开收起，收起期间沿用最后一次的进度文本。
-                val lastProgress = remember { arrayOfNulls<com.promenar.nexara.domain.generation.GenerationProgress>(1) }
-                if (progress != null) lastProgress[0] = progress
-                AnimatedVisibility(visible = progress != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-                    lastProgress[0]?.let { ChatGenerationProgressBar(it) }
-                }
               }
             },
             snackbarHost = {
@@ -538,12 +530,31 @@ fun ChatScreenContent(
                 }
             }
         ) { padding ->
+            val wordmarkPointer = remember { WordmarkPointer() }
+            // 空会话：只有还没有任何消息、审批或生成时才显示粒子字标。
+            val showWordmark = !uiState.isLoading && uiState.messages.isEmpty() &&
+                uiState.approvalRequest == null && !uiState.isGenerating
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .imePadding(),
+                    .imePadding()
+                    .then(if (showWordmark) Modifier.trackWordmarkPointer(wordmarkPointer) else Modifier),
             ) {
+            // 空会话的粒子字标画在列表下层，不拦截触摸；有了第一条消息就淡出并离开组合，粒子循环随之停止。
+            AnimatedVisibility(
+                visible = showWordmark,
+                enter = fadeIn(tween(600)),
+                exit = fadeOut(tween(500)),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .widthIn(max = NexaraSpacing.ChatMaxWidth)
+                    .fillMaxWidth()
+                    .padding(bottom = with(density) { composerHeightPx.toDp() }),
+            ) {
+                EmptyChatWordmark(dispersed = inputText.isNotEmpty(), pointer = wordmarkPointer)
+            }
             val renderStateTag = chatRenderStateTag(uiState)
             // 生成中多留一段底部空间：增长中的思考与工具块在跟随校正前也不贴着输入区；结束后平滑收回。
             val generatingExtraBottom by animateDpAsState(
@@ -808,6 +819,19 @@ fun ChatScreenContent(
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
                             topContent = {
+                                // 生成中的活动统计并入浮岛顶部：有计划时替换计划收起行，没有计划时单独占一行。
+                                val activity = if (uiState.isGenerating) state.generationProgress ?: GenerationProgress() else null
+                                var lastActivity by remember { mutableStateOf(GenerationProgress()) }
+                                if (activity != null) lastActivity = activity
+                                AnimatedVisibility(
+                                    visible = activity != null && !(taskPanel != null && planBarVisible),
+                                    enter = fadeIn(tween(220, delayMillis = 60)) +
+                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+                                    exit = fadeOut(tween(160)) +
+                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+                                ) {
+                                    GenerationActivityRow(lastActivity)
+                                }
                                 AnimatedVisibility(
                                     visible = taskPanel != null && planBarVisible,
                                     enter = fadeIn(tween(220, delayMillis = 60)) +
@@ -819,6 +843,7 @@ fun ChatScreenContent(
                                         TaskFloatingPanel(
                                             state = plan,
                                             isGenerating = uiState.isGenerating,
+                                            generationProgress = activity,
                                             onContinue = actions.onContinueTask,
                                             onComplete = actions.onCompleteTask,
                                             onClose = {
@@ -1651,6 +1676,7 @@ fun ChatInputBar(
     /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
     topContent: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val shownPlaceholder = if (isGenerating) stringResource(R.string.chat_input_placeholder_generating) else placeholder
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
     } else {
@@ -1676,12 +1702,20 @@ fun ChatInputBar(
             trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.None,
         ),
     )
+    // 浮岛与底部导航栏同一套材质：抬升底色、半透明描边与投影；生成时外圈流光环绕，出错时整圈泛红。
+    val material = composerIslandMaterial()
+    val glow = rememberComposerGlowState(generating = isGenerating, error = status == GenerationStatus.ERROR)
     Surface(
-        modifier = Modifier.fillMaxWidth().animateContentSize().testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .composerIslandGlow(glow, material.topHighlight)
+            .animateContentSize()
+            .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
+        shape = RoundedCornerShape(ComposerIslandCorner),
+        color = material.container,
+        border = material.border,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 6.dp,
     ) {
         // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
         val hasAttachments = hasImages || hasDocuments || isImportingDocument
@@ -1694,16 +1728,17 @@ fun ChatInputBar(
                 onValueChange = onTextChange,
                 modifier = Modifier.fillMaxWidth()
                     .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .semantics { if (placeholder.isNotBlank()) contentDescription = placeholder }
+                    .semantics { if (shownPlaceholder.isNotBlank()) contentDescription = shownPlaceholder }
                     .testTag(UiTags.CHAT_INPUT),
                 textStyle = inputStyle.forInput(),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                enabled = !isGenerating,
+                // 生成中仍可先写下一条消息；发送键在生成期间保持为停止，生成结束后再发送。
+                enabled = true,
                 minLines = 1,
                 maxLines = 6,
                 decorationBox = { innerTextField ->
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
-                        if (text.isEmpty()) Text(placeholder, style = inputStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (text.isEmpty()) Text(shownPlaceholder, style = inputStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         innerTextField()
                     }
                 },

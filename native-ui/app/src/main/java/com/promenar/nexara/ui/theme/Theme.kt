@@ -53,6 +53,7 @@ private fun dynamicDomainColors(colorScheme: ColorScheme, dark: Boolean): Nexara
     signalOn = if (dark) NexaraDarkSignalOn else NexaraLightSignalOn,
     signalPending = if (dark) NexaraDarkSignalPending else NexaraLightSignalPending,
     signalDown = if (dark) NexaraDarkSignalDown else NexaraLightSignalDown,
+    isDark = dark,
 )
 
 @Composable
