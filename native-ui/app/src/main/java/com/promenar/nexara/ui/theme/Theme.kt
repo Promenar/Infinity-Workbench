@@ -139,8 +139,10 @@ fun NexaraTheme(
             colorScheme = colorScheme,
             typography = NexaraTypography,
             shapes = NexaraShapes,
-            content = content
-        )
+        ) {
+            // 默认点按反馈裁在圆角内，覆盖 MaterialTheme 提供的矩形涟漪。
+            CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides NexaraIndication, content = content)
+        }
     }
 }
 

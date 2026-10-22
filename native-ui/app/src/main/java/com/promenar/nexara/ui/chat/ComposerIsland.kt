@@ -265,9 +265,10 @@ private fun updateHaloShader(shader: android.graphics.Shader, state: ComposerGlo
 
 /**
  * 光晕着色器：以浮岛圆角矩形的外距离衰减，按与光带头部的夹角取一段弧（与描边渐变的 70°–130° 亮段一致），
- * 叠加沿边缘流动的噪声纹理；错误时整圈改为红色并向外多扩散一些。输出为预乘透明度。
+ * 叠加沿边缘流动的噪声纹理；错误时整圈改为红色并向外多扩散一些。光晕在 44dp 内衰减到 0（绘制范围 64dp），
+ * 不会在列表上留下矩形边界。输出为预乘透明度。
  */
-private const val ComposerHaloAgsl = """
+internal const val ComposerHaloAgsl = """
 uniform float2 center;
 uniform float2 halfSize;
 uniform float radius;
@@ -304,14 +305,25 @@ half4 main(float2 coord) {
     float an = atan(p.x, -p.y);
     float deg = mod(an - head, 6.2831853) * 57.29578;
     float arc = smoothstep(0.0, 70.0, deg) * (1.0 - smoothstep(130.0, 190.0, deg));
-    float tx = fbm(float2(an * 2.2 - time * 0.5, d * 0.06 - time * 0.35));
+    // 噪声在圆周上取样，角度回绕处没有接缝。
+    float2 ring = float2(cos(an - time * 0.23), sin(an - time * 0.23)) * 1.6;
+    float tx = fbm(ring + float2(d * 0.06 - time * 0.35, time * 0.11));
+    // 在绘制范围之内平滑衰减到 0：长尾在 8 位色深下会留下圆角矩形的色阶轮廓。
+    float fade = 1.0 - smoothstep(16.0, 44.0, d);
     float core = exp(-d / 3.5) * 0.55;
-    float halo = exp(-d / 15.0) * (0.45 + 0.75 * tx);
-    half3 col = mix(colorA.rgb, colorB.rgb, half(smoothstep(70.0, 130.0, deg)));
-    float g = gen * (arc * (core + halo * 0.85) + 0.07 * exp(-d / 20.0));
-    float e = err * (exp(-d / 24.0) * (0.55 + 0.6 * tx) + 0.35 * exp(-d / 60.0));
+    float halo = exp(-d * d / 300.0) * (0.45 + 0.75 * tx);
+    float ga = gen * arc * (core + halo * 0.85);
+    float gb = gen * 0.07 * exp(-d * d / 200.0);
+    float e = err * (exp(-d * d / 500.0) * (0.55 + 0.6 * tx) + 0.35 * exp(-d / 14.0));
+    // 弧段颜色随角度渐变；整圈底光用两色中间值，光带头尾相接处不跳色。
+    half3 arcCol = mix(colorA.rgb, colorB.rgb, half(smoothstep(70.0, 130.0, deg)));
+    half3 baseCol = mix(colorA.rgb, colorB.rgb, half(0.5));
+    float g = ga + gb;
+    half3 col = (arcCol * half(ga) + baseCol * half(gb)) / half(max(g, 0.0001));
     col = mix(col, colorErr.rgb, half(clamp(e / (g + e + 0.001), 0.0, 1.0)));
-    float a = clamp((g + e) * mix(1.0, 0.8, lightMode), 0.0, 1.0);
+    float a = clamp((g + e) * fade * mix(1.0, 0.8, lightMode), 0.0, 1.0);
+    // 低亮度区加半级抖动，打散色阶。
+    a = clamp(a + (hash(coord) - 0.5) / 255.0 * step(0.002, a), 0.0, 1.0);
     return half4(col * half(a), half(a));
 }
 """
