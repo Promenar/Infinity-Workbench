@@ -24,7 +24,11 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,16 +104,31 @@ fun NexaraBottomSheet(
     dragGesturesEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    if (!show) return
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { currentDismissEnabled || it != SheetValue.Hidden },
+    )
+    // 调用方在选择完成等时机直接把 show 置为 false 时，先播放下滑退场再移除；
+    // 拖动、返回与点外部关闭时面板已自行收起，这里的 hide 会立即返回。
+    var composed by remember { mutableStateOf(show) }
+    LaunchedEffect(show) {
+        if (show) {
+            composed = true
+        } else if (composed) {
+            try {
+                sheetState.hide()
+            } finally {
+                composed = false
+            }
+        }
+    }
+    if (!show && !composed) return
 
     NexaraModalSheet(
         onDismissRequest = { if (currentDismissEnabled) onDismiss() },
         height = height,
-        sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-            confirmValueChange = { currentDismissEnabled || it != SheetValue.Hidden },
-        ),
+        sheetState = sheetState,
         sheetGesturesEnabled = dismissEnabled && dragGesturesEnabled,
         properties = ModalBottomSheetProperties(
             shouldDismissOnBackPress = dismissEnabled,

@@ -2,7 +2,11 @@ package com.promenar.nexara.ui.chat.components
 
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.animation.expandVertically
@@ -388,7 +392,11 @@ internal fun FilesPanel(
                     onReindex = onReindex,
                 )
             }
-            deleteFailure?.let { failure ->
+            val lastDeleteFailure = remember { arrayOfNulls<FileBatchOperationResult>(1) }
+            deleteFailure?.let { lastDeleteFailure[0] = it }
+            AnimatedVisibility(visible = deleteFailure != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                // 收起动画期间沿用最后一次失败信息。
+                val failure = lastDeleteFailure[0] ?: return@AnimatedVisibility
                 val failedLabel = stringResource(R.string.common_cd_failed)
                 Row(
                     modifier = Modifier
@@ -414,16 +422,23 @@ internal fun FilesPanel(
                     ) { Text(stringResource(R.string.common_dismiss)) }
                 }
             }
-            when (panelState) {
-                FilesPanelUiState.Loading -> FilesPanelLoadingState(bodyModifier)
+            // 加载、空、错误与文件列表之间交叉淡入，不再整块跳变。
+            val stateModifier = if (useScroll) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
+            AnimatedContent(
+                targetState = panelState,
+                transitionSpec = { NexaraMotion.fadeThrough() },
+                modifier = bodyModifier,
+                label = "files_panel_state",
+            ) { shownState -> when (shownState) {
+                FilesPanelUiState.Loading -> FilesPanelLoadingState(stateModifier)
                 FilesPanelUiState.Error -> FilesPanelErrorState(
-                    modifier = bodyModifier,
+                    modifier = stateModifier,
                     onRetry = onRetryLoad,
                 )
-                FilesPanelUiState.Empty -> EmptyFilesState(bodyModifier)
-                FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(bodyModifier)
+                FilesPanelUiState.Empty -> EmptyFilesState(stateModifier)
+                FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(stateModifier)
                 FilesPanelUiState.Content -> Surface(
-                    modifier = bodyModifier
+                    modifier = stateModifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
                     shape = MaterialTheme.shapes.extraLarge,
@@ -439,20 +454,21 @@ internal fun FilesPanel(
                                 items = visibleNodes,
                                 key = { it.file.uuid },
                                 contentType = { if (it.file.isDirectory) "directory" else "file" },
-                            ) { node -> content(node) }
+                            ) { node -> Box(Modifier.animateItem()) { content(node) } }
                         }
                     } else {
                         // 外层页面拥有滚动时保持非滚动容器，但仍以 UUID key 渲染单层投影。
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))
                                 .testTag("files_panel_tree_list"),
                         ) {
                             visibleNodes.forEach { node -> key(node.file.uuid) { content(node) } }
                         }
                     }
                 }
-            }
+            } }
         }
 
         // 底部批量操作栏：统一在真实屏幕底部居中，正文已预留空间。

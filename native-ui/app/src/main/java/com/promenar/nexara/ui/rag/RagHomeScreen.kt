@@ -1,5 +1,10 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.animation.animateContentSize
+
+import com.promenar.nexara.ui.theme.hierarchicalTransition
+import com.promenar.nexara.ui.theme.NexaraMotion
+
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.rounded.Add
@@ -435,96 +440,114 @@ fun RagHomeScreen(
                 folderStack = folderStack.dropLast(1)
             }
 
-            if (searchQuery.isBlank()) {
-                val folderSessionId = selectedWorkspaceSessionId?.takeUnless {
-                    it == CompositeWorkspaceConstants.GLOBAL_KNOWLEDGE_SESSION_ID
-                }
-                Column(
-                    modifier = modifier
-                        .verticalScroll(rememberScrollState())
-                        .padding(bottom = NexaraSpacing.XLarge),
-                ) {
-                    // 根目录先列出“浏览”分组：自选工作区（不进 Room 树，只读浏览并按文件加入资料）、外部文件夹与知识图谱。
-                    if (folderStack.isEmpty()) {
-                        NexaraSettingsSection(title = stringResource(R.string.rag_home_section_browse)) {
-                            com.promenar.nexara.ui.workspace.KnowledgeWorkspacesGroup(
-                                knowledgeRootUuid = workspaceRootUuid,
-                                onImported = { actions.onReindexFile(it) },
-                                grouped = true,
-                            )
-                            externalFolderManager?.let { manager ->
-                                ExternalFoldersPanel(
-                                    sessionId = folderSessionId,
-                                    workspaceRootUuid = workspaceRootUuid,
-                                    manager = manager,
-                                    onReindex = { actions.onReindexFile(it) },
+            // 输入或清空搜索词时，目录浏览与搜索结果交叉淡入。
+            AnimatedContent(
+                targetState = searchQuery.isBlank(),
+                transitionSpec = { NexaraMotion.fadeThrough() },
+                label = "rag_documents_search",
+            ) { browsing ->
+                if (browsing) {
+                    val folderSessionId = selectedWorkspaceSessionId?.takeUnless {
+                        it == CompositeWorkspaceConstants.GLOBAL_KNOWLEDGE_SESSION_ID
+                    }
+                    Column(
+                        modifier = modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = NexaraSpacing.XLarge),
+                    ) {
+                        // 根目录先列出“浏览”分组：自选工作区（不进 Room 树，只读浏览并按文件加入资料）、外部文件夹与知识图谱。
+                        // 进入子目录与返回上级时，页头与文件列表一起按层级方向横向切换。
+                        AnimatedContent(
+                            targetState = folderStack,
+                            contentKey = { it.lastOrNull()?.id },
+                            transitionSpec = { hierarchicalTransition { it.size } },
+                            label = "rag_folder_navigation",
+                        ) { shownStack ->
+                        val shownFolderId = shownStack.lastOrNull()?.id ?: workspaceRootUuid
+                        Column {
+                        if (shownStack.isEmpty()) {
+                            NexaraSettingsSection(title = stringResource(R.string.rag_home_section_browse)) {
+                                com.promenar.nexara.ui.workspace.KnowledgeWorkspacesGroup(
+                                    knowledgeRootUuid = workspaceRootUuid,
+                                    onImported = { actions.onReindexFile(it) },
                                     grouped = true,
                                 )
-                            }
-                            RagGraphEntry(onClick = actions.onOpenGraph)
-                        }
-                        SettingsSectionHeader(
-                            title = stringResource(R.string.rag_root_all_files),
-                            titleStyle = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(
-                                start = NexaraSpacing.RowHorizontal,
-                                end = NexaraSpacing.RowHorizontal,
-                            ),
-                        )
-                    } else {
-                        FolderBreadcrumbsBar(
-                            folderStack = folderStack,
-                            rootTitle = stringResource(R.string.rag_root_all_files),
-                            onNavigateBack = { folderStack = folderStack.dropLast(1) },
-                            onNavigateToCrumb = { index ->
-                                folderStack = if (index == 0) emptyList() else folderStack.take(index)
-                            },
-                        )
-                    }
-
-                    key(workspaceRootUuid, activeFolderId) {
-                        FilesPanel(
-                            workspaceRootUuid = workspaceRootUuid,
-                            workspaceRepo = viewModel.getWorkspaceRepo(),
-                            sessionId = folderSessionId,
-                            currentParentUuid = activeFolderId,
-                            searchQuery = "",
-                            // 整页随外层一起滚动，文件分组按内容高度收拢，不再撑满剩余空间。
-                            useScroll = false,
-                            onReindex = { actions.onReindexFile(it) },
-                            onDelete = requestDelete,
-                            onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
-                            onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
-                            onExtractKG = actions.onExtractKG,
-                            onViewKG = { onNavigateToGraph() },
-                            onCopy = actions.onCopyFile,
-                            indexingFileIds = indexingFileIds,
-                            kgExtractionStates = kgExtractionStates,
-                            externalSelectedIds = selectedDocumentIds,
-                            showSelectionOverlay = false,
-                            allowTreeExpansion = false,
-                            onFolderClick = { folderId, folderName ->
-                                // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
-                                folderStack = folderStack + FolderCrumb(folderId, folderName)
-                            },
-                            onFileClick = { docId ->
-                                workspaceRootUuid?.let { root ->
-                                    actions.onNavigateToDocEditor(root, docId)
+                                externalFolderManager?.let { manager ->
+                                    ExternalFoldersPanel(
+                                        sessionId = folderSessionId,
+                                        workspaceRootUuid = workspaceRootUuid,
+                                        manager = manager,
+                                        onReindex = { actions.onReindexFile(it) },
+                                        grouped = true,
+                                    )
                                 }
-                            },
-                        )
-                    }
-                }
-            } else {
-                RagSearchResults(
-                    state = searchState,
-                    onOpenDocument = { docId ->
-                        workspaceRootUuid?.let { root ->
-                            actions.onNavigateToDocEditor(root, docId)
+                                RagGraphEntry(onClick = actions.onOpenGraph)
+                            }
+                            SettingsSectionHeader(
+                                title = stringResource(R.string.rag_root_all_files),
+                                titleStyle = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(
+                                    start = NexaraSpacing.RowHorizontal,
+                                    end = NexaraSpacing.RowHorizontal,
+                                ),
+                            )
+                        } else {
+                            FolderBreadcrumbsBar(
+                                folderStack = shownStack,
+                                rootTitle = stringResource(R.string.rag_root_all_files),
+                                onNavigateBack = { folderStack = shownStack.dropLast(1) },
+                                onNavigateToCrumb = { index ->
+                                    folderStack = if (index == 0) emptyList() else shownStack.take(index)
+                                },
+                            )
                         }
-                    },
-                    modifier = modifier,
-                )
+
+                        key(workspaceRootUuid, shownFolderId) {
+                            FilesPanel(
+                                workspaceRootUuid = workspaceRootUuid,
+                                workspaceRepo = viewModel.getWorkspaceRepo(),
+                                sessionId = folderSessionId,
+                                currentParentUuid = shownFolderId,
+                                searchQuery = "",
+                                // 整页随外层一起滚动，文件分组按内容高度收拢，不再撑满剩余空间。
+                                useScroll = false,
+                                onReindex = { actions.onReindexFile(it) },
+                                onDelete = requestDelete,
+                                onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
+                                onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
+                                onExtractKG = actions.onExtractKG,
+                                onViewKG = { onNavigateToGraph() },
+                                onCopy = actions.onCopyFile,
+                                indexingFileIds = indexingFileIds,
+                                kgExtractionStates = kgExtractionStates,
+                                externalSelectedIds = selectedDocumentIds,
+                                showSelectionOverlay = false,
+                                allowTreeExpansion = false,
+                                onFolderClick = { folderId, folderName ->
+                                    // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
+                                    folderStack = shownStack + FolderCrumb(folderId, folderName)
+                                },
+                                onFileClick = { docId ->
+                                    workspaceRootUuid?.let { root ->
+                                        actions.onNavigateToDocEditor(root, docId)
+                                    }
+                                },
+                            )
+                        }
+                        }
+                        }
+                    }
+                } else {
+                    RagSearchResults(
+                        state = searchState,
+                        onOpenDocument = { docId ->
+                            workspaceRootUuid?.let { root ->
+                                actions.onNavigateToDocEditor(root, docId)
+                            }
+                        },
+                        modifier = modifier,
+                    )
+                }
             }
         }
     }
@@ -797,226 +820,237 @@ internal fun RagHomeScreenContent(
                         .padding(top = NexaraSpacing.XSmall, bottom = NexaraSpacing.Large),
                 )
 
-                when (state.currentTab) {
-                    PortalTab.DOCUMENTS -> {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .testTag(UiTags.RAG_HOME_DOCUMENTS_CONTENT)
-                        ) {
-                            documentsContent(
-                                Modifier.fillMaxSize(),
-                                state.selectedIds,
-                                requestDocumentDelete,
-                            )
+                // 文档与记忆按标签顺序横向切换，和分段指示器的移动方向一致。
+                AnimatedContent(
+                    targetState = state.currentTab,
+                    transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState.ordinal > initialState.ordinal) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    label = "rag_portal_tab",
+                ) { tab ->
+                    when (tab) {
+                        PortalTab.DOCUMENTS -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag(UiTags.RAG_HOME_DOCUMENTS_CONTENT)
+                            ) {
+                                documentsContent(
+                                    Modifier.fillMaxSize(),
+                                    state.selectedIds,
+                                    requestDocumentDelete,
+                                )
+                            }
+
                         }
 
-                    }
-
-                    PortalTab.MEMORY -> {
-                        val filteredMemories = remember(state.memoryVectors, state.searchQuery) {
-                            if (state.searchQuery.isBlank()) {
-                                state.memoryVectors
-                            } else {
-                                state.memoryVectors.filter {
-                                    it.content.contains(state.searchQuery, ignoreCase = true)
+                        PortalTab.MEMORY -> {
+                            val filteredMemories = remember(state.memoryVectors, state.searchQuery) {
+                                if (state.searchQuery.isBlank()) {
+                                    state.memoryVectors
+                                } else {
+                                    state.memoryVectors.filter {
+                                        it.content.contains(state.searchQuery, ignoreCase = true)
+                                    }
                                 }
                             }
-                        }
 
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .testTag(UiTags.RAG_HOME_MEMORY_CONTENT),
-                            contentPadding = PaddingValues(bottom = NexaraSpacing.XLarge),
-                        ) {
-                            if (state.memoryVectors.isEmpty()) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 96.dp)
-                                            .testTag("memory-empty"),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag(UiTags.RAG_HOME_MEMORY_CONTENT),
+                                contentPadding = PaddingValues(bottom = NexaraSpacing.XLarge),
+                            ) {
+                                if (state.memoryVectors.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 96.dp)
+                                                .testTag("memory-empty"),
+                                            contentAlignment = Alignment.Center,
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(72.dp)
-                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
-                                                contentAlignment = Alignment.Center,
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
                                             ) {
-                                                Icon(
-                                                    Icons.Rounded.Psychology,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(32.dp),
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            Text(
-                                                text = stringResource(R.string.rag_home_memory_empty_title),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = stringResource(R.string.rag_home_memory_empty),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            } else if (filteredMemories.isEmpty()) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 96.dp)
-                                            .testTag("memory-search-empty"),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(72.dp)
-                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Search,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(32.dp),
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            Text(
-                                                text = stringResource(R.string.rag_home_memory_search_empty_title),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = stringResource(R.string.rag_home_memory_search_empty),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            } else {
-                                itemsIndexed(filteredMemories, key = { _, memory -> memory.id }) { index, memory ->
-                                    val isExpanded = expandedMemoryId == memory.id
-                                    // 记忆逐条拼成一个连续分组，与设置页的分组面一致。
-                                    ListItem(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .bettboxListGroupItem(index, filteredMemories.size)
-                                            .testTag("memory-item-${memory.id}"),
-                                        headlineContent = {
-                                            Text(
-                                                text = memory.content,
-                                                style = MaterialTheme.typography.bodyLarge.forReading(),
-                                                maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        },
-                                        supportingContent = {
-                                            FlowRow(
-                                                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                                                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-                                            ) {
-                                                memory.sessionId?.let {
-                                                    Text(
-                                                        "${stringResource(R.string.sessions_tag_session)}: ${it.take(8)}…",
-                                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(72.dp)
+                                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    Icon(
+                                                        Icons.Rounded.Psychology,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(32.dp),
                                                     )
                                                 }
+                                                Spacer(modifier = Modifier.height(16.dp))
                                                 Text(
-                                                    sdf.format(java.util.Date(memory.createdAt)),
+                                                    text = stringResource(R.string.rag_home_memory_empty_title),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = stringResource(R.string.rag_home_memory_empty),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
                                             }
-                                        },
-                                        trailingContent = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                IconButton(
-                                                    onClick = {
-                                                        expandedMemoryId = if (isExpanded) null else memory.id
-                                                    },
+                                        }
+                                    }
+                                } else if (filteredMemories.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 96.dp)
+                                                .testTag("memory-search-empty"),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                            ) {
+                                                Box(
                                                     modifier = Modifier
-                                                        .sizeIn(
-                                                            minWidth = NexaraSpacing.MinimumTouchTarget,
-                                                            minHeight = NexaraSpacing.MinimumTouchTarget,
-                                                        )
-                                                        .testTag("memory-expand-${memory.id}"),
+                                                        .size(72.dp)
+                                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                                                    contentAlignment = Alignment.Center,
                                                 ) {
                                                     Icon(
-                                                        imageVector = if (isExpanded) {
-                                                            Icons.Rounded.ExpandLess
-                                                        } else {
-                                                            Icons.Rounded.ExpandMore
-                                                        },
-                                                        contentDescription = stringResource(
-                                                            if (isExpanded) {
-                                                                R.string.common_cd_collapse
-                                                            } else {
-                                                                R.string.common_cd_expand
-                                                            },
-                                                        ),
+                                                        Icons.Rounded.Search,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(32.dp),
                                                     )
                                                 }
-                                                IconButton(
-                                                    onClick = { memoryDeleteTargetId = memory.id },
-                                                    modifier = Modifier
-                                                        .sizeIn(
-                                                            minWidth = NexaraSpacing.MinimumTouchTarget,
-                                                            minHeight = NexaraSpacing.MinimumTouchTarget,
-                                                        )
-                                                        .testTag("memory-delete-${memory.id}"),
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Delete,
-                                                        contentDescription = stringResource(R.string.common_cd_delete),
-                                                        tint = MaterialTheme.colorScheme.error,
-                                                    )
-                                                }
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = stringResource(R.string.rag_home_memory_search_empty_title),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = stringResource(R.string.rag_home_memory_search_empty),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
                                             }
-                                        },
-                                        colors = ListItemDefaults.colors(
-                                            containerColor = Color.Transparent,
-                                        ),
-                                    )
-                                }
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = NexaraSpacing.Medium),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.rag_home_memory_footer_count, filteredMemories.size),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        }
+                                    }
+                                } else {
+                                    itemsIndexed(filteredMemories, key = { _, memory -> memory.id }) { index, memory ->
+                                        val isExpanded = expandedMemoryId == memory.id
+                                        // 记忆逐条拼成一个连续分组，与设置页的分组面一致。
+                                        ListItem(
+                                            // 删除与筛选时条目平滑让位；展开全文时高度过渡。
+                                            modifier = Modifier
+                                                .animateItem()
+                                                .fillMaxWidth()
+                                                .bettboxListGroupItem(index, filteredMemories.size)
+                                                .animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))
+                                                .testTag("memory-item-${memory.id}"),
+                                            headlineContent = {
+                                                Text(
+                                                    text = memory.content,
+                                                    style = MaterialTheme.typography.bodyLarge.forReading(),
+                                                    maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            },
+                                            supportingContent = {
+                                                FlowRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                                                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+                                                ) {
+                                                    memory.sessionId?.let {
+                                                        Text(
+                                                            "${stringResource(R.string.sessions_tag_session)}: ${it.take(8)}…",
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                        )
+                                                    }
+                                                    Text(
+                                                        sdf.format(java.util.Date(memory.createdAt)),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            },
+                                            trailingContent = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            expandedMemoryId = if (isExpanded) null else memory.id
+                                                        },
+                                                        modifier = Modifier
+                                                            .sizeIn(
+                                                                minWidth = NexaraSpacing.MinimumTouchTarget,
+                                                                minHeight = NexaraSpacing.MinimumTouchTarget,
+                                                            )
+                                                            .testTag("memory-expand-${memory.id}"),
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = if (isExpanded) {
+                                                                Icons.Rounded.ExpandLess
+                                                            } else {
+                                                                Icons.Rounded.ExpandMore
+                                                            },
+                                                            contentDescription = stringResource(
+                                                                if (isExpanded) {
+                                                                    R.string.common_cd_collapse
+                                                                } else {
+                                                                    R.string.common_cd_expand
+                                                                },
+                                                            ),
+                                                        )
+                                                    }
+                                                    IconButton(
+                                                        onClick = { memoryDeleteTargetId = memory.id },
+                                                        modifier = Modifier
+                                                            .sizeIn(
+                                                                minWidth = NexaraSpacing.MinimumTouchTarget,
+                                                                minHeight = NexaraSpacing.MinimumTouchTarget,
+                                                            )
+                                                            .testTag("memory-delete-${memory.id}"),
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Delete,
+                                                            contentDescription = stringResource(R.string.common_cd_delete),
+                                                            tint = MaterialTheme.colorScheme.error,
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            colors = ListItemDefaults.colors(
+                                                containerColor = Color.Transparent,
+                                            ),
                                         )
+                                    }
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = NexaraSpacing.Medium),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.rag_home_memory_footer_count, filteredMemories.size),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    PortalTab.GRAPH -> {}
+                        PortalTab.GRAPH -> {}
+                    }
                 }
             }
         }

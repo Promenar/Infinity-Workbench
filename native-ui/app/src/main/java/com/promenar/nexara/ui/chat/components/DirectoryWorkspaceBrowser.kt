@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.chat.components
 import android.content.Intent
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,12 +57,17 @@ import com.promenar.nexara.R
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.common.FolderCrumb
+import com.promenar.nexara.ui.common.FolderEntriesList
+import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forReading
+import com.promenar.nexara.ui.theme.hierarchicalTransition
+import androidx.compose.material3.IconButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -93,27 +100,37 @@ internal fun DirectoryWorkspaceBrowser(
     BackHandler(enabled = selected != null || parent != null) {
         if (selected != null) onCloseFile() else parent?.let(onNavigate)
     }
-    if (selected != null) {
-        DirectoryFileView(
-            entry = selected,
-            preview = state.preview ?: ExternalTextPreview.Loading,
-            previewError = state.previewError,
-            onBack = onCloseFile,
-            readFile = readFile,
-            modifier = modifier,
-        )
-    } else {
-        DirectoryListView(
-            rootTitle = rootTitle,
-            state = state,
-            onNavigate = onNavigate,
-            onOpenFile = { entry ->
-                if (onOpenMedia != null && isPreviewableMediaName(entry.name)) onOpenMedia(entry) else onOpenFile(entry)
-            },
-            onRefresh = onRefresh,
-            modifier = modifier,
-            rootHeader = rootHeader,
-        )
+    AnimatedContent(
+        targetState = state,
+        // 目录之间的切换由列表自己做层级过渡，页头保持不动；打开与关闭文件整页推入推出。
+        contentKey = { it.selectedFile?.path?.let { path -> "file:$path" } ?: "list" },
+        transitionSpec = { hierarchicalTransition { if (it.selectedFile != null) 1 else 0 } },
+        modifier = modifier,
+        label = "directory_workspace_page",
+    ) { current ->
+        val file = current.selectedFile
+        if (file != null) {
+            DirectoryFileView(
+                entry = file,
+                preview = current.preview ?: ExternalTextPreview.Loading,
+                previewError = current.previewError,
+                onBack = onCloseFile,
+                readFile = readFile,
+                modifier = Modifier,
+            )
+        } else {
+            DirectoryListView(
+                rootTitle = rootTitle,
+                state = current,
+                onNavigate = onNavigate,
+                onOpenFile = { entry ->
+                    if (onOpenMedia != null && isPreviewableMediaName(entry.name)) onOpenMedia(entry) else onOpenFile(entry)
+                },
+                onRefresh = onRefresh,
+                modifier = Modifier,
+                rootHeader = rootHeader,
+            )
+        }
     }
 }
 
@@ -127,7 +144,6 @@ private fun DirectoryListView(
     modifier: Modifier,
     rootHeader: @Composable () -> Unit,
 ) = Column(modifier.fillMaxSize()) {
-    val context = LocalContext.current
     val crumbs = directoryCrumbs(state.path)
     FolderBreadcrumbsBar(
         folderStack = crumbs,
@@ -138,85 +154,35 @@ private fun DirectoryListView(
             .padding(horizontal = NexaraSpacing.Small)
             .testTag(UiTags.RESOURCE_EXPLORER_BREADCRUMBS),
         backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
-    )
-    if (crumbs.isEmpty()) rootHeader()
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-        TextButton(
-            onClick = onRefresh,
-            enabled = !state.isLoading,
-            modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
-        ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(
-                stringResource(R.string.resource_explorer_directory_refresh),
-                modifier = Modifier.padding(start = NexaraSpacing.XSmall),
-            )
-        }
-    }
-    if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    val error = state.error
-    when {
-        error != null -> Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = NexaraSpacing.Medium)
-                .semantics { liveRegion = LiveRegionMode.Assertive }
-                .testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_STATUS),
-        ) {
-            Text(
-                text = error.reason?.let { stringResource(R.string.resource_explorer_directory_load_failed, it) }
-                    ?: stringResource(R.string.resource_explorer_directory_load_failed_generic),
-                style = MaterialTheme.typography.bodyMedium.forReading(),
-                color = MaterialTheme.colorScheme.error,
-            )
-            TextButton(
-                onClick = onRefresh,
-                modifier = Modifier
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .testTag(UiTags.RESOURCE_EXPLORER_RETRY_LOAD),
-            ) { Text(stringResource(R.string.shared_btn_retry)) }
-        }
-        !state.isLoading && state.entries.isEmpty() -> Text(
-            stringResource(R.string.resource_explorer_directory_empty),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .padding(NexaraSpacing.Large)
-                .testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_STATUS),
-        )
-        else -> LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_LIST),
-            contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
-        ) {
-            items(state.entries, key = { it.path }) { entry ->
-                ListItem(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(role = Role.Button) {
-                            if (entry.isDirectory) onNavigate(entry.path) else onOpenFile(entry)
-                        },
-                    headlineContent = {
-                        NexaraIdentifierText(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    },
-                    supportingContent = if (entry.isDirectory) null else ({
-                        Text(Formatter.formatShortFileSize(context, entry.size), style = NexaraTypography.bodySmall)
-                    }),
-                    leadingContent = {
-                        Icon(
-                            if (entry.isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.InsertDriveFile,
-                            contentDescription = null,
-                            tint = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    trailingContent = if (entry.isDirectory) ({ Icon(Icons.Rounded.ChevronRight, null) }) else null,
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
+        actions = {
+            IconButton(onClick = onRefresh, enabled = !state.isLoading) {
+                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.resource_explorer_directory_refresh))
             }
-        }
+        },
+    )
+    AnimatedVisibility(visible = crumbs.isEmpty(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        Column { rootHeader() }
     }
+    val error = state.error
+    FolderEntriesList(
+        path = state.path,
+        depth = crumbs.size,
+        entries = state.entries,
+        loading = state.isLoading,
+        error = error?.let {
+            it.reason?.let { reason -> stringResource(R.string.resource_explorer_directory_load_failed, reason) }
+                ?: stringResource(R.string.resource_explorer_directory_load_failed_generic)
+        },
+        emptyText = stringResource(R.string.resource_explorer_directory_empty),
+        onEntryClick = { entry -> if (entry.isDirectory) onNavigate(entry.path) else onOpenFile(entry) },
+        onRetry = onRefresh,
+        listTag = UiTags.RESOURCE_EXPLORER_DIRECTORY_LIST,
+        statusTag = UiTags.RESOURCE_EXPLORER_DIRECTORY_STATUS,
+        retryTag = UiTags.RESOURCE_EXPLORER_RETRY_LOAD,
+        modifier = Modifier
+            .weight(1f, fill = false)
+            .padding(horizontal = NexaraSpacing.Small),
+    )
 }
 
 @Composable
@@ -233,18 +199,21 @@ private fun DirectoryFileView(
     val chooserTitle = stringResource(R.string.mount_open_external)
     var opening by remember(entry.path) { mutableStateOf(false) }
     var openNotice by remember(entry.path) { mutableStateOf<Int?>(null) }
-    TextButton(onClick = onBack, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, Modifier.size(18.dp))
-        Text(stringResource(R.string.resource_explorer_directory_back), modifier = Modifier.padding(start = NexaraSpacing.XSmall))
-    }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
-        NexaraIdentifierText(entry.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        NexaraIdentifierText(
-            entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    NexaraNavigationHeader(
+        title = entry.name,
+        onBack = onBack,
+        backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
+        modifier = Modifier.padding(horizontal = NexaraSpacing.Small),
+        supporting = {
+            NexaraIdentifierText(
+                entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
         TextButton(
             enabled = !opening,
@@ -278,52 +247,26 @@ private fun DirectoryFileView(
             Text(chooserTitle, modifier = Modifier.padding(start = NexaraSpacing.XSmall))
         }
     }
-    if (opening) LinearProgressIndicator(Modifier.fillMaxWidth())
-    openNotice?.let { notice ->
+    AnimatedVisibility(visible = opening, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
+    AnimatedVisibility(visible = openNotice != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        // 退出动画期间提示已清空，保留空文本让区域平滑收起。
         Text(
-            stringResource(notice),
+            openNotice?.let { stringResource(it) }.orEmpty(),
             style = NexaraTypography.bodySmall,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
     }
-    Box(
-        Modifier
+    FileTextPreviewPanel(
+        preview = preview,
+        failedText = stringResource(R.string.workspace_kb_preview_failed, previewError.orEmpty()),
+        binaryText = stringResource(R.string.mount_preview_binary),
+        tooLargeText = stringResource(R.string.workspace_kb_preview_too_large),
+        previewTag = UiTags.RESOURCE_EXPLORER_DIRECTORY_PREVIEW,
+        modifier = Modifier
             .weight(1f)
-            .fillMaxWidth()
-            .padding(top = NexaraSpacing.Medium)
-            .bettboxListGroup(),
-    ) {
-        when (preview) {
-            ExternalTextPreview.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
-            ExternalTextPreview.Failed -> DirectoryPreviewMessage(
-                stringResource(R.string.workspace_kb_preview_failed, previewError.orEmpty()),
-                error = true,
-            )
-            ExternalTextPreview.Binary -> DirectoryPreviewMessage(stringResource(R.string.mount_preview_binary))
-            ExternalTextPreview.TooLarge -> DirectoryPreviewMessage(stringResource(R.string.workspace_kb_preview_too_large))
-            is ExternalTextPreview.Text -> SelectionContainer(Modifier.fillMaxSize()) {
-                Text(
-                    preview.content,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(NexaraSpacing.Medium)
-                        .testTag(UiTags.RESOURCE_EXPLORER_DIRECTORY_PREVIEW),
-                    style = NexaraTypography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DirectoryPreviewMessage(text: String, error: Boolean = false) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium.forReading(),
-        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(NexaraSpacing.Medium),
+            .padding(top = NexaraSpacing.Medium),
     )
 }

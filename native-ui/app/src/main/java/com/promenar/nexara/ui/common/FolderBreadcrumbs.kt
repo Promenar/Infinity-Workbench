@@ -1,29 +1,51 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /** 穿透式目录导航栈中的一级；根目录不入栈。 */
@@ -32,7 +54,83 @@ data class FolderCrumb(
     val name: String,
 ) : java.io.Serializable
 
-/** 返回上级按钮加可点击的路径面包屑；知识库与会话工作区共用。 */
+/**
+ * 面板与浏览器内的二级页头：左侧唯一的返回按钮，右侧为当前层级标题，标题下可放路径或说明，末尾放页面操作。
+ * 标题按 [depth] 的增减做纵向切换，返回按钮出现与消失时横向展开收起。
+ */
+@Composable
+fun NexaraNavigationHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    backContentDescription: String = stringResource(R.string.common_cd_back),
+    backButtonTag: String? = null,
+    depth: Int = 0,
+    titleStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    supporting: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(vertical = NexaraSpacing.XSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AnimatedVisibility(
+            visible = onBack != null,
+            enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) +
+                fadeIn(tween(NexaraMotion.DurationMedium)),
+            exit = shrinkHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)) +
+                fadeOut(tween(NexaraMotion.DurationFadeOut)),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(
+                    // 退出动画期间 onBack 已为空，此时点击不做任何事。
+                    onClick = { onBack?.invoke() },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .then(if (backButtonTag != null) Modifier.testTag(backButtonTag) else Modifier),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = backContentDescription,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(NexaraSpacing.Medium))
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            AnimatedContent(
+                targetState = title to depth,
+                transitionSpec = { NexaraMotion.sharedAxisY(forward = targetState.second >= initialState.second) },
+                label = "navigation_header_title",
+            ) { (currentTitle, _) ->
+                Text(
+                    text = currentTitle,
+                    style = titleStyle,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+            supporting?.invoke()
+        }
+        actions()
+    }
+}
+
+/**
+ * 目录浏览页头：一个返回按钮回到上一级（根目录时由 [onExitRoot] 回到外层列表，未提供则不显示），
+ * 标题为当前目录名，下方是可点击的上级路径。知识库、会话工作区与外部文件夹共用。
+ */
 @Composable
 fun FolderBreadcrumbsBar(
     folderStack: List<FolderCrumb>,
@@ -41,60 +139,59 @@ fun FolderBreadcrumbsBar(
     onNavigateToCrumb: (Int) -> Unit,
     modifier: Modifier = Modifier,
     backButtonTag: String = "rag_folder_back_btn",
+    onExitRoot: (() -> Unit)? = null,
+    titleStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val atRoot = folderStack.isEmpty()
+    val allCrumbs = remember(folderStack, rootTitle) {
+        listOf(FolderCrumb(id = "", name = rootTitle)) + folderStack
+    }
+    NexaraNavigationHeader(
+        title = allCrumbs.last().name,
+        modifier = modifier,
+        onBack = if (atRoot) onExitRoot else onNavigateBack,
+        backContentDescription = stringResource(if (atRoot) R.string.common_cd_back else R.string.rag_back_to_parent),
+        backButtonTag = backButtonTag,
+        depth = folderStack.size,
+        titleStyle = titleStyle,
+        supporting = if (atRoot) null else ({ FolderAncestorTrail(allCrumbs.dropLast(1), onNavigateToCrumb) }),
+        actions = actions,
+    )
+}
+
+/** 上级路径：逐级可点，路径过长时横向滚动并停在最近的上级。 */
+@Composable
+private fun FolderAncestorTrail(ancestors: List<FolderCrumb>, onNavigateToCrumb: (Int) -> Unit) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(ancestors.size) { scrollState.animateScrollTo(scrollState.maxValue) }
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = NexaraSpacing.XSmall),
+            // 路径段自带的内边距向左抵消，使首段文字与标题对齐。
+            .offset(x = -NexaraSpacing.XSmall)
+            .horizontalScroll(scrollState),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (folderStack.isNotEmpty()) {
-            IconButton(
-                onClick = onNavigateBack,
-                modifier = Modifier
-                    .size(36.dp)
-                    .testTag(backButtonTag),
-            ) {
+        ancestors.forEachIndexed { index, crumb ->
+            if (index > 0) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.rag_back_to_parent),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.outline,
                 )
             }
-        }
-        val allCrumbs = remember(folderStack, rootTitle) {
-            listOf(FolderCrumb(id = "", name = rootTitle)) + folderStack
-        }
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            allCrumbs.forEachIndexed { index, crumb ->
-                val isLast = index == allCrumbs.lastIndex
-                Text(
-                    text = crumb.name,
-                    style = if (isLast) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isLast) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isLast) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable(enabled = !isLast) {
-                            onNavigateToCrumb(index)
-                        }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                )
-                if (!isLast) {
-                    Text(
-                        text = "›",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                    )
-                }
-            }
+            Text(
+                text = crumb.name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(role = Role.Button) { onNavigateToCrumb(index) }
+                    .padding(horizontal = NexaraSpacing.XSmall, vertical = 6.dp),
+            )
         }
     }
 }

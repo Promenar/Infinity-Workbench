@@ -1,5 +1,15 @@
 package com.promenar.nexara.ui.hub
 
+import com.promenar.nexara.ui.theme.NexaraMotion
+
+import androidx.compose.runtime.key
+
+import androidx.compose.animation.core.tween
+
+import androidx.compose.animation.animateContentSize
+
+import androidx.compose.animation.AnimatedContent
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -432,6 +442,7 @@ internal fun AgentHubScreenContent(
     val sessionGroupsShown = sections.pinnedSessions.isNotEmpty() to sections.sessions.isNotEmpty()
     // 同一时间只展开一个助手，就地列出它的会话与“新建会话”。
     var expandedAgentId by rememberSaveable { mutableStateOf(initialExpandedAgentId) }
+    val haptics = LocalNexaraHaptics.current
     LaunchedEffect(sessionGroupsShown) {
         if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0)
     }
@@ -480,68 +491,88 @@ internal fun AgentHubScreenContent(
             destructive = true
         )
 
-        when {
-            state.displayAgents.isEmpty() -> EmptyAgentState(
-                onCreateAgent = actions.onRequestAdd,
-                modifier = Modifier.padding(paddingValues),
-            )
+        // 无助手、搜索无结果与列表之间交叉淡入。
+        AnimatedContent(
+            targetState = when {
+                state.displayAgents.isEmpty() -> 0
+                searching && sections.isEmpty -> 1
+                else -> 2
+            },
+            transitionSpec = { NexaraMotion.fadeThrough() },
+            label = "hub_content_phase",
+        ) { phase ->
+            when (phase) {
+                0 -> EmptyAgentState(
+                    onCreateAgent = actions.onRequestAdd,
+                    modifier = Modifier.padding(paddingValues),
+                )
 
-            searching && sections.isEmpty -> HubSearchEmptyState(modifier = Modifier.padding(paddingValues))
+                1 -> HubSearchEmptyState(modifier = Modifier.padding(paddingValues))
 
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag(UiTags.HUB_AGENT_LIST),
-                contentPadding = PaddingValues(
-                    top = paddingValues.calculateTopPadding() + NexaraSpacing.Small,
-                    bottom = paddingValues.calculateBottomPadding() + NexaraSpacing.XLarge,
-                ),
-            ) {
-                if (sections.pinnedSessions.isNotEmpty()) {
-                    item(key = "pinned") {
-                        HubSessionSection(
-                            title = stringResource(R.string.hub_section_pinned),
-                            entries = sections.pinnedSessions,
-                            actions = actions,
-                        )
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag(UiTags.HUB_AGENT_LIST),
+                    contentPadding = PaddingValues(
+                        top = paddingValues.calculateTopPadding() + NexaraSpacing.Small,
+                        bottom = paddingValues.calculateBottomPadding() + NexaraSpacing.XLarge,
+                    ),
+                ) {
+                    if (sections.pinnedSessions.isNotEmpty()) {
+                        item(key = "pinned") {
+                            HubSessionSection(
+                                modifier = Modifier.animateItem(),
+                                title = stringResource(R.string.hub_section_pinned),
+                                entries = sections.pinnedSessions,
+                                actions = actions,
+                            )
+                        }
                     }
-                }
-                if (sections.sessions.isNotEmpty()) {
-                    item(key = "sessions") {
-                        HubSessionSection(
-                            title = stringResource(if (searching) R.string.hub_section_sessions else R.string.hub_section_recent),
-                            entries = sections.sessions,
-                            actions = actions,
-                        )
+                    if (sections.sessions.isNotEmpty()) {
+                        item(key = "sessions") {
+                            HubSessionSection(
+                                modifier = Modifier.animateItem(),
+                                title = stringResource(if (searching) R.string.hub_section_sessions else R.string.hub_section_recent),
+                                entries = sections.sessions,
+                                actions = actions,
+                            )
+                        }
                     }
-                }
-                if (sections.agents.isNotEmpty() || !searching) {
-                    item(key = "agents") {
-                        NexaraSettingsSection(
-                            title = stringResource(R.string.hub_section_agents),
-                            headerStartPadding = NexaraSpacing.ScreenHorizontal,
-                        ) {
-                            sections.agents.forEach { entry ->
-                                val agentId = entry.item.agent.id
-                                val expanded = expandedAgentId == agentId
-                                HubAgentRow(
-                                    entry = entry,
-                                    expanded = expanded,
-                                    onToggleExpand = { expandedAgentId = if (expanded) null else agentId },
-                                    onTogglePin = { actions.onTogglePin(agentId) },
-                                    onEdit = { actions.onEdit(agentId) },
-                                    onDelete = { actions.onRequestDelete(agentId) },
-                                )
-                                AnimatedVisibility(visible = expanded) {
-                                    HubAgentSessions(
-                                        agentId = agentId,
-                                        sessions = state.sessionsByAgent[agentId].orEmpty(),
-                                        actions = actions,
+                    if (sections.agents.isNotEmpty() || !searching) {
+                        item(key = "agents") {
+                            NexaraSettingsSection(
+                                title = stringResource(R.string.hub_section_agents),
+                                headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                                modifier = Modifier.animateItem(),
+                            ) {
+                                sections.agents.forEach { entry ->
+                                    val agentId = entry.item.agent.id
+                                    key(agentId) {
+                                    val expanded = expandedAgentId == agentId
+                                    HubAgentRow(
+                                        entry = entry,
+                                        expanded = expanded,
+                                        onToggleExpand = {
+                                            // 展开与收起分别使用开/关两档轻振，与开关控件的触感一致。
+                                            haptics.toggle(!expanded)
+                                            expandedAgentId = if (expanded) null else agentId
+                                        },
+                                        onTogglePin = { actions.onTogglePin(agentId) },
+                                        onEdit = { actions.onEdit(agentId) },
+                                        onDelete = { actions.onRequestDelete(agentId) },
                                     )
+                                    AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                                        HubAgentSessions(
+                                            agentId = agentId,
+                                            sessions = state.sessionsByAgent[agentId].orEmpty(),
+                                            actions = actions,
+                                        )
+                                    }
+                                    }
                                 }
+                                if (!searching) HubAddAgentRow(onClick = actions.onRequestAdd)
                             }
-                            if (!searching) HubAddAgentRow(onClick = actions.onRequestAdd)
                         }
                     }
                 }
@@ -555,20 +586,27 @@ private fun HubSessionSection(
     title: String,
     entries: List<HubSessionEntry>,
     actions: AgentHubScreenActions,
+    modifier: Modifier = Modifier,
 ) {
     NexaraSettingsSection(
         title = title,
         headerStartPadding = NexaraSpacing.ScreenHorizontal,
+        modifier = modifier,
     ) {
-        entries.forEach { entry ->
-            val sessionId = entry.session.id
-            HubSessionRow(
-                session = entry.session,
-                subtitle = entry.agentTitle,
-                onOpen = { actions.onOpenChat(sessionId) },
-                onTogglePin = { actions.onToggleSessionPin(sessionId) },
-                onRequestDelete = { actions.onRequestDeleteSession(sessionId) },
-            )
+        // 置顶、删除或新会话进入时，分组高度平滑变化而不是整块跳动。
+        Column(Modifier.animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))) {
+            entries.forEach { entry ->
+                val sessionId = entry.session.id
+                key(sessionId) {
+                    HubSessionRow(
+                        session = entry.session,
+                        subtitle = entry.agentTitle,
+                        onOpen = { actions.onOpenChat(sessionId) },
+                        onTogglePin = { actions.onToggleSessionPin(sessionId) },
+                        onRequestDelete = { actions.onRequestDeleteSession(sessionId) },
+                    )
+                }
+            }
         }
     }
 }
@@ -837,7 +875,7 @@ private fun HubAgentSessions(
     sessions: List<Session>,
     actions: AgentHubScreenActions,
 ) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))) {
         if (sessions.isEmpty()) {
             Text(
                 text = stringResource(R.string.hub_sessions_empty),

@@ -4,7 +4,11 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -72,9 +76,8 @@ fun MainTabScaffold(
         ) {
             AnimatedContent(
                 targetState = selectedTab,
-                transitionSpec = {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                },
+                // 同级标签之间先淡出再淡入，避免两页内容叠在一起。
+                transitionSpec = { NexaraMotion.fadeThrough() },
                 label = "main-tab-content",
             ) { tab -> when (tab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
@@ -229,6 +232,24 @@ private fun BettboxNavigationContent(
                 animationSpec = tween(durationMillis = 250),
                 label = "bottom-navigation-weight-${tab.name}",
             )
+            val containerColor by animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0f)
+                },
+                animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.Standard),
+                label = "bottom-navigation-container-${tab.name}",
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.Standard),
+                label = "bottom-navigation-content-${tab.name}",
+            )
             Surface(
                 modifier = Modifier
                     .weight(weight)
@@ -246,16 +267,8 @@ private fun BettboxNavigationContent(
                     .semantics { contentDescription = label }
                     .testTag(navigationTabTag(tab)),
                 shape = CircleShape,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                    androidx.compose.ui.graphics.Color.Transparent
-                },
-                contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                color = containerColor,
+                contentColor = contentColor,
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -267,14 +280,23 @@ private fun BettboxNavigationContent(
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
                     )
-                    if (selected) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    // 选中标签的文字随胶囊变宽一起展开，取消选中时先淡出再收起。
+                    AnimatedVisibility(
+                        visible = selected,
+                        enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) +
+                            fadeIn(tween(NexaraMotion.DurationMedium - NexaraMotion.DurationFadeOut, delayMillis = NexaraMotion.DurationFadeOut)),
+                        exit = shrinkHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)) +
+                            fadeOut(tween(NexaraMotion.DurationFadeOut)),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }

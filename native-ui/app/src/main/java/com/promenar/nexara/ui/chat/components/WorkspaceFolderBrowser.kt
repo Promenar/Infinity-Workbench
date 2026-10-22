@@ -40,6 +40,8 @@ import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.storage.IExternalFolderManager
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
+import com.promenar.nexara.ui.theme.hierarchicalTransition
+import androidx.compose.animation.AnimatedContent
 import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.navigateToCrumb
 import com.promenar.nexara.ui.testing.UiTags
@@ -107,7 +109,6 @@ internal fun WorkspaceFolderBrowser(
     initialFolderPath: String? = null,
 ) {
     var folderStack by rememberSaveable(workspaceRootUuid) { mutableStateOf(listOf<FolderCrumb>()) }
-    val activeFolderId = folderStack.lastOrNull()?.id ?: workspaceRootUuid
     val atRoot = folderStack.isEmpty()
     val rootTitle = stringResource(R.string.resource_explorer_workspace_root)
 
@@ -146,22 +147,31 @@ internal fun WorkspaceFolderBrowser(
                     .testTag(UiTags.RESOURCE_EXPLORER_BREADCRUMBS),
                 backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
             )
-            Box(modifier = Modifier.weight(1f)) {
-                key(workspaceRootUuid, activeFolderId) {
+            // 页头保持不动，目录内容按进入或返回的方向横向切换。
+            AnimatedContent(
+                targetState = folderStack,
+                contentKey = { it.lastOrNull()?.id },
+                transitionSpec = { hierarchicalTransition { it.size } },
+                modifier = Modifier.weight(1f),
+                label = "workspace_folder_navigation",
+            ) { shownStack ->
+                val shownFolderId = shownStack.lastOrNull()?.id ?: workspaceRootUuid
+                val shownAtRoot = shownStack.isEmpty()
+                key(workspaceRootUuid, shownFolderId) {
                     FilesPanel(
                         workspaceRootUuid = workspaceRootUuid,
                         workspaceRepo = workspaceRepo,
                         sessionId = sessionId,
-                        externalFolderManager = externalFolderManager.takeIf { atRoot },
+                        externalFolderManager = externalFolderManager.takeIf { shownAtRoot },
                         searchQuery = "",
-                        rootFiles = rootFiles.takeIf { atRoot },
-                        isLoading = isLoading && atRoot,
-                        hasLoadError = hasLoadError && atRoot,
+                        rootFiles = rootFiles.takeIf { shownAtRoot },
+                        isLoading = isLoading && shownAtRoot,
+                        hasLoadError = hasLoadError && shownAtRoot,
                         onRetryLoad = onRetryLoad,
-                        currentParentUuid = activeFolderId,
+                        currentParentUuid = shownFolderId,
                         allowTreeExpansion = false,
                         onFolderClick = { folderId, folderName ->
-                            folderStack = folderStack + FolderCrumb(folderId, folderName)
+                            folderStack = shownStack + FolderCrumb(folderId, folderName)
                         },
                         onMediaFileClick = onMediaFileClick,
                     )

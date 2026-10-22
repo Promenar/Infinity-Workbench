@@ -75,5 +75,4 @@
     <string name="workspace_kb_preview_binary">This file type cannot be previewed as text.</string>
     <string name="workspace_kb_preview_too_large">Text preview is limited to 256 KB.</string>
     <string name="workspace_kb_preview_failed">Cannot preview the file: %1$s</string>
-    <string name="workspace_kb_back">Back</string>
 </resources>

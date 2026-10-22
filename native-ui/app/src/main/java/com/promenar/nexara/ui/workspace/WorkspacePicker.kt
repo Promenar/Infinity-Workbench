@@ -69,7 +69,11 @@ import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.theme.NexaraMotion
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.hierarchicalTransition
 import com.promenar.nexara.ui.theme.forReading
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -82,6 +86,14 @@ sealed interface WorkspacePickerPage {
     data object Projects : WorkspacePickerPage
     data class Shared(val volume: File, val path: File) : WorkspacePickerPage
 }
+
+/** 页面层级：首页为 0，项目与存储卷根为 1，共享目录按相对卷根的段数递增。 */
+internal val WorkspacePickerPage.depth: Int
+    get() = when (this) {
+        WorkspacePickerPage.Home -> 0
+        WorkspacePickerPage.Projects -> 1
+        is WorkspacePickerPage.Shared -> 1 + path.path.removePrefix(volume.path).split('/').count(String::isNotEmpty)
+    }
 
 data class WorkspacePickerUiState(
     val page: WorkspacePickerPage = WorkspacePickerPage.Home,
@@ -345,9 +357,21 @@ fun WorkspacePickerContent(
             Spacer(Modifier.size(NexaraSpacing.Small))
             Text(stringResource(if (page == WorkspacePickerPage.Projects) R.string.workspace_picker_new_project else R.string.workspace_picker_new_folder))
         }
-        if (state.loading || state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
-    Box(Modifier.weight(1f).fillMaxWidth()) {
+    AnimatedVisibility(
+        visible = page != WorkspacePickerPage.Home && (state.loading || state.busy),
+        enter = NexaraMotion.expandIn,
+        exit = NexaraMotion.shrinkOut,
+    ) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+    // 进入子目录与返回上级按层级方向横向切换；离场页保留自己的列表快照。
+    AnimatedContent(
+        targetState = state,
+        contentKey = { it.page },
+        transitionSpec = { hierarchicalTransition { it.page.depth } },
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        label = "workspace_picker_page",
+    ) { state ->
+        val page = state.page
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag("workspace_picker_list"),
             contentPadding = PaddingValues(bottom = NexaraSpacing.Large),

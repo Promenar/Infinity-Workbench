@@ -74,7 +74,10 @@ class AgentHubScreenContractTest {
         val expandedArea = source.substringAfter("private fun HubAgentSessions(").substringBefore("private fun HubAddAgentRow(")
 
         assertThat(content).contains("var expandedAgentId by rememberSaveable")
-        assertThat(content).contains("AnimatedVisibility(visible = expanded)")
+        assertThat(content).contains("AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut)")
+        // 展开与收起各给一次开/关轻振，并且先振动再切换状态。
+        assertThat(content).contains("haptics.toggle(!expanded)")
+        assertThat(content.substringAfter("haptics.toggle(!expanded)")).contains("expandedAgentId = if (expanded) null else agentId")
         assertThat(agentRow).contains("onClick = onToggleExpand")
         assertThat(agentRow).contains("Icons.Rounded.ExpandMore")
         assertThat(agentRow).contains("R.string.common_state_expanded")

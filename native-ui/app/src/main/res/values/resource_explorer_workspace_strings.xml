@@ -6,7 +6,6 @@
     <string name="resource_explorer_directory_load_failed">Could not read this folder: %1$s</string>
     <string name="resource_explorer_directory_load_failed_generic">Could not read this folder</string>
     <string name="resource_explorer_directory_refresh">Refresh</string>
-    <string name="resource_explorer_directory_back">Back</string>
     <string name="resource_explorer_unavailable_title">Workspace unavailable</string>
     <string name="resource_explorer_unavailable_help">The explorer does not fall back to the session private workspace. Check the folder and access permission, or choose another workspace above.</string>
     <string name="resource_explorer_directory_recycle_info">Folder workspaces have no session recycle bin. Files the agent deletes are backed up to the mounted folder recycle area; open External folders on the Files tab to restore them.</string>

@@ -1,6 +1,12 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -504,7 +510,12 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                 )
-                if (progress != null) ChatGenerationProgressBar(progress)
+                // 进度行出现与消失时纵向展开收起，收起期间沿用最后一次的进度文本。
+                val lastProgress = remember { arrayOfNulls<com.promenar.nexara.domain.generation.GenerationProgress>(1) }
+                if (progress != null) lastProgress[0] = progress
+                AnimatedVisibility(visible = progress != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                    lastProgress[0]?.let { ChatGenerationProgressBar(it) }
+                }
               }
             },
             snackbarHost = {
@@ -1722,16 +1733,24 @@ private fun GenerationStatusButton(
 ) {
     val active = status == GenerationStatus.UPLOADING || status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING
     val canSend = enabled && isModelSelected
-    val containerColor = when {
-        status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.error
-        active || canSend -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val contentColor = when {
-        status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.onError
-        active || canSend -> MaterialTheme.colorScheme.onPrimary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-    }
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.error
+            active || canSend -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.Standard),
+        label = "chat_send_container",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            status == GenerationStatus.ERROR -> MaterialTheme.colorScheme.onError
+            active || canSend -> MaterialTheme.colorScheme.onPrimary
+            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        },
+        animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.Standard),
+        label = "chat_send_content",
+    )
     val statusDescription = stringResource(
         when (status) {
             GenerationStatus.IDLE -> R.string.chat_status_ready
@@ -1769,6 +1788,7 @@ private fun GenerationStatusButton(
         },
         modifier = Modifier
             .semantics {
+                contentDescription = actionDescription
                 stateDescription = statusDescription
                 liveRegion = if (status == GenerationStatus.ERROR) {
                     LiveRegionMode.Assertive
@@ -1780,16 +1800,33 @@ private fun GenerationStatusButton(
         containerColor = containerColor,
         enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING || status == GenerationStatus.ERROR)
     ) {
-        if (active) {
-            Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(contentColor)
-                .semantics { contentDescription = actionDescription })
-        } else {
-            Icon(
-                imageVector = if (status == GenerationStatus.ERROR) Icons.Rounded.ErrorOutline else Icons.Rounded.ArrowUpward,
-                contentDescription = actionDescription,
-                tint = contentColor,
-                modifier = Modifier.size(20.dp),
-            )
+        // 发送、停止与错误三种图标之间缩放交叉切换；读屏描述挂在按钮上，不随图标动画重复播报。
+        AnimatedContent(
+            targetState = when {
+                active -> 1
+                status == GenerationStatus.ERROR -> 2
+                else -> 0
+            },
+            transitionSpec = {
+                ContentTransform(
+                    targetContentEnter = scaleIn(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate), initialScale = 0.6f) +
+                        fadeIn(tween(NexaraMotion.DurationShort)),
+                    initialContentExit = scaleOut(tween(NexaraMotion.DurationShort), targetScale = 0.6f) +
+                        fadeOut(tween(NexaraMotion.DurationFadeOut)),
+                )
+            },
+            contentAlignment = Alignment.Center,
+            label = "chat_send_icon",
+        ) { kind ->
+            when (kind) {
+                1 -> Box(Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(contentColor))
+                else -> Icon(
+                    imageVector = if (kind == 2) Icons.Rounded.ErrorOutline else Icons.Rounded.ArrowUpward,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

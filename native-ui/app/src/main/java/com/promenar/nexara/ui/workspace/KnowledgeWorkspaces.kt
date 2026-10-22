@@ -2,6 +2,9 @@ package com.promenar.nexara.ui.workspace
 
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import android.text.format.Formatter
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,8 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
@@ -36,7 +37,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,17 +64,22 @@ import com.promenar.nexara.data.workspace.WorkspaceDeleteResult
 import com.promenar.nexara.data.workspace.WorkspaceLibrary
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.ui.chat.components.ExternalTextPreview
+import com.promenar.nexara.ui.chat.components.FileTextPreviewPanel
 import com.promenar.nexara.ui.chat.components.decodeExternalTextPreview
 import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.common.FolderCrumb
+import com.promenar.nexara.ui.common.FolderEntriesList
+import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.bettboxListGroup
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forReading
+import com.promenar.nexara.ui.theme.hierarchicalTransition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
@@ -135,7 +140,21 @@ private sealed interface KnowledgeWorkspacePage {
     data object List : KnowledgeWorkspacePage
     data class Browse(val workspace: WorkspaceEntity, val path: String) : KnowledgeWorkspacePage
     data class File(val workspace: WorkspaceEntity, val directory: String, val entry: ExternalFolderEntry) : KnowledgeWorkspacePage
+
+    /** 层级深度：列表为 0，目录按路径段数递增，文件比所在目录更深一层。 */
+    val depth: Int
+        get() = when (this) {
+            List -> 0
+            is Browse -> 1 + pathDepth(path)
+            is File -> 2 + pathDepth(directory)
+        }
 }
+
+private fun pathDepth(path: String): Int = path.split('/').count(String::isNotEmpty)
+
+/** 工作区内的上一级目录；根目录返回 null。 */
+internal fun parentWorkspacePath(path: String): String? =
+    if (pathDepth(path) == 0) null else path.trimEnd('/').substringBeforeLast('/').ifEmpty { "/" }
 
 @Composable
 private fun KnowledgeWorkspacesSheet(
@@ -162,7 +181,28 @@ private fun KnowledgeWorkspacesSheet(
         height = NexaraSheetHeight.Full,
         dragGesturesEnabled = false,
     ) {
-        when (val current = page) {
+        // 系统返回先逐级回到上一页，回到列表后再关闭面板。
+        BackHandler(enabled = page != KnowledgeWorkspacePage.List) {
+            page = when (val current = page) {
+                KnowledgeWorkspacePage.List -> current
+                is KnowledgeWorkspacePage.Browse -> parentWorkspacePath(current.path)
+                    ?.let { current.copy(path = it) } ?: KnowledgeWorkspacePage.List
+                is KnowledgeWorkspacePage.File -> KnowledgeWorkspacePage.Browse(current.workspace, current.directory)
+            }
+        }
+        AnimatedContent(
+            targetState = page,
+            // 同一工作区内切换目录由浏览器自己做目录级过渡，页头保持不动。
+            contentKey = { current ->
+                when (current) {
+                    KnowledgeWorkspacePage.List -> "list"
+                    is KnowledgeWorkspacePage.Browse -> "browse:" + current.workspace.id
+                    is KnowledgeWorkspacePage.File -> "file:" + current.entry.path
+                }
+            },
+            transitionSpec = { hierarchicalTransition { it.depth } },
+            label = "knowledge_workspace_page",
+        ) { current -> when (current) {
             KnowledgeWorkspacePage.List -> KnowledgeWorkspaceListContent(
                 workspaces = workspaces,
                 notice = notice,
@@ -186,7 +226,7 @@ private fun KnowledgeWorkspacesSheet(
                 onImported = onImported,
                 onBack = { page = KnowledgeWorkspacePage.Browse(current.workspace, current.directory) },
             )
-        }
+        } }
     }
 
     renaming?.let { target ->
@@ -272,13 +312,15 @@ fun KnowledgeWorkspaceListContent(
             modifier = Modifier.padding(vertical = NexaraSpacing.Large),
         )
     } else LazyColumn(
-        modifier = Modifier.weight(1f).fillMaxWidth().padding(top = NexaraSpacing.Small).testTag("knowledge_workspaces_list"),
+        modifier = Modifier.weight(1f, fill = false).fillMaxWidth().padding(top = NexaraSpacing.Medium)
+            .bettboxListGroup().testTag("knowledge_workspaces_list"),
         contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
     ) {
         items(workspaces, key = { it.id }) { workspace ->
             var menu by remember(workspace.id) { mutableStateOf(false) }
             ListItem(
                 modifier = Modifier
+                    .animateItem()
                     .fillMaxWidth()
                     .clickable(role = Role.Button) { onOpen(workspace) }
                     .testTag("knowledge_workspace_${workspace.id}"),
@@ -372,64 +414,28 @@ fun KnowledgeWorkspaceBrowserContent(
     onOpenFile: (ExternalFolderEntry) -> Unit = {},
     onRetry: () -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
-    val context = LocalContext.current
     val segments = path.split('/').filter(String::isNotEmpty)
     val crumbs = segments.mapIndexed { index, name -> FolderCrumb("/" + segments.take(index + 1).joinToString("/"), name) }
-    TextButton(onClick = onBackToList, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, Modifier.size(18.dp))
-        Text(stringResource(R.string.workspace_kb_back), modifier = Modifier.padding(start = NexaraSpacing.XSmall))
-    }
     FolderBreadcrumbsBar(
         folderStack = crumbs,
         rootTitle = workspace.displayName,
         onNavigateBack = { onNavigate(crumbs.dropLast(1).lastOrNull()?.id ?: "/") },
         onNavigateToCrumb = { index -> onNavigate(if (index <= 0) "/" else crumbs[index - 1].id) },
         backButtonTag = "knowledge_workspace_back",
+        onExitRoot = onBackToList,
     )
-    if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    when {
-        error != null -> Column(Modifier.fillMaxWidth().padding(vertical = NexaraSpacing.Medium)) {
-            Text(
-                stringResource(R.string.workspace_unavailable_reason, error),
-                style = MaterialTheme.typography.bodyMedium.forReading(),
-                color = MaterialTheme.colorScheme.error,
-            )
-            TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                Text(stringResource(R.string.common_retry))
-            }
-        }
-        !loading && entries.isEmpty() -> Text(
-            stringResource(R.string.workspace_kb_folder_empty),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = NexaraSpacing.Medium),
-        )
-        else -> LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("knowledge_workspace_browser"),
-            contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
-        ) {
-            items(entries, key = { it.path }) { entry ->
-                ListItem(
-                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) {
-                        if (entry.isDirectory) onNavigate(entry.path) else onOpenFile(entry)
-                    },
-                    headlineContent = { NexaraIdentifierText(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = if (entry.isDirectory) null else ({
-                        Text(Formatter.formatShortFileSize(context, entry.size), style = NexaraTypography.bodySmall)
-                    }),
-                    leadingContent = {
-                        Icon(
-                            if (entry.isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.InsertDriveFile,
-                            contentDescription = null,
-                            tint = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    trailingContent = if (entry.isDirectory) ({ Icon(Icons.Rounded.ChevronRight, null) }) else null,
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-            }
-        }
-    }
+    FolderEntriesList(
+        path = path,
+        depth = crumbs.size,
+        entries = entries,
+        loading = loading,
+        error = error?.let { stringResource(R.string.workspace_unavailable_reason, it) },
+        emptyText = stringResource(R.string.workspace_kb_folder_empty),
+        onEntryClick = { entry -> if (entry.isDirectory) onNavigate(entry.path) else onOpenFile(entry) },
+        onRetry = onRetry,
+        listTag = "knowledge_workspace_browser",
+        modifier = Modifier.weight(1f, fill = false),
+    )
 }
 
 @Composable
@@ -505,18 +511,20 @@ internal fun KnowledgeWorkspaceFileContent(
     onImport: () -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
     val context = LocalContext.current
-    TextButton(onClick = onBack, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, Modifier.size(18.dp))
-        Text(stringResource(R.string.workspace_kb_back), modifier = Modifier.padding(start = NexaraSpacing.XSmall))
-    }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
-        NexaraIdentifierText(entry.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        NexaraIdentifierText(
-            entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    NexaraNavigationHeader(
+        title = entry.name,
+        onBack = onBack.takeUnless { busy },
+        backButtonTag = "knowledge_workspace_file_back",
+        supporting = {
+            NexaraIdentifierText(
+                entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
     Button(
         onClick = onImport,
         enabled = canImport && !busy,
@@ -529,50 +537,36 @@ internal fun KnowledgeWorkspaceFileContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = NexaraSpacing.XSmall),
     )
-    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small))
-    when (notice) {
-        KnowledgeImportNotice.Imported -> Text(
-            stringResource(R.string.workspace_kb_imported),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = NexaraSpacing.Small).testTag("knowledge_workspace_import_notice"),
-        )
-        is KnowledgeImportNotice.Failed -> Text(
-            stringResource(R.string.workspace_kb_import_failed, notice.reason),
-            style = MaterialTheme.typography.bodySmall.forReading(),
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = NexaraSpacing.Small).testTag("knowledge_workspace_import_notice"),
-        )
-        null -> Unit
+    AnimatedVisibility(visible = busy, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small))
     }
-    Box(
-        Modifier.weight(1f).fillMaxWidth().padding(top = NexaraSpacing.Medium)
-            .bettboxListGroup(),
-    ) {
-        when (preview) {
-            ExternalTextPreview.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
-            ExternalTextPreview.Failed -> PreviewMessage(stringResource(R.string.workspace_kb_preview_failed, previewError.orEmpty()), error = true)
-            ExternalTextPreview.Binary -> PreviewMessage(stringResource(R.string.workspace_kb_preview_binary))
-            ExternalTextPreview.TooLarge -> PreviewMessage(stringResource(R.string.workspace_kb_preview_too_large))
-            is ExternalTextPreview.Text -> SelectionContainer(Modifier.fillMaxSize()) {
-                Text(
-                    preview.content,
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NexaraSpacing.Medium)
-                        .testTag("knowledge_workspace_preview"),
-                    style = NexaraTypography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+    AnimatedContent(
+        targetState = notice,
+        transitionSpec = { NexaraMotion.fadeThrough() },
+        label = "knowledge_import_notice",
+    ) { current ->
+        when (current) {
+            KnowledgeImportNotice.Imported -> Text(
+                stringResource(R.string.workspace_kb_imported),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = NexaraSpacing.Small).testTag("knowledge_workspace_import_notice"),
+            )
+            is KnowledgeImportNotice.Failed -> Text(
+                stringResource(R.string.workspace_kb_import_failed, current.reason),
+                style = MaterialTheme.typography.bodySmall.forReading(),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = NexaraSpacing.Small).testTag("knowledge_workspace_import_notice"),
+            )
+            null -> Box(Modifier.fillMaxWidth())
         }
     }
-}
-
-@Composable
-private fun PreviewMessage(text: String, error: Boolean = false) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium.forReading(),
-        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(NexaraSpacing.Medium),
+    FileTextPreviewPanel(
+        preview = preview,
+        failedText = stringResource(R.string.workspace_kb_preview_failed, previewError.orEmpty()),
+        binaryText = stringResource(R.string.workspace_kb_preview_binary),
+        tooLargeText = stringResource(R.string.workspace_kb_preview_too_large),
+        previewTag = "knowledge_workspace_preview",
+        modifier = Modifier.weight(1f).padding(top = NexaraSpacing.Medium),
     )
 }

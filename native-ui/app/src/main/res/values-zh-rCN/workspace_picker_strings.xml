@@ -74,5 +74,4 @@
     <string name="workspace_kb_preview_binary">此类型无法进行文本预览。</string>
     <string name="workspace_kb_preview_too_large">文本预览上限为 256 KB。</string>
     <string name="workspace_kb_preview_failed">无法预览文件：%1$s</string>
-    <string name="workspace_kb_back">返回</string>
 </resources>
