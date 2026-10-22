@@ -93,6 +93,24 @@ internal fun reduceProviderModelsListState(
     else -> ProviderModelsListState.Content
 }
 
+/**
+ * 列表区域上方的提示条：只显示列表本身看不出的结果。
+ * 加载中由同步按钮的进度与列表占位表达；列表已显示“没有模型”或“同步失败”时不再重复。
+ */
+internal fun visibleSyncNotice(
+    notice: UiStatusNotice?,
+    listState: ProviderModelsListState,
+): UiStatusNotice? {
+    if (notice == null) return null
+    val duplicated = when (notice.code) {
+        ModelSyncNotice.CODE_LOADING -> true
+        ModelSyncNotice.CODE_NO_MODELS_FOUND -> listState == ProviderModelsListState.Empty
+        ModelSyncNotice.CODE_SYNC_FAILED -> listState == ProviderModelsListState.Error
+        else -> false
+    }
+    return notice.takeUnless { duplicated }
+}
+
 /** 同步请求的进程内幂等门禁，避免快速连点启动重复网络请求。 */
 internal class ModelSyncGate {
     private val acquired = AtomicBoolean(false)

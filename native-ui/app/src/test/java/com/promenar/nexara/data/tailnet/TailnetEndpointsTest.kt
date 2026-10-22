@@ -43,6 +43,11 @@ class TailnetEndpointsTest {
             .isEqualTo("https://gpu-box.tail3f9c.ts.net/v1/beta")
         assertThat(TailnetEndpoints.addressForPeer(gpu, "")).isEqualTo("https://gpu-box.tail3f9c.ts.net/v1")
         assertThat(TailnetEndpoints.addressForPeer(gpu, "https://x.example/")).isEqualTo("https://gpu-box.tail3f9c.ts.net/v1")
+        // 端口属于该设备上的服务：再次点按同一设备时保留，换到其它设备时不沿用。
+        assertThat(TailnetEndpoints.addressForPeer(gpu, "https://gpu-box.tail3f9c.ts.net:3010/v1"))
+            .isEqualTo("https://gpu-box.tail3f9c.ts.net:3010/v1")
+        assertThat(TailnetEndpoints.addressForPeer(gpu, "https://nas.tail3f9c.ts.net:3010/v1"))
+            .isEqualTo("https://gpu-box.tail3f9c.ts.net/v1")
         // 没有 MagicDNS 全名的设备签不出证书，不提供填入。
         assertThat(TailnetEndpoints.addressForPeer(running.peers[1], "")).isNull()
         assertThat(TailnetEndpoints.matchesPeer("https://GPU-BOX.tail3f9c.ts.net/v1", gpu)).isTrue()

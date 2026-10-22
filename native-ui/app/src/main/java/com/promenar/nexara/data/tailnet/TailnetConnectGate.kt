@@ -10,6 +10,11 @@ interface TailnetConnector {
     val state: StateFlow<TailnetState>
     fun isTailnetHost(host: String): Boolean
     /**
+     * 内置 Tailscale 已关闭、[host] 明确属于 tailnet（tailnet IP 或 MagicDNS 全名），且系统网络也没有通往 tailnet 的路由。
+     * 此时交给系统网络只会空等，应立即报告未开启；系统已有路由（例如官方 Tailscale App 在运行）时返回 false。
+     */
+    fun isUnreachableWhileDisabled(host: String): Boolean = false
+    /**
      * 按需拉起子进程并等待本机代理就绪，最多 [timeoutMillis]；就绪返回 true，启动失败、已停用或退避期内返回 false。
      * [force] 为 true 时忽略失败退避，用于用户主动发送或重试。
      */
@@ -27,10 +32,10 @@ data class TailnetConnectProgress(
 )
 
 /** tailnet 不可用的原因；界面按原因给出说明与入口。 */
-enum class TailnetUnavailableReason { NEEDS_LOGIN, FAILED, TIMEOUT }
+enum class TailnetUnavailableReason { DISABLED, NEEDS_LOGIN, FAILED, TIMEOUT }
 
 sealed interface TailnetConnectResult {
-    /** 目标不在 tailnet 内，或未启用内置 Tailscale（交给系统网络，例如已运行的官方 Tailscale App）。 */
+    /** 目标不在 tailnet 内，或未启用内置 Tailscale 但系统有 tailnet 路由（交给系统网络，例如已运行的官方 Tailscale App）。 */
     data object NotRequired : TailnetConnectResult
     /** 已接入；[waited] 表示本次确实等待过连接。 */
     data class Ready(val waited: Boolean) : TailnetConnectResult
@@ -43,20 +48,30 @@ class TailnetUnavailableException(val reason: TailnetUnavailableReason) :
 
 /**
  * 模型请求发出前的 tailnet 关口：目标属于 tailnet 时，等内置 Tailscale 接入后再放行；
- * 需要登录立即返回，启动失败或超过 [timeoutMillis] 返回不可用。非 tailnet 目标不等待。
+ * 需要登录或内置 Tailscale 已关闭（且系统无 tailnet 路由）立即返回，启动失败或超过 [timeoutMillis] 返回不可用。非 tailnet 目标不等待。
  */
 class TailnetConnectGate(
     private val connector: TailnetConnector,
     private val timeoutMillis: Long = SEND_TIMEOUT_MS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    /** 内置 Tailscale 关闭时的快速判断：[host] 会被 [await] 判为未开启。不阻塞，可在网络线程调用。 */
+    fun mayReject(host: String): Boolean = !connector.isTailnetHost(host) && connector.isUnreachableWhileDisabled(host)
+
     suspend fun await(
         host: String?,
         force: Boolean = false,
         timeoutMillis: Long = this.timeoutMillis,
         onProgress: (TailnetConnectProgress) -> Unit = {},
     ): TailnetConnectResult {
-        if (host.isNullOrBlank() || !connector.isTailnetHost(host)) return TailnetConnectResult.NotRequired
+        if (host.isNullOrBlank()) return TailnetConnectResult.NotRequired
+        if (!connector.isTailnetHost(host)) {
+            return if (connector.isUnreachableWhileDisabled(host)) {
+                TailnetConnectResult.Unavailable(TailnetUnavailableReason.DISABLED)
+            } else {
+                TailnetConnectResult.NotRequired
+            }
+        }
         when (connector.state.value.phase) {
             TailnetPhase.RUNNING -> return TailnetConnectResult.Ready(waited = false)
             TailnetPhase.NEEDS_LOGIN -> return TailnetConnectResult.Unavailable(TailnetUnavailableReason.NEEDS_LOGIN)

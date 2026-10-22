@@ -447,8 +447,15 @@ private fun TailnetFailureActionRow(kind: TailnetFailureKind, actions: Generatio
             ) { Text(stringResource(label), fontWeight = FontWeight.Medium) }
         }
         when (kind) {
+            // 开启或登录后回到会话，用“重试”重新发送这条消息。
+            TailnetFailureKind.DISABLED -> {
+                actions.onOpenTailscaleSettings?.let { Action(R.string.tailnet_failure_action_enable, UiTags.CHAT_TAILNET_FAILURE_ENABLE, it) }
+                Action(R.string.tailnet_failure_action_retry, UiTags.CHAT_TAILNET_FAILURE_RETRY, actions.onRetry)
+                Action(R.string.tailnet_failure_action_switch_model, UiTags.CHAT_TAILNET_FAILURE_SWITCH, actions.onSwitchModel)
+            }
             TailnetFailureKind.NEEDS_LOGIN -> {
                 actions.onOpenTailscaleSettings?.let { Action(R.string.tailnet_failure_action_login, UiTags.CHAT_TAILNET_FAILURE_LOGIN, it) }
+                Action(R.string.tailnet_failure_action_retry, UiTags.CHAT_TAILNET_FAILURE_RETRY, actions.onRetry)
                 Action(R.string.tailnet_failure_action_switch_model, UiTags.CHAT_TAILNET_FAILURE_SWITCH, actions.onSwitchModel)
             }
             TailnetFailureKind.UNREACHABLE -> {

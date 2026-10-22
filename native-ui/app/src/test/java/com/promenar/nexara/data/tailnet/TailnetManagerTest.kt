@@ -33,6 +33,8 @@ class TailnetManagerTest {
         FakeTailnetChild().also(children::add)
     }
 
+    private var systemRoutesTailnet = false
+
     private fun manager(launcher: TailnetProcessLauncher? = this.launcher) = TailnetManager(
         settingsStore = store,
         launcher = launcher,
@@ -40,6 +42,7 @@ class TailnetManagerTest {
         hostname = "nexara-test",
         scope = scope,
         clock = now::get,
+        systemRoutesTailnet = { systemRoutesTailnet },
     )
 
     @After
@@ -63,6 +66,23 @@ class TailnetManagerTest {
         assertThat(manager.jschProxy("100.64.0.5")).isNull()
         assertThat(manager.subprocessEnvironment()).isEmpty()
         assertThat(children).isEmpty()
+    }
+
+    @Test
+    fun `关闭时只有明确的 tailnet 目标且系统无 tailnet 路由才判为不可达`(): Unit = runBlocking {
+        val manager = manager()
+        assertThat(manager.isUnreachableWhileDisabled("gpu.tail1.ts.net")).isTrue()
+        assertThat(manager.isUnreachableWhileDisabled("100.101.7.42")).isTrue()
+        // 不含点的短名可能是局域网主机，关闭时不拦截。
+        assertThat(manager.isUnreachableWhileDisabled("nas")).isFalse()
+        assertThat(manager.isUnreachableWhileDisabled("api.deepseek.com")).isFalse()
+
+        systemRoutesTailnet = true
+        assertThat(manager.isUnreachableWhileDisabled("gpu.tail1.ts.net")).isFalse()
+
+        systemRoutesTailnet = false
+        store.setEnabled(true)
+        assertThat(manager.isUnreachableWhileDisabled("gpu.tail1.ts.net")).isFalse()
     }
 
     @Test
@@ -214,7 +234,11 @@ class TailnetManagerTest {
     fun `发送关口按需拉起子进程：未登录立即提示登录，上线后放行`(): Unit = runBlocking {
         val disabled = manager()
         assertThat(disabled.ensureStarted(force = true, timeoutMillis = 1_000)).isFalse()
+        assertThat(TailnetConnectGate(disabled).await("nas.tail1.ts.net"))
+            .isEqualTo(TailnetConnectResult.Unavailable(TailnetUnavailableReason.DISABLED))
+        systemRoutesTailnet = true
         assertThat(TailnetConnectGate(disabled).await("nas.tail1.ts.net")).isEqualTo(TailnetConnectResult.NotRequired)
+        systemRoutesTailnet = false
 
         store.setEnabled(true)
         val manager = manager()

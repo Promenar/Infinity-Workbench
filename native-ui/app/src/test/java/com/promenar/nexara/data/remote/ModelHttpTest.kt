@@ -31,7 +31,9 @@ import java.util.concurrent.atomic.AtomicInteger
 class ModelHttpTest {
     private class FakeConnector(phase: TailnetPhase, private val starts: Boolean) : TailnetConnector {
         override val state: StateFlow<TailnetState> = MutableStateFlow(TailnetState(phase))
-        override fun isTailnetHost(host: String): Boolean = host.endsWith(".ts.net")
+        private val disabled = phase == TailnetPhase.DISABLED
+        override fun isTailnetHost(host: String): Boolean = !disabled && host.endsWith(".ts.net")
+        override fun isUnreachableWhileDisabled(host: String): Boolean = disabled && host.endsWith(".ts.net")
         override suspend fun ensureStarted(force: Boolean, timeoutMillis: Long): Boolean = starts
     }
 
@@ -64,6 +66,16 @@ class ModelHttpTest {
         val error = assertThrows(TailnetUnavailableException::class.java) { call.execute() }
         assertThat(error.reason).isEqualTo(TailnetUnavailableReason.FAILED)
         assertThat(error.message).doesNotContain("Bearer")
+        assertThat(reached.get()).isEqualTo(0)
+    }
+
+    @Test
+    fun `内置 Tailscale 关闭且系统无 tailnet 路由时请求立即失败`() {
+        val reached = AtomicInteger()
+        val gate = TailnetConnectGate(FakeConnector(TailnetPhase.DISABLED, starts = false))
+        val call = client(gate, reached).newCall(Request.Builder().url("https://gpu.tail1.ts.net/v1/embeddings").build())
+        val error = assertThrows(TailnetUnavailableException::class.java) { call.execute() }
+        assertThat(error.reason).isEqualTo(TailnetUnavailableReason.DISABLED)
         assertThat(reached.get()).isEqualTo(0)
     }
 

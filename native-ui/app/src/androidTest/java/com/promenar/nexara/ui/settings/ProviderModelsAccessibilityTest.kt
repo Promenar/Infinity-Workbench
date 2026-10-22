@@ -364,7 +364,7 @@ class ProviderModelsAccessibilityTest {
     }
 
     @Test
-    fun providerModelsNoticeAndStateMessagesExposeDistinctTags() {
+    fun loadingIsShownOnceInTheListWithoutASeparateNotice() {
         rule.setContent {
             NexaraTheme {
                 ProviderModelsScreenContent(
@@ -392,7 +392,7 @@ class ProviderModelsAccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithTag(UiTags.PROVIDER_MODELS_NOTICE).assertExists()
+        rule.onNodeWithTag(UiTags.PROVIDER_MODELS_NOTICE).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_STATE_LOADING)
             .assertExists()
             .assert(
@@ -433,6 +433,8 @@ class ProviderModelsAccessibilityTest {
                     LiveRegionMode.Assertive,
                 ),
             )
+        // 列表已显示同步失败，不再另起同样内容的提示条。
+        rule.onNodeWithTag(UiTags.PROVIDER_MODELS_NOTICE).assertDoesNotExist()
 
         rule.runOnIdle { state.value = state.value.copy(syncNotice = null) }
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_STATE_ERROR).assertDoesNotExist()

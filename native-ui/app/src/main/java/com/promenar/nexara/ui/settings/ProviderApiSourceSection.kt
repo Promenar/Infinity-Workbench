@@ -6,8 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -16,12 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lan
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -29,12 +29,24 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -45,9 +57,12 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.tailnet.TailnetEndpoints
 import com.promenar.nexara.data.tailnet.TailnetPeer
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 /** 内置 Tailscale 状态行所需的本机信息。 */
@@ -255,67 +270,105 @@ internal fun ProviderAddressHint(
     }
 }
 
-/** tailnet 设备：点按把接口地址换成该设备的 https 全名；缺少 MagicDNS 全名的设备不列出。 */
-@OptIn(ExperimentalLayoutApi::class)
+/** 可填入的 tailnet 设备：在白名单内且有 MagicDNS 全名（否则签不出 HTTPS 证书），在线的排在前面。 */
+internal fun selectableTailnetPeers(peers: List<TailnetPeer>): List<TailnetPeer> =
+    peers.filter { it.allowed && TailnetEndpoints.peerHost(it) != null }.sortedForDisplay()
+
+/**
+ * “tailnet 设备”选择框：外观与表单输入框一致，显示接口地址当前对应的设备；
+ * 点按打开底部面板选择设备，选中后把接口地址换成该设备的 https 全名。
+ */
 @Composable
-internal fun TailnetPeerChips(
+internal fun TailnetPeerPicker(
     peers: List<TailnetPeer>,
     baseUrl: String,
     onPeerSelected: (TailnetPeer) -> Unit,
 ) {
-    val usable = peers.filter { it.allowed && TailnetEndpoints.peerHost(it) != null }
-        .sortedWith(compareBy({ !it.online }, { it.name.lowercase() }))
+    val usable = selectableTailnetPeers(peers)
     if (usable.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(R.string.provider_tailnet_peers_title),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        FlowRow(
-            modifier = Modifier.testTag(PROVIDER_TAILNET_PEERS_TAG),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val offlineLabel = stringResource(R.string.provider_tailnet_peer_offline)
-            usable.forEach { peer ->
-                val selected = TailnetEndpoints.matchesPeer(baseUrl, peer)
-                val stateText = if (peer.online) null else offlineLabel
-                FilterChip(
-                    selected = selected,
-                    onClick = { onPeerSelected(peer) },
-                    label = {
-                        Text(
-                            text = if (stateText == null) peer.name else stringResource(R.string.provider_tailnet_peer_label_offline, peer.name),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    leadingIcon = {
-                        val color = if (peer.online) MaterialTheme.nexaraDomainColors.success else MaterialTheme.colorScheme.outline
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .then(
-                                    if (peer.online) Modifier.background(color, CircleShape)
-                                    else Modifier.border(1.dp, color, CircleShape),
-                                ),
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        labelColor = if (peer.online) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
-                    ),
-                    modifier = Modifier
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .testTag(providerTailnetPeerTag(peer.name))
-                        .semantics {
-                            stateText?.let { stateDescription = it }
-                            contentDescription = peer.name
-                        },
-                )
-            }
+    var open by rememberSaveable { mutableStateOf(false) }
+    val selected = usable.firstOrNull { TailnetEndpoints.matchesPeer(baseUrl, it) }
+    val interactions = remember { MutableInteractionSource() }
+    LaunchedEffect(interactions) {
+        interactions.interactions.collect { if (it is PressInteraction.Release) open = true }
+    }
+    val openLabel = stringResource(R.string.provider_tailnet_peer_sheet_title)
+    OutlinedTextField(
+        value = selected?.name.orEmpty(),
+        onValueChange = {},
+        readOnly = true,
+        singleLine = true,
+        textStyle = LocalTextStyle.current.forInput(),
+        label = { Text(stringResource(R.string.provider_tailnet_peer_field_label)) },
+        placeholder = { Text(stringResource(R.string.provider_tailnet_peer_field_placeholder)) },
+        leadingIcon = selected?.let { peer -> { TailscalePeerIcon(peer) } },
+        trailingIcon = { Icon(Icons.Rounded.ExpandMore, contentDescription = null) },
+        supportingText = selected?.let { peer -> { Text(peerDetail(peer), maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        interactionSource = interactions,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(PROVIDER_TAILNET_PEERS_TAG)
+            .semantics {
+                role = Role.DropdownList
+                onClick(label = openLabel) { open = true; true }
+            },
+    )
+    NexaraBottomSheet(
+        show = open,
+        onDismiss = { open = false },
+        title = openLabel,
+        scrollContent = true,
+    ) {
+        TailnetPeerOptions(peers = usable, selected = selected) { peer ->
+            onPeerSelected(peer)
+            open = false
         }
     }
 }
+
+/** 设备面板的内容：设备行（图标带在线角标、全名与系统）与说明；选中项打勾。 */
+@Composable
+internal fun TailnetPeerOptions(
+    peers: List<TailnetPeer>,
+    selected: TailnetPeer?,
+    onSelect: (TailnetPeer) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.Medium)) {
+        peers.forEach { peer ->
+            val isSelected = peer == selected
+            val onlineText = stringResource(if (peer.online) R.string.tailscale_peer_online else R.string.tailscale_peer_offline)
+            NexaraSettingsRowLayout(
+                title = peer.name,
+                subtitle = peerDetail(peer),
+                titleColor = if (peer.online) null else MaterialTheme.colorScheme.onSurfaceVariant,
+                leadingContent = { TailscalePeerIcon(peer) },
+                modifier = Modifier
+                    .testTag(providerTailnetPeerTag(peer.name))
+                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(peer) }
+                    .semantics { stateDescription = onlineText },
+            ) {
+                if (isSelected) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.provider_tailnet_peer_sheet_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = NexaraSpacing.RowHorizontal, vertical = NexaraSpacing.Small),
+        )
+    }
+}
+
+/** 设备副标题：MagicDNS 全名 · 系统，离线时注明。 */
+@Composable
+private fun peerDetail(peer: TailnetPeer): String = listOfNotNull(
+    // 离线放在最前，长全名在大字号下被截断时也不会丢掉状态
+    if (peer.online) null else stringResource(R.string.provider_tailnet_peer_offline),
+    TailnetEndpoints.peerHost(peer),
+    tailscaleOsLabel(peer.os),
+).joinToString(" · ")
 
 internal const val PROVIDER_API_SOURCE_TAG = "provider_api_source"
 internal const val PROVIDER_TAILNET_STATUS_TAG = "provider_tailnet_status"

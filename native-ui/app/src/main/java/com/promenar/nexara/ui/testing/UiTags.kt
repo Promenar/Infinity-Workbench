@@ -21,6 +21,7 @@ object UiTags {
     const val CHAT_TAILNET_FAILURE_SWITCH = "chat_tailnet_failure_switch"
     const val CHAT_TAILNET_FAILURE_SETTINGS = "chat_tailnet_failure_settings"
     const val CHAT_TAILNET_FAILURE_LOGIN = "chat_tailnet_failure_login"
+    const val CHAT_TAILNET_FAILURE_ENABLE = "chat_tailnet_failure_enable"
     const val CHAT_ASSISTANT_TIME_METADATA = "chat_assistant_time_metadata"
     const val CHAT_ASSISTANT_STATS_TRIGGER = "chat_assistant_stats_trigger"
     const val CHAT_LOADING_SKELETON = "chat_loading_skeleton"

@@ -90,6 +90,24 @@ class ModelSyncNoticeTest {
     }
 
     @Test
+    fun `列表已表达的加载中、无模型与同步失败不再重复显示提示条`() {
+        // 加载中由同步按钮的进度与列表占位表达，不再另起提示条。
+        assertThat(visibleSyncNotice(null, ProviderModelsListState.Loading)).isNull()
+        assertThat(visibleSyncNotice(ModelSyncNotice.loading(), ProviderModelsListState.Content)).isNull()
+        assertThat(visibleSyncNotice(ModelSyncNotice.noModelsFound(), ProviderModelsListState.Empty)).isNull()
+        assertThat(visibleSyncNotice(ModelSyncNotice.syncFailed(null), ProviderModelsListState.Error)).isNull()
+        assertThat(visibleSyncNotice(null, ProviderModelsListState.Empty)).isNull()
+
+        // 列表里看不出的结果仍要提示。
+        val synced = ModelSyncNotice.synced(3, 1)
+        assertThat(visibleSyncNotice(synced, ProviderModelsListState.Content)).isEqualTo(synced)
+        val failedWithModels = ModelSyncNotice.syncFailed(null)
+        assertThat(visibleSyncNotice(failedWithModels, ProviderModelsListState.Content)).isEqualTo(failedWithModels)
+        val notFound = ModelSyncNotice.providerNotFound()
+        assertThat(visibleSyncNotice(notFound, ProviderModelsListState.Error)).isEqualTo(notFound)
+    }
+
+    @Test
     fun `sync gate rejects duplicate acquisition until released`() {
         val gate = ModelSyncGate()
 

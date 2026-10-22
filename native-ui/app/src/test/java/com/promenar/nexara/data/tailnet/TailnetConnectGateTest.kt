@@ -11,12 +11,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class TailnetConnectGateTest {
-    private class FakeConnector(phase: TailnetPhase) : TailnetConnector {
+    private class FakeConnector(phase: TailnetPhase, private val unreachableWhileDisabled: Boolean = false) : TailnetConnector {
         val mutableState = MutableStateFlow(TailnetState(phase))
         override val state: StateFlow<TailnetState> = mutableState
         val startResult = CompletableDeferred<Boolean>()
         val forces = mutableListOf<Boolean>()
-        override fun isTailnetHost(host: String): Boolean = host.endsWith(".ts.net") || host.startsWith("100.")
+        override fun isTailnetHost(host: String): Boolean =
+            mutableState.value.phase != TailnetPhase.DISABLED && (host.endsWith(".ts.net") || host.startsWith("100."))
+        override fun isUnreachableWhileDisabled(host: String): Boolean = unreachableWhileDisabled && host.endsWith(".ts.net")
         override suspend fun ensureStarted(force: Boolean, timeoutMillis: Long): Boolean {
             forces += force
             return startResult.await()
@@ -30,6 +32,20 @@ class TailnetConnectGateTest {
         assertThat(gate.await("api.deepseek.com")).isEqualTo(TailnetConnectResult.NotRequired)
         assertThat(gate.await(null)).isEqualTo(TailnetConnectResult.NotRequired)
         assertThat(connector.forces).isEmpty()
+    }
+
+    @Test
+    fun `内置 Tailscale 关闭且系统没有 tailnet 路由时立即报未开启，不交给系统网络空等`() = runTest {
+        val unreachable = FakeConnector(TailnetPhase.DISABLED, unreachableWhileDisabled = true)
+        val gate = TailnetConnectGate(unreachable, clock = { testScheduler.currentTime })
+        assertThat(gate.await("gpu.tail1.ts.net"))
+            .isEqualTo(TailnetConnectResult.Unavailable(TailnetUnavailableReason.DISABLED))
+        assertThat(gate.await("api.deepseek.com")).isEqualTo(TailnetConnectResult.NotRequired)
+        assertThat(unreachable.forces).isEmpty()
+
+        // 系统已有通往 tailnet 的路由（例如官方 Tailscale App 正在运行）时交给系统网络。
+        val systemRouted = FakeConnector(TailnetPhase.DISABLED, unreachableWhileDisabled = false)
+        assertThat(TailnetConnectGate(systemRouted).await("gpu.tail1.ts.net")).isEqualTo(TailnetConnectResult.NotRequired)
     }
 
     @Test

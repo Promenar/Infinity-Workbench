@@ -90,6 +90,7 @@ class TailnetManager(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val systemRoutesTailnet: () -> Boolean = ::hasSystemTailnetInterface,
 ) : TailnetRouting, TailnetController, TailnetEndpointSource, TailnetConnector {
 
     private inner class Session(val config: LaunchConfig) {
@@ -134,6 +135,11 @@ class TailnetManager(
 
     override fun isTailnetHost(host: String): Boolean =
         enabled && TailnetHosts.isTailnetHost(host, magicDnsSuffix, peerNames)
+
+    // 短名可能是局域网主机，关闭时不按 tailnet 拦截（传入空的已知节点集合）。
+    override fun isUnreachableWhileDisabled(host: String): Boolean =
+        launcher != null && !settingsStore.current.enabled &&
+            TailnetHosts.isTailnetHost(host, magicDnsSuffix, emptySet()) && !systemRoutesTailnet()
 
     override fun jschProxy(host: String): com.jcraft.jsch.Proxy? {
         if (!isTailnetHost(host)) return null
@@ -461,3 +467,10 @@ class TailnetManager(
         }
     }
 }
+
+/** 系统网络是否已有 tailnet 地址的网卡（官方 Tailscale App 等 VPN 会分配 100.64.0.0/10 或 fd7a:115c:a1e0::/48 地址）。 */
+internal fun hasSystemTailnetInterface(): Boolean = runCatching {
+    java.net.NetworkInterface.getNetworkInterfaces()?.asSequence().orEmpty().any { networkInterface ->
+        networkInterface.isUp && networkInterface.inetAddresses.asSequence().any { TailnetHosts.isTailnetAddress(it.address) }
+    }
+}.getOrDefault(false)

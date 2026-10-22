@@ -67,7 +67,7 @@ data class GenerationFailure(
         /** [GenerationFailureCode.TAILNET_UNAVAILABLE] 的原因，取值为 TailnetUnavailableReason 的名称。 */
         const val KEY_TAILNET_REASON = "tailnetReason"
         /** [KEY_TAILNET_REASON] 允许的取值；持久化信封只接受这些名称。 */
-        val TAILNET_REASONS = setOf("NEEDS_LOGIN", "FAILED", "TIMEOUT")
+        val TAILNET_REASONS = setOf("DISABLED", "NEEDS_LOGIN", "FAILED", "TIMEOUT")
 
         fun of(
             code: GenerationFailureCode,

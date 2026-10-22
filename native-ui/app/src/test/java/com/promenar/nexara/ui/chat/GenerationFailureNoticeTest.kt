@@ -199,6 +199,7 @@ class GenerationFailureNoticeTest {
             ),
         ).resourceId
         assertThat(resource("NEEDS_LOGIN")).isEqualTo(R.string.generation_failure_tailnet_needs_login)
+        assertThat(resource("DISABLED")).isEqualTo(R.string.generation_failure_tailnet_disabled)
         assertThat(resource("TIMEOUT")).isEqualTo(R.string.generation_failure_tailnet_timeout)
         assertThat(resource("FAILED")).isEqualTo(R.string.generation_failure_tailnet_failed)
         assertThat(resource("unexpected")).isEqualTo(R.string.generation_failure_tailnet_failed)
@@ -209,6 +210,8 @@ class GenerationFailureNoticeTest {
         fun kind(raw: String?) = GenerationFailureNotice.tailnetKind(GenerationFailureNotice.fromPersisted(raw))
         assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=NEEDS_LOGIN"))
             .isEqualTo(TailnetFailureKind.NEEDS_LOGIN)
+        assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=DISABLED"))
+            .isEqualTo(TailnetFailureKind.DISABLED)
         assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE?tailnetReason=TIMEOUT"))
             .isEqualTo(TailnetFailureKind.UNREACHABLE)
         assertThat(kind("@nexara/failure:TAILNET_UNAVAILABLE")).isEqualTo(TailnetFailureKind.UNREACHABLE)
@@ -235,6 +238,7 @@ class GenerationFailureNoticeTest {
             "generation_failure_busy",
             "generation_failure_persistence",
             "generation_failure_tool_budget",
+            "generation_failure_tailnet_disabled",
             "generation_failure_tailnet_needs_login",
             "generation_failure_tailnet_failed",
             "generation_failure_tailnet_timeout",

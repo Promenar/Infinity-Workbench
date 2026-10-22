@@ -33,7 +33,9 @@ import com.promenar.nexara.ui.settings.ProviderApiSourceHint
 import com.promenar.nexara.ui.settings.ProviderApiSourceSection
 import com.promenar.nexara.ui.settings.ProviderApiSourceState
 import com.promenar.nexara.ui.settings.ProviderTailnetInfo
-import com.promenar.nexara.ui.settings.TailnetPeerChips
+import com.promenar.nexara.ui.settings.TailnetPeerOptions
+import com.promenar.nexara.ui.settings.TailnetPeerPicker
+import com.promenar.nexara.ui.settings.selectableTailnetPeers
 import com.promenar.nexara.ui.theme.*
 
 // 经 Tailscale 访问内网模型网关的界面：网络指示灯、发送前的连接等待浮窗、失败后的操作行、提供商的 API 源分组。
@@ -165,11 +167,13 @@ private fun failureGroup(id: String, reason: String) = buildPipelineGroups(
     ),
 ).single()
 
-// 失败气泡下的操作行：需要登录（去登录 / 换用公网模型）与连不上（重试 / 换用公网模型 / Tailscale 设置）。
+// 失败气泡下的操作行：未开启（去开启 / 重试 / 换用公网模型）、需要登录（去登录 / 重试 / 换用公网模型）与连不上（重试 / 换用公网模型 / Tailscale 设置）。
 @Composable
 private fun FailureActionStates() {
     val actions = GenerationFailureActions(onRetry = {}, onSwitchModel = {}, onOpenTailscaleSettings = {})
     Column(Modifier.padding(16.dp)) {
+        PipelineBubble(group = failureGroup("disabled", "DISABLED"), isGenerating = false, streamingContent = "", fontSize = 15, failureActions = actions)
+        Spacer(Modifier.height(16.dp))
         PipelineBubble(group = failureGroup("login", "NEEDS_LOGIN"), isGenerating = false, streamingContent = "", fontSize = 15, failureActions = actions)
         Spacer(Modifier.height(16.dp))
         PipelineBubble(group = failureGroup("timeout", "TIMEOUT"), isGenerating = false, streamingContent = "", fontSize = 15, failureActions = actions)
@@ -177,15 +181,15 @@ private fun FailureActionStates() {
 }
 
 @PreviewTest
-@Preview(name = "内网失败操作 深中411", widthDp = 411, heightDp = 560, locale = "zh-rCN")
-@Preview(name = "内网失败操作 浅英360 大字", widthDp = 360, heightDp = 760, locale = "en", fontScale = 1.3f)
+@Preview(name = "内网失败操作 深中411", widthDp = 411, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "内网失败操作 浅英360 大字", widthDp = 360, heightDp = 1000, locale = "en", fontScale = 1.3f)
 @Composable
 fun tailnetFailureActionsPreview() = TailnetFrame(NexaraThemeMode.DARK) { FailureActionStates() }
 
 private val GATEWAY_PEERS = listOf(
-    TailnetPeer(name = "gpu-box", dnsName = "gpu-box.tail1234.ts.net.", online = true),
-    TailnetPeer(name = "nas", dnsName = "nas.tail1234.ts.net.", online = true),
-    TailnetPeer(name = "old-laptop", dnsName = "old-laptop.tail1234.ts.net.", online = false),
+    TailnetPeer(name = "gpu-box", dnsName = "gpu-box.tail1234.ts.net.", os = "linux", online = true),
+    TailnetPeer(name = "nas", dnsName = "nas.tail1234.ts.net.", os = "linux", online = true),
+    TailnetPeer(name = "old-laptop", dnsName = "old-laptop.tail1234.ts.net.", os = "macOS", online = false),
 )
 
 // 提供商表单的 API 源分组：选中 Tailscale 内网（已连接 / 需登录），地址已识别、与来源不一致两种提示和设备候选。
@@ -202,7 +206,7 @@ private fun ApiSourceStates() {
         ProviderAddressHint(ProviderApiSourceHint.RECOGNIZED_TAILNET, onSourceSelected = {})
         Spacer(Modifier.height(8.dp))
         Column(Modifier.padding(horizontal = 16.dp)) {
-            TailnetPeerChips(GATEWAY_PEERS, baseUrl = "https://gpu-box.tail1234.ts.net/v1", onPeerSelected = {})
+            TailnetPeerPicker(GATEWAY_PEERS, baseUrl = "https://gpu-box.tail1234.ts.net:3010/v1", onPeerSelected = {})
         }
         Spacer(Modifier.height(16.dp))
         ProviderApiSourceSection(
@@ -214,6 +218,23 @@ private fun ApiSourceStates() {
         ProviderAddressHint(ProviderApiSourceHint.ADDRESS_IS_PUBLIC, onSourceSelected = {})
     }
 }
+
+// 设备面板的内容：在线设备在前，选中项打勾，离线设备注明。
+@Composable
+private fun PeerOptionsPanel(mode: NexaraThemeMode) = TailnetFrame(mode) {
+    val peers = selectableTailnetPeers(GATEWAY_PEERS)
+    TailnetPeerOptions(peers = peers, selected = peers.first(), onSelect = {})
+}
+
+@PreviewTest
+@Preview(name = "设备面板 深中411", widthDp = 411, locale = "zh-rCN")
+@Composable
+fun tailnetPeerOptionsDarkPreview() = PeerOptionsPanel(NexaraThemeMode.DARK)
+
+@PreviewTest
+@Preview(name = "设备面板 浅英360 大字", widthDp = 360, locale = "en", fontScale = 1.3f)
+@Composable
+fun tailnetPeerOptionsLightPreview() = PeerOptionsPanel(NexaraThemeMode.LIGHT)
 
 @PreviewTest
 @Preview(name = "API 源 深中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")

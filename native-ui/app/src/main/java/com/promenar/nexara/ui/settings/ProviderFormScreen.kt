@@ -854,6 +854,14 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             placeholder = { Text(stringResource(R.string.provider_form_placeholder_name)) },
             singleLine = true,
         )
+        // 选 Tailscale 内网时先选设备，接口地址随之填好。
+        if (state.apiSource?.selected == ProviderApiSource.TAILNET) {
+            TailnetPeerPicker(
+                peers = state.tailnetInfo.peers,
+                baseUrl = state.baseUrl,
+                onPeerSelected = actions.onTailnetPeerSelected,
+            )
+        }
         OutlinedTextField(
             textStyle = LocalTextStyle.current.forInput(),
             value = state.baseUrl,
@@ -882,13 +890,6 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             },
         )
         ProviderAddressHint(hint = state.apiSource?.hint, onSourceSelected = actions.onApiSourceSelected)
-        if (state.apiSource?.selected == ProviderApiSource.TAILNET) {
-            TailnetPeerChips(
-                peers = state.tailnetInfo.peers,
-                baseUrl = state.baseUrl,
-                onPeerSelected = actions.onTailnetPeerSelected,
-            )
-        }
         SecretField(
             value = state.secretInput,
             onValueChange = actions.onSecretChange,

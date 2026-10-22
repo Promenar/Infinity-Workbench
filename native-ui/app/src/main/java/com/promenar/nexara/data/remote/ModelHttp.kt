@@ -59,7 +59,8 @@ internal class TailnetRouteGuard(
     override fun intercept(chain: Interceptor.Chain): Response {
         val host = chain.request().url.host
         val current = gate()
-        if (current != null && routing().isTailnetHost(host)) {
+        // 内置 Tailscale 关闭时 routing 不认 tailnet 目标，仍要经关口判断是否应立即失败。
+        if (current != null && (routing().isTailnetHost(host) || current.mayReject(host))) {
             val result = runBlocking { current.await(host, timeoutMillis = TailnetConnectGate.REQUEST_TIMEOUT_MS) }
             if (result is TailnetConnectResult.Unavailable) throw TailnetUnavailableException(result.reason)
         }

@@ -18,13 +18,15 @@ object TailnetEndpoints {
     fun usesCleartext(baseUrl: String): Boolean =
         runCatching { URI(baseUrl.trim()).scheme }.getOrNull().equals("http", ignoreCase = true)
 
-    /** 点按 tailnet 设备时填入的地址：换成该设备的 https 全名，保留已填写的路径。 */
+    /** 点按 tailnet 设备时填入的地址：换成该设备的 https 全名，保留已填写的路径；仍是同一设备时也保留端口。 */
     fun addressForPeer(peer: TailnetPeer, currentBaseUrl: String): String? {
         val host = peerHost(peer) ?: return null
-        val path = runCatching { URI(currentBaseUrl.trim()).rawPath }.getOrNull()
+        val current = runCatching { URI(currentBaseUrl.trim()) }.getOrNull()
+        val path = current?.rawPath
             ?.takeIf { it.isNotBlank() && it != "/" }
             ?: DEFAULT_PATH
-        return "https://$host$path"
+        val port = current?.port?.takeIf { it > 0 && matchesPeer(currentBaseUrl, peer) }?.let { ":$it" }.orEmpty()
+        return "https://$host$port$path"
     }
 
     /** 设备的 MagicDNS 全名（去掉末尾的点）；缺少全名时为 null，此时无法签发 HTTPS 证书。 */

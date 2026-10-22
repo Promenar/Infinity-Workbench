@@ -28,6 +28,7 @@ object GenerationFailureNotice {
     private const val CODE_BUSY = "generation.failure.busy"
     private const val CODE_PERSISTENCE = "generation.failure.persistence"
     private const val CODE_TOOL_BUDGET = "generation.failure.tool_budget"
+    private const val CODE_TAILNET_DISABLED = "generation.failure.tailnet_disabled"
     private const val CODE_TAILNET_NEEDS_LOGIN = "generation.failure.tailnet_needs_login"
     private const val CODE_TAILNET_FAILED = "generation.failure.tailnet_failed"
     private const val CODE_TAILNET_TIMEOUT = "generation.failure.tailnet_timeout"
@@ -54,6 +55,7 @@ object GenerationFailureNotice {
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
             GenerationFailureCode.TOOL_BUDGET_EXHAUSTED -> CODE_TOOL_BUDGET
             GenerationFailureCode.TAILNET_UNAVAILABLE -> when (failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]) {
+                "DISABLED" -> CODE_TAILNET_DISABLED
                 "NEEDS_LOGIN" -> CODE_TAILNET_NEEDS_LOGIN
                 "TIMEOUT" -> CODE_TAILNET_TIMEOUT
                 else -> CODE_TAILNET_FAILED
@@ -77,6 +79,7 @@ object GenerationFailureNotice {
 
     /** tailnet 失败在消息下方给出的入口；其它失败为 null。 */
     fun tailnetKind(notice: UiStatusNotice): TailnetFailureKind? = when (notice.code) {
+        CODE_TAILNET_DISABLED -> TailnetFailureKind.DISABLED
         CODE_TAILNET_NEEDS_LOGIN -> TailnetFailureKind.NEEDS_LOGIN
         CODE_TAILNET_FAILED, CODE_TAILNET_TIMEOUT -> TailnetFailureKind.UNREACHABLE
         else -> null
@@ -118,6 +121,7 @@ object GenerationFailureNotice {
         CODE_BUSY -> ResolvedStatus(R.string.generation_failure_busy)
         CODE_PERSISTENCE -> ResolvedStatus(R.string.generation_failure_persistence)
         CODE_TOOL_BUDGET -> ResolvedStatus(R.string.generation_failure_tool_budget)
+        CODE_TAILNET_DISABLED -> ResolvedStatus(R.string.generation_failure_tailnet_disabled)
         CODE_TAILNET_NEEDS_LOGIN -> ResolvedStatus(R.string.generation_failure_tailnet_needs_login)
         CODE_TAILNET_FAILED -> ResolvedStatus(R.string.generation_failure_tailnet_failed)
         CODE_TAILNET_TIMEOUT -> ResolvedStatus(R.string.generation_failure_tailnet_timeout)
@@ -127,7 +131,7 @@ object GenerationFailureNotice {
 }
 
 /**
- * tailnet 失败的两类入口：需要登录时“去登录 / 换用公网模型”，
+ * tailnet 失败的入口：内置 Tailscale 未开启时“去开启 / 重试 / 换用公网模型”，需要登录时“去登录 / 重试 / 换用公网模型”，
  * 无法连接或超时时“重试 / 换用公网模型 / Tailscale 设置”。
  */
-enum class TailnetFailureKind { NEEDS_LOGIN, UNREACHABLE }
+enum class TailnetFailureKind { DISABLED, NEEDS_LOGIN, UNREACHABLE }

@@ -292,8 +292,15 @@ internal fun ProviderModelsScreenContent(
                 }
             }
 
-            // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化
-            val effectiveSyncNotice = state.syncNotice ?: if (state.isFetching) ModelSyncNotice.loading() else null
+            val listState = reduceProviderModelsListState(
+                isLoading = state.isFetching,
+                modelCount = state.models.size,
+                filteredCount = filteredModels.size,
+                searchQuery = searchQuery,
+                notice = state.syncNotice,
+            )
+            // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化；列表已表达的状态不重复提示。
+            val effectiveSyncNotice = visibleSyncNotice(state.syncNotice, listState)
             if (effectiveSyncNotice != null) {
                 item("notice") {
                     Box(modifier = Modifier.animateItem().testTag(UiTags.PROVIDER_MODELS_NOTICE)) {
@@ -306,15 +313,7 @@ internal fun ProviderModelsScreenContent(
                 }
             }
 
-            when (
-                reduceProviderModelsListState(
-                    isLoading = state.isFetching,
-                    modelCount = state.models.size,
-                    filteredCount = filteredModels.size,
-                    searchQuery = searchQuery,
-                    notice = state.syncNotice,
-                )
-            ) {
+            when (listState) {
                 ProviderModelsListState.Loading -> item("loading") {
                     Box(Modifier.animateItem()) {
                         ProviderModelsListMessage(

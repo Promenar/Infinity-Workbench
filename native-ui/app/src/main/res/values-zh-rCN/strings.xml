@@ -1518,6 +1518,7 @@
     <string name="generation_failure_busy">其他会话正在生成，请在完成后重试。</string>
     <string name="generation_failure_persistence">回复保存失败，请重试。</string>
     <string name="generation_failure_tool_budget">本轮工具调用次数已用完，模型没有给出总结。发送消息即可继续。</string>
+    <string name="generation_failure_tailnet_disabled">内置 Tailscale 未开启，消息没有发出。这个模型的接口在 tailnet 内，开启后重试即可发送，或换用经公网访问的模型。</string>
     <string name="generation_failure_tailnet_needs_login">内置 Tailscale 需要登录。这个模型的接口在 tailnet 内，登录后重试即可发送。</string>
     <string name="generation_failure_tailnet_failed">内置 Tailscale 无法连接，消息没有发出。可以重试，或换用经公网访问的模型。</string>
     <string name="generation_failure_tailnet_timeout">内置 Tailscale 在等待时间内没有接入 tailnet，消息没有发出。可以稍后重试，或换用经公网访问的模型。</string>
@@ -1558,6 +1559,7 @@
     <string name="tailnet_failure_action_switch_model">换用公网模型</string>
     <string name="tailnet_failure_action_settings">Tailscale 设置</string>
     <string name="tailnet_failure_action_login">去登录</string>
+    <string name="tailnet_failure_action_enable">去开启</string>
     <string name="provider_api_source_title">API 源</string>
     <string name="provider_api_source_footer">经 App 内置的 Tailscale 访问 tailnet 内的 API 网关，不需要另装官方 Tailscale App。根据接口地址自动识别，也可以手动切换。</string>
     <string name="provider_api_source_public">公网</string>
@@ -1580,9 +1582,11 @@
     <string name="provider_address_hint_is_public">该地址不在 tailnet 内，请求会经公网发出。</string>
     <string name="provider_address_hint_use_public">改用公网</string>
     <string name="provider_form_tailnet_https_required">Tailscale 内网也需要 HTTPS。可以在网关所在设备运行 tailscale serve，改用 https://设备名.tailnet名.ts.net 访问。</string>
-    <string name="provider_tailnet_peers_title">tailnet 设备 · 点按填入地址</string>
+    <string name="provider_tailnet_peer_field_label">tailnet 设备</string>
+    <string name="provider_tailnet_peer_field_placeholder">选择设备，自动填入地址</string>
+    <string name="provider_tailnet_peer_sheet_title">选择 tailnet 设备</string>
+    <string name="provider_tailnet_peer_sheet_footer">选中后，接口地址换成该设备的 https 全名，路径保持不变。只列出有 MagicDNS 全名的设备。</string>
     <string name="provider_tailnet_peer_offline">离线</string>
-    <string name="provider_tailnet_peer_label_offline">%1$s · 离线</string>
     <string name="generation_failure_unknown">生成失败，请重试。</string>
 
     <!-- 发行可达的结构化状态文案 -->
@@ -1708,7 +1712,7 @@
     <string name="tailscale_section_node">内置 Tailscale</string>
     <string name="tailscale_enable">启用 Tailscale</string>
     <string name="tailscale_enable_desc">不占用系统 VPN，可与其它 VPN 同时使用</string>
-    <string name="tailscale_node_footer">登录后，SSH 主机、shell_exec、python_exec（含内置 git）与应用内 HTTPS 请求可访问 tailnet 设备，web_fetch 仍只访问公网。节点只在 Nexara 运行期间在线。</string>
+    <string name="tailscale_node_footer">登录后，模型提供商、SSH 主机、shell_exec、python_exec（含内置 git）与应用内 HTTPS 请求可访问 tailnet 设备，web_fetch 仍只访问公网。节点只在 Nexara 运行期间在线。</string>
     <string name="tailscale_unavailable_desc">当前安装包未包含内置 Tailscale。</string>
     <string name="tailscale_phase_unavailable">当前安装包未包含</string>
     <string name="tailscale_phase_disabled">未启用</string>

@@ -409,8 +409,9 @@ private fun TailscalePeerRow(peer: TailnetPeer) {
     )
 }
 
+/** 设备类别图标，右下角小点表示是否在线；提供商表单的设备面板复用。 */
 @Composable
-private fun TailscalePeerIcon(peer: TailnetPeer) {
+internal fun TailscalePeerIcon(peer: TailnetPeer) {
     val icon = when (tailscalePeerKind(peer.os)) {
         TailscalePeerKind.DESKTOP -> Icons.Rounded.DesktopWindows
         TailscalePeerKind.LAPTOP -> Icons.Rounded.LaptopMac
