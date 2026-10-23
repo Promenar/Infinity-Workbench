@@ -136,6 +136,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -739,6 +740,25 @@ fun ChatScreenContent(
                                             sessionId = uiState.session?.id,
                                             privateWorkspaceRootUuid = uiState.session?.workspaceRootUuid,
                                         ),
+                                        schedule = if (call.toolName != "schedule_create") null else {
+                                            val context = LocalContext.current
+                                            remember(call, request.assistantMessageId, uiState.messages) {
+                                                ApprovalPreview.arguments(call, uiState.messages, request.assistantMessageId)?.let { args ->
+                                                    scheduleApprovalPreview(
+                                                        args = args,
+                                                        nowMillis = System.currentTimeMillis(),
+                                                        zoneId = java.time.ZoneId.systemDefault().id,
+                                                        exactAlarmAvailable = com.promenar.nexara.distribution.DistributionCapabilities.exactAlarmAvailable,
+                                                        canScheduleExact = com.promenar.nexara.background.schedule.canScheduleExact(context),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        background = remember(call, request.assistantMessageId, uiState.messages) {
+                                            ApprovalPreview.arguments(call, uiState.messages, request.assistantMessageId)?.let {
+                                                backgroundRunPreview(it, com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
+                                            }
+                                        },
                                     )
                                 }.ifEmpty {
                                     listOf(ApprovalDisplayCall(
@@ -1073,6 +1093,7 @@ internal fun approvalRiskLabel(risk: String): String = stringResource(
         "process" -> R.string.chat_approval_risk_process
         "script" -> R.string.chat_approval_risk_script
         "external_write" -> R.string.chat_approval_risk_external_write
+        "schedule" -> R.string.schedule_approval_risk
         else -> R.string.chat_approval_risk_unknown
     },
 )

@@ -52,4 +52,7 @@
     <string name="chat_step_other_name">Other tool</string>
     <plurals name="chat_step_pending_count"><item quantity="one">%1$d tool is waiting</item><item quantity="other">%1$d tools are waiting</item></plurals>
     <string name="chat_tool_error_title">Failed</string>
+    <plurals name="chat_step_schedule_done"><item quantity="one">Updated %1$d scheduled task</item><item quantity="other">Updated scheduled tasks %1$d times</item></plurals>
+    <string name="chat_step_schedule_running">Setting up a scheduled task…</string>
+    <string name="chat_step_schedule_name">Scheduled task</string>
 </resources>

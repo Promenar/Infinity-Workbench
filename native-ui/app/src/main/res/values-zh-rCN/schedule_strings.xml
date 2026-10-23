@@ -10,4 +10,11 @@
     <string name="schedule_approval_risk">定时执行</string>
     <string name="schedule_running">正在执行定时任务</string>
     <string name="schedule_interrupted">Android 中断了本轮定时任务，请打开会话检查进度。</string>
+    <string name="schedule_approval_upcoming">接下来</string>
+    <string name="schedule_approval_invalid">参数未通过校验，批准后也会被拒绝。</string>
+    <string name="schedule_approval_exact_denied_title">尚未授权精确闹钟</string>
+    <string name="schedule_approval_exact_denied_body">将由系统决定具体时刻，最短每 15 分钟一次。在定时任务面板授权精确闹钟后会重新安排。</string>
+    <plurals name="schedule_approval_max_runs">
+        <item quantity="other">最多 %1$d 次</item>
+    </plurals>
 </resources>

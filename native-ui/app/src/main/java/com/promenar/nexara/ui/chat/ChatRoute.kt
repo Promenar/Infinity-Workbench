@@ -593,18 +593,28 @@ fun ChatRoute(
             requestOverlay(ChatOverlay.Workspace)
         },
     ) {
-    val agentActivity = remember(application, sessionId) {
+    // 从系统授权页返回时重新读取精确闹钟权限，授权入口随之消失。
+    var exactAlarmGranted by remember { mutableStateOf(com.promenar.nexara.background.schedule.canScheduleExact(context)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        exactAlarmGranted = com.promenar.nexara.background.schedule.canScheduleExact(context)
+        onPauseOrDispose { }
+    }
+    val agentActivity = remember(application, sessionId, exactAlarmGranted) {
         com.promenar.nexara.ui.chat.components.AgentActivityAccess(
             sessionId = sessionId,
             jobs = application.backgroundJobController,
-            schedules = null,
+            schedules = application.scheduledTaskController,
             keepAliveAvailable = com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable,
             exactAlarmAvailable = com.promenar.nexara.distribution.DistributionCapabilities.exactAlarmAvailable,
             onOpenLog = { path ->
                 workspaceLocatePath = path
                 requestOverlay(ChatOverlay.Workspace)
             },
-            onGrantExact = null,
+            onGrantExact = if (exactAlarmGranted) null else {
+                com.promenar.nexara.background.schedule.exactAlarmPermissionIntent(context)?.let { intent ->
+                    { runCatching { context.startActivity(intent) } }
+                }
+            },
             liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey) },
         )
     }

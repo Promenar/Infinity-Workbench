@@ -52,4 +52,7 @@
     <string name="chat_step_other_name">其它工具</string>
     <plurals name="chat_step_pending_count"><item quantity="other">有 %1$d 个工具等待处理</item></plurals>
     <string name="chat_tool_error_title">执行失败</string>
+    <plurals name="chat_step_schedule_done"><item quantity="other">处理了 %1$d 次定时任务</item></plurals>
+    <string name="chat_step_schedule_running">正在设置定时任务…</string>
+    <string name="chat_step_schedule_name">定时任务</string>
 </resources>

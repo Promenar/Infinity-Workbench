@@ -69,4 +69,15 @@
     <string name="agent_schedules_delete_title">Delete schedule</string>
     <string name="agent_schedules_delete_body">“%1$s” will stop running. The chat history is kept.</string>
     <string name="agent_schedules_delete_confirm">Delete</string>
+    <string name="chat_approval_background_run">Runs in background</string>
+    <plurals name="chat_approval_background_max_hours">
+        <item quantity="one">up to %1$d hour</item>
+        <item quantity="other">up to %1$d hours</item>
+    </plurals>
+    <plurals name="chat_approval_background_max_minutes">
+        <item quantity="one">up to %1$d minute</item>
+        <item quantity="other">up to %1$d minutes</item>
+    </plurals>
+    <string name="chat_approval_background_on_exit_wake">continues the chat when done</string>
+    <string name="chat_approval_background_on_exit_notify">notifies when done</string>
 </resources>

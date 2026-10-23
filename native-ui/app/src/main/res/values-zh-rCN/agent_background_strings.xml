@@ -64,4 +64,13 @@
     <string name="agent_schedules_delete_title">删除定时任务</string>
     <string name="agent_schedules_delete_body">“%1$s”将不再触发，已有的对话记录会保留。</string>
     <string name="agent_schedules_delete_confirm">删除</string>
+    <string name="chat_approval_background_run">后台运行</string>
+    <plurals name="chat_approval_background_max_hours">
+        <item quantity="other">最长 %1$d 小时</item>
+    </plurals>
+    <plurals name="chat_approval_background_max_minutes">
+        <item quantity="other">最长 %1$d 分钟</item>
+    </plurals>
+    <string name="chat_approval_background_on_exit_wake">结束后继续对话</string>
+    <string name="chat_approval_background_on_exit_notify">结束后通知</string>
 </resources>

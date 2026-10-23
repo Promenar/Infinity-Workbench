@@ -798,6 +798,10 @@ data class ApprovalDisplayCall(
     val highRisk: Boolean = false,
     /** 文件写入类工具的差异预览；为空时使用 [preview] 的文本片段。 */
     val diffPreview: com.promenar.nexara.ui.chat.diff.ApprovalDiffPreview? = null,
+    /** schedule_create 的名称、触发规则与接下来几次时间；存在时替代参数文本。 */
+    val schedule: ScheduleApprovalPreview? = null,
+    /** 命令以后台任务启动时的运行方式。 */
+    val background: BackgroundRunPreview? = null,
 )
 
 @Composable
@@ -982,7 +986,9 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
             ),
         )
         ApprovalReason(description)
-        if (preview == null) {
+        if (call.schedule != null) {
+            ScheduleApprovalBlock(call.schedule, nowMillis = remember(call.schedule) { System.currentTimeMillis() })
+        } else if (preview == null) {
             ApprovalTextBlock(text = call.argumentsSummary)
         } else {
             val previewTitle = approvalPreviewTitle(preview, target)
@@ -1018,6 +1024,7 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
                 body.isNotBlank() -> ApprovalTextBlock(body)
             }
         }
+        call.background?.let { BackgroundRunLine(it) }
         // 参数预览因摘要不一致缺失时，仍按工具名提示内置命令的工作区风险。
         val builtinExec = preview?.commandRunsInWorkspace == true || call.name == "shell_exec" || call.name == "python_exec"
         val riskFacts = buildList {

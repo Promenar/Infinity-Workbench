@@ -421,7 +421,7 @@ private fun ScheduledTaskRow(
 }
 
 @Composable
-private fun triggerText(trigger: ScheduleTrigger): String = when (trigger) {
+internal fun triggerText(trigger: ScheduleTrigger): String = when (trigger) {
     is ScheduleTrigger.Once -> {
         val at = runCatching { LocalDateTime.parse(trigger.localDateTime) }.getOrNull()
         stringResource(
@@ -456,7 +456,7 @@ private fun scheduleStatus(task: ScheduledTask, nowMillis: Long): String {
 }
 
 @Composable
-private fun fireTimeLabel(fireAtMillis: Long, nowMillis: Long): String {
+internal fun fireTimeLabel(fireAtMillis: Long, nowMillis: Long): String {
     val zoned = Instant.ofEpochMilli(fireAtMillis).atZone(ZoneId.systemDefault())
     val time = zoned.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
     return when (fireDay(fireAtMillis, nowMillis)) {

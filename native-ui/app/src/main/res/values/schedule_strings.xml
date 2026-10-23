@@ -10,4 +10,12 @@
     <string name="schedule_approval_risk">Scheduled execution</string>
     <string name="schedule_running">Running scheduled task</string>
     <string name="schedule_interrupted">Android interrupted this scheduled turn. Open the conversation to check its progress.</string>
+    <string name="schedule_approval_upcoming">Next</string>
+    <string name="schedule_approval_invalid">These settings fail validation; the task will be rejected even if approved.</string>
+    <string name="schedule_approval_exact_denied_title">Exact alarms not granted</string>
+    <string name="schedule_approval_exact_denied_body">This task will run at times chosen by the system, at most every 15 minutes. Grant exact alarms in the scheduled tasks panel to reschedule it.</string>
+    <plurals name="schedule_approval_max_runs">
+        <item quantity="one">up to %1$d run</item>
+        <item quantity="other">up to %1$d runs</item>
+    </plurals>
 </resources>
