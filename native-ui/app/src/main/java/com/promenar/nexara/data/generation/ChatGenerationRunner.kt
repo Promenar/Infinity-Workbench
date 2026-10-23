@@ -76,6 +76,7 @@ interface ChatGenerationRuntime {
         cause: Throwable? = null,
     ) = Unit
     suspend fun flush(request: GenerationRequest)
+    suspend fun pauseForUser(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
     /** 审批等待只保留有界租约，其余退出路径释放本轮工具资源。 */
     suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) = Unit
     fun cancelProvider()
@@ -535,6 +536,19 @@ class ChatGenerationRunner(
                 if (persistTerminal(GenerationTerminalStatus.SUCCESS)) {
                     NexaraLogger.diagnostic("generation.completed", mapOf("sessionId" to request.sessionId))
                     phase(GenerationPhase.COMPLETED)
+                }
+            }
+        } catch (paused: HeadlessInteractionRequired) {
+            withContext(NonCancellable) {
+                closeOpenRoundTiming(paused)
+                clearUnconfirmedToolCalls(paused)
+                try {
+                    runtime.pauseForUser(request, snapshot)
+                    flushOnce()
+                    awaitingApproval = true
+                    phase(GenerationPhase.WAITING_APPROVAL)
+                } catch (failure: Throwable) {
+                    publishPersistenceFailure(failure, paused)
                 }
             }
         } catch (cancelled: CancellationException) {

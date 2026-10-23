@@ -13,9 +13,12 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -41,12 +44,14 @@ class DefaultGenerationCoordinator(
         val request: GenerationRequest,
         val job: Job,
         val terminalAcknowledged: AtomicBoolean = AtomicBoolean(false),
+        val completion: CompletableDeferred<GenerationTaskSnapshot?> = CompletableDeferred(),
     )
 
     private val mutex = Mutex()
     private val lifecycleLock = Any()
     private val mutableActive = MutableStateFlow<GenerationTaskSnapshot?>(null)
     private val sessionStates = ConcurrentHashMap<String, MutableStateFlow<GenerationTaskSnapshot?>>()
+    private val completions = ConcurrentHashMap<String, CompletableDeferred<GenerationTaskSnapshot?>>()
     private val terminalOrder = ArrayDeque<String>()
     private val terminalOrderLock = Any()
 
@@ -126,22 +131,30 @@ class DefaultGenerationCoordinator(
                     GenerationError(failure.failureOrUnknown()),
                 )
             } finally {
-                mutex.withLock {
-                    if (running?.taskId == taskId) {
-                        if (task.terminalAcknowledged.get()) {
-                            presentationStore.finish(request.sessionId, taskId)
-                            clearSessionState(request.sessionId, taskId)
-                        } else {
-                            retainTerminalState(request.sessionId, taskId)
+                withContext(NonCancellable) {
+                    mutex.withLock {
+                        if (running?.taskId == taskId) {
+                            if (task.terminalAcknowledged.get()) {
+                                presentationStore.finish(request.sessionId, taskId)
+                                clearSessionState(request.sessionId, taskId)
+                            } else {
+                                retainTerminalState(request.sessionId, taskId)
+                            }
+                            running = null
+                            mutableActive.value = null
+                            task.completion.complete(lastSnapshots.remove(taskId))
+                            if (completions.size > terminalRetentionLimit + 1) {
+                                completions.entries.firstOrNull { it.key != taskId && it.value.isCompleted }
+                                    ?.let { completions.remove(it.key, it.value) }
+                            }
                         }
-                        running = null
-                        mutableActive.value = null
                     }
                 }
             }
         }
         task = RunningTask(taskId, request, job)
         running = task
+        completions[taskId] = task.completion
         val initial = GenerationTaskSnapshot(
             taskId = taskId,
             sessionId = request.sessionId,
@@ -151,6 +164,7 @@ class DefaultGenerationCoordinator(
             startedAt = startedAt,
         )
         mutableActive.value = initial
+        lastSnapshots[taskId] = initial
         publishSessionState(request.sessionId, initial)
         job.start()
         StartGenerationResult.Started(taskId)
@@ -171,6 +185,11 @@ class DefaultGenerationCoordinator(
         val task = mutex.withLock { running?.takeIf { it.request.sessionId == sessionId } }
         task?.job?.join()
     }
+
+    private val lastSnapshots = ConcurrentHashMap<String, GenerationTaskSnapshot>()
+
+    override suspend fun awaitTaskCompletion(sessionId: String, taskId: String): GenerationTaskSnapshot? =
+        completions[taskId]?.await()?.takeIf { it.sessionId == sessionId }
 
     override fun cancel(taskId: String, reason: CancellationReason): Boolean {
         val current = running ?: return false
@@ -263,6 +282,7 @@ class DefaultGenerationCoordinator(
         }
         sessionState(request.sessionId).value = next
         mutableActive.value = next
+        lastSnapshots[taskId] = next
     }
 
     private fun publishTerminalIfCurrent(
@@ -285,6 +305,7 @@ class DefaultGenerationCoordinator(
         )
         sessionState(request.sessionId).value = terminal
         mutableActive.value = terminal
+        lastSnapshots[taskId] = terminal
     }
 
     private fun snapshotOf(

@@ -43,7 +43,7 @@ class ParameterSchemeMigrationTest {
                 seed(database, "sessions", mapOf("id" to "broken", "agent_id" to "agent", "title" to "损坏", "inference_params" to "not json"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_23_24, MIGRATION_24_25)
+                .addMigrations(MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                 .allowMainThreadQueries()
                 .build()
             try {

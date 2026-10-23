@@ -444,7 +444,7 @@ internal class DefaultChatGenerationRuntime(
     private suspend fun ensureAutomaticConsent(request: GenerationRequest, mode: String) {
         val consent = UnlimitedAutomationConsent(settings)
         if (consent.requiresConfirmation(toolBudget(request).maxRounds == 0, mode)) {
-            val confirmed = interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.UNLIMITED_AUTO) == true
+            val confirmed = interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.UNLIMITED_AUTO, request.interactionMode) == true
             if (!confirmed) throw CancellationException("用户未确认不限轮次全自动执行")
             consent.confirm()
         }
@@ -934,7 +934,7 @@ internal class DefaultChatGenerationRuntime(
         settings.getInt("tool_loop_repeat_limit", 3).coerceIn(2, 20)
 
     override suspend fun confirmLoopContinuation(request: GenerationRequest): Boolean =
-        interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.REPEATED_TOOL) == true
+        interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.REPEATED_TOOL, request.interactionMode) == true
 
     override suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage {
         val messages = store.getSession(request.sessionId)?.messages ?: return GenerationToolUsage()
@@ -1105,6 +1105,11 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun flush(request: GenerationRequest) =
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
+
+    override suspend fun pauseForUser(request: GenerationRequest, snapshot: GenerationSnapshot) {
+        messageManager.markGenerationTerminal(request.sessionId, assistantMessageId(request), snapshot.content, "paused")
+        sessionManager.updateSession(request.sessionId, mapOf("loopStatus" to com.promenar.nexara.data.model.LoopStatus.PAUSED))
+    }
 
     override suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) {
         try {

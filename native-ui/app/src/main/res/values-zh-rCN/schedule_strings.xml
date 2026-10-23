@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_notification_channel">Agent 动态</string>
+    <string name="schedule_notification_channel_description">系统触发的回复和待处理请求</string>
+    <string name="schedule_notification_needs_user">需要处理：%1$s</string>
+    <string name="schedule_notification_completed">已完成：%1$s</string>
+    <string name="schedule_notification_failed">执行失败：%1$s</string>
+    <string name="schedule_notification_reply">本轮已完成</string>
+    <string name="schedule_notification_failed_reason">本轮未能完成</string>
+    <string name="schedule_approval_risk">定时执行</string>
+    <string name="schedule_running">正在执行定时任务</string>
+    <string name="schedule_interrupted">Android 中断了本轮定时任务，请打开会话检查进度。</string>
+</resources>

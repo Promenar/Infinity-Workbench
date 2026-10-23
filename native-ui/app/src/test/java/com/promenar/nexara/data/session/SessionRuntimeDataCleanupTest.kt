@@ -13,6 +13,19 @@ class SessionRuntimeDataCleanupTest {
         assertThat(error).isInstanceOf(IOException::class.java)
     }
 
+    @Test fun `前序清理失败仍撤销定时排期和持久确认`() = runTest {
+        val cleared = mutableListOf<String>()
+        val failure = runCatching {
+            cleanupSessionRuntimeData(
+                deleteGrants = { throw IOException("grants") }, deleteOutputs = {},
+                deleteSchedules = { cleared += "schedule"; throw IOException("schedule") },
+                deleteTriggerInteraction = { cleared += "interaction" },
+            )
+        }.exceptionOrNull()!!
+        assertThat(cleared).containsExactly("schedule", "interaction").inOrder()
+        assertThat(failure.suppressed.single().message).isEqualTo("schedule")
+    }
+
     @Test fun `前序清理失败仍清理画布并保留失败链`() = runTest {
         var canvasDeleted = false
         val failure = runCatching {

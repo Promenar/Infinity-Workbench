@@ -45,6 +45,8 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.util.LocaleHelper
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.promenar.nexara.share.ui.ShareImportUiState
 
 internal fun allowOnboardingEmptyModelsOverride(
@@ -211,7 +213,7 @@ open class MainActivity : ComponentActivity() {
                         }
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
-                            app.visibleBackgroundJobSessionId = currentSessionId
+                            app.visibleSessionId = currentSessionId
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
                         }
                         val skillRestoreNotice by app.skillRestoreNotice.collectAsStateWithLifecycle()
@@ -310,6 +312,14 @@ open class MainActivity : ComponentActivity() {
     }
 
     private fun routeOpenGenerationIntent(candidate: Intent?): Boolean {
+        if (candidate?.action == AppIntentRouter.ACTION_OPEN_SESSION) {
+            val sessionIntent = Intent(candidate)
+            setIntent(cleanMainIntent())
+            lifecycleScope.launch {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { appIntentRouter.offer(sessionIntent) }
+            }
+            return true
+        }
         if (!appIntentRouter.offer(candidate)) return false
         setIntent(cleanMainIntent())
         return true

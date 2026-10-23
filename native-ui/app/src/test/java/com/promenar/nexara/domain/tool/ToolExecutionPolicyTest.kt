@@ -18,10 +18,10 @@ class ToolExecutionPolicyTest {
     }
 
     @Test
-    fun `manual 全部审批而 auto 只跳过审批`() {
+    fun `manual 全部审批而 auto 的定时执行仍需审批`() {
         ToolRisk.entries.forEach { risk ->
             assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.MANUAL, risk)).isTrue()
-            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.AUTO, risk)).isFalse()
+            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.AUTO, risk)).isEqualTo(risk == ToolRisk.SCHEDULE)
         }
     }
 }

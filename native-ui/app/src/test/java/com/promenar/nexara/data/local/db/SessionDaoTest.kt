@@ -67,6 +67,14 @@ class SessionDaoTest {
     }
 
     @Test
+    fun hasPendingApprovalIgnoresBlankRequests() = runBlocking {
+        dao.insert(SessionEntity(id = "s1", agentId = "a", title = "t", createdAt = 1L, updatedAt = 1L, approvalRequest = ""))
+        assertThat(dao.hasPendingApproval()).isFalse()
+        dao.insert(SessionEntity(id = "s2", agentId = "a", title = "t", createdAt = 1L, updatedAt = 1L, approvalRequest = "{\"id\":\"x\"}"))
+        assertThat(dao.hasPendingApproval()).isTrue()
+    }
+
+    @Test
     fun deleteById() = runBlocking {
         val session = SessionEntity(
             id = "s1",

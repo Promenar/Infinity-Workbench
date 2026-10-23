@@ -1413,7 +1413,7 @@ class ChatViewModel(
         text: String,
         backgroundAllowed: Boolean,
         assistantMessageIdsToReplace: Set<String>,
-    ): Boolean {
+    ): Boolean = store.turnAdmission.withLock {
         val assistantMessageId = IdGenerator.message("ai")
         messageManager.addMessage(
             sessionId,
@@ -1458,9 +1458,9 @@ class ChatViewModel(
             messageManager.discardPreparedMessages(sessionId, listOf(assistantMessageId))
             _isGenerating.value = false
             _generationStatus.value = GenerationStatus.ERROR
-            return false
+            return@withLock false
         }
-        return true
+        return@withLock true
     }
 
     private fun uriToDataUrl(uri: Uri): String? =
@@ -1473,7 +1473,7 @@ class ChatViewModel(
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
-    ) {
+    ) = store.turnAdmission.withLock {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
         val queuedSubmission = queueSubmissions[sessionId]
@@ -1662,13 +1662,7 @@ class ChatViewModel(
      */
     internal suspend fun resumeAfterApproval(sessionId: String) {
         val session = store.getSession(sessionId) ?: return
-        val anchorIndex = session.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
-        if (anchorIndex < 0) return
-        val anchor = session.messages[anchorIndex]
-        val userMessage = anchor.parentMessageId
-            ?.let { parentId -> session.messages.firstOrNull { it.id == parentId && it.role == MessageRole.USER } }
-            ?: session.messages.take(anchorIndex).lastOrNull { it.role == MessageRole.USER }
-            ?: return
+        val userMessage = com.promenar.nexara.data.generation.generationResumption(session)?.user ?: return
         enqueuePreparedAssistantRetry(
             sessionId = sessionId,
             session = session,
@@ -1866,7 +1860,7 @@ class ChatViewModel(
         viewModelScope.launch {
             _isLoading.update { true }
             try {
-                val session = sessionRepository.getById(sessionId)
+                val session = store.getOrLoadSession(sessionId) { sessionRepository.getById(sessionId) }
                 if (session != null) {
                     var hydrated = session
                     if (hydrated.ragOptions == null) {

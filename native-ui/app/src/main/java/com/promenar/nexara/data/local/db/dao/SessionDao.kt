@@ -91,6 +91,10 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE approval_request IS NOT NULL OR loop_status = 'waiting_for_approval'")
     suspend fun getWithToolApprovalState(): List<SessionEntity>
 
+    /** 系统触发排队时轮询，只判断是否存在待批准的工具调用。 */
+    @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE approval_request IS NOT NULL AND approval_request != '')")
+    suspend fun hasPendingApproval(): Boolean
+
     @Query("UPDATE sessions SET options = :options, rag_options = :ragOptions, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateOptions(sessionId: String, options: String?, ragOptions: String?, updatedAt: Long)
 

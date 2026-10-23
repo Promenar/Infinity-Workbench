@@ -39,6 +39,7 @@ internal const val ROOM_SCHEMA_V4_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75
 internal const val ROOM_SCHEMA_V19_IDENTITY_HASH = "694f9ee43b8b6fbca993a11d4a789f64"
 internal const val ROOM_SCHEMA_V20_IDENTITY_HASH = "4cbc9d57e418ec09a3469f1fcdc6bac6"
 internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V26_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V26_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
@@ -818,8 +819,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 25 || identityHash != ROOM_SCHEMA_V25_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v25")
+        if (sqlite.version != 26 || identityHash != ROOM_SCHEMA_V26_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v26")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->

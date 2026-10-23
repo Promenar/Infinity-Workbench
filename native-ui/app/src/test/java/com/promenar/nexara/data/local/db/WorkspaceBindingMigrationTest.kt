@@ -38,12 +38,12 @@ class WorkspaceBindingMigrationTest {
                 seed(database, "ssh_hosts", mapOf("id" to "host", "alias" to "fnos", "hostname" to "fnos.local", "username" to "root"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                .addMigrations(MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val sqlite = room.openHelper.writableDatabase
-                sqlite.query("PRAGMA user_version").use { check(it.moveToFirst()); assertThat(it.getInt(0)).isEqualTo(25) }
+                sqlite.query("PRAGMA user_version").use { check(it.moveToFirst()); assertThat(it.getInt(0)).isEqualTo(26) }
                 val agent = room.agentDao().getById("agent")!!
                 assertThat(agent.name).isEqualTo("保留中文😀")
                 assertThat(agent.systemPrompt).isEqualTo("你是助手")

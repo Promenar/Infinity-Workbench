@@ -23,6 +23,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
 import com.promenar.nexara.data.local.db.MIGRATION_22_23
+import com.promenar.nexara.data.local.db.MIGRATION_25_26
 import com.promenar.nexara.data.local.db.MIGRATION_24_25
 import com.promenar.nexara.data.local.db.MIGRATION_23_24
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
@@ -127,6 +128,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.promenar.nexara.startup.StartupBackgroundHealthMonitor
 import com.promenar.nexara.startup.StartupBackgroundTask
@@ -264,7 +267,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -375,7 +378,25 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, toolAllowlistStore, scriptSettings,
             sessionWorkspaceResolver::resolve)
     }
-    val generationInteractions by lazy { com.promenar.nexara.data.generation.GenerationInteractionStore() }
+    val generationInteractions by lazy {
+        com.promenar.nexara.data.generation.GenerationInteractionStore(
+            com.promenar.nexara.data.generation.FileHeadlessInteractionPersistence(
+                java.io.File(noBackupFilesDir, "system-trigger-interaction.json"),
+            ),
+        ).also { interactions ->
+            interactions.onHeadlessDecision = { prompt, allowed ->
+                generationScope.launch {
+                    try { resumeHeadlessInteraction(prompt, allowed) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        interactions.retryHeadlessResponse()
+                        NexaraLogger.logError("SystemTriggerResume", failure)
+                        systemTriggerNotifications.failed(prompt.sessionId, "", getString(R.string.schedule_notification_failed_reason))
+                    }
+                }
+            }
+        }
+    }
 
     suspend fun resolveToolAllowlistScope(sessionId: String, target: String) =
         com.promenar.nexara.data.repository.ToolAllowlistScopes.resolveForSession(
@@ -470,6 +491,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
                 generationCoordinator.release(sessionId, discardTerminal = true)
+                scheduledTaskController.cancelForSession(sessionId)
                 sshRuntime.closeOwner("agent:$sessionId")
                 backgroundJobs.stopSession(sessionId)
             },
@@ -517,14 +539,21 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     },
                     deleteCanvases = { canvasStore.deleteSession(sessionId) },
                     deleteJobs = { backgroundJobs.deleteSession(sessionId) },
+                    deleteSchedules = { scheduledTaskController.deleteForSession(sessionId) },
+                    deleteTriggerInteraction = { generationInteractions.clearHeadless(sessionId) },
                 )
             },
         )
     }
 
     suspend fun deleteSessionRecoverably(sessionId: String):
-        com.promenar.nexara.data.session.SessionDeletionResult =
+        com.promenar.nexara.data.session.SessionDeletionResult = try {
         sessionDeletionCoordinator.delete(sessionId)
+    } finally {
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+            scheduledTaskController.resumeSchedulingForSession(sessionId)
+        }
+    }
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val composerDraftRecovery = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
@@ -630,10 +659,116 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.background.generation.AndroidGenerationForegroundController(this)
     }
     val appIntentRouter by lazy {
-        com.promenar.nexara.navigation.AppIntentRouter { taskId, sessionId ->
+        com.promenar.nexara.navigation.AppIntentRouter(
+            sessionOpenTokens = com.promenar.nexara.navigation.AndroidSessionOpenTokenStore(this),
+        ) { taskId, sessionId ->
             generationCoordinator.observe(sessionId).value?.taskId == taskId
         }
     }
+    @Volatile var visibleSessionId: String? = null
+    val sessionOpenIntentFactory: com.promenar.nexara.navigation.SessionOpenIntentFactory by lazy {
+        com.promenar.nexara.navigation.AndroidSessionOpenIntentFactory(this, appIntentRouter)
+    }
+    val systemTriggerNotifications by lazy {
+        com.promenar.nexara.background.trigger.SystemTriggerNotifications(this, sessionOpenIntentFactory) { visibleSessionId }
+    }
+    val systemTurnDispatcher: com.promenar.nexara.domain.trigger.SystemTurnDispatcher by lazy {
+        com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher(
+            generationScope,
+            com.promenar.nexara.data.trigger.ApplicationSystemTurnRuntime(
+                startup = startupState, store = chatStore,
+                findSession = ::loadGenerationSession,
+                exists = { id -> database.sessionDao().getById(id) != null },
+                hasApproval = { database.sessionDao().hasPendingApproval() },
+                messages = generationMessageManager, coordinator = generationCoordinator,
+                foreground = generationForegroundController, interactions = generationInteractions,
+                executionGate = sessionExecutionGate,
+                notify = { request, outcome, reply ->
+                    try { systemTriggerNotifications.result(request, outcome, reply) }
+                    catch (failure: Exception) { NexaraLogger.logError("SystemTriggerNotification", failure) }
+                },
+                failureText = { error -> error?.let {
+                    com.promenar.nexara.ui.chat.GenerationFailureNotice.template(
+                        com.promenar.nexara.ui.chat.GenerationFailureNotice.from(it.failure),
+                    ).let { text -> getString(text.resourceId, *text.args.toTypedArray()) }
+                } ?: getString(R.string.schedule_notification_failed_reason) },
+            ),
+            failureMessage = getString(R.string.schedule_notification_failed_reason),
+            interruptedMessage = getString(R.string.schedule_interrupted),
+        )
+    }
+    val scheduledTaskController by lazy {
+        com.promenar.nexara.data.schedule.DefaultScheduledTaskController(this, database,
+            object : com.promenar.nexara.domain.trigger.SystemTurnDispatcher {
+                override suspend fun request(request: com.promenar.nexara.domain.trigger.SystemTurnRequest) =
+                    systemTurnDispatcher.request(request)
+            },
+            withdrawPending = { (systemTurnDispatcher as com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher).withdrawPendingSource(it) },
+        )
+    }
+
+    suspend fun stopSystemTurnSource(sourceId: String) {
+        (systemTurnDispatcher as com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher).stopSource(sourceId)
+    }
+
+    private suspend fun loadGenerationSession(id: String): com.promenar.nexara.data.model.Session? = withContext(Dispatchers.IO) {
+        val session = sessionRepository.getById(id) ?: return@withContext null
+        if (session.ragOptions != null) return@withContext session
+        val config = com.promenar.nexara.domain.usecase.RagConfigPersistence(getSharedPreferences("rag_settings", MODE_PRIVATE)).loadFullConfig()
+        val policy = agentRepository.getById(session.agentId)?.memoryPolicy ?: com.promenar.nexara.data.agent.AgentMemoryPolicy()
+        val options = policy.defaultsFor(com.promenar.nexara.data.model.RagOptions(
+            enableMemory = config.enableMemory, enableDocs = config.enableDocs,
+            enableRerank = config.enableRerank, enableKnowledgeGraph = config.enableKnowledgeGraph,
+        ))
+        sessionRepository.updatePartial(id, mapOf("ragOptions" to options))
+        session.copy(ragOptions = options)
+    }
+
+    /** 无界面确认恢复通过应用级端口接续，不要求先创建 ChatViewModel。 */
+    private suspend fun resumeHeadlessInteraction(
+        prompt: com.promenar.nexara.data.generation.GenerationInteraction,
+        allowed: Boolean,
+    ) {
+        startupState.first { it == BackupStartupState.Ready }
+        generationCoordinator.awaitSessionIdle(prompt.sessionId)
+        chatStore.turnAdmission.withLock {
+            if (generationInteractions.pending.value?.id != prompt.id) return@withLock
+            if (!allowed) {
+                generationInteractions.clearHeadless(prompt.sessionId)
+                generationSessionManager.updateSession(prompt.sessionId, mapOf("loopStatus" to com.promenar.nexara.data.model.LoopStatus.COMPLETED))
+                return@withLock
+            }
+            check(generationCoordinator.active.value == null) { "生成器正在处理其它会话" }
+            var session = chatStore.getOrLoadSession(prompt.sessionId) { loadGenerationSession(prompt.sessionId) }
+            if (session?.ragOptions == null && session != null) {
+                val options = loadGenerationSession(prompt.sessionId)?.ragOptions
+                chatStore.updateSession(prompt.sessionId) { it.copy(ragOptions = options) }
+                session = chatStore.getSession(prompt.sessionId)
+            }
+            if (session == null) { generationInteractions.clearHeadless(prompt.sessionId); return@withLock }
+            val user = com.promenar.nexara.data.generation.generationResumption(session)?.user ?: return@withLock
+            if (prompt.kind == com.promenar.nexara.data.generation.GenerationInteractionKind.UNLIMITED_AUTO) {
+                com.promenar.nexara.data.generation.UnlimitedAutomationConsent(getSharedPreferences("nexara_settings", MODE_PRIVATE)).confirm()
+            }
+            val assistantId = com.promenar.nexara.domain.usecase.IdGenerator.message("ai")
+            generationMessageManager.addMessage(prompt.sessionId, com.promenar.nexara.data.model.Message(
+                id = assistantId, role = com.promenar.nexara.data.model.MessageRole.ASSISTANT, content = "",
+                modelId = session.modelId, parentMessageId = user.id,
+            ))
+            val start = generationCoordinator.start(com.promenar.nexara.domain.generation.GenerationRequest(
+                sessionId = session.id, assistantMessageId = assistantId, userMessageId = user.id,
+                userContent = user.content, imageDataUrls = user.userImages.orEmpty(),
+                runtimePolicy = com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            ))
+            if (start !is com.promenar.nexara.domain.generation.StartGenerationResult.Started) {
+                generationMessageManager.discardPreparedMessages(session.id, listOf(assistantId))
+                error("生成器未接受恢复请求")
+            }
+            generationInteractions.clearHeadless(prompt.sessionId)
+            generationCoordinator.observe(session.id).value?.let(generationForegroundController::track)
+        }
+    }
+
     private val generationSessionManager by lazy {
         com.promenar.nexara.ui.chat.manager.SessionManager(chatStore, sessionRepository)
     }
@@ -831,13 +966,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.background.exec.AndroidExecKeepAlive(this, execRunRegistry,
             com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
     }
-    /** 调度器与通知深链由系统触发工作包接入；缺省时唤醒退化为通知、点击打开主界面。 */
-    var backgroundJobDispatcherProvider: () -> com.promenar.nexara.domain.trigger.SystemTurnDispatcher? = { null }
-    var backgroundJobSessionIntentProvider: () -> com.promenar.nexara.navigation.SessionOpenIntentFactory? = { null }
-    @Volatile var visibleBackgroundJobSessionId: String? = null
     val backgroundJobController: com.promenar.nexara.domain.jobs.BackgroundJobController get() = backgroundJobs
     val backgroundJobs: com.promenar.nexara.data.jobs.BackgroundJobManager by lazy {
-        val notifications = com.promenar.nexara.background.jobs.BackgroundJobNotifications(this) { backgroundJobSessionIntentProvider() }
+        val notifications = com.promenar.nexara.background.jobs.BackgroundJobNotifications(this) { sessionOpenIntentFactory }
         com.promenar.nexara.data.jobs.BackgroundJobManager(
             scope = generationScope,
             store = com.promenar.nexara.data.jobs.BackgroundJobStore(File(noBackupFilesDir, "background-jobs")),
@@ -868,7 +999,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             },
             termux = com.promenar.nexara.data.termux.TermuxBackgroundJobs(termuxRuntime::executeRequest),
             keepAlive = commandKeepAlive, liveOutput = toolLiveOutputStore,
-            completion = com.promenar.nexara.data.jobs.BackgroundJobCompletion({ backgroundJobDispatcherProvider() }, notifications::notify),
+            completion = com.promenar.nexara.data.jobs.BackgroundJobCompletion({ systemTurnDispatcher }, notifications::notify),
             keepAliveMode = if (com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable) "service" else "foreground_only",
             executionGate = sessionExecutionGate,
             sessionExists = { database.sessionDao().getById(it) != null },
@@ -1111,6 +1242,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         ModularSkillRegistry(
             listOf(
                 presetSkillRegistry,
+                com.promenar.nexara.ui.chat.manager.skills.scheduleSkillRegistry(scheduledTaskController),
                 com.promenar.nexara.ui.chat.manager.skills.AgentSkillToolRegistry(skillCatalog, sessionWorkspaceResolver::resolve, sessionId),
                 userSkillRegistry,
                 mcpSkillRegistry,
@@ -1338,6 +1470,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         ?.let { _skillRestoreNotice.value = it }
                     if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
                     backgroundJobs.initialize()
+                    generationInteractions.restoreHeadless()
+                    generationInteractions.pending.value?.let { pending ->
+                        if (withContext(Dispatchers.IO) { database.sessionDao().getById(pending.sessionId) } == null) {
+                            generationInteractions.clearHeadless(pending.sessionId)
+                        }
+                    }
+                    scheduledTaskController.initialize()
                     _startupState.value = BackupStartupState.Ready
                     startModelCatalogUpdates()
                     generationScope.launch(Dispatchers.IO) {
