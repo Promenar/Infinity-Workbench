@@ -13,6 +13,8 @@ data class ChatState(
 )
 
 class ChatStore {
+    val turnAdmission = com.promenar.nexara.data.generation.GenerationTurnAdmission()
+    private val loading = kotlinx.coroutines.sync.Mutex()
     private val _state = MutableStateFlow(ChatState())
     val state: StateFlow<ChatState> = _state
 
@@ -66,6 +68,20 @@ class ChatStore {
 
     fun getSession(id: String): Session? {
         return _state.value.sessions.find { it.id == id }
+    }
+
+    /** 页面与系统触发共用载入锁；已有内存会话不能被较早的数据库快照覆盖。 */
+    suspend fun getOrLoadSession(id: String, load: suspend () -> Session?): Session? {
+        getSession(id)?.let { return it }
+        loading.lock()
+        try {
+            getSession(id)?.let { return it }
+            val loaded = load() ?: return null
+            update { state ->
+                if (state.sessions.any { it.id == id }) state else state.copy(sessions = state.sessions + loaded)
+            }
+            return getSession(id)
+        } finally { loading.unlock() }
     }
 
     fun updateSession(id: String, transform: (Session) -> Session) {

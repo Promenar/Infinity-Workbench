@@ -67,6 +67,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 
 @Database(
     entities = [
+        com.promenar.nexara.data.local.db.entity.ScheduledTaskEntity::class,
         AgentEntity::class,
         SessionEntity::class,
         MessageEntity::class,
@@ -101,11 +102,12 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         ParameterSchemeEntity::class,
         com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class NexaraDatabase : RoomDatabase() {
+    abstract fun scheduledTaskDao(): com.promenar.nexara.data.local.db.dao.ScheduledTaskDao
     abstract fun agentDao(): AgentDao
     abstract fun sessionDao(): SessionDao
     abstract fun sessionDeletionDao(): SessionDeletionDao
@@ -140,6 +142,7 @@ abstract class NexaraDatabase : RoomDatabase() {
 internal const val NEXARA_SCHEMA_V21_IDENTITY_HASH = "b59d4265cdf25db536fb91226cd85ab3"
 internal const val NEXARA_SCHEMA_V22_IDENTITY_HASH = "44c225495bedbde35d20c36ffbddf6a4"
 internal const val NEXARA_SCHEMA_V23_IDENTITY_HASH = "7d4eb1523842672010345f378c8b7bd9"
+internal const val NEXARA_SCHEMA_V26_IDENTITY_HASH = "d7823d310bc01ce689665a8f95f25c08"
 internal const val NEXARA_SCHEMA_V25_IDENTITY_HASH = "3345ac5e27ee342bbe8512e82146c406"
 internal const val NEXARA_SCHEMA_V24_IDENTITY_HASH = "25746d91c031c8c926030a9e148b20a1"
 
@@ -189,3 +192,20 @@ private data class SshColumnContract(
     val primaryKeyPosition: Int = 0,
     val defaultValue: String? = null,
 )
+
+/** v25 → v26：仅保存在本机的定时任务与持久化执行占位。 */
+val MIGRATION_25_26 = object : androidx.room.migration.Migration(25, 26) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS `scheduled_tasks` (
+            `id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `name` TEXT NOT NULL, `prompt` TEXT NOT NULL,
+            `trigger_type` TEXT NOT NULL, `trigger_value` TEXT NOT NULL, `zone_id` TEXT NOT NULL,
+            `exact_requested` INTEGER NOT NULL, `exact_effective` INTEGER NOT NULL, `enabled` INTEGER NOT NULL,
+            `next_fire_at` INTEGER, `run_count` INTEGER NOT NULL, `max_runs` INTEGER, `expires_at` INTEGER,
+            `last_fired_at` INTEGER, `last_result` TEXT, `created_at` INTEGER NOT NULL, `job_id` INTEGER NOT NULL,
+            `claim_token` TEXT, `catch_up` INTEGER NOT NULL, `stop_reason` INTEGER, `last_run_token` TEXT,
+            PRIMARY KEY(`id`), FOREIGN KEY(`session_id`) REFERENCES `sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_scheduled_tasks_session_id` ON `scheduled_tasks` (`session_id`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_scheduled_tasks_job_id` ON `scheduled_tasks` (`job_id`)")
+    }
+}

@@ -78,6 +78,11 @@ interface GenerationCoordinator {
     fun observe(sessionId: String): StateFlow<GenerationTaskSnapshot?>
     /** 等待本会话运行任务连同资源收尾完全退出，避免确认终态后的短暂 Busy。 */
     suspend fun awaitSessionIdle(sessionId: String) { active.first { it?.sessionId != sessionId } }
+    /** 资源释放后的结果回执独立于界面对展示终态的确认。 */
+    suspend fun awaitTaskCompletion(sessionId: String, taskId: String): GenerationTaskSnapshot? {
+        awaitSessionIdle(sessionId)
+        return observe(sessionId).value?.takeIf { it.taskId == taskId }
+    }
     suspend fun start(request: GenerationRequest): StartGenerationResult
     fun cancel(taskId: String, reason: CancellationReason = CancellationReason.USER): Boolean
     suspend fun cancelAndJoinSession(

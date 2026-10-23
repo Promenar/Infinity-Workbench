@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_notification_channel">Agent activity</string>
+    <string name="schedule_notification_channel_description">System-triggered replies and requests for your attention</string>
+    <string name="schedule_notification_needs_user">Action required: %1$s</string>
+    <string name="schedule_notification_completed">Completed: %1$s</string>
+    <string name="schedule_notification_failed">Failed: %1$s</string>
+    <string name="schedule_notification_reply">The turn is complete</string>
+    <string name="schedule_notification_failed_reason">The turn could not be completed</string>
+    <string name="schedule_approval_risk">Scheduled execution</string>
+    <string name="schedule_running">Running scheduled task</string>
+    <string name="schedule_interrupted">Android interrupted this scheduled turn. Open the conversation to check its progress.</string>
+</resources>

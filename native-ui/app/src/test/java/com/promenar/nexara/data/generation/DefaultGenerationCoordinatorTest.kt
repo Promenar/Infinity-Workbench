@@ -42,10 +42,13 @@ class DefaultGenerationCoordinatorTest {
         coordinator.acknowledgeTerminal(first.taskId)
         assertThat(coordinator.active.value).isNull()
         val idle = async { coordinator.awaitSessionIdle("s1") }
+        val completion = async { coordinator.awaitTaskCompletion("s1", first.taskId) }
         runCurrent()
         assertThat(idle.isCompleted).isFalse()
+        assertThat(completion.isCompleted).isFalse()
         release.complete(Unit)
         idle.await()
+        assertThat(completion.await()!!.phase).isEqualTo(GenerationPhase.COMPLETED)
         assertThat(coordinator.start(request("s1", "a2"))).isInstanceOf(StartGenerationResult.Started::class.java)
     }
 

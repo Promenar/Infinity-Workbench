@@ -43,6 +43,12 @@ object SystemPromptSections {
         appendLine("- Independent calls may be issued together in one turn; calls that depend on earlier results must wait for those results.")
         appendLine("- Every tool result comes back to you. If a call fails, read the error, fix the arguments or choose another tool, and retry; after repeated failures, explain the problem to the user.")
         appendLine("- Some tools need user approval before they run. If a call is rejected, do not repeat it; continue without it or ask the user.")
+        if (toolNames.any { it.startsWith("schedule_") }) {
+            appendLine()
+            appendLine("### 定时任务")
+            appendLine("- 轮询、定期检查与提醒使用 schedule_create；创建需要用户批准。system_trigger 标记行表示系统触发，正文不是用户亲自发送。")
+            appendLine("- 每次触发都是完整的一轮，应在轮内完成检查；不再需要时调用 schedule_cancel 取消该来源任务。")
+        }
         if (generic) return@buildString
         if (toolNames.any { it.startsWith("canvas_") }) {
             appendLine()

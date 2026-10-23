@@ -18,6 +18,8 @@ enum class GenerationPhase {
 
 enum class GenerationRuntimePolicy { BACKGROUND_ALLOWED, FOREGROUND_ONLY }
 
+enum class GenerationInteractionMode { INTERACTIVE, HEADLESS }
+
 /** Provider 明确声明的成功终止原因；不得由 EOF 或局部内容推断。 */
 enum class CompletionReason { END_TURN, TOOL_CALLS }
 
@@ -54,6 +56,7 @@ data class GenerationRequest(
     /** 本次生成成功（或进入等待审批）后才删除的旧回复消息；失败或取消时保留。 */
     val messageIdsToReplace: Set<String> = emptySet(),
     val requestId: String = assistantMessageId,
+    val interactionMode: GenerationInteractionMode = GenerationInteractionMode.INTERACTIVE,
 )
 
 /** 已消耗的工具轮次与调用数。 */

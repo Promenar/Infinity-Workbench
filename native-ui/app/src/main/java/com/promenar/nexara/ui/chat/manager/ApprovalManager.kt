@@ -85,8 +85,10 @@ class ApprovalManager(
         rememberTarget: Boolean = false,
     ) {
         val action: suspend () -> Unit = {
-            approvalLock(sessionId).withLock {
-                resumeGenerationLocked(sessionId, expectedRequest, approved, intervention, rememberTarget)
+            store.turnAdmission.withLock {
+                approvalLock(sessionId).withLock {
+                    resumeGenerationLocked(sessionId, expectedRequest, approved, intervention, rememberTarget)
+                }
             }
         }
         val gate = executionGate

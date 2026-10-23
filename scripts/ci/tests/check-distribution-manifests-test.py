@@ -22,7 +22,10 @@ class DistributionManifestTest(unittest.TestCase):
     def write(self, path, permission=False, package="com.promenar.nexara.native.debug", special_use=None, service=None):
         special_use = permission if special_use is None else special_use
         service = permission if service is None else service
-        items = ""
+        items = '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'
+        items += '<application><service android:name="com.promenar.nexara.background.schedule.ScheduledTaskJobService" android:permission="android.permission.BIND_JOB_SERVICE" /></application>'
+        if permission:
+            items += '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />'
         if permission:
             items += '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />'
         if special_use:
@@ -55,6 +58,16 @@ class DistributionManifestTest(unittest.TestCase):
             with self.subTest(play=play_extra, sideload=sideload_extra):
                 self.write(self.play, **play_extra)
                 self.write(self.sideload, True, **sideload_extra)
+                with self.assertRaises(ValueError):
+                    check.check_manifests(self.play, self.sideload)
+
+    def test_play_rejects_both_exact_alarm_permissions(self):
+        self.write(self.sideload, True)
+        for permission in ("SCHEDULE_EXACT_ALARM", "USE_EXACT_ALARM"):
+            with self.subTest(permission=permission):
+                self.write(self.play)
+                content = self.play.read_text().replace("</manifest>", f'<uses-permission android:name="android.permission.{permission}" /></manifest>')
+                self.play.write_text(content)
                 with self.assertRaises(ValueError):
                     check.check_manifests(self.play, self.sideload)
 
