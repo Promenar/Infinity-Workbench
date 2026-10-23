@@ -9,6 +9,7 @@ suspend fun cleanupSessionRuntimeData(
     deleteSubagents: suspend () -> Unit = {},
     deleteComposerQueue: suspend () -> Unit = {},
     deleteCanvases: suspend () -> Unit = {},
+    deleteJobs: suspend () -> Unit = {},
 ) {
     var failure: Throwable? = null
     try { deleteGrants() } catch (error: Throwable) { failure = error }
@@ -28,6 +29,9 @@ suspend fun cleanupSessionRuntimeData(
         if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
     }
     try { deleteCanvases() } catch (error: Throwable) {
+        if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
+    }
+    try { deleteJobs() } catch (error: Throwable) {
         if (failure == null) failure = error else if (failure !== error) failure.addSuppressed(error)
     }
     failure?.let { throw it }

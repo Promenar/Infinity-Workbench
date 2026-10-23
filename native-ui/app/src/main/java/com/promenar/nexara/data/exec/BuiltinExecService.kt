@@ -87,6 +87,31 @@ class BuiltinExecService(
         }
     }
 
+    /** 后台工作区与生命周期由 BackgroundJobManager 接管，仅共享运行环境和 git 认证租约。 */
+    suspend fun prepareBackgroundCommand(
+        kind: com.promenar.nexara.domain.jobs.BackgroundJobRunner,
+        source: String,
+        stdin: String?,
+        location: com.promenar.nexara.data.jobs.BackgroundJobLocation,
+        minutes: Int,
+    ): com.promenar.nexara.data.jobs.PreparedBackgroundCommand {
+        if (kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON && !environment.pythonAvailable) {
+            throw IllegalArgumentException("当前设备没有内置 Python，请改用 termux_exec 或 ssh_exec。")
+        }
+        val root = location.commandDirectory
+        val workspaceKind = location.workspaceKind
+        val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
+        return try {
+            val python = kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON
+            val argv = if (python) listOf(environment.pythonLauncher.path, "-c", source)
+                else listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", source)
+            com.promenar.nexara.data.jobs.PreparedBackgroundCommand(
+                BuiltinCommandRequest(argv, root, (if (python) environment.forPython(root, workspaceKind) else environment.forWorkspace(root, workspaceKind)) + lease.environment, stdin, minutes * 60),
+                lease::close,
+            )
+        } catch (failure: Throwable) { lease.close(); throw failure }
+    }
+
     private suspend fun execute(
         workspaceRootUuid: String,
         sessionId: String?,

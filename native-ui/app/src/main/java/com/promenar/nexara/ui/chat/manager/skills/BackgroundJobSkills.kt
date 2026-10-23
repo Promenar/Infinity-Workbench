@@ -1,0 +1,70 @@
+package com.promenar.nexara.ui.chat.manager.skills
+
+import com.promenar.nexara.data.jobs.*
+import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.jobs.*
+import com.promenar.nexara.domain.tool.*
+import com.promenar.nexara.ui.chat.manager.registry.*
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.*
+
+internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
+internal fun JsonObject.backgroundRequested() = (this["background"] as? JsonPrimitive)?.booleanOrNull == true
+internal fun backgroundStartJson(record: BackgroundJobRecord): JsonObject = buildJsonObject {
+    put("job_id",record.id);put("state",record.state.lowercase());put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
+    put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"})
+    val confirmed=record.runner!="TERMUX" || record.termuxPid!=null
+    put("launch_confirmed",confirmed)
+    put("guidance",if(confirmed) "后台任务已启动；可以继续其它工作，需要结果时用 job_status 或 job_wait；不要循环轮询。" else record.guidance ?: "启动结果尚未确认；请用 job_status 查询或 job_stop 撤销，避免重复执行。")
+    record.guidance?.let { put("warning",it) }
+    if(record.isolatedWorkspace) put("workspace_mode","snapshot_merge_on_exit")
+}
+internal suspend fun runBackgroundExec(
+    id:String, schema:String, args:JsonObject, context:SkillExecutionContext, jobs:BackgroundJobManager?, kind:BackgroundJobRunner, sourceField:String,
+): ToolResult = jobToolResult(id) {
+    if(ToolSchemaValidator().validate(schema,args) is ToolSchemaValidation.Invalid) throw JobAccessException("JOB_INVALID_ARGUMENTS","请按执行工具的 schema 修正参数。")
+    val source=(args[sourceField] as JsonPrimitive).content
+    require(source.isNotBlank() && '\u0000' !in source && source.length <= (if(kind==BackgroundJobRunner.PYTHON) 40_000 else 32_000)) { "$sourceField 为空或过长，请写入脚本文件后执行。" }
+    if(kind==BackgroundJobRunner.PYTHON) require(source.toByteArray(Charsets.UTF_8).size<=120_000) { "code 的 UTF-8 编码超过 120000 字节。" }
+    val minutes=(args["max_runtime_minutes"] as? JsonPrimitive)?.intOrNull ?: 120
+    require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
+    val action=BackgroundJobExitAction.fromWire((args["on_exit"] as? JsonPrimitive)?.content ?: "notify") ?: throw IllegalArgumentException("on_exit 必须为 none、notify 或 wake")
+    val manager=jobs ?: throw JobAccessException("JOB_UNAVAILABLE","后台任务服务不可用，请重新打开应用。")
+    val stdin=(args["stdin"] as? JsonPrimitive)?.content
+    val record=if(kind==BackgroundJobRunner.TERMUX) manager.startTermux(context.sessionId,context.workspaceRootUuid,source,(args["workdir"] as? JsonPrimitive)?.content?.trim()?.takeUnless{it.isEmpty() || it=="~" || it=="\$HOME"},stdin,minutes,action)
+        else manager.startBuiltin(context.sessionId,context.workspaceRootUuid,kind,source,stdin,minutes,action)
+    backgroundStartJson(record)
+}
+internal suspend fun jobToolResult(id:String, body:suspend()->JsonObject):ToolResult = try {
+    ToolResult("${id}_${UUID.randomUUID()}",body().toString(),"success")
+} catch(cancelled:CancellationException){throw cancelled
+} catch(failure:Exception) {
+    val code=(failure as? JobAccessException)?.code ?: if(failure is IllegalArgumentException) "JOB_INVALID_ARGUMENTS" else "JOB_OPERATION_FAILED"
+    val guidance=if(failure is JobAccessException || failure is IllegalArgumentException) failure.message else "后台任务操作失败，请检查工作区或 Termux 接入后重试；已启动的任务可用 job_list 查询。"
+    ToolResult("${id}_${UUID.randomUUID()}",buildJsonObject {put("error_code",code);put("guidance",guidance)}.toString(),"error")
+}
+
+fun backgroundJobTools(jobs:BackgroundJobManager):List<SkillDefinition> = listOf("status","wait","stop","list").map { JobSkill(jobs,it) }
+private class JobSkill(private val jobs:BackgroundJobManager,private val operation:String):SkillDefinition {
+    override val id="job_$operation"
+    override val name=id
+    override val risk=ToolRisk.SESSION_STATE
+    override val mcpServerId:String?=null
+    override val description=when(operation) {"status"->"读取本会话后台任务状态和最多 8000 字符日志末尾。";"wait"->"等待本会话后台任务结束或 1–600 秒超时；取消等待不会停止任务。";"stop"->"停止本会话后台任务整个进程组（TERM，2 秒后 KILL）。";else->"列出本会话后台任务，不包含日志。"}
+    override val parametersSchema=if(operation=="list") """{"type":"object","properties":{},"additionalProperties":false}""" else """{"type":"object","properties":{"job_id":{"type":"string"}${if(operation=="wait") ",\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"1–600 秒，默认 60\"}" else ""}},"required":["job_id"],"additionalProperties":false}"""
+    override suspend fun execute(args:JsonObject,context:SkillExecutionContext)=jobToolResult(id) {
+        require(ToolSchemaValidator().validate(parametersSchema,args) !is ToolSchemaValidation.Invalid) { "参数无效，请检查 job_id 与 1–600 秒的 timeout_seconds。" }
+        if(operation=="list") buildJsonObject {put("jobs",JsonArray(jobs.list(context.sessionId).map {info(it)}))} else {
+            val jobId=(args.getValue("job_id") as JsonPrimitive).content
+            val status=when(operation) {"status"->jobs.status(context.sessionId,jobId);"stop"->jobs.stop(context.sessionId,jobId);else->jobs.waitFor(context.sessionId,jobId,(args["timeout_seconds"] as? JsonPrimitive)?.intOrNull ?: 60)}
+            JsonObject(info(status.record)+buildJsonObject{put("log_tail",status.tail.text);put("log_truncated",status.tail.truncated);if(operation=="wait")put("timed_out",status.timedOut)})
+        }
+    }
+    private fun info(record:BackgroundJobRecord)=buildJsonObject {
+        put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
+        put("summary",record.summary);put("elapsed_seconds",BackgroundJobCompletion.elapsedSeconds(record));put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
+        put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"});put("keep_alive",jobs.keepAliveMode)
+        record.guidance?.let{put("guidance",it)}
+    }
+}

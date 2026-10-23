@@ -101,7 +101,11 @@ class ExecForegroundService : Service() {
     private fun notification(runs: List<ExecRunRegistry.Active>): Notification {
         val model = ExecNotificationModel.from(runs)
         val latest = model.latest
-        val title = if (model.count <= 1) getString(R.string.exec_notification_title) else getString(R.string.exec_notification_title_many, model.count)
+        val backgroundCount = runs.count { it.info.background }
+        val commandCount = runs.size - backgroundCount
+        val title = if (backgroundCount > 0 && commandCount > 0) getString(R.string.jobs_mixed_running_title, backgroundCount, commandCount)
+            else if (backgroundCount > 0) getString(R.string.jobs_running_title, backgroundCount)
+            else if (model.count <= 1) getString(R.string.exec_notification_title) else getString(R.string.exec_notification_title_many, model.count)
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),

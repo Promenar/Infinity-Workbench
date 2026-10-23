@@ -211,6 +211,7 @@ open class MainActivity : ComponentActivity() {
                         }
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
+                            app.visibleBackgroundJobSessionId = currentSessionId
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
                         }
                         val skillRestoreNotice by app.skillRestoreNotice.collectAsStateWithLifecycle()

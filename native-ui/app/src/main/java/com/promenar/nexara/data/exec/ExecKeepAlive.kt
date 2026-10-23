@@ -14,6 +14,7 @@ data class ExecRunInfo(
     val summary: String,
     val timeoutSeconds: Int,
     val startedAtMillis: Long,
+    val background: Boolean = false,
 ) {
     companion object {
         const val SUMMARY_MAX_CHARS = 80

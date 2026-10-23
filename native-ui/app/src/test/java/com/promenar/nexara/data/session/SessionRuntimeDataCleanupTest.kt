@@ -6,6 +6,13 @@ import org.junit.Test
 import java.io.IOException
 
 class SessionRuntimeDataCleanupTest {
+    @Test fun `其它清理失败仍停止后台任务`() = runTest {
+        var stopped=false
+        val error=runCatching {cleanupSessionRuntimeData({throw IOException("grants")},{},deleteJobs={stopped=true})}.exceptionOrNull()
+        assertThat(stopped).isTrue()
+        assertThat(error).isInstanceOf(IOException::class.java)
+    }
+
     @Test fun `前序清理失败仍清理画布并保留失败链`() = runTest {
         var canvasDeleted = false
         val failure = runCatching {

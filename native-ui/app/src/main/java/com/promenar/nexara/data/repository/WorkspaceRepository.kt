@@ -933,6 +933,37 @@ class WorkspaceRepository(
         )
     } }
 
+    /** 后台命令使用独立副本；复制与基线采集期间只占用一次根锁。 */
+    suspend fun prepareBackgroundWorkspace(
+        workspaceRootUuid: String,
+        sessionId: String?,
+        jobId: String,
+        staging: File,
+    ): File = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+        val physical = File(root.physicalRootPath)
+        BackgroundWorkspace(fileOps).prepare(physical, workspaceRootUuid, sessionId, jobId, staging)
+        physical
+    } }
+
+    /** 运行中仅发布日志；结束后合入没有前台冲突的结果，异常恢复不合入半成品。 */
+    suspend fun reconcileBackgroundWorkspace(
+        workspaceRootUuid: String,
+        sessionId: String?,
+        jobId: String,
+        staging: File,
+        finished: Boolean,
+        interrupted: Boolean = false,
+    ): String? = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+        val background = BackgroundWorkspace(fileOps)
+        val warnings = background.synchronize(
+            File(root.physicalRootPath), workspaceRootUuid, sessionId, jobId, staging, finished, interrupted,
+        )
+        // 后台子进程只接触副本，真实树在根锁下静止，可以完整按磁盘收敛索引。
+        reconcileCommandLocked(root, before = null, sessionId = sessionId)
+        if (finished || interrupted) background.complete(File(root.physicalRootPath), jobId)
+        warnings
+    } }
+
     /** 上次命令未完成对账（进程被杀或崩溃）时，下一次修改工作区前先按磁盘收敛索引。 */
     private suspend fun recoverInterruptedCommandLocked(root: FileEntry) {
         val rootPath = File(root.physicalRootPath).toPath()

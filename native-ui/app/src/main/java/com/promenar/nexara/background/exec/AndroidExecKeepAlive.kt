@@ -11,8 +11,9 @@ import com.promenar.nexara.data.exec.ExecRunInfo
 import com.promenar.nexara.data.exec.ExecRunRegistry
 
 /**
- * 命令运行期间持有 `PARTIAL_WAKE_LOCK`（超时上限加余量，结束即释放），并在 [foregroundServiceAvailable] 时
- * 启动 [ExecForegroundService] 显示命令摘要与停止按钮。前台服务被系统拒绝时命令照常运行，只是没有通知。
+ * 执行及结束处理期间持有 `PARTIAL_WAKE_LOCK`，在退出 hold 时释放；Play 渠道仅在应用可见时持有。
+ * [foregroundServiceAvailable] 时启动 [ExecForegroundService] 显示命令摘要与停止按钮。
+ * 前台服务被系统拒绝时命令照常运行，只是没有通知。
  */
 class AndroidExecKeepAlive(
     context: Context,
@@ -25,15 +26,29 @@ class AndroidExecKeepAlive(
     override suspend fun <T> hold(run: ExecRunInfo, stop: () -> Unit, block: suspend () -> T): ExecHeld<T> {
         val wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
             setReferenceCounted(false)
-            acquire(run.timeoutSeconds * 1_000L + WAKE_LOCK_MARGIN_MILLIS)
         }
-        registry.register(ExecRunRegistry.Active(run, stop))
+        val lifecycle = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle
+        val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { if (!wakeLock.isHeld) wakeLock.acquire() }
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { if (wakeLock.isHeld) wakeLock.release() }
+        }
         try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                if (foregroundServiceAvailable) wakeLock.acquire()
+                else {
+                    lifecycle.addObserver(observer)
+                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !wakeLock.isHeld) wakeLock.acquire()
+                }
+            }
+            registry.register(ExecRunRegistry.Active(run, stop))
             val foreground = if (foregroundServiceAvailable) startForeground() else ExecForegroundState.UNSUPPORTED
             return ExecHeld(block(), foreground)
         } finally {
             registry.unregister(run.id)
-            if (wakeLock.isHeld) wakeLock.release()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.Main.immediate) {
+                if (!foregroundServiceAvailable) lifecycle.removeObserver(observer)
+                if (wakeLock.isHeld) wakeLock.release()
+            }
         }
     }
 
@@ -50,7 +65,5 @@ class AndroidExecKeepAlive(
 
     private companion object {
         const val WAKE_LOCK_TAG = "Nexara:builtin-exec"
-        /** 覆盖等待写锁、终止宽限与对账；正常路径在 finally 中释放，上限只防泄漏。 */
-        const val WAKE_LOCK_MARGIN_MILLIS = 5 * 60_000L
     }
 }
