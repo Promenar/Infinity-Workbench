@@ -65,7 +65,8 @@ class CanvasComponentsTest {
         rule.onNodeWithText(canvas.title).assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.canvas_version, 1)).assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.canvas_card_newer, 3)).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.CANVAS_PREVIEW).assertIsDisplayed()
+        // 卡片可点击会合并子节点语义，预览节点只在未合并树中可寻址。
+        rule.onNodeWithTag(UiTags.CANVAS_PREVIEW, useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CANVAS_CARD)
             .assertHeightIsAtLeast(48.dp)
             .assertHasClickAction()

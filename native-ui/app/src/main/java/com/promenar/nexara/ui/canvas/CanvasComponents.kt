@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,8 +117,8 @@ fun CanvasCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.surface)
-                        .clearAndSetSemantics {}
-                        .testTag(UiTags.CANVAS_PREVIEW),
+                        // 预览内容不进入无障碍树；标签必须在清除语义的同一节点上设置。
+                        .clearAndSetSemantics { testTag = UiTags.CANVAS_PREVIEW },
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     when {
