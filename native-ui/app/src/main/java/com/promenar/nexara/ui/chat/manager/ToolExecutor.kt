@@ -291,7 +291,7 @@ class ToolExecutor internal constructor(
             }
         val approvedTarget = expectedGrantTargets[call.id] ?: approvedCall?.executionTarget
         val approvalBound = call.id in expectedGrantTargets || expectedIdentity.requiresApproval || approvedCall != null
-        val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound, stepId)
+        val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound, stepId, targetMsgId)
         hooks.afterSkillExecution()
         val failed = result.status != "success"
         val safeResultData = sanitizeResultData(result.data, failed)
@@ -381,6 +381,7 @@ class ToolExecutor internal constructor(
         approvedTarget: String?,
         approvalBound: Boolean,
         stepId: String,
+        sourceMessageId: String,
     ): ToolResult {
         val sink = liveOutput?.open(stepId) ?: com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
         return try {
@@ -394,6 +395,7 @@ class ToolExecutor internal constructor(
                     override val isApprovalBoundExecution = approvalBound
                     override val liveOutput = sink
                     override val toolStepId = stepId
+                    override val messageId = sourceMessageId
                     override val workspaceRootUuid = session.workspaceRootUuid
                         ?: throw SecurityException("Session workspace root is missing")
                 }

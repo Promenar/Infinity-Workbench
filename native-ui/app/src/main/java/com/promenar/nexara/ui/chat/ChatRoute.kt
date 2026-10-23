@@ -583,6 +583,11 @@ fun ChatRoute(
             onOpen = { stepId, index -> onOpenSubagent?.invoke(sessionId, stepId, index) },
         )
     }
+    com.promenar.nexara.ui.canvas.CanvasSessionHost(
+        sessionId = sessionId,
+        store = application.canvasStore,
+        onInsertText = { text -> chatViewModel.appendCanvasText(sessionId, text) },
+    ) {
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalSubagentRuns provides subagentRuns,
@@ -640,7 +645,17 @@ fun ChatRoute(
                 onOpenTurnMemory = { requestOverlay(ChatOverlay.TurnMemory(it)) },
                 onBranchMessage = { messageId ->
                     scope.launch {
-                        when (val result = chatViewModel.branchFromMessage(messageId)) {
+                        val result = try {
+                            chatViewModel.branchFromMessage(messageId)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            snackbarData = NexaraSnackbarData(branchFailedLabel, SnackbarType.ERROR)
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            snackbarHostState.showSnackbar(branchFailedLabel, duration = SnackbarDuration.Long)
+                            return@launch
+                        }
+                        when (result) {
                             is com.promenar.nexara.data.session.BranchSessionResult.Success ->
                                 onNavigateToSession(result.sessionId)
                             is com.promenar.nexara.data.session.BranchSessionResult.Rejected -> {
@@ -715,6 +730,7 @@ fun ChatRoute(
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,
         )
+    }
     }
 
     pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->

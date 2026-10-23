@@ -10,10 +10,15 @@ import com.promenar.nexara.data.model.ToolCall
 import java.util.UUID
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import com.promenar.nexara.data.canvas.CanvasStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 data class BranchSessionPlan(
     val session: SessionEntity,
     val messages: List<MessageEntity>,
+    val messageIdMap: Map<String, String> = emptyMap(),
 )
 
 sealed interface BranchSessionPlanResult {
@@ -82,7 +87,7 @@ object BranchSessionPlanner {
             createdAt = now,
             updatedAt = now,
         )
-        return BranchSessionPlanResult.Ready(BranchSessionPlan(branchedSession, branchedMessages))
+        return BranchSessionPlanResult.Ready(BranchSessionPlan(branchedSession, branchedMessages, idMap))
     }
 
     private fun MessageEntity.isStableBranchMessage(): Boolean {
@@ -139,31 +144,46 @@ class BranchSessionUseCase(
     private val now: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val branchTitle: (String) -> String = { title -> "$title · Branch" },
+    private val canvasStore: CanvasStore? = null,
 ) {
-    suspend fun branch(sourceSessionId: String, targetMessageId: String): BranchSessionResult =
-        database.withTransaction {
-            val source = sessionDao.getById(sourceSessionId)
-                ?: return@withTransaction BranchSessionResult.Rejected(
-                    BranchSessionRejectReason.SourceNotFound,
-                )
-            val newSessionId = newId()
-            when (
-                val planned = BranchSessionPlanner.plan(
-                    source = source,
-                    sourceMessages = messageDao.getBySession(sourceSessionId),
-                    targetMessageId = targetMessageId,
-                    newSessionId = newSessionId,
-                    now = now(),
-                    branchTitle = branchTitle(source.title),
-                    newMessageId = { newId() },
-                )
-            ) {
-                is BranchSessionPlanResult.Rejected -> BranchSessionResult.Rejected(planned.reason)
-                is BranchSessionPlanResult.Ready -> {
-                    sessionDao.insert(planned.plan.session)
-                    messageDao.insertAll(planned.plan.messages)
-                    BranchSessionResult.Success(newSessionId)
+    suspend fun branch(sourceSessionId: String, targetMessageId: String): BranchSessionResult = withContext(Dispatchers.IO) {
+        var copiedSession: String? = null
+        try {
+            database.withTransaction {
+                val source = sessionDao.getById(sourceSessionId)
+                    ?: return@withTransaction BranchSessionResult.Rejected(
+                        BranchSessionRejectReason.SourceNotFound,
+                    )
+                val newSessionId = newId()
+                when (
+                    val planned = BranchSessionPlanner.plan(
+                        source = source,
+                        sourceMessages = messageDao.getBySession(sourceSessionId),
+                        targetMessageId = targetMessageId,
+                        newSessionId = newSessionId,
+                        now = now(),
+                        branchTitle = branchTitle(source.title),
+                        newMessageId = { newId() },
+                    )
+                ) {
+                    is BranchSessionPlanResult.Rejected -> BranchSessionResult.Rejected(planned.reason)
+                    is BranchSessionPlanResult.Ready -> {
+                        canvasStore?.copySession(sourceSessionId, newSessionId, planned.plan.messageIdMap)
+                        if (canvasStore != null) copiedSession = newSessionId
+                        sessionDao.insert(planned.plan.session)
+                        messageDao.insertAll(planned.plan.messages)
+                        BranchSessionResult.Success(newSessionId)
+                    }
                 }
             }
+        } catch (failure: Throwable) {
+            // 文件与 Room 无共享事务，数据库提交失败时补偿已发布的画布副本。
+            copiedSession?.let { sessionId ->
+                withContext(NonCancellable) {
+                    runCatching { canvasStore?.deleteSession(sessionId) }.exceptionOrNull()?.let(failure::addSuppressed)
+                }
+            }
+            throw failure
         }
+    }
 }

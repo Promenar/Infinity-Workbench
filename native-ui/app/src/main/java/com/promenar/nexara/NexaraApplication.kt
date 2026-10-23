@@ -513,6 +513,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         composerDraftRecovery.deleteSession(sessionId)
                         composerQueueStore.deleteSession(sessionId)
                     },
+                    deleteCanvases = { canvasStore.deleteSession(sessionId) },
                 )
             },
         )
@@ -524,6 +525,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val composerDraftRecovery = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
+    val canvasStore: com.promenar.nexara.data.canvas.CanvasStore by lazy {
+        com.promenar.nexara.data.canvas.FileCanvasStore(java.io.File(filesDir, "session_canvases"))
+    }
     val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore by lazy {
         com.promenar.nexara.data.chat.queue.FileComposerQueueStore(
             java.io.File(filesDir, "composer_queue"),
@@ -993,6 +997,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService))
             register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService))
             register(InitializePlanSkill(taskRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.CanvasCreateSkill(canvasStore))
+            register(com.promenar.nexara.ui.chat.manager.skills.CanvasUpdateSkill(canvasStore))
+            register(com.promenar.nexara.ui.chat.manager.skills.CanvasReadSkill(canvasStore))
+            register(com.promenar.nexara.ui.chat.manager.skills.CanvasListSkill(canvasStore))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))

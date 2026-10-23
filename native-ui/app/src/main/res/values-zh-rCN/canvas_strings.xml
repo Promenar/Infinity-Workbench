@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="canvas_title">画布</string>
+    <string name="canvas_version">第 %1$d 版</string>
+    <string name="canvas_current_version">最新：第 %1$d 版</string>
+    <string name="canvas_newer_version">已有新版本 · 预览显示最新内容</string>
+    <string name="canvas_open">打开</string>
+    <string name="canvas_preview">画布预览</string>
+    <string name="canvas_empty_title">还没有画布</string>
+    <string name="canvas_empty_description">请 AI 创建图表、数据看板或交互小工具。</string>
+    <string name="canvas_copy_source">复制 HTML 源码</string>
+    <string name="canvas_close">关闭画布</string>
+    <string name="canvas_follow_latest">跟随最新 · 第 %1$d 版</string>
+    <string name="canvas_history_version">第 %1$d 版 · 只读</string>
+    <string name="canvas_history_notice">历史版本只读，不能向输入框添加内容。</string>
+    <string name="canvas_loading">正在加载画布…</string>
+    <string name="canvas_load_error">无法加载画布</string>
+    <string name="canvas_scripts_unavailable">当前为静态预览，更新 Android System WebView 后可启用安全隔离的脚本。</string>
+    <string name="canvas_tool_create">创建画布</string>
+    <string name="canvas_tool_create_description">创建有版本记录的 HTML 图表、看板或交互工具。</string>
+    <string name="canvas_tool_update">更新画布</string>
+    <string name="canvas_tool_update_description">整体替换或用文本补丁修改会话画布。</string>
+    <string name="canvas_tool_read">读取画布</string>
+    <string name="canvas_tool_read_description">读取画布源码与版本信息。</string>
+    <string name="canvas_tool_list">列出画布</string>
+    <string name="canvas_tool_list_description">列出当前会话中的全部画布。</string>
+</resources>

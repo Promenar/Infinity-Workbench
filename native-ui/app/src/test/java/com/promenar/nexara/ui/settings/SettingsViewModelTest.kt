@@ -137,6 +137,11 @@ class SettingsViewModelTest {
         assertThat(skills.find { it.id == "current_time" }).isNull()
     }
 
+    @Test fun `画布四个工具出现在可开关的内置工具列表`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        assertThat(vm.skills.value.map { it.id }).containsAtLeast("canvas_create", "canvas_update", "canvas_read", "canvas_list")
+    }
+
     @Test
     fun `skills list includes image_generation`() = runTest {
         val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)

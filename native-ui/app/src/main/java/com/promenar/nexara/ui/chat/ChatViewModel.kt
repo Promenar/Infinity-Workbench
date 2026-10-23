@@ -879,6 +879,12 @@ class ChatViewModel(
         _inputText.update { text }
     }
 
+    /** 画布只能追加到它所在会话的草稿，发送仍由用户触发。 */
+    fun appendCanvasText(sessionId: String, text: String) {
+        com.promenar.nexara.ui.canvas.appendCanvasDraft(sessionId, _currentSessionId.value, _inputText.value, text)
+            ?.let(::updateInputText)
+    }
+
     /**
      * 用户确认生成失败：解除失败态，恢复发送按钮。
      * 同一 taskId 的失败 presentation 之后不再把状态拉回 ERROR。
@@ -2962,6 +2968,7 @@ class ChatViewModel(
                         ),
                         branchSessionUseCase = BranchSessionUseCase(
                             app.database,
+                            canvasStore = app.canvasStore,
                             branchTitle = { title ->
                                 application.getString(R.string.chat_branch_title, title)
                             },

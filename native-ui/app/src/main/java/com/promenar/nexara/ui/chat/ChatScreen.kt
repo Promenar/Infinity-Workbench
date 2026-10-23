@@ -551,6 +551,7 @@ fun ChatScreenContent(
                     onClearHistory = actions.onOpenClearDialog,
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
+                    onCanvases = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
                 )
               }
             },
@@ -1472,6 +1473,7 @@ fun ChatTopBar(
     onDeleteSession: () -> Unit,
     showDivider: Boolean = false,
     windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+    onCanvases: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -1525,6 +1527,14 @@ fun ChatTopBar(
                     onDismissRequest = { showMenu = false },
                     minWidth = 190.dp,
                 ) {
+                    onCanvases?.let { open ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.canvas_title), style = NexaraTypography.labelLarge) },
+                            leadingIcon = { Icon(Icons.Rounded.Description, contentDescription = null) },
+                            modifier = Modifier.testTag(UiTags.CANVAS_ENTRY),
+                            onClick = { showMenu = false; open() },
+                        )
+                    }
                     DropdownMenuItem(
                         leadingIcon = {
                             Icon(

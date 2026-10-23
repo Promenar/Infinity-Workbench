@@ -391,4 +391,16 @@ object UiTags {
     const val CHAT_SLASH_PALETTE = "chat_slash_palette"
     const val CHAT_SLASH_ITEM_PREFIX = "chat_slash_item_"
     const val CHAT_SLASH_EMPTY = "chat_slash_empty"
+
+    // 会话画布。
+    const val CANVAS_CARD = "canvas_card"
+    const val CANVAS_OPEN = "canvas_open"
+    const val CANVAS_PREVIEW = "canvas_preview"
+    const val CANVAS_LIST = "canvas_list"
+    const val CANVAS_LIST_ITEM = "canvas_list_item"
+    const val CANVAS_FULLSCREEN = "canvas_fullscreen"
+    const val CANVAS_CLOSE = "canvas_close"
+    const val CANVAS_COPY = "canvas_copy"
+    const val CANVAS_VERSION_SELECTOR = "canvas_version_selector"
+    const val CANVAS_ENTRY = "canvas_entry"
 }

@@ -53,4 +53,6 @@ interface SkillExecutionContext {
         get() = com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
     /** 本次调用的执行步骤 id，供需要按调用归档过程的工具使用。 */
     val toolStepId: String? get() = null
+    /** 发起调用的助手消息，供会话画布记录来源。 */
+    val messageId: String? get() = null
 }

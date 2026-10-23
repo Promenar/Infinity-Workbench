@@ -44,6 +44,13 @@ object SystemPromptSections {
         appendLine("- Every tool result comes back to you. If a call fails, read the error, fix the arguments or choose another tool, and retry; after repeated failures, explain the problem to the user.")
         appendLine("- Some tools need user approval before they run. If a call is rejected, do not repeat it; continue without it or ask the user.")
         if (generic) return@buildString
+        if (toolNames.any { it.startsWith("canvas_") }) {
+            appendLine()
+            appendLine("### 会话画布")
+            appendLine("- 需要图表、看板、交互小工具或反复修改的可视化时用具有固定身份的 HTML 画布；一次性小图可直接写回复代码块。当前可用画布工具：${toolNames.filter { it.startsWith("canvas_") }.sorted().joinToString("、")}。")
+            if ("canvas_update" in toolNames) appendLine("- 小改动优先用 canvas_update 的 patches；find 必须唯一，并传 expected_version 避免覆盖新内容。")
+            appendLine("- 画布仅在支持原生网络隔离的 WebView 上运行脚本，不能联网、读取本地文件或使用外部脚本；请把 HTML、样式、脚本写在源码中。window.nexara.insertText(text) 仅把不超过 8000 字符的文字追加到当前会话草稿，由用户发送；预览及历史版本没有此能力。")
+        }
         if (toolNames.any(WORKSPACE_TOOLS::contains)) {
             appendLine()
             appendLine("### Workspace Files")

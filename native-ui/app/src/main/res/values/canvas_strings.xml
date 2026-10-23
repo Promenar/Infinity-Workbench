@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="canvas_title">Canvases</string>
+    <string name="canvas_version">Version %1$d</string>
+    <string name="canvas_current_version">Latest: version %1$d</string>
+    <string name="canvas_newer_version">Newer version available · preview shows the latest</string>
+    <string name="canvas_open">Open</string>
+    <string name="canvas_preview">Canvas preview</string>
+    <string name="canvas_empty_title">No canvases yet</string>
+    <string name="canvas_empty_description">Ask AI to create a chart, dashboard or interactive tool.</string>
+    <string name="canvas_copy_source">Copy HTML source</string>
+    <string name="canvas_close">Close canvas</string>
+    <string name="canvas_follow_latest">Follow latest · version %1$d</string>
+    <string name="canvas_history_version">Version %1$d · read only</string>
+    <string name="canvas_history_notice">History is read only. It cannot add text to your draft.</string>
+    <string name="canvas_loading">Loading canvas…</string>
+    <string name="canvas_load_error">Could not load canvas</string>
+    <string name="canvas_scripts_unavailable">Static preview. Update Android System WebView to enable safely isolated scripts.</string>
+    <string name="canvas_tool_create">Create canvas</string>
+    <string name="canvas_tool_create_description">Create a versioned HTML chart, dashboard or interactive tool.</string>
+    <string name="canvas_tool_update">Update canvas</string>
+    <string name="canvas_tool_update_description">Replace or patch an existing conversation canvas.</string>
+    <string name="canvas_tool_read">Read canvas</string>
+    <string name="canvas_tool_read_description">Read canvas source and version metadata.</string>
+    <string name="canvas_tool_list">List canvases</string>
+    <string name="canvas_tool_list_description">List all canvases in the current conversation.</string>
+</resources>

@@ -716,6 +716,19 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `真实画布调用记录助手消息而非工具调用ID`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val canvases = com.promenar.nexara.data.canvas.FileCanvasStore(grantFiles.newFolder(), kotlinx.coroutines.test.StandardTestDispatcher(testScheduler))
+        val skill = com.promenar.nexara.ui.chat.manager.skills.CanvasCreateSkill(canvases)
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+        executor.executeTools("s1", "m1", listOf(ToolCall("canvas-call", skill.name, """{"title":"统计","html":"<p>42</p>"}""")), preparedTools = registry.getAllTools())
+        org.junit.Assert.assertEquals("工具结果：${store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL }.map { it.content }}", 1, canvases.list("s1").size)
+        assertThat(canvases.list("s1").single().createdByMessageId).isEqualTo("m1")
+        assertThat(canvases.read("s1", canvases.list("s1").single().id)!!.html).isEqualTo("<p>42</p>")
+    }
+
+    @Test
     fun `显式批准目标只传递给身份完全匹配的调用`() = testScope.runTest {
         val target = """["path","/mnt/termux/a.txt",{"mountIds":{"termux":"mount"}}]"""
         for (matches in listOf(true, false)) {

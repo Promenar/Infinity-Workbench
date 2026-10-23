@@ -6,6 +6,19 @@ import org.junit.Test
 import java.io.IOException
 
 class SessionRuntimeDataCleanupTest {
+    @Test fun `前序清理失败仍清理画布并保留失败链`() = runTest {
+        var canvasDeleted = false
+        val failure = runCatching {
+            cleanupSessionRuntimeData(
+                deleteGrants = { throw IOException("grants") },
+                deleteOutputs = {},
+                deleteCanvases = { canvasDeleted = true; throw IOException("canvas") },
+            )
+        }.exceptionOrNull()!!
+        assertThat(canvasDeleted).isTrue()
+        assertThat(failure.suppressed.map { it.message }).containsExactly("canvas")
+    }
+
     @Test
     fun `会话删除即使其它缓存清理失败仍清理折叠缓存`() = runTest {
         val attempted = mutableListOf<String>()
