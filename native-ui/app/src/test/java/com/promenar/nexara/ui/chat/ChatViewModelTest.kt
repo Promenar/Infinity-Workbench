@@ -37,6 +37,7 @@ import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -2322,7 +2323,10 @@ class ChatViewModelTest {
         seedSession(messages = multiMessageTurn().map { if (it.id == "a2") it.copy(vectorizationStatus = stored.encode()) else it })
         advanceUntilIdle()
 
-        viewModel.deleteMessage("u1"); advanceUntilIdle()
+        viewModel.deleteMessage("u1")
+        viewModel.deletionUndo.first { it != null }
+        viewModel.uiState.first { it.messages.isEmpty() }
+        advanceUntilIdle()
 
         assertThat(viewModel.uiState.value.messages).isEmpty()
         assertThat(viewModel.deletionUndo.value?.let { it.count to it.withMemory }).isEqualTo(2 to true)
@@ -2333,7 +2337,10 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(messages = multiMessageTurn()); advanceUntilIdle()
 
-        viewModel.deleteMessage("a2"); advanceUntilIdle()
+        viewModel.deleteMessage("a2")
+        viewModel.deletionUndo.first { it != null }
+        viewModel.uiState.first { it.messages.map { message -> message.id } == listOf("u1") }
+        advanceUntilIdle()
 
         assertThat(viewModel.uiState.value.messages.map { it.id }).containsExactly("u1")
         // 撤销提示按气泡计数：整轮回复（两条助手消息与一条工具消息）算一条。

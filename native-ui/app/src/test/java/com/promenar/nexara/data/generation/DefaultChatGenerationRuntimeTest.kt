@@ -93,6 +93,8 @@ class DefaultChatGenerationRuntimeTest {
         toolNames: List<String> = listOf("read_file"),
         contextTokens: Int = 100_000,
         content: String = "使用 \$demo",
+        contextBuilder: ContextBuilder = ContextBuilder(),
+        stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
     ): SkillsFixture {
         val settings = mockk<SharedPreferences> {
             every { getInt(any(), any()) } answers { secondArg() }
@@ -126,10 +128,27 @@ class DefaultChatGenerationRuntimeTest {
         val runtime = DefaultChatGenerationRuntime(
             settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
             AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            ContextBuilder(), mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), mockk(relaxed = true),
+            contextBuilder, mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), mockk(relaxed = true),
             mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
+            stateBoardRepository = stateBoardRepository,
         )
         return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads)
+    }
+
+    @Test fun `工具续轮新助手继承请求所见状态版本而不是重新读取最新值`() = runTest {
+        val boardRepository = mockk<com.promenar.nexara.data.repository.StateBoardRepository>(relaxed = true)
+        val builder = mockk<ContextBuilder> {
+            coEvery { buildContext(any()) } returns ContextBuilderResult("", "", emptyList(), emptyList(), null, "system", stateBoardRevision = 7)
+        }
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog, contextBuilder = builder, stateBoardRepository = boardRepository)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        val nextOwner = fixture.runtime.prepareContinuation(fixture.request)
+        assertThat(nextOwner).isNotEqualTo(fixture.request.assistantMessageId)
+        verify(exactly = 1) { boardRepository.recordContextRead("skills-session", nextOwner, 7) }
+        coVerify(exactly = 0) { boardRepository.get(any(), any()) }
     }
 
     @Test fun `工具表在调用协程线程之外构建`() = runTest {

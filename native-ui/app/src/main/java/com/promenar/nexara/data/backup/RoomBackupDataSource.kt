@@ -39,6 +39,7 @@ internal const val ROOM_SCHEMA_V4_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75
 internal const val ROOM_SCHEMA_V19_IDENTITY_HASH = "694f9ee43b8b6fbca993a11d4a789f64"
 internal const val ROOM_SCHEMA_V20_IDENTITY_HASH = "4cbc9d57e418ec09a3469f1fcdc6bac6"
 internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
 
@@ -502,15 +503,18 @@ class RoomBackupDataSource(
         } catch (error: IllegalArgumentException) {
             throw BackupValidationException("数据库 payload 无效", error)
         }
-        return when (decoded.schemaVersion) {
-            DATABASE_SCHEMA_VERSION -> decoded
+        val upgraded = when (decoded.schemaVersion) {
+            DATABASE_SCHEMA_VERSION -> return decoded
             1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
             2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
             3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
             4 -> upgradeV5Payload(upgradeV4Payload(decoded))
             5 -> upgradeV5Payload(decoded)
-            else -> decoded
+            6 -> decoded
+            else -> return decoded
         }
+        if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
+        return upgraded.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = upgraded.tables + ("state_board_versions" to emptyList()))
     }
 
     /**
@@ -678,6 +682,7 @@ class RoomBackupDataSource(
         validateUnique(payload, "tags", "id")
         validateCompositeUnique(payload, "document_tags", listOf("doc_id", "tag_id"))
         validateUnique(payload, "task_nodes", "id")
+        validateUnique(payload, "state_board_versions", "id")
         validateUnique(payload, "custom_skills", "id")
         validateUnique(payload, "mcp_servers", "id")
         validateUnique(payload, FILE_TABLE, "uuid")
@@ -710,6 +715,25 @@ class RoomBackupDataSource(
                 if (parent.requiredString("session_id") != row.requiredString("session_id")) {
                     throw BackupValidationException("Message parent 跨 session")
                 }
+            }
+        }
+        payload.rows("state_board_versions").forEach { row ->
+            requireReference(row, "session_id", sessions, "状态面板会话")
+            val anchor = messageById[row.requiredString("anchor_message_id")]
+                ?: throw BackupValidationException("状态面板所属消息不存在")
+            if (anchor.requiredString("session_id") != row.requiredString("session_id")) throw BackupValidationException("状态面板所属消息跨会话")
+            if (row.requiredString("source") !in setOf("assistant", "user")) throw BackupValidationException("状态面板来源无效")
+            row.optionalString("snapshot")?.let { raw ->
+                val board = try { json.decodeFromString<com.promenar.nexara.data.state.StateBoard>(raw) }
+                    catch (_: IllegalArgumentException) { throw BackupValidationException("状态面板快照无效") }
+                try {
+                    com.promenar.nexara.data.state.StateBoardEngine.define(null, board.title, board.fields, 0)
+                    board.fields.forEach { com.promenar.nexara.data.state.StateBoardEngine.validateValue(it.type, it.value) }
+                } catch (_: IllegalArgumentException) { throw BackupValidationException("状态面板字段值无效") }
+                if (board.manualKeys.distinct().size != board.manualKeys.size ||
+                    board.manualKeys.any { key -> board.fields.none { it.key == key } } ||
+                    board.manualRevisions.any { (key, revision) -> key !in board.manualKeys || revision <= 0 || revision > (row.requiredString("id").toLongOrNull() ?: 0) }
+                ) throw BackupValidationException("状态面板用户修改标记无效")
             }
         }
         sortMessagesParentFirst(messageRows)
@@ -794,8 +818,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 24 || identityHash != ROOM_SCHEMA_V24_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v24")
+        if (sqlite.version != 25 || identityHash != ROOM_SCHEMA_V25_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v25")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1582,7 +1606,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 6
+        const val DATABASE_SCHEMA_VERSION = 7
         const val PARAMETER_SCHEME_TABLE = "parameter_schemes"
         const val FILE_TABLE = "workspace_files"
         const val WORKSPACE_TABLE = "workspaces"
@@ -1611,6 +1635,7 @@ class RoomBackupDataSource(
             "tags",
             "document_tags",
             "task_nodes",
+            "state_board_versions",
             "custom_skills",
             "mcp_servers",
             PARAMETER_SCHEME_TABLE,

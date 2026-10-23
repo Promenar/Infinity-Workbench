@@ -1038,9 +1038,12 @@ internal fun InlineToolRow(
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
     var openedChange by remember { mutableStateOf<com.promenar.nexara.data.model.FileChangeSummary?>(null) }
     val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
+    val stateSummaries = invocations.mapNotNull(::stateToolSummary).map { stateToolSummaryText(it) }
+    val stateOnly = stateSummaries.size == invocations.size && stateSummaries.isNotEmpty()
     val segments = buildList<CharSequence> {
+        if (stateSummaries.isNotEmpty()) add(stateSummaries.joinToString("，"))
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
-        if (!showFileTitle || !summary.isFileEditOnly) add(toolGroupSummaryText(summary))
+        if (!stateOnly && (!showFileTitle || !summary.isFileEditOnly)) add(toolGroupSummaryText(summary))
         if (showFileTitle) add(com.promenar.nexara.ui.chat.diff.fileChangesStyledTitle(fileChanges))
         if (summary.failedCount == 0 && summary.runningAction == null) summary.durationMs?.let { add(stepDurationText(it)) }
     }
@@ -1056,7 +1059,7 @@ internal fun InlineToolRow(
             expanded = isExpanded,
             state = stringResource(if (isExpanded) R.string.common_state_expanded else R.string.common_state_collapsed),
             clickLabel = stringResource(if (isExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
-            tag = "CHAT_TOOL_TOGGLE",
+            tag = if (stateOnly) com.promenar.nexara.ui.testing.UiTags.CHAT_STATE_SUMMARY else "CHAT_TOOL_TOGGLE",
             failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )

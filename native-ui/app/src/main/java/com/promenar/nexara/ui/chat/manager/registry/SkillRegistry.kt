@@ -43,6 +43,8 @@ fun SkillDefinition.toProtocolTool(): ProtocolTool = ProtocolTool(
 interface SkillExecutionContext {
     val sessionId: String
     val agentId: String
+    /** 发起本次工具调用的助手消息，供会话状态版本绑定与会话画布记录来源。 */
+    val assistantMessageId: String? get() = null
     val workspacePath: String?
     val workspaceRootUuid: String
     /** 执行底座已核验的审批目标，供技能固定来源身份。 */
@@ -53,6 +55,4 @@ interface SkillExecutionContext {
         get() = com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
     /** 本次调用的执行步骤 id，供需要按调用归档过程的工具使用。 */
     val toolStepId: String? get() = null
-    /** 发起调用的助手消息，供会话画布记录来源。 */
-    val messageId: String? get() = null
 }

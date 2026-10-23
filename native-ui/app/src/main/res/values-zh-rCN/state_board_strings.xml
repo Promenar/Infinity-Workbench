@@ -1,0 +1,33 @@
+<resources>
+    <string name="state_open">展开状态面板</string>
+    <string name="state_close">关闭状态面板</string>
+    <string name="state_edit">编辑%1$s</string>
+    <string name="state_remove">移除面板</string>
+    <string name="state_remove_title">移除状态面板？</string>
+    <string name="state_remove_body">面板将从此会话中隐藏，撤销所属消息时会一并回滚此改动。</string>
+    <string name="state_save">保存</string>
+    <string name="state_cancel">取消</string>
+    <string name="state_value">当前值</string>
+    <string name="state_current">当前值</string>
+    <string name="state_max">上限</string>
+    <string name="state_item">条目 %1$d</string>
+    <string name="state_add_item">添加条目</string>
+    <string name="state_remove_item">移除条目 %1$d</string>
+    <string name="state_board_empty_value">空</string>
+    <string name="state_invalid_value">请检查数值：有限且绝对值不超过10¹²；进度值在0到正数上限之间；文字最多2000字；列表最多50项，每项1～200字。</string>
+    <string name="state_save_failed">保存失败，面板可能已更新，请关闭编辑后重新打开。</string>
+    <string name="state_created">已创建状态面板：%1$s</string>
+    <string name="state_defined">已定义状态面板：%1$s</string>
+    <string name="state_updated">状态更新：%1$s</string>
+    <string name="state_read">已读取状态面板</string>
+    <string name="state_removed">已移除状态面板</string>
+    <string name="state_no_changes">无变化</string>
+    <string name="state_tool_define">定义状态面板</string>
+    <string name="state_tool_define_desc">跟踪游戏状态或写作进度等字段</string>
+    <string name="state_tool_update">更新状态面板</string>
+    <string name="state_tool_update_desc">批量更新字段现值</string>
+    <string name="state_tool_get">读取状态面板</string>
+    <string name="state_tool_get_desc">读取完整字段及现值</string>
+    <string name="state_tool_remove">移除状态面板</string>
+    <string name="state_tool_remove_desc">移除当前会话的状态面板</string>
+</resources>

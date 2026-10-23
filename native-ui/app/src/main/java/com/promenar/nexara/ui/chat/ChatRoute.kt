@@ -248,6 +248,7 @@ fun ChatRoute(
     val taskPanel = remember(activeTaskTree, activeTaskGoal, uiState.isGenerating) {
         taskPanelUiState(activeTaskTree, uiState.isGenerating, activeTaskGoal)
     }
+    val stateBoard by chatViewModel.stateBoard.collectAsStateWithLifecycle()
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
@@ -615,6 +616,7 @@ fun ChatRoute(
                 composerQueue = composerQueue,
                 keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
                 slashCommands = slashCommands.commands,
+                stateBoard = stateBoard,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
@@ -709,6 +711,8 @@ fun ChatRoute(
                 },
                 onCompleteTask = chatViewModel::completeActivePlan,
                 onClearCompletedTask = chatViewModel::clearCompletedPlan,
+                onEditState = chatViewModel::editStateField,
+                onRemoveState = chatViewModel::removeStateBoard,
                 onSteerQueued = chatViewModel::steerQueuedMessage,
                 onEditQueued = { id ->
                     if (!chatViewModel.editQueuedMessage(id)) {

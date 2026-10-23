@@ -376,6 +376,7 @@ class ChatViewModel(
         messageRepository,
         sessionRepository,
         memoryLifecycle = (application as NexaraApplication).conversationMemoryLifecycle,
+        stateBoardRepository = (application as NexaraApplication).stateBoardRepository,
     )
     private val toolLedger = (application as NexaraApplication).toolExecutionLedger
     private val toolExecutor = ToolExecutor(
@@ -524,6 +525,31 @@ class ChatViewModel(
     private val approvalSubmissionMutex = Mutex()
     /** 重新生成期间被替换、暂不展示的旧回复；成功后由运行时删除，失败或取消后恢复展示。 */
     private val _replacingMessageIds = MutableStateFlow<Set<String>>(emptySet())
+    private val stateBoardRepository = (application as NexaraApplication).stateBoardRepository
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val stateBoard = combine(_currentSessionId, _replacingMessageIds) { session, excluded -> session to excluded }
+        .flatMapLatest { (session, excluded) ->
+            if (session == null) kotlinx.coroutines.flow.flowOf(null) else stateBoardRepository.observe(session, excluded)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    suspend fun editStateField(revision: Long, operation: com.promenar.nexara.data.state.StateOperation): String? {
+        val session = _currentSessionId.value ?: return stringResourceResolver(R.string.state_save_failed)
+        return try {
+            stateBoardRepository.edit(session, revision, listOf(operation), _replacingMessageIds.value)
+            null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { stringResourceResolver(R.string.state_save_failed) }
+    }
+
+    suspend fun removeStateBoard(revision: Long): String? {
+        val session = _currentSessionId.value ?: return stringResourceResolver(R.string.state_save_failed)
+        return try {
+            stateBoardRepository.removeByUser(session, revision, _replacingMessageIds.value)
+            null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { stringResourceResolver(R.string.state_save_failed) }
+    }
+
     /** 隐藏旧回复所对应的生成任务；该任务结束或进入等待审批后恢复展示（成功时旧回复已被删除）。 */
     private var replacingTaskId: String? = null
     private val _deletionUndo = MutableStateFlow<DeletionUndo?>(null)
@@ -2578,15 +2604,19 @@ class ChatViewModel(
 
 
     private val lastDeletedMessages = mutableListOf<Pair<String, Message>>()
+    private var lastDeletedStateVersions = emptyList<com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity>()
 
     fun undoLastDeletion() {
         _deletionUndo.value = null
         if (lastDeletedMessages.isEmpty()) return
+        val stateVersions = lastDeletedStateVersions
+        lastDeletedStateVersions = emptyList()
         val restored = lastDeletedMessages.toList()
         lastDeletedMessages.clear()
         viewModelScope.launch {
             restored.groupBy({ it.first }, { it.second }).forEach { (sid, messages) ->
                 messageManager.restoreMessages(sid, messages.sortedBy { it.createdAt })
+                stateBoardRepository.restoreVersions(stateVersions.filter { it.sessionId == sid })
             }
         }
     }
@@ -2689,7 +2719,8 @@ class ChatViewModel(
             val current = store.getSession(sessionId)?.messages.orEmpty()
             val removalIds = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(current, it) }
             val messagesToRestore = current.filter { it.id in removalIds }
-            messageManager.deleteMessages(sessionId, targetIds) { stopGeneration() }
+            val stateVersions = messageManager.deleteMessagesWithStateUndo(sessionId, targetIds) { stopGeneration() }
+            lastDeletedStateVersions = stateVersions
             lastDeletedMessages.clear()
             messagesToRestore.forEach { lastDeletedMessages.add(sessionId to it) }
             _deletionUndo.value = DeletionUndo(

@@ -23,6 +23,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
 import com.promenar.nexara.data.local.db.MIGRATION_22_23
+import com.promenar.nexara.data.local.db.MIGRATION_24_25
 import com.promenar.nexara.data.local.db.MIGRATION_23_24
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
@@ -263,7 +264,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -650,6 +651,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             ragProvider = com.promenar.nexara.data.rag.MemoryManagerRagAdapter(memoryManager),
             kgProvider = kgProvider,
             taskRepository = taskRepository,
+            stateBoardRepository = stateBoardRepository,
             onEmbeddingNotConfigured = embeddingSetupHint::onEmbeddingNotConfigured,
         )
     }
@@ -734,6 +736,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             subagentUsage = subagentRunStore,
             tailnetGate = tailnetConnectGate,
             composerQueueStore = composerQueueStore,
+            stateBoardRepository = stateBoardRepository,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -929,6 +932,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    val stateBoardRepository by lazy { com.promenar.nexara.data.repository.StateBoardRepository(database) }
+
     val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {
         TaskRepository(database.taskNodeDao(), database)
     }
@@ -996,6 +1001,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.nexara.ui.chat.manager.skills.PythonSandboxSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService))
             register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService))
+            register(com.promenar.nexara.ui.chat.manager.skills.StateDefineSkill(stateBoardRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.StateUpdateSkill(stateBoardRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.StateGetSkill(stateBoardRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.StateRemoveSkill(stateBoardRepository))
             register(InitializePlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.CanvasCreateSkill(canvasStore))
             register(com.promenar.nexara.ui.chat.manager.skills.CanvasUpdateSkill(canvasStore))

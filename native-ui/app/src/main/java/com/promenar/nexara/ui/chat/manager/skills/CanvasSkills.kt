@@ -30,7 +30,7 @@ class CanvasCreateSkill(private val store: CanvasStore) : SkillDefinition {
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = canvasExecution(id) {
         val title = args.requiredString("title")
         val html = args.requiredString("html")
-        val messageId = context.messageId?.takeIf(String::isNotBlank)
+        val messageId = context.assistantMessageId?.takeIf(String::isNotBlank)
             ?: throw CanvasException("MISSING_MESSAGE_CONTEXT", "创建画布需要当前回复的消息上下文。")
         val document = store.create(context.sessionId, title, html, messageId)
         canvasResult(id) { putDocument(document) }

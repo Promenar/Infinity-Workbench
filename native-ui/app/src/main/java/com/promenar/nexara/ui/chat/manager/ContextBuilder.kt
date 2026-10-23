@@ -37,6 +37,8 @@ data class ContextBuilderResult(
         kgPaths = kgPaths,
         ragTrace = ragTrace,
     ),
+    /** 模型请求所见的状态版本，工具续轮创建新助手消息时继承此值。 */
+    val stateBoardRevision: Long = 0,
 )
 
 /** 依赖用户问题的检索结果（联网搜索、文档与记忆、知识图谱），与工具轮次无关。 */
@@ -78,6 +80,7 @@ data class ContextBuilderParams(
     val modelContextTokens: Int? = null,
     /** 本轮用户以 `/技能名` 点名并已由客户端加载的技能；null 表示本轮没有斜杠技能命令。 */
     val requestedSkill: com.promenar.nexara.ui.chat.manager.skills.RequestedSkill? = null,
+    val stateExcludedMessageIds: Set<String> = emptySet(),
 )
 
 interface WebSearchProvider {
@@ -135,6 +138,7 @@ class ContextBuilder(
     private val taskRepository: ITaskRepository? = null,
     /** 记忆或文档检索已开启但未配置嵌入模型时调用，用于给出一次性配置引导。 */
     private val onEmbeddingNotConfigured: () -> Unit = {},
+    private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val retrieval = params.cachedRetrieval ?: retrieve(params)
@@ -154,6 +158,8 @@ class ContextBuilder(
                 java.nio.file.Files.exists(it.root.resolve("skills").toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
             }
         } ?: false
+        val stateSnapshot = stateBoardRepository?.get(params.sessionId, params.stateExcludedMessageIds)
+        stateBoardRepository?.recordContextRead(params.sessionId, params.assistantMsgId, stateSnapshot?.revision ?: 0)
         val systemPrompt = buildSystemPrompt(
             params = params,
             ragContext = retrieval.ragContext,
@@ -162,6 +168,9 @@ class ContextBuilder(
             kgContext = retrieval.kgContext,
             activePlan = activePlan,
             workspaceSkillsShadowed = workspaceSkillsShadowed,
+        ) + stateBoardContext(
+            stateSnapshot?.board,
+            params.session.options.toolsEnabled && (params.availableToolNames == null || "state_update" in params.availableToolNames),
         )
 
         return ContextBuilderResult(
@@ -174,6 +183,7 @@ class ContextBuilder(
             kgPaths = retrieval.kgPaths,
             ragTrace = retrieval.ragTrace,
             retrieval = retrieval,
+            stateBoardRevision = stateSnapshot?.revision ?: 0,
         )
     }
 

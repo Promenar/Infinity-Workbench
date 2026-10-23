@@ -531,8 +531,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(6)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("6")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(7)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("7")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
@@ -1661,6 +1661,50 @@ class RoomBackupDataSourceTest {
         }
     }
 
+    @Test
+    fun `状态快照备份恢复保留版本用户标记与级联关系`() = runBlocking {
+        seedCompleteGraph()
+        val board = com.promenar.nexara.data.state.StateBoard("冒险", listOf(
+            com.promenar.nexara.data.state.StateField("hp", "生命值", "number", JsonPrimitive(65), updatedAt = 1),
+        ), manualKeys = listOf("hp"))
+        db.stateBoardDao().insert(com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity(
+            sessionId = "session-1", anchorMessageId = "message-1", source = "user",
+            snapshot = kotlinx.serialization.json.Json.encodeToString(com.promenar.nexara.data.state.StateBoard.serializer(), board), createdAt = 1,
+        ))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot))
+        assertThat(com.promenar.nexara.data.repository.StateBoardRepository(db).get("session-1")!!.board).isEqualTo(board)
+        db.messageDao().deleteByIdWithContextSummary("message-1")
+        assertThat(db.stateBoardDao().versions("session-1")).isEmpty()
+    }
+
+    @Test
+    fun `v6历史备份恢复补空状态快照表`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val historical = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(6),
+            "tables" to JsonObject(root.getValue("tables").jsonObject - "state_board_versions"))).toString().toByteArray()
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot, database = historical))
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+        assertThat(db.stateBoardDao().versions("session-1")).isEmpty()
+    }
+
+    @Test
+    fun `v7备份状态字段缺省或null时拒绝恢复且保留当前数据`() = runBlocking {
+        seedCompleteGraph()
+        val board = """{"title":"坏面板","fields":[{"key":"bag","label":"背包","type":"list"}]}"""
+        db.stateBoardDao().insert(com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity(
+            sessionId = "session-1", anchorMessageId = "message-1", source = "user", snapshot = board, createdAt = 1,
+        ))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val failure = runCatching { newDataSource().restore(validated(snapshot)) }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(BackupValidationException::class.java)
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+    }
+
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -1767,7 +1811,7 @@ class RoomBackupDataSourceTest {
 
     /** 真实 v5 备份没有参数方案表和助手的扩展采样、推理强度列。 */
     private fun historicalV5Tables(tables: JsonObject): JsonObject = JsonObject(
-        (tables - "parameter_schemes") + (
+        (tables - "parameter_schemes" - "state_board_versions") + (
             "agents" to JsonArray(tables.getValue("agents").jsonArray.map {
                 JsonObject(it.jsonObject - "top_k" - "frequency_penalty" - "presence_penalty" - "repetition_penalty" - "reasoning_effort")
             })

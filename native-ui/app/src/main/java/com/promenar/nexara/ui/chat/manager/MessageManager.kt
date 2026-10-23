@@ -83,6 +83,7 @@ class MessageManager(
     private val hooks: MessageManagerHooks = MessageManagerHooks(),
     /** 聊天记录删除、恢复、编辑后同步对话记忆；为空时不维护记忆。 */
     private val memoryLifecycle: ConversationMemoryLifecycle? = null,
+    private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
 ) {
     private data class PendingUpdate(
         val epoch: Long,
@@ -787,6 +788,23 @@ class MessageManager(
         sessionId: String,
         messageIds: List<String>,
         onAbortGeneration: ((String) -> Unit)? = null
+    ) = deleteMessagesInternal(sessionId, messageIds, onAbortGeneration)
+
+    suspend fun deleteMessagesWithStateUndo(
+        sessionId: String,
+        messageIds: List<String>,
+        onAbortGeneration: ((String) -> Unit)? = null,
+    ): List<com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity> {
+        var captured = emptyList<com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity>()
+        deleteMessagesInternal(sessionId, messageIds, onAbortGeneration) { captured = it }
+        return captured
+    }
+
+    private suspend fun deleteMessagesInternal(
+        sessionId: String,
+        messageIds: List<String>,
+        onAbortGeneration: ((String) -> Unit)?,
+        onStateCaptured: ((List<com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity>) -> Unit)? = null,
     ) {
         if (messageIds.isEmpty()) return
         withContextMutation(sessionId) {
@@ -804,9 +822,14 @@ class MessageManager(
 
             val purgeKeys = purgeMessageState(sessionId, removalIds)
             try {
-                check(messageRepository.deleteManyInSession(sessionId, removalIds) > 0) {
-                    "消息不存在或不属于当前会话"
+                suspend fun deleteRows() {
+                    check(messageRepository.deleteManyInSession(sessionId, removalIds) > 0) {
+                        "消息不存在或不属于当前会话"
+                    }
                 }
+                if (onStateCaptured != null && stateBoardRepository != null) {
+                    onStateCaptured(stateBoardRepository.captureDeletion(sessionId, removalIds.toSet()) { deleteRows() })
+                } else deleteRows()
                 val persistedSnapshot = sessionRepository.getById(sessionId)
                 mirrorDeletedMessages(sessionId, removalIds.toSet(), persistedSnapshot)
             } finally {

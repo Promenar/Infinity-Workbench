@@ -56,6 +56,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val sessionState: com.promenar.nexara.data.rag.SessionStateScheduler? = null,
     private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
     private val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore? = null,
+    private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -98,6 +99,7 @@ internal class DefaultChatGenerationRunnerFactory(
             subagentUsage = subagentUsage,
             tailnetGate = tailnetGate,
             composerQueueStore = composerQueueStore,
+            stateBoardRepository = stateBoardRepository,
         )
     }
 }

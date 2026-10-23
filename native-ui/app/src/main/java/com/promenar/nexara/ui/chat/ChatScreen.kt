@@ -230,6 +230,7 @@ data class ChatScreenState(
     val keepScreenOn: Boolean? = null,
     /** 输入框斜杠命令目录（内置命令与当前会话可用技能）。 */
     val slashCommands: List<com.promenar.nexara.ui.chat.command.SlashCommand> = emptyList(),
+    val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
 )
 
 data class ChatScreenActions(
@@ -273,6 +274,8 @@ data class ChatScreenActions(
     val onContinueTask: () -> Unit = {},
     val onCompleteTask: () -> Unit = {},
     val onClearCompletedTask: () -> Unit = {},
+    val onEditState: suspend (Long, com.promenar.nexara.data.state.StateOperation) -> String? = { _, _ -> null },
+    val onRemoveState: suspend (Long) -> String? = { null },
     val onSteerQueued: (String) -> Unit = {},
     val onEditQueued: (String) -> Unit = {},
     val onMoveQueuedToFront: (String) -> Unit = {},
@@ -897,6 +900,14 @@ fun ChatScreenContent(
                                             },
                                         )
                                     }
+                                }
+                                state.stateBoard?.takeIf { it.board != null }?.let { snapshot ->
+                                    com.promenar.nexara.ui.chat.components.StateBoardPanel(
+                                        snapshot = snapshot,
+                                        isGenerating = uiState.isGenerating,
+                                        onEdit = actions.onEditState,
+                                        onRemove = actions.onRemoveState,
+                                    )
                                 }
                                 // 排队托盘紧贴输入区：自下而上是正在写的、排着的、正在运行的。
                                 val queue = state.composerQueue

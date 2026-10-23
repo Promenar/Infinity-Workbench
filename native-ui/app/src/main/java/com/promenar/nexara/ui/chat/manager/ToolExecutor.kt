@@ -381,7 +381,7 @@ class ToolExecutor internal constructor(
         approvedTarget: String?,
         approvalBound: Boolean,
         stepId: String,
-        sourceMessageId: String,
+        ownerMessageId: String,
     ): ToolResult {
         val sink = liveOutput?.open(stepId) ?: com.promenar.nexara.domain.tool.ToolLiveOutputSink.None
         return try {
@@ -390,12 +390,12 @@ class ToolExecutor internal constructor(
                 object : SkillExecutionContext {
                     override val sessionId = session.id
                     override val agentId = session.agentId
+                    override val assistantMessageId = ownerMessageId
                     override val workspacePath = session.workspacePath
                     override val approvedExecutionTarget = approvedTarget
                     override val isApprovalBoundExecution = approvalBound
                     override val liveOutput = sink
                     override val toolStepId = stepId
-                    override val messageId = sourceMessageId
                     override val workspaceRootUuid = session.workspaceRootUuid
                         ?: throw SecurityException("Session workspace root is missing")
                 }

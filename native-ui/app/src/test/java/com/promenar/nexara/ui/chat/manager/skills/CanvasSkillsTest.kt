@@ -26,7 +26,7 @@ class CanvasSkillsTest {
         override val agentId = "agent"
         override val workspacePath = null
         override val workspaceRootUuid = "workspace"
-        override val messageId = "assistant-message"
+        override val assistantMessageId = "assistant-message"
     }
 
     @Test fun `创建返回固定顶层字段并绑定真实消息且不泄露源码`() = runTest {

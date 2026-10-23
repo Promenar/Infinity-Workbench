@@ -47,6 +47,7 @@ internal fun builtinToolCategory(id: String): BuiltinToolCategory = when (id) {
     "create_file", "create_directory", "move_file", "delete_file" -> BuiltinToolCategory.FILES
     "exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox" -> BuiltinToolCategory.EXECUTION
     "image_generation", "view_media", "media_fetch" -> BuiltinToolCategory.MEDIA
+    "state_define", "state_update", "state_get", "state_remove",
     "initialize_plan", "update_plan", "get_plan", "drop_plan" -> BuiltinToolCategory.PLANNING
     else -> BuiltinToolCategory.OTHER
 }

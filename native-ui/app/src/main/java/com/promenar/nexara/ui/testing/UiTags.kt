@@ -403,4 +403,16 @@ object UiTags {
     const val CANVAS_COPY = "canvas_copy"
     const val CANVAS_VERSION_SELECTOR = "canvas_version_selector"
     const val CANVAS_ENTRY = "canvas_entry"
+
+    // 会话状态面板
+    const val CHAT_STATE_BAR = "chat_state_bar"
+    const val CHAT_STATE_SHEET = "chat_state_sheet"
+    const val CHAT_STATE_EDITOR = "chat_state_editor"
+    const val CHAT_STATE_VALUE = "chat_state_value"
+    const val CHAT_STATE_MAX = "chat_state_max"
+    const val CHAT_STATE_SAVE = "chat_state_save"
+    const val CHAT_STATE_REMOVE = "chat_state_remove"
+    const val CHAT_STATE_REMOVE_CONFIRM = "chat_state_remove_confirm"
+    const val CHAT_STATE_SUMMARY = "chat_state_summary"
+    fun stateField(key: String) = "chat_state_field:$key"
 }

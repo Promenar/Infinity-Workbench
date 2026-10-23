@@ -81,6 +81,9 @@ object SystemPromptSections {
                 appendLine("- The user switched this conversation's workspace earlier. Paths, uuids and hashes in earlier messages may belong to a previous workspace; list or read files again before reusing them.")
             }
         }
+        if (toolNames.any { it in setOf("state_define", "state_update", "state_get", "state_remove") }) {
+            appendLine("- 用户要求跟踪游戏状态或写作进度时，用 state_define 定义状态面板，以 state_update 更新，state_get 读取，state_remove 移除；无需额外模型抽取。")
+        }
         if (toolNames.any(PLAN_TOOLS::contains)) {
             appendLine()
             appendLine("### Multi-step Tasks")

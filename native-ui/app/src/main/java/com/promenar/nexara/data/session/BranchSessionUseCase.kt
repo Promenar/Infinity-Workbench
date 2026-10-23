@@ -172,6 +172,12 @@ class BranchSessionUseCase(
                         if (canvasStore != null) copiedSession = newSessionId
                         sessionDao.insert(planned.plan.session)
                         messageDao.insertAll(planned.plan.messages)
+                        val versions = database.stateBoardDao().versions(sourceSessionId).mapNotNull { version ->
+                            planned.plan.messageIdMap[version.anchorMessageId]?.let { anchor ->
+                                version.copy(id = 0, sessionId = newSessionId, anchorMessageId = anchor)
+                            }
+                        }
+                        database.stateBoardDao().insertAll(versions)
                         BranchSessionResult.Success(newSessionId)
                     }
                 }

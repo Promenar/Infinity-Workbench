@@ -172,6 +172,7 @@ internal class DefaultChatGenerationRuntime(
     /** 接口在 tailnet 内时，请求前等待内置 Tailscale 接入；为空时不等待。 */
     private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
     private val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore? = null,
+    private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -424,6 +425,7 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun prepare(request: GenerationRequest) {
+        stateBoardRepository?.beginGeneration(request.sessionId, request.assistantMessageId, request.messageIdsToReplace)
         sshRuntime?.resumeOwner("agent:${request.sessionId}")
         val session = requireNotNull(store.getSession(request.sessionId)) { "生成会话不存在" }
         currentAssistantMessageId = request.assistantMessageId
@@ -460,6 +462,7 @@ internal class DefaultChatGenerationRuntime(
         val effectiveRagOptions = session.ragOptions ?: RagOptions()
         val params = ContextBuilderParams(
             sessionId = request.sessionId,
+            stateExcludedMessageIds = request.messageIdsToReplace,
             content = request.userContent,
             assistantMsgId = assistantMessageId(request),
             session = session,
@@ -976,6 +979,7 @@ internal class DefaultChatGenerationRuntime(
             ),
         )
         currentAssistantMessageId = nextAssistantMessageId
+        stateBoardRepository?.recordContextRead(request.sessionId, nextAssistantMessageId, preparedContext?.stateBoardRevision ?: 0)
         return nextAssistantMessageId
     }
 
@@ -1112,7 +1116,9 @@ internal class DefaultChatGenerationRuntime(
             }
         } finally {
             val owner = "agent:${request.sessionId}"
-            if (awaitingApproval) sshRuntime?.pauseOwner(owner) else sshRuntime?.closeOwner(owner)
+            try {
+                if (awaitingApproval) sshRuntime?.pauseOwner(owner) else sshRuntime?.closeOwner(owner)
+            } finally { stateBoardRepository?.endGeneration(request.sessionId, request.assistantMessageId) }
         }
     }
 
