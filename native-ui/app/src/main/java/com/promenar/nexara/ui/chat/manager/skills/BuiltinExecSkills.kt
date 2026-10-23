@@ -15,7 +15,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import java.util.UUID
 
-private const val WORKSPACE_NOTE = "命令直接读写会话工作区：删除或覆盖的文件不进回收站、无法恢复；结束后自动对账，结果的 workspace_changes 列出新增、修改、删除与移动的工作区路径。" +
+private const val WORKSPACE_NOTE = "background:true 立即返回后台任务号，任务不随生成取消；max_runtime_minutes 默认120、上限1440，后台不使用 timeout_seconds；on_exit 为 none/notify/wake，默认 notify，长任务优先 wake。私有根后台任务在快照中运行，结束合入，冲突保留到 jobs/；运行中日志通过状态查询发布。Play版只在应用前台保证运行。" +
+    "命令直接读写会话工作区：删除或覆盖的文件不进回收站、无法恢复；结束后自动对账，结果的 workspace_changes 列出新增、修改、删除与移动的工作区路径。" +
     "工作目录即工作区根，命令中请用相对路径或 \$NEXARA_WORKSPACE；/mnt/<别名> 挂载对命令不可见，需要时先用文件工具复制到工作区。" +
     "文件工具中的 /skills 在 shell 与 Python 中对应环境变量 NEXARA_SKILLS（shell 用 \$NEXARA_SKILLS，Python 用 os.environ['NEXARA_SKILLS']），亦可通过 ~/.agents/skills 符号链接访问；已有同名条目冲突时保留原条目，请用环境变量。" +
     "项目级技能位于工作区内 .agents/skills/，请用相对路径访问。" +
@@ -24,7 +25,7 @@ private const val WORKSPACE_NOTE = "命令直接读写会话工作区：删除�
     "用户可在通知栏停止命令（error_code 为 EXEC_STOPPED，不要自动重试）。stdout、stderr 各保留尾部 32000 字符。"
 
 /** 内置后端的 sh 命令，附带 python3、git（dulwich）与侧载渠道的 pip 函数；需要 apt 包、编译工具链或原生 Python 扩展时改用 Termux 或 SSH。 */
-class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition {
+class ShellExecSkill(private val service: BuiltinExecService, private val jobs: com.promenar.nexara.data.jobs.BackgroundJobManager? = null) : SkillDefinition {
     override val id = "shell_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
@@ -36,16 +37,19 @@ class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition 
         "（可改用 python3 -m nexara_git" + (if (service.pipAvailable) " / python3 -m nexara_pip" else "") + "，或用 . 脚本 在当前 shell 执行）。" + WORKSPACE_NOTE +
         "需要 apt 包、编译工具链、SSH 远端 git 或原生 Python 扩展时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
-    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"}},"required":["command"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA}},"required":["command"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 
-    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult =
-        runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        if (args.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL, "command")
+        return runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
             val command = (args.getValue("command") as JsonPrimitive).content
             if (command.isBlank()) return@runBuiltin invalid("command 不能为空")
             if (command.length > MAX_COMMAND_CHARS) return@runBuiltin invalid("command 超过 $MAX_COMMAND_CHARS 字符，请把脚本写入工作区文件后执行")
             service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput)
         }
+
+    }
 
     private fun invalid(reason: String?) = CommandToolResult(
         errorCode = "EXEC_INVALID_ARGUMENTS",
@@ -59,7 +63,7 @@ class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition 
 }
 
 /** 内置 Python 3.14：标准库完整（已裁剪 test、tkinter 等），附带 dulwich；侧载渠道可用 pip 安装纯 Python 包。 */
-class PythonExecSkill(private val service: BuiltinExecService) : SkillDefinition {
+class PythonExecSkill(private val service: BuiltinExecService, private val jobs: com.promenar.nexara.data.jobs.BackgroundJobManager? = null) : SkillDefinition {
     override val id = "python_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
@@ -68,11 +72,12 @@ class PythonExecSkill(private val service: BuiltinExecService) : SkillDefinition
         "sys.path 包含工作区根，可导入工作区中的模块。" + WORKSPACE_NOTE +
         "需要原生扩展包时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
-    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"Python 源码"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"}},"required":["code"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"Python 源码"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA}},"required":["code"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 
-    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult =
-        runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        if (args.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON, "code")
+        return runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
             val code = (args.getValue("code") as JsonPrimitive).content
             when {
                 code.isBlank() -> invalid("code 不能为空")
@@ -82,6 +87,8 @@ class PythonExecSkill(private val service: BuiltinExecService) : SkillDefinition
                 else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput)
             }
         }
+
+    }
 
     private fun invalid(reason: String?) = CommandToolResult(
         errorCode = "EXEC_INVALID_ARGUMENTS",

@@ -471,6 +471,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 generationCoordinator.cancelAndJoinSession(sessionId)
                 generationCoordinator.release(sessionId, discardTerminal = true)
                 sshRuntime.closeOwner("agent:$sessionId")
+                backgroundJobs.stopSession(sessionId)
             },
             recoverFileMutations = { target ->
                 workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)
@@ -515,6 +516,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         composerQueueStore.deleteSession(sessionId)
                     },
                     deleteCanvases = { canvasStore.deleteSession(sessionId) },
+                    deleteJobs = { backgroundJobs.deleteSession(sessionId) },
                 )
             },
         )
@@ -814,24 +816,72 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    private val backgroundCommandRunner by lazy {
+        com.promenar.nexara.data.exec.BuiltinCommandRunner(
+            groupLauncher = listOf("/system/bin/setsid"), shell = "/system/bin/sh",
+            signaller = com.promenar.nexara.data.exec.AndroidProcessGroupSignaller,
+            scratchDirectory = { File(cacheDir, "exec-run") },
+            clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
+            // 系统开机计数不依赖受设备策略限制的 /proc/sys 文件。
+            bootIdentity = { android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT).toString() },
+            requireBackgroundIdentity = true,
+        )
+    }
+    private val commandKeepAlive by lazy {
+        com.promenar.nexara.background.exec.AndroidExecKeepAlive(this, execRunRegistry,
+            com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
+    }
+    /** 调度器与通知深链由系统触发工作包接入；缺省时唤醒退化为通知、点击打开主界面。 */
+    var backgroundJobDispatcherProvider: () -> com.promenar.nexara.domain.trigger.SystemTurnDispatcher? = { null }
+    var backgroundJobSessionIntentProvider: () -> com.promenar.nexara.navigation.SessionOpenIntentFactory? = { null }
+    @Volatile var visibleBackgroundJobSessionId: String? = null
+    val backgroundJobController: com.promenar.nexara.domain.jobs.BackgroundJobController get() = backgroundJobs
+    val backgroundJobs: com.promenar.nexara.data.jobs.BackgroundJobManager by lazy {
+        val notifications = com.promenar.nexara.background.jobs.BackgroundJobNotifications(this) { backgroundJobSessionIntentProvider() }
+        com.promenar.nexara.data.jobs.BackgroundJobManager(
+            scope = generationScope,
+            store = com.promenar.nexara.data.jobs.BackgroundJobStore(File(noBackupFilesDir, "background-jobs")),
+            runRoot = File(noBackupFilesDir, "background-jobs/runs"),
+            runner = backgroundCommandRunner,
+            prepareWorkspace = { record ->
+                when (val target = sessionWorkspaceResolver.resolve(record.sessionId)) {
+                    is com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable -> throw IllegalStateException("会话工作区不可用")
+                    is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> com.promenar.nexara.data.jobs.BackgroundJobLocation(target.root, target.root, false,
+                        target.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED)
+                    com.promenar.nexara.data.workspace.SessionWorkspace.Private -> {
+                        if (record.runner == "TERMUX") {
+                            // Termux 不能访问应用私有根，不复制整个工作区。
+                            com.promenar.nexara.data.jobs.BackgroundJobLocation(File(record.runDirectory), File(record.runDirectory), false, false)
+                        } else {
+                            val staging = File(record.runDirectory, "workspace")
+                            val root = (workspaceRepository as WorkspaceRepository).prepareBackgroundWorkspace(record.workspaceRootUuid, record.sessionId, record.id, staging)
+                            com.promenar.nexara.data.jobs.BackgroundJobLocation(staging, root, true, false)
+                        }
+                    }
+                }
+            },
+            prepareCommand = { kind, source, stdin, location, minutes -> builtinExecService.prepareBackgroundCommand(kind, source, stdin, location, minutes) },
+            reconcile = { record, finished, interrupted ->
+                if (record.isolatedWorkspace || File(record.runDirectory, "baseline.json").isFile) (workspaceRepository as WorkspaceRepository).reconcileBackgroundWorkspace(
+                    record.workspaceRootUuid, record.sessionId, record.id, File(record.runDirectory, "workspace"), finished, interrupted)
+                else null
+            },
+            termux = com.promenar.nexara.data.termux.TermuxBackgroundJobs(termuxRuntime::executeRequest),
+            keepAlive = commandKeepAlive, liveOutput = toolLiveOutputStore,
+            completion = com.promenar.nexara.data.jobs.BackgroundJobCompletion({ backgroundJobDispatcherProvider() }, notifications::notify),
+            keepAliveMode = if (com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable) "service" else "foreground_only",
+            executionGate = sessionExecutionGate,
+            sessionExists = { database.sessionDao().getById(it) != null },
+        )
+    }
+
     val builtinExecService: com.promenar.nexara.data.exec.BuiltinExecService by lazy {
         com.promenar.nexara.data.exec.BuiltinExecService(
             workspace = workspaceRepository as com.promenar.nexara.data.repository.WorkspaceCommandHost,
-            runner = com.promenar.nexara.data.exec.BuiltinCommandRunner(
-                groupLauncher = listOf("/system/bin/setsid"),
-                shell = "/system/bin/sh",
-                signaller = com.promenar.nexara.data.exec.AndroidProcessGroupSignaller,
-                scratchDirectory = { File(cacheDir, "exec-run") },
-                clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
-            ),
+            runner = backgroundCommandRunner,
             environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = BuildConfig.DISTRIBUTION == "sideload", skillsDirectory = skillCatalog.userRoot),
             unavailablePythonAbi = { android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" },
-            keepAlive = com.promenar.nexara.background.exec.AndroidExecKeepAlive(
-                this,
-                execRunRegistry,
-                // 命令前台服务（specialUse）只在侧载渠道声明；Play 渠道待政策评审，只持有唤醒锁。
-                foregroundServiceAvailable = BuildConfig.DISTRIBUTION == "sideload",
-            ),
+            keepAlive = commandKeepAlive,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             gitRemote = gitRemoteBroker,
         )
@@ -968,7 +1018,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
             register(CalculatorSkill())
-            register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest) {
+            register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
             })
             com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
@@ -1008,8 +1058,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(ExecJsSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.RunScriptSkill(scriptToolRunner))
             register(com.promenar.nexara.ui.chat.manager.skills.PythonSandboxSkill(scriptToolRunner))
-            register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService))
-            register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService))
+            register(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(builtinExecService, backgroundJobs))
+            register(com.promenar.nexara.ui.chat.manager.skills.PythonExecSkill(builtinExecService, backgroundJobs))
+            com.promenar.nexara.ui.chat.manager.skills.backgroundJobTools(backgroundJobs).forEach(::register)
             register(com.promenar.nexara.ui.chat.manager.skills.StateDefineSkill(stateBoardRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.StateUpdateSkill(stateBoardRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.StateGetSkill(stateBoardRepository))
@@ -1286,6 +1337,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         ?.takeIf { it.skippedGitRepositories.isNotEmpty() || it.skippedSymbolicLinks > 0 }
                         ?.let { _skillRestoreNotice.value = it }
                     if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
+                    backgroundJobs.initialize()
                     _startupState.value = BackupStartupState.Ready
                     startModelCatalogUpdates()
                     generationScope.launch(Dispatchers.IO) {

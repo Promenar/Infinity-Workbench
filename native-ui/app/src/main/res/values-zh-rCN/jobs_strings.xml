@@ -1,0 +1,7 @@
+<resources>
+    <string name="jobs_channel">后台任务</string>
+    <string name="jobs_finished_title">后台任务已结束</string>
+    <string name="jobs_finished_text">%1$s · 结果：%2$s · 耗时 %3$d 秒</string>
+    <string name="jobs_running_title">%1$d 个后台任务运行中</string>
+    <string name="jobs_mixed_running_title">%1$d 个后台任务 · %2$d 条命令运行中</string>
+</resources>

@@ -85,6 +85,9 @@ object SystemPromptSections {
         if (toolNames.any { it in setOf("state_define", "state_update", "state_get", "state_remove") }) {
             appendLine("- 用户要求跟踪游戏状态或写作进度时，用 state_define 定义状态面板，以 state_update 更新，state_get 读取，state_remove 移除；无需额外模型抽取。")
         }
+        if (toolNames.any { it in setOf("shell_exec", "python_exec", "termux_exec") } && "job_wait" in toolNames) {
+            appendLine("- 耗时超过约一分钟或需要持续运行的命令使用 background:true；启动后继续其它工作，需要结果时用 job_wait。长任务优先 on_exit:\"wake\"，不要循环轮询。私有工作区后台命令在快照中运行，结束时合入，冲突产物保留在 jobs/；job_status/job_wait 发布日志。")
+        }
         if (toolNames.any(PLAN_TOOLS::contains)) {
             appendLine()
             appendLine("### Multi-step Tasks")

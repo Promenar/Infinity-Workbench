@@ -76,15 +76,50 @@ class BuiltinCommandRunner(
     private val pollMillis: Long = 250,
     private val pauseThresholdMillis: Long = 2_000,
     private val clockNanos: () -> Long = System::nanoTime,
+    private val processIdentity: (Int) -> String? = ::readLinuxProcessStartIdentity,
+    private val bootIdentity: () -> String? = { runCatching { File("/proc/sys/kernel/random/boot_id").readText().trim() }.getOrNull() },
+    private val requireBackgroundIdentity: Boolean = false,
 ) {
     suspend fun run(
         request: BuiltinCommandRequest,
         control: BuiltinCommandControl = BuiltinCommandControl(),
         /** 读取线程每读到一块输出即回调，只用于展示；不影响结果中的尾部截断。 */
         onOutput: ((ToolOutputStream, String) -> Unit)? = null,
+    ): BuiltinCommandOutput = runInternal(request, control, onOutput)
+
+    /** 后台日志由单条合并管道流式写盘，调用方必须使用应用级作用域。 */
+    suspend fun runBackground(
+        request: BuiltinCommandRequest,
+        control: BuiltinCommandControl,
+        logFile: File,
+        processGroupFile: File,
+        onStarted: () -> Unit = {},
+        onOutput: ((ToolOutputStream, String) -> Unit)? = null,
+    ): BuiltinCommandOutput = runInternal(request, control, onOutput, logFile, processGroupFile, onStarted)
+
+    /** 启动恢复仅清理持久化进程组；调用方负责记录中断。 */
+    suspend fun interruptBackground(processGroupFile: File): Boolean = withContext(Dispatchers.IO) {
+        val group=readProcessGroup(processGroupFile) ?: return@withContext true
+        val saved = File(processGroupFile.path + ".identity").takeIf { it.isFile }?.readText()?.trim()
+        val current=identityToken(group)
+        if(saved==null || current==null) return@withContext false
+        if(saved!=current) return@withContext true
+        signaller.signal(group, SIGTERM)
+        kotlinx.coroutines.delay(killGraceMillis)
+        signaller.signal(group, SIGKILL)
+        true
+    }
+
+    private suspend fun runInternal(
+        request: BuiltinCommandRequest,
+        control: BuiltinCommandControl,
+        onOutput: ((ToolOutputStream, String) -> Unit)?,
+        logFile: File? = null,
+        processGroupFile: File? = null,
+        onStarted: () -> Unit = {},
     ): BuiltinCommandOutput = withContext(Dispatchers.IO) {
         require(request.argv.isNotEmpty()) { "命令不能为空" }
-        require(request.timeoutSeconds in 1..MAX_TIMEOUT_SECONDS) { "timeout_seconds 必须为 1–$MAX_TIMEOUT_SECONDS" }
+        require(request.timeoutSeconds in 1..(if (logFile == null) MAX_TIMEOUT_SECONDS else 1440 * 60)) { "timeout_seconds 必须为 1–$MAX_TIMEOUT_SECONDS" }
         // 启动前已请求停止（等待写锁或准备环境期间）则不再启动命令。
         if (control.stopRequested) {
             return@withContext BuiltinCommandOutput(
@@ -94,16 +129,56 @@ class BuiltinCommandRunner(
             )
         }
         val scratch = File(scratchDirectory(), "exec-${UUID.randomUUID()}").apply { mkdirs() }
-        val pidFile = File(scratch, "pgid")
+        val pidFile = processGroupFile ?: File(scratch, "pgid")
+        pidFile.parentFile?.mkdirs()
         try {
-            val builder = ProcessBuilder(groupLauncher + listOf(shell, "-c", WRAPPER, "nexara-exec", pidFile.path) + request.argv)
+            val builder = ProcessBuilder(groupLauncher + listOf(shell, "-c", WRAPPER, "nexara-exec", pidFile.path, bootIdentity().orEmpty(), if (logFile != null && requireBackgroundIdentity) "1" else "0") + request.argv)
                 .directory(request.workingDirectory)
+                .redirectErrorStream(logFile != null)
             builder.environment().clear()
             builder.environment().putAll(request.environment)
             val process = builder.start()
+            var settled=false
+            try {
+            if (logFile != null) {
+                val group = awaitProcessGroup(pidFile)
+                if(requireBackgroundIdentity) {
+                    repeat(10) {
+                        if(!File(pidFile.path+".identity").isFile && process.isAlive) runInterruptible { Thread.sleep(50) }
+                    }
+                    if(!File(pidFile.path+".identity").isFile) throw java.io.IOException("无法验证后台进程身份，命令未获准运行")
+                } else if(!File("/proc/self/stat").isFile) {
+                    group?.let { pid -> identityToken(pid)?.let { identity ->
+                        val file=File(pidFile.path + ".identity")
+                        val temporary=File(file.path + ".host-${UUID.randomUUID()}.tmp")
+                        temporary.writeText(identity)
+                        java.nio.file.Files.move(temporary.toPath(),file.toPath(),java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                    } }
+                }
+            }
+            onStarted()
             val stdout = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDOUT, text) } })
             val stderr = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDERR, text) } })
-            val readers = listOf(
+            val logFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            val readers = if (logFile != null) listOf(daemon("nexara-job-output") {
+                try {
+                com.promenar.nexara.data.jobs.RotatingJobLog(logFile).use { log ->
+                    InputStreamReader(process.inputStream, Charsets.UTF_8).use { reader ->
+                        val chunk = CharArray(8 * 1024)
+                        while (true) {
+                            val count = reader.read(chunk)
+                            if (count < 0) break
+                            val text = String(chunk, 0, count)
+                            log.write(text.toByteArray(Charsets.UTF_8))
+                            onOutput?.invoke(ToolOutputStream.STDOUT, text)
+                        }
+                    }
+                }
+                } catch (failure: Throwable) {
+                    logFailure.set(failure)
+                    control.requestStop()
+                }
+            }) else listOf(
                 daemon("nexara-exec-stdout") { stdout.consume(process.inputStream) },
                 daemon("nexara-exec-stderr") { stderr.consume(process.errorStream) },
             )
@@ -111,19 +186,26 @@ class BuiltinCommandRunner(
                 process.outputStream.use { output -> request.stdin?.let { output.write(it.toByteArray(Charsets.UTF_8)) } }
             }
             val wait = try {
-                runInterruptible { await(process, request.timeoutSeconds, control) }
+                runInterruptible { await(process, request.timeoutSeconds, control, logFile == null) }
             } catch (cancelled: CancellationException) {
-                withContext(NonCancellable) { terminate(process, pidFile) }
+                withContext(NonCancellable) { terminate(process, pidFile, logFile != null); settled=true }
                 throw cancelled
             }
             val signalled = wait.outcome != WaitOutcome.EXITED
             if (signalled) {
-                terminate(process, pidFile)
+                terminate(process, pidFile, logFile != null)
             } else {
                 // 主进程已退出；同组后台进程不能跨过写锁继续运行。
                 readProcessGroup(pidFile)?.let { runCatching { signaller.signal(it, SIGKILL) } }
             }
+            settled=true
             readers.forEach { it.join(drainTimeoutMillis) }
+            if (logFile != null && readers.any { it.isAlive }) {
+                process.inputStream.close()
+                readers.forEach { it.join(drainTimeoutMillis) }
+                throw java.io.IOException("后台任务日志未能完整写入")
+            }
+            logFailure.get()?.let { throw java.io.IOException("后台任务日志写入失败", it) }
             val exit = if (signalled) null else process.exitValue()
             BuiltinCommandOutput(
                 exitCode = exit,
@@ -138,6 +220,10 @@ class BuiltinCommandRunner(
                 stoppedByUser = wait.outcome == WaitOutcome.STOPPED,
                 pausedMillis = wait.pausedNanos / 1_000_000,
             )
+            } catch (failure:Throwable) {
+                if(!settled) withContext(NonCancellable) {terminate(process,pidFile,logFile!=null)}
+                throw failure
+            }
         } finally {
             scratch.deleteRecursively()
         }
@@ -147,7 +233,7 @@ class BuiltinCommandRunner(
     private class WaitResult(val outcome: WaitOutcome, val pausedNanos: Long)
 
     /** 阻塞等待进程结束、超时或用户停止；被系统暂停的时间不消耗超时预算。 */
-    private fun await(process: Process, timeoutSeconds: Int, control: BuiltinCommandControl): WaitResult {
+    private fun await(process: Process, timeoutSeconds: Int, control: BuiltinCommandControl, excludePauses: Boolean): WaitResult {
         val step = TimeUnit.MILLISECONDS.toNanos(pollMillis)
         val pauseThreshold = TimeUnit.MILLISECONDS.toNanos(pauseThresholdMillis)
         var remaining = TimeUnit.SECONDS.toNanos(timeoutSeconds.toLong())
@@ -162,7 +248,7 @@ class BuiltinCommandRunner(
             val elapsed = (now - last).coerceAtLeast(0)
             last = now
             val excess = elapsed - step
-            remaining -= if (excess > pauseThreshold) {
+            remaining -= if (excludePauses && excess > pauseThreshold) {
                 paused += excess
                 step
             } else {
@@ -174,7 +260,7 @@ class BuiltinCommandRunner(
         }
     }
 
-    private suspend fun terminate(process: Process, pidFile: File) {
+    private suspend fun terminate(process: Process, pidFile: File, fullGrace: Boolean = false) {
         val group = readProcessGroup(pidFile) ?: awaitProcessGroup(pidFile)
         if (group == null) {
             process.destroyForcibly()
@@ -182,7 +268,9 @@ class BuiltinCommandRunner(
             return
         }
         runCatching { signaller.signal(group, SIGTERM) }
+        val started = System.nanoTime()
         val exited = runInterruptible { process.waitFor(killGraceMillis, TimeUnit.MILLISECONDS) }
+        if (fullGrace) kotlinx.coroutines.delay((killGraceMillis - (System.nanoTime() - started) / 1_000_000).coerceAtLeast(0))
         runCatching { signaller.signal(group, SIGKILL) }
         if (!exited) {
             process.destroyForcibly()
@@ -199,6 +287,10 @@ class BuiltinCommandRunner(
         return null
     }
 
+    private fun identityToken(pid:Int):String? = processIdentity(pid)?.let { start ->
+        listOfNotNull(bootIdentity()?.takeIf{it.isNotBlank()}, start).joinToString("\n")
+    }
+
     private fun readProcessGroup(pidFile: File): Int? =
         runCatching { pidFile.readText().trim().toInt() }.getOrNull()?.takeIf { it > 1 }
 
@@ -212,7 +304,12 @@ class BuiltinCommandRunner(
         const val SIGTERM = 15
         private const val SIGNAL_EXIT_BASE = 128
         /** $1 为进程组号文件；写入失败时不执行命令。 */
-        private const val WRAPPER = "echo \$\$ > \"\$1\" || exit 125; shift; exec \"\$@\""
+        private const val WRAPPER = "echo \$\$ > \"\$1\" || exit 125; " +
+            "if [ -r /proc/\$\$/stat ]; then " +
+            "__nexara_stat=\$(cat /proc/\$\$/stat) || exit 125; __nexara_fields=\${__nexara_stat##*) }; " +
+            "(set -- \$__nexara_fields; case \"\${20}\" in ''|*[!0-9]*) exit 125;; esac; printf '%s' \"\${20}\") > \"\$1.start\" || exit 125; " +
+            "{ [ -z \"\$2\" ] || printf '%s\\n' \"\$2\"; cat \"\$1.start\"; } > \"\$1.identity.tmp\" && mv \"\$1.identity.tmp\" \"\$1.identity\" || exit 125; " +
+            "elif [ \"\$3\" = 1 ]; then exit 125; fi; shift 3; exec \"\$@\""
     }
 }
 
@@ -249,3 +346,10 @@ internal class TailTextCollector(private val limit: Int, private val listener: (
         return if (truncated && buffer.isNotEmpty() && Character.isLowSurrogate(buffer[0])) buffer.substring(1) else buffer.toString()
     }
 }
+
+/** 同一开机周期与进程启动时钟共同识别进程，避免重启恢复时误杀复用的 PID。 */
+private fun readLinuxProcessStartIdentity(pid: Int): String? = runCatching {
+    val fields = File("/proc/$pid/stat").readText().substringAfterLast(") ").split(' ')
+    if (fields[2].toInt() != pid) return@runCatching null
+    fields[19]
+}.getOrNull()

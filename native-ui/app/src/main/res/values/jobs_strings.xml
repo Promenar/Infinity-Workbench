@@ -1,0 +1,7 @@
+<resources>
+    <string name="jobs_channel">Background jobs</string>
+    <string name="jobs_finished_title">Background job finished</string>
+    <string name="jobs_finished_text">%1$s · Result: %2$s · %3$d seconds</string>
+    <string name="jobs_running_title">%1$d background jobs running</string>
+    <string name="jobs_mixed_running_title">%1$d background jobs · %2$d commands running</string>
+</resources>
