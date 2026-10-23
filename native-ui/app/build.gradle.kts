@@ -334,11 +334,13 @@ android {
             dimension = "distribution"
             buildConfigField("String", "DISTRIBUTION", "\"play\"")
             buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "false")
+            buildConfigField("boolean", "EXACT_ALARM_AVAILABLE", "false")
         }
         create("sideload") {
             dimension = "distribution"
             buildConfigField("String", "DISTRIBUTION", "\"sideload\"")
             buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "true")
+            buildConfigField("boolean", "EXACT_ALARM_AVAILABLE", "true")
         }
     }
 
