@@ -67,7 +67,7 @@ class CanvasChatEntryTest {
             }
         }
         rule.onNodeWithTag(UiTags.CANVAS_CARD).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.CANVAS_OPEN).performClick()
+        rule.onNodeWithTag(UiTags.CANVAS_CARD).performClick()
         rule.onNodeWithTag(UiTags.CANVAS_FULLSCREEN).assertIsDisplayed()
         runBlocking { store.update("session", canvas.metadata.id, html = "<p>2</p>") }
         val latestLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.canvas_follow_latest, 2)
@@ -102,11 +102,11 @@ class CanvasChatEntryTest {
             }
         }
         rule.waitUntil(5_000) { observedRevision.get() == 2 }
-        rule.onNodeWithTag(UiTags.CANVAS_OPEN).performClick()
-        rule.onNodeWithTag(UiTags.CANVAS_VERSION_SELECTOR).performClick()
+        // 旧消息的卡片直接打开它当时的版本。
+        rule.onNodeWithTag(UiTags.CANVAS_CARD).performClick()
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val historyLabel = resources.getString(R.string.canvas_history_version, 1)
-        rule.onNodeWithText(historyLabel).performClick()
+        rule.onNodeWithText(historyLabel).assertIsDisplayed()
         rule.waitUntil(5_000) {
             runCatching { rule.onNodeWithTag(UiTags.CANVAS_COPY).assertIsEnabled() }.isSuccess
         }

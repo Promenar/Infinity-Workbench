@@ -82,6 +82,7 @@ fun canvasCardDarkChinesePreview() = CanvasPreviewFrame(dark = true) {
         html = null,
         onOpen = {},
         previewContent = { StaticChartPreview(english = false) },
+        workspacePath = "canvas/季度经营看板.html",
     )
 }
 
@@ -95,6 +96,8 @@ fun canvasCardLightEnglishLargeFontPreview() = CanvasPreviewFrame(dark = false) 
         html = null,
         onOpen = {},
         previewContent = { StaticChartPreview(english = true) },
+        workspacePath = "canvas/quarterly-business-dashboard.html",
+        workspaceWarning = true,
     )
 }
 

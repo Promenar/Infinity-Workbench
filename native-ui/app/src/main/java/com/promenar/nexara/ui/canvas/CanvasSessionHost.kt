@@ -35,6 +35,10 @@ internal data class CanvasSessionAccess(
     val loaded: Boolean,
     val open: (String) -> Unit,
     val openList: () -> Unit,
+    /** 打开指定版本；不早于当前版本时按跟随最新打开。 */
+    val openVersion: (String, Int) -> Unit = { id, _ -> open(id) },
+    val copySource: (String, Int) -> Unit = { _, _ -> },
+    val revealInWorkspace: (String) -> Unit = {},
 )
 
 internal val LocalCanvasSession = staticCompositionLocalOf<CanvasSessionAccess?> { null }
@@ -45,6 +49,7 @@ fun CanvasSessionHost(
     sessionId: String,
     store: CanvasStore,
     onInsertText: (String) -> Unit,
+    onRevealInWorkspace: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) = key(sessionId, store) {
     var canvases by remember { mutableStateOf<List<CanvasMetadata>>(emptyList()) }
@@ -67,9 +72,23 @@ fun CanvasSessionHost(
             loaded = true
         }
     }
+    val currentReveal by rememberUpdatedState(onRevealInWorkspace)
     val access = CanvasSessionAccess(sessionId, store, canvases, loaded,
         open = { id -> selectedVersion = null; openedId = id; showList = false },
         openList = { showList = true },
+        openVersion = { id, version ->
+            val current = canvases.find { it.id == id }?.currentVersion
+            selectedVersion = version.takeIf { current != null && it < current }
+            openedId = id
+            showList = false
+        },
+        copySource = { id, version ->
+            scope.launch {
+                val snapshot = try { store.read(sessionId, id, version) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+                snapshot?.let { clipboard.setClipEntry(ClipEntry(android.content.ClipData.newPlainText(it.metadata.title, it.html))) }
+            }
+        },
+        revealInWorkspace = { path -> currentReveal(path) },
     )
     CompositionLocalProvider(LocalCanvasSession provides access) { content() }
     NexaraBottomSheet(show = showList, onDismiss = { showList = false }, title = null, height = NexaraSheetHeight.Full, dragGesturesEnabled = false) {

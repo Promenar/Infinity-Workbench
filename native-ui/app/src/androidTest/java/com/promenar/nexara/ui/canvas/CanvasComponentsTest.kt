@@ -64,9 +64,9 @@ class CanvasComponentsTest {
 
         rule.onNodeWithText(canvas.title).assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.canvas_version, 1)).assertIsDisplayed()
-        rule.onNodeWithText(resources.getString(R.string.canvas_newer_version)).assertIsDisplayed()
-        rule.onNodeWithText("固定预览内容").assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.CANVAS_OPEN)
+        rule.onNodeWithText(resources.getString(R.string.canvas_card_newer, 3)).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CANVAS_PREVIEW).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CANVAS_CARD)
             .assertHeightIsAtLeast(48.dp)
             .assertHasClickAction()
             .performClick()
@@ -100,7 +100,7 @@ class CanvasComponentsTest {
             }
         }
 
-        rule.onNodeWithTag(UiTags.CANVAS_OPEN).performClick()
+        rule.onNodeWithTag(UiTags.CANVAS_CARD).performClick()
         rule.onNodeWithTag(UiTags.CANVAS_FULLSCREEN).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CANVAS_COPY).assertIsNotEnabled()
         rule.onNodeWithTag(UiTags.CANVAS_CLOSE).assertHeightIsAtLeast(48.dp).performClick()

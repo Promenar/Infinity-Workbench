@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="system_trigger_schedule">Scheduled · %1$s</string>
+    <string name="system_trigger_schedule_seq">Scheduled · %1$s · run %2$d</string>
+    <string name="system_trigger_job_exit">Background task finished · %1$s</string>
+    <string name="system_trigger_catch_up">Missed · %1$s</string>
+    <string name="system_trigger_expand">Show prompt</string>
+    <string name="system_trigger_collapse">Hide prompt</string>
+    <plurals name="agent_jobs_running">
+        <item quantity="one">%1$d background task</item>
+        <item quantity="other">%1$d background tasks</item>
+    </plurals>
+    <string name="agent_jobs_finished">Finished · %1$s</string>
+    <plurals name="agent_schedules_count">
+        <item quantity="one">%1$d schedule</item>
+        <item quantity="other">%1$d schedules</item>
+    </plurals>
+    <string name="agent_schedules_next">Next %1$s</string>
+    <string name="agent_schedules_next_many">Next %1$s · %2$d schedules</string>
+    <string name="agent_schedules_tomorrow">Tomorrow %1$s</string>
+    <string name="agent_jobs_title">Background tasks</string>
+    <string name="agent_jobs_empty">No background tasks in this chat</string>
+    <string name="agent_jobs_limit_label">Foreground only</string>
+    <string name="agent_jobs_limit_title">Runs while Nexara is open</string>
+    <string name="agent_jobs_limit_body">In the Play version, Android may pause or stop tasks after you leave the app. The sideload version keeps them running with a notification.</string>
+    <string name="agent_jobs_stop">Stop task</string>
+    <string name="agent_jobs_open_log">Open log in workspace</string>
+    <string name="agent_jobs_runner_shell">Shell</string>
+    <string name="agent_jobs_runner_python">Python</string>
+    <string name="agent_jobs_runner_termux">Termux</string>
+    <string name="agent_jobs_state_running">Running %1$s</string>
+    <string name="agent_jobs_state_exited">Exit %1$d · %2$s</string>
+    <string name="agent_jobs_state_stopped">Stopped · %1$s</string>
+    <string name="agent_jobs_state_timed_out">Timed out · %1$s</string>
+    <string name="agent_jobs_state_interrupted">Interrupted by app restart</string>
+    <string name="agent_jobs_state_failed">Failed</string>
+    <string name="agent_duration_hm">%1$dh %2$dm</string>
+    <string name="agent_duration_ms">%1$dm %2$ds</string>
+    <string name="agent_duration_s">%1$ds</string>
+    <string name="agent_schedules_title">Schedules</string>
+    <string name="agent_schedules_empty">No schedules in this chat</string>
+    <string name="agent_schedules_limit_label">System-timed</string>
+    <string name="agent_schedules_limit_title">Android picks the exact moment</string>
+    <string name="agent_schedules_limit_body">In the Play version, runs may be delayed by a few minutes and repeat at most every 15 minutes. The sideload version can use exact alarms.</string>
+    <string name="agent_schedules_exact">Exact</string>
+    <string name="agent_schedules_grant_exact">Allow exact alarms</string>
+    <string name="agent_schedules_enabled">On</string>
+    <string name="agent_schedules_paused">Paused</string>
+    <string name="agent_schedules_trigger_once">Once · %1$s</string>
+    <string name="agent_schedules_trigger_cron">cron · %1$s</string>
+    <plurals name="agent_schedules_every_minutes">
+        <item quantity="one">Every minute</item>
+        <item quantity="other">Every %1$d minutes</item>
+    </plurals>
+    <plurals name="agent_schedules_every_hours">
+        <item quantity="one">Every hour</item>
+        <item quantity="other">Every %1$d hours</item>
+    </plurals>
+    <plurals name="agent_schedules_every_days">
+        <item quantity="one">Every day</item>
+        <item quantity="other">Every %1$d days</item>
+    </plurals>
+    <string name="agent_schedules_last_completed">Last run done</string>
+    <string name="agent_schedules_last_needs_user">Waiting for you</string>
+    <string name="agent_schedules_last_skipped_busy">Last run skipped (busy)</string>
+    <string name="agent_schedules_last_skipped">Last run skipped</string>
+    <string name="agent_schedules_last_failed">Last run failed</string>
+    <string name="agent_schedules_runs_of">%1$d/%2$d runs</string>
+    <string name="agent_schedules_delete_title">Delete schedule</string>
+    <string name="agent_schedules_delete_body">“%1$s” will stop running. The chat history is kept.</string>
+    <string name="agent_schedules_delete_confirm">Delete</string>
+</resources>

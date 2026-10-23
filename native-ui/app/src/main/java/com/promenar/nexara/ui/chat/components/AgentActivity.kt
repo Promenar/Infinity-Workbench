@@ -1,0 +1,500 @@
+package com.promenar.nexara.ui.chat.components
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.rounded.AlarmOff
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.HourglassBottom
+import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
+import com.promenar.nexara.domain.jobs.BackgroundJob
+import com.promenar.nexara.domain.jobs.BackgroundJobRunner
+import com.promenar.nexara.domain.jobs.BackgroundJobState
+import com.promenar.nexara.domain.schedule.ScheduleRunResult
+import com.promenar.nexara.domain.schedule.ScheduleTrigger
+import com.promenar.nexara.domain.schedule.ScheduledTask
+import com.promenar.nexara.ui.common.ChannelLimitChip
+import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.NexaraTypography
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+
+/** 输入区上方的一行活动标签：后台任务与定时任务各一枚，点开对应面板；没有活动时不占位。 */
+@Composable
+internal fun AgentActivityStrip(
+    summary: AgentActivitySummary,
+    nowMillis: Long,
+    onOpenJobs: () -> Unit,
+    onOpenSchedules: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!summary.visible) return
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.XSmall)
+            .testTag(UiTags.AGENT_ACTIVITY_STRIP),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            summary.runningJobs > 0 -> ActivityPill(
+                text = pluralStringResource(R.plurals.agent_jobs_running, summary.runningJobs, summary.runningJobs),
+                onClick = onOpenJobs,
+                tag = UiTags.AGENT_JOBS_PILL,
+                leading = { CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp) },
+            )
+            summary.latestFinishedJob != null -> {
+                val job = summary.latestFinishedJob
+                ActivityPill(
+                    text = stringResource(R.string.agent_jobs_finished, job.summary),
+                    onClick = onOpenJobs,
+                    tag = UiTags.AGENT_JOBS_PILL,
+                    leading = { JobStateIcon(job, Modifier.size(14.dp)) },
+                )
+            }
+        }
+        if (summary.enabledSchedules > 0) {
+            val next = summary.nextFireAtMillis?.let { fireTimeLabel(it, nowMillis) }
+            ActivityPill(
+                text = when {
+                    next == null -> pluralStringResource(R.plurals.agent_schedules_count, summary.enabledSchedules, summary.enabledSchedules)
+                    summary.enabledSchedules > 1 -> stringResource(R.string.agent_schedules_next_many, next, summary.enabledSchedules)
+                    else -> stringResource(R.string.agent_schedules_next, next)
+                },
+                onClick = onOpenSchedules,
+                tag = UiTags.AGENT_SCHEDULES_PILL,
+                leading = { Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(14.dp)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActivityPill(text: String, onClick: () -> Unit, tag: String, leading: @Composable () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.heightIn(min = 32.dp).testTag(tag),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Medium, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            leading()
+            Text(text, style = NexaraTypography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+// ─────────────────────────────── 后台任务面板 ───────────────────────────────
+
+/**
+ * 本会话的后台任务。Play 版在标题旁用一枚标签说明“仅前台运行”，不在列表里重复解释；
+ * [liveOutput] 由宿主按任务的实时输出键渲染终端区。
+ */
+@Composable
+internal fun BackgroundJobsContent(
+    jobs: List<BackgroundJob>,
+    nowMillis: Long,
+    keepAliveAvailable: Boolean,
+    onStop: (String) -> Unit,
+    onOpenLog: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    liveOutput: @Composable (BackgroundJob) -> Unit = {},
+) {
+    var expandedId by rememberSaveable { mutableStateOf(jobs.firstOrNull { !it.state.isTerminal }?.id) }
+    LazyColumn(modifier = modifier.fillMaxWidth().testTag(UiTags.BACKGROUND_JOBS_SHEET)) {
+        item(key = "header") {
+            SheetHeader(title = stringResource(R.string.agent_jobs_title)) {
+                if (!keepAliveAvailable) {
+                    ChannelLimitChip(
+                        label = stringResource(R.string.agent_jobs_limit_label),
+                        title = stringResource(R.string.agent_jobs_limit_title),
+                        body = stringResource(R.string.agent_jobs_limit_body),
+                        icon = Icons.Rounded.Visibility,
+                    )
+                }
+            }
+        }
+        if (jobs.isEmpty()) {
+            item(key = "empty") { EmptyHint(Icons.Rounded.Terminal, stringResource(R.string.agent_jobs_empty)) }
+        }
+        items(jobs, key = { it.id }) { job ->
+            BackgroundJobRow(
+                job = job,
+                nowMillis = nowMillis,
+                expanded = expandedId == job.id,
+                onToggle = { expandedId = if (expandedId == job.id) null else job.id },
+                onStop = { onStop(job.id) },
+                onOpenLog = job.logWorkspacePath?.let { path -> { onOpenLog(path) } },
+                liveOutput = { liveOutput(job) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackgroundJobRow(
+    job: BackgroundJob,
+    nowMillis: Long,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onOpenLog: (() -> Unit)?,
+    liveOutput: @Composable () -> Unit,
+) {
+    val running = !job.state.isTerminal
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(start = NexaraSpacing.Large, end = NexaraSpacing.Small, top = NexaraSpacing.Small, bottom = NexaraSpacing.Small)
+            .testTag(UiTags.backgroundJob(job.id)),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                if (running) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                else JobStateIcon(job, Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(NexaraSpacing.Medium))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = job.summary,
+                    style = NexaraTypography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = jobMeta(job, nowMillis),
+                    style = NexaraTypography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            if (running) {
+                FilledTonalIconButton(onClick = onStop, modifier = Modifier.testTag(UiTags.backgroundJobStop(job.id))) {
+                    Icon(Icons.Rounded.Stop, contentDescription = stringResource(R.string.agent_jobs_stop), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier.padding(start = 24.dp + NexaraSpacing.Medium, top = NexaraSpacing.Small, end = NexaraSpacing.Small),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+            ) {
+                if (running) liveOutput()
+                if (onOpenLog != null) {
+                    TextButton(onClick = onOpenLog, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(NexaraSpacing.RowIconSize))
+                        Text(stringResource(R.string.agent_jobs_open_log), modifier = Modifier.padding(start = NexaraSpacing.Small))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
+    val ok = job.state == BackgroundJobState.EXITED && job.exitCode == 0
+    val (icon, tint) = when {
+        ok -> Icons.Rounded.CheckCircle to MaterialTheme.colorScheme.primary
+        job.state == BackgroundJobState.STOPPED || job.state == BackgroundJobState.INTERRUPTED ->
+            Icons.Rounded.PauseCircle to MaterialTheme.colorScheme.onSurfaceVariant
+        job.state == BackgroundJobState.TIMED_OUT -> Icons.Rounded.HourglassBottom to MaterialTheme.colorScheme.error
+        job.state == BackgroundJobState.RUNNING -> Icons.Rounded.Terminal to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> Icons.Rounded.ErrorOutline to MaterialTheme.colorScheme.error
+    }
+    Icon(icon, contentDescription = null, tint = tint, modifier = modifier)
+}
+
+@Composable
+private fun jobMeta(job: BackgroundJob, nowMillis: Long): String {
+    val runner = stringResource(
+        when (job.runner) {
+            BackgroundJobRunner.SHELL -> R.string.agent_jobs_runner_shell
+            BackgroundJobRunner.PYTHON -> R.string.agent_jobs_runner_python
+            BackgroundJobRunner.TERMUX -> R.string.agent_jobs_runner_termux
+        },
+    )
+    val duration = durationText(compactDuration((job.endedAtMillis ?: nowMillis) - job.startedAtMillis))
+    val state = when (job.state) {
+        BackgroundJobState.RUNNING -> stringResource(R.string.agent_jobs_state_running, duration)
+        BackgroundJobState.EXITED -> stringResource(R.string.agent_jobs_state_exited, job.exitCode ?: -1, duration)
+        BackgroundJobState.STOPPED -> stringResource(R.string.agent_jobs_state_stopped, duration)
+        BackgroundJobState.TIMED_OUT -> stringResource(R.string.agent_jobs_state_timed_out, duration)
+        BackgroundJobState.INTERRUPTED -> stringResource(R.string.agent_jobs_state_interrupted)
+        BackgroundJobState.FAILED -> stringResource(R.string.agent_jobs_state_failed)
+    }
+    return "$runner · $state"
+}
+
+@Composable
+private fun durationText(duration: CompactDuration): String = when {
+    duration.hours > 0 -> stringResource(R.string.agent_duration_hm, duration.hours, duration.minutes)
+    duration.minutes > 0 -> stringResource(R.string.agent_duration_ms, duration.minutes, duration.seconds)
+    else -> stringResource(R.string.agent_duration_s, duration.seconds)
+}
+
+// ─────────────────────────────── 定时任务面板 ───────────────────────────────
+
+/**
+ * 本会话的定时任务：名称、触发规则、下次触发与最近结果，开关暂停，删除前确认。
+ * [exactAlarmAvailable] 为 false（Play）时标题旁显示“系统择时”标签；侧载版缺少精确闹钟授权时，
+ * 受影响的条目各自显示一枚可点的授权标签。
+ */
+@Composable
+internal fun ScheduledTasksContent(
+    tasks: List<ScheduledTask>,
+    nowMillis: Long,
+    exactAlarmAvailable: Boolean,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+    onGrantExact: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    var deleting by remember { mutableStateOf<ScheduledTask?>(null) }
+    LazyColumn(modifier = modifier.fillMaxWidth().testTag(UiTags.SCHEDULED_TASKS_SHEET)) {
+        item(key = "header") {
+            SheetHeader(title = stringResource(R.string.agent_schedules_title)) {
+                if (!exactAlarmAvailable) {
+                    ChannelLimitChip(
+                        label = stringResource(R.string.agent_schedules_limit_label),
+                        title = stringResource(R.string.agent_schedules_limit_title),
+                        body = stringResource(R.string.agent_schedules_limit_body),
+                        icon = Icons.Rounded.Schedule,
+                    )
+                }
+            }
+        }
+        if (tasks.isEmpty()) {
+            item(key = "empty") { EmptyHint(Icons.Rounded.Schedule, stringResource(R.string.agent_schedules_empty)) }
+        }
+        items(tasks, key = { it.id }) { task ->
+            ScheduledTaskRow(
+                task = task,
+                nowMillis = nowMillis,
+                onToggle = { onToggle(task.id, it) },
+                onDelete = { deleting = task },
+                onGrantExact = onGrantExact?.takeIf { exactAlarmAvailable && task.exactRequested && !task.exactEffective },
+            )
+        }
+    }
+    deleting?.let { task ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(R.string.agent_schedules_delete_title)) },
+            text = { Text(stringResource(R.string.agent_schedules_delete_body, task.name)) },
+            confirmButton = {
+                TextButton(onClick = { deleting = null; onDelete(task.id) }) { Text(stringResource(R.string.agent_schedules_delete_confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+}
+
+@Composable
+private fun ScheduledTaskRow(
+    task: ScheduledTask,
+    nowMillis: Long,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onGrantExact: (() -> Unit)?,
+) {
+    val stateText = stringResource(if (task.enabled) R.string.agent_schedules_enabled else R.string.agent_schedules_paused)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = NexaraSpacing.Large, end = NexaraSpacing.Small, top = NexaraSpacing.Small, bottom = NexaraSpacing.Small)
+            .testTag(UiTags.scheduledTask(task.id)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(task.name, style = NexaraTypography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = triggerText(task.trigger),
+                style = NexaraTypography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = scheduleStatus(task, nowMillis),
+                    style = NexaraTypography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (task.exactEffective) SmallTag(stringResource(R.string.agent_schedules_exact), MaterialTheme.colorScheme.secondaryContainer)
+            }
+            // 授权入口单独一行，不挤占状态文字。
+            if (onGrantExact != null) {
+                Row(Modifier.padding(top = 2.dp)) {
+                    Surface(
+                        onClick = onGrantExact,
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ) {
+                        Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.AlarmOff, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Text(stringResource(R.string.agent_schedules_grant_exact), style = NexaraTypography.labelSmall, modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Switch(
+            checked = task.enabled,
+            onCheckedChange = onToggle,
+            modifier = Modifier
+                .semantics { stateDescription = stateText }
+                .testTag(UiTags.scheduledTaskToggle(task.id)),
+        )
+        IconButton(onClick = onDelete, modifier = Modifier.testTag(UiTags.scheduledTaskDelete(task.id))) {
+            Icon(
+                Icons.Outlined.DeleteOutline,
+                contentDescription = stringResource(R.string.agent_schedules_delete_title),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun triggerText(trigger: ScheduleTrigger): String = when (trigger) {
+    is ScheduleTrigger.Once -> {
+        val at = runCatching { LocalDateTime.parse(trigger.localDateTime) }.getOrNull()
+        stringResource(
+            R.string.agent_schedules_trigger_once,
+            at?.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)) ?: trigger.localDateTime,
+        )
+    }
+    is ScheduleTrigger.Interval -> when (val unit = intervalUnit(trigger.everyMinutes)) {
+        is IntervalUnit.Minutes -> pluralStringResource(R.plurals.agent_schedules_every_minutes, unit.value, unit.value)
+        is IntervalUnit.Hours -> pluralStringResource(R.plurals.agent_schedules_every_hours, unit.value, unit.value)
+        is IntervalUnit.Days -> pluralStringResource(R.plurals.agent_schedules_every_days, unit.value, unit.value)
+    }
+    is ScheduleTrigger.Cron -> stringResource(R.string.agent_schedules_trigger_cron, trigger.expression)
+}
+
+@Composable
+private fun scheduleStatus(task: ScheduledTask, nowMillis: Long): String {
+    val next = task.nextFireAtMillis?.takeIf { task.enabled }?.let { stringResource(R.string.agent_schedules_next, fireTimeLabel(it, nowMillis)) }
+    val last = task.lastResult?.let {
+        stringResource(
+            when (it) {
+                ScheduleRunResult.COMPLETED -> R.string.agent_schedules_last_completed
+                ScheduleRunResult.NEEDS_USER -> R.string.agent_schedules_last_needs_user
+                ScheduleRunResult.SKIPPED_BUSY -> R.string.agent_schedules_last_skipped_busy
+                ScheduleRunResult.SKIPPED_OTHER -> R.string.agent_schedules_last_skipped
+                ScheduleRunResult.FAILED -> R.string.agent_schedules_last_failed
+            },
+        )
+    }
+    val runs = task.maxRuns?.let { stringResource(R.string.agent_schedules_runs_of, task.runCount, it) }
+    return listOfNotNull(next ?: if (!task.enabled) stringResource(R.string.agent_schedules_paused) else null, last, runs).joinToString(" · ")
+}
+
+@Composable
+private fun fireTimeLabel(fireAtMillis: Long, nowMillis: Long): String {
+    val zoned = Instant.ofEpochMilli(fireAtMillis).atZone(ZoneId.systemDefault())
+    val time = zoned.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
+    return when (fireDay(fireAtMillis, nowMillis)) {
+        FireDay.TODAY -> time
+        FireDay.TOMORROW -> stringResource(R.string.agent_schedules_tomorrow, time)
+        FireDay.LATER -> zoned.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT))
+    }
+}
+
+// ─────────────────────────────── 共用片段 ───────────────────────────────
+
+@Composable
+private fun SheetHeader(title: String, trailing: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        Text(title, style = NexaraTypography.titleLarge, modifier = Modifier.weight(1f, fill = false))
+        trailing()
+    }
+}
+
+@Composable
+private fun EmptyHint(icon: ImageVector, text: String) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.XLarge),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp))
+        Text(text, style = NexaraTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun SmallTag(text: String, color: androidx.compose.ui.graphics.Color) {
+    Surface(shape = CircleShape, color = color) {
+        Text(text, style = NexaraTypography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+    }
+}

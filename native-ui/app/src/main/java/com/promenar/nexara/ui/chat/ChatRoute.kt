@@ -588,6 +588,10 @@ fun ChatRoute(
         sessionId = sessionId,
         store = application.canvasStore,
         onInsertText = { text -> chatViewModel.appendCanvasText(sessionId, text) },
+        onRevealInWorkspace = { path ->
+            workspaceLocatePath = path
+            requestOverlay(ChatOverlay.Workspace)
+        },
     ) {
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,

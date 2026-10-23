@@ -64,8 +64,10 @@ internal fun CanvasInvocationCards(steps: List<ExecutionStep>) {
                 metadata = metadata ?: fallback,
                 version = reference.version,
                 html = html,
-                onOpen = { access.open(reference.id) },
+                onOpen = { access.openVersion(reference.id, reference.version) },
                 previewContent = if (failed) { { Text(stringResource(R.string.canvas_load_error)) } } else null,
+                onOpenLatest = { access.open(reference.id) },
+                onCopySource = { access.copySource(reference.id, reference.version) },
             )
         } }
     }

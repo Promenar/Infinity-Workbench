@@ -403,6 +403,22 @@ object UiTags {
     const val CANVAS_COPY = "canvas_copy"
     const val CANVAS_VERSION_SELECTOR = "canvas_version_selector"
     const val CANVAS_ENTRY = "canvas_entry"
+    const val CANVAS_CARD_MENU = "canvas_card_menu"
+
+    // 系统触发轮次、后台任务与定时任务
+    const val SYSTEM_TRIGGER_ROW = "system_trigger_row"
+    const val SYSTEM_TRIGGER_BODY = "system_trigger_body"
+    const val AGENT_ACTIVITY_STRIP = "agent_activity_strip"
+    const val AGENT_JOBS_PILL = "agent_jobs_pill"
+    const val AGENT_SCHEDULES_PILL = "agent_schedules_pill"
+    const val BACKGROUND_JOBS_SHEET = "background_jobs_sheet"
+    const val SCHEDULED_TASKS_SHEET = "scheduled_tasks_sheet"
+    const val CHANNEL_LIMIT_CHIP = "channel_limit_chip"
+    fun backgroundJob(id: String) = "background_job_$id"
+    fun backgroundJobStop(id: String) = "background_job_stop_$id"
+    fun scheduledTask(id: String) = "scheduled_task_$id"
+    fun scheduledTaskToggle(id: String) = "scheduled_task_toggle_$id"
+    fun scheduledTaskDelete(id: String) = "scheduled_task_delete_$id"
 
     // 会话状态面板
     const val CHAT_STATE_BAR = "chat_state_bar"

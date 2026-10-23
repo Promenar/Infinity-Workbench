@@ -199,6 +199,10 @@ fun PipelineBubble(
     }
     if (group.isUser) {
         val msg = group.messages.first()
+        msg.systemTrigger?.let { trigger ->
+            SystemTriggerRow(trigger = trigger, modifier = modifier)
+            return
+        }
         UserMessageBubble(
             message = msg,
             fontSize = fontSize,

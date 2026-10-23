@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="system_trigger_schedule">定时任务 · %1$s</string>
+    <string name="system_trigger_schedule_seq">定时任务 · %1$s · 第 %2$d 次</string>
+    <string name="system_trigger_job_exit">后台任务结束 · %1$s</string>
+    <string name="system_trigger_catch_up">补发 · %1$s</string>
+    <string name="system_trigger_expand">展开提示</string>
+    <string name="system_trigger_collapse">收起提示</string>
+    <plurals name="agent_jobs_running">
+        <item quantity="other">%1$d 个后台任务</item>
+    </plurals>
+    <string name="agent_jobs_finished">已结束 · %1$s</string>
+    <plurals name="agent_schedules_count">
+        <item quantity="other">%1$d 个定时任务</item>
+    </plurals>
+    <string name="agent_schedules_next">下次 %1$s</string>
+    <string name="agent_schedules_next_many">下次 %1$s · 共 %2$d 个</string>
+    <string name="agent_schedules_tomorrow">明天 %1$s</string>
+    <string name="agent_jobs_title">后台任务</string>
+    <string name="agent_jobs_empty">本会话还没有后台任务</string>
+    <string name="agent_jobs_limit_label">仅前台运行</string>
+    <string name="agent_jobs_limit_title">离开应用后可能暂停</string>
+    <string name="agent_jobs_limit_body">Play 版不提供后台保活，切到其它应用后任务可能被系统暂停或结束。侧载版会以常驻通知保持运行。</string>
+    <string name="agent_jobs_stop">停止任务</string>
+    <string name="agent_jobs_open_log">在工作区中打开日志</string>
+    <string name="agent_jobs_runner_shell">Shell</string>
+    <string name="agent_jobs_runner_python">Python</string>
+    <string name="agent_jobs_runner_termux">Termux</string>
+    <string name="agent_jobs_state_running">已运行 %1$s</string>
+    <string name="agent_jobs_state_exited">退出码 %1$d · 用时 %2$s</string>
+    <string name="agent_jobs_state_stopped">已停止 · 用时 %1$s</string>
+    <string name="agent_jobs_state_timed_out">超时终止 · 用时 %1$s</string>
+    <string name="agent_jobs_state_interrupted">应用重启时中断</string>
+    <string name="agent_jobs_state_failed">启动失败</string>
+    <string name="agent_duration_hm">%1$d 小时 %2$d 分</string>
+    <string name="agent_duration_ms">%1$d 分 %2$d 秒</string>
+    <string name="agent_duration_s">%1$d 秒</string>
+    <string name="agent_schedules_title">定时任务</string>
+    <string name="agent_schedules_empty">本会话还没有定时任务</string>
+    <string name="agent_schedules_limit_label">系统择时</string>
+    <string name="agent_schedules_limit_title">由系统决定具体时刻</string>
+    <string name="agent_schedules_limit_body">Play 版的定时任务可能延后几分钟执行，最短每 15 分钟一次。侧载版可使用精确闹钟。</string>
+    <string name="agent_schedules_exact">精确</string>
+    <string name="agent_schedules_grant_exact">授权精确闹钟</string>
+    <string name="agent_schedules_enabled">已启用</string>
+    <string name="agent_schedules_paused">已暂停</string>
+    <string name="agent_schedules_trigger_once">单次 · %1$s</string>
+    <string name="agent_schedules_trigger_cron">cron · %1$s</string>
+    <plurals name="agent_schedules_every_minutes">
+        <item quantity="other">每 %1$d 分钟</item>
+    </plurals>
+    <plurals name="agent_schedules_every_hours">
+        <item quantity="other">每 %1$d 小时</item>
+    </plurals>
+    <plurals name="agent_schedules_every_days">
+        <item quantity="other">每 %1$d 天</item>
+    </plurals>
+    <string name="agent_schedules_last_completed">上次已完成</string>
+    <string name="agent_schedules_last_needs_user">等待你处理</string>
+    <string name="agent_schedules_last_skipped_busy">上次因忙碌跳过</string>
+    <string name="agent_schedules_last_skipped">上次已跳过</string>
+    <string name="agent_schedules_last_failed">上次失败</string>
+    <string name="agent_schedules_runs_of">已执行 %1$d/%2$d 次</string>
+    <string name="agent_schedules_delete_title">删除定时任务</string>
+    <string name="agent_schedules_delete_body">“%1$s”将不再触发，已有的对话记录会保留。</string>
+    <string name="agent_schedules_delete_confirm">删除</string>
+</resources>
