@@ -306,6 +306,16 @@ class ChatScreenContentStateTest {
     }
 
     @Test
+    fun approvalCardCollapsesWhileDecisionIsSubmitting() {
+        val request = ApprovalRequest(
+            toolName = "write_file", args = "{\"path\":\"legacy.md\"}",
+            reason = "Execution mode: semi\nUpdate workspace",
+        )
+        render(ChatUiState(session = session, approvalRequest = request, isApprovalSubmitting = true))
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertDoesNotExist()
+    }
+
+    @Test
     fun legacyApprovalKeepsArgumentsInOneParameterBlock() {
         render(ChatUiState(session = session, approvalRequest = ApprovalRequest(
             toolName = "write_file", args = "{\"path\":\"legacy.md\"}",

@@ -23,7 +23,7 @@ private class ScheduleSkill(
     override val mcpServerId: String? = null
     override val risk = if (operation == "create") ToolRisk.SCHEDULE else ToolRisk.SESSION_STATE
     override val description: String = when (operation) {
-        "create" -> "在当前会话创建单次、间隔或 cron 定时任务，用于轮询、检查或提醒。创建始终需要用户批准；每次到点发起完整一轮。时区固定为创建时设备时区。非精确最短15分钟，精确最短5分钟；渠道或权限不支持时按至少15分钟降级。"
+        "create" -> "在当前会话创建单次、间隔或 cron 定时任务，用于轮询、检查或提醒。创建始终需要用户批准；每次到点发起完整一轮。时区固定为创建时设备时区。轮询用 interval，相对时间用 once.in_minutes；at 仅用于用户明确给出具体钟点。前台最短1分钟；重复任务后台精确间隔至少5分钟，非精确至少15分钟。单次任务不受后台间隔下限约束。"
         "list" -> "列出当前会话的定时任务、下次触发时间和最近结果。"
         "pause" -> "暂停当前会话中的定时任务，保留记录。"
         "resume" -> "恢复当前会话中尚未过期或达到次数上限的定时任务。"
@@ -31,7 +31,7 @@ private class ScheduleSkill(
     }
     override val parametersSchema: String = when (operation) {
         // 只用 ToolSchemaValidator 支持的关键字；变体必填项与下限写在描述里，由 ScheduleCalculation 在运行时校验。
-        "create" -> """{"type":"object","properties":{"name":{"type":"string","description":"1 到 60 字符"},"prompt":{"type":"string","description":"每次到点发给本会话的提示，1 到 4000 字符"},"trigger":{"type":"object","description":"once 需 at；interval 需 every_minutes；cron 需 expr","properties":{"type":{"type":"string","enum":["once","interval","cron"]},"at":{"type":"string","description":"once 必填：设备本地时间，例如2026-10-24T09:00"},"every_minutes":{"type":"integer","description":"interval 必填：间隔分钟，精确至少5，非精确至少15"},"expr":{"type":"string","description":"cron 必填：五段cron：分 时 日 月 周，支持*、数字、列表、范围、步长"}},"required":["type"],"additionalProperties":false},"exact":{"type":"boolean","default":false},"max_runs":{"type":"integer","description":"可选的触发次数上限，正整数"},"expires_at":{"type":"string","description":"ISO本地时间或含Z/偏移的时间"}},"required":["name","prompt","trigger"],"additionalProperties":false}"""
+        "create" -> """{"type":"object","properties":{"name":{"type":"string","description":"1 到 60 字符"},"prompt":{"type":"string","description":"每次到点发给本会话的提示，1 到 4000 字符"},"trigger":{"type":"object","description":"once 必须且只能提供 in_minutes 或 at；相对时间用 in_minutes，轮询用 interval，at 仅用于用户给出具体钟点；interval 需 every_minutes；cron 需 expr；前台最短1分钟，重复任务后台精确至少5分钟、非精确至少15分钟","properties":{"type":{"type":"string","enum":["once","interval","cron"]},"in_minutes":{"type":"integer","description":"once 相对倒计时：1 到 10080 分钟，与 at 二选一；相对时间一律使用此字段"},"at":{"type":"string","description":"once 绝对时间：仅当用户明确给出具体钟点时使用设备本地时间，例如2026-10-24T09:00；与 in_minutes 二选一"},"every_minutes":{"type":"integer","description":"interval 必填：间隔分钟，最短1分钟；前台按请求间隔执行，后台精确至少5分钟、非精确至少15分钟"},"expr":{"type":"string","description":"cron 必填：五段cron：分 时 日 月 周，支持*、数字、列表、范围、步长"}},"required":["type"],"additionalProperties":false},"exact":{"type":"boolean","default":false},"max_runs":{"type":"integer","description":"可选的触发次数上限，正整数"},"expires_at":{"type":"string","description":"ISO本地时间或含Z/偏移的时间"}},"required":["name","prompt","trigger"],"additionalProperties":false}"""
         "list" -> """{"type":"object","properties":{},"additionalProperties":false}"""
         else -> """{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false}"""
     }
@@ -40,7 +40,7 @@ private class ScheduleSkill(
         val result = buildJsonObject {
             when (operation) {
                 "create" -> {
-                    val created = controller.create(context.sessionId, ScheduleCalculation.parse(args, ZoneId.systemDefault().id))
+                    val created = controller.create(context.sessionId, ScheduleCalculation.parse(args, ZoneId.systemDefault().id, System.currentTimeMillis()))
                     put("task", taskJson(created.task))
                     put("id", created.task.id)
                     put("next_fire_at", created.task.nextFireAtMillis?.let(::JsonPrimitive) ?: JsonNull)

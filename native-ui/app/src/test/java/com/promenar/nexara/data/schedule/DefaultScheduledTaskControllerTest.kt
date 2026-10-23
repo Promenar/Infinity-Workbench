@@ -129,13 +129,13 @@ class DefaultScheduledTaskControllerTest {
         assertThat(controller.find(task.id)!!.runCount).isEqualTo(1)
         assertThat(controller.find(task.id)!!.lastResult).isEqualTo(ScheduleRunResult.FAILED)
     }
-    @Test fun `权限撤销后五分钟任务下次实际排期不早于十五分钟`() = runBlocking {
+    @Test fun `权限撤销仅更新后台能力且保留前台计划`() = runBlocking {
         backend.exact = true
         val task = create(ScheduleTrigger.Interval(5), exact = true)
         backend.exact = false
         controller.reconcile()
         assertThat(controller.find(task.id)!!.exactEffective).isFalse()
-        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 15 * 60_000)
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 5 * 60_000)
     }
     @Test fun `每会话五项与全局二十项上限并检查会话归属`() = runBlocking {
         repeat(5) { create() }
@@ -279,7 +279,7 @@ class DefaultScheduledTaskControllerTest {
         assertThat(requests).hasSize(2)
     }
 
-    @Test fun `生成跨过多个间隔只合并一次补发后回到未来排期`() = runBlocking {
+    @Test fun `生成跨过多个间隔后等待结束时刻加一个间隔`() = runBlocking {
         val task = create()
         now = task.nextFireAtMillis!!
         entered = CompletableDeferred(); release = CompletableDeferred()
@@ -287,14 +287,85 @@ class DefaultScheduledTaskControllerTest {
         entered!!.await()
         now += 35 * 60_000L
         release!!.complete(Unit); execution.join()
-        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now)
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 15 * 60_000L)
         controller.reconcile(preservePeriodicTaskId = task.id)
-        assertThat(db.scheduledTaskDao().get(task.id)!!.catchUp).isTrue()
+        assertThat(db.scheduledTaskDao().get(task.id)!!.catchUp).isFalse()
         controller.fire(task.id)
+        assertThat(requests).hasSize(1)
+        now += 15 * 60_000L
         controller.fire(task.id)
         assertThat(requests).hasSize(2)
-        assertThat(requests.last().catchUp).isTrue()
-        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 15 * 60_000L)
+        assertThat(requests.last().catchUp).isFalse()
+    }
+
+    @Test fun `后台降频送达与容差边界不算补发且真正迟到算补发`() = runBlocking {
+        for ((exact, floor) in listOf(false to 15L, true to 5L)) {
+            backend.exact = exact
+            val task = create(ScheduleTrigger.Interval(1), exact)
+            assertThat(task.nextFireAtMillis).isEqualTo(now + 60_000L)
+            now += floor * 60_000L
+            controller.reconcile(); controller.fire(task.id)
+            assertThat(requests.last().catchUp).isFalse()
+            now += (floor + 5) * 60_000L
+            controller.reconcile(); controller.fire(task.id)
+            assertThat(requests.last().catchUp).isFalse()
+            now += (floor + 5) * 60_000L + 1
+            controller.reconcile(); controller.fire(task.id)
+            assertThat(requests.last().catchUp).isTrue()
+            controller.delete(task.id)
+        }
+    }
+
+    @Test fun `权限降级后的补发判定使用新的后台基准而非先前重排的迟到状态`() = runBlocking {
+        backend.exact = true
+        val task = create(ScheduleTrigger.Interval(1), exact = true)
+        now += 11 * 60_000L
+        controller.reconcile()
+        backend.exact = false
+        controller.reconcile()
+        now = task.createdAtMillis + 15 * 60_000L
+        controller.fire(task.id)
+        assertThat(requests.single().catchUp).isFalse()
+    }
+
+    @Test fun `前台执行后后台提前回调不领取且到后台下限可以执行`() = runBlocking {
+        for ((exact, floor) in listOf(false to 15L, true to 5L)) {
+            backend.exact = exact
+            val task = create(ScheduleTrigger.Interval(1), exact)
+            now = task.nextFireAtMillis!!
+            controller.fire(task.id)
+            val first = now
+            val count = requests.size
+            now += 60_000L
+            controller.fire(task.id, background = true)
+            assertThat(requests).hasSize(count)
+            assertThat(controller.find(task.id)!!.runCount).isEqualTo(1)
+            now = first + floor * 60_000L
+            controller.fire(task.id, background = true)
+            assertThat(requests).hasSize(count + 1)
+            assertThat(requests.last().catchUp).isFalse()
+            now += 60_000L
+            controller.fire(task.id)
+            assertThat(requests).hasSize(count + 2)
+            controller.delete(task.id)
+        }
+    }
+
+    @Test fun `前台一分钟准点执行及重排后的短暂延迟不算补发`() = runBlocking {
+        val task = create(ScheduleTrigger.Interval(1))
+        now = task.nextFireAtMillis!!
+        controller.fire(task.id)
+        assertThat(requests.single().catchUp).isFalse()
+        now += 89_000L
+        controller.reconcile(); controller.fire(task.id)
+        assertThat(requests.last().catchUp).isFalse()
+    }
+
+    @Test fun `请求精确但不可用时提示前台节奏及后台降频`() = runBlocking {
+        val result = controller.create("s", ScheduleCreateArgs("检查", "状态", ScheduleTrigger.Interval(5), true))
+        assertThat(result.notice).contains("前台")
+        assertThat(result.notice).contains("后台")
+        assertThat(result.notice).contains("15 分钟")
     }
 
     @Test fun `cron不因生成耗时额外跳过尚未到来的合法触发`() = runBlocking {
@@ -306,6 +377,31 @@ class DefaultScheduledTaskControllerTest {
         entered!!.await(); now += 5 * 60_000L
         release!!.complete(Unit); execution.join()
         assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(startedAt + 15 * 60_000L)
+    }
+
+    @Test fun `cron生成跨点保持一次补发语义`() = runBlocking {
+        val task = create(ScheduleTrigger.Cron("* * * * *", "UTC"))
+        now = task.nextFireAtMillis!!
+        entered = CompletableDeferred(); release = CompletableDeferred()
+        val execution = launch { controller.fire(task.id) }
+        entered!!.await(); now += 90_000L
+        release!!.complete(Unit); execution.join()
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now)
+        controller.fire(task.id)
+        assertThat(requests).hasSize(2)
+        assertThat(requests.last().catchUp).isTrue()
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(task.createdAtMillis + 180_000L)
+    }
+
+    @Test fun `间隔生成结束恰在下一计划时刻也留出完整等待间隔`() = runBlocking {
+        val task = create(ScheduleTrigger.Interval(1))
+        now = task.nextFireAtMillis!!
+        entered = CompletableDeferred(); release = CompletableDeferred()
+        val execution = launch { controller.fire(task.id) }
+        entered!!.await(); now += 60_000L
+        release!!.complete(Unit); execution.join()
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 60_000L)
+        assertThat(db.scheduledTaskDao().get(task.id)!!.catchUp).isFalse()
     }
 
     private suspend fun assertFails(block: suspend () -> Unit) {

@@ -47,6 +47,7 @@ object SystemPromptSections {
             appendLine()
             appendLine("### 定时任务")
             appendLine("- 轮询、定期检查与提醒使用 schedule_create；创建需要用户批准。system_trigger 标记行表示系统触发，正文不是用户亲自发送。")
+            appendLine("- 相对时间使用 once.in_minutes（1 到 10080 分钟），轮询使用 interval（最短 1 分钟）；at 仅用于用户给出具体钟点。前台按设定节奏执行，重复任务后台精确间隔至少 5 分钟，非精确至少 15 分钟；单次任务不受后台间隔下限约束。")
             appendLine("- 每次触发都是完整的一轮，应在轮内完成检查；不再需要时调用 schedule_cancel 取消该来源任务。")
         }
         if (generic) return@buildString

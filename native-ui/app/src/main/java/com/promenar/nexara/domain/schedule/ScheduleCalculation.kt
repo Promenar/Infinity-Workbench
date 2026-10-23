@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.*
 
 data class ScheduleCreateArgs(
@@ -18,9 +19,9 @@ data class ScheduleCreateArgs(
 data class ScheduleCreateResult(val task: ScheduledTask, val notice: String? = null)
 
 object ScheduleCalculation {
-    fun minimumMinutes(exactEffective: Boolean): Int = if (exactEffective) 5 else 15
+    private fun backgroundMinimumMinutes(exactEffective: Boolean): Int = if (exactEffective) 5 else 15
 
-    fun parse(args: JsonObject, zoneId: String): ScheduleCreateArgs {
+    fun parse(args: JsonObject, zoneId: String, nowMillis: Long): ScheduleCreateArgs {
         ZoneId.of(zoneId)
         fun JsonObject.text(key: String): String = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
             ?: throw IllegalArgumentException("$key 必须是字符串。")
@@ -28,7 +29,16 @@ object ScheduleCalculation {
             ?: throw IllegalArgumentException("$key 必须是整数。")
         val raw = args["trigger"] as? JsonObject ?: throw IllegalArgumentException("trigger 必须是对象。")
         val trigger = when (raw.text("type")) {
-            "once" -> ScheduleTrigger.Once(normalizeOnce(raw.text("at"), zoneId), zoneId)
+            "once" -> {
+                require(("at" in raw) != ("in_minutes" in raw)) { "once 必须且只能提供 at 或 in_minutes 其中一项。" }
+                val local = if ("in_minutes" in raw) {
+                    val minutes = raw.integer("in_minutes")
+                    require(minutes in 1..10080) { "in_minutes 必须为 1 到 10080 的整数。" }
+                    Instant.ofEpochMilli(nowMillis).plusSeconds(minutes * 60L)
+                        .atZone(ZoneId.of(zoneId)).toLocalDateTime().withNano(0).toString()
+                } else normalizeOnce(raw.text("at"), zoneId)
+                ScheduleTrigger.Once(local, zoneId)
+            }
             "interval" -> ScheduleTrigger.Interval(raw.integer("every_minutes"))
             "cron" -> ScheduleTrigger.Cron(raw.text("expr"), zoneId)
             else -> throw IllegalArgumentException("trigger.type 必须是 once、interval 或 cron。")
@@ -50,10 +60,14 @@ object ScheduleCalculation {
         require(args.prompt.isNotBlank() && args.prompt.codePointCount(0, args.prompt.length) <= 4000) { "提示必须为 1 到 4000 字符。" }
         require(args.maxRuns == null || args.maxRuns > 0) { "max_runs 必须是正整数。" }
         require(args.expiresAtMillis == null || args.expiresAtMillis > nowMillis) { "到期时间必须在未来。" }
-        val minimum = minimumMinutes(exactEffective || args.exactRequested)
+        val minimum = 1
         when (val trigger = args.trigger) {
-            is ScheduleTrigger.Once -> require(resolveLocal(trigger.localDateTime, trigger.zoneId) > nowMillis) { "单次触发时间必须在未来。" }
-            is ScheduleTrigger.Interval -> require(trigger.everyMinutes >= minimum) { "当前调度模式的间隔至少为 $minimum 分钟。" }
+            is ScheduleTrigger.Once -> require(resolveLocal(trigger.localDateTime, trigger.zoneId) > nowMillis) {
+                val current = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.of(trigger.zoneId))
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
+                "单次触发时间必须在未来。设备当前本地时间：$current；相对时间请使用 in_minutes。"
+            }
+            is ScheduleTrigger.Interval -> require(trigger.everyMinutes >= minimum) { "前台间隔至少为 $minimum 分钟。" }
             is ScheduleTrigger.Cron -> {
                 val times = CronExpression.parse(trigger.expression).nextTimes(nowMillis, trigger.zoneId, 64)
                 require(times.isNotEmpty()) { "cron 在未来 8 年内没有触发时间。" }
@@ -80,15 +94,27 @@ object ScheduleCalculation {
         return local.toInstant(offsets.first()).toEpochMilli()
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun nextAfter(trigger: ScheduleTrigger, afterMillis: Long, exactEffective: Boolean): Long? = when (trigger) {
         is ScheduleTrigger.Once -> resolveLocal(trigger.localDateTime, trigger.zoneId).takeIf { it > afterMillis }
-        is ScheduleTrigger.Interval -> Math.addExact(afterMillis, maxOf(trigger.everyMinutes, minimumMinutes(exactEffective)) * 60_000L)
+        is ScheduleTrigger.Interval -> Math.addExact(afterMillis, maxOf(trigger.everyMinutes, 1) * 60_000L)
         is ScheduleTrigger.Cron -> CronExpression.parse(trigger.expression).nextAfter(afterMillis, trigger.zoneId)
     }
 
-    /** 失去精确权限时，cron 的下一次实际排期同样遵守非精确间隔下限。 */
     fun nextAfterRun(trigger: ScheduleTrigger, firedAtMillis: Long, exactEffective: Boolean): Long? =
-        nextAfter(trigger, if (trigger is ScheduleTrigger.Cron) firedAtMillis + minimumMinutes(exactEffective) * 60_000L - 1 else firedAtMillis, exactEffective)
+        nextAfter(trigger, firedAtMillis, exactEffective)
+
+    /** 前台计划独立于系统兜底：只有重复任务的后台时刻受渠道下限约束。 */
+    fun backgroundFireAt(
+        trigger: ScheduleTrigger,
+        nextFireAtMillis: Long,
+        lastFiredAtMillis: Long?,
+        createdAtMillis: Long,
+        exactEffective: Boolean,
+    ): Long = if (trigger is ScheduleTrigger.Once) nextFireAtMillis else maxOf(
+        nextFireAtMillis,
+        Math.addExact(lastFiredAtMillis ?: createdAtMillis, backgroundMinimumMinutes(exactEffective) * 60_000L),
+    )
 
     fun exhausted(runCount: Int, maxRuns: Int?, expiresAtMillis: Long?, nowMillis: Long): Boolean =
         (maxRuns != null && runCount >= maxRuns) || (expiresAtMillis != null && nowMillis >= expiresAtMillis)
@@ -104,7 +130,7 @@ fun previewScheduleTriggers(
     count: Int = 3,
 ): List<Long> {
     require(count in 1..64)
-    val parsed = ScheduleCalculation.parse(args, zoneId)
+    val parsed = ScheduleCalculation.parse(args, zoneId, nowMillis)
     val effective = parsed.exactRequested && exactAlarmAvailable && canScheduleExact
     ScheduleCalculation.validate(parsed, nowMillis, effective)
     val result = mutableListOf<Long>()

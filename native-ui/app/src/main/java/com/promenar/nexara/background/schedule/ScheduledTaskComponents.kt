@@ -67,7 +67,7 @@ class ScheduledTaskAlarmReceiver : BroadcastReceiver() {
         ScheduleApplicationScope.scope.launch {
             val app = context.applicationContext as NexaraApplication
             app.startupState.first { it == BackupStartupState.Ready }
-            app.scheduledTaskController.fire(id)
+            app.scheduledTaskController.fire(id, background = true)
         }
     }
 }
@@ -83,7 +83,7 @@ class ScheduledTaskJobService : JobService() {
             var finished = false
             try {
                 app.startupState.first { it == BackupStartupState.Ready }
-                app.scheduledTaskController.fire(id, reschedule = false, executionToken = token)
+                app.scheduledTaskController.fire(id, reschedule = false, executionToken = token, background = true)
             } finally {
                 try {
                     withContext(Dispatchers.Main.immediate + NonCancellable) {
@@ -149,7 +149,7 @@ class ScheduledTaskAlarmService : Service() {
             ScheduleApplicationScope.scope.launch {
                 val app = application as NexaraApplication
                 app.startupState.first { it == BackupStartupState.Ready }
-                app.scheduledTaskController.fire(id)
+                app.scheduledTaskController.fire(id, background = true)
             }
             stopSelf(startId)
             return START_NOT_STICKY
@@ -160,7 +160,7 @@ class ScheduledTaskAlarmService : Service() {
                 try {
                     val app = application as NexaraApplication
                     app.startupState.first { it == BackupStartupState.Ready }
-                    app.scheduledTaskController.fire(id, executionToken = token)
+                    app.scheduledTaskController.fire(id, executionToken = token, background = true)
                 } finally {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
                         running.remove(id)

@@ -54,6 +54,7 @@ class ScheduledTaskJobServiceLifecycleTest {
     private lateinit var service: ScheduledTaskJobService
     private lateinit var app: NexaraApplication
     private var executionJob: Job? = null
+    private var onScheduled: (() -> Unit)? = null
     private val entered = CompletableDeferred<Unit>()
     private val release = CompletableDeferred<Unit>()
     private val rearmed = CompletableDeferred<Unit>()
@@ -70,6 +71,7 @@ class ScheduledTaskJobServiceLifecycleTest {
             override fun schedule(task: ScheduledTaskEntity) {
                 // 与平台后端一致：已领取的轮次不能登记下一个系统窗口。
                 if (task.claimToken == null && task.enabled && task.runCount > 0) rearmed.complete(Unit)
+                onScheduled?.invoke()
             }
         }
         controller = DefaultScheduledTaskController(context, database, object : SystemTurnDispatcher {
@@ -140,6 +142,27 @@ class ScheduledTaskJobServiceLifecycleTest {
         coEvery { app.systemTriggerNotifications.failed(any(), any(), any()) } coAnswers { notified.complete(Unit) }
         service.onStopJob(params)
         withTimeout(5_000) { stopped.await(); notified.await() }
+    }
+
+    @Test fun `后台Job提前送达不能领取一分钟前台计划且完成窗口后重新排期`() = runBlocking {
+        val task = controller.create("session", ScheduleCreateArgs("检查", "检查状态", ScheduleTrigger.Interval(1))).task
+        now = task.nextFireAtMillis!!
+        val row = database.scheduledTaskDao().get(task.id)!!
+        val rescheduled = CompletableDeferred<Unit>()
+        onScheduled = { rescheduled.complete(Unit) }
+        release.complete(Unit)
+        val params = mockk<JobParameters>(relaxed = true)
+        every { params.extras } returns PersistableBundle().apply {
+            putString(AndroidScheduleBackend.EXTRA_TASK_ID, task.id)
+        }
+        every { params.jobId } returns row.jobId
+        assertThat(service.onStartJob(params)).isTrue()
+        val running = ReflectionHelpers.getField<Map<Int, Any>>(service, "running")
+        executionJob = running[row.jobId]?.let { ReflectionHelpers.getField<Job>(it, "job") }
+        withTimeout(5_000) { rescheduled.await(); executionJob?.join() }
+        assertThat(controller.find(task.id)!!.runCount).isEqualTo(0)
+        assertThat(entered.isCompleted).isFalse()
+        assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(task.nextFireAtMillis)
     }
 
     private suspend fun start(stopReason: Int): Pair<String, JobParameters> {

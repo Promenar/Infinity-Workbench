@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
     <string name="system_trigger_schedule">定时任务 · %1$s</string>
     <string name="system_trigger_schedule_seq">定时任务 · %1$s · 第 %2$d 次</string>
@@ -40,8 +41,8 @@
     <string name="agent_schedules_title">定时任务</string>
     <string name="agent_schedules_empty">本会话还没有定时任务</string>
     <string name="agent_schedules_limit_label">系统择时</string>
-    <string name="agent_schedules_limit_title">由系统决定具体时刻</string>
-    <string name="agent_schedules_limit_body">Play 版的定时任务可能延后几分钟执行，最短每 15 分钟一次。侧载版可使用精确闹钟。</string>
+    <string name="agent_schedules_limit_title">后台由系统决定具体时刻</string>
+    <string name="agent_schedules_limit_body">&brand; 在前台时按设定时刻执行。退到后台后，Play 版由系统择时，可能延后几分钟，最短每 15 分钟一次；侧载版可使用精确闹钟。</string>
     <string name="agent_schedules_exact">精确</string>
     <string name="agent_schedules_grant_exact">授权精确闹钟</string>
     <string name="agent_schedules_enabled">已启用</string>
@@ -82,9 +83,9 @@
     <string name="settings_background_keep_alive_on">后台任务与定时触发的回复在后台完成</string>
     <string name="settings_background_keep_alive_foreground">仅在应用位于前台时保证运行</string>
     <string name="settings_background_exact">精确闹钟</string>
-    <string name="settings_background_exact_granted">已授权，定时任务按设定时刻触发</string>
-    <string name="settings_background_exact_denied">未授权，由系统择时；点按授权</string>
-    <string name="settings_background_exact_system">由系统择时，最短每 15 分钟一次</string>
+    <string name="settings_background_exact_granted">已授权，退到后台时由精确闹钟触发，最短每 5 分钟一次</string>
+    <string name="settings_background_exact_denied">未授权，退到后台时由系统择时；点按授权</string>
+    <string name="settings_background_exact_system">退到后台时由系统择时，最短每 15 分钟一次</string>
     <string name="settings_background_battery">电池优化</string>
     <string name="settings_background_battery_unrestricted">不受限制</string>
     <string name="settings_background_battery_restricted">受限制，后台运行可能被推迟；点按调整</string>

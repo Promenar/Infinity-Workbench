@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,7 +49,8 @@ internal fun CanvasInvocationCards(steps: List<ExecutionStep>) {
     val access = LocalCanvasSession.current ?: return
     val references = remember(steps) { canvasTimelineReferences(toolInvocations(steps)) }
     if (references.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // 卡片跟在正文之后，与上方文字留出段落级间隔，避免顶边贴住最后一行。
+    Column(modifier = Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         references.forEachIndexed { index, reference -> key(index, reference.id) {
             val metadata = access.canvases.find { it.id == reference.id }
             var html by remember(access.sessionId, reference.id, metadata?.currentVersion) { mutableStateOf<String?>(null) }

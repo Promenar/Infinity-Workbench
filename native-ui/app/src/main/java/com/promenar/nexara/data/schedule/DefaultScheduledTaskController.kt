@@ -71,7 +71,7 @@ class DefaultScheduledTaskController(
                 dao.delete(task.id)
                 throw IllegalArgumentException("系统无法保存排期，定时任务未创建，请稍后重试。")
             }
-            ScheduleCreateResult(task.toDomain(), if (args.exactRequested && !exact) "当前渠道或精确闹钟权限不可用，已按非精确模式排期，间隔至少 15 分钟。" else null)
+            ScheduleCreateResult(task.toDomain(), if (args.exactRequested && !exact) "当前渠道或精确闹钟权限不可用：应用在前台时按设定间隔执行，退到后台时重复任务间隔至少 15 分钟。" else null)
         }
     }
 
@@ -101,7 +101,8 @@ class DefaultScheduledTaskController(
             val exact = task.exactRequested && backend.canUseExact()
             val next = if (task.triggerType == "once") ScheduleCalculation.resolveLocal(task.triggerValue, task.zoneId) else ScheduleCalculation.nextAfter(task.trigger(), now, exact)
             require(next != null && (task.expiresAtMillis == null || next < task.expiresAtMillis)) { "到期时间前没有可用触发时间。" }
-            val updated = task.copy(enabled = true, exactEffective = exact, nextFireAtMillis = next, catchUp = next <= now)
+            val resumed = task.copy(enabled = true, exactEffective = exact, nextFireAtMillis = next)
+            val updated = resumed.copy(catchUp = isLate(resumed, now))
             dao.update(updated)
             try {
                 backend.schedule(updated)
@@ -179,16 +180,13 @@ class DefaultScheduledTaskController(
                 if (task.claimToken != null) return@forEach
                 val exact = task.exactRequested && backend.canUseExact()
                 val exhausted = ScheduleCalculation.exhausted(task.runCount, task.maxRuns, task.expiresAtMillis, now)
-                var next = task.nextFireAtMillis
-                if (task.exactEffective && !exact && task.triggerType != "once") {
-                    val floor = (task.lastFiredAtMillis ?: task.createdAtMillis) + 15 * 60_000L
-                    if (next != null && next < floor) next = if (task.triggerType == "cron") CronExpression.parse(task.triggerValue).nextAfter(floor - 1, task.zoneId) else floor
-                }
-                val updated = task.copy(enabled = !exhausted && next != null, exactEffective = exact,
-                    nextFireAtMillis = if (exhausted) null else next, catchUp = next != null && (task.catchUp || next < now))
+                val next = task.nextFireAtMillis
+                val candidate = task.copy(exactEffective = exact)
+                val updated = candidate.copy(enabled = !exhausted && next != null,
+                    nextFireAtMillis = if (exhausted) null else next, catchUp = next != null && task.catchUp)
                 dao.update(updated)
                 val preserve = task.id == preservePeriodicTaskId && updated.enabled && !updated.exactEffective &&
-                    updated.triggerType == "interval" && !updated.catchUp
+                    updated.triggerType == "interval" && !updated.catchUp && !isLate(updated, now)
                 if (!preserve) {
                     backend.cancel(task)
                     if (updated.enabled) scheduleOrDisable(updated)
@@ -197,11 +195,12 @@ class DefaultScheduledTaskController(
         }
     }
 
-    /** JobService 与精确闹钟服务共同入口；重复回调不能重复领取。 */
-    suspend fun fire(id: String, reschedule: Boolean = true, executionToken: String? = null) = withContext(Dispatchers.IO) {
+    /** 前台计时器与系统后台共同入口；后台提前回调不能领取前台计划，重复回调不能重复领取。 */
+    suspend fun fire(id: String, reschedule: Boolean = true, executionToken: String? = null, background: Boolean = false) = withContext(Dispatchers.IO) {
         val caller = currentCoroutineContext().job
         val token = executionToken ?: UUID.randomUUID().toString()
         var result = ScheduleRunResult.FAILED
+        var catchUp = false
         try {
             val claimed = mutex.withLock {
                 val now = clock()
@@ -212,11 +211,14 @@ class DefaultScheduledTaskController(
                     backend.cancel(existing)
                     return@withLock null
                 }
+                if (background && backgroundFireAt(existing)?.let { now < it } == true) return@withLock null
                 if (dao.claim(id, token, now) != 1) return@withLock null
+                // claim 会覆盖上次触发时刻，迟到必须按领取前的后台时刻判断。
+                catchUp = existing.catchUp || isLate(existing, now)
                 dao.get(id)?.also { running[id] = caller }
             } ?: return@withContext
             result = when (val outcome = dispatcher.request(SystemTurnRequest(claimed.sessionId, SystemTurnKind.SCHEDULE,
-                claimed.id, claimed.name, claimed.prompt, claimed.runCount, claimed.catchUp || (claimed.nextFireAtMillis?.let { it < clock() - CATCH_UP_TOLERANCE_MILLIS } == true)))) {
+                claimed.id, claimed.name, claimed.prompt, claimed.runCount, catchUp))) {
                 SystemTurnOutcome.Completed -> ScheduleRunResult.COMPLETED
                 SystemTurnOutcome.NeedsUser -> ScheduleRunResult.NEEDS_USER
                 is SystemTurnOutcome.Failed -> ScheduleRunResult.FAILED
@@ -259,10 +261,12 @@ class DefaultScheduledTaskController(
         val now = clock()
         val exact = task.exactRequested && backend.canUseExact()
         var enabled = task.enabled && task.triggerType != "once" && !ScheduleCalculation.exhausted(task.runCount, task.maxRuns, task.expiresAtMillis, now)
-        // 生成耗时不叠加到周期；跨过的时点合并一次补发。
-        val planned = if (enabled) ScheduleCalculation.nextAfterRun(task.trigger(), task.lastFiredAtMillis ?: now, exact) else null
-        val catchUp = planned != null && planned <= now
-        val next = planned?.coerceAtLeast(now)
+        val trigger = task.trigger()
+        val planned = if (enabled) ScheduleCalculation.nextAfterRun(trigger, task.lastFiredAtMillis ?: now, exact) else null
+        // 间隔轮询超时后留出完整等待间隔；cron 保留跨点合并补发语义。
+        val intervalOverrun = trigger is ScheduleTrigger.Interval && planned != null && planned <= now
+        val catchUp = !intervalOverrun && planned != null && planned <= now
+        val next = if (intervalOverrun) ScheduleCalculation.nextAfter(trigger, now, exact) else planned?.coerceAtLeast(now)
         if (next == null || (task.expiresAtMillis != null && next >= task.expiresAtMillis)) enabled = false
         val updated = task.copy(claimToken = null, lastResult = result.name, enabled = enabled,
             exactEffective = exact, nextFireAtMillis = if (enabled) next else null, catchUp = enabled && catchUp, stopReason = stopReason, lastRunToken = task.claimToken)
@@ -272,6 +276,14 @@ class DefaultScheduledTaskController(
             if (updated.enabled) scheduleOrDisable(updated)
         }
     }
+
+    private fun backgroundFireAt(task: ScheduledTaskEntity): Long? = task.nextFireAtMillis?.let { next ->
+        ScheduleCalculation.backgroundFireAt(task.trigger(), next, task.lastFiredAtMillis,
+            task.createdAtMillis, task.exactEffective)
+    }
+
+    private fun isLate(task: ScheduledTaskEntity, now: Long): Boolean =
+        backgroundFireAt(task)?.let { (now - it).coerceAtLeast(0) > CATCH_UP_TOLERANCE_MILLIS } ?: false
 
     private suspend fun scheduleOrDisable(task: ScheduledTaskEntity) {
         try {

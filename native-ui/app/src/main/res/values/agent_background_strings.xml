@@ -45,8 +45,8 @@
     <string name="agent_schedules_title">Schedules</string>
     <string name="agent_schedules_empty">No schedules in this chat</string>
     <string name="agent_schedules_limit_label">System-timed</string>
-    <string name="agent_schedules_limit_title">Android picks the exact moment</string>
-    <string name="agent_schedules_limit_body">In the Play version, runs may be delayed by a few minutes and repeat at most every 15 minutes. The sideload version can use exact alarms.</string>
+    <string name="agent_schedules_limit_title">Android picks the time in the background</string>
+    <string name="agent_schedules_limit_body">While &brand; is open, tasks run on time. In the background, the Play version lets Android pick the moment, which may be a few minutes late and at most every 15 minutes. The sideload version can use exact alarms.</string>
     <string name="agent_schedules_exact">Exact</string>
     <string name="agent_schedules_grant_exact">Allow exact alarms</string>
     <string name="agent_schedules_enabled">On</string>
@@ -92,9 +92,9 @@
     <string name="settings_background_keep_alive_on">Background jobs and scheduled replies finish in the background</string>
     <string name="settings_background_keep_alive_foreground">Guaranteed only while the app is open</string>
     <string name="settings_background_exact">Exact alarms</string>
-    <string name="settings_background_exact_granted">Granted. Scheduled tasks fire at the set time</string>
-    <string name="settings_background_exact_denied">Not granted. The system picks the time; tap to grant</string>
-    <string name="settings_background_exact_system">The system picks the time, at most every 15 minutes</string>
+    <string name="settings_background_exact_granted">Granted. In the background, exact alarms fire tasks at most every 5 minutes</string>
+    <string name="settings_background_exact_denied">Not granted. In the background, the system picks the time; tap to grant</string>
+    <string name="settings_background_exact_system">In the background, the system picks the time, at most every 15 minutes</string>
     <string name="settings_background_battery">Battery optimization</string>
     <string name="settings_background_battery_unrestricted">Unrestricted</string>
     <string name="settings_background_battery_restricted">Restricted. Background work may be delayed; tap to adjust</string>

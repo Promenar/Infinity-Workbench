@@ -36,4 +36,22 @@ class AndroidScheduleBackendTest {
         backend.cancel(task)
         assertThat(jobs.getPendingJob(4321)).isNull()
     }
+    @Test fun `非精确首轮登记后台时刻而单次不降频`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val backend = AndroidScheduleBackend(context)
+        val jobs = context.getSystemService(JobScheduler::class.java)
+        val now = System.currentTimeMillis()
+        val task = ScheduledTaskEntity("s", "session", "检查", "检查状态", "interval", "1", "UTC", false, false, true,
+            now + 60_000L, 0, null, null, null, null, now, 4322)
+        for ((type, value) in listOf("interval" to "1", "cron" to "* * * * *")) {
+            backend.schedule(task.copy(triggerType = type, triggerValue = value))
+            assertThat(jobs.getPendingJob(4322)!!.minLatencyMillis).isIn(899_000L..900_000L)
+        }
+        backend.schedule(task.copy(triggerType = "once", triggerValue = "2026-10-23T00:01"))
+        assertThat(jobs.getPendingJob(4322)!!.minLatencyMillis).isIn(59_000L..60_000L)
+        backend.schedule(task.copy(runCount = 1, lastFiredAtMillis = now))
+        assertThat(jobs.getPendingJob(4322)!!.intervalMillis).isEqualTo(15 * 60_000L)
+        backend.cancel(task)
+    }
+
 }

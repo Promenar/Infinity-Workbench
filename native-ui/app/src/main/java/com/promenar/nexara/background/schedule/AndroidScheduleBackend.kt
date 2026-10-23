@@ -14,6 +14,7 @@ import com.promenar.nexara.data.local.db.entity.ScheduledTaskEntity
 import com.promenar.nexara.data.schedule.ScheduleBackend
 import com.promenar.nexara.distribution.DistributionCapabilities
 import com.promenar.nexara.domain.schedule.ScheduleTrigger
+import com.promenar.nexara.domain.schedule.ScheduleCalculation
 
 fun canScheduleExact(context: Context): Boolean = DistributionCapabilities.exactAlarmAvailable &&
     context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
@@ -35,7 +36,9 @@ class AndroidScheduleBackend(context: Context) : ScheduleBackend {
     }
 
     override fun schedule(task: ScheduledTaskEntity) {
-        val next = task.nextFireAtMillis ?: return
+        val foregroundAt = task.nextFireAtMillis ?: return
+        val next = ScheduleCalculation.backgroundFireAt(task.trigger(), foregroundAt, task.lastFiredAtMillis,
+            task.createdAtMillis, task.exactEffective)
         if (!task.enabled || task.claimToken != null) return
         if (task.exactEffective && !canUseExact()) {
             ScheduleApplicationScope.launchReconcile(context)
@@ -46,7 +49,7 @@ class AndroidScheduleBackend(context: Context) : ScheduleBackend {
                 alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, maxOf(System.currentTimeMillis(), next), alarmIntent(task))
                 return
             } catch (_: SecurityException) {
-                // 权限可能在检查后撤销；交由控制器重新计算非精确下限并落盘。
+                // 权限可能在检查后撤销；交由控制器更新后台渠道并重新登记排期。
                 ScheduleApplicationScope.launchReconcile(context)
                 return
             }

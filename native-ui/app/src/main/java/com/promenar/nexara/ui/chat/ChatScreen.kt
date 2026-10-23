@@ -715,7 +715,9 @@ fun ChatScreenContent(
                     }
                 }
 
-                uiState.approvalRequest?.let { request ->
+                // 决定提交后批准的工具在审批流程内同步执行，请求要到执行结束才清除；
+                // 期间收起卡片，由工具行与实时输出显示进度。提交未生效时请求仍在，卡片随即恢复。
+                uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.let { request ->
                     item(key = "approval_request") {
                         ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
                             ApprovalCard(
@@ -767,7 +769,6 @@ fun ChatScreenContent(
                                         riskLabel = approvalRiskLabel(request.type.orEmpty()),
                                     ))
                                 },
-                                enabled = !uiState.isApprovalSubmitting,
                                 onApprove = { actions.onApprove(request) },
                                 onApproveAll = { actions.onApproveAll(request) },
                                 onAlwaysAllow = { actions.onAlwaysAllowTarget(request) },

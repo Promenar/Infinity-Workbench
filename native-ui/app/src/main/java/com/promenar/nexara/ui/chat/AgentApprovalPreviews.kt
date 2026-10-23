@@ -33,7 +33,9 @@ import com.promenar.nexara.domain.jobs.BackgroundJobExitAction
 import com.promenar.nexara.domain.schedule.ScheduleCalculation
 import com.promenar.nexara.domain.schedule.ScheduleTrigger
 import com.promenar.nexara.domain.schedule.previewScheduleTriggers
+import com.promenar.nexara.ui.chat.components.IntervalUnit
 import com.promenar.nexara.ui.chat.components.fireTimeLabel
+import com.promenar.nexara.ui.chat.components.intervalUnit
 import com.promenar.nexara.ui.chat.components.triggerText
 import com.promenar.nexara.ui.common.ChannelLimitChip
 import com.promenar.nexara.ui.testing.UiTags
@@ -47,6 +49,8 @@ data class ScheduleApprovalPreview(
     val name: String,
     val prompt: String,
     val trigger: ScheduleTrigger,
+    /** once 以 in_minutes 倒计时创建时的分钟数；审批卡按倒计时而非换算后的钟点描述触发方式。 */
+    val countdownMinutes: Int? = null,
     val upcoming: List<Long>,
     /** 计算预览的时刻；“今天/明天”按它判断。 */
     val nowMillis: Long,
@@ -65,7 +69,7 @@ internal fun scheduleApprovalPreview(
     exactAlarmAvailable: Boolean,
     canScheduleExact: Boolean,
 ): ScheduleApprovalPreview? {
-    val parsed = runCatching { ScheduleCalculation.parse(args, zoneId) }.getOrNull() ?: return null
+    val parsed = runCatching { ScheduleCalculation.parse(args, zoneId, nowMillis) }.getOrNull() ?: return null
     val upcoming = try {
         previewScheduleTriggers(args, nowMillis, zoneId, exactAlarmAvailable, canScheduleExact)
     } catch (_: IllegalArgumentException) {
@@ -77,6 +81,9 @@ internal fun scheduleApprovalPreview(
         name = parsed.name,
         prompt = parsed.prompt,
         trigger = parsed.trigger,
+        countdownMinutes = (args["trigger"] as? JsonObject)?.get("in_minutes")
+            ?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.intOrNull }
+            ?.takeIf { parsed.trigger is ScheduleTrigger.Once },
         upcoming = upcoming.orEmpty(),
         nowMillis = nowMillis,
         maxRuns = parsed.maxRuns,
@@ -136,7 +143,7 @@ internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview) {
         }
         Text(
             text = listOfNotNull(
-                triggerText(preview.trigger),
+                preview.countdownMinutes?.let { countdownText(it) } ?: triggerText(preview.trigger),
                 preview.maxRuns?.let { pluralStringResource(R.plurals.schedule_approval_max_runs, it, it) },
             ).joinToString(" · "),
             style = MaterialTheme.typography.labelMedium,
@@ -168,6 +175,13 @@ internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview) {
         }
         if (preview.invalid) ApprovalRiskLine(stringResource(R.string.schedule_approval_invalid))
     }
+}
+
+@Composable
+private fun countdownText(minutes: Int): String = when (val unit = intervalUnit(minutes)) {
+    is IntervalUnit.Minutes -> pluralStringResource(R.plurals.schedule_approval_in_minutes, unit.value, unit.value)
+    is IntervalUnit.Hours -> pluralStringResource(R.plurals.schedule_approval_in_hours, unit.value, unit.value)
+    is IntervalUnit.Days -> pluralStringResource(R.plurals.schedule_approval_in_days, unit.value, unit.value)
 }
 
 /** 命令正文下方的一行：后台运行、最长时长与结束后的动作；Play 版附带渠道限制说明。 */

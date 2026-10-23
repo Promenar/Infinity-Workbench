@@ -29,14 +29,33 @@ class AgentApprovalPreviewsTest {
     }
 
     @Test
-    fun `请求精确但未授权时按系统择时预览，次数上限截断列表`() {
+    fun `请求精确但未授权时保留前台节奏预览并按次数上限截断`() {
         val preview = scheduleApprovalPreview(
             json("""{"name":"轮询","prompt":"看部署","trigger":{"type":"interval","every_minutes":5},"exact":true,"max_runs":2}"""),
             now, zone, exactAlarmAvailable = true, canScheduleExact = false,
         )!!
         assertThat(preview.exactRequested).isTrue()
         assertThat(preview.exactEffective).isFalse()
-        assertThat(preview.upcoming).containsExactly(now + 15 * 60_000L, now + 30 * 60_000L).inOrder()
+        assertThat(preview.upcoming).containsExactly(now + 5 * 60_000L, now + 10 * 60_000L).inOrder()
+    }
+
+    @Test
+    fun `一分钟间隔与倒计时使用传入时钟生成审批预览`() {
+        val interval = scheduleApprovalPreview(
+            json("""{"name":"轮询","prompt":"状态","trigger":{"type":"interval","every_minutes":1}}"""),
+            now, zone, false, false,
+        )!!
+        assertThat(interval.invalid).isFalse()
+        assertThat(interval.countdownMinutes).isNull()
+        assertThat(interval.upcoming).containsExactly(now + 60_000L, now + 120_000L, now + 180_000L).inOrder()
+        val once = scheduleApprovalPreview(
+            json("""{"name":"提醒","prompt":"状态","trigger":{"type":"once","in_minutes":2}}"""),
+            now + 30_987L, zone, false, false,
+        )!!
+        assertThat(once.trigger).isEqualTo(ScheduleTrigger.Once("2026-10-23T10:02:30", zone))
+        assertThat(once.invalid).isFalse()
+        assertThat(once.upcoming).containsExactly(now + 150_000L)
+        assertThat(once.countdownMinutes).isEqualTo(2)
     }
 
     @Test
@@ -47,6 +66,7 @@ class AgentApprovalPreviewsTest {
         )!!
         assertThat(past.invalid).isTrue()
         assertThat(past.upcoming).isEmpty()
+        assertThat(past.countdownMinutes).isNull()
         assertThat(scheduleApprovalPreview(json("""{"name":"x"}"""), now, zone, false, false)).isNull()
     }
 

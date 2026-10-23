@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
     <string name="schedule_notification_channel">Agent activity</string>
     <string name="schedule_notification_channel_description">System-triggered replies and requests for your attention</string>
@@ -15,9 +16,21 @@
     <string name="schedule_approval_target">This chat</string>
     <string name="schedule_approval_invalid">These settings fail validation; the task will be rejected even if approved.</string>
     <string name="schedule_approval_exact_denied_title">Exact alarms not granted</string>
-    <string name="schedule_approval_exact_denied_body">This task will run at times chosen by the system, at most every 15 minutes. Grant exact alarms in the scheduled tasks panel to reschedule it.</string>
+    <string name="schedule_approval_exact_denied_body">Runs on time while &brand; is open. In the background, the system picks the time, at most every 15 minutes. Grant exact alarms in the scheduled tasks panel to reschedule it.</string>
     <plurals name="schedule_approval_max_runs">
         <item quantity="one">up to %1$d run</item>
         <item quantity="other">up to %1$d runs</item>
+    </plurals>
+    <plurals name="schedule_approval_in_minutes">
+        <item quantity="one">Once, in %1$d minute</item>
+        <item quantity="other">Once, in %1$d minutes</item>
+    </plurals>
+    <plurals name="schedule_approval_in_hours">
+        <item quantity="one">Once, in %1$d hour</item>
+        <item quantity="other">Once, in %1$d hours</item>
+    </plurals>
+    <plurals name="schedule_approval_in_days">
+        <item quantity="one">Once, in %1$d day</item>
+        <item quantity="other">Once, in %1$d days</item>
     </plurals>
 </resources>

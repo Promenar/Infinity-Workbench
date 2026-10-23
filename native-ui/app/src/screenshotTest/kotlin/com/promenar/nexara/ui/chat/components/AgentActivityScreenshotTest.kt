@@ -226,7 +226,7 @@ fun scheduleApprovalPlayDarkEnglishPreview() = ActivityPreviewFrame(dark = true)
                     name = "Poll deployment",
                     prompt = "Check whether the deployment finished.",
                     trigger = ScheduleTrigger.Interval(5),
-                    upcoming = listOf(NOW + 15 * 60_000, NOW + 30 * 60_000, NOW + 45 * 60_000),
+                    upcoming = listOf(NOW + 5 * 60_000, NOW + 10 * 60_000, NOW + 15 * 60_000),
                     nowMillis = NOW,
                     maxRuns = null,
                     exactRequested = true,
