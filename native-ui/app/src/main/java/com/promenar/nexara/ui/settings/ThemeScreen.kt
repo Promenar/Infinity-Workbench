@@ -82,6 +82,7 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onCollapseFinishedTurnsChange = viewModel::setCollapseFinishedTurns,
         onHapticsChange = viewModel::setHapticsEnabled,
         onStatusHapticsChange = viewModel::setStatusHapticsEnabled,
+        onKeepScreenOnChange = viewModel::setKeepScreenOnWhileGenerating,
     )
 }
 
@@ -98,6 +99,7 @@ fun ThemeScreenContent(
     onCollapseFinishedTurnsChange: (Boolean) -> Unit = {},
     onHapticsChange: (Boolean) -> Unit = {},
     onStatusHapticsChange: (Boolean) -> Unit = {},
+    onKeepScreenOnChange: (Boolean) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -191,6 +193,13 @@ fun ThemeScreenContent(
                         checked = preferences.collapseFinishedTurns,
                         onCheckedChange = onCollapseFinishedTurnsChange,
                         modifier = Modifier.testTag("theme_collapse_finished_turns_switch"),
+                    )
+                    SettingsToggle(
+                        title = stringResource(R.string.keep_screen_setting_title),
+                        description = stringResource(R.string.keep_screen_setting_summary),
+                        checked = preferences.keepScreenOnWhileGenerating,
+                        onCheckedChange = onKeepScreenOnChange,
+                        modifier = Modifier.testTag("theme_keep_screen_on_switch"),
                     )
                 }
             }

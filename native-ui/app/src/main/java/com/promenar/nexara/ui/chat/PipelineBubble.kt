@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.rounded.TextFields
+import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
@@ -284,10 +287,6 @@ fun PipelineBubble(
                             onContentChange = sourceMessage?.let { msg ->
                                 onMessageContentChange?.let { handler -> { content: String -> handler(msg.id, content) } }
                             } ?: onContentChange,
-                            onCopy = messageCopyOverride(onCopy, displayContent),
-                            onRegenerate = sourceMessage?.let { msg -> onRegenerate?.let { handler -> { handler(msg.id) } } },
-                            onDelete = sourceMessage?.let { msg -> onDelete?.let { handler -> { handler(msg.id) } } },
-                            onBranch = sourceMessage?.let { msg -> onBranch?.let { handler -> { handler(msg.id) } } },
                         )
                     }
                 }
@@ -386,7 +385,8 @@ private fun ErrorMessageSegment(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                .combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
+                // 长按只弹菜单，不铺按压涟漪；长按震动由 combinedClickable 自带。
+                .combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = { showMenu = true }),
         ) {
             Box(
                 modifier = Modifier
@@ -1165,7 +1165,10 @@ internal fun ExpandableToolText(
 //  ContentSegment — 正文渲染
 // ─────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * 助手正文。生成结束后长按直接进入系统文字选择（复制、全选），正文不再弹消息菜单：
+ * 复制、重新生成、分支与删除由本轮末尾的操作栏提供。生成中不开放选择，避免选区随文字增长跳动。
+ */
 @Composable
 internal fun ContentSegment(
     content: String,
@@ -1173,54 +1176,19 @@ internal fun ContentSegment(
     showStreamingCursor: Boolean,
     fontSize: Int,
     onContentChange: ((String) -> Unit)?,
-    onCopy: (() -> Unit)? = null,
-    onRegenerate: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null,
-    onBranch: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
-    var showMenu by remember { mutableStateOf(false) }
-    var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
-
-    Box {
-        Surface(
-            color = Color.Transparent,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("CHAT_ASSISTANT_BODY")
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = {
-                        pressOffset = DpOffset.Zero
-                        showMenu = true
-                    }
-                )
-        ) {
-            MarkdownText(
-                markdown = content,
-                isStreaming = isStreaming,
-                showCursor = showStreamingCursor,
-                fontSize = fontSize,
-                onContentChange = onContentChange,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        MessageContextMenu(
-            expanded = showMenu,
-            onDismiss = { showMenu = false },
-            onCopy = {
-                onCopy?.invoke() ?: copyToClipboard(context, content)
-                showMenu = false
-            },
-            onRegenerate = onRegenerate,
-            onBranch = onBranch,
-            onDelete = {
-                onDelete?.invoke()
-                showMenu = false
-            },
-            offset = pressOffset
+    val body = @Composable {
+        MarkdownText(
+            markdown = content,
+            isStreaming = isStreaming,
+            showCursor = showStreamingCursor,
+            fontSize = fontSize,
+            onContentChange = onContentChange,
+            modifier = Modifier.fillMaxWidth()
         )
+    }
+    Box(modifier = Modifier.fillMaxWidth().testTag("CHAT_ASSISTANT_BODY")) {
+        if (isStreaming) body() else SelectionContainer { body() }
     }
 }
 
@@ -1271,6 +1239,7 @@ fun UserMessageBubble(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    var showSelection by remember { mutableStateOf(false) }
     val timestamp = remember(message.createdAt) {
         java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(message.createdAt))
     }
@@ -1287,7 +1256,7 @@ fun UserMessageBubble(
         val bubbleMaxWidth = maxWidth * 0.82f
         Box(modifier = Modifier.align(Alignment.TopEnd).widthIn(max = bubbleMaxWidth)) {
             Column(
-                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
+                modifier = Modifier.combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = { showMenu = true }),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -1328,11 +1297,34 @@ fun UserMessageBubble(
                 expanded = showMenu,
                 onDismiss = { showMenu = false },
                 onCopy = { onCopy?.invoke() ?: copyToClipboard(context, message.content); showMenu = false },
+                onSelectText = if (message.content.isNotBlank()) ({ showSelection = true }) else null,
                 onRegenerate = onRegenerate,
                 onBranch = onBranch,
                 onDelete = { onDelete?.invoke(); showMenu = false },
                 isUser = true,
                 timestamp = timestamp,
+            )
+        }
+    }
+    MessageTextSelectionSheet(show = showSelection, text = message.content, fontSize = fontSize, onDismiss = { showSelection = false })
+}
+
+/** 用户气泡的长按留给消息菜单，自由选字放进底部面板：长按或双击文字即可选择。 */
+@Composable
+private fun MessageTextSelectionSheet(show: Boolean, text: String, fontSize: Int, onDismiss: () -> Unit) {
+    NexaraBottomSheet(
+        show = show,
+        onDismiss = onDismiss,
+        title = stringResource(R.string.chat_action_select_text),
+        scrollContent = true,
+        modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_SELECTION_SHEET),
+    ) {
+        SelectionContainer {
+            Text(
+                text = text,
+                style = NexaraTypography.bodyLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.5).sp).forReading(),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
             )
         }
     }
@@ -1460,6 +1452,7 @@ fun MessageContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
+    onSelectText: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
     onBranch: (() -> Unit)? = null,
     onDelete: () -> Unit,
@@ -1492,6 +1485,24 @@ fun MessageContextMenu(
                 onDismiss()
             }
         )
+        if (onSelectText != null) {
+            DropdownMenuItem(
+                modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_SELECT_TEXT),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.TextFields,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+                text = { Text(stringResource(R.string.chat_action_select_text), style = NexaraTypography.labelLarge) },
+                onClick = {
+                    onSelectText()
+                    onDismiss()
+                },
+            )
+        }
         
         if (onRegenerate != null) {
             DropdownMenuItem(

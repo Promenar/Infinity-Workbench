@@ -34,4 +34,6 @@ data class NexaraThemePreferences(
     val hapticsEnabled: Boolean = true,
     /** 等待审批、较长生成完成或失败时振动一次。 */
     val statusHapticsEnabled: Boolean = true,
+    /** 回复生成期间保持屏幕常亮；生成中可在浮岛上临时切换。 */
+    val keepScreenOnWhileGenerating: Boolean = true,
 )

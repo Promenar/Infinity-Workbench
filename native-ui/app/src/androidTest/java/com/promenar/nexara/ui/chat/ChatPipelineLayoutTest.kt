@@ -24,6 +24,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -223,7 +224,7 @@ class ChatPipelineLayoutTest {
     }
 
     @Test
-    fun shortAssistantBodyKeeps48DpTouchAreaWithoutAddingVisualPadding() {
+    fun assistantBodyIsNotClickableSoLongPressGoesToTextSelection() {
         rule.setContent {
             NexaraTheme {
                 Box(Modifier.width(371.dp).padding(vertical = 24.dp)) {
@@ -231,9 +232,7 @@ class ChatPipelineLayoutTest {
                 }
             }
         }
-        val body = rule.onNodeWithTag("CHAT_ASSISTANT_BODY").assertHasClickAction().fetchSemanticsNode()
-        assertThat(body.touchBoundsInRoot.height).isAtLeast(with(rule.density) { 48.dp.toPx() })
-        assertThat(body.boundsInRoot.height).isLessThan(with(rule.density) { 48.dp.toPx() })
+        rule.onNodeWithTag("CHAT_ASSISTANT_BODY").assertHasNoClickAction()
     }
 
     @Test
@@ -350,27 +349,41 @@ class ChatPipelineLayoutTest {
     }
 
     @Test
-    fun longPressActionsUseEachContentSegmentOwner() {
-        val regenerated = mutableListOf<String>()
-        val branched = mutableListOf<String>()
+    fun longPressOnAssistantBodyNoLongerOpensMessageMenu() {
         rule.setContent {
             NexaraTheme {
                 PipelineBubble(PipelineGroup(listOf(
                     Message("first", MessageRole.ASSISTANT, "前段正文"),
                     Message("second", MessageRole.ASSISTANT, "最终正文"),
                 ), false), false, streamingContent = "", fontSize = 15,
-                    onRegenerate = { regenerated += it }, onBranch = { branched += it })
+                    onRegenerate = {}, onBranch = {})
             }
         }
-        val regenerateLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.chat_action_regenerate)
         rule.onNodeWithText("前段正文").performTouchInput { longClick() }
-        rule.onNodeWithText(regenerateLabel).performClick()
-        rule.onNodeWithText("最终正文").performTouchInput { longClick() }
-        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_BRANCH).performClick()
-        rule.runOnIdle {
-            assertThat(regenerated).containsExactly("first")
-            assertThat(branched).containsExactly("second")
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_BRANCH).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_SELECT_TEXT).assertDoesNotExist()
+    }
+
+    @Test
+    fun userBubbleMenuOpensTextSelectionSheet() {
+        rule.setContent {
+            NexaraTheme { UserMessageBubble(Message("user", MessageRole.USER, "可以选择的用户消息"), 15) }
         }
+        rule.onNodeWithText("可以选择的用户消息").performTouchInput { longClick() }
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_SELECT_TEXT).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_SELECTION_SHEET).assertIsDisplayed()
+    }
+
+    @Test
+    fun userBubbleWithoutTextHasNoSelectTextEntry() {
+        val document = MessageDocumentAttachment("doc", "a.pdf", "application/pdf", "正文", 10, "sha", 1)
+        rule.setContent {
+            NexaraTheme { UserMessageBubble(Message("user", MessageRole.USER, "", userDocuments = listOf(document)), 15) }
+        }
+        rule.onNodeWithText("a.pdf").performTouchInput { longClick() }
+        val copyLabel = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.chat_action_copy)
+        rule.onNodeWithText(copyLabel).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_SELECT_TEXT).assertDoesNotExist()
     }
 
     private fun textLayout(tag: String): TextLayoutResult {

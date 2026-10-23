@@ -64,6 +64,8 @@ object UiTags {
     const val CHAT_LEGACY_ATTACHMENTS = "chat_legacy_attachments"
     const val CHAT_LEGACY_ATTACHMENT_ENTRY = "chat_legacy_attachment_entry"
     const val CHAT_MESSAGE_BRANCH = "chat_message_branch"
+    const val CHAT_MESSAGE_SELECT_TEXT = "chat_message_select_text"
+    const val CHAT_MESSAGE_SELECTION_SHEET = "chat_message_selection_sheet"
     private const val CHAT_DOCUMENT_CHIP_PREFIX = "chat_document_chip:"
     private const val CHAT_DOCUMENT_REMOVE_PREFIX = "chat_document_remove:"
 
@@ -286,6 +288,8 @@ object UiTags {
     const val RAG_DETAILS_LINK_ERROR = "RAG_DETAILS_LINK_ERROR"
     const val RAG_DETAILS_LINK_RETRY = "RAG_DETAILS_LINK_RETRY"
     const val RAG_PROGRESS_CARD = "RAG_PROGRESS_CARD"
+    const val RAG_SCAN_ICON = "RAG_SCAN_ICON"
+    const val CHAT_KEEP_SCREEN_TOGGLE = "CHAT_KEEP_SCREEN_TOGGLE"
     const val RAG_SOURCE_BREAKDOWN = "RAG_SOURCE_BREAKDOWN"
     private const val RAG_DETAILS_REFERENCE_ITEM_PREFIX = "RAG_DETAILS_REFERENCE_ITEM:"
     private const val RAG_DETAILS_WEB_ITEM_PREFIX = "RAG_DETAILS_WEB_ITEM:"

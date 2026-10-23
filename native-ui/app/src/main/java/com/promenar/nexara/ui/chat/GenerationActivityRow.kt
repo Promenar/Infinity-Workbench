@@ -1,5 +1,11 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
@@ -102,21 +108,61 @@ internal fun GenerationActivityContent(
  * 内容在行内垂直居中，与浮岛上边和分隔线等距，不贴向 24dp 圆角的左上角。
  */
 @Composable
-internal fun GenerationActivityRow(progress: GenerationProgress, modifier: Modifier = Modifier) {
+internal fun GenerationActivityRow(
+    progress: GenerationProgress,
+    modifier: Modifier = Modifier,
+    /** 本次生成是否保持亮屏；为 null 时不显示亮屏开关。 */
+    keepScreenOn: Boolean? = null,
+    onToggleKeepScreenOn: () -> Unit = {},
+) {
     Column(modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            GenerationActivityContent(progress = progress, modifier = Modifier.fillMaxWidth())
+        if (keepScreenOn == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                GenerationActivityContent(progress = progress, modifier = Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GenerationActivityContent(progress = progress, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
+                KeepScreenOnToggle(on = keepScreenOn, onToggle = onToggleKeepScreenOn)
+            }
         }
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = 16.dp),
             thickness = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+        )
+    }
+}
+
+/** 浮岛上的亮屏开关：只影响本次生成，默认值来自“生成时保持亮屏”设置。 */
+@Composable
+internal fun KeepScreenOnToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val haptics = LocalNexaraHaptics.current
+    val state = stringResource(if (on) R.string.keep_screen_toggle_on else R.string.keep_screen_toggle_off)
+    IconToggleButton(
+        checked = on,
+        onCheckedChange = {
+            haptics.toggle(it)
+            onToggle()
+        },
+        modifier = modifier
+            .testTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE)
+            .semantics { stateDescription = state },
+    ) {
+        Icon(
+            imageVector = if (on) Icons.Rounded.LightMode else Icons.Outlined.LightMode,
+            contentDescription = stringResource(R.string.keep_screen_toggle_cd),
+            tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            modifier = Modifier.size(18.dp),
         )
     }
 }

@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandMore
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.PI
+import com.promenar.nexara.ui.testing.UiTags
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -121,6 +126,8 @@ internal fun CompactStepRow(
     tone: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     preview: (@Composable RowScope.() -> Unit)? = null,
     failureText: String? = null,
+    /** 摘要前的状态图标，例如检索进行中的放大镜；默认不显示图标。 */
+    leading: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val style = NexaraTypography.labelLarge.copy(
         fontSize = 13.sp,
@@ -152,6 +159,7 @@ internal fun CompactStepRow(
         val summaryMaxWidth = (maxWidth - 58.dp).coerceAtLeast(0.dp)
         val arrowVisible = expanded == true
         Row(Modifier.fillMaxWidth().align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+            leading?.invoke(this)
             val summaryText = buildAnnotatedString {
                 visibleSegments.forEachIndexed { index, segment ->
                     if (index > 0) append(" $NexaraMetaSeparator ")
@@ -208,4 +216,34 @@ internal fun CompactStepRow(
             }
         }
     }
+}
+
+/**
+ * 检索进行中的放大镜：沿小圆周巡游并轻微摆动，像在逐行扫视；系统关闭动画或截图预览时静止。
+ * 只在检索进行中出现，结束后由调用方收起，摘要文字随之左移归位。
+ */
+@Composable
+internal fun RetrievalScanIcon(tint: Color, modifier: Modifier = Modifier) {
+    val animate = rememberStreamAnimationsEnabled() == true
+    val phase = if (animate) {
+        rememberInfiniteTransition(label = "retrievalScan")
+            .animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "retrievalScanPhase")
+    } else null
+    Icon(
+        imageVector = Icons.Rounded.Search,
+        contentDescription = null,
+        tint = tint,
+        modifier = modifier
+            .padding(end = 6.dp)
+            .size(16.dp)
+            .graphicsLayer {
+                val t = phase?.value ?: return@graphicsLayer
+                val angle = t * 2f * PI.toFloat()
+                val radius = 2.dp.toPx()
+                translationX = cos(angle) * radius
+                translationY = sin(angle) * radius * 0.6f
+                rotationZ = sin(angle) * 10f
+            }
+            .testTag(UiTags.RAG_SCAN_ICON),
+    )
 }

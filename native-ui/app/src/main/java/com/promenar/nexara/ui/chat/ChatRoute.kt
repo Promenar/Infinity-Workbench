@@ -427,8 +427,12 @@ fun ChatRoute(
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
-    LaunchedEffect(uiState.isGenerating, activity) {
-        if (uiState.isGenerating) {
+    // 浮岛上的临时开关只覆盖本次生成；生成结束后回到设置里的默认值。
+    var keepScreenOverride by remember(sessionId) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(uiState.isGenerating) { if (!uiState.isGenerating) keepScreenOverride = null }
+    val keepScreenOn = keepScreenOverride ?: themePreferences.keepScreenOnWhileGenerating
+    LaunchedEffect(uiState.isGenerating, keepScreenOn, activity) {
+        if (uiState.isGenerating && keepScreenOn) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -582,6 +586,7 @@ fun ChatRoute(
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
                 turnGraphStates = turnGraphStates,
                 composerQueue = composerQueue,
+                keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
@@ -680,6 +685,7 @@ fun ChatRoute(
                 onMoveQueuedToFront = chatViewModel::moveQueuedMessageToFront,
                 onRemoveQueued = chatViewModel::removeQueuedMessage,
                 onResumeQueue = chatViewModel::resumeComposerQueue,
+                onToggleKeepScreenOn = { keepScreenOverride = !keepScreenOn },
             ),
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,

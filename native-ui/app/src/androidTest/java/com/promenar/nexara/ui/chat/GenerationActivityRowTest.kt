@@ -3,6 +3,10 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.performClick
+import com.google.common.truth.Truth.assertThat
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -48,5 +52,24 @@ class GenerationActivityRowTest {
             ).joinToString(separator),
         )
         rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertExists()
+    }
+
+    @Test
+    fun keepScreenToggleReportsTapAndHidesWhenNull() {
+        var on by mutableStateOf<Boolean?>(true)
+        var toggles = 0
+        rule.setContent {
+            NexaraTheme {
+                GenerationActivityRow(GenerationProgress(rounds = 1), keepScreenOn = on, onToggleKeepScreenOn = { toggles++ })
+            }
+        }
+        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertIsOn().performClick()
+        rule.runOnIdle {
+            assertThat(toggles).isEqualTo(1)
+            on = false
+        }
+        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertIsOff()
+        rule.runOnIdle { on = null }
+        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertDoesNotExist()
     }
 }

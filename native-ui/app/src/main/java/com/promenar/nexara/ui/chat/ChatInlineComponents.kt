@@ -335,6 +335,15 @@ fun RagProgressCard(
             tag = UiTags.RAG_PROGRESS_CARD,
             onClick = { showDetailsSheet = true },
             failureText = partialFailureText,
+            leading = {
+                AnimatedVisibility(
+                    visible = !ready,
+                    enter = fadeIn(tween(160)) + expandHorizontally(tween(160)),
+                    exit = fadeOut(tween(200)) + shrinkHorizontally(tween(200)),
+                ) {
+                    RetrievalScanIcon(tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f))
+                }
+            },
         )
         if (breakdown.isNotEmpty()) {
             NexaraMetaLine(

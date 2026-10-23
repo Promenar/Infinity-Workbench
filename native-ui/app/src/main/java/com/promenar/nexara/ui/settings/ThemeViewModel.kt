@@ -78,6 +78,10 @@ class ThemeViewModel(
         store.setStatusHapticsEnabled(enabled)
     }
 
+    fun setKeepScreenOnWhileGenerating(enabled: Boolean) {
+        store.setKeepScreenOnWhileGenerating(enabled)
+    }
+
     companion object {
         fun provideFactory(store: ThemePreferenceStore): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

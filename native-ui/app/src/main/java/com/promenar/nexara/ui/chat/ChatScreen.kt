@@ -226,6 +226,8 @@ data class ChatScreenState(
     val turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
     /** 生成中按发送键排队的后续消息。 */
     val composerQueue: ComposerQueueUiState = ComposerQueueUiState(),
+    /** 本次生成是否保持亮屏；为 null 时浮岛不显示亮屏开关。 */
+    val keepScreenOn: Boolean? = null,
 )
 
 data class ChatScreenActions(
@@ -274,6 +276,7 @@ data class ChatScreenActions(
     val onMoveQueuedToFront: (String) -> Unit = {},
     val onRemoveQueued: (String) -> Unit = {},
     val onResumeQueue: () -> Unit = {},
+    val onToggleKeepScreenOn: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -847,7 +850,11 @@ fun ChatScreenContent(
                                     exit = fadeOut(tween(160)) +
                                         shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
                                 ) {
-                                    GenerationActivityRow(lastActivity)
+                                    GenerationActivityRow(
+                                        progress = lastActivity,
+                                        keepScreenOn = state.keepScreenOn,
+                                        onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
+                                    )
                                 }
                                 AnimatedVisibility(
                                     visible = taskPanel != null && planBarVisible,
@@ -861,6 +868,8 @@ fun ChatScreenContent(
                                             state = plan,
                                             isGenerating = uiState.isGenerating,
                                             generationProgress = activity,
+                                            keepScreenOn = state.keepScreenOn,
+                                            onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
                                             onContinue = actions.onContinueTask,
                                             onComplete = actions.onCompleteTask,
                                             onClose = {

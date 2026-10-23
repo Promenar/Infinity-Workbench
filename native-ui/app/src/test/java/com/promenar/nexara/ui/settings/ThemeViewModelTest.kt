@@ -145,4 +145,16 @@ class ThemeViewModelTest {
         assertThat(viewModel.uiState.value.preferences.collapseFinishedTurns).isFalse()
         assertThat(store.state.value.collapseFinishedTurns).isFalse()
     }
+
+    @Test
+    fun keepScreenOnWhileGeneratingDefaultsOnAndPersistsWhenTurnedOff() = runTest {
+        val store = createStore()
+        val viewModel = ThemeViewModel(store, dynamicColorAvailable = true)
+        assertThat(viewModel.uiState.value.preferences.keepScreenOnWhileGenerating).isTrue()
+
+        viewModel.setKeepScreenOnWhileGenerating(false)
+
+        assertThat(viewModel.uiState.value.preferences.keepScreenOnWhileGenerating).isFalse()
+        assertThat(store.state.value.keepScreenOnWhileGenerating).isFalse()
+    }
 }

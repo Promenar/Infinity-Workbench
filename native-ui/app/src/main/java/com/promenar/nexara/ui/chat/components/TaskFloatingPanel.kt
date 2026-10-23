@@ -81,6 +81,9 @@ fun TaskFloatingPanel(
     initiallyExpanded: Boolean = false,
     /** 生成中的活动统计；非空时收起行改为活动栏，左侧流光文字显示当前步骤。 */
     generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
+    /** 生成中本次是否保持亮屏；为 null 时不显示亮屏开关。 */
+    keepScreenOn: Boolean? = null,
+    onToggleKeepScreenOn: () -> Unit = {},
 ) {
     var expanded by rememberSaveable(state.planId) { mutableStateOf(initiallyExpanded) }
     val toggleLabel = stringResource(
@@ -181,6 +184,9 @@ fun TaskFloatingPanel(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp).rotate(chevronRotation),
                     )
+                }
+                if (generationProgress != null && keepScreenOn != null) {
+                    com.promenar.nexara.ui.chat.KeepScreenOnToggle(on = keepScreenOn, onToggle = onToggleKeepScreenOn)
                 }
                 IconButton(
                     onClick = onClose,
