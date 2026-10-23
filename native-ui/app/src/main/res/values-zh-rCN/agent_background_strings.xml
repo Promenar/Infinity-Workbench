@@ -15,6 +15,8 @@
     </plurals>
     <string name="agent_schedules_next">下次 %1$s</string>
     <string name="agent_schedules_next_many">下次 %1$s · 共 %2$d 个</string>
+    <string name="agent_schedules_due">等待执行</string>
+    <string name="agent_schedules_due_many">等待执行 · 共 %1$d 个</string>
     <string name="agent_schedules_tomorrow">明天 %1$s</string>
     <string name="agent_jobs_title">后台任务</string>
     <string name="agent_jobs_empty">本会话还没有后台任务</string>

@@ -109,8 +109,12 @@ internal fun AgentActivityStrip(
         }
         if (summary.enabledSchedules > 0) {
             val next = summary.nextFireAtMillis?.let { fireTimeLabel(it, nowMillis) }
+            // 已过点仍未开始：正在等前一轮生成或审批结束，显示过去的时刻会被误读为错过。
+            val due = summary.nextFireAtMillis?.let { it <= nowMillis } == true
             ActivityPill(
                 text = when {
+                    due && summary.enabledSchedules > 1 -> stringResource(R.string.agent_schedules_due_many, summary.enabledSchedules)
+                    due -> stringResource(R.string.agent_schedules_due)
                     next == null -> pluralStringResource(R.plurals.agent_schedules_count, summary.enabledSchedules, summary.enabledSchedules)
                     summary.enabledSchedules > 1 -> stringResource(R.string.agent_schedules_next_many, next, summary.enabledSchedules)
                     else -> stringResource(R.string.agent_schedules_next, next)
@@ -442,7 +446,10 @@ internal fun triggerText(trigger: ScheduleTrigger): String = when (trigger) {
 
 @Composable
 private fun scheduleStatus(task: ScheduledTask, nowMillis: Long): String {
-    val next = task.nextFireAtMillis?.takeIf { task.enabled }?.let { stringResource(R.string.agent_schedules_next, fireTimeLabel(it, nowMillis)) }
+    val next = task.nextFireAtMillis?.takeIf { task.enabled }?.let {
+        if (it <= nowMillis) stringResource(R.string.agent_schedules_due)
+        else stringResource(R.string.agent_schedules_next, fireTimeLabel(it, nowMillis))
+    }
     val last = task.lastResult?.let {
         stringResource(
             when (it) {

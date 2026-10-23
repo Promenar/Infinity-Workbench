@@ -20,6 +20,8 @@
     </plurals>
     <string name="agent_schedules_next">Next %1$s</string>
     <string name="agent_schedules_next_many">Next %1$s · %2$d schedules</string>
+    <string name="agent_schedules_due">Waiting to run</string>
+    <string name="agent_schedules_due_many">Waiting to run · %1$d schedules</string>
     <string name="agent_schedules_tomorrow">Tomorrow %1$s</string>
     <string name="agent_jobs_title">Background tasks</string>
     <string name="agent_jobs_empty">No background tasks in this chat</string>

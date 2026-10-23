@@ -129,6 +129,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.promenar.nexara.startup.StartupBackgroundHealthMonitor
@@ -705,6 +706,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             },
             withdrawPending = { (systemTurnDispatcher as com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher).withdrawPendingSource(it) },
         )
+    }
+
+    /** 前台可见时由进程内计时器准点触发定时任务；系统闹钟与 JobScheduler 只在后台兜底。 */
+    private fun startForegroundScheduleTicker() {
+        val ticker = com.promenar.nexara.data.schedule.ForegroundScheduleTicker(
+            scope = generationScope,
+            tasks = scheduledTaskController.observe(null),
+            foreground = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentStateFlow
+                .map { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) },
+            clock = System::currentTimeMillis,
+            fire = { id -> scheduledTaskController.fire(id) },
+        )
+        generationScope.launch { ticker.run() }
     }
 
     suspend fun stopSystemTurnSource(sourceId: String) {
@@ -1478,6 +1492,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     }
                     scheduledTaskController.initialize()
                     _startupState.value = BackupStartupState.Ready
+                    startForegroundScheduleTicker()
                     startModelCatalogUpdates()
                     generationScope.launch(Dispatchers.IO) {
                         try {

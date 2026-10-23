@@ -37,7 +37,7 @@ internal class AgentActivityAccess(
 
 internal val LocalAgentActivity = staticCompositionLocalOf<AgentActivityAccess?> { null }
 
-/** 活动标签与两个面板。时长与“下次触发”每 30 秒刷新一次，任务运行中每秒刷新运行时长。 */
+/** 活动标签与两个面板。时长与“下次触发”每 30 秒且在下次触发时刻刷新，任务运行中每秒刷新运行时长。 */
 @Composable
 internal fun AgentActivityPanel(modifier: Modifier = Modifier) {
     val access = LocalAgentActivity.current ?: return
@@ -49,10 +49,12 @@ internal fun AgentActivityPanel(modifier: Modifier = Modifier) {
     var showSchedules by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val anyRunning = jobs.any { !it.state.isTerminal }
-    LaunchedEffect(anyRunning, showJobs) {
+    val nextFire = schedules.mapNotNull { it.nextFireAtMillis?.takeIf { _ -> it.enabled } }.minOrNull()
+    LaunchedEffect(anyRunning, showJobs, nextFire) {
         while (true) {
             now = System.currentTimeMillis()
-            delay(if (anyRunning && showJobs) 1_000 else 30_000)
+            val base = if (anyRunning && showJobs) 1_000L else 30_000L
+            delay(nextFire?.let { (it - now).takeIf { untilFire -> untilFire > 0 } }?.coerceAtMost(base) ?: base)
         }
     }
     val scope = rememberCoroutineScope()
