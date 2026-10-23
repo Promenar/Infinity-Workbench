@@ -138,6 +138,10 @@ class OpenAIProtocol(
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
+                    } catch (abnormal: AbnormalFinishException) {
+                        send(abnormal.error)
+                        failed = true
+                        break
                     } catch (_: Exception) {
                         send(streamContractError("Malformed OpenAI stream event"))
                         failed = true
@@ -421,7 +425,8 @@ class OpenAIProtocol(
             "" -> null
             "stop" -> CompletionReason.END_TURN
             "tool_calls" -> CompletionReason.TOOL_CALLS
-            else -> throw IllegalStateException("Unknown OpenAI finish_reason: $finishReason")
+            else -> throw abnormalFinishError("OpenAI stream", finishReason)?.let(::AbnormalFinishException)
+                ?: IllegalStateException("Unknown OpenAI finish_reason: $finishReason")
         }
     }
 

@@ -461,6 +461,26 @@ internal fun streamContractError(technical: String): StreamChunk.Error = StreamC
     technical = technical,
 )
 
+/**
+ * 提供商以非正常原因结束输出时的失败：截断（输出上限）、内容过滤与服务端中断。
+ * 返回 null 表示不是已知的非正常结束原因，由调用方按协议合同错误处理。
+ * 截断时工具参数常常只写了一半，因此在核验工具调用完整性之前判定。
+ */
+internal fun abnormalFinishError(label: String, reason: String): StreamChunk.Error? {
+    val (code, retryable) = when (reason) {
+        "length", "max_tokens", "MAX_TOKENS", "max_output_tokens" -> GenerationFailureCode.OUTPUT_LIMIT to false
+        "content_filter", "refusal", "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "IMAGE_SAFETY" ->
+            GenerationFailureCode.CONTENT_FILTERED to false
+        // DeepSeek：推理资源不足或生成被中断，原样重发通常可以成功。
+        "insufficient_system_resource", "aborted" -> GenerationFailureCode.SERVER to true
+        else -> return null
+    }
+    return StreamChunk.Error(code = code, retryable = retryable, technical = "$label finished with reason: $reason")
+}
+
+/** 流解析过程中遇到非正常结束原因时携带对应失败，由流循环直接发出。 */
+internal class AbnormalFinishException(val error: StreamChunk.Error) : Exception(error.technical)
+
 /** 在发出成功 terminal 前集中核验工具调用的完整性。 */
 internal fun validatedCompletion(
     reason: CompletionReason,

@@ -1523,6 +1523,8 @@
     <string name="generation_failure_quota">The provider quota is exhausted. Check the account limits.</string>
     <string name="generation_failure_timeout">The request timed out. Please retry.</string>
     <string name="generation_failure_invalid_request">This request could not be processed. Adjust it and retry.</string>
+    <string name="generation_failure_output_limit">The reply hit the model\'s output limit and was cut off. Raise Max tokens in session parameters, or ask for the work in smaller steps.</string>
+    <string name="generation_failure_content_filtered">The provider\'s content policy stopped this reply. Adjust the request and retry.</string>
     <string name="generation_failure_server">The provider is temporarily unavailable. Please retry.</string>
     <string name="generation_failure_busy">Another conversation is generating. Retry after it finishes.</string>
     <string name="generation_failure_persistence">The response could not be saved. Please retry.</string>

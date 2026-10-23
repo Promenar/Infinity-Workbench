@@ -379,6 +379,11 @@ class OpenAIResponsesProtocol(
                 )
             }
             "response.failed", "response.incomplete", "error" -> {
+                if (type == "response.incomplete") {
+                    val reason = ((chunk["response"] as? JsonObject)?.get("incomplete_details") as? JsonObject)
+                        ?.stringField("reason").orEmpty()
+                    abnormalFinishError("OpenAI Responses stream", reason)?.let { return it }
+                }
                 val errorObject = when (type) {
                     "response.failed", "response.incomplete" ->
                         (chunk["response"] as? JsonObject)?.get("error") as? JsonObject

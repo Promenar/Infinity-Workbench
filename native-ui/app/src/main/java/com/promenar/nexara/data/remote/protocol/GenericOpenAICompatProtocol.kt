@@ -147,6 +147,10 @@ class GenericOpenAICompatProtocol(
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
+                    } catch (abnormal: AbnormalFinishException) {
+                        send(abnormal.error)
+                        failed = true
+                        break
                     } catch (_: Exception) {
                         send(streamContractError("Malformed OpenAI-compatible stream event"))
                         failed = true
@@ -442,7 +446,8 @@ class GenericOpenAICompatProtocol(
             // 聚合网关可能把 Responses 的成功状态映射到兼容接口。
             "stop", "completed" -> CompletionReason.END_TURN
             "tool_calls" -> CompletionReason.TOOL_CALLS
-            else -> throw IllegalStateException("Unknown compatible finish_reason: $finishReason")
+            else -> throw abnormalFinishError("OpenAI-compatible stream", finishReason)?.let(::AbnormalFinishException)
+                ?: IllegalStateException("Unknown compatible finish_reason: $finishReason")
         }
     }
 

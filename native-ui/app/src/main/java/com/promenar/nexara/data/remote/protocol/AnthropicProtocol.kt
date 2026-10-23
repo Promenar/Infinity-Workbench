@@ -471,7 +471,12 @@ class AnthropicProtocol(
             "content_block_delta" -> processContentBlockDelta(eventData)
             "content_block_start" -> processContentBlockStart(eventData)
             "content_block_stop" -> processContentBlockStop(eventData)
-            "message_delta" -> processMessageDelta(eventData)
+            "message_delta" -> try {
+                processMessageDelta(eventData)
+            } catch (abnormal: AbnormalFinishException) {
+                send(abnormal.error)
+                return true
+            }
             "message_start" -> processMessageStart(eventData)
             "message_stop" -> {
                 val reason = pendingStopReason
@@ -554,7 +559,8 @@ class AnthropicProtocol(
             pendingStopReason = when (stopReason) {
                 "end_turn" -> CompletionReason.END_TURN
                 "tool_use" -> CompletionReason.TOOL_CALLS
-                else -> throw IllegalStateException("Unknown Anthropic stop_reason: $stopReason")
+                else -> throw abnormalFinishError("Anthropic stream", stopReason)?.let(::AbnormalFinishException)
+                    ?: IllegalStateException("Unknown Anthropic stop_reason: $stopReason")
             }
         }
         val usage = eventData["usage"] as? JsonObject

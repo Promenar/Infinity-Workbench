@@ -15,6 +15,10 @@ enum class GenerationFailureCode {
     TIMEOUT,
     INVALID_REQUEST,
     CONTEXT_LIMIT,
+    /** 回复达到模型单次输出上限被截断（如 finish_reason=length、max_tokens）。 */
+    OUTPUT_LIMIT,
+    /** 回复被提供商的内容过滤或安全策略中止。 */
+    CONTENT_FILTERED,
     SERVER,
     BUSY,
     PERSISTENCE,

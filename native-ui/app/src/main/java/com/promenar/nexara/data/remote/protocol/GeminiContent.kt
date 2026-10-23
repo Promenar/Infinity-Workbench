@@ -448,6 +448,7 @@ internal class GeminiStreamState(
     fun completion(label: String): List<StreamChunk> {
         val reason = finishReason ?: return listOf(truncatedStreamError("$label stream ended before finishReason"))
         if (reason != "STOP") {
+            abnormalFinishError(label, reason)?.let { return listOf(it) }
             return listOf(StreamChunk.Error(
                 code = GenerationFailureCode.SERVER,
                 retryable = false,

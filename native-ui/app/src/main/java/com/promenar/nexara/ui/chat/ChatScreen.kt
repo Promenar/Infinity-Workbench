@@ -27,6 +27,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,7 +135,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -600,6 +603,7 @@ fun ChatScreenContent(
                 targetValue = if (uiState.isGenerating) ChatGeneratingExtraBottom else 0.dp,
                 label = "chat_generating_bottom",
             )
+            val focusManager = LocalFocusManager.current
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -608,7 +612,11 @@ fun ChatScreenContent(
                     .widthIn(max = NexaraSpacing.ChatMaxWidth)
                     .fillMaxWidth()
                     .nestedScroll(userScrollConnection)
-                    .testTag(renderStateTag),
+                    .testTag(renderStateTag)
+                    // 轻点列表空白处清除焦点，正文选区随之释放；空的长按回调避免长按选字后抬手被当成轻点。
+                    .pointerInput(focusManager) {
+                        detectTapGestures(onLongPress = {}, onTap = { focusManager.clearFocus() })
+                    },
                 contentPadding = PaddingValues(
                     start = NexaraSpacing.ChatHorizontal,
                     end = NexaraSpacing.ChatHorizontal,

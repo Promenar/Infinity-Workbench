@@ -24,6 +24,8 @@ object GenerationFailureNotice {
     private const val CODE_INVALID_REQUEST = "generation.failure.invalid_request"
     private const val CODE_CONTEXT_LIMIT = "generation.failure.context_limit"
     private const val CODE_CONTEXT_LIMIT_CONVERSATION = "generation.failure.context_limit_conversation"
+    private const val CODE_OUTPUT_LIMIT = "generation.failure.output_limit"
+    private const val CODE_CONTENT_FILTERED = "generation.failure.content_filtered"
     private const val CODE_SERVER = "generation.failure.server"
     private const val CODE_BUSY = "generation.failure.busy"
     private const val CODE_PERSISTENCE = "generation.failure.persistence"
@@ -50,6 +52,8 @@ object GenerationFailureNotice {
                 } else {
                     CODE_CONTEXT_LIMIT
                 }
+            GenerationFailureCode.OUTPUT_LIMIT -> CODE_OUTPUT_LIMIT
+            GenerationFailureCode.CONTENT_FILTERED -> CODE_CONTENT_FILTERED
             GenerationFailureCode.SERVER -> CODE_SERVER
             GenerationFailureCode.BUSY -> CODE_BUSY
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
@@ -117,6 +121,8 @@ object GenerationFailureNotice {
         } else {
             ResolvedStatus(R.string.chat_document_error_invalid_estimate)
         }
+        CODE_OUTPUT_LIMIT -> ResolvedStatus(R.string.generation_failure_output_limit)
+        CODE_CONTENT_FILTERED -> ResolvedStatus(R.string.generation_failure_content_filtered)
         CODE_SERVER -> ResolvedStatus(R.string.generation_failure_server)
         CODE_BUSY -> ResolvedStatus(R.string.generation_failure_busy)
         CODE_PERSISTENCE -> ResolvedStatus(R.string.generation_failure_persistence)
