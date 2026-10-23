@@ -20,6 +20,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 
 /** 元数据为发布点，源码在元数据发布前写入；同一应用统一使用一个实例。 */
 class FileCanvasStore(
@@ -27,6 +34,7 @@ class FileCanvasStore(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val maxVersions: Int = 10,
     private val maxSourceBytes: Int = 1_048_576,
+    private val workspaceFiles: CanvasWorkspaceFiles? = null,
 ) : CanvasStore {
     init {
         require(maxVersions > 0)
@@ -64,7 +72,7 @@ class FileCanvasStore(
             throw failure
         }
         state.value = sorted(state.value + metadata)
-        CanvasDocument(metadata, html, 1)
+        writeToWorkspace(sessionId, CanvasDocument(metadata, html, 1))
     }
 
     override suspend fun update(
@@ -79,18 +87,21 @@ class FileCanvasStore(
         invalidIf((html == null) == (patches == null), "html 与 patches 必须且只能提供其中一种。")
         invalidIf(expectedVersion != null && expectedVersion < 1, "expected_version 必须是正整数。")
         val state = load(sessionId)
-        val current = state.value.find { it.id == id } ?: throw CanvasException("NOT_FOUND", "本会话中不存在该画布。")
+        val synced = syncLocked(sessionId, id) ?: throw CanvasException("NOT_FOUND", "本会话中不存在该画布。")
+        val current = synced.metadata
         if (expectedVersion != null && current.currentVersion != expectedVersion) {
             throw CanvasException("VERSION_CONFLICT", "画布当前为第 ${current.currentVersion} 版，与 expected_version 不一致。")
         }
         invalidIf(current.currentVersion == Int.MAX_VALUE, "画布版本号已达到上限。")
-        val nextHtml = html ?: applyPatches(readSource(canvasDirectory(sessionId, id), current.currentVersion), patches!!)
+        val nextHtml = html ?: applyPatches(synced.html, patches!!)
         validateSource(nextHtml)
         val nextVersion = current.currentVersion + 1
         val metadata = current.copy(
             updatedAt = maxOf(current.updatedAt, System.currentTimeMillis()),
             currentVersion = nextVersion,
+            workspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
             versions = (current.versions + nextVersion).takeLast(maxVersions),
+            versionSources = current.versionSources.filterKeys { it in (current.versions + nextVersion).takeLast(maxVersions) } + (nextVersion to CanvasVersionSource.CANVAS),
         )
         val dir = canvasDirectory(sessionId, id)
         publish(dir, metadata, nextHtml)
@@ -99,7 +110,7 @@ class FileCanvasStore(
         dir.listFiles().orEmpty().filter { file ->
             file.extension == "html" && file.nameWithoutExtension.toIntOrNull() !in metadata.versions
         }.forEach { it.delete() }
-        CanvasDocument(metadata, nextHtml, nextVersion)
+        writeToWorkspace(sessionId, CanvasDocument(metadata, nextHtml, nextVersion))
     }
 
     override suspend fun read(sessionId: String, id: String, version: Int?): CanvasDocument? = locked {
@@ -112,6 +123,11 @@ class FileCanvasStore(
         val source = child(dir, "$selected.html")
         if (!source.isFile) return@locked null
         CanvasDocument(metadata, readSource(dir, selected), selected)
+    }
+
+    override suspend fun syncFromWorkspace(sessionId: String, id: String): CanvasDocument? = locked {
+        validateId(id)
+        syncLocked(sessionId, id)
     }
 
     override suspend fun deleteSession(sessionId: String) = locked {
@@ -137,8 +153,15 @@ class FileCanvasStore(
             ensureDirectory(staging)
             source.forEach { metadata ->
                 val html = readSource(canvasDirectory(sourceSessionId, metadata.id), metadata.currentVersion)
-                val remapped = metadata.copy(createdByMessageId = messageIdMap.getValue(metadata.createdByMessageId), versions = listOf(metadata.currentVersion))
-                publish(child(staging, metadata.id), remapped, html)
+                val remapped = metadata.copy(
+                    createdByMessageId = messageIdMap.getValue(metadata.createdByMessageId),
+                    versions = listOf(metadata.currentVersion),
+                    versionSources = metadata.versionSources.filterKeys { it == metadata.currentVersion },
+                    // 分支可能与源会话共用自选工作区，路径在首次写出时重新分配，避免两份画布指向同一文件。
+                    workspacePath = null,
+                    workspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
+                )
+                publish(child(staging, metadata.id), remapped, html, workspaceHash = null)
                 copied += remapped
             }
             Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -146,6 +169,112 @@ class FileCanvasStore(
             if (staging.exists()) staging.deleteRecursively()
         }
         states.getOrPut(targetSessionId) { MutableStateFlow(emptyList()) }.value = sorted(copied)
+    }
+
+    private suspend fun syncLocked(sessionId: String, id: String): CanvasDocument? {
+        val current = load(sessionId).value.find { it.id == id } ?: return null
+        val dir = canvasDirectory(sessionId, id)
+        val document = CanvasDocument(current, readSource(dir, current.currentVersion), current.currentVersion)
+        val files = workspaceFiles ?: return document
+        val hash = workspaceHash(dir)
+        if (current.workspacePath == null) return writeToWorkspace(sessionId, document)
+        if (hash == null) return writeToWorkspace(sessionId, document)
+        try {
+            val bytes = files.read(sessionId, current.workspacePath, maxSourceBytes)
+                ?: return setSync(sessionId, document, CanvasWorkspaceSync.MISSING, hash)
+            val actualHash = canvasSha256(bytes)
+            if (actualHash == canvasSha256(document.html.toByteArray(Charsets.UTF_8))) {
+                return if (current.workspaceSync == CanvasWorkspaceSync.SYNCED && hash == actualHash) document
+                    else setSync(sessionId, document, CanvasWorkspaceSync.SYNCED, actualHash)
+            }
+            if (actualHash != hash) {
+                invalidIf(current.currentVersion == Int.MAX_VALUE, "画布版本号已达到上限。")
+                val html = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
+                validateSource(html)
+                val next = current.currentVersion + 1
+                val versions = (current.versions + next).takeLast(maxVersions)
+                val metadata = current.copy(
+                    updatedAt = maxOf(current.updatedAt, System.currentTimeMillis()), currentVersion = next,
+                    versions = versions, workspaceSync = CanvasWorkspaceSync.SYNCED,
+                    versionSources = current.versionSources.filterKeys { it in versions } + (next to CanvasVersionSource.WORKSPACE),
+                )
+                publish(dir, metadata, html, actualHash)
+                replaceMetadata(sessionId, metadata)
+                cleanupVersions(dir, metadata)
+                return CanvasDocument(metadata, html, next)
+            }
+            return if (current.workspaceSync in setOf(CanvasWorkspaceSync.FAILED, CanvasWorkspaceSync.NOT_WRITTEN)) writeToWorkspace(sessionId, document)
+                else setSync(sessionId, document, CanvasWorkspaceSync.SYNCED, hash)
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            return setSync(sessionId, document, CanvasWorkspaceSync.FAILED, hash)
+        }
+    }
+
+    private suspend fun writeToWorkspace(sessionId: String, document: CanvasDocument): CanvasDocument {
+        val files = workspaceFiles ?: return document
+        var current = document
+        val dir = canvasDirectory(sessionId, document.metadata.id)
+        val previousHash = workspaceHash(dir)
+        try {
+            if (current.metadata.workspacePath == null) {
+                val base = current.metadata.title.replace(Regex("[^\\p{IsHan}\\p{L}\\p{N}-]+"), "-")
+                    .trim('-').codePoints().limit(48).toArray().let { String(it, 0, it.size) }.trimEnd('-').ifEmpty { "canvas" }
+                val occupied = load(sessionId).value.mapNotNull { it.workspacePath }.toSet()
+                var suffix = 1
+                var path: String
+                do {
+                    path = "canvas/$base${if (suffix == 1) "" else "-$suffix"}.html"
+                    suffix++
+                } while (path in occupied || files.exists(sessionId, path))
+                current = current.copy(metadata = current.metadata.copy(workspacePath = path))
+                current = setSync(sessionId, current, CanvasWorkspaceSync.NOT_WRITTEN, previousHash)
+            }
+            val path = current.metadata.workspacePath!!
+            // 仅覆盖最后一次已同步的内容；文件工具的并发修改交给下一次同步导入。
+            val bytes = files.read(sessionId, path, maxSourceBytes)
+            val expectedHash = bytes?.let(::canvasSha256)
+            val sourceHash = canvasSha256(current.html.toByteArray(Charsets.UTF_8))
+            // 允许恢复文件已落盘、私有哈希尚未确认的中断窗口，避免导入自身写出的内容。
+            if (expectedHash == sourceHash) return setSync(sessionId, current, CanvasWorkspaceSync.SYNCED, sourceHash)
+            if (expectedHash != null && expectedHash != previousHash) throw CanvasException("WORKSPACE_CONFLICT", "画布工作区文件已变化。")
+            files.write(sessionId, path, current.html, expectedHash)
+            return setSync(sessionId, current, CanvasWorkspaceSync.SYNCED, canvasSha256(current.html.toByteArray(Charsets.UTF_8)))
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            return setSync(sessionId, current, CanvasWorkspaceSync.FAILED, previousHash)
+        }
+    }
+
+    private fun setSync(sessionId: String, document: CanvasDocument, sync: CanvasWorkspaceSync, hash: String?): CanvasDocument {
+        val metadata = document.metadata.copy(workspaceSync = sync)
+        writeAtomic(child(canvasDirectory(sessionId, metadata.id), "metadata.json"), metadataBytes(metadata, hash))
+        replaceMetadata(sessionId, metadata)
+        return document.copy(metadata = metadata)
+    }
+
+    private fun replaceMetadata(sessionId: String, metadata: CanvasMetadata) {
+        val state = load(sessionId)
+        state.value = sorted(state.value.map { if (it.id == metadata.id) metadata else it })
+    }
+
+    private fun workspaceHash(dir: File): String? {
+        val file = child(dir, "metadata.json")
+        if (!file.isFile) return null
+        return json.parseToJsonElement(file.readText(Charsets.UTF_8)).jsonObject["workspaceHash"]
+            ?.takeUnless { it == JsonNull }?.jsonPrimitive?.content
+    }
+
+    private fun metadataBytes(metadata: CanvasMetadata, hash: String?): ByteArray = buildJsonObject {
+        json.parseToJsonElement(json.encodeToString(metadata)).jsonObject.forEach { (key, value) -> put(key, value) }
+        put("workspaceHash", hash?.let(::JsonPrimitive) ?: JsonNull)
+    }.toString().toByteArray(Charsets.UTF_8).also {
+        invalidIf(it.size > MAX_METADATA_BYTES, "画布元数据超过 64 KiB 上限。")
+    }
+
+    private fun cleanupVersions(dir: File, metadata: CanvasMetadata) {
+        dir.listFiles().orEmpty().filter { it.extension == "html" && it.nameWithoutExtension.toIntOrNull() !in metadata.versions }.forEach { it.delete() }
     }
 
     private fun load(sessionId: String): MutableStateFlow<List<CanvasMetadata>> {
@@ -183,11 +312,13 @@ class FileCanvasStore(
         metadata.title.length <= MAX_TITLE_CHARS && metadata.createdByMessageId.isNotBlank() &&
         metadata.createdAt >= 0 && metadata.updatedAt >= metadata.createdAt && metadata.currentVersion > 0 &&
         metadata.versions.isNotEmpty() && metadata.versions.all { it > 0 } &&
-        metadata.versions == metadata.versions.distinct().sorted() && metadata.versions.last() == metadata.currentVersion
+        metadata.versions == metadata.versions.distinct().sorted() && metadata.versions.last() == metadata.currentVersion &&
+        (metadata.workspacePath == null || CANVAS_PATH.matches(metadata.workspacePath)) &&
+        metadata.versionSources.keys.all { it in metadata.versions }
 
-    private fun publish(dir: File, metadata: CanvasMetadata, html: String) {
+    private fun publish(dir: File, metadata: CanvasMetadata, html: String, workspaceHash: String? = workspaceHash(dir)) {
         validateSource(html)
-        val metadataBytes = json.encodeToString(metadata).toByteArray(Charsets.UTF_8)
+        val metadataBytes = metadataBytes(metadata, workspaceHash)
         invalidIf(metadataBytes.size > MAX_METADATA_BYTES, "画布元数据超过 64 KiB 上限。")
         ensureDirectory(dir)
         val source = child(dir, "${metadata.currentVersion}.html")
@@ -270,7 +401,7 @@ class FileCanvasStore(
     private fun invalidIf(invalid: Boolean, message: String) { if (invalid) throw CanvasException("INVALID_ARGUMENTS", message) }
     private fun sorted(items: List<CanvasMetadata>) = items.sortedWith(compareByDescending<CanvasMetadata> { it.updatedAt }.thenBy { it.id })
 
-    private suspend fun <T> locked(block: () -> T): T = withContext(NonCancellable) {
+    private suspend fun <T> locked(block: suspend () -> T): T = withContext(NonCancellable) {
         withContext(ioDispatcher) {
             mutex.withLock {
                 try { block() } catch (_: IOException) { throw CanvasException("STORAGE_ERROR", "画布文件读写失败，请重试。") }

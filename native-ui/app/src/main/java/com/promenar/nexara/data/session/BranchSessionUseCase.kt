@@ -14,6 +14,8 @@ import com.promenar.nexara.data.canvas.CanvasStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class BranchSessionPlan(
     val session: SessionEntity,
@@ -147,48 +149,71 @@ class BranchSessionUseCase(
     private val canvasStore: CanvasStore? = null,
 ) {
     suspend fun branch(sourceSessionId: String, targetMessageId: String): BranchSessionResult = withContext(Dispatchers.IO) {
+        val planned = database.withTransaction {
+            val source = sessionDao.getById(sourceSessionId)
+                ?: return@withTransaction BranchSessionPlanResult.Rejected(BranchSessionRejectReason.SourceNotFound)
+            BranchSessionPlanner.plan(
+                source = source,
+                sourceMessages = messageDao.getBySession(sourceSessionId),
+                targetMessageId = targetMessageId,
+                newSessionId = newId(),
+                now = now(),
+                branchTitle = branchTitle(source.title),
+                newMessageId = { newId() },
+            )
+        }
+        if (planned is BranchSessionPlanResult.Rejected) return@withContext BranchSessionResult.Rejected(planned.reason)
+        val plan = (planned as BranchSessionPlanResult.Ready).plan
         var copiedSession: String? = null
+        suspend fun cleanupCopy() {
+            copiedSession?.let { sessionId ->
+                withContext(NonCancellable) { canvasStore?.deleteSession(sessionId) }
+                copiedSession = null
+            }
+        }
         try {
-            database.withTransaction {
-                val source = sessionDao.getById(sourceSessionId)
-                    ?: return@withTransaction BranchSessionResult.Rejected(
-                        BranchSessionRejectReason.SourceNotFound,
-                    )
-                val newSessionId = newId()
-                when (
-                    val planned = BranchSessionPlanner.plan(
+            // 画布同步会访问 Room；复制在事务外执行，统一锁顺序，避免 Room 与画布 Mutex 反向等待。
+            if (canvasStore != null) withContext(NonCancellable) {
+                canvasStore.copySession(sourceSessionId, plan.session.id, plan.messageIdMap)
+                copiedSession = plan.session.id
+            }
+            currentCoroutineContext().ensureActive()
+            val result = withContext(NonCancellable) {
+                val committed = database.withTransaction {
+                    val source = sessionDao.getById(sourceSessionId)
+                        ?: return@withTransaction BranchSessionResult.Rejected(BranchSessionRejectReason.SourceNotFound)
+                    val refreshed = BranchSessionPlanner.plan(
                         source = source,
                         sourceMessages = messageDao.getBySession(sourceSessionId),
                         targetMessageId = targetMessageId,
-                        newSessionId = newSessionId,
-                        now = now(),
-                        branchTitle = branchTitle(source.title),
-                        newMessageId = { newId() },
+                        newSessionId = plan.session.id,
+                        now = plan.session.createdAt,
+                        branchTitle = plan.session.title,
+                        newMessageId = { plan.messageIdMap[it] ?: it },
                     )
-                ) {
-                    is BranchSessionPlanResult.Rejected -> BranchSessionResult.Rejected(planned.reason)
-                    is BranchSessionPlanResult.Ready -> {
-                        canvasStore?.copySession(sourceSessionId, newSessionId, planned.plan.messageIdMap)
-                        if (canvasStore != null) copiedSession = newSessionId
-                        sessionDao.insert(planned.plan.session)
-                        messageDao.insertAll(planned.plan.messages)
-                        val versions = database.stateBoardDao().versions(sourceSessionId).mapNotNull { version ->
-                            planned.plan.messageIdMap[version.anchorMessageId]?.let { anchor ->
-                                version.copy(id = 0, sessionId = newSessionId, anchorMessageId = anchor)
-                            }
-                        }
-                        database.stateBoardDao().insertAll(versions)
-                        BranchSessionResult.Success(newSessionId)
+                    if (refreshed is BranchSessionPlanResult.Rejected) return@withTransaction BranchSessionResult.Rejected(refreshed.reason)
+                    if ((refreshed as BranchSessionPlanResult.Ready).plan != plan) {
+                        return@withTransaction BranchSessionResult.Rejected(BranchSessionRejectReason.TargetNotStable)
                     }
+                    sessionDao.insert(plan.session)
+                    messageDao.insertAll(plan.messages)
+                    val versions = database.stateBoardDao().versions(sourceSessionId).mapNotNull { version ->
+                        plan.messageIdMap[version.anchorMessageId]?.let { anchor ->
+                            version.copy(id = 0, sessionId = plan.session.id, anchorMessageId = anchor)
+                        }
+                    }
+                    database.stateBoardDao().insertAll(versions)
+                    BranchSessionResult.Success(plan.session.id)
                 }
+                // 事务结果与副本所有权一同确认，取消不能清理已经提交的分支。
+                if (committed is BranchSessionResult.Success) copiedSession = null
+                committed
             }
+            if (result is BranchSessionResult.Rejected) cleanupCopy()
+            result
         } catch (failure: Throwable) {
-            // 文件与 Room 无共享事务，数据库提交失败时补偿已发布的画布副本。
-            copiedSession?.let { sessionId ->
-                withContext(NonCancellable) {
-                    runCatching { canvasStore?.deleteSession(sessionId) }.exceptionOrNull()?.let(failure::addSuppressed)
-                }
-            }
+            // 文件与 Room 无共享事务，拒绝、取消或数据库提交失败时补偿已发布的画布副本。
+            try { cleanupCopy() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
             throw failure
         }
     }
