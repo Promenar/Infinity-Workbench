@@ -142,6 +142,7 @@ fun SkillsScreen(
     onOpenGitCredentials: () -> Unit = {},
     onOpenTailscale: () -> Unit = {},
     onOpenAllowlist: () -> Unit = {},
+    onOpenBackground: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -247,6 +248,7 @@ fun SkillsScreen(
                         onOpenGitCredentials = onOpenGitCredentials,
                         onOpenTailscale = onOpenTailscale,
                         onOpenAllowlist = onOpenAllowlist,
+                        onOpenBackground = onOpenBackground,
                     ),
                 )
 

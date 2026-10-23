@@ -19,6 +19,12 @@ import com.promenar.nexara.domain.schedule.ScheduleTrigger
 import com.promenar.nexara.domain.schedule.ScheduledTask
 import com.promenar.nexara.domain.trigger.SystemTriggerMessage
 import com.promenar.nexara.domain.trigger.SystemTurnKind
+import com.promenar.nexara.domain.jobs.BackgroundJobExitAction as ExitAction
+import com.promenar.nexara.ui.chat.ApprovalCard
+import com.promenar.nexara.ui.chat.ApprovalDisplayCall
+import com.promenar.nexara.ui.chat.ApprovalPreview
+import com.promenar.nexara.ui.chat.BackgroundRunPreview
+import com.promenar.nexara.ui.chat.ScheduleApprovalPreview
 import com.promenar.nexara.ui.chat.SystemTriggerRow
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -163,5 +169,79 @@ fun scheduledTasksSideloadDarkEnglishPreview() = ActivityPreviewFrame(dark = tru
         onToggle = { _, _ -> },
         onDelete = {},
         onGrantExact = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "定时与后台命令审批 侧载 浅中360", widthDp = 360, heightDp = 640, locale = "zh-rCN")
+@Composable
+fun scheduleApprovalSideloadLightChinesePreview() = ActivityPreviewFrame(dark = false) {
+    ApprovalCard(
+        toolName = "schedule_create",
+        description = "每半小时检查一次构建状态，失败时提醒你。",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "schedule_create",
+                argumentsSummary = "{}",
+                riskLabel = "定时执行",
+                schedule = ScheduleApprovalPreview(
+                    name = "检查 CI 构建",
+                    prompt = "查看最新一次构建是否通过；失败时总结错误并给出修复建议。",
+                    trigger = ScheduleTrigger.Interval(30),
+                    upcoming = listOf(NOW + 30 * 60_000, NOW + 60 * 60_000, NOW + 90 * 60_000),
+                    nowMillis = NOW,
+                    maxRuns = 10,
+                    exactRequested = true,
+                    exactEffective = true,
+                    exactAlarmAvailable = true,
+                    invalid = false,
+                ),
+            ),
+            ApprovalDisplayCall(
+                name = "shell_exec",
+                argumentsSummary = "{}",
+                riskLabel = "执行命令",
+                preview = ApprovalPreview.Preview(ApprovalPreview.Action.SCRIPT, "", "./gradlew assembleRelease", commandRunsInWorkspace = true),
+                highRisk = true,
+                background = BackgroundRunPreview(120, ExitAction.WAKE, keepAliveAvailable = true),
+            ),
+        ),
+        onApproveAll = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "定时审批 Play 深英360", widthDp = 360, heightDp = 520, locale = "en")
+@Composable
+fun scheduleApprovalPlayDarkEnglishPreview() = ActivityPreviewFrame(dark = true) {
+    ApprovalCard(
+        toolName = "schedule_create",
+        description = "",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "schedule_create",
+                argumentsSummary = "{}",
+                riskLabel = "Scheduled run",
+                schedule = ScheduleApprovalPreview(
+                    name = "Poll deployment",
+                    prompt = "Check whether the deployment finished.",
+                    trigger = ScheduleTrigger.Interval(5),
+                    upcoming = listOf(NOW + 15 * 60_000, NOW + 30 * 60_000, NOW + 45 * 60_000),
+                    nowMillis = NOW,
+                    maxRuns = null,
+                    exactRequested = true,
+                    exactEffective = false,
+                    exactAlarmAvailable = false,
+                    invalid = false,
+                ),
+                background = null,
+            ),
+            ApprovalDisplayCall(
+                name = "termux_exec",
+                argumentsSummary = "{\"command\":\"pkg upgrade -y\",\"background\":true}",
+                riskLabel = "Process",
+                background = BackgroundRunPreview(45, ExitAction.NOTIFY, keepAliveAvailable = false),
+            ),
+        ),
     )
 }

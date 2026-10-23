@@ -1,13 +1,16 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Visibility
@@ -45,6 +48,8 @@ data class ScheduleApprovalPreview(
     val prompt: String,
     val trigger: ScheduleTrigger,
     val upcoming: List<Long>,
+    /** 计算预览的时刻；“今天/明天”按它判断。 */
+    val nowMillis: Long,
     val maxRuns: Int?,
     val exactRequested: Boolean,
     val exactEffective: Boolean,
@@ -73,6 +78,7 @@ internal fun scheduleApprovalPreview(
         prompt = parsed.prompt,
         trigger = parsed.trigger,
         upcoming = upcoming.orEmpty(),
+        nowMillis = nowMillis,
         maxRuns = parsed.maxRuns,
         exactRequested = parsed.exactRequested,
         exactEffective = parsed.exactRequested && exactAlarmAvailable && canScheduleExact,
@@ -100,7 +106,7 @@ internal fun backgroundRunPreview(args: JsonObject, keepAliveAvailable: Boolean)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview, nowMillis: Long) {
+internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview) {
     Column(Modifier.testTag(UiTags.CHAT_APPROVAL_SCHEDULE), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Rounded.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
@@ -136,7 +142,18 @@ internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview, nowMillis: 
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        ApprovalTextBlock(text = preview.prompt)
+        // 提示是自然语言，按正文排版而非代码块。
+        Text(
+            text = preview.prompt,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        )
         if (preview.upcoming.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -145,7 +162,7 @@ internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview, nowMillis: 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    preview.upcoming.forEach { ApprovalTag(fireTimeLabel(it, nowMillis)) }
+                    preview.upcoming.forEach { ApprovalTag(fireTimeLabel(it, preview.nowMillis)) }
                 }
             }
         }

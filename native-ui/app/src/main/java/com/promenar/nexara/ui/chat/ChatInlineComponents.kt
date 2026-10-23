@@ -982,12 +982,14 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
             highRisk = call.highRisk,
             target = approvalHeaderTarget(
                 call.name,
-                headerTarget ?: approvalFixedWriteTarget(call.name) ?: stringResource(R.string.chat_approval_execution_target_unknown),
+                headerTarget ?: approvalFixedWriteTarget(call.name)
+                    ?: call.schedule?.let { stringResource(R.string.schedule_approval_target) }
+                    ?: stringResource(R.string.chat_approval_execution_target_unknown),
             ),
         )
         ApprovalReason(description)
         if (call.schedule != null) {
-            ScheduleApprovalBlock(call.schedule, nowMillis = remember(call.schedule) { System.currentTimeMillis() })
+            ScheduleApprovalBlock(call.schedule)
         } else if (preview == null) {
             ApprovalTextBlock(text = call.argumentsSummary)
         } else {

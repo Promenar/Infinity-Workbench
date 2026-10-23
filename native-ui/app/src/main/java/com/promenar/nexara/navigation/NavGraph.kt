@@ -82,6 +82,7 @@ object NavDestinations {
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val GIT_CREDENTIALS = "git_credentials"
     const val TOOL_ALLOWLIST = "tool_allowlist"
+    const val BACKGROUND_ACTIVITY = "background_activity"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
@@ -597,6 +598,14 @@ fun NexaraNavGraph(
                 onOpenGitCredentials = { navController.navigate(NavDestinations.GIT_CREDENTIALS) },
                 onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
                 onOpenAllowlist = { navController.navigate(NavDestinations.TOOL_ALLOWLIST) },
+                onOpenBackground = { navController.navigate(NavDestinations.BACKGROUND_ACTIVITY) },
+            )
+        }
+
+        composable(NavDestinations.BACKGROUND_ACTIVITY) {
+            com.promenar.nexara.ui.settings.BackgroundActivitySettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenSession = { sessionId -> navController.navigate(NavDestinations.chatHero(sessionId)) },
             )
         }
 

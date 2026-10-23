@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+]>
 <resources>
     <string name="system_trigger_schedule">Scheduled · %1$s</string>
     <string name="system_trigger_schedule_seq">Scheduled · %1$s · run %2$d</string>
@@ -21,7 +24,7 @@
     <string name="agent_jobs_title">Background tasks</string>
     <string name="agent_jobs_empty">No background tasks in this chat</string>
     <string name="agent_jobs_limit_label">Foreground only</string>
-    <string name="agent_jobs_limit_title">Runs while Nexara is open</string>
+    <string name="agent_jobs_limit_title">Runs while &brand; is open</string>
     <string name="agent_jobs_limit_body">In the Play version, Android may pause or stop tasks after you leave the app. The sideload version keeps them running with a notification.</string>
     <string name="agent_jobs_stop">Stop task</string>
     <string name="agent_jobs_open_log">Open log in workspace</string>
@@ -80,4 +83,25 @@
     </plurals>
     <string name="chat_approval_background_on_exit_wake">continues the chat when done</string>
     <string name="chat_approval_background_on_exit_notify">notifies when done</string>
+    <string name="settings_background_title">Background &amp; schedules</string>
+    <string name="settings_background_entry_subtitle">Background jobs, scheduled tasks and what they need to run</string>
+    <string name="settings_background_conditions">Run conditions</string>
+    <string name="settings_background_keep_alive">Background running</string>
+    <string name="settings_background_keep_alive_on">Background jobs and scheduled replies finish in the background</string>
+    <string name="settings_background_keep_alive_foreground">Guaranteed only while the app is open</string>
+    <string name="settings_background_exact">Exact alarms</string>
+    <string name="settings_background_exact_granted">Granted. Scheduled tasks fire at the set time</string>
+    <string name="settings_background_exact_denied">Not granted. The system picks the time; tap to grant</string>
+    <string name="settings_background_exact_system">The system picks the time, at most every 15 minutes</string>
+    <string name="settings_background_battery">Battery optimization</string>
+    <string name="settings_background_battery_unrestricted">Unrestricted</string>
+    <string name="settings_background_battery_restricted">Restricted. Background work may be delayed; tap to adjust</string>
+    <string name="settings_background_notifications">Notifications</string>
+    <string name="settings_background_notifications_on">Allowed</string>
+    <string name="settings_background_notifications_off">Off. Finished jobs and scheduled replies won’t alert you; tap to turn on</string>
+    <string name="settings_background_jobs_footer">Up to 3 jobs run at once per chat, and 6 across all chats.</string>
+    <string name="settings_background_jobs_empty">No background jobs</string>
+    <string name="settings_background_schedules_footer">Up to 5 active scheduled tasks per chat and 20 in total. They stay on this device and are not backed up.</string>
+    <string name="settings_background_schedules_empty">No scheduled tasks</string>
+    <string name="settings_background_untitled_session">Untitled chat</string>
 </resources>

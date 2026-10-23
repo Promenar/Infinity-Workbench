@@ -190,8 +190,9 @@ internal fun BackgroundJobsContent(
     }
 }
 
+/** [sessionTitle] 仅在跨会话列表中给出，追加在说明行末尾。 */
 @Composable
-private fun BackgroundJobRow(
+internal fun BackgroundJobRow(
     job: BackgroundJob,
     nowMillis: Long,
     expanded: Boolean,
@@ -199,6 +200,7 @@ private fun BackgroundJobRow(
     onStop: () -> Unit,
     onOpenLog: (() -> Unit)?,
     liveOutput: @Composable () -> Unit,
+    sessionTitle: String? = null,
 ) {
     val running = !job.state.isTerminal
     Column(
@@ -222,7 +224,7 @@ private fun BackgroundJobRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = jobMeta(job, nowMillis),
+                    text = listOfNotNull(jobMeta(job, nowMillis), sessionTitle).joinToString(" · "),
                     style = NexaraTypography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -351,12 +353,13 @@ internal fun ScheduledTasksContent(
 }
 
 @Composable
-private fun ScheduledTaskRow(
+internal fun ScheduledTaskRow(
     task: ScheduledTask,
     nowMillis: Long,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onGrantExact: (() -> Unit)?,
+    sessionTitle: String? = null,
 ) {
     val stateText = stringResource(if (task.enabled) R.string.agent_schedules_enabled else R.string.agent_schedules_paused)
     Row(
@@ -369,7 +372,7 @@ private fun ScheduledTaskRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(task.name, style = NexaraTypography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = triggerText(task.trigger),
+                text = listOfNotNull(triggerText(task.trigger), sessionTitle).joinToString(" · "),
                 style = NexaraTypography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

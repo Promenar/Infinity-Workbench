@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.WifiProtectedSetup
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.WorkHistory
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -51,6 +52,7 @@ internal data class SkillsSettingsVisualActions(
     val onOpenGitCredentials: () -> Unit = {},
     val onOpenTailscale: () -> Unit = {},
     val onOpenAllowlist: () -> Unit = {},
+    val onOpenBackground: () -> Unit = {},
 )
 
 /** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
@@ -70,6 +72,14 @@ internal fun SkillsSettingsHeaderContent(
             onSaved = actions.onScriptHostsSaved,
         )
         NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
+            NexaraSettingsItem(
+                icon = Icons.Rounded.WorkHistory,
+                title = stringResource(R.string.settings_background_title),
+                subtitle = stringResource(R.string.settings_background_entry_subtitle),
+                onClick = actions.onOpenBackground,
+                showChevron = true,
+                modifier = Modifier.testTag("background_activity_entry"),
+            )
             NexaraSettingsItem(
                 icon = Icons.Rounded.Terminal,
                 title = stringResource(R.string.ssh_settings_entry),
