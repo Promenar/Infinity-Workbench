@@ -909,6 +909,7 @@ fun ChatScreenContent(
                                         )
                                     }
                                 }
+                                com.promenar.nexara.ui.chat.components.AgentActivityPanel()
                                 state.stateBoard?.takeIf { it.board != null }?.let { snapshot ->
                                     com.promenar.nexara.ui.chat.components.StateBoardPanel(
                                         snapshot = snapshot,
