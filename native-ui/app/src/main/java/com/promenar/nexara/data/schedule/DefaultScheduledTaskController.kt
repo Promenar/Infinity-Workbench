@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** 厂商系统会把精确闹钟对齐到约 1.5 分钟的窗口内送达；超过该容差才视为错过后补发。 */
+internal const val CATCH_UP_TOLERANCE_MILLIS = 5 * 60_000L
+
 interface ScheduleBackend {
     fun canUseExact(): Boolean
     fun schedule(task: ScheduledTaskEntity)
@@ -213,7 +216,7 @@ class DefaultScheduledTaskController(
                 dao.get(id)?.also { running[id] = caller }
             } ?: return@withContext
             result = when (val outcome = dispatcher.request(SystemTurnRequest(claimed.sessionId, SystemTurnKind.SCHEDULE,
-                claimed.id, claimed.name, claimed.prompt, claimed.runCount, claimed.catchUp || (claimed.nextFireAtMillis?.let { it < clock() - 60_000L } == true)))) {
+                claimed.id, claimed.name, claimed.prompt, claimed.runCount, claimed.catchUp || (claimed.nextFireAtMillis?.let { it < clock() - CATCH_UP_TOLERANCE_MILLIS } == true)))) {
                 SystemTurnOutcome.Completed -> ScheduleRunResult.COMPLETED
                 SystemTurnOutcome.NeedsUser -> ScheduleRunResult.NEEDS_USER
                 is SystemTurnOutcome.Failed -> ScheduleRunResult.FAILED

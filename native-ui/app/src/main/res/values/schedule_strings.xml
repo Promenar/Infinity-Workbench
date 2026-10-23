@@ -3,6 +3,7 @@
     <string name="schedule_notification_channel">Agent activity</string>
     <string name="schedule_notification_channel_description">System-triggered replies and requests for your attention</string>
     <string name="schedule_notification_needs_user">Action required: %1$s</string>
+    <string name="schedule_notification_needs_user_text">Waiting for your approval or reply. Open the chat to continue.</string>
     <string name="schedule_notification_completed">Completed: %1$s</string>
     <string name="schedule_notification_failed">Failed: %1$s</string>
     <string name="schedule_notification_reply">The turn is complete</string>

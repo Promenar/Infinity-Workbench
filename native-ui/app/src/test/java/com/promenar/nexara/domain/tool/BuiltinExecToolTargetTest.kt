@@ -45,6 +45,9 @@ class BuiltinExecToolTargetTest {
         val python = ApprovalPreview.format("python_exec", Json.parseToJsonElement("""{"code":"import os"}""").jsonObject)
         assertThat(python?.detail).isEqualTo("import os")
         assertThat(python?.commandRunsInWorkspace).isTrue()
-        assertThat(ApprovalPreview.format("termux_exec", Json.parseToJsonElement("""{"command":"ls"}""").jsonObject)).isNull()
+        // Termux 只展示命令正文，不借用内置后端的工作区风险提示。
+        val termux = ApprovalPreview.format("termux_exec", Json.parseToJsonElement("""{"command":"ls"}""").jsonObject)
+        assertThat(termux?.detail).isEqualTo("ls")
+        assertThat(termux?.commandRunsInWorkspace).isFalse()
     }
 }

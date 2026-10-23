@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.google.common.truth.Truth.assertWithMessage
+import com.promenar.nexara.data.jobs.BackgroundJobManager
+import com.promenar.nexara.data.schedule.DefaultScheduledTaskController
 import com.promenar.nexara.data.script.ScriptToolRunner
 import com.promenar.nexara.data.ssh.SshRuntime
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
@@ -39,7 +41,8 @@ class BuiltInToolSchemaDefinitionTest {
             ExecJsSkill(mockk<ScriptToolRunner>()),
             RunScriptSkill(mockk<ScriptToolRunner>()),
             TermuxExecSkill({ error("不应派发") }, { true }),
-        )
+        ) + scheduleSkillRegistry(mockk<DefaultScheduledTaskController>(relaxed = true)).getAllSkills() +
+            backgroundJobTools(mockk<BackgroundJobManager>(relaxed = true))
         definitions.forEach { assertValid(it.id, it.parametersSchema) }
     }
 

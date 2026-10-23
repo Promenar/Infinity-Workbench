@@ -27,6 +27,17 @@ class ScheduleCalculationTest {
         assertThrows(IllegalArgumentException::class.java) { ScheduleCalculation.validate(args(15).copy(trigger = ScheduleTrigger.Once("2026-10-22T09:00", "UTC")), now, false) }
         assertThrows(IllegalArgumentException::class.java) { ScheduleCalculation.resolveLocal("2026-03-08T02:30", "America/New_York") }
     }
+    @Test fun `单次时间带Z或偏移时换算为设备本地时间`() {
+        fun once(at: String) = ScheduleCalculation.parse(
+            Json.parseToJsonElement("""{"name":"检查","prompt":"检查状态","trigger":{"type":"once","at":"$at"}}""").jsonObject,
+            "Asia/Shanghai",
+        ).trigger
+        assertEquals(ScheduleTrigger.Once("2026-10-23T19:36", "Asia/Shanghai"), once("2026-10-23T19:36"))
+        assertEquals(ScheduleTrigger.Once("2026-10-23T19:36:30", "Asia/Shanghai"), once("2026-10-23T19:36:30"))
+        assertEquals(ScheduleTrigger.Once("2026-10-23T19:36", "Asia/Shanghai"), once("2026-10-23T11:36:00Z"))
+        assertEquals(ScheduleTrigger.Once("2026-10-23T19:36", "Asia/Shanghai"), once("2026-10-23T20:36:00+09:00"))
+        assertEquals(ScheduleTrigger.Once("明天", "Asia/Shanghai"), once("明天"))
+    }
     @Test fun `cron高频表达式拒绝且降级实际间隔至少十五分钟`() {
         assertThrows(IllegalArgumentException::class.java) { ScheduleCalculation.validate(args(15).copy(trigger = ScheduleTrigger.Cron("*/5 * * * *", "UTC")), now, false) }
         val raw = Json.parseToJsonElement("""{"name":"检查","prompt":"检查状态","trigger":{"type":"cron","expr":"*/5 * * * *"},"exact":true}""").jsonObject

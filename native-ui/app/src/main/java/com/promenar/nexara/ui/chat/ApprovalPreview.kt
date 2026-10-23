@@ -68,6 +68,8 @@ object ApprovalPreview {
                 args.string("command") ?: args.string("code"),
                 commandRunsInWorkspace = true,
             )
+            // Termux 在其自身 home 中运行，不改动 Nexara 工作区。
+            "termux_exec" -> Preview(Action.SCRIPT, "", args.string("command"))
             "move_file" -> Preview(
                 Action.MOVE,
                 target,

@@ -39,7 +39,7 @@ class SystemTriggerNotifications(
 
     suspend fun needsUser(sessionId: String, title: String) = post(
         sessionId, context.getString(R.string.schedule_notification_needs_user, title),
-        context.getString(R.string.schedule_notification_needs_user, title), true,
+        context.getString(R.string.schedule_notification_needs_user_text), true,
     )
 
     private suspend fun post(sessionId: String, title: String, text: String, high: Boolean) {

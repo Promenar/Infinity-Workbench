@@ -74,6 +74,16 @@ class DefaultScheduledTaskControllerTest {
         assertThat(requests.single().catchUp).isTrue()
         assertThat(controller.find(task.id)!!.nextFireAtMillis).isEqualTo(now + 15 * 60_000)
     }
+    @Test fun `系统闹钟对齐造成的短暂延迟不标记补发`() = runBlocking {
+        val aligned = create(ScheduleTrigger.Once("2026-10-23T00:30", "UTC"), exact = true)
+        now = aligned.nextFireAtMillis!! + 89_000L
+        controller.fire(aligned.id)
+        assertThat(requests.single().catchUp).isFalse()
+        val late = create(ScheduleTrigger.Once("2026-10-23T01:00", "UTC"), exact = true)
+        now = late.nextFireAtMillis!! + 10 * 60_000L
+        controller.fire(late.id)
+        assertThat(requests.last().catchUp).isTrue()
+    }
     @Test fun `单次任务错过后补发并自动停用`() = runBlocking {
         val task = create(ScheduleTrigger.Once("2026-10-23T00:30", "UTC"))
         now += 60 * 60_000L

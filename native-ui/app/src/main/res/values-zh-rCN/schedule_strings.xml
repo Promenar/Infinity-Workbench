@@ -3,6 +3,7 @@
     <string name="schedule_notification_channel">Agent 动态</string>
     <string name="schedule_notification_channel_description">系统触发的回复和待处理请求</string>
     <string name="schedule_notification_needs_user">需要处理：%1$s</string>
+    <string name="schedule_notification_needs_user_text">等待你批准或回复，打开会话继续。</string>
     <string name="schedule_notification_completed">已完成：%1$s</string>
     <string name="schedule_notification_failed">执行失败：%1$s</string>
     <string name="schedule_notification_reply">本轮已完成</string>

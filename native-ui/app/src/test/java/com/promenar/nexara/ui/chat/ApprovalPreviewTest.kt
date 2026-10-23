@@ -123,4 +123,16 @@ class ApprovalPreviewTest {
 
         assertThat(ApprovalPreview.forCall(call("web_search", arguments), messages("web_search", arguments), "a1")).isNull()
     }
+
+    @Test
+    fun `termux command preview shows the command text and does not claim the workspace`() {
+        val preview = ApprovalPreview.format(
+            "termux_exec",
+            buildJsonObject { put("command", "for i in 1 2; do echo tick; done"); put("background", true) },
+        )
+
+        assertThat(preview).isEqualTo(
+            ApprovalPreview.Preview(ApprovalPreview.Action.SCRIPT, "", "for i in 1 2; do echo tick; done"),
+        )
+    }
 }

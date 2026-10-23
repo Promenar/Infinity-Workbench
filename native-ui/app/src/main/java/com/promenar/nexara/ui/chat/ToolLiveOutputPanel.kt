@@ -31,17 +31,25 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 /** 运行中命令的实时输出存储；预览与测试中为空，此时不显示终端区。 */
 val LocalToolLiveOutput = staticCompositionLocalOf<ToolLiveOutputStore?> { null }
 
-/** 按工具调用步骤 id 读取实时输出；命令结束后存储移除该项，终端区随之消失。 */
+/**
+ * 按工具调用步骤 id 读取实时输出；命令结束后存储移除该项，终端区随之消失。
+ * 宿主已有自己的停止控件时传 [showStop] = false，避免同一任务出现两个停止按钮。
+ */
 @Composable
-internal fun RunningToolLiveOutput(stepId: String) {
+internal fun RunningToolLiveOutput(stepId: String, showStop: Boolean = true) {
     val store = LocalToolLiveOutput.current ?: return
     val initial = remember(store, stepId) { store.snapshot(stepId) }
     val snapshot by remember(store, stepId) { store.observe(stepId) }.collectAsState(initial = initial)
-    snapshot?.let { ToolLiveOutputPanel(it, onStop = { store.requestStop(stepId) }, modifier = Modifier.padding(bottom = ExpandedStepBottomPadding)) }
+    snapshot?.let { ToolLiveOutputPanel(it, onStop = { store.requestStop(stepId) }, showStop = showStop, modifier = Modifier.padding(bottom = ExpandedStepBottomPadding)) }
 }
 
 @Composable
-internal fun ToolLiveOutputPanel(snapshot: ToolLiveOutputStore.Snapshot, onStop: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ToolLiveOutputPanel(
+    snapshot: ToolLiveOutputStore.Snapshot,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+    showStop: Boolean = true,
+) {
     val tail = remember(snapshot.text) { liveOutputTail(snapshot.text) }
     Column(
         modifier = modifier
@@ -59,7 +67,7 @@ internal fun ToolLiveOutputPanel(snapshot: ToolLiveOutputStore.Snapshot, onStop:
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            if (snapshot.stoppable) {
+            if (showStop && snapshot.stoppable) {
                 TextButton(
                     onClick = onStop,
                     enabled = !snapshot.stopRequested,

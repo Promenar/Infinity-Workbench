@@ -615,7 +615,7 @@ fun ChatRoute(
                     { runCatching { context.startActivity(intent) } }
                 }
             },
-            liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey) },
+            liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey, showStop = false) },
         )
     }
     androidx.compose.runtime.CompositionLocalProvider(

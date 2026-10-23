@@ -2,6 +2,7 @@ package com.promenar.nexara.domain.schedule
 
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import kotlinx.serialization.json.*
 
@@ -27,7 +28,7 @@ object ScheduleCalculation {
             ?: throw IllegalArgumentException("$key 必须是整数。")
         val raw = args["trigger"] as? JsonObject ?: throw IllegalArgumentException("trigger 必须是对象。")
         val trigger = when (raw.text("type")) {
-            "once" -> ScheduleTrigger.Once(raw.text("at"), zoneId)
+            "once" -> ScheduleTrigger.Once(normalizeOnce(raw.text("at"), zoneId), zoneId)
             "interval" -> ScheduleTrigger.Interval(raw.integer("every_minutes"))
             "cron" -> ScheduleTrigger.Cron(raw.text("expr"), zoneId)
             else -> throw IllegalArgumentException("trigger.type 必须是 once、interval 或 cron。")
@@ -61,6 +62,13 @@ object ScheduleCalculation {
         }
         val first = nextAfter(args.trigger, nowMillis, exactEffective)
         require(first != null && (args.expiresAtMillis == null || first < args.expiresAtMillis)) { "到期时间前没有可用触发时间。" }
+    }
+
+    /** 模型常给单次时间附带 Z 或偏移；换算为设备时区的本地时间，其它写法原样交给校验。 */
+    private fun normalizeOnce(value: String, zoneId: String): String {
+        if (runCatching { LocalDateTime.parse(value) }.isSuccess) return value
+        val offset = runCatching { OffsetDateTime.parse(value) }.getOrNull() ?: return value
+        return offset.atZoneSameInstant(ZoneId.of(zoneId)).toLocalDateTime().toString()
     }
 
     /** 缺失的本地时间拒绝创建；重复的本地时间取较早的有效偏移。 */
