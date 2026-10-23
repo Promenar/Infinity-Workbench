@@ -386,4 +386,9 @@ object UiTags {
     fun fileNodeOptions(fileId: String): String = "$FILE_NODE_OPTIONS_PREFIX$fileId"
     fun fileNodeReindex(fileId: String): String = "$FILE_NODE_REINDEX_PREFIX$fileId"
     fun fileNodeMultiSelect(fileId: String): String = "$FILE_NODE_MULTI_SELECT_PREFIX$fileId"
+
+    // 输入框斜杠命令
+    const val CHAT_SLASH_PALETTE = "chat_slash_palette"
+    const val CHAT_SLASH_ITEM_PREFIX = "chat_slash_item_"
+    const val CHAT_SLASH_EMPTY = "chat_slash_empty"
 }

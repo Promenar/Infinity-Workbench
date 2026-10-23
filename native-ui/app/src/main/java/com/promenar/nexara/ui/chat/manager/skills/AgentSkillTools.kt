@@ -5,7 +5,6 @@ import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.skills.AgentSkillFormatException
 import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillCatalog
-import com.promenar.nexara.data.skills.SkillScope
 import com.promenar.nexara.data.skills.SkillSnapshot
 import com.promenar.nexara.data.skills.SkillStatus
 import com.promenar.nexara.data.skills.SkillWorkspace
@@ -81,23 +80,7 @@ class ActivateSkillTool(
             val skill = access.select(access.scan(context.sessionId), args.stringArgument("name"), args.stringArgument("path"))
             val document = access.catalog.readDocument(skill)
                 ?: throw AgentSkillFormatException("技能 `${skill.virtualDir}/SKILL.md` 无法读取。")
-            buildString {
-                appendLine("# Skill: ${skill.name}")
-                appendLine("Source: ${skill.scope.name.lowercase()}")
-                appendLine("Directory: ${skill.virtualDir}")
-                appendLine("Document: ${skill.virtualDir}/SKILL.md")
-                appendLine("Follow these skill instructions for the current task.")
-                appendLine()
-                appendLine(document.body.ifBlank { "(empty)" })
-                appendLine()
-                appendLine("## Bundled files")
-                appendLine("Read as needed with read_skill_file(path=\"${skill.virtualDir}/<relative-file>\") or file tools.")
-                if (skill.files.isEmpty()) appendLine("(none)")
-                skill.files.forEach { appendLine("- $it") }
-                appendLine("Run bundled scripts with shell_exec or python_exec, subject to the execution tool's approval rules.")
-                val shellDirectory = if (skill.scope == SkillScope.USER) "\$NEXARA_SKILLS/${skill.name}" else ".agents/skills/${skill.name}"
-                appendLine("Script directory in the shell: `$shellDirectory`.")
-            }.trimEnd()
+            SlashSkillActivation.render(skill, document)
         }
     }
 }

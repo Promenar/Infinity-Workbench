@@ -219,6 +219,22 @@ internal class DefaultChatGenerationRuntime(
         }
     }
 
+    /**
+     * 本轮用户消息以 `/技能名` 开头时预先加载该技能（与 `activate_skill` 等价）。
+     * 按落库的用户消息原文判断，排队发送、重新生成与审批后续写都能还原同一技能。
+     */
+    private suspend fun requestedSkill(
+        session: com.promenar.nexara.data.model.Session,
+        userMessageId: String?,
+        fallbackText: String,
+        skills: List<com.promenar.nexara.data.skills.DiscoveredSkill>,
+    ): com.promenar.nexara.ui.chat.manager.skills.RequestedSkill? {
+        val text = session.messages.firstOrNull { it.id == userMessageId && it.role == MessageRole.USER }?.content
+            ?: fallbackText
+        val catalog = skillCatalog ?: return null
+        return com.promenar.nexara.ui.chat.manager.skills.SlashSkillActivation.resolve(text, skills) { catalog.readDocument(it) }
+    }
+
     private suspend fun compactContext(
         request: GenerationRequest,
         session: com.promenar.nexara.data.model.Session,
@@ -342,6 +358,7 @@ internal class DefaultChatGenerationRuntime(
         }
         val tools = if (preparedRoute?.supportsToolCalls == true) buildToolsOffMain(session) else emptyList()
         val workspace = sessionWorkspace?.invoke(sessionId)
+        val storedSkills = scanSkills(workspace)
         val prompt = PromptRequest(
             model = preparedRoute?.remoteModelId ?: model,
             messages = emptyList(),
@@ -360,7 +377,8 @@ internal class DefaultChatGenerationRuntime(
             agentRetrievalConfig = config.retrievalConfig,
             agentMemoryPolicy = config.memoryPolicy,
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
-            availableSkills = scanSkills(workspace),
+            availableSkills = storedSkills,
+            requestedSkill = requestedSkill(session, lastUser?.id, lastUser?.content.orEmpty(), storedSkills),
             cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
             workspace = workspace,
             modelContextTokens = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, preparedRoute?.modelId).modelContextTokens,
@@ -467,10 +485,12 @@ internal class DefaultChatGenerationRuntime(
                 // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
                 routeTools = if (route.supportsToolCalls) buildToolsOffMain(session, route.modelId) else emptyList()
                 val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
+                val skills = scanSkills(params.workspace)
                 contextBuilder.buildContext(
                     params.copy(
                         availableToolNames = toolNames,
-                        availableSkills = scanSkills(params.workspace),
+                        availableSkills = skills,
+                        requestedSkill = requestedSkill(session, request.userMessageId, request.userContent, skills),
                         modelContextTokens = PreparedPromptBudgetGate.resolveWindow(
                             session, PromptRequest(model = route.remoteModelId ?: model, messages = emptyList()), settings, route.modelId,
                         ).modelContextTokens,

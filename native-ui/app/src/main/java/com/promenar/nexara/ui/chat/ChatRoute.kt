@@ -63,6 +63,8 @@ import kotlinx.coroutines.launch
 internal sealed interface ChatOverlay {
     data object Workspace : ChatOverlay
     data object ModelSettings : ChatOverlay
+    /** 会话设置的“工具”页（斜杠命令 /mode 不带参数时打开）。 */
+    data object SessionTools : ChatOverlay
     data object PromptEditor : ChatOverlay
     data object ClearHistory : ChatOverlay
     data object DeleteSession : ChatOverlay
@@ -105,6 +107,7 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
     ChatOverlay.Workspace -> "workspace"
     ChatOverlay.ModelSettings -> "model_settings"
+    ChatOverlay.SessionTools -> "session_tools"
     ChatOverlay.PromptEditor -> "prompt_editor"
     ChatOverlay.ClearHistory -> "clear_history"
     ChatOverlay.DeleteSession -> "delete_session"
@@ -116,6 +119,7 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
 internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     token == "workspace" -> ChatOverlay.Workspace
     token == "model_settings" -> ChatOverlay.ModelSettings
+    token == "session_tools" -> ChatOverlay.SessionTools
     token == "prompt_editor" -> ChatOverlay.PromptEditor
     token == "clear_history" -> ChatOverlay.ClearHistory
     token == "delete_session" -> ChatOverlay.DeleteSession
@@ -554,6 +558,24 @@ fun ChatRoute(
         if (result == SnackbarResult.Dismissed) chatViewModel.dismissTaskCompletionUndo(undo.token)
     }
 
+    val slashCommands = rememberChatSlashCommands(
+        sessionId = sessionId,
+        chatViewModel = chatViewModel,
+        uiState = uiState,
+        inputText = inputText,
+        isCompressing = compressionState.isCompressing,
+        requestOverlay = requestOverlay,
+        onNavigateToSession = onNavigateToSession,
+        showFeedback = { message, type ->
+            snackbarAction = null
+            snackbarData = NexaraSnackbarData(message, type)
+            scope.launch {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            }
+        },
+    )
+
     val subagentRuns = remember(application, sessionId, onOpenSubagent) {
         SubagentRunsAccess(
             observe = { stepId -> application.subagentRunStore.observe(sessionId, stepId) },
@@ -587,6 +609,7 @@ fun ChatRoute(
                 turnGraphStates = turnGraphStates,
                 composerQueue = composerQueue,
                 keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
+                slashCommands = slashCommands.commands,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
@@ -644,7 +667,7 @@ fun ChatRoute(
                 onDismissCompressionResult = chatViewModel::dismissCompressionResult,
                 onTextChange = chatViewModel::updateInputText,
                 onSend = { text, images ->
-                    chatViewModel.sendMessage(text, images)
+                    slashCommands.submit(text) { chatViewModel.sendMessage(text, images) }
                 },
                 onStop = chatViewModel::stopGeneration,
                 onDismissGenerationError = chatViewModel::acknowledgeGenerationFailure,
@@ -686,6 +709,8 @@ fun ChatRoute(
                 onRemoveQueued = chatViewModel::removeQueuedMessage,
                 onResumeQueue = chatViewModel::resumeComposerQueue,
                 onToggleKeepScreenOn = { keepScreenOverride = !keepScreenOn },
+                onSlashCommandPicked = slashCommands.onPick,
+                onSlashPaletteShown = slashCommands.onPaletteShown,
             ),
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,
@@ -808,10 +833,11 @@ fun ChatRoute(
         )
     }
     SessionSettingsSheet(
-        show = activeOverlay == ChatOverlay.ModelSettings,
+        show = activeOverlay == ChatOverlay.ModelSettings || activeOverlay == ChatOverlay.SessionTools,
         onDismiss = { activeOverlayToken = null },
         chatViewModel = chatViewModel,
         onOpenTailscaleSettings = onOpenTailscaleSettings,
+        initialPage = if (activeOverlay == ChatOverlay.SessionTools) 2 else 0,
     )
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 输入框斜杠命令：候选列表 -->
+    <string name="slash_palette_empty">No matching commands</string>
+    <string name="slash_source_global">Global</string>
+    <string name="slash_source_workspace">Workspace</string>
+    <string name="slash_item_cd">/%1$s, %2$s</string>
+
+    <!-- 内置命令名称与说明 -->
+    <string name="slash_cmd_new_name">New chat</string>
+    <string name="slash_cmd_new_desc">Start a new chat with this assistant</string>
+    <string name="slash_cmd_rename_name">Rename</string>
+    <string name="slash_cmd_rename_desc">Rename this chat; add the new title after the command</string>
+    <string name="slash_cmd_prompt_name">Chat prompt</string>
+    <string name="slash_cmd_prompt_desc">Set this chat\'s prompt; opens the editor without text</string>
+    <string name="slash_cmd_compact_name">Compact context</string>
+    <string name="slash_cmd_compact_desc">Summarize earlier turns to free up context</string>
+    <string name="slash_cmd_clear_name">Clear history</string>
+    <string name="slash_cmd_clear_desc">Delete all messages in this chat after you confirm</string>
+    <string name="slash_cmd_mode_name">Execution mode</string>
+    <string name="slash_cmd_mode_desc">Switch tool approval: auto, semi or manual</string>
+    <string name="slash_cmd_tools_name">Tool use</string>
+    <string name="slash_cmd_tools_desc">Turn tool use on or off for this chat</string>
+    <string name="slash_cmd_export_name">Export chat</string>
+    <string name="slash_cmd_export_desc">Save this chat as Markdown; add txt for plain text</string>
+
+    <!-- 执行结果 -->
+    <string name="slash_feedback_renamed">Renamed to “%1$s”</string>
+    <string name="slash_feedback_prompt_saved">Chat prompt updated</string>
+    <string name="slash_feedback_prompt_failed">Couldn\'t save the chat prompt</string>
+    <string name="slash_feedback_compacting">Compacting context…</string>
+    <string name="slash_feedback_mode">Execution mode set to %1$s</string>
+    <string name="slash_mode_auto">Auto</string>
+    <string name="slash_mode_semi">Semi</string>
+    <string name="slash_mode_manual">Manual</string>
+    <string name="slash_feedback_tools_on">Tool use on</string>
+    <string name="slash_feedback_tools_off">Tool use off</string>
+    <string name="slash_feedback_exported">Exported %1$s</string>
+    <string name="slash_feedback_export_failed">Export failed</string>
+    <string name="slash_feedback_new_failed">Couldn\'t create a new chat</string>
+
+    <!-- 无法执行 -->
+    <string name="slash_reject_nothing_to_clear">This chat has no messages to clear</string>
+    <string name="slash_reject_nothing_to_export">This chat has no messages to export</string>
+    <string name="slash_reject_unknown_mode">Unknown mode “%1$s”. Use auto, semi or manual</string>
+    <string name="slash_reject_unknown_toggle">Use /tools on or /tools off</string>
+    <string name="slash_reject_unknown_format">Export supports md or txt only</string>
+    <string name="slash_block_disabled">Skill /%1$s is off. Turn it on in chat settings under Tools</string>
+    <string name="slash_block_pending_trust">Skill /%1$s isn\'t trusted yet. Review it in chat settings under Tools</string>
+    <string name="slash_block_broken">Skill /%1$s can\'t be loaded. Check its SKILL.md</string>
+    <string name="slash_block_scan_failed">Couldn\'t read your skills. The message wasn\'t sent</string>
+</resources>

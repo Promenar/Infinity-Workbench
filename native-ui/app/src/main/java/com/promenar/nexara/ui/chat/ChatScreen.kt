@@ -228,6 +228,8 @@ data class ChatScreenState(
     val composerQueue: ComposerQueueUiState = ComposerQueueUiState(),
     /** 本次生成是否保持亮屏；为 null 时浮岛不显示亮屏开关。 */
     val keepScreenOn: Boolean? = null,
+    /** 输入框斜杠命令目录（内置命令与当前会话可用技能）。 */
+    val slashCommands: List<com.promenar.nexara.ui.chat.command.SlashCommand> = emptyList(),
 )
 
 data class ChatScreenActions(
@@ -277,6 +279,10 @@ data class ChatScreenActions(
     val onRemoveQueued: (String) -> Unit = {},
     val onResumeQueue: () -> Unit = {},
     val onToggleKeepScreenOn: () -> Unit = {},
+    /** 点选斜杠命令候选。 */
+    val onSlashCommandPicked: (com.promenar.nexara.ui.chat.command.SlashCommand) -> Unit = {},
+    /** 斜杠命令候选弹出时调用一次，用于刷新技能列表。 */
+    val onSlashPaletteShown: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -302,6 +308,15 @@ fun ChatScreenContent(
     var composerTopInRoot by remember { mutableStateOf(0f) }
     var attachmentAnchorInRoot by remember { mutableStateOf(Rect.Zero) }
     val scope = rememberCoroutineScope()
+    // 只在第一个词仍在输入时弹出候选：文本以 / 开头且尚未出现空白。
+    val slashQuery = com.promenar.nexara.ui.chat.command.SlashCommandCatalog.triggerQuery(inputText, inputText.length)
+    val slashPaletteVisible = slashQuery != null
+    val slashMatches = remember(slashQuery, state.slashCommands) {
+        slashQuery?.let { com.promenar.nexara.ui.chat.command.SlashCommandCatalog.filter(state.slashCommands, it) }.orEmpty()
+    }
+    LaunchedEffect(slashPaletteVisible) {
+        if (slashPaletteVisible) actions.onSlashPaletteShown()
+    }
 
     LaunchedEffect(showModelHint) {
         if (showModelHint) {
@@ -901,6 +916,21 @@ fun ChatScreenContent(
                                         onMoveToFront = actions.onMoveQueuedToFront,
                                         onRemove = actions.onRemoveQueued,
                                         onResume = actions.onResumeQueue,
+                                    )
+                                }
+                                // 斜杠命令候选紧贴输入区，在排队托盘之下，二者同时出现时上下排列、互不遮挡。
+                                var lastSlashMatches by remember { mutableStateOf(slashMatches) }
+                                if (slashPaletteVisible) lastSlashMatches = slashMatches
+                                AnimatedVisibility(
+                                    visible = slashPaletteVisible,
+                                    enter = fadeIn(tween(160)) +
+                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+                                    exit = fadeOut(tween(120)) +
+                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+                                ) {
+                                    com.promenar.nexara.ui.chat.command.SlashCommandPalette(
+                                        commands = lastSlashMatches,
+                                        onPick = actions.onSlashCommandPicked,
                                     )
                                 }
                             },

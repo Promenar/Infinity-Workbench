@@ -76,6 +76,8 @@ data class ContextBuilderParams(
     val workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
     /** 已路由模型的上下文窗口，未知时技能目录使用默认字符预算。 */
     val modelContextTokens: Int? = null,
+    /** 本轮用户以 `/技能名` 点名并已由客户端加载的技能；null 表示本轮没有斜杠技能命令。 */
+    val requestedSkill: com.promenar.nexara.ui.chat.manager.skills.RequestedSkill? = null,
 )
 
 interface WebSearchProvider {
@@ -504,6 +506,12 @@ class ContextBuilder(
             sb.appendLine("<history_summary>")
             sb.appendLine(summary.trim())
             sb.appendLine("</history_summary>")
+        }
+
+        // 6.1 本轮斜杠命令点名的技能：只随这一轮出现，放在稳定段落之后，减少对前缀缓存的破坏。
+        params.requestedSkill?.let {
+            sb.appendLine()
+            sb.append(com.promenar.nexara.ui.chat.manager.skills.SlashSkillActivation.promptSection(it))
         }
 
         // 7. 易变环境信息放在末尾，减少对前缀缓存的破坏。

@@ -373,6 +373,8 @@ class ChatViewModelTest {
     }
 
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
+    // 斜杠技能命令：生成运行时从这里扫描并预加载技能。
+    private val slashSkillCatalog = com.promenar.nexara.ui.chat.command.StaticSkillCatalog()
     private var protocolRequestCount = 0
     private var lastPromptRequest: PromptRequest? = null
     private var holdStreamOpen = false
@@ -627,6 +629,7 @@ class ChatViewModelTest {
             presentationStore = presentationStore,
             toolBuildDispatcher = testDispatcher,
             composerQueueStore = queuePort,
+            skillCatalog = slashSkillCatalog,
         )
         val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -1804,6 +1807,32 @@ class ChatViewModelTest {
         assertThat(viewModel.composerQueue.value.items).isEmpty()
         assertThat(viewModel.inputText.value).isEqualTo("待编辑")
         assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("first", "second").inOrder()
+    }
+
+    @Test
+    fun `生成中发送的技能命令进入队列原样保留，出队生成时预加载该技能`() = runTest {
+        slashSkillCatalog.skills = listOf(com.promenar.nexara.ui.chat.command.slashTestSkill("demo"))
+        seedSession(); advanceUntilIdle()
+        val gate = CompletableDeferred<List<StreamChunk>>()
+        streamGate = gate
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("首轮"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        assertThat(lastPromptRequest!!.messages.first().content).doesNotContain("## Requested Skill")
+        viewModel.sendMessage("/demo 整理本周进展"); advanceUntilIdle()
+        assertThat(viewModel.composerQueue.value.items.map { it.text }).containsExactly("/demo 整理本周进展")
+        streamGate = null
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("次轮"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        gate.complete(listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)))
+        advanceUntilIdle()
+        assertThat(protocolRequestCount).isEqualTo(2)
+        val messages = lastPromptRequest!!.messages
+        val system = messages.first { it.role == "system" }.content
+        assertThat(system).contains("## Requested Skill")
+        assertThat(system).contains("`/demo`")
+        assertThat(system).contains("Body of demo")
+        assertThat(messages.last { it.role == "user" }.content).contains("/demo 整理本周进展")
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content })
+            .containsExactly("first", "/demo 整理本周进展").inOrder()
     }
 
     @Test

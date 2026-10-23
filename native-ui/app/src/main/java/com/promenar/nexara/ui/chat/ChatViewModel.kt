@@ -1924,36 +1924,54 @@ class ChatViewModel(
 
     fun createNewSession(agentId: String) {
         viewModelScope.launch {
-            val sessionId = IdGenerator.session()
-            val agent = agentRepository.getById(agentId)
-            val defaultOptions = getDefaultRagOptions(agentId)
-            val defaultModelId = agent?.modelId
-                ?.takeIf { it.isNotBlank() }
-                ?: resolveDefaultModelId()
-            val session = Session(
-                id = sessionId,
-                agentId = agentId,
-                modelId = defaultModelId,
-                executionMode = agent?.executionMode
-                    ?.let(com.promenar.nexara.domain.model.ExecutionModeCodec::serialize)
-                    ?: "semi",
-                activeSkillIds = agent?.skills.orEmpty(),
-                activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
-                // 新会话复制 Agent 当前默认工作区；之后修改 Agent 默认值只影响新会话。
-                workspaceId = agent?.defaultWorkspaceId,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis(),
-                ragOptions = defaultOptions
-            )
-            sessionManager.addSession(session)
-            val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
-            sessionManager.updateSession(
-                sessionId,
-                mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
-            )
+            val sessionId = insertNewSession(agentId)
             _currentSessionId.update { sessionId }
             updateAgentName(agentId)
         }
+    }
+
+    /** 斜杠命令 /new：以当前会话的助手新建会话并返回其 ID；当前没有会话或写入失败时返回 null。 */
+    suspend fun createSessionForCurrentAgent(): String? {
+        val agentId = _currentSessionId.value?.let(store::getSession)?.agentId ?: return null
+        return try {
+            insertNewSession(agentId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            NexaraLogger.logError("ChatViewModel.createSessionForCurrentAgent", failure)
+            null
+        }
+    }
+
+    private suspend fun insertNewSession(agentId: String): String {
+        val sessionId = IdGenerator.session()
+        val agent = agentRepository.getById(agentId)
+        val defaultOptions = getDefaultRagOptions(agentId)
+        val defaultModelId = agent?.modelId
+            ?.takeIf { it.isNotBlank() }
+            ?: resolveDefaultModelId()
+        val session = Session(
+            id = sessionId,
+            agentId = agentId,
+            modelId = defaultModelId,
+            executionMode = agent?.executionMode
+                ?.let(com.promenar.nexara.domain.model.ExecutionModeCodec::serialize)
+                ?: "semi",
+            activeSkillIds = agent?.skills.orEmpty(),
+            activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
+            // 新会话复制 Agent 当前默认工作区；之后修改 Agent 默认值只影响新会话。
+            workspaceId = agent?.defaultWorkspaceId,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            ragOptions = defaultOptions
+        )
+        sessionManager.addSession(session)
+        val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
+        sessionManager.updateSession(
+            sessionId,
+            mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
+        )
+        return sessionId
     }
 
     private suspend fun ensureSessionWorkspace(sessionId: String) {

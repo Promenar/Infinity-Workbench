@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 输入框斜杠命令：候选列表 -->
+    <string name="slash_palette_empty">没有匹配的命令</string>
+    <string name="slash_source_global">全局</string>
+    <string name="slash_source_workspace">工作区</string>
+    <string name="slash_item_cd">/%1$s，%2$s</string>
+
+    <!-- 内置命令名称与说明 -->
+    <string name="slash_cmd_new_name">新会话</string>
+    <string name="slash_cmd_new_desc">用当前助手新建一个会话</string>
+    <string name="slash_cmd_rename_name">重命名</string>
+    <string name="slash_cmd_rename_desc">重命名会话，可直接在后面写新标题</string>
+    <string name="slash_cmd_prompt_name">会话提示词</string>
+    <string name="slash_cmd_prompt_desc">设置会话提示词，不写内容时打开编辑器</string>
+    <string name="slash_cmd_compact_name">压缩上下文</string>
+    <string name="slash_cmd_compact_desc">把较早的对话压缩成摘要，腾出上下文空间</string>
+    <string name="slash_cmd_clear_name">清空历史</string>
+    <string name="slash_cmd_clear_desc">确认后删除本会话的全部消息</string>
+    <string name="slash_cmd_mode_name">执行模式</string>
+    <string name="slash_cmd_mode_desc">切换工具审批方式：auto、semi 或 manual</string>
+    <string name="slash_cmd_tools_name">工具调用</string>
+    <string name="slash_cmd_tools_desc">为本会话开启或关闭工具调用</string>
+    <string name="slash_cmd_export_name">导出会话</string>
+    <string name="slash_cmd_export_desc">保存为 Markdown 文件，加 txt 导出纯文本</string>
+
+    <!-- 执行结果 -->
+    <string name="slash_feedback_renamed">已重命名为“%1$s”</string>
+    <string name="slash_feedback_prompt_saved">会话提示词已更新</string>
+    <string name="slash_feedback_prompt_failed">会话提示词保存失败</string>
+    <string name="slash_feedback_compacting">正在压缩上下文…</string>
+    <string name="slash_feedback_mode">执行模式已切换为%1$s</string>
+    <string name="slash_mode_auto">自动</string>
+    <string name="slash_mode_semi">半自动</string>
+    <string name="slash_mode_manual">手动</string>
+    <string name="slash_feedback_tools_on">已开启工具调用</string>
+    <string name="slash_feedback_tools_off">已关闭工具调用</string>
+    <string name="slash_feedback_exported">已导出 %1$s</string>
+    <string name="slash_feedback_export_failed">导出失败</string>
+    <string name="slash_feedback_new_failed">新建会话失败</string>
+
+    <!-- 无法执行 -->
+    <string name="slash_reject_nothing_to_clear">本会话还没有可清空的消息</string>
+    <string name="slash_reject_nothing_to_export">本会话还没有可导出的消息</string>
+    <string name="slash_reject_unknown_mode">没有“%1$s”模式，可用 auto、semi 或 manual</string>
+    <string name="slash_reject_unknown_toggle">用法：/tools on 或 /tools off</string>
+    <string name="slash_reject_unknown_format">导出只支持 md 或 txt</string>
+    <string name="slash_block_disabled">技能 /%1$s 已停用，可在会话设置的“工具”中启用</string>
+    <string name="slash_block_pending_trust">技能 /%1$s 尚未信任，请在会话设置的“工具”中确认</string>
+    <string name="slash_block_broken">技能 /%1$s 无法加载，请检查它的 SKILL.md</string>
+    <string name="slash_block_scan_failed">无法读取技能列表，消息未发送</string>
+</resources>

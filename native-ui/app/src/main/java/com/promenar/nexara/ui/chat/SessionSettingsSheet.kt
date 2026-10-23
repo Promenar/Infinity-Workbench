@@ -132,6 +132,8 @@ fun SessionSettingsSheet(
     onDismiss: () -> Unit,
     chatViewModel: ChatViewModel,
     onOpenTailscaleSettings: (() -> Unit)? = null,
+    /** 打开时所在的标签页：0 模型、1 参数、2 工具、3 设置。 */
+    initialPage: Int = 0,
 ) {
     if (!show) return
 
@@ -150,7 +152,7 @@ fun SessionSettingsSheet(
     val session = uiState.session
     
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerState = rememberPagerState(initialPage = initialPage.coerceIn(0, 3), pageCount = { 4 })
     val tabTitles = listOf(
         stringResource(R.string.sheet_tab_model),
         stringResource(R.string.sheet_tab_thinking),
