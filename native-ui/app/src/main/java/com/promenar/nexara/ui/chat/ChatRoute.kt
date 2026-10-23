@@ -593,9 +593,25 @@ fun ChatRoute(
             requestOverlay(ChatOverlay.Workspace)
         },
     ) {
+    val agentActivity = remember(application, sessionId) {
+        com.promenar.nexara.ui.chat.components.AgentActivityAccess(
+            sessionId = sessionId,
+            jobs = application.backgroundJobController,
+            schedules = null,
+            keepAliveAvailable = com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable,
+            exactAlarmAvailable = com.promenar.nexara.distribution.DistributionCapabilities.exactAlarmAvailable,
+            onOpenLog = { path ->
+                workspaceLocatePath = path
+                requestOverlay(ChatOverlay.Workspace)
+            },
+            onGrantExact = null,
+            liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey) },
+        )
+    }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalSubagentRuns provides subagentRuns,
+        com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
     ) {
         ChatScreenContent(
             state = ChatScreenState(
