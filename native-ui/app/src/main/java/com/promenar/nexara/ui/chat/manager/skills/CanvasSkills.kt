@@ -4,6 +4,7 @@ import com.promenar.nexara.data.canvas.CanvasDocument
 import com.promenar.nexara.data.canvas.CanvasException
 import com.promenar.nexara.data.canvas.CanvasPatch
 import com.promenar.nexara.data.canvas.CanvasStore
+import com.promenar.nexara.data.canvas.CanvasWorkspaceSync
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -15,6 +16,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -71,7 +74,10 @@ class CanvasReadSkill(private val store: CanvasStore) : SkillDefinition {
     override val parametersSchema = """{"type":"object","properties":{"canvas_id":{"type":"string"},"version":{"type":"integer","description":"可选的历史版本号，必须是正整数；省略时读取最新版"}},"required":["canvas_id"],"additionalProperties":false}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = canvasExecution(id) {
-        val document = store.read(context.sessionId, args.requiredString("canvas_id"), args.optionalPositiveInt("version"))
+        val canvasId = args.requiredString("canvas_id")
+        val version = args.optionalPositiveInt("version")
+        val document = (if (version == null) store.syncFromWorkspace(context.sessionId, canvasId)
+            else store.read(context.sessionId, canvasId, version))
             ?: throw CanvasException("NOT_FOUND", "本会话中不存在该画布或所选版本已不再保留。")
         canvasResult(id) { putDocument(document); put("html", document.html) }
     }
@@ -133,4 +139,8 @@ private fun JsonObjectBuilder.putDocument(document: CanvasDocument) {
     put("title", document.metadata.title)
     put("version", document.version)
     put("metadata", Json.encodeToJsonElement(document.metadata))
+    put("workspace_path", document.metadata.workspacePath?.let(::JsonPrimitive) ?: JsonNull)
+    if (document.metadata.workspaceSync == CanvasWorkspaceSync.FAILED) {
+        put("workspace_warning", "画布已保存到私有版本，但未同步到工作区；请检查目录权限后重新读取或更新画布。")
+    }
 }

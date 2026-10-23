@@ -1,6 +1,15 @@
 package com.promenar.nexara.domain.repository
 
 interface IFileOperationRepository {
+    /** 保留已校验 UTF-8 源码的 BOM 与换行，供需要字节一致的画布镜像使用。 */
+    suspend fun writeFileAtomicExact(
+        workspaceRootUuid: String,
+        uuid: String,
+        newContent: String,
+        sessionId: String,
+        expectedHash: String,
+    ): WriteResult = writeFileAtomic(workspaceRootUuid, uuid, newContent, sessionId, expectedHash)
+
     suspend fun writeFileAtomic(
         workspaceRootUuid: String,
         uuid: String,

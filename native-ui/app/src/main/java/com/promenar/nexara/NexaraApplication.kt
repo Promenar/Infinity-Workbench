@@ -527,7 +527,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val composerDraftRecovery = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
     val canvasStore: com.promenar.nexara.data.canvas.CanvasStore by lazy {
-        com.promenar.nexara.data.canvas.FileCanvasStore(java.io.File(filesDir, "session_canvases"))
+        com.promenar.nexara.data.canvas.FileCanvasStore(
+            java.io.File(filesDir, "session_canvases"),
+            workspaceFiles = com.promenar.nexara.data.canvas.WorkspaceCanvasFiles(
+                com.promenar.nexara.data.workspace.WorkspaceFileTargetResolver(
+                    sessionRepository, workspaceRepository, externalFolderManager,
+                    sessionWorkspaceResolver::resolve, skillCatalog.userRoot,
+                ),
+                workspaceRepository, fileOperationRepository, externalFolderManager, pendingDocumentIndexCoordinator,
+            ),
+        )
     }
     val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore by lazy {
         com.promenar.nexara.data.chat.queue.FileComposerQueueStore(

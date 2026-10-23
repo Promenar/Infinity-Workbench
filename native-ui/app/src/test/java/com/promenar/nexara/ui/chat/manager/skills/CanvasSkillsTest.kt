@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.canvas.FileCanvasStore
+import com.promenar.nexara.data.canvas.CanvasWorkspaceFiles
+import com.promenar.nexara.data.canvas.canvasSha256
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
@@ -27,6 +29,37 @@ class CanvasSkillsTest {
         override val workspacePath = null
         override val workspaceRootUuid = "workspace"
         override val assistantMessageId = "assistant-message"
+    }
+
+    @Test fun `工作区失败工具仍成功并返回警告路径恢复后读取导入修改`() = runTest {
+        var fail = true
+        val content = mutableMapOf<String, ByteArray>()
+        val files = object : CanvasWorkspaceFiles {
+            override suspend fun exists(sessionId: String, path: String) = content.containsKey(path)
+            override suspend fun read(sessionId: String, path: String, maxBytes: Int) = content[path]
+            override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) {
+                if (fail) throw java.io.IOException("测试拒绝写入")
+                check(content[path]?.let(::canvasSha256) == expectedHash)
+                content[path] = html.toByteArray()
+            }
+        }
+        val store = FileCanvasStore(folder.root, StandardTestDispatcher(testScheduler), workspaceFiles = files)
+        val created = CanvasCreateSkill(store).execute(args("""{"title":"图表","html":"原文"}"""), context)
+        assertThat(created.status).isEqualTo("success")
+        assertThat(created.body()["workspace_path"]!!.jsonPrimitive.content).isEqualTo("canvas/图表.html")
+        assertThat(created.body()["workspace_warning"]!!.jsonPrimitive.content).isNotEmpty()
+        val id = created.body()["canvasId"]!!.jsonPrimitive.content
+        val updated = CanvasUpdateSkill(store).execute(args("""{"canvas_id":"$id","html":"更新"}"""), context)
+        assertThat(updated.status).isEqualTo("success")
+        assertThat(updated.body()["workspace_warning"]).isNotNull()
+        fail = false
+        CanvasReadSkill(store).execute(args("""{"canvas_id":"$id"}"""), context)
+        content["canvas/图表.html"] = "外部".toByteArray()
+        val read = CanvasReadSkill(store).execute(args("""{"canvas_id":"$id"}"""), context)
+        assertThat(read.body()["html"]!!.jsonPrimitive.content).isEqualTo("外部")
+        assertThat(read.body()["version"]!!.jsonPrimitive.content).isEqualTo("3")
+        assertThat(read.body()["workspace_warning"]).isNull()
+        assertThat(read.body()["metadata"]!!.jsonObject.keys).doesNotContain("workspaceHash")
     }
 
     @Test fun `创建返回固定顶层字段并绑定真实消息且不泄露源码`() = runTest {

@@ -12,7 +12,16 @@ data class CanvasMetadata(
     val currentVersion: Int,
     val createdByMessageId: String,
     val versions: List<Int>,
+    val workspacePath: String? = null,
+    val workspaceSync: CanvasWorkspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
+    val versionSources: Map<Int, CanvasVersionSource> = emptyMap(),
 )
+
+@Serializable
+enum class CanvasWorkspaceSync { SYNCED, FAILED, MISSING, NOT_WRITTEN }
+
+@Serializable
+enum class CanvasVersionSource { CANVAS, WORKSPACE }
 
 data class CanvasDocument(val metadata: CanvasMetadata, val html: String, val version: Int)
 
@@ -32,6 +41,8 @@ interface CanvasStore {
         expectedVersion: Int? = null,
     ): CanvasDocument
     suspend fun read(sessionId: String, id: String, version: Int? = null): CanvasDocument?
+    /** 导入工作区修改；缺失时保留私有版本，未写出或失败时重试同步。 */
+    suspend fun syncFromWorkspace(sessionId: String, id: String): CanvasDocument?
     suspend fun deleteSession(sessionId: String)
     suspend fun copySession(sourceSessionId: String, targetSessionId: String, messageIdMap: Map<String, String>)
 }

@@ -8,6 +8,8 @@ import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.storage.*
+import com.promenar.nexara.data.workspace.WorkspaceFileTarget as Target
+import com.promenar.nexara.data.workspace.WorkspaceFileTargetResolver
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.domain.media.*
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -39,6 +41,7 @@ internal class DefaultWorkspaceMedia(
     private val fileSystem: RealPathFileSystem = AndroidRealPathFileSystem,
     private val userSkillsDirectory: File = File(context.filesDir, "agent_skills").canonicalFile,
 ) : WorkspaceMediaResolver, WorkspaceMediaStore {
+    private val targets = WorkspaceFileTargetResolver(sessions, workspace, mounts, sessionWorkspace, userSkillsDirectory)
     private val local = MediaLocalAccess(fileSystem)
     private val metadata = MediaMetadataReader(context)
     // 弱键不延长卡片生命周期；open 必须重新核验会话和挂载身份，不能接受任意本机文件。
@@ -146,17 +149,6 @@ internal class DefaultWorkspaceMedia(
         }
     }
 
-    private data class Target(val sessionId: String, val root: FileEntry?, val directory: File?, val mount: ExternalMount?, val workspaceMount: ExternalMount? = null) {
-        val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, workspaceMount?.id)
-        val mountIds: Map<String, String> get() = listOfNotNull(workspaceMount, mount).associate { it.alias to it.id }
-        fun relative(path: String): String = ExternalMountPaths.parse(path)?.second ?: path
-        val virtualRoot: String get() = when {
-            mount == null || mount.isWorkspaceRoot -> "/"
-            mount.isUserSkills -> "/skills"
-            else -> "/mnt/${mount.alias}"
-        }
-    }
-
     private class ResolutionKey(resolution: MediaResolution.Available, queue: ReferenceQueue<MediaResolution.Available>? = null) :
         WeakReference<MediaResolution.Available>(resolution, queue) {
         private val identityHash = System.identityHashCode(resolution)
@@ -172,34 +164,8 @@ internal class DefaultWorkspaceMedia(
         } else bindings[ResolutionKey(resolution)]
     }
 
-    private suspend fun target(sessionId: String, path: String, writing: Boolean): Target {
-        val current = sessionWorkspace(sessionId)
-        if (current is SessionWorkspace.Unavailable) fail("WORKSPACE_UNAVAILABLE", "当前会话工作区不可用，请检查目录与授权")
-        val workspaceMount = mounts.workspaceMount(sessionId)
-        if (current is SessionWorkspace.Directory && workspaceMount == null || current is SessionWorkspace.Private && workspaceMount != null) {
-            fail("WORKSPACE_UNAVAILABLE", "会话工作区正在变化，请重新执行媒体操作")
-        }
-        val alias = ExternalMountPaths.aliasOf(path, workspaceMount != null)
-        if (alias != null) {
-            val mount = if (alias == ExternalMountPaths.WORKSPACE_ALIAS) workspaceMount
-                else mounts.visible(sessionId).singleOrNull { it.alias == alias }
-            if (mount == null || mount.unavailableReason != null) fail("WORKSPACE_UNAVAILABLE", "媒体挂载已失效或不属于当前会话")
-            val directory = when {
-                mount.isWorkspaceRoot -> (current as? SessionWorkspace.Directory)?.root
-                mount.isUserSkills -> userSkillsDirectory.canonicalFile
-                mount.sourceType == "real_path" -> File(mount.sourceId)
-                mount.sourceType == "saf_tree" -> null
-                else -> fail("WORKSPACE_UNAVAILABLE", "不支持该媒体挂载来源")
-            }
-            return Target(sessionId, null, directory, mount, workspaceMount)
-        }
-        // /mnt 是挂载列表的虚拟目录，不应误落到私有工作区的同名路径。
-        if (path == "/mnt") return Target(sessionId, null, null, null, workspaceMount)
-        val session = sessions.getById(sessionId) ?: fail("WORKSPACE_UNAVAILABLE", "会话不存在，无法访问媒体工作区")
-        val root = session.workspaceRootUuid?.let { workspace.getByUuid(it, it) }
-            ?: if (writing) workspace.ensureSessionRoot(sessionId) else fail("WORKSPACE_UNAVAILABLE", "会话私有工作区尚不可用")
-        return Target(sessionId, root, File(root.physicalRootPath), null)
-    }
+    private suspend fun target(sessionId: String, path: String, writing: Boolean): Target =
+        targets.resolve(sessionId, path, writing)
 
     private suspend fun checkCurrent(bound: Target, path: String) {
         if (target(bound.sessionId, path, writing = false).identity != bound.identity) {

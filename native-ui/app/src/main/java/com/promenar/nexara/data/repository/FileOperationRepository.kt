@@ -35,12 +35,29 @@ class FileOperationRepository(
     private val textPolicy: WorkspaceTextContentPolicy = WorkspaceTextContentPolicy(),
 ) : IFileOperationRepository {
 
+    override suspend fun writeFileAtomicExact(
+        workspaceRootUuid: String,
+        uuid: String,
+        newContent: String,
+        sessionId: String,
+        expectedHash: String,
+    ): WriteResult = writeFile(workspaceRootUuid, uuid, newContent, sessionId, expectedHash, exact = true)
+
     override suspend fun writeFileAtomic(
         workspaceRootUuid: String,
         uuid: String,
         newContent: String,
         sessionId: String,
         expectedHash: String,
+    ): WriteResult = writeFile(workspaceRootUuid, uuid, newContent, sessionId, expectedHash, exact = false)
+
+    private suspend fun writeFile(
+        workspaceRootUuid: String,
+        uuid: String,
+        newContent: String,
+        sessionId: String,
+        expectedHash: String,
+        exact: Boolean,
     ): WriteResult = withSessionWorkspaceAdmission(sessionId, workspaceRootUuid) {
         withContext(Dispatchers.IO) {
         val initial = dao.getActiveByUuid(workspaceRootUuid, uuid)
@@ -55,6 +72,7 @@ class FileOperationRepository(
                 entry.mimeType,
                 newContent.toByteArray(Charsets.UTF_8),
                 WorkspaceTextOperation.WRITE,
+                if (exact) EXACT_MIRROR_BUDGET else WorkspaceTextContentPolicy.budgetFor(WorkspaceTextOperation.WRITE),
             )
             if (entry.hash != expectedHash) {
                 return@withBoundRoot WriteResult.Conflict(
@@ -63,7 +81,10 @@ class FileOperationRepository(
                     message = "文件已被其他会话修改。请先读取最新版本再重试。",
                 )
             }
-            val committed = commitContentChange(entry, validated.text, sessionId)
+            val committed = commitContentChange(
+                entry, if (exact) newContent else validated.text, sessionId,
+                if (exact) EXACT_MIRROR_BUDGET else WorkspaceTextContentPolicy.budgetFor(WorkspaceTextOperation.WRITE),
+            )
             val indexTarget = committed ?: entry.currentIndexTargetIfStale()
             val indexQueued = indexTarget == null || publishIndexEvent(workspaceRootUuid, uuid, indexTarget)
             WriteResult.Success(
@@ -228,9 +249,10 @@ class FileOperationRepository(
         entry: FileEntry,
         newContent: String,
         sessionId: String?,
+        budget: WorkspaceTextBudget = WorkspaceTextContentPolicy.budgetFor(WorkspaceTextOperation.WRITE),
     ): CommittedIndexTarget? {
         val root = File(entry.physicalRootPath).toPath()
-        val old = readRawText(entry, WorkspaceTextOperation.WRITE)
+        val old = readRawText(entry, WorkspaceTextOperation.WRITE, budget)
         val oldContent = old.text
         val physicalHash = Sha256Utils.hash(old.bytes)
         if (physicalHash != entry.hash) {
@@ -359,14 +381,22 @@ class FileOperationRepository(
         directories.indices.forEach { index -> fileOps.ensureDirectory(root, directories.take(index + 1)) }
     }
 
+    private companion object {
+        // 画布镜像以 1 MiB 字节上限约束，不能套用交互式文件工具的行数预算。
+        val EXACT_MIRROR_BUDGET = WorkspaceTextBudget(1_048_576, 1_048_577, 1_048_576)
+    }
+
     private data class RawText(val bytes: ByteArray, val text: String)
 
     private fun readContent(entry: FileEntry, operation: WorkspaceTextOperation): String =
         readRawText(entry, operation).text
 
-    private fun readRawText(entry: FileEntry, operation: WorkspaceTextOperation): RawText {
+    private fun readRawText(
+        entry: FileEntry,
+        operation: WorkspaceTextOperation,
+        budget: WorkspaceTextBudget = WorkspaceTextContentPolicy.budgetFor(operation),
+    ): RawText {
         textPolicy.requireSupportedType(entry.name, entry.mimeType)
-        val budget = WorkspaceTextContentPolicy.budgetFor(operation)
         if (entry.sizeBytes > budget.maxInputBytes) {
             throw WorkspaceTextPolicyException(
                 WorkspaceTextErrorCode.INPUT_TOO_LARGE,
