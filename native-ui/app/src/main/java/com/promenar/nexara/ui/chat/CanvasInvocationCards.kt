@@ -14,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Text
 import com.promenar.nexara.R
 import com.promenar.nexara.data.canvas.CanvasMetadata
+import com.promenar.nexara.data.canvas.CanvasWorkspaceSync
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.ui.canvas.CanvasCard
 import com.promenar.nexara.ui.canvas.LocalCanvasSession
@@ -66,8 +67,13 @@ internal fun CanvasInvocationCards(steps: List<ExecutionStep>) {
                 html = html,
                 onOpen = { access.openVersion(reference.id, reference.version) },
                 previewContent = if (failed) { { Text(stringResource(R.string.canvas_load_error)) } } else null,
+                workspacePath = metadata?.workspacePath,
+                workspaceWarning = metadata?.workspaceSync == CanvasWorkspaceSync.FAILED,
                 onOpenLatest = { access.open(reference.id) },
                 onCopySource = { access.copySource(reference.id, reference.version) },
+                onRevealInWorkspace = metadata?.workspacePath
+                    ?.takeIf { metadata.workspaceSync != CanvasWorkspaceSync.MISSING }
+                    ?.let { path -> { access.revealInWorkspace(path) } },
             )
         } }
     }

@@ -102,7 +102,8 @@ fun CanvasSessionHost(
         LaunchedEffect(id, selectedVersion, latestRevisionKey, loaded) {
             if (!loaded) return@LaunchedEffect
             try {
-                document = store.read(sessionId, id, selectedVersion)
+                // 跟随最新时先导入工作区里的外部修改；查看历史版本只读私有快照。
+                document = if (selectedVersion == null) store.syncFromWorkspace(sessionId, id) else store.read(sessionId, id, selectedVersion)
                 if (document == null) error = loadError
             } catch (cancelled: CancellationException) {
                 throw cancelled
