@@ -49,7 +49,7 @@ class SshHostMigrationTest {
                 seed(database, "kg_nodes", mapOf("id" to "ssh-migration-node", "name" to "测试实体",
                     "normalized_name" to "测试实体", "type" to "concept"))
                 if (version >= 20) seed(database, "external_mounts", mapOf("id" to "ssh-migration-mount",
-                    "alias" to "docs", "source_type" to "saf_tree", "source_id" to "content://test/tree/docs"))
+                    "alias" to "docs", "source_type" to "saf_tree", "source_id" to "content://test/tree/docs", "scope_key" to "session"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
                 .addMigrations(MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)

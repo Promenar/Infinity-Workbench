@@ -18,12 +18,9 @@ internal fun availableExternalMountSources(
     if (buildAllFilesAccess && distributionAllFilesAccess) add(ExternalMountSource.RealPath)
 }
 
-/** 空会话只允许看到全局挂载，防止页面切换时展示其它会话的路径。 */
+/** 空会话不展示挂载，防止页面切换时展示其它会话的路径。 */
 internal fun visibleExternalMounts(mounts: List<ExternalMount>, sessionId: String?): List<ExternalMount> =
-    mounts.filter { it.sessionId == null || (!sessionId.isNullOrBlank() && it.sessionId == sessionId) }
-
-internal fun externalMountSessionScope(sessionId: String?, forCurrentSession: Boolean): String? =
-    sessionId?.takeIf { forCurrentSession && it.isNotBlank() }
+    mounts.filter { !sessionId.isNullOrBlank() && it.sessionId == sessionId }
 
 /** 浏览器回退只能留在当前挂载内，不能把挂载别名的相似前缀当作子目录。 */
 internal fun parentExternalFolderPath(rootPath: String, path: String): String? {

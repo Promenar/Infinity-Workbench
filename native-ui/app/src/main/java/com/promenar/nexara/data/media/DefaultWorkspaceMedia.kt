@@ -104,7 +104,6 @@ internal class DefaultWorkspaceMedia(
                 val initialPath = explicit ?: "/media"
                 protect(initialPath)
                 val target = target(sessionId, initialPath, writing = true)
-                if (target.mount?.readOnly == true) fail("READ_ONLY", "目标挂载为只读，无法保存媒体")
                 withContext(ExternalMountOperationBindings(target.mountIds)) {
                     if (explicit != null && exists(target, explicit)) fail("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖")
                     val temporary = File.createTempFile("workspace-media-", ".tmp", context.cacheDir.canonicalFile)

@@ -31,9 +31,11 @@ class ExternalFolderManagerTest {
     private val context = mockk<Context> { every { noBackupFilesDir } returns directory }
     private val rows = MutableStateFlow(listOf(ExternalMountEntity("mount", "termux", "saf_tree", "content://test/tree/root", "session", false, 1)))
     private val dao = mockk<ExternalMountDao> {
-        coEvery { visible(any()) } answers { rows.value.filter { it.scopeKey.isEmpty() || it.scopeKey == firstArg<String>() } }
-        every { observeVisible(any()) } answers { val id = firstArg<String>(); rows.map { list -> list.filter { it.scopeKey.isEmpty() || it.scopeKey == id } } }
+        coEvery { visible(any()) } answers { rows.value.filter { it.scopeKey.isNotEmpty() && it.scopeKey == firstArg<String>() } }
+        every { observeVisible(any()) } answers { val id = firstArg<String>(); rows.map { list -> list.filter { it.scopeKey.isNotEmpty() && it.scopeKey == id } } }
         coEvery { all() } answers { rows.value }
+        coEvery { get(id = any()) } answers { rows.value.firstOrNull { it.id == firstArg<String>() } }
+        coEvery { delete(any()) } coAnswers { val id = firstArg<String>(); rows.value = rows.value.filterNot { it.id == id } }
         coEvery { update(any()) } coAnswers { val row = firstArg<ExternalMountEntity>(); rows.value = rows.value.map { if (it.id == row.id) row else it } }
     }
     private val workspace = mockk<IWorkspaceRepository>()
@@ -65,17 +67,40 @@ class ExternalFolderManagerTest {
 
     @After fun cleanup() { directory.deleteRecursively() }
 
-    @Test fun `只读挂载阻止所有写入且别的会话无法读取`() = runBlocking {
+    @Test fun `新增挂载必须指定非空会话且在申请权限前拒绝空白`() = runBlocking {
+        for (session in listOf("", " ", "\t")) {
+            assertThat(assertThrows(ExternalFolderException::class.java) {
+                runBlocking { manager.addSaf("docs", session, "content://test/tree/root", 0) }
+            }.code).isEqualTo("INVALID_SESSION")
+            assertThat(assertThrows(ExternalFolderException::class.java) {
+                runBlocking { manager.addRealPath("docs", session, "/storage/emulated/0/docs") }
+            }.code).isEqualTo("INVALID_SESSION")
+        }
+        coVerify(exactly = 0) { dao.insert(any()) }
+    }
+
+    @Test fun `删除会话挂载只移除本会话且保留来源文件`() = runBlocking {
+        rows.value = listOf(
+            rows.value.single().copy(sourceType = "real_path"),
+            rows.value.single().copy(id = "other", scopeKey = "other", sourceType = "real_path"),
+        )
+        memory.write("/a.txt", "保留".toByteArray())
+        manager.deleteSessionMounts("session")
+        assertThat(rows.value.map { it.id }).containsExactly("other")
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("保留")
+        coVerify(exactly = 1) { dao.delete("mount") }
+    }
+
+    @Test fun `历史只读挂载允许写入且别的会话无法读取`() = runBlocking {
         memory.write("/a.txt", "hello".toByteArray())
         rows.value = rows.value.map { it.copy(readOnly = true) }
-        for (action in listOf<suspend () -> Unit>(
-            { manager.write("session", "/mnt/termux/a.txt", byteArrayOf(), null, false) },
-            { manager.createDirectory("session", "/mnt/termux/dir") },
-            { manager.delete("session", "/mnt/termux/a.txt", null, false) },
-            { manager.backupBeforeMove("session", "/mnt/termux/a.txt") },
-        )) assertThat(assertThrows(ExternalFolderException::class.java) { runBlocking { action() } }.code).isEqualTo("READ_ONLY")
+        manager.write("session", "/mnt/termux/a.txt", "changed".toByteArray(), null, false)
+        manager.createDirectory("session", "/mnt/termux/dir")
+        manager.backupBeforeMove("session", "/mnt/termux/a.txt")
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("changed")
         assertThat(assertThrows(ExternalFolderException::class.java) { runBlocking { manager.read("different", "/mnt/termux/a.txt") } }.code).isEqualTo("NOT_FOUND")
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("hello")
+        manager.delete("session", "/mnt/termux/a.txt", null, false)
+        assertThat(memory.stat("/a.txt")).isNull()
     }
 
     @Test fun `授权撤销写入不可用状态且恢复授权清除错误`() = runBlocking {

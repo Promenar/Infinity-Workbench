@@ -1,9 +1,11 @@
 package com.promenar.nexara.data.storage
 
 import com.promenar.nexara.domain.storage.ExternalMount
+import com.promenar.nexara.domain.storage.ExternalMountCommandAccess
 import com.promenar.nexara.domain.storage.ExternalFolderPaths
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import java.util.Base64
+import java.io.File
 
 object ExternalMountPaths {
     const val ROOT_UUID = "external:root"
@@ -60,7 +62,17 @@ object ExternalMountPaths {
     }
     fun conflicts(first: ExternalMount, second: ExternalMount): Boolean =
         first.id != second.id && first.alias == second.alias &&
-            (first.sessionId == null || second.sessionId == null || first.sessionId == second.sessionId)
+            first.sessionId == second.sessionId
+
+    /** 仅映射本机命令路径，不代表远端 SSH 或其它执行后端拥有该目录。 */
+    fun commandAccess(mount: ExternalMount, relativePath: String = "/"): ExternalMountCommandAccess {
+        val relative = ExternalFolderPaths.normalize(relativePath)
+        if (!mount.commandAccessible) return ExternalMountCommandAccess(null, "该来源没有命令可用的真实路径，请使用文件工具访问虚拟路径")
+        mount.unavailableReason?.let { return ExternalMountCommandAccess(null, it) }
+        val root = File(mount.sourceId)
+        if (!root.isAbsolute) throw ExternalFolderException("INVALID_PATH", "命令路径必须为绝对路径")
+        return ExternalMountCommandAccess(File(root, relative.removePrefix("/")).path, null)
+    }
 }
 
 val ExternalMount.isWorkspaceRoot: Boolean get() = alias == ExternalMountPaths.WORKSPACE_ALIAS

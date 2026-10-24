@@ -232,7 +232,7 @@ class MediaFetchSkillTest {
     @Test fun `下载期间同别名挂载换源被拒绝且不写入新来源`() = runTest {
         var mountId = "old"
         val mounts = mockk<ExternalWorkspaceAccess>()
-        coEvery { mounts.visible(any()) } answers { listOf(ExternalMount(mountId, "assets", "real_path", "/test", "media-session", false, 1)) }
+        coEvery { mounts.visible(any()) } answers { listOf(ExternalMount(mountId, "assets", "real_path", "/test", "media-session", 1)) }
         coEvery { mounts.workspaceMount(any()) } returns null
         val bound = object : SkillExecutionContext by mediaTestContext {
             override val approvedExecutionTarget = """["path","/mnt/assets/a.png",{"mountIds":{"assets":"old"}}]"""
@@ -248,7 +248,7 @@ class MediaFetchSkillTest {
 
     @Test fun `审批挂载缺失或身份过期在联网前拒绝`() = runTest {
         val mounts = mockk<ExternalWorkspaceAccess>()
-        coEvery { mounts.visible(any()) } returns listOf(ExternalMount("new", "assets", "real_path", "/test", "media-session", false, 1))
+        coEvery { mounts.visible(any()) } returns listOf(ExternalMount("new", "assets", "real_path", "/test", "media-session", 1))
         coEvery { mounts.workspaceMount(any()) } returns null
         for (target in listOf("""["path","/mnt/assets/a.png"]""", """["path","/mnt/assets/a.png",{"mountIds":{"assets":"old"}}]""")) {
             val bound = object : SkillExecutionContext by mediaTestContext {
@@ -264,7 +264,7 @@ class MediaFetchSkillTest {
 
     @Test fun `批准的挂载身份通过协程上下文传到保存`() = runTest {
         val mounts = mockk<ExternalWorkspaceAccess>()
-        coEvery { mounts.visible(any()) } returns listOf(ExternalMount("old", "assets", "real_path", "/test", "media-session", false, 1))
+        coEvery { mounts.visible(any()) } returns listOf(ExternalMount("old", "assets", "real_path", "/test", "media-session", 1))
         coEvery { mounts.workspaceMount(any()) } returns null
         var observed: Map<String, String>? = null
         val boundStore = object : WorkspaceMediaStore by store {

@@ -18,7 +18,7 @@ class SessionToolTargetIntegrationTest {
     private val mounts = mockk<ExternalWorkspaceAccess> {
         coEvery { workspaceMount(any()) } returns null
         coEvery { visible("session") } answers {
-            listOf(ExternalMount(mountId, "docs", "saf_tree", "content://test/tree/docs", "session", false, 1))
+            listOf(ExternalMount(mountId, "docs", "saf_tree", "content://test/tree/docs", "session", 1))
         }
     }
     private val leases = mutableMapOf(("agent:session" to "pty") to "server")

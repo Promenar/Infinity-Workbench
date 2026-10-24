@@ -115,7 +115,6 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
     val application = context.applicationContext as NexaraApplication
     val runtime = application.termuxRuntime
     val hostStore = application.sshHostStore
-    val folderManager = application.externalFolderManager
     val scope = rememberCoroutineScope()
     val noticeHost = remember { SnackbarHostState() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -128,15 +127,7 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
     var noticeIsError by remember { mutableStateOf(false) }
     var diagnostic by remember { mutableStateOf<TermuxCommandResult?>(null) }
     var keyHosts by remember { mutableStateOf<List<SshHost>>(emptyList()) }
-    var mounts by remember { mutableStateOf<List<ExternalMount>>(emptyList()) }
     var selectedKeyHostId by rememberSaveable { mutableStateOf<String?>(null) }
-    var mountAlias by rememberSaveable { mutableStateOf("termux") }
-    var aliasEdited by rememberSaveable { mutableStateOf(false) }
-    var readOnly by rememberSaveable { mutableStateOf(true) }
-    var pickerActive by rememberSaveable { mutableStateOf(false) }
-    var pendingAlias by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingReadOnly by rememberSaveable { mutableStateOf(true) }
-    val usedAliases = remember(mounts) { mounts.map { it.alias }.toSet() }
     val selectedKeyHost = keyHosts.firstOrNull { it.id == selectedKeyHostId } ?: keyHosts.firstOrNull()
 
     fun showNotice(message: String, isError: Boolean = false) {
@@ -221,35 +212,6 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
         if (!granted) showNotice(resources.getString(R.string.termux_error_permission_denied), isError = true)
         refresh()
     }
-    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        pickerActive = false
-        val requestedAlias = pendingAlias
-        val requestedReadOnly = pendingReadOnly
-        pendingAlias = null
-        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
-        val returnedIntent = result.data
-        val treeUri = returnedIntent?.data
-        if (requestedAlias == null || returnedIntent == null || treeUri == null) {
-            showNotice(resources.getString(R.string.termux_error_picker_empty), isError = true)
-            return@rememberLauncherForActivityResult
-        }
-        if (treeUri.authority != TERMUX_DOCUMENTS_AUTHORITY) {
-            showNotice(resources.getString(R.string.termux_error_picker_provider), isError = true)
-            return@rememberLauncherForActivityResult
-        }
-        perform(resources.getString(R.string.termux_error_mount)) {
-            val mount = withContext(Dispatchers.IO) {
-                folderManager.addSaf(requestedAlias, null, treeUri.toString(), returnedIntent.flags, requestedReadOnly)
-            }
-            aliasEdited = false
-            showNotice(resources.getString(
-                R.string.termux_mounted_notice,
-                mount.alias,
-                resources.getString(if (mount.readOnly) R.string.termux_read_only else R.string.termux_read_write),
-            ))
-        }
-    }
-
     val currentRefresh by rememberUpdatedState(::refresh)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -270,18 +232,6 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
             showNotice(resources.getString(R.string.termux_error_hosts), isError = true)
         }
     }
-    LaunchedEffect(folderManager) {
-        try {
-            folderManager.observeMounts("").flowOn(Dispatchers.IO).collect { mounts = it }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            showNotice(resources.getString(R.string.termux_error_mounts), isError = true)
-        }
-    }
-    LaunchedEffect(usedAliases) {
-        if (!aliasEdited) mountAlias = TermuxSetupSupport.availableMountAlias(usedAliases)
-    }
 
     NexaraSettingsPageLayout(title = stringResource(R.string.termux_title), onBack = onBack) { contentPadding ->
         Box(Modifier.fillMaxSize()) {
@@ -297,11 +247,6 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
                     diagnostic = diagnostic,
                     keyHosts = keyHosts.map { TermuxSettingsKeyHost(it.id, it.alias) },
                     selectedKeyHostId = selectedKeyHost?.id,
-                    mountAlias = mountAlias,
-                    readOnly = readOnly,
-                    pickerActive = pickerActive,
-                    mounts = mounts.filter { Uri.parse(it.sourceId).authority == TERMUX_DOCUMENTS_AUTHORITY }
-                        .map { TermuxSettingsMount(it.alias, it.readOnly) },
                 ),
                 actions = TermuxSettingsActions(
                     onEnabledChange = { value ->
@@ -350,39 +295,6 @@ fun TermuxSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
                     onSelectKeyHost = { selectedKeyHostId = it },
                     onCopyPublicKey = { selectedKeyHost?.let { copyHostKey(it, asCommand = false) } },
                     onCopyPublicKeyCommand = { selectedKeyHost?.let { copyHostKey(it, asCommand = true) } },
-                    onMountAliasChange = { mountAlias = it; aliasEdited = true },
-                    onReadOnlyChange = { readOnly = it },
-                    onChooseHome = {
-                        try {
-                            val requestedAlias = TermuxSetupSupport.normalizeMountAlias(mountAlias, usedAliases)
-                            pendingAlias = requestedAlias
-                            pendingReadOnly = readOnly
-                            pickerActive = true
-                            val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or
-                                (if (readOnly) 0 else Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                            treePicker.launch(
-                                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                                    .addFlags(grantFlags)
-                                    .putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(TERMUX_DOCUMENTS_AUTHORITY, TERMUX_HOME_DOCUMENT_ID)),
-                            )
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: IllegalArgumentException) {
-                            pickerActive = false
-                            pendingAlias = null
-                            val message = when (rejectedTermuxMountAliasError(mountAlias, usedAliases)) {
-                                TermuxMountAliasError.ControlCharacter -> R.string.termux_error_alias_control
-                                TermuxMountAliasError.Conflict -> R.string.termux_error_alias_conflict
-                                TermuxMountAliasError.Invalid -> R.string.termux_error_alias_invalid
-                            }
-                            showNotice(resources.getString(message), isError = true)
-                        } catch (_: Exception) {
-                            pickerActive = false
-                            pendingAlias = null
-                            showNotice(resources.getString(R.string.termux_error_picker), isError = true)
-                        }
-                    },
                 ),
                 contentPadding = contentPadding,
             )
@@ -583,50 +495,6 @@ internal fun TermuxSettingsContent(
                         title = stringResource(R.string.termux_copy_key_command),
                         enabled = !state.busy,
                         onClick = actions.onCopyPublicKeyCommand,
-                    )
-                }
-            }
-        }
-        item {
-            NexaraSettingsSection(
-                title = stringResource(R.string.termux_step_mount),
-                footer = stringResource(R.string.settings_batch1_termux_mount_footer),
-            ) {
-                TermuxSectionBody {
-                    OutlinedTextField(
-                        value = state.mountAlias,
-                        onValueChange = actions.onMountAliasChange,
-                        label = { Text(stringResource(R.string.termux_mount_alias)) },
-                    supportingText = { Text(stringResource(R.string.termux_mount_alias_hint)) },
-                        enabled = !state.busy && !state.pickerActive,
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.forInput(),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth().testTag("termux_mount_alias"),
-                    )
-                }
-                SettingsToggle(
-                    title = stringResource(R.string.termux_mount_read_only),
-                    description = stringResource(R.string.settings_batch1_mount_read_only_summary),
-                    icon = Icons.Rounded.FolderOpen,
-                    checked = state.readOnly,
-                    onCheckedChange = actions.onReadOnlyChange,
-                    enabled = !state.busy && !state.pickerActive,
-                    modifier = Modifier.testTag("termux_mount_read_only"),
-                )
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.FolderOpen,
-                    title = stringResource(R.string.termux_choose_folder),
-                    subtitle = if (state.mounts.isEmpty()) stringResource(R.string.termux_step_optional) else stringResource(R.string.termux_mount_count, state.mounts.size),
-                    onClick = actions.onChooseHome,
-                    enabled = state.availability?.installed == true && !state.busy && !state.pickerActive,
-                    modifier = Modifier.testTag("termux_choose_home"),
-                    showChevron = true,
-                )
-                state.mounts.forEach { mount ->
-                    NexaraSettingsRowLayout(
-                        icon = Icons.Rounded.FolderOpen,
-                        title = stringResource(R.string.termux_mount_path, mount.alias, stringResource(if (mount.readOnly) R.string.termux_read_only else R.string.termux_read_write)),
                     )
                 }
             }

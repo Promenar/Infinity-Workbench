@@ -27,7 +27,7 @@ class ScriptWorkspaceGatewayTest {
     private val context = mockk<Context> { every { noBackupFilesDir } returns directory }
     private var row = ExternalMountEntity("mount", "demo", "saf_tree", "content://test/tree/root", "session", false, 1)
     private val dao = mockk<ExternalMountDao> {
-        coEvery { visible(any()) } answers { listOf(row) }
+        coEvery { visible(any()) } answers { listOf(row).filter { it.scopeKey == firstArg<String>() } }
         coEvery { update(any()) } answers { row = firstArg() }
     }
     private val workspace = mockk<IWorkspaceRepository>()
@@ -62,15 +62,15 @@ class ScriptWorkspaceGatewayTest {
     }
     @After fun cleanup() { directory.deleteRecursively() }
 
-    @Test fun `代理拒绝路径越界和保留名称且只读挂载不可写`() = runBlocking {
+    @Test fun `代理拒绝路径越界和保留名称且历史只读挂载可写`() = runBlocking {
+        approveWrites = false
         val gateway = open()
         for (path in listOf("/mnt/demo/../outside.txt", "/mnt/demo/.nexara/x.txt", "/mnt/demo/.recycle_bin/x.txt")) {
             try { gateway.invoke("read", args(path)); error("应拒绝") } catch (_: ExternalFolderException) { }
         }
         row = row.copy(readOnly = true)
-        try { gateway.invoke("create", args("/mnt/demo/a.txt", "x")); error("应拒绝只读") }
-        catch (failure: ScriptFailure) { assertThat(failure.code).isEqualTo("READ_ONLY") }
-        assertThat(memory.stat("/a.txt")).isNull()
+        gateway.invoke("create", args("/mnt/demo/a.txt", "x"))
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("x")
     }
 
     @Test fun `写入先审批并按哈希拒绝冲突且审批期间挂载换源失败`() = runBlocking {
@@ -122,7 +122,7 @@ class ScriptWorkspaceGatewayTest {
             .isEqualTo("export const value = 42")
     }
 
-    @Test fun `脚本批准并记住挂载写入后另一会话直接命中全局白名单且撤销后重询`() = runBlocking {
+    @Test fun `脚本批准并记住会话挂载写入且撤销后重询`() = runBlocking {
         memory.write("/a.txt", "old".toByteArray())
         val first = async { open().invoke("write", args("/mnt/demo/a.txt", "one", Sha256Utils.hash("old"))) }
         val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }
@@ -130,11 +130,14 @@ class ScriptWorkspaceGatewayTest {
         first.await()
         assertThat(grants.entries.value.single().scopeKey).isEqualTo("mount:mount")
         assertThat(grants.entries.value.single().sourceSessionId).isEqualTo("session")
-        withTimeout(3000) { open("another").invoke("write", args("/mnt/demo/a.txt", "two", Sha256Utils.hash("one"))) }
+        val other = runCatching { open("another").invoke("write", args("/mnt/demo/a.txt", "outside", Sha256Utils.hash("one"))) }.exceptionOrNull()
+        assertThat((other as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("one")
+        withTimeout(3000) { open().invoke("write", args("/mnt/demo/a.txt", "two", Sha256Utils.hash("one"))) }
         assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
         assertThat(broker.pending.value).isEmpty()
         grants.remove(grants.entries.value.single().id)
-        val next = async { open("another").invoke("write", args("/mnt/demo/a.txt", "three", Sha256Utils.hash("two"))) }
+        val next = async { open().invoke("write", args("/mnt/demo/a.txt", "three", Sha256Utils.hash("two"))) }
         withTimeout(3000) { broker.pending.first { it.isNotEmpty() } }
         next.cancelAndJoin()
         assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
