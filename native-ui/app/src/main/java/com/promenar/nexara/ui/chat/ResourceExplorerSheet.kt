@@ -209,6 +209,8 @@ fun ResourceExplorerSheet(
                                 onCreateFolder = viewModel::createDirectoryFolder,
                                 onRename = viewModel::renameDirectoryEntry,
                                 onDismissOutcome = viewModel::dismissDirectoryOutcome,
+                                onDeletePermanently = viewModel::deleteTooLargePermanently,
+                                onKeepTooLarge = viewModel::keepTooLarge,
                             )
                         },
                         rootHeader = {

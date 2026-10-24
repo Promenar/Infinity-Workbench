@@ -317,6 +317,39 @@ class ResourceExplorerWorkspaceModeTest {
         assertThat(files.calls).containsExactly("delete s [/a.md]", "rename s /a.md -> b.md", "rename s /a.md -> b.md").inOrder()
     }
 
+    @Test
+    fun `items too large for recycle bin ask before permanent delete`() = runTest(dispatcher) {
+        val backend = FakeBackend(mapOf("/" to listOf(entry("/big", isDirectory = true), entry("/a.md"))))
+        val files = FakeFiles().apply {
+            deleteResult = { paths ->
+                DirectoryBatchResult(paths - "/big", paths.filter { it == "/big" }.associateWith { DirectoryFileOpCode.TOO_LARGE })
+            }
+        }
+        val viewModel = directoryViewModel(backend, files)
+
+        viewModel.toggleDirectorySelection("/big")
+        viewModel.toggleDirectorySelection("/a.md")
+        viewModel.deleteDirectorySelection()
+        advanceUntilIdle()
+        // 超限项不算失败，只等待确认；其余项照常报告。
+        assertThat(viewModel.directory.value.permanentDeleteCandidates).containsExactly("/big")
+        assertThat(viewModel.directory.value.outcome).isEqualTo(DirectoryOpOutcome(DirectoryOp.DELETE, 1, 0, null))
+
+        viewModel.keepTooLarge()
+        assertThat(viewModel.directory.value.permanentDeleteCandidates).isEmpty()
+
+        viewModel.toggleDirectorySelection("/big")
+        viewModel.deleteDirectorySelection()
+        advanceUntilIdle()
+        assertThat(viewModel.directory.value.outcome).isNull()
+        viewModel.deleteTooLargePermanently()
+        advanceUntilIdle()
+
+        assertThat(files.calls.last()).isEqualTo("delete s [/big] permanent")
+        assertThat(viewModel.directory.value.permanentDeleteCandidates).isEmpty()
+        assertThat(viewModel.directory.value.outcome).isEqualTo(DirectoryOpOutcome(DirectoryOp.DELETE, 1, 0, null))
+    }
+
     private fun TestScope.directoryViewModel(backend: FakeBackend, files: DirectoryWorkspaceFiles): ResourceExplorerViewModel {
         val access = FakeAccess(directory("ws1", "p4-accept", temporaryFolder.newFolder())) { backend }
         return ResourceExplorerViewModel(
@@ -337,6 +370,7 @@ class ResourceExplorerWorkspaceModeTest {
         var moveResult = DirectoryBatchResult(emptyList(), emptyMap())
         var deleteFailure: DirectoryFileOpException? = null
         var renameFailure: DirectoryFileOpException? = null
+        var deleteResult: (List<String>) -> DirectoryBatchResult = { DirectoryBatchResult(it, emptyMap()) }
         override suspend fun createDirectory(sessionId: String, parent: String, name: String): ExternalFolderEntry {
             calls += "mkdir $sessionId $parent/$name"
             return ExternalFolderEntry("$parent/$name", name, true, 0, 0)
@@ -354,10 +388,10 @@ class ResourceExplorerWorkspaceModeTest {
             calls += "copy $sessionId $paths -> $targetDirectory"
             return DirectoryBatchResult(paths, emptyMap())
         }
-        override suspend fun delete(sessionId: String, paths: List<String>): DirectoryBatchResult {
-            calls += "delete $sessionId $paths"
+        override suspend fun delete(sessionId: String, paths: List<String>, permanent: Boolean): DirectoryBatchResult {
+            calls += "delete $sessionId $paths" + if (permanent) " permanent" else ""
             deleteFailure?.let { throw it }
-            return DirectoryBatchResult(paths, emptyMap())
+            return if (permanent) DirectoryBatchResult(paths, emptyMap()) else deleteResult(paths)
         }
     }
 

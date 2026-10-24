@@ -72,6 +72,8 @@ internal data class DirectoryFileActions(
     val onCreateFolder: (name: String, onResult: (DirectoryFileOpCode?) -> Unit) -> Unit,
     val onRename: (path: String, name: String, onResult: (DirectoryFileOpCode?) -> Unit) -> Unit,
     val onDismissOutcome: () -> Unit,
+    val onDeletePermanently: () -> Unit = {},
+    val onKeepTooLarge: () -> Unit = {},
 )
 
 @Composable
@@ -84,6 +86,7 @@ internal fun directoryOpCodeText(code: DirectoryFileOpCode): String = stringReso
         DirectoryFileOpCode.READ_ONLY -> R.string.directory_op_read_only
         DirectoryFileOpCode.WORKSPACE_UNAVAILABLE -> R.string.directory_op_unavailable
         DirectoryFileOpCode.SESSION_BUSY -> R.string.directory_op_busy
+        DirectoryFileOpCode.TOO_LARGE -> R.string.directory_op_too_large
         DirectoryFileOpCode.IO -> R.string.directory_op_failed
     },
 )
@@ -208,6 +211,22 @@ internal fun DirectoryDeleteDialog(count: Int, onConfirm: () -> Unit, onCancel: 
             onCancel = onCancel,
             isDestructive = true,
             confirmButtonModifier = Modifier.testTag("directory_delete_confirm"),
+        )
+    }
+}
+
+/** 超出回收站容量的条目无法备份，只能永久删除或保留。 */
+@Composable
+internal fun DirectoryPermanentDeleteDialog(count: Int, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    Dialog(onDismissRequest = onCancel) {
+        NexaraConfirmDialog(
+            title = pluralStringResource(R.plurals.directory_permanent_delete_title, count, count),
+            message = stringResource(R.string.directory_permanent_delete_message),
+            confirmText = stringResource(R.string.directory_permanent_delete_confirm),
+            onConfirm = onConfirm,
+            onCancel = onCancel,
+            isDestructive = true,
+            confirmButtonModifier = Modifier.testTag("directory_permanent_delete_confirm"),
         )
     }
 }

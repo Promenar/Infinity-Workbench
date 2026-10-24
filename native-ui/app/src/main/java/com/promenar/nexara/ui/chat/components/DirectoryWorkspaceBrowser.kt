@@ -292,6 +292,13 @@ private fun DirectoryListView(
             onCancel = { confirmingDelete = false },
         )
     }
+    if (state.permanentDeleteCandidates.isNotEmpty()) {
+        DirectoryPermanentDeleteDialog(
+            count = state.permanentDeleteCandidates.size,
+            onConfirm = fileActions.onDeletePermanently,
+            onCancel = fileActions.onKeepTooLarge,
+        )
+    }
 }
 
 private sealed interface DirectoryNaming {

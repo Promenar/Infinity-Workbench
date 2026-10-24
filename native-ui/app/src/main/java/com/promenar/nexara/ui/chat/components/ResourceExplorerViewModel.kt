@@ -402,6 +402,18 @@ class ResourceExplorerViewModel(
         runDirectoryBatch(DirectoryOp.DELETE, clearClipboard = false) { files, sessionId -> files.delete(sessionId, paths) }
     }
 
+    /** 用户确认后永久删除先前因超出回收站容量而保留的条目。 */
+    fun deleteTooLargePermanently() {
+        val paths = _directory.value.permanentDeleteCandidates
+        if (paths.isEmpty()) return
+        _directory.value = _directory.value.copy(permanentDeleteCandidates = emptyList())
+        runDirectoryBatch(DirectoryOp.DELETE, clearClipboard = false) { files, sessionId -> files.delete(sessionId, paths, permanent = true) }
+    }
+
+    fun keepTooLarge() {
+        _directory.value = _directory.value.copy(permanentDeleteCandidates = emptyList())
+    }
+
     /** 新建或改名；[onResult] 收到 null 表示成功，否则为失败原因，由对话框就地显示。 */
     fun createDirectoryFolder(name: String, onResult: (DirectoryFileOpCode?) -> Unit) {
         val parent = _directory.value.path
@@ -470,7 +482,18 @@ class ResourceExplorerViewModel(
                 operating = false,
                 selection = emptySet(),
                 clipboard = clipboard,
-                outcome = outcome,
+                // 超出回收站容量的条目另行询问是否永久删除，不计入失败提示。
+                outcome = if (op == DirectoryOp.DELETE && batch != null) {
+                    batch.copy(failed = batch.failed.filterValues { it != DirectoryFileOpCode.TOO_LARGE })
+                        .toOutcome(op).takeIf { it.succeeded + it.failed > 0 }
+                } else {
+                    outcome
+                },
+                permanentDeleteCandidates = if (op == DirectoryOp.DELETE) {
+                    batch?.failed?.filterValues { it == DirectoryFileOpCode.TOO_LARGE }?.keys?.toList().orEmpty()
+                } else {
+                    current.permanentDeleteCandidates
+                },
             )
             refreshDirectory()
         }

@@ -66,6 +66,8 @@ internal data class DirectoryBrowserState(
     val clipboard: DirectoryClipboard? = null,
     val operating: Boolean = false,
     val outcome: DirectoryOpOutcome? = null,
+    /** 因超出回收站容量未删除、等待用户确认永久删除的条目。 */
+    val permanentDeleteCandidates: List<String> = emptyList(),
 )
 
 /** 复制或剪切后等待粘贴的条目；进入目标目录后“粘贴到此处”。 */
