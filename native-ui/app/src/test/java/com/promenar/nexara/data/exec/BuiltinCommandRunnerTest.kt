@@ -29,17 +29,30 @@ class BuiltinCommandRunnerTest {
         if (::work.isInitialized) work.deleteRecursively()
     }
 
-    private fun runner(outputLimit: Int = BuiltinCommandRunner.OUTPUT_LIMIT) = BuiltinCommandRunner(
+    private fun runner(outputLimit: Int = BuiltinCommandRunner.OUTPUT_LIMIT, monitor: RuntimeDataMonitor? = null) = BuiltinCommandRunner(
         groupLauncher = listOf(PERL, "-e", "setpgrp(0, 0); exec @ARGV or exit 127"),
         shell = "/bin/sh",
         signaller = HostSignaller,
         scratchDirectory = { File(work, "scratch") },
         outputLimit = outputLimit,
         killGraceMillis = 500,
+        runtimeDataMonitor = monitor,
     )
 
     private fun request(command: String, timeout: Int = 20, stdin: String? = null, env: Map<String, String> = mapOf("PATH" to "/usr/bin:/bin")) =
         BuiltinCommandRequest(listOf("/bin/sh", "-c", command), work, env, stdin, timeout)
+
+    @Test
+    fun `后台检测结果无法写入时保留命令真实退出码`() = runBlocking<Unit> {
+        val job = File(work, "job").apply { mkdirs() }
+        File(job, "runtime-changes.json").mkdir()
+        val output = runner(monitor = RuntimeDataMonitor(work)).runBackground(
+            request("echo done; exit 3"), BuiltinCommandControl(), File(job, "log"), File(job, "pgid"),
+        )
+        assertThat(output.exitCode).isEqualTo(3)
+        assertThat(File(job, "log").readText()).isEqualTo("done\n")
+        assertThat(RuntimeDataMonitor.backgroundResult(job)["runtime_scan_notes"]).isNotNull()
+    }
 
     @Test
     fun `退出码、两路输出与标准输入原样返回`() = runBlocking<Unit> {

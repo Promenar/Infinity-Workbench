@@ -473,7 +473,7 @@ class AgentEditViewModel(
                 _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
             },
             useInheritedConfig = _useInheritedConfig.value,
-            executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
+            executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE,
             skills = initial?.skills ?: emptyList(),
             mcpServerIds = initial?.mcpServerIds ?: emptyList(),
             defaultWorkspaceId = _defaultWorkspaceId.value,

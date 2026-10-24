@@ -27,7 +27,7 @@ data class Agent(
     val ragConfig: AgentRagConfig? = null,
     val retrievalConfig: AgentRetrievalConfig? = null,
     val useInheritedConfig: Boolean = true,
-    val executionMode: ExecutionMode = ExecutionMode.SEMI,
+    val executionMode: ExecutionMode = ExecutionMode.WORKSPACE,
     val skills: List<String> = emptyList(),
     val mcpServerIds: List<String> = emptyList(),
     val nameCustomized: Boolean = false,
@@ -45,11 +45,9 @@ data class Agent(
 }
 
 object ExecutionModeCodec {
-    fun parseOrSemi(raw: String?): ExecutionMode = when (raw?.trim()?.lowercase()) {
-        "auto" -> ExecutionMode.AUTO
-        "manual" -> ExecutionMode.MANUAL
-        "semi" -> ExecutionMode.SEMI
-        else -> ExecutionMode.SEMI
+    fun parseOrWorkspace(raw: String?): ExecutionMode = when (raw?.trim()?.lowercase()) {
+        "auto", "full_access" -> ExecutionMode.FULL_ACCESS
+        else -> ExecutionMode.WORKSPACE
     }
 
     fun serialize(mode: ExecutionMode): String = mode.name.lowercase()

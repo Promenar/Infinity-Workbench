@@ -19,6 +19,18 @@ class ToolAllowlistStoreTest {
     private val host = """["host","example.com"]"""
     private val path = """["path","/docs/a.md"]"""
 
+    @Test fun `启动清空旧授权持久数据且清理标记只执行一次`() = runBlocking<Unit> {
+        val root = temporary.newFolder()
+        val store = ToolAllowlistStore(root)
+        store.add("web_fetch", host, null)
+        store.clearLegacyOnce()
+        assertThat(store.entries.value).isEmpty()
+        assertThat(ToolAllowlistStore(root).contains("web_fetch", host, null)).isFalse()
+        store.add("web_fetch", host, null)
+        ToolAllowlistStore(root).clearLegacyOnce()
+        assertThat(store.contains("web_fetch", host, null)).isTrue()
+    }
+
     @Test fun `持久化往返保留稳定身份时间来源且按时间倒序并去重`() = runBlocking<Unit> {
         val root = temporary.newFolder()
         var now = 100L

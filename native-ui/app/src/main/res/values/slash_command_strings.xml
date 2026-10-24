@@ -30,9 +30,6 @@
     <string name="slash_feedback_prompt_failed">Couldn\'t save the chat prompt</string>
     <string name="slash_feedback_compacting">Compacting context…</string>
     <string name="slash_feedback_mode">Execution mode set to %1$s</string>
-    <string name="slash_mode_auto">Auto</string>
-    <string name="slash_mode_semi">Semi</string>
-    <string name="slash_mode_manual">Manual</string>
     <string name="slash_feedback_tools_on">Tool use on</string>
     <string name="slash_feedback_tools_off">Tool use off</string>
     <string name="slash_feedback_exported">Exported %1$s</string>

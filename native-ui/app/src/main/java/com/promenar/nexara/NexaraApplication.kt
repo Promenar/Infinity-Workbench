@@ -391,7 +391,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
     private val scriptToolRunner by lazy {
         com.promenar.nexara.data.script.AndroidScriptToolRunner(scriptRuntime, workspaceRepository, externalFolderManager,
-            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, toolAllowlistStore, scriptSettings,
+            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, scriptSettings,
             sessionWorkspaceResolver::resolve, networkPolicy = agentNetworkPolicy, tailnetRouting = tailnetManager)
     }
     val generationInteractions by lazy {
@@ -425,13 +425,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         args: kotlinx.serialization.json.JsonObject,
         target: String,
     ): Boolean {
-        val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
-            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
-            risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
-        )
-        val scope = resolveToolAllowlistScope(session.id, target) ?: return false
-        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost) == target &&
-            toolAllowlistStore.contains(skill.name, target, scope.scopeKey)
+        return false
     }
 
     val messageRepository: IMessageRepository by lazy {
@@ -649,14 +643,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             session, tool, arguments, workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost,
         )
 
-        override suspend fun isGranted(sessionId: String, toolName: String, target: String): Boolean {
-            val scope = resolveToolAllowlistScope(sessionId, target) ?: return false
-            return toolAllowlistStore.contains(toolName, target, scope.scopeKey)
-        }
+        override suspend fun isGranted(sessionId: String, toolName: String, target: String) = false
 
-        override suspend fun remember(sessionId: String, toolName: String, target: String) {
-            resolveToolAllowlistScope(sessionId, target)?.let { scope -> toolAllowlistStore.add(toolName, target, scope.scopeKey, sessionId) }
-        }
+        override suspend fun remember(sessionId: String, toolName: String, target: String) = Unit
 
         override fun preview(toolName: String, arguments: kotlinx.serialization.json.JsonObject): String =
             com.promenar.nexara.ui.chat.ApprovalPreview.format(toolName, arguments)?.let { preview ->
@@ -1011,6 +1000,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    private val runtimeDataMonitor by lazy {
+        com.promenar.nexara.data.exec.RuntimeDataMonitor(File(applicationInfo.dataDir))
+    }
     private val backgroundCommandRunner by lazy {
         com.promenar.nexara.data.exec.BuiltinCommandRunner(
             groupLauncher = listOf("/system/bin/setsid"), shell = "/system/bin/sh",
@@ -1020,6 +1012,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             // 系统开机计数不依赖受设备策略限制的 /proc/sys 文件。
             bootIdentity = { android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT).toString() },
             requireBackgroundIdentity = true,
+            runtimeDataMonitor = runtimeDataMonitor,
         )
     }
     private val commandKeepAlive by lazy {
@@ -1075,6 +1068,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             keepAlive = commandKeepAlive,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             gitRemote = gitRemoteBroker,
+            runtimeDataMonitor = runtimeDataMonitor,
         )
     }
 
@@ -1446,6 +1440,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         PDFBoxResourceLoader.init(applicationContext)
         startupScope.launch(Dispatchers.IO) {
             runCatching {
+                toolAllowlistStore.clearLegacyOnce()
                 val legacy = File(noBackupFilesDir, "tool-grants")
                 check(!legacy.exists() || legacy.deleteRecursively()) { "旧会话授权目录清理失败" }
             }.onFailure { NexaraLogger.log("[ToolAllowlist] 旧会话授权清理失败：${it::class.java.simpleName}") }

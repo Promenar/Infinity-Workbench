@@ -24,7 +24,7 @@ class CreateAgentUseCase(
             modelId = modelId,
             icon = icon,
             color = color,
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
             createdAt = System.currentTimeMillis()
         )
         agentRepository.create(agent)

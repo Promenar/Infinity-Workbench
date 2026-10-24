@@ -160,6 +160,14 @@ class ToolAllowlistStore(private val root: File, private val now: () -> Long = S
         }
     }
 
+    suspend fun clearLegacyOnce() = locked {
+        val marker = File(root, "scope-permissions-v1")
+        if (!marker.exists()) {
+            write(emptyList())
+            check(marker.createNewFile()) { "无法记录旧授权清理状态" }
+        }
+    }
+
     suspend fun clear() { locked { write(emptyList()) } }
 
     private suspend fun <T> locked(block: () -> T): T = withContext(Dispatchers.IO) {

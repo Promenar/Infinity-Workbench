@@ -388,7 +388,7 @@ class ChatViewModelTest {
             Agent(
                 id = "approval-agent",
                 name = "Approval Agent",
-                executionMode = com.promenar.nexara.domain.model.ExecutionMode.MANUAL,
+                executionMode = com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE,
                 skills = listOf("read_file", "calculator"),
                 mcpServerIds = listOf("server-a", "server-b"),
             ),
@@ -398,7 +398,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val created = savedSessions.single { it.agentId == "approval-agent" }
-        assertThat(created.executionMode).isEqualTo("manual")
+        assertThat(created.executionMode).isEqualTo("workspace")
         assertThat(created.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
         assertThat(created.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
@@ -419,7 +419,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val created = savedSessions.single { it.agentId == "missing-approval-agent" }
-        assertThat(created.executionMode).isEqualTo("semi")
+        assertThat(created.executionMode).isEqualTo("workspace")
         assertThat(created.activeSkillIds).isEmpty()
         assertThat(created.activeMcpServerIds).isEmpty()
         assertThat(created.workspaceId).isNull()

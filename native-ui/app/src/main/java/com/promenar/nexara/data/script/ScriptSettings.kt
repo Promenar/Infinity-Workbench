@@ -14,7 +14,4 @@ class ScriptSettings(private val preferences: SharedPreferences) {
             catch (failure: IllegalArgumentException) { throw ScriptFailure("NETWORK_DENIED", failure.message.orEmpty()) }
         }
     val lanHosts: Set<String> get() = networkSettings.lanHosts
-    var approveFileWrites: Boolean
-        get() = preferences.getBoolean("script_approve_writes", true)
-        set(value) { preferences.edit().putBoolean("script_approve_writes", value).apply() }
 }

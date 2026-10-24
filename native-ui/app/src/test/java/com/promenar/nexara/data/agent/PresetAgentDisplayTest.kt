@@ -29,7 +29,7 @@ class PresetAgentDisplayTest {
             id = "default",
             name = "DB 中文残留",
             description = "DB desc",
-            executionMode = ExecutionMode.SEMI
+            executionMode = ExecutionMode.WORKSPACE
         )
 
         val fields = PresetAgentDisplay.resolve(agent)
@@ -48,7 +48,7 @@ class PresetAgentDisplayTest {
             description = "edited by user",
             nameCustomized = true,
             descriptionCustomized = true,
-            executionMode = ExecutionMode.SEMI
+            executionMode = ExecutionMode.WORKSPACE
         )
 
         val fields = PresetAgentDisplay.resolve(agent)
@@ -63,7 +63,7 @@ class PresetAgentDisplayTest {
             id = "user-1",
             name = "User Agent",
             description = "x",
-            executionMode = ExecutionMode.SEMI
+            executionMode = ExecutionMode.WORKSPACE
         )
 
         val fields = PresetAgentDisplay.resolve(agent)
@@ -74,13 +74,13 @@ class PresetAgentDisplayTest {
     @Test
     fun `coder and writer presets resolve to their respective resources when uncustomized`() {
         val coder = PresetAgentDisplay.resolve(
-            Agent(id = "coder", name = "x", executionMode = ExecutionMode.SEMI),
+            Agent(id = "coder", name = "x", executionMode = ExecutionMode.WORKSPACE),
         )
         assertThat(coder.name)
             .isEqualTo(PresetAgentDisplay.TextSource.Resource(R.string.preset_agent_coder_name))
 
         val writer = PresetAgentDisplay.resolve(
-            Agent(id = "writer", name = "x", executionMode = ExecutionMode.SEMI),
+            Agent(id = "writer", name = "x", executionMode = ExecutionMode.WORKSPACE),
         )
         assertThat(writer.name)
             .isEqualTo(PresetAgentDisplay.TextSource.Resource(R.string.preset_agent_writer_name))

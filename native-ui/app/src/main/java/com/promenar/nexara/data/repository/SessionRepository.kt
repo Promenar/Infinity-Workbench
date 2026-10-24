@@ -108,7 +108,7 @@ open class SessionRepository(
                 "customPrompt" -> result.copy(customPrompt = value as? String)
                 "executionMode" -> result.copy(
                     executionMode = ExecutionModeCodec.serialize(
-                        ExecutionModeCodec.parseOrSemi(value as? String),
+                        ExecutionModeCodec.parseOrWorkspace(value as? String),
                     ),
                 )
                 "loopStatus" -> result.copy(loopStatus = (value as? LoopStatus)?.toSerializedName() ?: result.loopStatus)

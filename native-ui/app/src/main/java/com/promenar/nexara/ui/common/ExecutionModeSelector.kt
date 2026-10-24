@@ -11,9 +11,8 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 enum class ExecutionMode(@param:StringRes val labelRes: Int) {
-    AUTO(R.string.common_mode_auto),
-    SEMI(R.string.common_mode_semi),
-    MANUAL(R.string.common_mode_manual)
+    WORKSPACE(R.string.common_mode_workspace),
+    FULL_ACCESS(R.string.common_mode_full_access)
 }
 
 @Composable

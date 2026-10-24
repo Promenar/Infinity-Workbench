@@ -164,7 +164,7 @@ class SkillsVirtualWorkspaceTest {
             rooted = root
             val broker = ScriptFileApprovalBroker()
             val grants = ToolAllowlistStore(File(directory, "grants-$root"))
-            val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None, broker, grants, { false }, null)
+            val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None, broker, null)
             for ((operation, path, content) in listOf(
                 Triple("mkdir", "/skills/folder-$root", null),
                 Triple("create", "/skills/test.txt", "one"),
@@ -192,8 +192,7 @@ class SkillsVirtualWorkspaceTest {
     @Test fun `脚本项目级技能写入逐次审批并可拒绝`() = runBlocking {
         File(repo, ".agents/skills").mkdirs()
         val broker = ScriptFileApprovalBroker()
-        val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None, broker,
-            ToolAllowlistStore(File(directory, "grants")), { false }, null)
+        val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None, broker, null)
         val pending = async { runCatching { gateway.invoke("create", args("""{"path":"/.agents/skills/test.md","content":"blocked"}""")) } }
         try {
             val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }

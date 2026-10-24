@@ -61,10 +61,14 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
             JsonObject(info(status.record)+buildJsonObject{put("log_tail",status.tail.text);put("log_truncated",status.tail.truncated);if(operation=="wait")put("timed_out",status.timedOut)})
         }
     }
-    private fun info(record:BackgroundJobRecord)=buildJsonObject {
+    private suspend fun info(record:BackgroundJobRecord):JsonObject {
+        val runtime = if (record.runner == "TERMUX") JsonObject(emptyMap()) else
+            com.promenar.nexara.data.exec.RuntimeDataMonitor.backgroundResult(java.io.File(record.runDirectory), expectResult = !record.running)
+        return JsonObject(buildJsonObject {
         put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
         put("summary",record.summary);put("elapsed_seconds",BackgroundJobCompletion.elapsedSeconds(record));put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
         put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"});put("keep_alive",jobs.keepAliveMode)
         record.guidance?.let{put("guidance",it)}
+        } + runtime)
     }
 }

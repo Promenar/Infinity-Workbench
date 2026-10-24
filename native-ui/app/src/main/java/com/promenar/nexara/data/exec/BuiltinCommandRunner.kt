@@ -79,6 +79,7 @@ class BuiltinCommandRunner(
     private val processIdentity: (Int) -> String? = ::readLinuxProcessStartIdentity,
     private val bootIdentity: () -> String? = { runCatching { File("/proc/sys/kernel/random/boot_id").readText().trim() }.getOrNull() },
     private val requireBackgroundIdentity: Boolean = false,
+    private val runtimeDataMonitor: RuntimeDataMonitor? = null,
 ) {
     suspend fun run(
         request: BuiltinCommandRequest,
@@ -95,7 +96,22 @@ class BuiltinCommandRunner(
         processGroupFile: File,
         onStarted: () -> Unit = {},
         onOutput: ((ToolOutputStream, String) -> Unit)? = null,
-    ): BuiltinCommandOutput = runInternal(request, control, onOutput, logFile, processGroupFile, onStarted)
+    ): BuiltinCommandOutput {
+        val before = runtimeDataMonitor?.capture()
+        try {
+            return runInternal(request, control, onOutput, logFile, processGroupFile, onStarted)
+        } finally {
+            if (before != null) withContext(NonCancellable) {
+                val fields = runtimeDataMonitor.changesSince(before)
+                // 检测文件不可写不改变进程退出码；查询工具会披露缺失的检测结果。
+                try {
+                    RuntimeDataMonitor.writeBackgroundResult(checkNotNull(processGroupFile.absoluteFile.parentFile), fields)
+                } catch (_: java.io.IOException) {
+                } catch (_: SecurityException) {
+                }
+            }
+        }
+    }
 
     /** 启动恢复仅清理持久化进程组；调用方负责记录中断。 */
     suspend fun interruptBackground(processGroupFile: File): Boolean = withContext(Dispatchers.IO) {

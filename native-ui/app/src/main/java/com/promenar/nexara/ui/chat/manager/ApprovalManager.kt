@@ -190,15 +190,6 @@ class ApprovalManager(
         }
         if (approved) {
             try {
-                if (rememberTarget) {
-                    val current = request.calls.first()
-                    current.executionTarget?.takeIf(String::isNotBlank)?.let { target ->
-                        resolveAllowlistScope(sessionId, target)?.let { scope ->
-                            val allowlist = checkNotNull(toolAllowlistStore) { "全局审批白名单不可用" }
-                            allowlist.add(current.toolName, target, scope.scopeKey, sessionId)
-                        }
-                    }
-                }
                 onExecuteTools?.invoke(
                     sessionId,
                     assistantMessageId,
@@ -355,7 +346,7 @@ class ApprovalManager(
     }
 
     suspend fun setExecutionMode(sessionId: String, mode: String) {
-        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(mode))
+        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrWorkspace(mode))
         sessionRepository.updatePartial(sessionId, mapOf("executionMode" to normalized))
         store.updateSession(sessionId) { s ->
             s.copy(executionMode = normalized)

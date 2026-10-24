@@ -72,7 +72,7 @@ class AgentRepositoryTest {
         val dao: AgentDao = mockk(relaxed = true)
         val repo = AgentRepository(dao)
         val agent = com.promenar.nexara.domain.model.Agent(
-            id = "new", name = "New", executionMode = ExecutionMode.SEMI
+            id = "new", name = "New", executionMode = ExecutionMode.WORKSPACE
         )
 
         repo.create(agent)
@@ -85,7 +85,7 @@ class AgentRepositoryTest {
         val dao: AgentDao = mockk(relaxed = true)
         val repo = AgentRepository(dao)
         val agent = com.promenar.nexara.domain.model.Agent(
-            id = "update-me", name = "Updated", executionMode = ExecutionMode.SEMI
+            id = "update-me", name = "Updated", executionMode = ExecutionMode.WORKSPACE
         )
 
         repo.update(agent)

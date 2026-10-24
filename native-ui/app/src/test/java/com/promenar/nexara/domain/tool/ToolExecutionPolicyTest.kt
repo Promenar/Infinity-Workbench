@@ -6,22 +6,36 @@ import org.junit.Test
 
 class ToolExecutionPolicyTest {
     @Test
-    fun `semi 只允许已知安全只读与会话内部状态工具免审批`() {
-        val exempt = setOf(ToolRisk.SAFE_READ, ToolRisk.SESSION_STATE)
-        exempt.forEach { risk ->
-            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.SEMI, risk)).isFalse()
-        }
-
-        ToolRisk.entries.filterNot { it in exempt }.forEach { risk ->
-            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.SEMI, risk)).isTrue()
-        }
-    }
-
-    @Test
-    fun `manual 全部审批而 auto 的定时执行仍需审批`() {
-        ToolRisk.entries.forEach { risk ->
-            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.MANUAL, risk)).isTrue()
-            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.AUTO, risk)).isEqualTo(risk == ToolRisk.SCHEDULE)
+    fun `两档按工具能力与显式目标审批而非泛化风险`() {
+        val commands = mapOf(
+            "shell_exec" to CommandToolBackend.BUILTIN_SHELL,
+            "python_exec" to CommandToolBackend.BUILTIN_PYTHON,
+            "termux_exec" to CommandToolBackend.TERMUX,
+            "ssh_exec" to CommandToolBackend.SSH,
+            "ssh_session_open" to CommandToolBackend.SSH,
+            "ssh_session_send" to CommandToolBackend.SSH,
+        )
+        ExecutionMode.entries.forEach { mode ->
+            commands.forEach { (tool, backend) ->
+                assertThat(CommandToolClassification.backendFor(tool)).isEqualTo(backend)
+                assertThat(ToolExecutionPolicy.requiresApproval(mode, tool, ToolRisk.PROCESS))
+                    .isEqualTo(mode == ExecutionMode.WORKSPACE)
+            }
+            ToolRisk.entries.forEach { risk ->
+                assertThat(ToolExecutionPolicy.requiresApproval(mode, "other", risk)).isEqualTo(risk == ToolRisk.SCHEDULE)
+            }
+            listOf("ssh_session_read", "write_file", "delete_file", "exec_js", "run_script", "python_sandbox", "mcp_demo", "web_fetch", "update_plan").forEach { tool ->
+                assertThat(CommandToolClassification.backendFor(tool)).isNull()
+                assertThat(ToolExecutionPolicy.requiresApproval(mode, tool, ToolRisk.UNKNOWN,
+                    """{"path":"/a","irreversible":true,"url":"https://example.com/?data=secret"}""")).isFalse()
+            }
+            listOf("schedule_create", "ssh_host_save", "ssh_host_delete", "ssh_host_install_key").forEach { tool ->
+                assertThat(ToolExecutionPolicy.requiresApproval(mode, tool, ToolRisk.UNKNOWN)).isTrue()
+            }
+            listOf("/skills/demo/SKILL.md", "/.agents/skills/demo/SKILL.md").forEach { path ->
+                assertThat(ToolExecutionPolicy.requiresApproval(mode, "write_file", ToolRisk.FILE_WRITE,
+                    """{"path":"$path"}""")).isTrue()
+            }
         }
     }
 }

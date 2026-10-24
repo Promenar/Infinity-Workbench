@@ -23,12 +23,39 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.junit.Test
 
-/** 子代理运行循环：受限工具集、继承父会话的执行模式与白名单、运行中审批、超时与取消。 */
+/** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
     private val read = tool("read_file", ToolRisk.SAFE_READ)
     private val shell = tool("shell_exec", ToolRisk.PROCESS)
     private val plan = tool("update_plan", ToolRisk.SESSION_STATE)
     private val agentTask = tool(SubagentLimits.TOOL_NAME, ToolRisk.SESSION_STATE)
+
+    @Test
+    fun `两档全部类别与生成链路审批一致且不读取记忆授权`() = runTest {
+        listOf("workspace", "full_access").forEach { mode ->
+            com.promenar.nexara.domain.tool.permissionPolicyCases.forEach { case ->
+                val broker = SubagentApprovalBroker()
+                val host = FakeHost(listOf(tool(case.tool, case.risk)))
+                val models = ScriptedModels(listOf(toolCall("c1", case.tool, case.arguments)), listOf(text("完成")))
+                val task = launch {
+                    val result = runner(models, host, broker).run(parent(), session(mode), "step", run(), null) { _, _ -> }
+                    assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+                }
+                runCurrent()
+                val needsApproval = case.alwaysApprove || case.command && mode == "workspace"
+                assertThat(broker.pending.value.size).isEqualTo(if (needsApproval) 1 else 0)
+                if (needsApproval) {
+                    assertThat(host.executed).isEmpty()
+                    broker.resolve(broker.pending.value.single().id, approved = true, remember = true)
+                }
+                task.join()
+                assertThat(host.executed.map { it.first }).containsExactly(case.tool)
+                assertThat(models.requests.first().messages.first().content).contains(
+                    if (mode == "workspace") "requires user approval" else "without per-command approval",
+                )
+            }
+        }
+    }
 
     @Test
     fun `工具集不含 agent_task 与会话状态工具，只读档只保留读取工具`() {
@@ -63,7 +90,7 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `全自动模式执行进程工具不出现审批`() = runTest {
+    fun `完全访问模式执行命令工具不出现审批`() = runTest {
         val broker = SubagentApprovalBroker()
         val host = FakeHost(listOf(shell))
         val models = ScriptedModels(listOf(toolCall("c1", "shell_exec", """{"command":"ls"}""")), listOf(text("done")))
@@ -76,7 +103,7 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `半自动模式需要授权时挂起等待审批，允许并记住写入父会话白名单`() = runTest {
+    fun `工作区模式逐条审批且记住标志不会产生授权`() = runTest {
         val broker = SubagentApprovalBroker()
         val host = FakeHost(listOf(shell))
         val models = ScriptedModels(listOf(toolCall("c1", "shell_exec", """{"command":"ls"}""")), listOf(text("done")))
@@ -96,7 +123,7 @@ class SubagentRunnerTest {
         broker.resolve(request.id, approved = true, remember = true)
         job.join()
 
-        assertThat(host.remembered).containsExactly(Triple("parent", "shell_exec", TARGET))
+        assertThat(host.remembered).isEmpty()
         val context = host.executed.single().second
         assertThat(context.isApprovalBoundExecution).isTrue()
         assertThat(context.approvedExecutionTarget).isEqualTo(TARGET)
@@ -104,22 +131,16 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `白名单已授权的目标直接执行，拒绝只拒绝该次调用`() = runTest {
+    fun `已有记忆授权不跳过审批且拒绝只影响当前调用`() = runTest {
         val broker = SubagentApprovalBroker()
-        val granted = FakeHost(listOf(shell), granted = true)
-        val first = runner(ScriptedModels(listOf(toolCall("c1", "shell_exec", "{}")), listOf(text("ok"))), granted, broker)
-            .run(parent(), session("semi"), "step", run(), null) { _, _ -> }
-        assertThat(first.status).isEqualTo(SubagentStatus.COMPLETED)
-        assertThat(granted.executed.single().second.approvedExecutionTarget).isEqualTo(TARGET)
-
-        val host = FakeHost(listOf(shell))
+        val host = FakeHost(listOf(shell), granted = true)
         val models = ScriptedModels(listOf(toolCall("c1", "shell_exec", "{}")), listOf(text("换了方式完成")))
         val job = launch {
-            val result = runner(models, host, broker).run(parent(), session("manual"), "step", run(), null) { _, _ -> }
+            val result = runner(models, host, broker).run(parent(), session("workspace"), "step", run(), null) { _, _ -> }
             assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
         }
         runCurrent()
-        broker.resolve(broker.pending.value.single().id, approved = false)
+        broker.resolve(broker.pending.value.single().id, approved = false, remember = true)
         job.join()
         assertThat(host.executed).isEmpty()
         assertThat(models.requests.last().messages.last().content).isEqualTo(SubagentRunner.DENIED)
@@ -197,7 +218,7 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `父会话中途改为手动模式后，后续调用立即需要审批`() = runTest {
+    fun `父会话切换到工作区后后续命令需要审批`() = runTest {
         val broker = SubagentApprovalBroker()
         val host = FakeHost(listOf(shell))
         var mode = "auto"
@@ -208,13 +229,15 @@ class SubagentRunnerTest {
         )
         val job = launch {
             runner(models, host, broker).run(parent(), { sessionOf(mode) }, "step", run(), null) { run, _ ->
-                // 第一次调用执行后，用户把会话改为手动模式。
+                // 第一次调用执行后，用户切换为工作区范围。
                 if (run.events.count { it.kind == SubagentEvent.Kind.TOOL_RESULT } == 1) mode = "manual"
             }
         }
         runCurrent()
         assertThat(host.executed).hasSize(1)
         assertThat(broker.pending.value).hasSize(1)
+        assertThat(models.requests[0].messages.first().content).contains("Current scope: Full access")
+        assertThat(models.requests[1].messages.first().content).contains("Current scope: Workspace")
         broker.resolve(broker.pending.value.single().id, approved = false)
         job.join()
         assertThat(host.executed).hasSize(1)
@@ -334,8 +357,8 @@ class SubagentRunnerTest {
             return tools
         }
         override suspend fun target(session: Session, tool: ProtocolTool, arguments: String) = if (tool.function.name == "shell_exec") shellTarget() else null
-        override suspend fun isGranted(sessionId: String, toolName: String, target: String) = granted
-        override suspend fun remember(sessionId: String, toolName: String, target: String) { remembered += Triple(sessionId, toolName, target) }
+        override suspend fun isGranted(sessionId: String, toolName: String, target: String): Boolean = error("不得读取记忆授权")
+        override suspend fun remember(sessionId: String, toolName: String, target: String) { error("不得保存记忆授权") }
         override fun preview(toolName: String, arguments: JsonObject) = previewText(toolName)
         override suspend fun execute(tool: ProtocolTool, arguments: JsonObject, context: SkillExecutionContext): SubagentToolOutcome {
             executed += tool.function.name to context

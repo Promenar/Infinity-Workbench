@@ -33,7 +33,7 @@ class SessionRepositoryExecutionModeTest {
     fun tearDown() = database.close()
 
     @Test
-    fun `partial update normalizes blank unknown and null execution mode to semi`() = runBlocking {
+    fun `partial update normalizes blank unknown and null execution mode to workspace`() = runBlocking {
         database.sessionDao().insert(
             SessionEntity(
                 id = "session",
@@ -46,7 +46,7 @@ class SessionRepositoryExecutionModeTest {
 
         listOf<Any?>("", "future-mode", null).forEach { raw ->
             repository.updatePartial("session", mapOf("executionMode" to raw))
-            assertThat(database.sessionDao().getById("session")!!.executionMode).isEqualTo("semi")
+            assertThat(database.sessionDao().getById("session")!!.executionMode).isEqualTo("workspace")
         }
     }
 }

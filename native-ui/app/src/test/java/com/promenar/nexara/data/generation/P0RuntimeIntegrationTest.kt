@@ -295,7 +295,13 @@ class P0RuntimeIntegrationTest {
 
     @Test
     fun `无 Usage 估算落库后审批恢复用相同用户消息累计 token 并触发收尾`() = runTest {
-        val fixture = fixture(mode = "manual")
+        val fixture = fixture(mode = "workspace")
+        fixture.rounds = { index ->
+            if (index == 1) listOf(
+                StreamChunk.ToolCallDelta("call-1", "write_file", """{"path":"/skills/demo/SKILL.md"}""", 0),
+                StreamChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call-1")),
+            ) else listOf(StreamChunk.TextDelta("任务完成"), StreamChunk.Completed(CompletionReason.END_TURN))
+        }
         ChatGenerationRunner(fixture.runtime()).run(fixture.request) {}
         assertThat(fixture.store.getSession("session")!!.loopStatus).isEqualTo(LoopStatus.WAITING_FOR_APPROVAL)
         assertThat(fixture.executedCalls).isEmpty()

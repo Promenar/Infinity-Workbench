@@ -44,9 +44,8 @@ class BuiltinSlashCommandResolverTest {
 
     @Test fun `mode 识别中英文模式名，缺少参数打开工具设置，未知参数拒绝`() {
         mapOf(
-            "auto" to ExecutionMode.AUTO, "AUTO" to ExecutionMode.AUTO, "自动" to ExecutionMode.AUTO,
-            "semi" to ExecutionMode.SEMI, "半自动" to ExecutionMode.SEMI,
-            "manual" to ExecutionMode.MANUAL, "手动" to ExecutionMode.MANUAL,
+            "full_access" to ExecutionMode.FULL_ACCESS, "FULL_ACCESS" to ExecutionMode.FULL_ACCESS, "完全访问" to ExecutionMode.FULL_ACCESS,
+            "full access" to ExecutionMode.FULL_ACCESS, "workspace" to ExecutionMode.WORKSPACE, "工作区" to ExecutionMode.WORKSPACE,
         ).forEach { (argument, mode) ->
             assertThat(resolve(BuiltinSlashCommand.MODE, argument)).isEqualTo(SlashCommandAction.SetExecutionMode(mode))
         }

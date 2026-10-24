@@ -401,7 +401,7 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun `记住目标只在当前精确调用批准后保存且重启保持`() = testScope.runTest {
+    fun `批准精确调用时忽略记住目标标志`() = testScope.runTest {
         val root = grantFiles.newFolder("grants")
         val grants = ToolAllowlistStore(root)
         approvalManager = ApprovalManager(
@@ -426,7 +426,7 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executed).containsExactly("first")
-        assertThat(ToolAllowlistStore(root).contains("write_file", target, "session:s1")).isTrue()
+        assertThat(ToolAllowlistStore(root).contains("write_file", target, "session:s1")).isFalse()
         assertThat(grants.contains("delete_file", target, "session:s1")).isFalse()
         assertThat(grants.contains("write_file", target, "session:s2")).isFalse()
         assertThat(store.getSession("s1")!!.approvalRequest!!.calls.single().toolCallId).isEqualTo("next")
@@ -465,22 +465,15 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun `授权写入失败会补偿已批准调用且不执行工具`() = testScope.runTest {
-        val invalidRoot = grantFiles.newFile("not-a-directory")
-        val grants = ToolAllowlistStore(invalidRoot)
+    fun `审批不访问不可写的旧授权存储`() = testScope.runTest {
+        val grants = ToolAllowlistStore(grantFiles.newFile("not-a-directory"))
         approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolAllowlistStore = grants,
-            resolveAllowlistScope = { id, target -> com.promenar.nexara.data.repository.ToolAllowlistScopes.resolve(target, id, com.promenar.nexara.data.workspace.SessionWorkspace.Private) })
+            resolveAllowlistScope = { _, _ -> error("不得查询记忆授权作用域") })
         val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
         var executed = false
         approvalManager.setCallbacks(null) { _, _, _ -> executed = true }
-
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
-
-        assertThat(executed).isFalse()
-        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.FAILED)
-        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
-        assertThat(store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL })
-            .hasSize(1)
+        assertThat(executed).isTrue()
     }
 
     @Test
@@ -600,7 +593,7 @@ class ApprovalManagerTest {
         approvalManager.resumeGeneration("s1", request, rememberTarget = true)
 
         assertThat(executedMessages).containsExactly("m1")
-        assertThat(grants.contains("write_file", target, "session:s1")).isTrue()
+        assertThat(grants.contains("write_file", target, "session:s1")).isFalse()
         assertThat(grants.contains("write_file", """["path","/old.md"]""", "session:s1")).isFalse()
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "shared-call")]).isEqualTo(ToolLedgerState.SUCCEEDED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
@@ -644,7 +637,7 @@ class ApprovalManagerTest {
 
         assertThat(executed).containsExactly("ssh-send")
         assertThat(ledger.states[ToolExecutionKey("s1", "m1", "ssh-send")]).isEqualTo(ToolLedgerState.SUCCEEDED)
-        assertThat(grants.contains("ssh_session_send", initialTarget!!, null)).isTrue()
+        assertThat(grants.contains("ssh_session_send", initialTarget!!, null)).isFalse()
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
     }
 
@@ -742,7 +735,7 @@ class ApprovalManagerTest {
         approvalManager.setExecutionMode("s1", "manual")
 
         val session = store.getSession("s1")!!
-        assertThat(session.executionMode).isEqualTo("manual")
+        assertThat(session.executionMode).isEqualTo("workspace")
     }
 
     @Test

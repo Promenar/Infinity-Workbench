@@ -18,9 +18,13 @@ enum class ToolRisk {
 }
 
 object ToolExecutionPolicy {
-    fun requiresApproval(mode: ExecutionMode, risk: ToolRisk): Boolean = risk == ToolRisk.SCHEDULE || when (mode) {
-        ExecutionMode.AUTO -> false
-        ExecutionMode.MANUAL -> true
-        ExecutionMode.SEMI -> risk != ToolRisk.SAFE_READ && risk != ToolRisk.SESSION_STATE
-    }
+    fun requiresApproval(
+        mode: ExecutionMode,
+        toolName: String,
+        risk: ToolRisk,
+        arguments: String = "{}",
+        resolvedTarget: String? = null,
+    ): Boolean = risk == ToolRisk.SCHEDULE || toolName == "schedule_create" ||
+        ToolArgumentApprovalRules.requiresExplicitApproval(toolName, arguments, resolvedTarget) ||
+        (mode == ExecutionMode.WORKSPACE && CommandToolClassification.backendFor(toolName) != null)
 }

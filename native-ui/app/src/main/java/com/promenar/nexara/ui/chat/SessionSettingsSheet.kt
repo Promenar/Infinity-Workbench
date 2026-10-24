@@ -439,7 +439,7 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
     val mcpConnectionRevision = mcpSettings?.revision?.collectAsStateWithLifecycle()?.value
     SessionToolsContent(
         options = session?.options ?: com.promenar.nexara.data.model.SessionOptions(),
-        executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi",
+        executionMode = session?.executionMode?.ifEmpty { "workspace" } ?: "workspace",
         isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true,
         onToolToggle = chatViewModel::toggleTool, onExecutionModeChange = chatViewModel::updateExecutionMode,
         skillsSection = { SessionSkillsSections(skillsState, skillActions) },
@@ -487,23 +487,16 @@ private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexar
 @Composable
 internal fun SessionToolsContent(
     options: com.promenar.nexara.data.model.SessionOptions = com.promenar.nexara.data.model.SessionOptions(),
-    executionMode: String = "semi",
+    executionMode: String = "workspace",
     isGeminiModel: Boolean = false,
     onToolToggle: (String, Boolean) -> Unit = { _, _ -> },
     onExecutionModeChange: (String) -> Unit = {},
     skillsSection: @Composable () -> Unit = {},
     additionalSections: @Composable () -> Unit = {},
 ) {
-    val selectedExecutionMode = when (executionMode) {
-        "auto" -> ExecutionMode.AUTO
-        "manual" -> ExecutionMode.MANUAL
-        else -> ExecutionMode.SEMI
-    }
-    val modeDesc = stringResource(when (selectedExecutionMode) {
-        ExecutionMode.AUTO -> R.string.sheet_execution_mode_auto
-        ExecutionMode.MANUAL -> R.string.sheet_execution_mode_manual
-        ExecutionMode.SEMI -> R.string.sheet_execution_mode_semi
-    })
+    val selectedExecutionMode = ExecutionMode.valueOf(
+        com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(executionMode).name,
+    )
     var showModePicker by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -540,13 +533,11 @@ internal fun SessionToolsContent(
     }
     NexaraBottomSheet(show = showModePicker, onDismiss = { showModePicker = false },
         title = stringResource(R.string.sheet_tool_execution_mode), scrollContent = true) {
-        Text(modeDesc, style = MaterialTheme.typography.bodySmall.forReading(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         ExecutionMode.entries.forEach { mode ->
             val label = stringResource(mode.labelRes)
             NexaraSettingsItem(
                 horizontalPadding = 0.dp,
-                title = if (mode == ExecutionMode.SEMI) stringResource(R.string.numeric_default_value, label) else label,
+                title = if (mode == ExecutionMode.WORKSPACE) stringResource(R.string.numeric_default_value, label) else label,
                 role = Role.RadioButton,
                 selected = mode == selectedExecutionMode,
                 modifier = Modifier.testTag("session_execution_mode_${mode.name.lowercase()}"),

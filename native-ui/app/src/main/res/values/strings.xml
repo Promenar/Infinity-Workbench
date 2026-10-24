@@ -31,9 +31,6 @@
     <string name="common_color_custom">Custom</string>
 
     <!-- ExecutionMode -->
-    <string name="common_mode_auto">Auto</string>
-    <string name="common_mode_semi">Semi</string>
-    <string name="common_mode_manual">Manual</string>
 
     <!-- ConfirmDialog -->
     <string name="common_btn_confirm">Confirm</string>
@@ -647,9 +644,6 @@
     <string name="sheet_tool_custom_unsandboxed">Custom scripts aren\'t available yet.</string>
     <string name="sheet_tool_user_skills">User Skills</string>
     <string name="sheet_tool_execution_mode">Execution Mode</string>
-    <string name="sheet_execution_mode_auto">Auto: All tools run automatically</string>
-    <string name="sheet_execution_mode_semi">Semi: File writes and high-risk tools need approval</string>
-    <string name="sheet_execution_mode_manual">Manual: All tools need approval</string>
     <string name="sheet_tool_code_analysis">Code Analysis</string>
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
@@ -1765,4 +1759,6 @@
     <string name="tailscale_allowlist_all">All devices</string>
     <string name="tailscale_allowlist_format">One entry per line or comma-separated: device name, MagicDNS name or tailnet IP.</string>
     <string name="tailscale_auth_key_hint">Paste an auth key starting with tskey-</string>
+    <string name="common_mode_workspace">Workspace</string>
+    <string name="common_mode_full_access">Full access</string>
 </resources>

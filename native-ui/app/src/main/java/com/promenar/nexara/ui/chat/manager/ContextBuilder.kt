@@ -448,6 +448,11 @@ class ContextBuilder(
             sb.appendLine(customPrompt.trim())
         }
 
+        sb.appendLine()
+        sb.append(SystemPromptSections.permissions(
+            com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode),
+        ))
+
         // 3. 工具与工作区运行时契约
         val toolGuidance = when (val names = params.availableToolNames) {
             null -> if (session.options.toolsEnabled) SystemPromptSections.toolGuidance(emptySet(), generic = true) else ""

@@ -43,7 +43,7 @@ class SessionManagerTest {
         assertThat(result!!.title).isEqualTo("Test")
         assertThat(result.agentId).isEqualTo("a1")
         assertThat(result.loopStatus).isEqualTo(LoopStatus.COMPLETED)
-        assertThat(result.executionMode).isEqualTo("semi")
+        assertThat(result.executionMode).isEqualTo("workspace")
     }
 
     @Test
@@ -58,8 +58,8 @@ class SessionManagerTest {
 
         manager.addSession(Session(id = "unknown-mode", agentId = "a1", executionMode = "future"))
 
-        assertThat(persisted!!.executionMode).isEqualTo("semi")
-        assertThat(manager.getSession("unknown-mode")!!.executionMode).isEqualTo("semi")
+        assertThat(persisted!!.executionMode).isEqualTo("workspace")
+        assertThat(manager.getSession("unknown-mode")!!.executionMode).isEqualTo("workspace")
     }
 
     @Test
@@ -79,9 +79,9 @@ class SessionManagerTest {
         manager.updateSessionExecutionMode("mode-session", "invalid")
 
         assertThat(updates.map { it["executionMode"] })
-            .containsExactly("auto", "manual", "semi", "semi")
+            .containsExactly("full_access", "workspace", "workspace", "workspace")
             .inOrder()
-        assertThat(manager.getSession("mode-session")!!.executionMode).isEqualTo("semi")
+        assertThat(manager.getSession("mode-session")!!.executionMode).isEqualTo("workspace")
     }
 
     @Test

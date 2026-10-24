@@ -66,7 +66,7 @@ class SessionListViewModelTest {
         val agent = Agent(
             id = "a1", name = "Agent", modelId = "provider::gpt-4",
             temperature = 0.5, topP = 0.8, maxTokens = 2048,
-            executionMode = ExecutionMode.MANUAL,
+            executionMode = ExecutionMode.WORKSPACE,
             skills = listOf("read_file", "calculator"),
             mcpServerIds = listOf("server-a", "server-b"),
         )
@@ -83,7 +83,7 @@ class SessionListViewModelTest {
         assertThat(session.modelId).isEqualTo("provider::gpt-4")
         // 会话不复制助手参数，生成时按 会话 → 助手 → 模型默认 解析。
         assertThat(session.inferenceParams).isNull()
-        assertThat(session.executionMode).isEqualTo("manual")
+        assertThat(session.executionMode).isEqualTo("workspace")
         assertThat(session.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
         assertThat(session.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
@@ -101,7 +101,7 @@ class SessionListViewModelTest {
         val session = store.get().sessions.first()
         assertThat(session.agentId).isEqualTo("missing")
         assertThat(session.modelId).isNull()
-        assertThat(session.executionMode).isEqualTo("semi")
+        assertThat(session.executionMode).isEqualTo("workspace")
         assertThat(session.activeSkillIds).isEmpty()
         assertThat(session.activeMcpServerIds).isEmpty()
     }

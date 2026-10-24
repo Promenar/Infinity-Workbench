@@ -86,7 +86,7 @@ class AgentMapperTest {
         val entity = createEntity()
         val agent = AgentMapper.toDomain(entity)
 
-        assertThat(agent.executionMode).isEqualTo(ExecutionMode.MANUAL)
+        assertThat(agent.executionMode).isEqualTo(ExecutionMode.WORKSPACE)
         assertThat(agent.skills).containsExactly("read_file", "calculator").inOrder()
         assertThat(agent.mcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
@@ -98,7 +98,7 @@ class AgentMapperTest {
             skillIds = "not-json",
             mcpServerIds = "{\"wrong\":true}",
         )
-        assertThat(AgentMapper.toDomain(entity).executionMode).isEqualTo(ExecutionMode.SEMI)
+        assertThat(AgentMapper.toDomain(entity).executionMode).isEqualTo(ExecutionMode.WORKSPACE)
         assertThat(AgentMapper.toDomain(entity).skills).isEmpty()
         assertThat(AgentMapper.toDomain(entity).mcpServerIds).isEmpty()
     }
@@ -136,7 +136,7 @@ class AgentMapperTest {
             temperature = 0.5,
             topP = 0.8,
             maxTokens = 2048,
-            executionMode = ExecutionMode.AUTO,
+            executionMode = ExecutionMode.FULL_ACCESS,
             skills = listOf("read_file", "calculator"),
             mcpServerIds = listOf("server-a", "server-b"),
             createdAt = 42L
@@ -151,7 +151,7 @@ class AgentMapperTest {
         assertThat(entity.temperature).isEqualTo(0.5)
         assertThat(entity.top_p).isEqualTo(0.8)
         assertThat(entity.max_tokens).isEqualTo(2048)
-        assertThat(entity.executionMode).isEqualTo("auto")
+        assertThat(entity.executionMode).isEqualTo("full_access")
         assertThat(entity.skillIds).isEqualTo("[\"read_file\",\"calculator\"]")
         assertThat(entity.mcpServerIds).isEqualTo("[\"server-a\",\"server-b\"]")
         assertThat(entity.createdAt).isEqualTo(42L)

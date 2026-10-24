@@ -18,7 +18,7 @@ internal data class AgentReachState(
     val workspace: SessionWorkspaceUi = SessionWorkspaceUi.Loading,
     val mounts: List<ReachMount> = emptyList(),
     val backends: List<ReachBackend> = emptyList(),
-    val executionMode: ExecutionMode = ExecutionMode.SEMI,
+    val executionMode: ExecutionMode = ExecutionMode.WORKSPACE,
     /** 对本会话生效的“始终允许”目标数；尚未读取时为 null。 */
     val alwaysAllowedCount: Int? = null,
     /** 网络访问总表；尚未取得时为 null。 */
