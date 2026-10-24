@@ -24,6 +24,12 @@ interface ExternalFolderBackend {
     ): ExternalFolderEntry
     suspend fun createDirectory(path: String): ExternalFolderEntry
     suspend fun delete(path: String, expectedSha256: String? = null)
+
+    /** 写入树操作前校验整个来源；真实路径实现还检查浏览列表隐藏的链接与受保护条目。 */
+    suspend fun validateTree(path: String) {
+        val entry = stat(path) ?: throw ExternalFolderException("NOT_FOUND", "源条目不存在")
+        if (entry.isDirectory) list(path).forEach { validateTree(it.path) }
+    }
 }
 
 class ExternalFolderException(val code: String, override val message: String) : Exception(message)

@@ -288,6 +288,9 @@ class ExternalFolderManager(
 
     override fun backend(sessionId: String, mountIds: Map<String, String>): ExternalFolderBackend = object : ExternalFolderBackend {
         private val bindings = mountIds.toMutableMap()
+        override suspend fun validateTree(path: String) = withContext(Dispatchers.IO) {
+            access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.validateTree(relative) }
+        }
         override suspend fun stat(path: String) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.stat(relative)?.copy(path = path) }
         }

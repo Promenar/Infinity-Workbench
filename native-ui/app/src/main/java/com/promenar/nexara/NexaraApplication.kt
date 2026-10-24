@@ -473,11 +473,32 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private val workspaceFileMutationRecoveryCoordinator by lazy {
         com.promenar.nexara.data.repository.WorkspaceFileMutationRecoveryCoordinator(database)
     }
-    private val sessionDeletionCoordinator by lazy {
-        val targetResolver = com.promenar.nexara.data.session.RoomSessionDeletionTargetResolver(
+    private val sessionDeletionTargetResolver by lazy {
+        com.promenar.nexara.data.session.RoomSessionDeletionTargetResolver(
             database,
             sessionWorkspaceParent,
         )
+    }
+    private val privateWorkspaceFileRetention by lazy {
+        com.promenar.nexara.data.workspace.PrivateWorkspaceFileRetention(
+            sessionWorkspaceResolver.projectsRoot, database.workspaceDao(),
+        )
+    }
+
+    suspend fun privateWorkspaceSummary(sessionId: String): com.promenar.nexara.domain.workspace.PrivateWorkspaceSummary? =
+        withContext(Dispatchers.IO) {
+            val session = database.sessionDao().getById(sessionId) ?: return@withContext null
+            if (session.workspaceId != null || session.workspaceRootUuid.isNullOrBlank() || session.workspacePath.isNullOrBlank()) {
+                return@withContext null
+            }
+            if (!java.nio.file.Files.exists(File(session.workspacePath).toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                return@withContext null
+            }
+            val target = sessionDeletionTargetResolver.resolve(sessionId) ?: return@withContext null
+            privateWorkspaceFileRetention.summary(target.physicalRoot)
+        }
+
+    private val sessionDeletionCoordinator by lazy {
         val journal = com.promenar.nexara.data.session.RoomSessionWorkspaceMutationJournal(
             database,
             sessionWorkspaceParent,
@@ -486,7 +507,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.data.session.SessionDeletionCoordinator(
             gate = sessionExecutionGate,
             recoverSessionDeletion = workspaceMutationRecoveryCoordinator::recoverSessionOrThrow,
-            resolveTarget = targetResolver::resolve,
+            resolveTarget = sessionDeletionTargetResolver::resolve,
             isDatabaseOnlySession = { sessionId ->
                 val session = database.sessionDao().getById(sessionId)
                 if (session == null) {
@@ -535,6 +556,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             },
             journal = journal,
             deleteDatabase = transaction::delete,
+            deleteDatabaseKeepingFiles = { target, operationId, retained ->
+                transaction.deleteKeepingFiles(target, operationId, retained.register)
+            },
             afterDatabaseCommit = { target ->
                 pendingDocumentIndexCoordinator.clearCommitted(
                     target.workspaceRootUuid,
@@ -559,12 +583,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     deleteTriggerInteraction = { generationInteractions.clearHeadless(sessionId) },
                 )
             },
+            retainWorkspace = { target ->
+                withContext(Dispatchers.IO) {
+                    val session = checkNotNull(database.sessionDao().getById(target.sessionId))
+                    if (session.workspaceId == null) privateWorkspaceFileRetention.prepare(target.physicalRoot, session.title)
+                    else null
+                }
+            },
         )
     }
 
-    suspend fun deleteSessionRecoverably(sessionId: String):
+    suspend fun deleteSessionRecoverably(sessionId: String, keepFiles: Boolean = false):
         com.promenar.nexara.data.session.SessionDeletionResult = try {
-        sessionDeletionCoordinator.delete(sessionId)
+        withContext(Dispatchers.IO) { sessionDeletionCoordinator.delete(sessionId, keepFiles) }
     } finally {
         withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
             scheduledTaskController.resumeSchedulingForSession(sessionId)
@@ -1122,6 +1153,26 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             workspaces = sessionWorkspaceResolver,
             userSkillsDirectory = skillCatalog.userRoot,
         )
+    }
+
+    private val directoryWorkspaceBusyChecks = com.promenar.nexara.data.workspace.DirectoryWorkspaceBusyChecks()
+
+    fun registerDirectoryWorkspaceBusyCheck(check: (String) -> Boolean): AutoCloseable =
+        directoryWorkspaceBusyChecks.register(check)
+
+    val directoryWorkspaceFiles: com.promenar.nexara.domain.workspace.DirectoryWorkspaceFiles by lazy {
+        com.promenar.nexara.data.workspace.DefaultDirectoryWorkspaceFiles(externalFolderManager, sessionExecutionGate) { sessionId ->
+            val phase = generationCoordinator.observe(sessionId).value?.phase
+            val running = phase != null && phase !in setOf(
+                com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
+                com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+                com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+                com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+            )
+            running || directoryWorkspaceBusyChecks.isBusy(sessionId) ||
+                chatStore.getSession(sessionId)?.approvalRequest != null ||
+                database.sessionDao().getById(sessionId)?.approvalRequest != null
+        }
     }
 
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {

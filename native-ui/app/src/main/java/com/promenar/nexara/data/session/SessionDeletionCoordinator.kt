@@ -15,6 +15,7 @@ data class SessionDeletionTarget(
 
 sealed interface SessionDeletionResult {
     data object Deleted : SessionDeletionResult
+    data class DeletedKeepingFiles(val workspaceId: String, val displayName: String) : SessionDeletionResult
     data object AlreadyDeleted : SessionDeletionResult
     data class Failed(val error: SessionDeletionError) : SessionDeletionResult
 }
@@ -64,8 +65,13 @@ class SessionDeletionCoordinator(
     private val deleteDatabase: suspend (SessionDeletionTarget, operationId: String) -> Unit,
     private val afterDatabaseCommit: suspend (SessionDeletionTarget) -> Unit = {},
     private val cleanupSessionData: suspend (String) -> Unit = {},
+    private val retainWorkspace: suspend (SessionDeletionTarget) -> com.promenar.nexara.data.workspace.RetainedSessionWorkspace? = { null },
+    private val deleteDatabaseKeepingFiles: suspend (SessionDeletionTarget, String, com.promenar.nexara.data.workspace.RetainedSessionWorkspace) -> Unit = { target, operationId, retained ->
+        retained.register()
+        deleteDatabase(target, operationId)
+    },
 ) {
-    suspend fun delete(sessionId: String): SessionDeletionResult = try {
+    suspend fun delete(sessionId: String, keepFiles: Boolean = false): SessionDeletionResult = try {
         gate.withSessionDeletionSequence(sessionId) {
             try {
                 recoverSessionDeletion(sessionId)
@@ -74,7 +80,7 @@ class SessionDeletionCoordinator(
             } catch (failure: Throwable) {
                 return@withSessionDeletionSequence failed(SessionDeletionErrorCode.WORKSPACE, failure)
             }
-            deleteAfterRecovery(sessionId)
+            deleteAfterRecovery(sessionId, keepFiles)
         }
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -82,7 +88,7 @@ class SessionDeletionCoordinator(
         failed(SessionDeletionErrorCode.EXECUTION, failure)
     }
 
-    private suspend fun deleteAfterRecovery(sessionId: String): SessionDeletionResult {
+    private suspend fun deleteAfterRecovery(sessionId: String, keepFiles: Boolean): SessionDeletionResult {
         val databaseOnly = try {
             isDatabaseOnlySession(sessionId)
         } catch (cancelled: CancellationException) {
@@ -152,21 +158,39 @@ class SessionDeletionCoordinator(
                 return@withDeletion failed(SessionDeletionErrorCode.VECTOR, failure)
             }
             var staged: StagedSessionWorkspaceMutation? = null
+            var retained: com.promenar.nexara.data.workspace.RetainedSessionWorkspace? = null
+            var databaseCommitted = false
             try {
                 barrier.awaitReady()
-                staged = journal.stage(target)
-                deleteDatabase(target, staged.operationId)
+                val prepareAndDelete: suspend () -> Unit = {
+                    if (keepFiles) retained = retainWorkspace(target)
+                    staged = journal.stage(target)
+                    val kept = retained
+                    if (kept == null) deleteDatabase(target, checkNotNull(staged).operationId)
+                    else deleteDatabaseKeepingFiles(target, checkNotNull(staged).operationId, kept)
+                    databaseCommitted = true
+                }
+                if (keepFiles) {
+                    val failure = withContext(NonCancellable) { runCatching { prepareAndDelete() }.exceptionOrNull() }
+                    if (failure != null) throw failure
+                } else prepareAndDelete()
             } catch (failure: Throwable) {
                 withContext(NonCancellable) {
-                    staged?.let { mutation ->
-                        runCatching { journal.rollback(mutation) }
-                            .exceptionOrNull()?.let(failure::addSuppressed)
+                    if (!databaseCommitted) {
+                        var restored = staged == null
+                        staged?.let { mutation ->
+                            val rollback = runCatching { journal.rollback(mutation) }
+                            restored = rollback.isSuccess
+                            rollback.exceptionOrNull()?.let(failure::addSuppressed)
+                        }
+                        runCatching { barrier.abort() }.exceptionOrNull()?.let(failure::addSuppressed)
+                        // journal 拒绝回滚时可能已经提交；保留副本避免恢复收尾后失去文件。
+                        if (restored) retained?.let { copy -> runCatching { copy.rollback() }.exceptionOrNull()?.let(failure::addSuppressed) }
                     }
-                    runCatching { barrier.abort() }.exceptionOrNull()?.let(failure::addSuppressed)
                 }
                 if (failure is CancellationException) throw failure
                 return@withDeletion failed(
-                    if (staged == null) SessionDeletionErrorCode.WORKSPACE else SessionDeletionErrorCode.DATABASE,
+                    if (keepFiles || staged == null) SessionDeletionErrorCode.WORKSPACE else SessionDeletionErrorCode.DATABASE,
                     failure,
                 )
             }
@@ -188,7 +212,8 @@ class SessionDeletionCoordinator(
             } else if (cleanupFailure != null) {
                 failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
             } else {
-                SessionDeletionResult.Deleted
+                retained?.let { SessionDeletionResult.DeletedKeepingFiles(it.workspaceId, it.displayName) }
+                    ?: SessionDeletionResult.Deleted
             }
             }
         } catch (cancelled: CancellationException) {

@@ -15,8 +15,25 @@ import com.promenar.nexara.ui.chat.ChatStore
 class SessionManager(
     private val store: ChatStore,
     private val sessionRepository: ISessionRepository,
-    private val coordinatedDelete: (suspend (String) -> SessionDeletionResult)? = null,
+    private val coordinatedDelete: (suspend (String, Boolean) -> SessionDeletionResult)? = null,
 ) {
+    constructor(
+        store: ChatStore,
+        sessionRepository: ISessionRepository,
+        coordinatedDelete: (suspend (String) -> SessionDeletionResult)?,
+    ) : this(store, sessionRepository, adaptDelete(coordinatedDelete))
+
+    companion object {
+        private fun adaptDelete(delete: (suspend (String) -> SessionDeletionResult)?):
+            (suspend (String, Boolean) -> SessionDeletionResult)? {
+            if (delete == null) return null
+            return { id, keepFiles ->
+                check(!keepFiles) { "保留会话文件需要支持保留参数的删除协调器" }
+                delete(id)
+            }
+        }
+    }
+
     suspend fun addSession(session: Session) {
         val enrichedSession = session.copy(
             executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(session.executionMode)),
@@ -63,15 +80,21 @@ class SessionManager(
             }
         }
 
-    suspend fun deleteSession(id: String) {
-        when (val result = coordinatedDelete?.invoke(id)) {
-            null -> sessionRepository.delete(id)
+    suspend fun deleteSession(id: String, keepFiles: Boolean = false): SessionDeletionResult {
+        val result = coordinatedDelete?.invoke(id, keepFiles) ?: run {
+            check(!keepFiles) { "保留会话文件需要删除协调器" }
+            sessionRepository.delete(id)
+            SessionDeletionResult.Deleted
+        }
+        when (result) {
             SessionDeletionResult.Deleted,
             SessionDeletionResult.AlreadyDeleted -> Unit
+            is SessionDeletionResult.DeletedKeepingFiles -> Unit
             is SessionDeletionResult.Failed -> throw SessionDeletionFailedException(result.error)
         }
 
         store.removeSession(id)
+        return result
     }
 
     fun getSession(id: String): Session? {

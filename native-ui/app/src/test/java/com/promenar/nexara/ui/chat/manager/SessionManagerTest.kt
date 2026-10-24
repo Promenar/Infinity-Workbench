@@ -189,7 +189,7 @@ class SessionManagerTest {
     fun `deleteSession 协调删除失败时保留内存会话并暴露可重试错误`() = testScope.runTest {
         sessionManager.addSession(Session(id = "s1", agentId = "a1"))
         val failure = IllegalStateException("workspace conflict")
-        val manager = SessionManager(store, stubSessionRepo) {
+        val manager = SessionManager(store, stubSessionRepo) { _, _ ->
             com.promenar.nexara.data.session.SessionDeletionResult.Failed(
                 com.promenar.nexara.data.session.SessionDeletionError(
                     com.promenar.nexara.data.session.SessionDeletionErrorCode.WORKSPACE,
@@ -214,6 +214,19 @@ class SessionManagerTest {
         advanceUntilIdle()
 
         assertThat(sessionManager.getSession("s1")).isNull()
+    }
+
+    @Test
+    fun `deleteSession 透传保留参数并返回显示名`() = testScope.runTest {
+        sessionManager.addSession(Session(id = "s1", agentId = "a1"))
+        val kept = com.promenar.nexara.data.session.SessionDeletionResult.DeletedKeepingFiles("workspace", "会话文件")
+        val manager = SessionManager(store, stubSessionRepo) { id, keepFiles ->
+            assertThat(id).isEqualTo("s1")
+            assertThat(keepFiles).isTrue()
+            kept
+        }
+        assertThat(manager.deleteSession("s1", keepFiles = true)).isEqualTo(kept)
+        assertThat(manager.getSession("s1")).isNull()
     }
 
     @Test

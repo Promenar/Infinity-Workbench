@@ -166,6 +166,13 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
+    override suspend fun validateTree(path: String) = io {
+        val normalized = mutationPath(path)
+        withRoot { root ->
+            withParent(root, normalized) { parent, name -> preflightDelete(parent, name, normalized) }
+        }
+    }
+
     private suspend fun publishNew(parent: BoundRealPathDirectory, temporary: String, name: String): String {
         val sourceId = parent.stat(temporary)?.objectId ?: fail("NOT_FOUND", "发布源文档不存在")
         if (parent.linkNew(temporary, name)) return sourceId

@@ -11,6 +11,13 @@ import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
 
 class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
+    suspend fun deleteKeepingFiles(target: SessionDeletionTarget, operationId: String, register: suspend () -> Unit) {
+        database.withTransaction {
+            register()
+            delete(target, operationId)
+        }
+    }
+
     suspend fun deleteWithoutWorkspace(sessionId: String): Boolean = database.withTransaction {
         val dao = database.sessionDeletionDao()
         dao.deleteAttachments(sessionId)

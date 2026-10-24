@@ -73,7 +73,7 @@ class DefaultGenerationCoordinator(
         return try {
             val gate = executionGate
             if (gate == null) startAdmitted(request)
-            else gate.withNewSessionAdmission(request.sessionId) { startAdmitted(request) }
+            else gate.withSessionMutation(request.sessionId) { startAdmitted(request) }
         } catch (failure: com.promenar.nexara.data.session.SessionDeletingException) {
             deletionRejected(failure)
         }

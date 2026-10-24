@@ -58,7 +58,11 @@ class RoomSessionDeletionTransactionTest {
             ),
         )
 
-        RoomSessionDeletionTransaction(database).delete(target(), "op")
+        val kept = com.promenar.nexara.data.local.db.entity.WorkspaceEntity("kept", "project", "保留文件", "session-20261024-0809", 1)
+        RoomSessionDeletionTransaction(database).deleteKeepingFiles(target(), "op") {
+            database.workspaceDao().insert(kept)
+        }
+        assertThat(database.workspaceDao().getById("kept")).isEqualTo(kept)
 
         listOf(
             "sessions", "messages", "attachments", "vectors", "vectors_fts",
@@ -101,6 +105,20 @@ class RoomSessionDeletionTransactionTest {
         assertThat(count("sessions")).isEqualTo(1)
         assertThat(count("workspace_files")).isEqualTo(2)
         assertThat(count("tool_execution_ledger")).isEqualTo(1)
+    }
+
+    @Test
+    fun `保留登记与删除数据库事务一起回滚`() = runBlocking {
+        seedAllRelations()
+        val kept = com.promenar.nexara.data.local.db.entity.WorkspaceEntity("kept", "project", "保留文件", "session-20261024-0809", 1)
+        val failure = runCatching {
+            RoomSessionDeletionTransaction(database).deleteKeepingFiles(target(), "missing-op") {
+                database.workspaceDao().insert(kept)
+            }
+        }.exceptionOrNull()
+        assertThat(failure).isNotNull()
+        assertThat(database.workspaceDao().getById("kept")).isNull()
+        assertThat(database.sessionDao().getById(SESSION)).isNotNull()
     }
 
     @Test

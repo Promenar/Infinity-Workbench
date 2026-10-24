@@ -25,6 +25,7 @@ class SessionExecutionGate {
     )
 
     private val sessionLocks = ConcurrentHashMap<String, Mutex>()
+    private val mutationLocks = ConcurrentHashMap<String, Mutex>()
     private val deletionSequenceLocks = ConcurrentHashMap<String, DeletionSequenceLock>()
     private val stateMutex = Mutex()
     private val deletingSessions = ConcurrentHashMap.newKeySet<String>()
@@ -35,6 +36,12 @@ class SessionExecutionGate {
 
     suspend fun <T> withSessionAdmission(sessionId: String, block: suspend () -> T): T =
         withAdmission(setOf(requireIdentifier(sessionId, "sessionId")), emptySet(), block = block)
+
+    /** 目录文件操作与生成启动串行；生成启动只持有至任务登记，后续由忙碌状态拒绝文件操作。 */
+    suspend fun <T> withSessionMutation(sessionId: String, block: suspend () -> T): T =
+        mutationLocks.getOrPut(requireIdentifier(sessionId, "sessionId")) { Mutex() }.withLock {
+            withNewSessionAdmission(sessionId, block)
+        }
 
     /** 新业务入口即使嵌套在旧租约中，也必须重新服从删除 tombstone。 */
     suspend fun <T> withNewSessionAdmission(sessionId: String, block: suspend () -> T): T =
