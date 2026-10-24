@@ -78,6 +78,8 @@ import com.promenar.nexara.ui.chat.components.WorkspaceFolderBrowser
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerWorkspaceMode
+import com.promenar.nexara.ui.chat.components.DirectoryFileActions
+import com.promenar.nexara.ui.chat.components.DirectoryRecycleList
 import com.promenar.nexara.ui.chat.components.DirectoryWorkspaceBrowser
 import com.promenar.nexara.ui.chat.components.ExternalFoldersPanel
 import com.promenar.nexara.ui.chat.components.rememberWorkspaceMediaOpener
@@ -173,7 +175,6 @@ fun ResourceExplorerSheet(
                 onOpenGitPanel = { showGitPanel = true },
                 onOpenReach = { showReach = true },
                 onChooseWorkspace = { pickingWorkspace = true },
-                onUsePrivateWorkspace = { chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched) },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onImportFiles = {
                     filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray())
@@ -197,6 +198,19 @@ fun ResourceExplorerSheet(
                         onRefresh = viewModel::refreshDirectory,
                         readFile = viewModel::readDirectoryFile,
                         onOpenMedia = openMedia?.let { open -> { entry -> open(entry.path) } },
+                        fileActions = remember(viewModel) {
+                            DirectoryFileActions(
+                                onToggleSelect = viewModel::toggleDirectorySelection,
+                                onClearSelection = viewModel::clearDirectorySelection,
+                                onCopy = viewModel::copyDirectorySelection,
+                                onPaste = viewModel::pasteDirectoryClipboard,
+                                onCancelClipboard = viewModel::clearDirectoryClipboard,
+                                onDelete = viewModel::deleteDirectorySelection,
+                                onCreateFolder = viewModel::createDirectoryFolder,
+                                onRename = viewModel::renameDirectoryEntry,
+                                onDismissOutcome = viewModel::dismissDirectoryOutcome,
+                            )
+                        },
                         rootHeader = {
                             // 目录工作区下 /mnt 挂载仍对 Agent 生效，其回收区也承接目录内被删除文件的备份。
                             externalFolderManager?.let { manager ->
@@ -234,6 +248,13 @@ fun ResourceExplorerSheet(
                     onClearOperationState = viewModel::clearRecycleOperationState,
                 )
             },
+            directoryRecycleContent = {
+                if (externalFolderManager != null && workspaceMode is ResourceExplorerWorkspaceMode.Directory) {
+                    DirectoryRecycleList(sessionId, externalFolderManager, onRestored = viewModel::refreshDirectory)
+                } else {
+                    DirectoryRecycleInfo()
+                }
+            },
         )
     }
     WorkspacePickerSheet(
@@ -243,6 +264,10 @@ fun ResourceExplorerSheet(
         onPicked = { picked ->
             pickingWorkspace = false
             chatViewModel.switchSessionWorkspace(picked.id, onWorkspaceSwitched)
+        },
+        onPickPrivate = {
+            pickingWorkspace = false
+            if (chatState.session?.workspaceId != null) chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched)
         },
     )
     if (showReach) {
@@ -302,7 +327,6 @@ internal data class ResourceExplorerSheetActions(
     val onRetryLoad: () -> Unit = {},
     val onOpenGitPanel: () -> Unit = {},
     val onChooseWorkspace: () -> Unit = {},
-    val onUsePrivateWorkspace: () -> Unit = {},
     val onOpenReach: (() -> Unit)? = null,
 )
 
@@ -312,6 +336,7 @@ internal fun ResourceExplorerSheetContent(
     actions: ResourceExplorerSheetActions,
     filesContent: @Composable () -> Unit,
     recycleBinContent: @Composable () -> Unit,
+    directoryRecycleContent: @Composable () -> Unit = { DirectoryRecycleInfo() },
 ) {
     val pagerState = rememberPagerState(
         initialPage = state.selectedTab.page,
@@ -401,7 +426,7 @@ internal fun ResourceExplorerSheetContent(
                         label = "resource_explorer_recycle_phase",
                     ) { phase ->
                         when (phase) {
-                            0 -> DirectoryRecycleInfo()
+                            0 -> directoryRecycleContent()
                             1 -> ResourceExplorerSessionState(isLoading = true)
                             2 -> ResourceExplorerSessionState(
                                 isLoading = false,
@@ -429,7 +454,7 @@ private fun ResourceExplorerFilesPage(
         )
         ResourceExplorerWorkspaceMode.Private -> ResourceExplorerPrivateFilesPage(state, actions, filesContent)
         is ResourceExplorerWorkspaceMode.Directory -> Column(modifier = Modifier.fillMaxSize()) {
-            ResourceExplorerWorkspaceBar(state, actions, footnote = stringResource(R.string.resource_explorer_directory_notice))
+            ResourceExplorerWorkspaceBar(state, actions)
             ResourceExplorerGitEntry(state, actions)
             Spacer(modifier = Modifier.height(NexaraSpacing.Small))
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -469,15 +494,12 @@ private fun ResourceExplorerGitEntry(
 private fun ResourceExplorerWorkspaceBar(
     state: ResourceExplorerSheetState,
     actions: ResourceExplorerSheetActions,
-    footnote: String? = null,
 ) {
     SessionWorkspaceBar(
         workspace = state.workspaceMode.toWorkspaceUi(),
         busy = state.workspaceSwitchBusy,
         switchFailed = state.workspaceSwitchFailed,
-        footnote = footnote,
         onChoose = actions.onChooseWorkspace,
-        onUsePrivate = actions.onUsePrivateWorkspace,
         onOpenReach = actions.onOpenReach,
         modifier = Modifier.fillMaxWidth(),
     )

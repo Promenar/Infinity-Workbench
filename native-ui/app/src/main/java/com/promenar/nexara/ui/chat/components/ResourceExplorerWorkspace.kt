@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.domain.workspace.DirectoryBatchResult
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
@@ -59,7 +61,27 @@ internal data class DirectoryBrowserState(
     val selectedFile: ExternalFolderEntry? = null,
     val preview: ExternalTextPreview? = null,
     val previewError: String? = null,
+    /** 多选中的条目路径；非空时点按切换选择，底部显示操作栏。 */
+    val selection: Set<String> = emptySet(),
+    val clipboard: DirectoryClipboard? = null,
+    val operating: Boolean = false,
+    val outcome: DirectoryOpOutcome? = null,
 )
+
+/** 复制或剪切后等待粘贴的条目；进入目标目录后“粘贴到此处”。 */
+internal data class DirectoryClipboard(val paths: List<String>, val cut: Boolean)
+
+enum class DirectoryOp { COPY, MOVE, DELETE }
+
+/** 一次操作的结果提示：全部成功只报数量，部分失败报失败数与首个原因。 */
+internal data class DirectoryOpOutcome(val op: DirectoryOp, val succeeded: Int, val failed: Int, val reason: DirectoryFileOpCode?)
+
+internal fun DirectoryBatchResult.toOutcome(op: DirectoryOp) =
+    DirectoryOpOutcome(op, succeeded.size, failed.size, failed.values.firstOrNull())
+
+/** 粘贴目标不能是条目自身或其子目录；剪切到原目录没有意义，复制到原目录由后端自动改名。 */
+internal fun DirectoryClipboard.canPasteInto(directory: String): Boolean =
+    paths.none { directory == it || directory.startsWith(it.trimEnd('/') + "/") || (cut && parentDirectoryPath(it) == directory) }
 
 /** 上一级目录；根目录返回 null。 */
 internal fun parentDirectoryPath(path: String): String? =

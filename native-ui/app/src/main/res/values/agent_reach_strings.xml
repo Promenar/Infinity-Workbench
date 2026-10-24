@@ -4,68 +4,55 @@
 ]>
 <resources>
     <string name="agent_reach_title">Agent reach</string>
-    <string name="agent_reach_entry">Agent reach</string>
-    <string name="agent_reach_entry_desc">Workspace, paths, backends, approvals and network</string>
-    <string name="agent_reach_intro">What the agent in this chat can read and write right now, who runs its commands, when it asks you, and which networks it can reach. This page only describes the current state; each tool call is checked when it runs.</string>
 
     <string name="agent_reach_section_workspace">Current workspace</string>
-    <string name="agent_reach_workspace_footer">File tools and built-in commands both use it as their root. Switch it in the workspace bar above.</string>
     <string name="agent_reach_workspace_unavailable">The workspace is unavailable</string>
-    <string name="agent_reach_trait_tracked_yes">Files deleted by file tools go to the recycle bin, with version history</string>
-    <string name="agent_reach_trait_tracked_no">No recycle bin or version history. Use Git to review changes</string>
-    <string name="agent_reach_trait_backup_yes">Included in local and WebDAV backups</string>
-    <string name="agent_reach_trait_backup_no">Not included in &brand; backups</string>
-    <string name="agent_reach_trait_termux_yes">Termux can open it directly (after termux-setup-storage)</string>
-    <string name="agent_reach_trait_termux_no">Termux cannot see this folder</string>
-    <string name="agent_reach_trait_uninstall_yes">Kept when &brand; is uninstalled</string>
-    <string name="agent_reach_trait_uninstall_no">Deleted when &brand; is uninstalled or its data is cleared</string>
 
     <string name="agent_reach_section_paths">Paths</string>
-    <string name="agent_reach_paths_footer">The same path means different things to different runners: / is the workspace for file tools, the device root for commands and Termux, and the remote root over SSH.</string>
-    <string name="agent_reach_path_root">File tools and sandboxed scripts: the workspace root</string>
-    <string name="agent_reach_path_workspace_var">Built-in commands: the same workspace, also their working directory</string>
-    <string name="agent_reach_path_skills">Your skills folder. Every change asks for approval; commands use $NEXARA_SKILLS</string>
-    <string name="agent_reach_path_mnt_empty">No external folders mounted. Add one under External folders on the Files page</string>
-    <string name="agent_reach_path_mnt">Only file tools and sandboxed scripts can open it; commands cannot see it</string>
-    <string name="agent_reach_mount_saf">System-granted folder</string>
-    <string name="agent_reach_mount_path">Shared storage path</string>
+    <string name="agent_reach_paths_footer">In commands and Termux, / is the device root; commands can\'t see folders under /mnt.</string>
+    <string name="agent_reach_path_root">Root for file tools</string>
+    <string name="agent_reach_path_workspace_var">Workspace path in commands</string>
+    <string name="agent_reach_path_skills">Skills folder; every change asks first</string>
+    <string name="agent_reach_path_mnt_empty">No external folders mounted</string>
+    <string name="agent_reach_mount_saf">System-granted</string>
+    <string name="agent_reach_mount_path">Device path</string>
     <string name="agent_reach_mount_read_only">Read-only</string>
     <string name="agent_reach_mount_read_write">Read and write</string>
     <string name="agent_reach_mount_unavailable">Unavailable</string>
 
     <string name="agent_reach_section_backends">Runners</string>
-    <string name="agent_reach_backends_footer">Files that commands delete or overwrite skip the recycle bin. Turn on and manage Termux and SSH in tool settings.</string>
+    <string name="agent_reach_backends_footer">Files deleted by commands skip the recycle bin.</string>
     <string name="agent_reach_backend_files">File tools</string>
-    <string name="agent_reach_backend_files_scope">Workspace, mounts and skills folder</string>
+    <string name="agent_reach_backend_files_scope">Workspace, /mnt and /skills</string>
     <string name="agent_reach_backend_builtin">Built-in commands shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">Run as &brand; in the workspace and can also read and write &brand;\'s own data</string>
+    <string name="agent_reach_backend_builtin_scope">Runs in the workspace; can read and write &brand; data</string>
     <string name="agent_reach_backend_sandbox">Sandbox exec_js · python_sandbox</string>
-    <string name="agent_reach_backend_sandbox_scope">Isolated process; reaches the workspace only through file approvals</string>
+    <string name="agent_reach_backend_sandbox_scope">Isolated; file writes ask first</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>
-    <string name="agent_reach_backend_termux_scope">Runs in the Termux home folder and cannot see this workspace; exchange files through a mount or shared storage</string>
-    <string name="agent_reach_backend_termux_scope_shared">Runs in the Termux home folder; this workspace is in shared storage, so Termux can open it</string>
+    <string name="agent_reach_backend_termux_scope">Runs in Termux home; can\'t see the workspace</string>
+    <string name="agent_reach_backend_termux_scope_shared">Runs in Termux home; can open the workspace</string>
     <string name="agent_reach_backend_ssh">SSH ssh_exec · sftp</string>
-    <string name="agent_reach_backend_ssh_scope">Connects only to hosts saved in settings; the remote account decides what it can touch</string>
+    <string name="agent_reach_backend_ssh_scope">Saved hosts only</string>
     <plurals name="agent_reach_ssh_hosts">
         <item quantity="one">%1$d host saved</item>
         <item quantity="other">%1$d hosts saved</item>
     </plurals>
     <string name="agent_reach_status_ready">Ready</string>
-    <string name="agent_reach_status_shell_only">System shell only; no built-in Python on this device</string>
-    <string name="agent_reach_status_js_only">JavaScript only; no built-in Python on this device</string>
+    <string name="agent_reach_status_shell_only">Shell only; no built-in Python</string>
+    <string name="agent_reach_status_js_only">JavaScript only; no built-in Python</string>
     <string name="agent_reach_status_disabled">Off</string>
     <string name="agent_reach_status_no_hosts">No hosts saved</string>
 
     <string name="agent_reach_section_approval">Approvals</string>
-    <string name="agent_reach_approval_footer">In every mode, SSH host changes, skills folder changes, permanent deletes and new scheduled tasks ask each time.</string>
-    <string name="agent_reach_mode_auto">Tools run directly; only the exceptions below ask you</string>
-    <string name="agent_reach_mode_semi">Reads run directly; writes, deletes, commands, scripts, external writes and MCP tools ask you</string>
-    <string name="agent_reach_mode_manual">Every tool call asks you</string>
+    <string name="agent_reach_approval_footer">SSH hosts, skills folder, permanent deletes and scheduled tasks always ask.</string>
+    <string name="agent_reach_mode_auto">Runs directly, except below</string>
+    <string name="agent_reach_mode_semi">Reads run directly; the rest ask</string>
+    <string name="agent_reach_mode_manual">Every call asks</string>
     <string name="agent_reach_always_allowed">Always-allowed targets</string>
-    <string name="agent_reach_always_allowed_none">None apply to this chat</string>
+    <string name="agent_reach_always_allowed_none">None</string>
     <plurals name="agent_reach_always_allowed_count">
-        <item quantity="one">%1$d applies to this chat; revoke it in tool settings</item>
-        <item quantity="other">%1$d apply to this chat; revoke them in tool settings</item>
+        <item quantity="one">%1$d applies</item>
+        <item quantity="other">%1$d apply</item>
     </plurals>
 
     <string name="agent_reach_section_network">Network</string>

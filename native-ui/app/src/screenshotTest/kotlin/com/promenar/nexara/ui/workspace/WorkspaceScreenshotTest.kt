@@ -20,6 +20,14 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.workspace.WorkspaceFolder
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
+import com.promenar.nexara.domain.workspace.PrivateWorkspaceSummary
+import com.promenar.nexara.ui.chat.components.DirectoryBrowserState
+import com.promenar.nexara.ui.chat.components.DirectoryClipboard
+import com.promenar.nexara.ui.chat.components.DirectoryFileActions
+import com.promenar.nexara.ui.chat.components.DirectoryOp
+import com.promenar.nexara.ui.chat.components.DirectoryOpOutcome
+import com.promenar.nexara.ui.chat.components.DirectoryWorkspaceBrowser
 import com.promenar.nexara.ui.chat.components.ExternalTextPreview
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
@@ -72,6 +80,7 @@ fun workspacePickerProjectsPreview() = SheetFrame(stringResource(R.string.worksp
 private val PermissionState = WorkspacePickerUiState(
     registered = listOf(Project, Shared),
     currentWorkspaceId = Project.id,
+    showPrivate = true,
     sharedSupported = true,
     sharedPermission = false,
     sharedRoots = listOf(Volume),
@@ -126,11 +135,11 @@ fun sessionWorkspaceStatesPreview() = WorkspaceTheme {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SessionWorkspaceBar(SessionWorkspaceUi.Private, busy = false)
+        SessionWorkspaceBar(SessionWorkspaceUi.Private, busy = false, onOpenReach = {})
         SessionWorkspaceBar(
             SessionWorkspaceUi.Directory(Project.id, Project.displayName, Project.kind, Project.location),
             busy = false,
-            footnote = stringResource(R.string.resource_explorer_directory_notice),
+            onOpenReach = {},
         )
         SessionWorkspaceBar(
             SessionWorkspaceUi.Directory(Shared.id, Shared.displayName, Shared.kind, Shared.location),
@@ -224,4 +233,69 @@ fun knowledgeWorkspaceFilePreview() = SheetFrame(stringResource(R.string.workspa
         preview = ExternalTextPreview.Text("# 检索与重排\n\n1. 向量召回 Top-50\n2. 关键词补召回\n3. 交叉编码器重排\n\n> 只读预览，不会修改源文件。\n"),
         notice = KnowledgeImportNotice.Imported,
     )
+}
+
+private val DirectoryEntries = listOf(
+    ExternalFolderEntry("/assets", "assets", true, 0, 0),
+    ExternalFolderEntry("/src", "src", true, 0, 0),
+    ExternalFolderEntry("/README.md", "README.md", false, 4_096, 0),
+    ExternalFolderEntry("/架构说明-检索与重排流程.md", "架构说明-检索与重排流程.md", false, 18_432, 0),
+)
+
+private val NoopFileActions = DirectoryFileActions(
+    onToggleSelect = {}, onClearSelection = {}, onCopy = {}, onPaste = {}, onCancelClipboard = {},
+    onDelete = {}, onCreateFolder = { _, _ -> }, onRename = { _, _, _ -> }, onDismissOutcome = {},
+)
+
+@Composable
+private fun DirectoryBrowserPreview(state: DirectoryBrowserState, mode: NexaraThemeMode = NexaraThemeMode.DARK) = WorkspaceTheme(mode) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        DirectoryWorkspaceBrowser(
+            rootTitle = Project.displayName,
+            state = state,
+            onNavigate = {}, onOpenFile = {}, onCloseFile = {}, onRefresh = {},
+            readFile = { _, _ -> ByteArray(0) },
+            fileActions = NoopFileActions,
+        )
+    }
+}
+
+@PreviewTest
+@Preview(name = "目录工作区 多选 深中411", widthDp = 411, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "目录工作区 多选 深中360 大字", widthDp = 360, heightDp = 720, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun directoryWorkspaceSelectionPreview() = DirectoryBrowserPreview(
+    DirectoryBrowserState(entries = DirectoryEntries, selection = setOf("/src", "/README.md")),
+)
+
+@PreviewTest
+@Preview(name = "目录工作区 粘贴与部分失败 浅英411", widthDp = 411, heightDp = 640, locale = "en")
+@Composable
+fun directoryWorkspacePastePreview() = DirectoryBrowserPreview(
+    DirectoryBrowserState(
+        path = "/src",
+        entries = listOf(ExternalFolderEntry("/src/main.kt", "main.kt", false, 1_024, 0)),
+        clipboard = DirectoryClipboard(listOf("/README.md", "/assets"), cut = true),
+        outcome = DirectoryOpOutcome(DirectoryOp.MOVE, succeeded = 1, failed = 1, reason = DirectoryFileOpCode.NAME_EXISTS),
+    ),
+    NexaraThemeMode.LIGHT,
+)
+
+@PreviewTest
+@Preview(name = "删除会话 保留文件 深中411", widthDp = 411, heightDp = 480, locale = "zh-rCN")
+@Preview(name = "删除会话 保留文件 浅英360 大字", widthDp = 360, heightDp = 560, locale = "en", fontScale = 1.3f)
+@Composable
+fun deleteSessionKeepFilesPreview() = WorkspaceTheme {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        DeleteSessionDialogContent(PrivateWorkspaceSummary(12, 3_480_000), keep = true, onKeepChange = {}, onConfirm = {}, onCancel = {})
+    }
+}
+
+@PreviewTest
+@Preview(name = "删除会话 空间为空 深中411", widthDp = 411, heightDp = 320, locale = "zh-rCN")
+@Composable
+fun deleteSessionEmptyPreview() = WorkspaceTheme {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        DeleteSessionDialogContent(summary = null, keep = true, onKeepChange = {}, onConfirm = {}, onCancel = {})
+    }
 }

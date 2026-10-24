@@ -141,6 +141,8 @@ fun FolderBreadcrumbsBar(
     backButtonTag: String = "rag_folder_back_btn",
     onExitRoot: (() -> Unit)? = null,
     titleStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    /** 根目录名已在别处醒目显示时设为 false：根部只留操作按钮，[rootTitle] 仍用作上级路径首段。 */
+    showRootTitle: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val atRoot = folderStack.isEmpty()
@@ -148,7 +150,7 @@ fun FolderBreadcrumbsBar(
         listOf(FolderCrumb(id = "", name = rootTitle)) + folderStack
     }
     NexaraNavigationHeader(
-        title = allCrumbs.last().name,
+        title = if (atRoot && !showRootTitle) "" else allCrumbs.last().name,
         modifier = modifier,
         onBack = if (atRoot) onExitRoot else onNavigateBack,
         backContentDescription = stringResource(if (atRoot) R.string.common_cd_back else R.string.rag_back_to_parent),

@@ -2,12 +2,9 @@ package com.promenar.nexara.ui.workspace
 
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,16 +18,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.FolderShared
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.SdStorage
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,13 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -68,7 +64,6 @@ import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
-import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -99,6 +94,8 @@ data class WorkspacePickerUiState(
     val page: WorkspacePickerPage = WorkspacePickerPage.Home,
     val registered: List<WorkspaceEntity> = emptyList(),
     val currentWorkspaceId: String? = null,
+    /** 为 true 时列出“会话专用空间”，[currentWorkspaceId] 为 null 即表示当前使用它。 */
+    val showPrivate: Boolean = false,
     val sharedSupported: Boolean = false,
     val sharedPermission: Boolean = false,
     val sharedRoots: List<File> = emptyList(),
@@ -160,6 +157,8 @@ fun WorkspacePickerSheet(
     onDismiss: () -> Unit,
     onPicked: (WorkspaceEntity) -> Unit,
     currentWorkspaceId: String? = null,
+    /** 非 null 时可选回会话专用空间（仅会话资源管理器提供）。 */
+    onPickPrivate: (() -> Unit)? = null,
 ) {
     if (!show) return
     val context = LocalContext.current
@@ -232,7 +231,7 @@ fun WorkspacePickerSheet(
     }
 
     val state = WorkspacePickerUiState(
-        page = page, registered = registered, currentWorkspaceId = currentWorkspaceId,
+        page = page, registered = registered, currentWorkspaceId = currentWorkspaceId, showPrivate = onPickPrivate != null,
         sharedSupported = browser.sharedSupported, sharedPermission = permission, sharedRoots = roots,
         folders = folders, loading = loading, loadError = loadError, selectedProject = selectedProject,
         busy = busy, error = error,
@@ -254,6 +253,7 @@ fun WorkspacePickerSheet(
                 error = null
             },
             onPickRegistered = onPicked,
+            onPickPrivate = { onPickPrivate?.invoke() },
             onSelectProject = { selectedProject = it },
             onCreate = {
                 createError = null
@@ -283,7 +283,6 @@ fun WorkspacePickerSheet(
             title = stringResource(if (project) R.string.workspace_picker_new_project else R.string.workspace_picker_new_folder),
             label = stringResource(if (project) R.string.workspace_picker_project_name else R.string.workspace_picker_folder_name),
             confirmLabel = stringResource(R.string.workspace_picker_create),
-            hint = if (project) stringResource(R.string.workspace_picker_project_name_hint) else null,
             error = createError?.let { folderNameErrorText(it, project) },
             busy = busy,
             onValueChange = { createError = null },
@@ -329,6 +328,7 @@ fun WorkspacePickerContent(
     modifier: Modifier = Modifier,
     onNavigate: (WorkspacePickerPage) -> Unit = {},
     onPickRegistered: (WorkspaceEntity) -> Unit = {},
+    onPickPrivate: () -> Unit = {},
     onSelectProject: (String) -> Unit = {},
     onCreate: () -> Unit = {},
     onUseFolder: () -> Unit = {},
@@ -336,7 +336,7 @@ fun WorkspacePickerContent(
     onRetry: () -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
     val page = state.page
-    val projectsLabel = stringResource(R.string.workspace_picker_projects)
+    val projectsLabel = stringResource(R.string.workspace_kind_project)
     val volumeLabels = state.sharedRoots.associateWith { sharedVolumeLabel(state.sharedRoots, it) }
     if (page != WorkspacePickerPage.Home) {
         val crumbs = page.crumbs({ volumeLabels[it] ?: it.name }, projectsLabel).collapsedForDisplay()
@@ -377,7 +377,7 @@ fun WorkspacePickerContent(
             contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
         ) {
             when (page) {
-                WorkspacePickerPage.Home -> homeItems(state, volumeLabels, onNavigate, onPickRegistered, onGrantPermission)
+                WorkspacePickerPage.Home -> homeItems(state, volumeLabels, onNavigate, onPickRegistered, onPickPrivate, onGrantPermission)
                 WorkspacePickerPage.Projects -> folderItems(state, onRetry, emptyText = R.string.workspace_picker_projects_empty) { folder ->
                     NexaraSettingsItem(
                         title = folder.name,
@@ -385,7 +385,7 @@ fun WorkspacePickerContent(
                         role = Role.RadioButton,
                         selected = state.selectedProject == folder.name,
                         horizontalPadding = 0.dp,
-                        leadingContent = { Icon(Icons.Rounded.Work, null, tint = MaterialTheme.colorScheme.primary) },
+                        leadingContent = { Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary) },
                         trailingContent = if (state.selectedProject == folder.name) ({
                             Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
                         }) else null,
@@ -405,11 +405,7 @@ fun WorkspacePickerContent(
         }
     }
     if (page != WorkspacePickerPage.Home) {
-        val target = when (page) {
-            WorkspacePickerPage.Projects -> state.selectedProject?.let { stringResource(R.string.workspace_location_project, it) }
-            is WorkspacePickerPage.Shared -> page.path.path
-            WorkspacePickerPage.Home -> null
-        }
+        val ready = page !is WorkspacePickerPage.Projects || state.selectedProject != null
         Column(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
             state.error?.let {
                 Text(
@@ -418,18 +414,19 @@ fun WorkspacePickerContent(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            Text(
-                text = target?.let { stringResource(R.string.workspace_picker_target, it) }
-                    ?: stringResource(R.string.workspace_picker_select_project),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-            )
             Button(
                 onClick = onUseFolder,
-                enabled = target != null && !state.busy && state.loadError == null,
+                enabled = ready && !state.busy && state.loadError == null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("workspace_picker_use"),
-            ) { Text(stringResource(R.string.workspace_picker_use_folder)) }
+            ) {
+                Text(
+                    state.selectedProject?.takeIf { page is WorkspacePickerPage.Projects }
+                        ?.let { stringResource(R.string.workspace_picker_use_named, it) }
+                        ?: stringResource(R.string.workspace_picker_use_folder),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -439,59 +436,108 @@ private fun LazyListScope.homeItems(
     volumeLabels: Map<File, String>,
     onNavigate: (WorkspacePickerPage) -> Unit,
     onPickRegistered: (WorkspaceEntity) -> Unit,
+    onPickPrivate: () -> Unit,
     onGrantPermission: () -> Unit,
 ) {
-    if (state.registered.isNotEmpty()) {
-        item(key = "registered_header") { SettingsSectionHeader(stringResource(R.string.workspace_picker_registered)) }
-        items(state.registered, key = { "registered:" + it.id }) { workspace ->
-            val selected = workspace.id == state.currentWorkspaceId
-            NexaraSettingsItem(
-                title = workspace.displayName,
-                subtitle = workspaceLocationText(workspace.kind, workspace.location),
-                subtitleIsIdentifier = true,
-                onClick = { onPickRegistered(workspace) },
+    if (state.showPrivate) {
+        item(key = "private_header") { WorkspaceKindHeader(null) }
+        item(key = "private") {
+            PickerRow(
+                title = stringResource(R.string.workspace_picker_this_chat),
+                selected = state.currentWorkspaceId == null,
                 enabled = !state.busy,
-                horizontalPadding = 0.dp,
-                selected = selected,
-                leadingContent = { WorkspaceKindIcon(workspace.kind) },
-                trailingContent = if (selected) ({
-                    Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
-                }) else null,
-                modifier = Modifier.testTag("workspace_picker_registered_${workspace.id}"),
+                onClick = onPickPrivate,
+                leading = { WorkspaceKindIcon(null) },
+                modifier = Modifier.testTag("workspace_picker_private"),
             )
         }
     }
-    item(key = "locations_header") { SettingsSectionHeader(stringResource(R.string.workspace_picker_locations)) }
+    val (projects, shared) = state.registered.partition { it.kind == WorkspaceEntity.KIND_PROJECT }
+    item(key = "project_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_PROJECT) }
+    items(projects, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
     item(key = "projects") {
         NexaraSettingsItem(
-            title = stringResource(R.string.workspace_picker_projects),
-            subtitle = stringResource(R.string.workspace_picker_projects_desc),
+            title = stringResource(R.string.workspace_picker_all_folders),
             onClick = { onNavigate(WorkspacePickerPage.Projects) },
             showChevron = true,
             horizontalPadding = 0.dp,
-            leadingContent = { WorkspaceKindIcon(WorkspaceEntity.KIND_PROJECT) },
+            leadingContent = { Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary) },
             modifier = Modifier.testTag("workspace_picker_projects"),
         )
     }
-    if (state.sharedSupported) {
-        if (!state.sharedPermission) {
-            item(key = "shared_permission") { SharedPermissionCard(onGrantPermission) }
-        } else {
-            items(state.sharedRoots, key = { "volume:" + it.path }) { volume ->
-                NexaraSettingsItem(
-                    title = volumeLabels[volume] ?: volume.name,
-                    subtitle = volume.path,
-                    subtitleIsIdentifier = true,
-                    onClick = { onNavigate(WorkspacePickerPage.Shared(volume, volume)) },
-                    showChevron = true,
-                    horizontalPadding = 0.dp,
-                    leadingContent = { Icon(Icons.Rounded.SdStorage, null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.testTag("workspace_picker_volume"),
-                )
-            }
+    if (!state.sharedSupported && shared.isEmpty()) return
+    item(key = "shared_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_SHARED) }
+    items(shared, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
+    if (!state.sharedSupported) return
+    if (!state.sharedPermission) {
+        item(key = "shared_permission") {
+            NexaraSettingsItem(
+                title = stringResource(R.string.workspace_picker_shared_permission_title),
+                onClick = onGrantPermission,
+                horizontalPadding = 0.dp,
+                leadingContent = { Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary) },
+                trailingContent = {
+                    Text(stringResource(R.string.workspace_picker_grant), color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge)
+                },
+                modifier = Modifier.testTag("workspace_picker_shared_permission"),
+            )
+        }
+    } else {
+        items(state.sharedRoots, key = { "volume:" + it.path }) { volume ->
+            NexaraSettingsItem(
+                title = volumeLabels[volume] ?: volume.name,
+                onClick = { onNavigate(WorkspacePickerPage.Shared(volume, volume)) },
+                showChevron = true,
+                horizontalPadding = 0.dp,
+                leadingContent = { Icon(Icons.Rounded.SdStorage, null, tint = MaterialTheme.colorScheme.primary) },
+                modifier = Modifier.testTag("workspace_picker_volume"),
+            )
         }
     }
 }
+
+@Composable
+private fun RegisteredRow(state: WorkspacePickerUiState, workspace: WorkspaceEntity, onPick: (WorkspaceEntity) -> Unit) =
+    PickerRow(
+        title = workspace.displayName,
+        // 内置文件夹只在显示名与目录名不同时补目录名；设备文件夹的路径本身就是有用信息。
+        subtitle = when {
+            workspace.kind == WorkspaceEntity.KIND_SHARED -> compactSharedPath(workspace.location)
+            workspace.displayName != workspace.location -> workspace.location
+            else -> null
+        },
+        selected = workspace.id == state.currentWorkspaceId,
+        enabled = !state.busy,
+        onClick = { onPick(workspace) },
+        leading = { WorkspaceKindIcon(workspace.kind) },
+        modifier = Modifier.testTag("workspace_picker_registered_${workspace.id}"),
+    )
+
+@Composable
+private fun PickerRow(
+    title: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    leading: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+) = NexaraSettingsItem(
+    title = title,
+    subtitle = subtitle,
+    subtitleIsIdentifier = true,
+    onClick = onClick,
+    enabled = enabled,
+    horizontalPadding = 0.dp,
+    role = Role.RadioButton,
+    selected = selected,
+    leadingContent = leading,
+    trailingContent = if (selected) ({
+        Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
+    }) else null,
+    modifier = modifier,
+)
 
 private fun LazyListScope.folderItems(
     state: WorkspacePickerUiState,
@@ -526,44 +572,12 @@ private fun LazyListScope.folderItems(
 }
 
 @Composable
-private fun SharedPermissionCard(onGrantPermission: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small).testTag("workspace_picker_shared_permission"),
-    ) {
-        Column(Modifier.padding(NexaraSpacing.Large), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Lock, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.size(NexaraSpacing.Small))
-                Text(
-                    stringResource(R.string.workspace_picker_shared_volume) + " · " +
-                        stringResource(R.string.workspace_picker_shared_permission_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Text(
-                stringResource(R.string.workspace_picker_shared_permission_desc),
-                style = MaterialTheme.typography.bodySmall.forReading(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(NexaraSpacing.XSmall))
-            OutlinedButton(
-                onClick = onGrantPermission,
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("workspace_picker_grant"),
-            ) { Text(stringResource(R.string.workspace_picker_grant)) }
-        }
-    }
-}
-
-@Composable
 internal fun WorkspaceKindIcon(kind: String?) {
     Icon(
         imageVector = when (kind) {
-            WorkspaceEntity.KIND_PROJECT -> Icons.Rounded.Work
-            WorkspaceEntity.KIND_SHARED -> Icons.Rounded.FolderShared
-            else -> Icons.Rounded.Lock
+            WorkspaceEntity.KIND_PROJECT -> Icons.Rounded.Folder
+            WorkspaceEntity.KIND_SHARED -> Icons.Rounded.PhoneAndroid
+            else -> Icons.Rounded.ChatBubbleOutline
         },
         contentDescription = null,
         tint = MaterialTheme.colorScheme.primary,

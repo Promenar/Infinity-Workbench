@@ -1,29 +1,35 @@
 package com.promenar.nexara.ui.workspace
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.BettboxListGroup
-import com.promenar.nexara.ui.common.NexaraSettingsItem
-import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forReading
 
 /**
- * 资源管理器顶部的工作区栏：当前工作区占一行，行尾切换；目录或不可用时可改回会话私有工作区。
- * 生成进行中或有待审批时禁止切换，[busy] 时按钮停用并说明原因。
+ * 资源管理器顶部的工作区栏：一行突出当前工作区名称与类型，行尾是可达范围与切换。
+ * 改回会话专用空间在选择器中完成；生成进行中或有待审批时禁止切换。
  */
 @Composable
 fun SessionWorkspaceBar(
@@ -31,60 +37,71 @@ fun SessionWorkspaceBar(
     busy: Boolean,
     modifier: Modifier = Modifier,
     switchFailed: Boolean = false,
-    footnote: String? = null,
     onChoose: () -> Unit = {},
-    onUsePrivate: () -> Unit = {},
-    /** 打开“Agent 可达范围”面板；为 null 时不显示该行。 */
+    /** 打开“Agent 可达范围”面板；为 null 时不显示该按钮。 */
     onOpenReach: (() -> Unit)? = null,
 ) {
     val canSwitch = !busy && workspace != SessionWorkspaceUi.Loading
     BettboxListGroup(modifier = modifier.testTag("session_workspace_bar")) {
-        NexaraSettingsRowLayout(
-            title = when (workspace) {
-                SessionWorkspaceUi.Loading -> stringResource(R.string.workspace_session_current)
-                SessionWorkspaceUi.Private -> stringResource(R.string.workspace_kind_private)
-                is SessionWorkspaceUi.Directory -> workspace.name
-                is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
-            },
-            subtitle = when (workspace) {
-                SessionWorkspaceUi.Loading -> "…"
-                SessionWorkspaceUi.Private -> stringResource(R.string.workspace_session_private_desc)
-                is SessionWorkspaceUi.Directory -> workspaceKindLabel(workspace.kind) + " · " + compactSharedPath(workspace.location)
-                is SessionWorkspaceUi.Unavailable -> workspace.kind?.let { kind ->
-                    workspaceKindLabel(kind) + workspace.location?.let { " · " + compactSharedPath(it) }.orEmpty()
-                }
-            },
-            subtitleIsIdentifier = workspace is SessionWorkspaceUi.Directory || workspace is SessionWorkspaceUi.Unavailable,
-            leadingContent = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = NexaraSpacing.RowTwoLineHeight)
+                .padding(start = NexaraSpacing.RowHorizontal, end = NexaraSpacing.Small)
+                .testTag("session_workspace_current"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (workspace) {
+                is SessionWorkspaceUi.Unavailable -> Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
+                is SessionWorkspaceUi.Directory -> WorkspaceKindIcon(workspace.kind)
+                else -> WorkspaceKindIcon(null)
+            }
+            Spacer(Modifier.size(NexaraSpacing.Medium))
+            Column(Modifier.weight(1f).padding(vertical = NexaraSpacing.Small), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
+                Text(
+                    text = when (workspace) {
+                        SessionWorkspaceUi.Loading -> "…"
+                        SessionWorkspaceUi.Private -> stringResource(R.string.workspace_kind_private)
+                        is SessionWorkspaceUi.Directory -> workspace.name
+                        is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // 目录工作区标出所属类型；专用空间的名称已是类型，改为提示它会随会话删除。
                 when (workspace) {
-                    is SessionWorkspaceUi.Unavailable -> Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
-                    is SessionWorkspaceUi.Directory -> WorkspaceKindIcon(workspace.kind)
-                    else -> WorkspaceKindIcon(null)
+                    SessionWorkspaceUi.Private -> workspaceKindTags(null).last().let { tag ->
+                        WorkspaceTagChip(stringResource(tag.label), tag.tone)
+                    }
+                    is SessionWorkspaceUi.Directory -> WorkspaceTagChip(workspaceKindLabel(workspace.kind), WorkspaceTagTone.NEUTRAL)
+                    is SessionWorkspaceUi.Unavailable -> workspace.kind?.let {
+                        WorkspaceTagChip(workspaceKindLabel(it), WorkspaceTagTone.NEUTRAL)
+                    }
+                    SessionWorkspaceUi.Loading -> Unit
                 }
-            },
-            modifier = Modifier.testTag("session_workspace_current"),
-            trailingContent = {
-                TextButton(
-                    onClick = onChoose,
-                    enabled = canSwitch,
-                    modifier = Modifier.testTag("session_workspace_choose"),
-                ) {
-                    Text(
-                        stringResource(
-                            if (workspace is SessionWorkspaceUi.Unavailable) R.string.workspace_session_reselect
-                            else R.string.workspace_bar_switch,
-                        ),
-                    )
+            }
+            if (onOpenReach != null) {
+                IconButton(onClick = onOpenReach, modifier = Modifier.testTag("session_workspace_reach")) {
+                    Icon(Icons.Outlined.Explore, contentDescription = stringResource(R.string.agent_reach_title))
                 }
-            },
-        )
-        // 错误类说明（不可用原因、切换失败）用错误色，其余为次要说明。
+            }
+            TextButton(onClick = onChoose, enabled = canSwitch, modifier = Modifier.testTag("session_workspace_choose")) {
+                Text(
+                    stringResource(
+                        if (workspace is SessionWorkspaceUi.Unavailable) R.string.workspace_session_reselect
+                        else R.string.workspace_bar_switch,
+                    ),
+                )
+            }
+        }
         val errors = listOfNotNull(
             (workspace as? SessionWorkspaceUi.Unavailable)?.let { stringResource(R.string.workspace_unavailable_reason, it.reason) },
             if (switchFailed) stringResource(R.string.workspace_switch_failed) else null,
         )
-        val notes = listOfNotNull(if (busy) stringResource(R.string.workspace_session_busy) else null, footnote)
-        if (errors.isNotEmpty() || notes.isNotEmpty() || workspace.canUsePrivate) {
+        val notes = listOfNotNull(if (busy) stringResource(R.string.workspace_session_busy) else null)
+        if (errors.isNotEmpty() || notes.isNotEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -106,24 +123,8 @@ fun SessionWorkspaceBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (workspace.canUsePrivate) {
-                    TextButton(
-                        onClick = onUsePrivate,
-                        enabled = !busy,
-                        modifier = Modifier.testTag("session_workspace_use_private"),
-                    ) { Text(stringResource(R.string.workspace_session_use_private)) }
-                }
             }
-        }
-        if (onOpenReach != null) {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Explore,
-                title = stringResource(R.string.agent_reach_entry),
-                subtitle = stringResource(R.string.agent_reach_entry_desc),
-                onClick = onOpenReach,
-                showChevron = true,
-                modifier = Modifier.testTag("session_workspace_reach"),
-            )
         }
     }
 }
+

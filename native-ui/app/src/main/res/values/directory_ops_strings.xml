@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="directory_action_copy">Copy</string>
+    <string name="directory_action_move">Move</string>
+    <string name="directory_action_rename">Rename</string>
+    <string name="directory_action_delete">Delete</string>
+    <string name="directory_paste_here">Paste here</string>
+    <plurals name="directory_selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="directory_clipboard_copy">
+        <item quantity="one">%1$d item to copy</item>
+        <item quantity="other">%1$d items to copy</item>
+    </plurals>
+    <plurals name="directory_clipboard_cut">
+        <item quantity="one">%1$d item to move</item>
+        <item quantity="other">%1$d items to move</item>
+    </plurals>
+    <plurals name="directory_delete_title">
+        <item quantity="one">Delete %1$d item?</item>
+        <item quantity="other">Delete %1$d items?</item>
+    </plurals>
+    <string name="directory_delete_message">You can restore them from the recycle bin.</string>
+    <plurals name="directory_op_copied">
+        <item quantity="one">Copied %1$d item</item>
+        <item quantity="other">Copied %1$d items</item>
+    </plurals>
+    <plurals name="directory_op_moved">
+        <item quantity="one">Moved %1$d item</item>
+        <item quantity="other">Moved %1$d items</item>
+    </plurals>
+    <plurals name="directory_op_deleted">
+        <item quantity="one">Deleted %1$d item</item>
+        <item quantity="other">Deleted %1$d items</item>
+    </plurals>
+    <plurals name="directory_op_failed_count">
+        <item quantity="one">%1$d failed</item>
+        <item quantity="other">%1$d failed</item>
+    </plurals>
+    <string name="directory_op_name_invalid">That name isn\'t allowed</string>
+    <string name="directory_op_name_exists">An item with this name exists</string>
+    <string name="directory_op_not_found">The file no longer exists</string>
+    <string name="directory_op_inside_source">Can\'t move a folder into itself</string>
+    <string name="directory_op_read_only">The workspace is read-only</string>
+    <string name="directory_op_unavailable">The workspace is unavailable</string>
+    <string name="directory_op_busy">A reply is running. Try again later</string>
+    <string name="directory_op_failed">Couldn\'t complete the operation</string>
+    <string name="directory_recycle_footer">Kept for 7 days, up to 32 MiB in total</string>
+    <string name="directory_op_failed_reason">%1$s: %2$s</string>
+</resources>

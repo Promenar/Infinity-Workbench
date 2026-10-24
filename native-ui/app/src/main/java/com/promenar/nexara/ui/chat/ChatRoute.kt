@@ -812,18 +812,15 @@ fun ChatRoute(
         }
     }
     if (activeOverlay == ChatOverlay.DeleteSession) {
-        Dialog(onDismissRequest = { activeOverlayToken = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.chat_dialog_delete_session_title),
-                message = stringResource(R.string.chat_dialog_delete_session_msg),
-                confirmText = stringResource(R.string.shared_btn_delete),
-                onConfirm = {
-                    activeOverlayToken = null
-                    chatViewModel.deleteSession(onNavigateBack)
-                },
-                onCancel = { activeOverlayToken = null },
-            )
-        }
+        com.promenar.nexara.ui.workspace.DeleteSessionDialog(
+            sessionId = sessionId,
+            loadSummary = (LocalContext.current.applicationContext as? NexaraApplication)?.let { app -> app::privateWorkspaceSummary },
+            onConfirm = { keep ->
+                activeOverlayToken = null
+                chatViewModel.deleteSession(onNavigateBack, keepFiles = keep)
+            },
+            onCancel = { activeOverlayToken = null },
+        )
     }
     if (activeOverlay == ChatOverlay.RenameSession) {
         RenameDialog(

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -26,9 +27,11 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -36,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,11 +59,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.FolderEntriesList
-import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraMotion
@@ -67,8 +72,9 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forReading
 import com.promenar.nexara.ui.theme.hierarchicalTransition
-import androidx.compose.material3.IconButton
+import com.promenar.nexara.ui.workspace.WorkspaceNameDialog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 由规范路径生成面包屑；crumb id 即该级目录的路径。 */
@@ -79,8 +85,8 @@ internal fun directoryCrumbs(path: String): List<FolderCrumb> {
 
 /**
  * 目录工作区的穿透式浏览：每次一级，面包屑以工作区名为根，系统返回先关闭文件再回到上级。
- * 图片、视频、音频交给 [onOpenMedia] 在会话内查看或播放；其它文件只做有界文本预览，或经私有只读副本交给其它应用打开；
- * 不在此处写入或删除。
+ * 图片、视频、音频交给 [onOpenMedia] 在会话内查看或播放；其它文件只做有界文本预览，或经私有只读副本交给其它应用打开。
+ * 提供 [fileActions] 时可长按多选后复制、移动、重命名、删除，并新建文件夹。
  */
 @Composable
 internal fun DirectoryWorkspaceBrowser(
@@ -94,11 +100,17 @@ internal fun DirectoryWorkspaceBrowser(
     modifier: Modifier = Modifier,
     onOpenMedia: ((ExternalFolderEntry) -> Unit)? = null,
     rootHeader: @Composable () -> Unit = {},
+    fileActions: DirectoryFileActions? = null,
 ) {
     val selected = state.selectedFile
     val parent = parentDirectoryPath(state.path)
-    BackHandler(enabled = selected != null || parent != null) {
-        if (selected != null) onCloseFile() else parent?.let(onNavigate)
+    val selecting = state.selection.isNotEmpty()
+    BackHandler(enabled = selected != null || selecting || parent != null) {
+        when {
+            selected != null -> onCloseFile()
+            selecting -> fileActions?.onClearSelection?.invoke()
+            else -> parent?.let(onNavigate)
+        }
     }
     AnimatedContent(
         targetState = state,
@@ -129,6 +141,7 @@ internal fun DirectoryWorkspaceBrowser(
                 onRefresh = onRefresh,
                 modifier = Modifier,
                 rootHeader = rootHeader,
+                fileActions = fileActions,
             )
         }
     }
@@ -143,8 +156,12 @@ private fun DirectoryListView(
     onRefresh: () -> Unit,
     modifier: Modifier,
     rootHeader: @Composable () -> Unit,
+    fileActions: DirectoryFileActions?,
 ) = Column(modifier.fillMaxSize()) {
     val crumbs = directoryCrumbs(state.path)
+    var naming by remember { mutableStateOf<DirectoryNaming?>(null) }
+    var namingError by remember { mutableStateOf<DirectoryFileOpCode?>(null) }
+    var confirmingDelete by remember { mutableStateOf(false) }
     FolderBreadcrumbsBar(
         folderStack = crumbs,
         rootTitle = rootTitle,
@@ -154,7 +171,15 @@ private fun DirectoryListView(
             .padding(horizontal = NexaraSpacing.Small)
             .testTag(UiTags.RESOURCE_EXPLORER_BREADCRUMBS),
         backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
+        showRootTitle = false,
         actions = {
+            if (fileActions != null && state.selection.isEmpty()) {
+                IconButton(
+                    onClick = { namingError = null; naming = DirectoryNaming.Create },
+                    enabled = !state.operating && state.error == null,
+                    modifier = Modifier.testTag("directory_new_folder"),
+                ) { Icon(Icons.Rounded.CreateNewFolder, contentDescription = stringResource(R.string.workspace_picker_new_folder)) }
+            }
             IconButton(onClick = onRefresh, enabled = !state.isLoading) {
                 Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.resource_explorer_directory_refresh))
             }
@@ -174,16 +199,107 @@ private fun DirectoryListView(
                 ?: stringResource(R.string.resource_explorer_directory_load_failed_generic)
         },
         emptyText = stringResource(R.string.resource_explorer_directory_empty),
-        onEntryClick = { entry -> if (entry.isDirectory) onNavigate(entry.path) else onOpenFile(entry) },
+        onEntryClick = { entry ->
+            when {
+                fileActions != null && state.selection.isNotEmpty() -> fileActions.onToggleSelect(entry.path)
+                entry.isDirectory -> onNavigate(entry.path)
+                else -> onOpenFile(entry)
+            }
+        },
+        selection = state.selection.takeIf { fileActions != null },
+        onEntryLongClick = fileActions?.let { actions -> { entry -> actions.onToggleSelect(entry.path) } },
         onRetry = onRefresh,
         listTag = UiTags.RESOURCE_EXPLORER_DIRECTORY_LIST,
         statusTag = UiTags.RESOURCE_EXPLORER_DIRECTORY_STATUS,
         retryTag = UiTags.RESOURCE_EXPLORER_RETRY_LOAD,
         modifier = Modifier
-            .weight(1f, fill = false)
+            // 有操作栏时列表占满剩余空间，操作栏贴底。
+            .weight(1f, fill = fileActions != null)
             .padding(horizontal = NexaraSpacing.Small),
     )
+    if (fileActions == null) return@Column
+    AnimatedVisibility(visible = state.operating, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Large))
+    }
+    state.outcome?.let { outcome ->
+        DirectoryOutcomeLine(outcome)
+        LaunchedEffect(outcome) {
+            delay(OUTCOME_VISIBLE_MS)
+            fileActions.onDismissOutcome()
+        }
+    }
+    val clipboard = state.clipboard
+    AnimatedContent(
+        targetState = when {
+            state.selection.isNotEmpty() -> 1
+            clipboard != null -> 2
+            else -> 0
+        },
+        transitionSpec = { NexaraMotion.fadeThrough() },
+        label = "directory_action_bar",
+    ) { bar ->
+        when (bar) {
+            1 -> DirectorySelectionBar(
+                count = state.selection.size,
+                busy = state.operating,
+                onCopy = { fileActions.onCopy(false) },
+                onMove = { fileActions.onCopy(true) },
+                onRename = {
+                    namingError = null
+                    naming = state.entries.firstOrNull { it.path in state.selection }?.let { DirectoryNaming.Rename(it.path, it.name) }
+                },
+                onDelete = { confirmingDelete = true },
+                onClear = fileActions.onClearSelection,
+            )
+            2 -> clipboard?.let {
+                DirectoryPasteBar(
+                    clipboard = it,
+                    canPaste = it.canPasteInto(state.path),
+                    busy = state.operating,
+                    onPaste = fileActions.onPaste,
+                    onCancel = fileActions.onCancelClipboard,
+                )
+            }
+            else -> Spacer(Modifier.fillMaxWidth())
+        }
+    }
+    naming?.let { current ->
+        WorkspaceNameDialog(
+            title = stringResource(if (current is DirectoryNaming.Rename) R.string.directory_action_rename else R.string.workspace_picker_new_folder),
+            label = stringResource(R.string.workspace_picker_folder_name),
+            confirmLabel = stringResource(if (current is DirectoryNaming.Rename) R.string.directory_action_rename else R.string.workspace_picker_create),
+            initialValue = (current as? DirectoryNaming.Rename)?.name.orEmpty(),
+            error = namingError?.let { directoryOpCodeText(it) },
+            busy = state.operating,
+            onValueChange = { namingError = null },
+            onDismiss = { naming = null },
+            onConfirm = { name ->
+                val done: (DirectoryFileOpCode?) -> Unit = { code -> if (code == null) naming = null else namingError = code }
+                when (current) {
+                    DirectoryNaming.Create -> fileActions.onCreateFolder(name, done)
+                    is DirectoryNaming.Rename -> if (name == current.name) naming = null else fileActions.onRename(current.path, name, done)
+                }
+            },
+        )
+    }
+    if (confirmingDelete) {
+        DirectoryDeleteDialog(
+            count = state.selection.size,
+            onConfirm = {
+                confirmingDelete = false
+                fileActions.onDelete()
+            },
+            onCancel = { confirmingDelete = false },
+        )
+    }
 }
+
+private sealed interface DirectoryNaming {
+    data object Create : DirectoryNaming
+    data class Rename(val path: String, val name: String) : DirectoryNaming
+}
+
+private const val OUTCOME_VISIBLE_MS = 4_000L
 
 @Composable
 private fun DirectoryFileView(

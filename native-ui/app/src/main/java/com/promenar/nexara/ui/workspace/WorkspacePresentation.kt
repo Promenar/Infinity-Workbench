@@ -32,10 +32,6 @@ fun SessionWorkspace.toUi(): SessionWorkspaceUi = when (this) {
     )
 }
 
-/** 已不可用或已删除的工作区仍可改回私有工作区；只有私有工作区本身不需要该操作。 */
-val SessionWorkspaceUi.canUsePrivate: Boolean
-    get() = this is SessionWorkspaceUi.Directory || this is SessionWorkspaceUi.Unavailable
-
 @Composable
 fun workspaceKindLabel(kind: String?): String = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> stringResource(R.string.workspace_kind_project)

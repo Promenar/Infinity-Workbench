@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.common
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,8 +15,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -68,6 +74,9 @@ fun FolderEntriesList(
     listTag: String? = null,
     statusTag: String? = null,
     retryTag: String? = null,
+    /** 非 null 时支持多选：长按进入选择，选择期间点按切换，行首显示勾选框。 */
+    selection: Set<String>? = null,
+    onEntryLongClick: ((ExternalFolderEntry) -> Unit)? = null,
 ) = Column(modifier.fillMaxWidth()) {
     AnimatedVisibility(visible = loading, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
         LinearProgressIndicator(
@@ -111,14 +120,20 @@ fun FolderEntriesList(
                     text = emptyText,
                     modifier = Modifier.then(if (statusTag != null) Modifier.testTag(statusTag) else Modifier),
                 )
-                FolderListPhase.Content -> FolderEntryRows(listing.entries, onEntryClick, listTag)
+                FolderListPhase.Content -> FolderEntryRows(listing.entries, onEntryClick, listTag, selection, onEntryLongClick)
             }
         }
     }
 }
 
 @Composable
-private fun FolderEntryRows(entries: List<ExternalFolderEntry>, onEntryClick: (ExternalFolderEntry) -> Unit, listTag: String?) {
+private fun FolderEntryRows(
+    entries: List<ExternalFolderEntry>,
+    onEntryClick: (ExternalFolderEntry) -> Unit,
+    listTag: String?,
+    selection: Set<String>?,
+    onEntryLongClick: ((ExternalFolderEntry) -> Unit)?,
+) {
     val context = LocalContext.current
     LazyColumn(
         modifier = Modifier
@@ -128,19 +143,47 @@ private fun FolderEntryRows(entries: List<ExternalFolderEntry>, onEntryClick: (E
         contentPadding = PaddingValues(vertical = NexaraSpacing.XSmall),
     ) {
         items(entries, key = { it.path }) { entry ->
-            NexaraSettingsItem(
-                title = entry.name,
-                subtitle = if (entry.isDirectory) null else Formatter.formatShortFileSize(context, entry.size),
-                onClick = { onEntryClick(entry) },
-                showChevron = entry.isDirectory,
-                leadingContent = {
-                    Icon(
-                        if (entry.isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.InsertDriveFile,
-                        contentDescription = null,
-                        tint = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-            )
+            val selecting = !selection.isNullOrEmpty()
+            val checked = selection?.contains(entry.path) == true
+            val subtitle = if (entry.isDirectory) null else Formatter.formatShortFileSize(context, entry.size)
+            val leading: @Composable () -> Unit = {
+                Icon(
+                    when {
+                        checked -> Icons.Rounded.CheckCircle
+                        selecting -> Icons.Rounded.RadioButtonUnchecked
+                        entry.isDirectory -> Icons.Rounded.Folder
+                        else -> Icons.AutoMirrored.Rounded.InsertDriveFile
+                    },
+                    contentDescription = null,
+                    tint = if (checked || (!selecting && entry.isDirectory)) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (onEntryLongClick == null) {
+                NexaraSettingsItem(
+                    title = entry.name,
+                    subtitle = subtitle,
+                    onClick = { onEntryClick(entry) },
+                    showChevron = entry.isDirectory,
+                    leadingContent = leading,
+                )
+            } else {
+                NexaraSettingsRowLayout(
+                    title = entry.name,
+                    subtitle = subtitle,
+                    leadingContent = leading,
+                    trailingContent = if (entry.isDirectory && !selecting) ({
+                        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }) else null,
+                    modifier = Modifier
+                        .then(if (checked) Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)) else Modifier)
+                        .combinedClickable(
+                            onClick = { onEntryClick(entry) },
+                            onLongClick = { onEntryLongClick(entry) },
+                        )
+                        .semantics { if (selecting) selected = checked },
+                )
+            }
         }
     }
 }

@@ -30,7 +30,8 @@ class SessionListViewModel(
     private val store: ChatStore,
     private val sessionRepository: ISessionRepository,
     private val agentRepository: AgentRepository,
-    coordinatedDelete: (suspend (String) -> com.promenar.nexara.data.session.SessionDeletionResult)? = null,
+    coordinatedDelete: (suspend (String, Boolean) -> com.promenar.nexara.data.session.SessionDeletionResult)? = null,
+    private val onDeleted: (com.promenar.nexara.data.session.SessionDeletionResult) -> Unit = {},
 ) : ViewModel() {
 
     private val sessionManager = SessionManager(store, sessionRepository, coordinatedDelete)
@@ -94,13 +95,14 @@ class SessionListViewModel(
         }
     }
 
-    fun deleteSession(id: String) {
+    fun deleteSession(id: String, keepFiles: Boolean = false) {
         viewModelScope.launch {
             runSessionOperation {
-                sessionManager.deleteSession(id).also { deleted ->
+                sessionManager.deleteSession(id, keepFiles).also { deleted ->
+                    onDeleted(deleted)
                     com.promenar.nexara.utils.NexaraLogger.diagnostic(
                         "session.delete",
-                        mapOf("sessionId" to id, "deleted" to deleted),
+                        mapOf("sessionId" to id, "deleted" to deleted::class.simpleName),
                     )
                 }
             }
@@ -154,7 +156,8 @@ class SessionListViewModel(
                         store = app.chatStore,
                         sessionRepository = app.sessionRepository,
                         agentRepository = app.agentRepository,
-                        coordinatedDelete = app::deleteSessionRecoverably,
+                        coordinatedDelete = { id, keepFiles -> app.deleteSessionRecoverably(id, keepFiles) },
+                        onDeleted = { com.promenar.nexara.ui.workspace.announceKeptFiles(app, it) },
                     ) as T
                 }
             }

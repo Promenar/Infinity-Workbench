@@ -291,11 +291,6 @@ fun KnowledgeWorkspaceListContent(
     onRename: (WorkspaceEntity) -> Unit = {},
     onDelete: (WorkspaceEntity) -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
-    Text(
-        stringResource(R.string.workspace_kb_desc),
-        style = MaterialTheme.typography.bodySmall.forReading(),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
     notice?.let {
         Text(
             it,
@@ -312,7 +307,7 @@ fun KnowledgeWorkspaceListContent(
             modifier = Modifier.padding(vertical = NexaraSpacing.Large),
         )
     } else LazyColumn(
-        modifier = Modifier.weight(1f, fill = false).fillMaxWidth().padding(top = NexaraSpacing.Medium)
+        modifier = Modifier.weight(1f, fill = false).fillMaxWidth().padding(top = NexaraSpacing.Small)
             .bettboxListGroup().testTag("knowledge_workspaces_list"),
         contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
     ) {
@@ -327,7 +322,12 @@ fun KnowledgeWorkspaceListContent(
                 headlineContent = { Text(workspace.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
                     NexaraIdentifierText(
-                        workspaceKindLabel(workspace.kind) + " · " + compactSharedPath(workspace.location),
+                        // 内置文件夹只在显示名与目录名不同时补目录名；设备文件夹的路径本身有用。
+                        workspaceKindLabel(workspace.kind) + when {
+                            workspace.kind == WorkspaceEntity.KIND_SHARED -> " · " + compactSharedPath(workspace.location)
+                            workspace.displayName != workspace.location -> " · " + workspace.location
+                            else -> ""
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

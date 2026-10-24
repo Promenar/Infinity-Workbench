@@ -3,16 +3,13 @@ package com.promenar.nexara.ui.workspace
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
@@ -30,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -54,7 +50,6 @@ import com.promenar.nexara.ui.settings.lanHostsSummary
 import com.promenar.nexara.ui.settings.saveLanHosts
 import com.promenar.nexara.ui.settings.tailnetSummary
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.forReading
 
 internal data class AgentReachActions(
     val onEditLanHosts: () -> Unit = {},
@@ -119,11 +114,6 @@ internal fun AgentReachContent(
             .testTag("agent_reach_content"),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.SectionGap),
     ) {
-        Text(
-            text = stringResource(R.string.agent_reach_intro),
-            style = MaterialTheme.typography.bodyMedium.forReading(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         WorkspaceSection(state)
         PathSection(state)
         BackendSection(state)
@@ -135,24 +125,19 @@ internal fun AgentReachContent(
 @Composable
 private fun WorkspaceSection(state: AgentReachState) {
     val workspace = state.workspace
-    NexaraSettingsSection(
-        title = stringResource(R.string.agent_reach_section_workspace),
-        footer = stringResource(R.string.agent_reach_workspace_footer),
-    ) {
+    NexaraSettingsSection(title = stringResource(R.string.agent_reach_section_workspace)) {
         NexaraSettingsRowLayout(
             title = when (workspace) {
-                SessionWorkspaceUi.Loading -> stringResource(R.string.workspace_session_current)
+                SessionWorkspaceUi.Loading -> "…"
                 SessionWorkspaceUi.Private -> stringResource(R.string.workspace_kind_private)
                 is SessionWorkspaceUi.Directory -> workspace.name
                 is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
             },
             subtitle = when (workspace) {
-                SessionWorkspaceUi.Loading -> "…"
-                SessionWorkspaceUi.Private -> stringResource(R.string.workspace_session_private_desc)
-                is SessionWorkspaceUi.Directory -> workspaceKindLabel(workspace.kind) + " · " + workspaceLocationText(workspace.kind, workspace.location)
+                is SessionWorkspaceUi.Directory -> workspaceKindLabel(workspace.kind)
                 is SessionWorkspaceUi.Unavailable -> workspace.reason.ifBlank { stringResource(R.string.agent_reach_workspace_unavailable) }
+                else -> null
             },
-            subtitleIsIdentifier = workspace is SessionWorkspaceUi.Directory,
             subtitleMaxLines = 2,
             leadingContent = {
                 if (workspace is SessionWorkspaceUi.Unavailable) {
@@ -163,37 +148,19 @@ private fun WorkspaceSection(state: AgentReachState) {
             },
             modifier = Modifier.testTag("agent_reach_workspace"),
         )
-        workspace.traits?.let { traits ->
-            Column(
+        if (workspace is SessionWorkspaceUi.Private || workspace is SessionWorkspaceUi.Directory) {
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = NexaraSpacing.RowHorizontal)
                     .padding(bottom = NexaraSpacing.Medium),
-                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
             ) {
-                TraitLine(traits.tracked, R.string.agent_reach_trait_tracked_yes, R.string.agent_reach_trait_tracked_no)
-                TraitLine(traits.backedUp, R.string.agent_reach_trait_backup_yes, R.string.agent_reach_trait_backup_no)
-                TraitLine(traits.termuxVisible, R.string.agent_reach_trait_termux_yes, R.string.agent_reach_trait_termux_no)
-                TraitLine(traits.survivesUninstall, R.string.agent_reach_trait_uninstall_yes, R.string.agent_reach_trait_uninstall_no)
+                workspaceKindTags((workspace as? SessionWorkspaceUi.Directory)?.kind).forEach { tag ->
+                    WorkspaceTagChip(stringResource(tag.label), tag.tone)
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun TraitLine(value: Boolean, yes: Int, no: Int) {
-    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-        Icon(
-            imageVector = if (value) Icons.Rounded.Check else Icons.Rounded.Close,
-            contentDescription = null,
-            tint = if (value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(NexaraSpacing.RowIconSize),
-        )
-        Text(
-            text = stringResource(if (value) yes else no),
-            style = MaterialTheme.typography.bodySmall.forReading(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -203,7 +170,7 @@ private fun PathRow(path: String, meaning: String, tag: String) {
         title = path,
         subtitle = meaning,
         titleTextStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-        subtitleMaxLines = 5,
+        subtitleMaxLines = 2,
         modifier = Modifier.testTag(tag),
     )
 }
@@ -226,11 +193,7 @@ private fun PathSection(state: AgentReachState) {
                     stringResource(if (mount.global) R.string.mount_scope_global else R.string.mount_scope_current),
                     stringResource(if (mount.readOnly) R.string.agent_reach_mount_read_only else R.string.agent_reach_mount_read_write),
                 ) + listOfNotNull(if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null)
-                PathRow(
-                    "/mnt/${mount.alias}",
-                    attributes.joinToString(" · ") + "\n" + stringResource(R.string.agent_reach_path_mnt),
-                    "agent_reach_path_mount",
-                )
+                PathRow("/mnt/${mount.alias}", attributes.joinToString(" · "), "agent_reach_path_mount")
             }
         }
     }
@@ -257,9 +220,11 @@ private fun BackendSection(state: AgentReachState) {
             }
             NexaraSettingsRowLayout(
                 title = stringResource(title),
-                subtitle = backendStatusText(backend) + " · " + stringResource(scope),
+                // 可用时说明作用范围，不可用时只说状态。
+                subtitle = if (backend.status == ReachBackendStatus.READY && backend.count == null) stringResource(scope)
+                else backendStatusText(backend),
                 icon = icon,
-                subtitleMaxLines = 6,
+                subtitleMaxLines = 2,
                 enabled = backend.status != ReachBackendStatus.DISABLED,
                 modifier = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}"),
             )
@@ -304,7 +269,7 @@ private fun ApprovalSection(state: AgentReachState) {
                 },
             ),
             icon = Icons.Rounded.VerifiedUser,
-            subtitleMaxLines = 5,
+            subtitleMaxLines = 2,
             modifier = Modifier.testTag("agent_reach_mode"),
         )
         NexaraSettingsRowLayout(
@@ -321,10 +286,7 @@ private fun ApprovalSection(state: AgentReachState) {
 
 @Composable
 private fun NetworkSection(state: AgentReachState, actions: AgentReachActions) {
-    NexaraSettingsSection(
-        title = stringResource(R.string.agent_reach_section_network),
-        footer = stringResource(R.string.network_section_matrix_footer),
-    ) {
+    NexaraSettingsSection(title = stringResource(R.string.agent_reach_section_network)) {
         val network = state.network
         if (network == null) {
             NexaraSettingsRowLayout(title = stringResource(R.string.settings_status_loading))

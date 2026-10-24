@@ -2,66 +2,53 @@
 <!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
     <string name="agent_reach_title">Agent 可达范围</string>
-    <string name="agent_reach_entry">Agent 可达范围</string>
-    <string name="agent_reach_entry_desc">工作区、路径、执行后端、审批与网络</string>
-    <string name="agent_reach_intro">本会话的 Agent 此刻能读写哪些位置、由谁执行、何时需要你批准、能连到哪些网络。这里只展示现状，实际判定在每次工具调用时进行。</string>
 
     <string name="agent_reach_section_workspace">当前工作区</string>
-    <string name="agent_reach_workspace_footer">文件工具和内置命令都以它为根。在上方工作区栏切换。</string>
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
-    <string name="agent_reach_trait_tracked_yes">文件工具删除的文件进回收站，并保留版本历史</string>
-    <string name="agent_reach_trait_tracked_no">没有回收站和版本历史，改动请用 Git 查看</string>
-    <string name="agent_reach_trait_backup_yes">包含在本地与 WebDAV 备份中</string>
-    <string name="agent_reach_trait_backup_no">不在 &brand; 备份中</string>
-    <string name="agent_reach_trait_termux_yes">Termux 可直接访问（需执行 termux-setup-storage）</string>
-    <string name="agent_reach_trait_termux_no">Termux 看不到这个目录</string>
-    <string name="agent_reach_trait_uninstall_yes">卸载 &brand; 后仍保留</string>
-    <string name="agent_reach_trait_uninstall_no">卸载 &brand; 或清除数据会一并删除</string>
 
     <string name="agent_reach_section_paths">路径</string>
-    <string name="agent_reach_paths_footer">同一个路径在不同执行方中含义不同：文件工具里的 / 是工作区，命令和 Termux 里的 / 是设备根目录，SSH 里的 / 是远端根目录。</string>
-    <string name="agent_reach_path_root">文件工具与隔离脚本：当前工作区根目录</string>
-    <string name="agent_reach_path_workspace_var">内置命令：同一个工作区，也是命令的当前目录</string>
-    <string name="agent_reach_path_skills">用户级技能目录，修改需逐次批准；命令中使用 $NEXARA_SKILLS</string>
-    <string name="agent_reach_path_mnt_empty">没有挂载外部文件夹。可在文件页的外部文件夹中添加</string>
-    <string name="agent_reach_path_mnt">只有文件工具和隔离脚本能访问，命令看不到</string>
-    <string name="agent_reach_mount_saf">系统授权文件夹</string>
-    <string name="agent_reach_mount_path">共享存储路径</string>
+    <string name="agent_reach_paths_footer">命令和 Termux 里的 / 是设备根目录；/mnt 下的文件夹命令看不到。</string>
+    <string name="agent_reach_path_root">文件工具的根目录</string>
+    <string name="agent_reach_path_workspace_var">命令里的工作区路径</string>
+    <string name="agent_reach_path_skills">技能目录，每次改动需批准</string>
+    <string name="agent_reach_path_mnt_empty">未挂载外部文件夹</string>
+    <string name="agent_reach_mount_saf">系统授权</string>
+    <string name="agent_reach_mount_path">设备路径</string>
     <string name="agent_reach_mount_read_only">只读</string>
     <string name="agent_reach_mount_read_write">可读写</string>
     <string name="agent_reach_mount_unavailable">当前不可用</string>
 
     <string name="agent_reach_section_backends">执行后端</string>
-    <string name="agent_reach_backends_footer">命令直接删除或覆盖的文件不进回收站。Termux 与 SSH 在工具设置中启用和管理。</string>
+    <string name="agent_reach_backends_footer">命令删除的文件不进回收站。</string>
     <string name="agent_reach_backend_files">文件工具</string>
-    <string name="agent_reach_backend_files_scope">工作区、挂载与技能目录</string>
+    <string name="agent_reach_backend_files_scope">工作区、/mnt 与 /skills</string>
     <string name="agent_reach_backend_builtin">内置命令 shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">以 &brand; 身份在工作区运行，也能读写 &brand; 自己的数据</string>
+    <string name="agent_reach_backend_builtin_scope">在工作区运行，可读写 &brand; 数据</string>
     <string name="agent_reach_backend_sandbox">隔离脚本 exec_js · python_sandbox</string>
-    <string name="agent_reach_backend_sandbox_scope">隔离进程，只能经文件审批访问工作区</string>
+    <string name="agent_reach_backend_sandbox_scope">隔离运行，写文件需批准</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>
-    <string name="agent_reach_backend_termux_scope">在 Termux 主目录运行，看不到本工作区；可经挂载或共享存储交换文件</string>
-    <string name="agent_reach_backend_termux_scope_shared">在 Termux 主目录运行；本工作区位于共享存储，Termux 可访问</string>
+    <string name="agent_reach_backend_termux_scope">在 Termux 主目录运行，看不到工作区</string>
+    <string name="agent_reach_backend_termux_scope_shared">在 Termux 主目录运行，可访问工作区</string>
     <string name="agent_reach_backend_ssh">SSH ssh_exec · sftp</string>
-    <string name="agent_reach_backend_ssh_scope">只连设置中登记的主机，远端权限由账户决定</string>
+    <string name="agent_reach_backend_ssh_scope">只连已登记的主机</string>
     <plurals name="agent_reach_ssh_hosts">
         <item quantity="other">已登记 %1$d 台主机</item>
     </plurals>
     <string name="agent_reach_status_ready">可用</string>
-    <string name="agent_reach_status_shell_only">只有系统 Shell，此设备无内置 Python</string>
-    <string name="agent_reach_status_js_only">只有 JavaScript，此设备无内置 Python</string>
+    <string name="agent_reach_status_shell_only">只有 Shell，无内置 Python</string>
+    <string name="agent_reach_status_js_only">只有 JavaScript，无内置 Python</string>
     <string name="agent_reach_status_disabled">未启用</string>
     <string name="agent_reach_status_no_hosts">未登记主机</string>
 
     <string name="agent_reach_section_approval">审批</string>
-    <string name="agent_reach_approval_footer">无论哪种模式，SSH 主机配置、技能目录修改、永久删除和创建定时任务都会逐次询问。</string>
-    <string name="agent_reach_mode_auto">工具直接执行，只有下方列出的例外需要你批准</string>
-    <string name="agent_reach_mode_semi">读取直接执行；写入、删除、命令、脚本、外部写入和 MCP 工具需要批准</string>
-    <string name="agent_reach_mode_manual">每次工具调用都需要批准</string>
+    <string name="agent_reach_approval_footer">SSH 主机、技能目录、永久删除和定时任务始终逐次批准。</string>
+    <string name="agent_reach_mode_auto">直接执行，下方例外除外</string>
+    <string name="agent_reach_mode_semi">读取直接执行，其余需批准</string>
+    <string name="agent_reach_mode_manual">每次调用都需批准</string>
     <string name="agent_reach_always_allowed">始终允许的目标</string>
-    <string name="agent_reach_always_allowed_none">没有对本会话生效的条目</string>
+    <string name="agent_reach_always_allowed_none">无</string>
     <plurals name="agent_reach_always_allowed_count">
-        <item quantity="other">%1$d 条对本会话生效，可在工具设置中撤销</item>
+        <item quantity="other">%1$d 条生效</item>
     </plurals>
 
     <string name="agent_reach_section_network">网络</string>

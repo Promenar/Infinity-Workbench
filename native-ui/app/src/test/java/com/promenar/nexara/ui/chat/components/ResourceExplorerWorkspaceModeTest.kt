@@ -12,6 +12,10 @@ import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
+import com.promenar.nexara.domain.workspace.DirectoryBatchResult
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
+import com.promenar.nexara.domain.workspace.DirectoryFileOpException
+import com.promenar.nexara.domain.workspace.DirectoryWorkspaceFiles
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -217,6 +221,144 @@ class ResourceExplorerWorkspaceModeTest {
         assertThat(parentDirectoryPath("/")).isNull()
         assertThat(parentDirectoryPath("/src")).isEqualTo("/")
         assertThat(parentDirectoryPath("/src/main")).isEqualTo("/src")
+    }
+
+    @Test
+    fun `clipboard refuses pasting an entry into itself or its descendants`() {
+        val copy = DirectoryClipboard(listOf("/src", "/notes.md"), cut = false)
+        assertThat(copy.canPasteInto("/src")).isFalse()
+        assertThat(copy.canPasteInto("/src/main")).isFalse()
+        // 前缀相同的兄弟目录不算子目录；复制回原目录由后端自动改名。
+        assertThat(copy.canPasteInto("/src2")).isTrue()
+        assertThat(copy.canPasteInto("/")).isTrue()
+
+        val cut = copy.copy(cut = true)
+        assertThat(cut.canPasteInto("/")).isFalse()
+        assertThat(cut.canPasteInto("/docs")).isTrue()
+    }
+
+    @Test
+    fun `batch outcome counts results and keeps first failure reason`() {
+        val result = DirectoryBatchResult(
+            succeeded = listOf("/a"),
+            failed = linkedMapOf("/b" to DirectoryFileOpCode.NAME_EXISTS, "/c" to DirectoryFileOpCode.IO),
+        )
+        assertThat(result.toOutcome(DirectoryOp.MOVE))
+            .isEqualTo(DirectoryOpOutcome(DirectoryOp.MOVE, succeeded = 1, failed = 2, reason = DirectoryFileOpCode.NAME_EXISTS))
+        assertThat(DirectoryBatchResult(listOf("/a"), emptyMap()).toOutcome(DirectoryOp.DELETE).reason).isNull()
+    }
+
+    @Test
+    fun `cut and paste moves selection and keeps only failed entries on clipboard`() = runTest(dispatcher) {
+        val backend = FakeBackend(
+            mapOf(
+                "/" to listOf(entry("/docs", isDirectory = true), entry("/a.md"), entry("/b.md")),
+                "/docs" to emptyList(),
+            ),
+        )
+        val files = FakeFiles().apply { moveResult = DirectoryBatchResult(listOf("/a.md"), mapOf("/b.md" to DirectoryFileOpCode.NAME_EXISTS)) }
+        val viewModel = directoryViewModel(backend, files)
+
+        viewModel.toggleDirectorySelection("/b.md")
+        viewModel.toggleDirectorySelection("/a.md")
+        viewModel.copyDirectorySelection(cut = true)
+        // 剪贴板按列表顺序记录，选择随之清空。
+        assertThat(viewModel.directory.value.clipboard).isEqualTo(DirectoryClipboard(listOf("/a.md", "/b.md"), cut = true))
+        assertThat(viewModel.directory.value.selection).isEmpty()
+
+        viewModel.pasteDirectoryClipboard()
+        advanceUntilIdle()
+        assertThat(files.calls).isEmpty()
+
+        viewModel.openDirectory("/docs")
+        advanceUntilIdle()
+        viewModel.pasteDirectoryClipboard()
+        advanceUntilIdle()
+
+        assertThat(files.calls).containsExactly("move s [/a.md, /b.md] -> /docs")
+        val state = viewModel.directory.value
+        assertThat(state.operating).isFalse()
+        assertThat(state.outcome).isEqualTo(DirectoryOpOutcome(DirectoryOp.MOVE, 1, 1, DirectoryFileOpCode.NAME_EXISTS))
+        assertThat(state.clipboard).isEqualTo(DirectoryClipboard(listOf("/b.md"), cut = true))
+        assertThat(backend.listed.last()).isEqualTo("/docs")
+    }
+
+    @Test
+    fun `delete failure reports reason and rename result reaches dialog callback`() = runTest(dispatcher) {
+        val backend = FakeBackend(mapOf("/" to listOf(entry("/a.md"))))
+        val files = FakeFiles().apply {
+            deleteFailure = DirectoryFileOpException(DirectoryFileOpCode.SESSION_BUSY)
+            renameFailure = DirectoryFileOpException(DirectoryFileOpCode.NAME_EXISTS)
+        }
+        val viewModel = directoryViewModel(backend, files)
+
+        viewModel.toggleDirectorySelection("/a.md")
+        viewModel.deleteDirectorySelection()
+        advanceUntilIdle()
+        assertThat(viewModel.directory.value.outcome)
+            .isEqualTo(DirectoryOpOutcome(DirectoryOp.DELETE, 0, 1, DirectoryFileOpCode.SESSION_BUSY))
+        assertThat(viewModel.directory.value.selection).isEmpty()
+
+        val results = mutableListOf<DirectoryFileOpCode?>()
+        viewModel.toggleDirectorySelection("/a.md")
+        viewModel.renameDirectoryEntry("/a.md", "b.md") { results += it }
+        advanceUntilIdle()
+        // 失败时保留选择，用户可在对话框里改名重试。
+        assertThat(results).containsExactly(DirectoryFileOpCode.NAME_EXISTS)
+        assertThat(viewModel.directory.value.selection).containsExactly("/a.md")
+
+        files.renameFailure = null
+        viewModel.renameDirectoryEntry("/a.md", "b.md") { results += it }
+        viewModel.createDirectoryFolder("new") { results += it }
+        advanceUntilIdle()
+        // 前一项进行中时新的单项操作被忽略，不会并发写同一目录。
+        assertThat(results).containsExactly(DirectoryFileOpCode.NAME_EXISTS, null).inOrder()
+        assertThat(viewModel.directory.value.selection).isEmpty()
+        assertThat(files.calls).containsExactly("delete s [/a.md]", "rename s /a.md -> b.md", "rename s /a.md -> b.md").inOrder()
+    }
+
+    private fun TestScope.directoryViewModel(backend: FakeBackend, files: DirectoryWorkspaceFiles): ResourceExplorerViewModel {
+        val access = FakeAccess(directory("ws1", "p4-accept", temporaryFolder.newFolder())) { backend }
+        return ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            injectedWorkspaceRepository = mockk(relaxed = true),
+            injectedImporter = mockk(relaxed = true),
+            injectedWorkspaceAccess = access,
+            injectedDirectoryFiles = files,
+            io = dispatcher,
+        ).also {
+            it.loadSession("s")
+            advanceUntilIdle()
+        }
+    }
+
+    private class FakeFiles : DirectoryWorkspaceFiles {
+        val calls = mutableListOf<String>()
+        var moveResult = DirectoryBatchResult(emptyList(), emptyMap())
+        var deleteFailure: DirectoryFileOpException? = null
+        var renameFailure: DirectoryFileOpException? = null
+        override suspend fun createDirectory(sessionId: String, parent: String, name: String): ExternalFolderEntry {
+            calls += "mkdir $sessionId $parent/$name"
+            return ExternalFolderEntry("$parent/$name", name, true, 0, 0)
+        }
+        override suspend fun rename(sessionId: String, path: String, newName: String): ExternalFolderEntry {
+            calls += "rename $sessionId $path -> $newName"
+            renameFailure?.let { throw it }
+            return ExternalFolderEntry("/$newName", newName, false, 0, 0)
+        }
+        override suspend fun move(sessionId: String, paths: List<String>, targetDirectory: String): DirectoryBatchResult {
+            calls += "move $sessionId $paths -> $targetDirectory"
+            return moveResult
+        }
+        override suspend fun copy(sessionId: String, paths: List<String>, targetDirectory: String): DirectoryBatchResult {
+            calls += "copy $sessionId $paths -> $targetDirectory"
+            return DirectoryBatchResult(paths, emptyMap())
+        }
+        override suspend fun delete(sessionId: String, paths: List<String>): DirectoryBatchResult {
+            calls += "delete $sessionId $paths"
+            deleteFailure?.let { throw it }
+            return DirectoryBatchResult(paths, emptyMap())
+        }
     }
 
     private fun TestScope.viewModel(repo: IWorkspaceRepository, access: ResourceExplorerWorkspaceAccess) =

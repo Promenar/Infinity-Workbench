@@ -14,6 +14,10 @@ import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
+import com.promenar.nexara.domain.workspace.DirectoryBatchResult
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
+import com.promenar.nexara.domain.workspace.DirectoryFileOpException
+import com.promenar.nexara.domain.workspace.DirectoryWorkspaceFiles
 import com.promenar.nexara.share.core.AndroidSafContentSource
 import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.ShareImportItem
@@ -72,6 +76,7 @@ class ResourceExplorerViewModel(
     injectedImporter: SharedFileImporter? = null,
     injectedGitChanges: GitChangesService? = null,
     injectedWorkspaceAccess: ResourceExplorerWorkspaceAccess? = null,
+    injectedDirectoryFiles: DirectoryWorkspaceFiles? = null,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -96,6 +101,13 @@ class ResourceExplorerViewModel(
     private val workspaceAccess: ResourceExplorerWorkspaceAccess? by lazy {
         injectedWorkspaceAccess ?: if (injectedWorkspaceRepository == null) {
             (application as? NexaraApplication)?.sessionWorkspaceResolver?.let(::ResolverWorkspaceAccess)
+        } else {
+            null
+        }
+    }
+    private val directoryFiles: DirectoryWorkspaceFiles? by lazy {
+        injectedDirectoryFiles ?: if (injectedWorkspaceRepository == null) {
+            (application as? NexaraApplication)?.directoryWorkspaceFiles
         } else {
             null
         }
@@ -343,6 +355,127 @@ class ResourceExplorerViewModel(
         _directory.value = _directory.value.copy(selectedFile = null, preview = null, previewError = null)
     }
 
+    fun toggleDirectorySelection(path: String) {
+        val current = _directory.value
+        _directory.value = current.copy(
+            selection = if (path in current.selection) current.selection - path else current.selection + path,
+            outcome = null,
+        )
+    }
+
+    fun clearDirectorySelection() {
+        _directory.value = _directory.value.copy(selection = emptySet())
+    }
+
+    /** 把选中条目放入剪贴板，[cut] 为 true 时粘贴即移动。 */
+    fun copyDirectorySelection(cut: Boolean) {
+        val current = _directory.value
+        if (current.selection.isEmpty()) return
+        _directory.value = current.copy(
+            clipboard = DirectoryClipboard(current.entries.map { it.path }.filter(current.selection::contains), cut),
+            selection = emptySet(),
+            outcome = null,
+        )
+    }
+
+    fun clearDirectoryClipboard() {
+        _directory.value = _directory.value.copy(clipboard = null)
+    }
+
+    fun dismissDirectoryOutcome() {
+        _directory.value = _directory.value.copy(outcome = null)
+    }
+
+    fun pasteDirectoryClipboard() {
+        val clipboard = _directory.value.clipboard ?: return
+        val target = _directory.value.path
+        if (!clipboard.canPasteInto(target)) return
+        val op = if (clipboard.cut) DirectoryOp.MOVE else DirectoryOp.COPY
+        runDirectoryBatch(op, clearClipboard = true) { files, sessionId ->
+            if (clipboard.cut) files.move(sessionId, clipboard.paths, target) else files.copy(sessionId, clipboard.paths, target)
+        }
+    }
+
+    fun deleteDirectorySelection() {
+        val paths = _directory.value.selection.toList()
+        if (paths.isEmpty()) return
+        runDirectoryBatch(DirectoryOp.DELETE, clearClipboard = false) { files, sessionId -> files.delete(sessionId, paths) }
+    }
+
+    /** 新建或改名；[onResult] 收到 null 表示成功，否则为失败原因，由对话框就地显示。 */
+    fun createDirectoryFolder(name: String, onResult: (DirectoryFileOpCode?) -> Unit) {
+        val parent = _directory.value.path
+        runDirectorySingle(onResult) { files, sessionId -> files.createDirectory(sessionId, parent, name) }
+    }
+
+    fun renameDirectoryEntry(path: String, name: String, onResult: (DirectoryFileOpCode?) -> Unit) {
+        runDirectorySingle(onResult) { files, sessionId -> files.rename(sessionId, path, name) }
+    }
+
+    private fun runDirectorySingle(
+        onResult: (DirectoryFileOpCode?) -> Unit,
+        action: suspend (DirectoryWorkspaceFiles, String) -> Unit,
+    ) {
+        val files = directoryFiles ?: return onResult(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
+        val sessionId = currentSessionId ?: return onResult(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
+        if (_directory.value.operating) return
+        _directory.value = _directory.value.copy(operating = true, outcome = null)
+        viewModelScope.launch {
+            val code = try {
+                withContext(io) { action(files, sessionId) }
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: DirectoryFileOpException) {
+                failure.code
+            } catch (_: Exception) {
+                DirectoryFileOpCode.IO
+            }
+            _directory.value = _directory.value.copy(operating = false, selection = if (code == null) emptySet() else _directory.value.selection)
+            onResult(code)
+            if (code == null) refreshDirectory()
+        }
+    }
+
+    private fun runDirectoryBatch(
+        op: DirectoryOp,
+        clearClipboard: Boolean,
+        action: suspend (DirectoryWorkspaceFiles, String) -> DirectoryBatchResult,
+    ) {
+        val files = directoryFiles ?: return
+        val sessionId = currentSessionId ?: return
+        if (_directory.value.operating) return
+        _directory.value = _directory.value.copy(operating = true, outcome = null)
+        viewModelScope.launch {
+            var failure: DirectoryFileOpCode? = null
+            val batch = try {
+                withContext(io) { action(files, sessionId) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: DirectoryFileOpException) {
+                failure = error.code
+                null
+            } catch (_: Exception) {
+                failure = DirectoryFileOpCode.IO
+                null
+            }
+            val outcome = batch?.toOutcome(op) ?: DirectoryOpOutcome(op, 0, 1, failure)
+            val current = _directory.value
+            // 粘贴部分失败时剪贴板只留下失败的条目，便于换个位置重试。
+            val clipboard = if (!clearClipboard) current.clipboard else current.clipboard?.let { board ->
+                val remaining = if (batch == null) board.paths else board.paths.filter(batch.failed::containsKey)
+                remaining.takeIf { it.isNotEmpty() }?.let { board.copy(paths = it) }
+            }
+            _directory.value = current.copy(
+                operating = false,
+                selection = emptySet(),
+                clipboard = clipboard,
+                outcome = outcome,
+            )
+            refreshDirectory()
+        }
+    }
+
     /**
      * 读取目录工作区内的文件，供预览与“使用其它应用打开”。每次读取前重新解析会话工作区，
      * 绑定已变化或目录不可用时抛出 [ExternalFolderException]。
@@ -361,6 +494,7 @@ class ResourceExplorerViewModel(
         _directory.value = current.copy(
             path = path,
             entries = if (current.path == path) current.entries else emptyList(),
+            selection = if (current.path == path) current.selection else emptySet(),
             isLoading = true,
             error = null,
         )

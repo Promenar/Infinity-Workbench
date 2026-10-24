@@ -363,8 +363,11 @@ class ChatViewModel(
     private val sessionManager = SessionManager(
         store,
         sessionRepository,
-        (application as NexaraApplication)::deleteSessionRecoverably,
+        { id: String, keepFiles: Boolean -> (application as NexaraApplication).deleteSessionRecoverably(id, keepFiles) },
     )
+    private val appContext = application
+    private val directoryBusyRegistration = (application as? NexaraApplication)
+        ?.registerDirectoryWorkspaceBusyCheck { id -> id == _currentSessionId.value && isWorkspaceSwitchBlocked() }
     val availableSessionCustomSkills = (application as NexaraApplication).skillRepository
         .getAllCustomSkills()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -2677,6 +2680,7 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        directoryBusyRegistration?.close()
         _currentSessionId.value?.let { sessionId ->
             generationCoordinator.release(sessionId)
             generationPresentationStore.release(sessionId)
@@ -2810,11 +2814,12 @@ class ChatViewModel(
         }
     }
 
-    fun deleteSession(onDeleted: () -> Unit = {}) {
+    fun deleteSession(onDeleted: () -> Unit = {}, keepFiles: Boolean = false) {
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
             val failure = SessionDeletionUiAction {
-                sessionManager.deleteSession(sessionId)
+                val result = sessionManager.deleteSession(sessionId, keepFiles)
+                com.promenar.nexara.ui.workspace.announceKeptFiles(appContext, result)
                 generationCoordinator.release(sessionId, discardTerminal = true)
                 generationPresentationStore.release(sessionId)
             }.run(onDeleted)

@@ -146,10 +146,12 @@ fun AgentHubScreen(
         onCancelDeleteSession = {
             pendingDeleteSessionId = null
         },
-        onDeleteSession = { sessionId ->
-            sessionListViewModel.deleteSession(sessionId)
+        onDeleteSession = { sessionId, keepFiles ->
+            sessionListViewModel.deleteSession(sessionId, keepFiles)
             pendingDeleteSessionId = null
         },
+        loadWorkspaceSummary = (LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication)
+            ?.let { app -> app::privateWorkspaceSummary },
     )
 
     AgentHubScreenContent(state = state, actions = actions, snackbarHostState = snackbarHostState)
@@ -355,7 +357,8 @@ internal data class AgentHubScreenActions(
     val onToggleSessionPin: (String) -> Unit = {},
     val onRequestDeleteSession: (String) -> Unit = {},
     val onCancelDeleteSession: () -> Unit = {},
-    val onDeleteSession: (String) -> Unit = {},
+    val onDeleteSession: (sessionId: String, keepFiles: Boolean) -> Unit = { _, _ -> },
+    val loadWorkspaceSummary: (suspend (String) -> com.promenar.nexara.domain.workspace.PrivateWorkspaceSummary?)? = null,
 )
 
 internal data class HubSessionEntry(val session: Session, val agentTitle: String)
@@ -479,17 +482,14 @@ internal fun AgentHubScreenContent(
             confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
             destructive = true
         )
-        ConfirmDialog(
-            show = state.pendingDeleteSessionId != null,
-            onDismiss = actions.onCancelDeleteSession,
-            onConfirm = {
-                state.pendingDeleteSessionId?.let(actions.onDeleteSession)
-            },
-            title = stringResource(R.string.session_settings_delete_title),
-            description = stringResource(R.string.session_settings_delete_message),
-            confirmLabel = stringResource(R.string.session_settings_delete_btn),
-            destructive = true
-        )
+        state.pendingDeleteSessionId?.let { sessionId ->
+            com.promenar.nexara.ui.workspace.DeleteSessionDialog(
+                sessionId = sessionId,
+                loadSummary = actions.loadWorkspaceSummary,
+                onConfirm = { keepFiles -> actions.onDeleteSession(sessionId, keepFiles) },
+                onCancel = actions.onCancelDeleteSession,
+            )
+        }
 
         // 无助手、搜索无结果与列表之间交叉淡入。
         AnimatedContent(
