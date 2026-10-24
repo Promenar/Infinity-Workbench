@@ -22,6 +22,61 @@ class PrivateWorkspaceFileRetentionTest {
     @get:Rule val temporary = TemporaryFolder()
     private val clock = Clock.fixed(Instant.parse("2026-10-24T08:09:00Z"), ZoneOffset.UTC)
 
+    @Test fun `只有链接与特殊文件时无摘要也不创建保留目录`() = runBlocking {
+        val source = temporary.newFolder().canonicalFile
+        java.nio.file.Files.createSymbolicLink(File(source, "link").toPath(), temporary.newFolder().toPath())
+        assertEquals(0, ProcessBuilder("mkfifo", File(source, "pipe").path).start().waitFor())
+        val projects = temporary.newFolder().canonicalFile
+        val rows = mutableListOf<WorkspaceEntity>()
+        val retention = PrivateWorkspaceFileRetention(projects, dao(rows), clock, JvmBoundRealPathFileSystem())
+        assertNull(retention.summary(source.toPath()))
+        assertNull(retention.prepare(source.toPath(), "标题"))
+        assertTrue(projects.list()!!.isEmpty())
+        assertTrue(rows.isEmpty())
+    }
+
+    @Test fun `保留副本内新增链接时拒绝登记并保留人工核查证据`() = runBlocking {
+        val source = temporary.newFolder().canonicalFile
+        File(source, "a").writeText("内容")
+        val projects = temporary.newFolder().canonicalFile
+        val rows = mutableListOf<WorkspaceEntity>()
+        val retention = PrivateWorkspaceFileRetention(projects, dao(rows), clock, JvmBoundRealPathFileSystem())
+        val kept = retention.prepare(source.toPath(), "标题")!!
+        val destination = projects.listFiles()!!.single()
+        java.nio.file.Files.createSymbolicLink(File(destination, "link").toPath(), source.toPath())
+        assertNotNull(runCatching { kept.register() }.exceptionOrNull())
+        assertNotNull(runCatching { kept.rollback() }.exceptionOrNull())
+        assertTrue(rows.isEmpty())
+        assertEquals("内容", File(destination, "a").readText())
+        assertEquals("内容", File(source, "a").readText())
+    }
+
+    @Test fun `统计和保留跳过链接与特殊文件且不读取界外内容`() = runBlocking {
+        val source = temporary.newFolder().canonicalFile
+        File(source, "nested").mkdir()
+        File(source, "nested/a").writeText("abc")
+        val outside = temporary.newFolder().canonicalFile
+        File(outside, "secret").writeText("界外文件")
+        java.nio.file.Files.createSymbolicLink(File(source, "link").toPath(), outside.toPath())
+        java.nio.file.Files.createSymbolicLink(File(source, "nested/broken").toPath(), File(outside, "missing").toPath())
+        val fifo = File(source, "pipe")
+        assertEquals(0, ProcessBuilder("mkfifo", fifo.path).start().waitFor())
+        val projects = temporary.newFolder().canonicalFile
+        val rows = mutableListOf<WorkspaceEntity>()
+        val fs = JvmBoundRealPathFileSystem()
+        val retention = PrivateWorkspaceFileRetention(projects, dao(rows), clock, fs)
+        assertEquals(PrivateWorkspaceSummary(1, 3), retention.summary(source.toPath()))
+        val kept = retention.prepare(source.toPath(), "标题")!!
+        kept.register()
+        val destination = File(projects, rows.single().location)
+        assertEquals("abc", File(destination, "nested/a").readText())
+        assertEquals(setOf("nested", "nested/a"), destination.walkTopDown().drop(1).map { destination.toPath().relativize(it.toPath()).toString() }.toSet())
+        assertFalse(fs.reads.any { it.startsWith(outside.toPath()) || it == fifo.toPath() })
+        kept.rollback()
+        assertTrue(projects.list()!!.isEmpty())
+        assertEquals("界外文件", File(outside, "secret").readText())
+    }
+
     @Test fun `统计与保留排除回收站版本和暂存且空标题回退并避让登记和目录`() = runBlocking {
         val source = temporary.newFolder().canonicalFile
         File(source, "nested").mkdir()

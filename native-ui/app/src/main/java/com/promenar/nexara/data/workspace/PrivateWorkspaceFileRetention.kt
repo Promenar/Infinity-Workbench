@@ -198,9 +198,12 @@ class PrivateWorkspaceFileRetention internal constructor(
         fun visit(directory: BoundRealPathDirectory, prefix: String) {
             for (name in directory.names().sorted()) {
                 if (!includeReserved && (name.startsWith(".nexara", ignoreCase = true) || name.equals(".recycle_bin", ignoreCase = true))) continue
-                ExternalFolderPaths.validateName(name)
                 val state = checkNotNull(directory.stat(name)) { "文件在扫描期间消失" }
-                require(!state.isSymbolicLink && (state.isDirectory || state.isRegularFile)) { "会话专用空间包含链接或特殊文件" }
+                if (state.isSymbolicLink || (!state.isDirectory && !state.isRegularFile)) {
+                    check(!includeReserved) { "保留副本包含链接或特殊文件" }
+                    continue
+                }
+                ExternalFolderPaths.validateName(name)
                 val path = if (prefix.isEmpty()) name else "$prefix/$name"
                 nodes[path] = state
                 if (state.isDirectory) directory.openDirectory(name).use { child ->

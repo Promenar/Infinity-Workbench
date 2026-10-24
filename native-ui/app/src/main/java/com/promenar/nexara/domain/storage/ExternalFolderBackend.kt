@@ -25,6 +25,16 @@ interface ExternalFolderBackend {
     suspend fun createDirectory(path: String): ExternalFolderEntry
     suspend fun delete(path: String, expectedSha256: String? = null)
 
+    /** 同一后端内移动，不覆盖目标；不具备安全移动原语的实现明确拒绝。 */
+    suspend fun move(sourcePath: String, targetPath: String) {
+        throw ExternalFolderException("UNSUPPORTED", "该存储后端不支持直接移动")
+    }
+
+    /** 同一后端内流式复制，不覆盖目标；失败或取消时清理本次创建的条目。 */
+    suspend fun copy(sourcePath: String, targetPath: String) {
+        throw ExternalFolderException("UNSUPPORTED", "该存储后端不支持流式复制")
+    }
+
     /** 写入树操作前校验整个来源；真实路径实现还检查浏览列表隐藏的链接与受保护条目。 */
     suspend fun validateTree(path: String) {
         val entry = stat(path) ?: throw ExternalFolderException("NOT_FOUND", "源条目不存在")

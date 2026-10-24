@@ -291,6 +291,19 @@ class ExternalFolderManager(
         override suspend fun validateTree(path: String) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.validateTree(relative) }
         }
+        override suspend fun move(sourcePath: String, targetPath: String) = transfer(sourcePath, targetPath, move = true)
+        override suspend fun copy(sourcePath: String, targetPath: String) = transfer(sourcePath, targetPath, move = false)
+
+        private suspend fun transfer(sourcePath: String, targetPath: String, move: Boolean) = withContext(Dispatchers.IO) {
+            mutex.withLock {
+                access(sessionId, sourcePath, true, bindings) { sourceMount, backend, source ->
+                    access(sessionId, targetPath, true, bindings) { targetMount, _, target ->
+                        if (sourceMount.id != targetMount.id) fail("UNSUPPORTED", "直接文件操作不能跨挂载")
+                        if (move) backend.move(source, target) else backend.copy(source, target)
+                    }
+                }
+            }
+        }
         override suspend fun stat(path: String) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.stat(relative)?.copy(path = path) }
         }

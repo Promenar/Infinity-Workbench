@@ -83,6 +83,11 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
             beforeOperation?.invoke(operation, openedPath.resolve(if (source.startsWith(".nexara")) target else source))
             Files.move(child(source), child(target), ATOMIC_MOVE, REPLACE_EXISTING)
         }
+        override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            beforeOperation?.invoke("move", openedPath.resolve(source))
+            val destination = targetDirectory as Directory
+            Files.move(child(source), destination.child(target))
+        }
         override fun linkNew(source: String, target: String): Boolean {
             if (!supportHardLinks) return false
             Files.createLink(child(target), child(source))
