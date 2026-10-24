@@ -33,10 +33,11 @@ class LinuxModule(
     }
 
     // ── 软件包、来源记录与镜像 ──
-    private val packageBackend by lazy { UnavailableLinuxPackages(runtime) }
-    val packages: LinuxPackageManager get() = packageBackend
-    val provenance: LinuxPackageProvenance get() = packageBackend
-    val mirrors: LinuxMirrorSettings get() = packageBackend
+    private val unavailablePackages by lazy { UnavailableLinuxPackages(runtime) }
+    private val packageBackend by lazy { LinuxPackageBackend(context, runtime, host) }
+    val packages: LinuxPackageManager get() = if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) unavailablePackages else packageBackend.packages
+    val provenance: LinuxPackageProvenance get() = if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) unavailablePackages else packageBackend.provenance
+    val mirrors: LinuxMirrorSettings get() = if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) unavailablePackages else packageBackend.mirrors
 
     // ── 文件浏览 ──
     val files: LinuxFileSystem by lazy { UnavailableLinuxFiles() }
