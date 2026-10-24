@@ -162,7 +162,6 @@ fun approvalDiffPreviewDarkPreview() = FileChangeFrame {
             ),
         ),
         onApproveAll = {},
-        onAlwaysAllow = {},
     )
 }
 
@@ -182,6 +181,5 @@ fun approvalDiffPreviewCreateLightPreview() = FileChangeFrame(dark = false) {
                 diffPreview = ApprovalDiffPreview.Diff(FileDiffModel.fromTexts("", ApprovalNew, changeKind = FileChangeKind.CREATED)),
             ),
         ),
-        onAlwaysAllow = {},
     )
 }

@@ -31,7 +31,6 @@ fun approvalSingleBatch2Preview() = InlineBatch2Frame {
         toolName = "write_file",
         description = "此操作会修改目标文件，请核对内容后批准。",
         calls = listOf(previewWriteCall()),
-        onAlwaysAllow = {},
     )
 }
 
@@ -54,7 +53,6 @@ fun approvalMultipleBatch2Preview() = InlineBatch2Frame {
             ),
         ),
         onApproveAll = {},
-        onAlwaysAllow = {},
     )
 }
 
@@ -76,7 +74,6 @@ fun approvalBuiltinShellBatch2Preview() = InlineBatch2Frame {
                 highRisk = true,
             ),
         ),
-        onAlwaysAllow = {},
     )
 }
 
@@ -180,7 +177,6 @@ fun approvalLargeFontBatch2Preview() = InlineBatch2Frame {
         toolName = "write_file",
         description = "此操作会修改目标文件，请核对内容后批准。",
         calls = listOf(previewWriteCall()),
-        onAlwaysAllow = {},
     )
 }
 
@@ -261,7 +257,6 @@ fun approvalLongPythonCollapsedBatch2Preview() = InlineBatch2Frame {
                 highRisk = true,
             ),
         ),
-        onAlwaysAllow = {},
     )
 }
 

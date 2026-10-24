@@ -955,13 +955,9 @@
     <string name="skill_exec_js_desc">Run JavaScript in an isolated sandbox</string>
     <string name="skill_run_script">Run script file</string>
     <string name="skill_run_script_desc">Run a JS script from the workspace</string>
-    <string name="script_runtime_title">Script runtime</string>
-    <string name="script_approve_writes">Approve script writes</string>
-    <string name="script_approve_writes_desc">Write approval is on by default. When off, writes follow the script approval; deletion always needs its own approval.</string>
     <string name="script_write_approval">Script file write approval</string>
     <string name="script_approval_session">Session: %1$s</string>
     <string name="script_delete_approval">Script file deletion approval</string>
-    <string name="script_remember_file_target">Always allow this file operation in this session</string>
     <string name="script_allow_file">Allow</string>
     <string name="script_deny_file">Deny</string>
     <string name="skill_initialize_plan">Initialize Plan</string>
@@ -1760,4 +1756,11 @@
     <string name="tailscale_auth_key_hint">Paste an auth key starting with tskey-</string>
     <string name="common_mode_workspace">Workspace</string>
     <string name="common_mode_full_access">Full access</string>
+    <string name="common_mode_workspace_desc">File tools work freely inside the workspace; every command asks first.</string>
+    <string name="common_mode_full_access_desc">Commands also run without asking. They run as &brand; and can access all app data.</string>
+    <string name="chat_runtime_changes_title">Critical app data changed</string>
+    <plurals name="chat_runtime_changes_more">
+        <item quantity="one">%d more</item>
+        <item quantity="other">%d more</item>
+    </plurals>
 </resources>

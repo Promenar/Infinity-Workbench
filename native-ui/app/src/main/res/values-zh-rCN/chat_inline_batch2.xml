@@ -14,7 +14,6 @@
     <string name="chat_inline_collapse">收起</string>
     <string name="chat_inline_approval_reject">拒绝</string>
     <string name="chat_inline_approval_approve">批准</string>
-    <string name="chat_inline_approval_always_allow">本会话始终允许</string>
     <string name="chat_inline_approval_approve_current">批准当前</string>
     <string name="chat_inline_approval_reject_current">拒绝当前</string>
 </resources>

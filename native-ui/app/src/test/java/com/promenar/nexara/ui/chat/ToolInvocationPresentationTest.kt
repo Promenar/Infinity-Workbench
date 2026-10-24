@@ -276,6 +276,32 @@ class ToolInvocationPresentationTest {
         assertThat(invocation.durationMs).isEqualTo(200)
     }
 
+    @Test
+    fun `关键数据变化只解析结果对象中的字符串数组`() {
+        assertThat(parseRuntimeChanges(null)).isEmpty()
+        assertThat(parseRuntimeChanges("完成")).isEmpty()
+        assertThat(parseRuntimeChanges("[\"databases/a.db\"]")).isEmpty()
+        assertThat(parseRuntimeChanges("{\"exit_code\":0}")).isEmpty()
+        assertThat(parseRuntimeChanges("{\"runtime_changes\":\"databases/a.db\"}")).isEmpty()
+        assertThat(parseRuntimeChanges("{\"runtime_changes\":[\"databases/a.db (replaced)\",\"\",3,null]}"))
+            .containsExactly("databases/a.db (replaced)", "3")
+    }
+
+    @Test
+    fun `命令与后台任务结果的关键数据变化合并去重，其它工具不报告`() {
+        fun withChanges(id: String, callId: String, vararg paths: String) = result(id, callId, 2_000).copy(
+            content = "{\"runtime_changes\":[${paths.joinToString(",") { "\"$it\"" }}]}",
+        )
+        val invocations = toolInvocations(listOf(
+            call("a", "1", "shell_exec", 1_000), withChanges("ar", "1", "shared_prefs/x.xml (deleted)"),
+            call("b", "2", "job_status", 1_100), withChanges("br", "2", "shared_prefs/x.xml (deleted)", "files/agent_skills/s (added)"),
+            call("c", "3", "read_file", 1_200), withChanges("cr", "3", "databases/a.db (replaced)"),
+        ))
+        assertThat(invocations.last().runtimeChanges).isEmpty()
+        assertThat(toolGroupRuntimeChanges(invocations))
+            .containsExactly("shared_prefs/x.xml (deleted)", "files/agent_skills/s (added)").inOrder()
+    }
+
     private fun call(id: String, callId: String?, name: String, time: Long): ExecutionStep =
         ExecutionStep(id, "tool_call", toolName = name, toolCallId = callId, toolArgs = "{}", timestamp = time)
 

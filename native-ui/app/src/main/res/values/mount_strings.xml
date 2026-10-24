@@ -12,10 +12,6 @@
     <string name="mount_form_title">Mount an external folder</string>
     <string name="mount_alias">Mount alias</string>
     <string name="mount_alias_hint">Files are available at /mnt/alias/</string>
-    <string name="mount_read_only">Read only</string>
-    <string name="mount_read_write">Read and write</string>
-    <string name="mount_scope_current">Current session only</string>
-    <string name="mount_scope_global">All sessions</string>
     <string name="mount_select_folder">Select folder</string>
     <string name="mount_confirm">Mount folder</string>
     <string name="mount_path">External storage directory</string>
@@ -56,7 +52,6 @@
     <string name="mount_recycle_desc">Restore files the Agent deleted from mounted folders</string>
     <string name="mount_more_actions">More actions for %1$s</string>
     <string name="mount_form_section_target">Folder</string>
-    <string name="mount_form_section_permission">Permission</string>
-    <string name="mount_form_section_scope">Available in</string>
-    <string name="mount_read_only_desc">The Agent can read files but cannot change or delete them</string>
+    <string name="mount_saf_command_note">Only file tools can see this folder. Commands cannot reach folders authorized through the system picker.</string>
+    <string name="mount_real_path_command_note">File tools use /mnt/alias/. Commands reach it by its real path, and in Workspace mode each command still asks first.</string>
 </resources>

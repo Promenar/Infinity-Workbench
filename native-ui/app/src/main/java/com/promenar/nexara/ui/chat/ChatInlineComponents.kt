@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -55,6 +56,8 @@ import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagRetrievalTrace
+import com.promenar.nexara.domain.tool.CommandToolBackend
+import com.promenar.nexara.domain.tool.CommandToolClassification
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -939,6 +942,55 @@ internal fun ApprovalCallHeader(
     }
 }
 
+/**
+ * 标明这次审批的是命令还是内置工具：命令以真实进程运行、可越出工作区，内置工具由 Nexara 按固定规则执行。
+ * 两类并排出现时靠底色与图标区分，说明行写清各自能触及的范围。
+ */
+@Composable
+internal fun ApprovalKindNote(toolName: String, modifier: Modifier = Modifier) {
+    val backend = CommandToolClassification.backendFor(toolName)
+    val (label, detail) = when (backend) {
+        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON ->
+            R.string.chat_approval_kind_builtin_command to R.string.chat_approval_kind_builtin_command_detail
+        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command to R.string.chat_approval_kind_termux_command_detail
+        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command to R.string.chat_approval_kind_ssh_command_detail
+        null -> R.string.chat_approval_kind_tool to R.string.chat_approval_kind_tool_detail
+    }
+    val scheme = MaterialTheme.colorScheme
+    // 命令用强调色淡底与描边提示“能力更大”，不使用满色块，避免与唯一实心的批准按钮争夺视线。
+    val accent = if (backend != null) scheme.tertiary else scheme.onSurfaceVariant
+    val container = if (backend != null) scheme.tertiary.copy(alpha = 0.12f).compositeOver(scheme.surfaceContainerHigh) else scheme.surfaceContainerHigh
+    Surface(
+        color = container,
+        contentColor = scheme.onSurfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        border = if (backend != null) BorderStroke(1.dp, scheme.tertiary.copy(alpha = 0.35f)) else null,
+        modifier = modifier.fillMaxWidth().testTag(if (backend != null) UiTags.CHAT_APPROVAL_KIND_COMMAND else UiTags.CHAT_APPROVAL_KIND_TOOL),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = if (backend != null) Icons.Rounded.Terminal else Icons.Rounded.Extension,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.padding(top = 1.dp).size(18.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    stringResource(label),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (backend != null) accent else scheme.onSurface,
+                )
+                Text(stringResource(detail), style = MaterialTheme.typography.bodySmall.forReading())
+            }
+        }
+    }
+}
+
 /** 风险事实只占一行图标加文字，不使用整块红底。 */
 @Composable
 internal fun ApprovalRiskLine(text: String) {
@@ -987,6 +1039,7 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
                     ?: stringResource(R.string.chat_approval_execution_target_unknown),
             ),
         )
+        ApprovalKindNote(call.name)
         ApprovalReason(description)
         if (call.schedule != null) {
             ScheduleApprovalBlock(call.schedule)
@@ -1027,17 +1080,15 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
             }
         }
         call.background?.let { BackgroundRunLine(it) }
-        // 参数预览因摘要不一致缺失时，仍按工具名提示内置命令的工作区风险。
-        val builtinExec = preview?.commandRunsInWorkspace == true || call.name == "shell_exec" || call.name == "python_exec"
+        // 命令的访问范围已由类别条说明，不再重复通用高风险提示。
+        val command = CommandToolClassification.backendFor(call.name) != null
         val riskFacts = buildList {
             if (preview?.action == ApprovalPreview.Action.DELETE && !preview.detail.isNullOrBlank()) {
                 add(approvalPreviewDetail(preview, preview.detail))
-            } else if (call.highRisk && !target.isNullOrBlank() && !builtinExec) {
-                // 内置命令警告已说明数据风险，不再重复通用高风险提示。
+            } else if (call.highRisk && !target.isNullOrBlank() && !command) {
                 add(stringResource(R.string.chat_approval_high_risk_target_warning))
             }
             if (preview?.scriptAllowsNetwork == true) add(stringResource(R.string.agent_panels_network_allowed))
-            if (builtinExec) add(stringResource(R.string.chat_approval_builtin_exec_warning))
         }
         approvalRiskLines(description, riskFacts).forEach { ApprovalRiskLine(it) }
     }
@@ -1149,13 +1200,11 @@ fun ApprovalCard(
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {},
     onApproveAll: (() -> Unit)? = null,
-    onAlwaysAllow: (() -> Unit)? = null,
 ) {
     val currentCall = calls.firstOrNull()
     val remainingCount = (calls.size - 1).coerceAtLeast(0)
     val currentName = currentCall?.name ?: toolName
     val currentRisk = currentCall?.riskLabel.orEmpty()
-    val currentTarget = currentCall?.executionTarget
     val approveA11y = stringResource(R.string.chat_approval_approve_current_a11y, currentName, currentRisk, remainingCount)
     val declineA11y = stringResource(R.string.chat_approval_decline_current_a11y, currentName, currentRisk, remainingCount)
     val statusLabel = if (isExecuted) {
@@ -1186,6 +1235,7 @@ fun ApprovalCard(
                 if (calls.isEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         ApprovalCallHeader(toolName, "", highRisk = false, target = null)
+                        ApprovalKindNote(toolName)
                         ApprovalReason(description)
                         approvalRiskLines(description, emptyList()).forEach { ApprovalRiskLine(it) }
                     }
@@ -1216,15 +1266,6 @@ fun ApprovalCard(
                     onApprove = onApprove,
                     onDecline = onDecline,
                     onApproveAll = onApproveAll?.takeIf { remainingCount > 0 },
-                    alwaysAllow = onAlwaysAllow?.takeIf {
-                        !currentTarget.isNullOrBlank() && ToolExecutionTargets.canRemember(currentTarget)
-                    }?.let { handler ->
-                        handler to stringResource(
-                            R.string.chat_approval_always_allow_target_a11y,
-                            currentName,
-                            ToolExecutionTargets.display(requireNotNull(currentTarget)),
-                        )
-                    },
                 )
             }
         }
@@ -1246,7 +1287,6 @@ private fun ApprovalActionBar(
     onApprove: () -> Unit,
     onDecline: () -> Unit,
     onApproveAll: (() -> Unit)?,
-    alwaysAllow: Pair<() -> Unit, String>?,
 ) {
     val haptics = LocalNexaraHaptics.current
     val confirm: (() -> Unit) -> () -> Unit = { action -> { haptics.perform(NexaraHapticEvent.CONFIRM); action() } }
@@ -1256,14 +1296,6 @@ private fun ApprovalActionBar(
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        alwaysAllow?.let { (handler, a11y) ->
-            ApprovalSecondaryAction(
-                label = stringResource(R.string.chat_inline_approval_always_allow),
-                onClick = confirm(handler),
-                enabled = enabled,
-                modifier = Modifier.semantics { contentDescription = a11y },
-            )
-        }
         onApproveAll?.let { handler ->
             ApprovalSecondaryAction(
                 label = stringResource(R.string.chat_approval_approve_all, totalCount),
@@ -1272,7 +1304,7 @@ private fun ApprovalActionBar(
                 modifier = Modifier.testTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
             )
         }
-        if (alwaysAllow != null || onApproveAll != null) Spacer(Modifier.weight(1f))
+        if (onApproveAll != null) Spacer(Modifier.weight(1f))
         ChatCompactApprovalButton(
             label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_reject_current else R.string.chat_inline_approval_reject),
             onClick = { haptics.perform(NexaraHapticEvent.REJECT); onDecline() }, outlined = true, enabled = enabled,

@@ -7,7 +7,6 @@
     <string name="settings_batch1_tokens_500k">500K</string>
     <string name="settings_batch1_tokens_1m">1M</string>
     <string name="settings_batch1_tokens_5m">5M</string>
-    <string name="settings_batch1_script_write_summary">Confirm before writing files</string>
     <string name="settings_batch1_dynamic_color_summary">Match your wallpaper</string>
     <string name="settings_batch1_dynamic_color_unavailable_summary">Android 12 or later required</string>
     <string name="settings_batch1_text_scale_value">Text size</string>

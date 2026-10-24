@@ -10,8 +10,8 @@
     <string name="p0_reset_consent">Reset authorization</string>
     <string name="p0_decrease_setting">Decrease %1$s</string>
     <string name="p0_increase_setting">Increase %1$s</string>
-    <string name="p0_auto_confirm_title">Allow unlimited automatic execution?</string>
-    <string name="p0_auto_confirm_body">Writes, deletions and external calls won\'t ask each time. You can stop anytime, and token limits still apply.</string>
+    <string name="p0_auto_confirm_title">Allow unlimited full access?</string>
+    <string name="p0_auto_confirm_body">Commands will run back to back without asking, as the app itself. You can stop anytime, and token limits still apply.</string>
     <string name="p0_loop_title">Repeated tool calls detected</string>
     <string name="p0_loop_body">The agent keeps repeating the same call and may be stuck in a loop.</string>
     <string name="p0_continue">Continue</string>

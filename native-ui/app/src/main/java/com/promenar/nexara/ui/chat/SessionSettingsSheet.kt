@@ -538,6 +538,8 @@ internal fun SessionToolsContent(
             NexaraSettingsItem(
                 horizontalPadding = 0.dp,
                 title = if (mode == ExecutionMode.WORKSPACE) stringResource(R.string.numeric_default_value, label) else label,
+                subtitle = stringResource(mode.descriptionRes),
+                subtitleMaxLines = 3,
                 role = Role.RadioButton,
                 selected = mode == selectedExecutionMode,
                 modifier = Modifier.testTag("session_execution_mode_${mode.name.lowercase()}"),

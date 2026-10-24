@@ -373,16 +373,12 @@ private fun ExternalFoldersPanelContent(
                         source = current.source,
                         alias = alias,
                         sourcePath = sourcePath,
-                        readOnly = false,
-                        sessionOnly = true,
                         hasCurrentSession = !sessionId.isNullOrBlank(),
                         realPathPermission = realPathPermission,
                         busy = busy || pickerActive,
                         notice = notice,
                         onAliasChanged = { alias = it },
                         onPathChanged = { sourcePath = it },
-                        onReadOnlyChanged = {},
-                        onSessionOnlyChanged = {},
                         onGrantAccess = openAccessSettings,
                         onBack = backToManager,
                         onConfirm = {
@@ -571,8 +567,7 @@ private fun ExternalMountRow(
     val meta = listOf(
         "/mnt/" + mount.alias,
         stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
-        stringResource(R.string.mount_read_write),
-        stringResource(R.string.mount_scope_current),
+        stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_command_visible else R.string.agent_reach_mount_files_only),
     ).joinToString(" · ")
     NexaraSettingsItem(
         title = mount.alias,
@@ -622,22 +617,18 @@ private fun ExternalMountRow(
     )
 }
 
-/** 添加挂载：别名与来源、权限、适用范围分组，主操作固定在底部。 */
+/** 添加挂载：别名与来源，主操作固定在底部。挂载只属于当前会话且可读写。 */
 @Composable
 internal fun ExternalMountFormContent(
     source: ExternalMountSource,
     alias: String,
     sourcePath: String,
-    readOnly: Boolean,
-    sessionOnly: Boolean,
     hasCurrentSession: Boolean,
     realPathPermission: Boolean,
     busy: Boolean,
     notice: Int?,
     onAliasChanged: (String) -> Unit,
     onPathChanged: (String) -> Unit,
-    onReadOnlyChanged: (Boolean) -> Unit,
-    onSessionOnlyChanged: (Boolean) -> Unit,
     onGrantAccess: (() -> Unit)?,
     onBack: () -> Unit,
     onConfirm: () -> Unit,
@@ -667,8 +658,11 @@ internal fun ExternalMountFormContent(
     ) {
         NexaraSettingsSection(
             title = stringResource(R.string.mount_form_section_target),
-            footer = if (isSaf) stringResource(R.string.mount_system_limits) + "\n" + stringResource(R.string.mount_termux_hint)
-            else stringResource(R.string.mount_real_path_help),
+            footer = if (isSaf) {
+                listOf(R.string.mount_saf_command_note, R.string.mount_system_limits, R.string.mount_termux_hint)
+            } else {
+                listOf(R.string.mount_real_path_command_note, R.string.mount_real_path_help)
+            }.map { stringResource(it) }.joinToString("\n"),
         ) {
             Column(
                 Modifier.padding(NexaraSpacing.Large),

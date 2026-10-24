@@ -45,11 +45,9 @@ private val Batch1ToolsState = SkillsSettingsVisualState(
     loopLimit = 50,
     tokenLimit = 0,
     repeatLimit = 3,
-    approveScriptWrites = true,
     sshHostCount = 0,
     termuxAvailability = TermuxAvailability(false, null, false),
     gitCredentialCount = 0,
-    allowlistCount = 3,
 )
 
 @Composable

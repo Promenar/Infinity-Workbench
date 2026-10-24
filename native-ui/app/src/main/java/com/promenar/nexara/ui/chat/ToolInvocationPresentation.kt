@@ -5,6 +5,7 @@ import com.promenar.nexara.data.model.FileChangeSummary
 import com.promenar.nexara.ui.chat.diff.WorkspaceChangeList
 import com.promenar.nexara.ui.chat.diff.parseWorkspaceChanges
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -44,10 +45,28 @@ internal data class ToolInvocationPresentation(val steps: List<ExecutionStep>) {
         get() = if (name !in WORKSPACE_TRACKED_COMMANDS) null
         else results.firstNotNullOfOrNull { parseWorkspaceChanges(it.content) }
 
+    /** 内置命令结束后报告的运行时关键数据变化；后台运行的命令由状态查询结果带回。 */
+    val runtimeChanges: List<String>
+        get() = if (name !in RUNTIME_MONITORED_TOOLS) emptyList()
+        else results.flatMap { parseRuntimeChanges(it.content) }.distinct()
+
     private companion object {
         val WORKSPACE_TRACKED_COMMANDS = setOf("shell_exec", "python_exec")
+        val RUNTIME_MONITORED_TOOLS = setOf("shell_exec", "python_exec", "job_status", "job_wait")
     }
 }
+
+/** 结果不是 JSON 对象或没有该字段时为空。 */
+internal fun parseRuntimeChanges(content: String?): List<String> {
+    if (content.isNullOrBlank()) return emptyList()
+    val root = runCatching { Json.parseToJsonElement(content) as? JsonObject }.getOrNull() ?: return emptyList()
+    return (root["runtime_changes"] as? JsonArray).orEmpty()
+        .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+}
+
+/** 一组工具调用中报告的全部关键数据变化，去重后按出现顺序排列。 */
+internal fun toolGroupRuntimeChanges(invocations: List<ToolInvocationPresentation>): List<String> =
+    invocations.flatMap { it.runtimeChanges }.distinct()
 
 /** 一组工具调用中全部成功文件工具的改动摘要，按调用顺序排列。 */
 internal fun toolGroupFileChanges(invocations: List<ToolInvocationPresentation>): List<FileChangeSummary> =

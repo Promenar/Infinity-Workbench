@@ -5,7 +5,6 @@
     <string name="subagent_approval_notification_title">A subagent needs approval</string>
     <string name="subagent_approval_notification_text">Requests %1$s. It stops if not handled within 10 minutes.</string>
     <string name="subagent_approval_title">From subagent · %1$s</string>
-    <string name="subagent_approval_remember">Always allow this target</string>
     <string name="subagent_approval_allow">Allow</string>
     <string name="subagent_approval_deny">Deny</string>
     <string name="subagent_approval_timeout_hint">The subagent stops if this isn\'t handled within 10 minutes.</string>

@@ -105,7 +105,7 @@ fun subagentViewerWaitingLightPreview() = SubagentFrame(dark = false) {
 @Preview(name = "子代理审批 深色", widthDp = 411, heightDp = 560, locale = "zh-rCN")
 @Composable
 fun subagentApprovalDarkPreview() = SubagentFrame {
-    SubagentApprovalContent(approval(), sessionTitle = "构建排查", remember = true, onRememberChange = {})
+    SubagentApprovalContent(approval(), sessionTitle = "构建排查")
 }
 
 @PreviewTest
@@ -115,8 +115,6 @@ fun subagentApprovalNoTargetEnglishPreview() = SubagentFrame(dark = false) {
     SubagentApprovalContent(
         approval().copy(subagentPreset = null, subagentDescription = "Write a summary file", toolName = "write_file", risk = ToolRisk.FILE_WRITE, target = null, preview = "notes/summary.md"),
         sessionTitle = null,
-        remember = false,
-        onRememberChange = {},
     )
 }
 

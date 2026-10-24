@@ -76,6 +76,8 @@ data class ContextBuilderParams(
     val cachedRetrieval: ContextRetrieval? = null,
     /** 会话当前工作区；null 表示调用方未解析，按私有工作区说明。 */
     val workspace: com.promenar.nexara.data.workspace.SessionWorkspace? = null,
+    /** 会话当前可见的挂载，用于说明各挂载对命令是否可见。 */
+    val mounts: List<com.promenar.nexara.domain.storage.ExternalMount> = emptyList(),
     /** 已路由模型的上下文窗口，未知时技能目录使用默认字符预算。 */
     val modelContextTokens: Int? = null,
     /** 本轮用户以 `/技能名` 点名并已由客户端加载的技能；null 表示本轮没有斜杠技能命令。 */
@@ -462,6 +464,7 @@ class ContextBuilder(
                 workspace = params.workspace,
                 workspaceChanged = session.messages.any { it.isWorkspaceSwitchNotice },
                 workspaceSkillsShadowed = workspaceSkillsShadowed,
+                mounts = params.mounts,
             )
         }
         if (toolGuidance.isNotEmpty()) {

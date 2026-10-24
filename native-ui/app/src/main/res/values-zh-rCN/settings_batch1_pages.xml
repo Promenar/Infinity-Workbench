@@ -7,7 +7,6 @@
     <string name="settings_batch1_tokens_500k">500K</string>
     <string name="settings_batch1_tokens_1m">1M</string>
     <string name="settings_batch1_tokens_5m">5M</string>
-    <string name="settings_batch1_script_write_summary">写入文件前确认</string>
     <string name="settings_batch1_dynamic_color_summary">跟随壁纸配色</string>
     <string name="settings_batch1_dynamic_color_unavailable_summary">需要 Android 12 或更高版本</string>
     <string name="settings_batch1_text_scale_value">文字大小</string>

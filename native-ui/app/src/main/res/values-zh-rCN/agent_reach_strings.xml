@@ -7,15 +7,13 @@
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
 
     <string name="agent_reach_section_paths">路径</string>
-    <string name="agent_reach_paths_footer">命令和 Termux 里的 / 是设备根目录；/mnt 下的文件夹命令看不到。</string>
+    <string name="agent_reach_paths_footer">命令和 Termux 里的 / 是设备根目录。设备路径文件夹可用真实路径访问，系统授权的文件夹命令看不到。</string>
     <string name="agent_reach_path_root">文件工具的根目录</string>
     <string name="agent_reach_path_workspace_var">命令里的工作区路径</string>
     <string name="agent_reach_path_skills">技能目录，每次改动需批准</string>
     <string name="agent_reach_path_mnt_empty">未挂载外部文件夹</string>
     <string name="agent_reach_mount_saf">系统授权</string>
     <string name="agent_reach_mount_path">设备路径</string>
-    <string name="agent_reach_mount_read_only">只读</string>
-    <string name="agent_reach_mount_read_write">可读写</string>
     <string name="agent_reach_mount_unavailable">当前不可用</string>
 
     <string name="agent_reach_section_backends">执行后端</string>
@@ -23,7 +21,7 @@
     <string name="agent_reach_backend_files">文件工具</string>
     <string name="agent_reach_backend_files_scope">工作区、/mnt 与 /skills</string>
     <string name="agent_reach_backend_builtin">内置命令 shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">在工作区运行，可读写 &brand; 数据</string>
+    <string name="agent_reach_backend_builtin_scope">以 &brand; 身份运行，可访问全部应用数据，不受工作区限制</string>
     <string name="agent_reach_backend_sandbox">隔离脚本 exec_js · python_sandbox</string>
     <string name="agent_reach_backend_sandbox_scope">隔离运行，写文件需批准</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>
@@ -41,12 +39,9 @@
     <string name="agent_reach_status_no_hosts">未登记主机</string>
 
     <string name="agent_reach_section_approval">审批</string>
-    <string name="agent_reach_approval_footer">SSH 主机、技能目录、永久删除和定时任务始终逐次批准。</string>
-    <string name="agent_reach_always_allowed">始终允许的目标</string>
-    <string name="agent_reach_always_allowed_none">无</string>
-    <plurals name="agent_reach_always_allowed_count">
-        <item quantity="other">%1$d 条生效</item>
-    </plurals>
+    <string name="agent_reach_approval_footer">定时任务、技能目录变更和 SSH 主机配置始终逐次批准。</string>
 
     <string name="agent_reach_section_network">网络</string>
+    <string name="agent_reach_mount_command_visible">命令可访问</string>
+    <string name="agent_reach_mount_files_only">仅文件工具</string>
 </resources>

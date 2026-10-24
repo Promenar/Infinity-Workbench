@@ -15,7 +15,6 @@
     <string name="chat_inline_collapse">Collapse</string>
     <string name="chat_inline_approval_reject">Reject</string>
     <string name="chat_inline_approval_approve">Approve</string>
-    <string name="chat_inline_approval_always_allow">Always allow in this session</string>
     <string name="chat_inline_approval_approve_current">Approve current</string>
     <string name="chat_inline_approval_reject_current">Reject current</string>
 </resources>

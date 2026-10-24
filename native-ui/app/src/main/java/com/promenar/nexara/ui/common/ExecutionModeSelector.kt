@@ -10,9 +10,9 @@ import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTypography
 
-enum class ExecutionMode(@param:StringRes val labelRes: Int) {
-    WORKSPACE(R.string.common_mode_workspace),
-    FULL_ACCESS(R.string.common_mode_full_access)
+enum class ExecutionMode(@param:StringRes val labelRes: Int, @param:StringRes val descriptionRes: Int) {
+    WORKSPACE(R.string.common_mode_workspace, R.string.common_mode_workspace_desc),
+    FULL_ACCESS(R.string.common_mode_full_access, R.string.common_mode_full_access_desc),
 }
 
 @Composable

@@ -220,6 +220,16 @@ internal class DefaultChatGenerationRuntime(
         }
     }
 
+    /** 读取失败时提示中不列挂载，工具调用仍按实时挂载判定。 */
+    private suspend fun visibleMounts(sessionId: String): List<com.promenar.nexara.domain.storage.ExternalMount> = try {
+        externalFolders?.visible(sessionId).orEmpty()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        NexaraLogger.log("[Mounts] 上下文挂载读取失败：${failure.javaClass.simpleName}")
+        emptyList()
+    }
+
     /**
      * 本轮用户消息以 `/技能名` 开头时预先加载该技能（与 `activate_skill` 等价）。
      * 按落库的用户消息原文判断，排队发送、重新生成与审批后续写都能还原同一技能。
@@ -382,6 +392,7 @@ internal class DefaultChatGenerationRuntime(
             requestedSkill = requestedSkill(session, lastUser?.id, lastUser?.content.orEmpty(), storedSkills),
             cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
             workspace = workspace,
+            mounts = visibleMounts(sessionId),
             modelContextTokens = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, preparedRoute?.modelId).modelContextTokens,
         ))
         preparedContext = context
@@ -481,6 +492,7 @@ internal class DefaultChatGenerationRuntime(
             agentRetrievalConfig = agentConfig.retrievalConfig,
             agentMemoryPolicy = agentConfig.memoryPolicy,
             workspace = sessionWorkspace?.invoke(request.sessionId),
+            mounts = visibleMounts(request.sessionId),
         )
         var routeTools: List<ProtocolTool> = emptyList()
         val preparation = try {

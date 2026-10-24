@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
-import com.promenar.nexara.data.repository.ToolAllowlistEntry
 import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.domain.model.ExecutionMode
@@ -19,8 +18,6 @@ internal data class AgentReachState(
     val mounts: List<ReachMount> = emptyList(),
     val backends: List<ReachBackend> = emptyList(),
     val executionMode: ExecutionMode = ExecutionMode.WORKSPACE,
-    /** 对本会话生效的“始终允许”目标数；尚未读取时为 null。 */
-    val alwaysAllowedCount: Int? = null,
     /** 网络访问总表；尚未取得时为 null。 */
     val network: AgentNetworkSnapshot? = null,
     /** 侧载渠道才有共享存储工作区与路径挂载。 */
@@ -32,8 +29,8 @@ internal enum class ReachMountSource { SAF, PATH }
 internal data class ReachMount(
     val alias: String,
     val source: ReachMountSource,
-    val global: Boolean,
-    val readOnly: Boolean,
+    /** 设备路径来源可被命令以真实路径访问；系统授权来源只对文件工具可见。 */
+    val commandAccessible: Boolean,
     val unavailable: Boolean,
 )
 
@@ -86,14 +83,13 @@ internal val SessionWorkspaceUi.traits: WorkspaceTraits?
 internal fun ExternalMount.toReach(): ReachMount = ReachMount(
     alias = alias,
     source = if (sourceType == "real_path") ReachMountSource.PATH else ReachMountSource.SAF,
-    global = false,
-    readOnly = false,
+    commandAccessible = commandAccessible,
     unavailable = unavailableReason != null,
 )
 
 /** 用户级技能以保留别名 `skills` 出现在挂载列表中，面板单独说明，不作为普通挂载重复列出。 */
 internal fun reachMounts(mounts: List<ExternalMount>): List<ReachMount> =
-    mounts.filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMount::toReach).sortedWith(compareBy({ it.global }, { it.alias }))
+    mounts.filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMount::toReach).sortedBy { it.alias }
 
 /** 安装、版本与权限的判定沿用工具设置页入口的同一规则。 */
 internal fun termuxReachStatus(enabled: Boolean, availability: TermuxAvailability?): ReachBackendStatus =
@@ -125,16 +121,3 @@ internal fun reachBackends(
         sshHostCount,
     ),
 )
-
-/**
- * 对本会话生效的“始终允许”目标：全局条目、当前目录工作区条目与本会话条目。
- * 挂载范围的条目按挂载身份生效，不在这里计入。
- */
-internal fun alwaysAllowedCount(entries: List<ToolAllowlistEntry>, sessionId: String, workspaceId: String?): Int =
-    entries.count { entry ->
-        when (val key = entry.scopeKey) {
-            null -> true
-            "session:$sessionId" -> true
-            else -> workspaceId != null && key == "workspace:$workspaceId"
-        }
-    }

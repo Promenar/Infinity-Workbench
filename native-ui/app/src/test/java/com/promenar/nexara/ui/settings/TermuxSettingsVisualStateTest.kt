@@ -70,16 +70,4 @@ class TermuxSettingsVisualStateTest {
             ready.copy(availability = TermuxAvailability(true, "0.119.1", false)),
         ).forEach { assertThat(it.visualState().canRunDiagnostic).isFalse() }
     }
-
-    @Test
-    fun `挂载错误说明区分控制字符和已存在的规范化别名`() {
-        assertThat(rejectedTermuxMountAliasError("termux\n", setOf("termux")))
-            .isEqualTo(TermuxMountAliasError.ControlCharacter)
-        assertThat(rejectedTermuxMountAliasError(" termux ", setOf("termux")))
-            .isEqualTo(TermuxMountAliasError.Conflict)
-        listOf("mnt", ".nexara", "folder/name").forEach { alias ->
-            assertThat(rejectedTermuxMountAliasError(alias, emptySet()))
-                .isEqualTo(TermuxMountAliasError.Invalid)
-        }
-    }
 }

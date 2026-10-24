@@ -6,13 +6,18 @@
     <string name="chat_approval_execution_target">执行目标：%1$s</string>
     <string name="chat_approval_execution_target_unknown">未能确认执行目标。</string>
     <string name="chat_approval_high_risk_target_warning">删除与进程命令可能更改或移除数据，请核对目标。</string>
-    <string name="chat_approval_always_allow_target">本会话始终允许此目标</string>
-    <string name="chat_approval_always_allow_target_a11y">批准 %1$s，并在本会话内始终允许目标 %2$s</string>
-    <string name="chat_approval_builtin_exec_warning">可访问 &brand; 的数据和网络，删除的文件无法恢复。</string>
     <string name="chat_approval_title_python">运行 Python</string>
     <string name="chat_approval_title_js">运行 JavaScript</string>
     <string name="chat_approval_title_ssh_host_save">保存 SSH 主机</string>
     <string name="chat_approval_title_ssh_host_delete">删除 SSH 主机</string>
     <string name="chat_approval_title_ssh_install_key">安装 SSH 公钥</string>
     <string name="chat_approval_title_mcp">MCP 工具</string>
+    <string name="chat_approval_kind_builtin_command">内置命令</string>
+    <string name="chat_approval_kind_builtin_command_detail">以 &brand; 身份运行，可访问全部应用数据，不受工作区限制；删除的文件无法恢复。</string>
+    <string name="chat_approval_kind_termux_command">Termux 命令</string>
+    <string name="chat_approval_kind_termux_command_detail">以 Termux 身份运行，只能访问 Termux 自身文件和已授权的共享存储。</string>
+    <string name="chat_approval_kind_ssh_command">远程命令</string>
+    <string name="chat_approval_kind_ssh_command_detail">在远程主机上以登录账户的权限运行。</string>
+    <string name="chat_approval_kind_tool">内置工具</string>
+    <string name="chat_approval_kind_tool_detail">由 &brand; 按固定规则执行，不会运行任意命令。</string>
 </resources>

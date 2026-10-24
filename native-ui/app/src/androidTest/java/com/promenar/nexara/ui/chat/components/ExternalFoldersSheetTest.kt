@@ -82,10 +82,10 @@ class ExternalFoldersSheetTest {
     }
 
     private class FakeManager : IExternalFolderManager {
-        private val mount = ExternalMount("m1", "photos", "saf_tree", "content://tree", "s1", readOnly = true, createdAt = 0)
+        private val mount = ExternalMount("m1", "photos", "saf_tree", "content://tree", "s1", createdAt = 0)
         override fun observeMounts(sessionId: String): Flow<List<ExternalMount>> = flowOf(listOf(mount))
-        override suspend fun addSaf(alias: String, sessionId: String?, treeUri: String, grantFlags: Int, readOnly: Boolean) = error("unused")
-        override suspend fun addRealPath(alias: String, sessionId: String?, source: String, readOnly: Boolean) = error("unused")
+        override suspend fun addSaf(alias: String, sessionId: String, treeUri: String, grantFlags: Int) = error("unused")
+        override suspend fun addRealPath(alias: String, sessionId: String, source: String) = error("unused")
         override suspend fun remove(mountId: String) = error("unused")
         override suspend fun reauthorize(mountId: String, treeUri: String, grantFlags: Int) = error("unused")
         override suspend fun refresh(sessionId: String) = Unit

@@ -3,8 +3,8 @@
     <string name="settings_execution_budget">Execution rounds and budget</string>
     <string name="settings_local_remote">Local and remote</string>
     <string name="settings_repeat_limit_description">Pause when the same tool and arguments repeat consecutively.</string>
-    <string name="settings_reset_consent_description">Ask for confirmation the next time unlimited automatic execution is enabled.</string>
-    <string name="settings_consent_reset">Unlimited automatic execution confirmation reset</string>
+    <string name="settings_reset_consent_description">Ask for confirmation the next time unlimited rounds are combined with full access.</string>
+    <string name="settings_consent_reset">Unlimited full access confirmation reset</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_ssh_hosts_count">%1$d configured hosts</string>
     <string name="settings_status_loading">Checking status</string>

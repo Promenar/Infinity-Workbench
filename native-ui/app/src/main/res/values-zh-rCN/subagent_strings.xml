@@ -5,7 +5,6 @@
     <string name="subagent_approval_notification_title">子代理等待审批</string>
     <string name="subagent_approval_notification_text">请求使用 %1$s，10 分钟内未处理将停止</string>
     <string name="subagent_approval_title">来自子代理 · %1$s</string>
-    <string name="subagent_approval_remember">以后允许此目标</string>
     <string name="subagent_approval_allow">允许</string>
     <string name="subagent_approval_deny">拒绝</string>
     <string name="subagent_approval_timeout_hint">10 分钟内未处理，子代理将停止。</string>

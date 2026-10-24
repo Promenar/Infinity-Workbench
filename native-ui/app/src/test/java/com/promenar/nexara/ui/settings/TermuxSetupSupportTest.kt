@@ -94,31 +94,6 @@ class TermuxSetupSupportTest {
     }
 
     @Test
-    fun `mount aliases are trimmed and checked against visible aliases`() {
-        assertThat(TermuxSetupSupport.normalizeMountAlias("  termux-home  ", setOf("documents")))
-            .isEqualTo("termux-home")
-        assertThrows(IllegalArgumentException::class.java) {
-            TermuxSetupSupport.normalizeMountAlias(" termux ", setOf("termux"))
-        }
-    }
-
-    @Test
-    fun `mount aliases reject traversal reserved names and control characters`() {
-        listOf("", ".", "..", "mnt", "a/b", "a\\b", ".nexara-cache", "home\nother", "home\u0000other").forEach { alias ->
-            assertThrows(IllegalArgumentException::class.java) {
-                TermuxSetupSupport.normalizeMountAlias(alias, emptySet())
-            }
-        }
-    }
-
-    @Test
-    fun `default mount alias selects the first available suffix`() {
-        assertThat(TermuxSetupSupport.availableMountAlias(emptySet())).isEqualTo("termux")
-        assertThat(TermuxSetupSupport.availableMountAlias(setOf("termux", "termux-2", "termux-4")))
-            .isEqualTo("termux-3")
-    }
-
-    @Test
     fun `diagnostic succeeds only for the expected marker and a clean exit`() {
         assertThat(TermuxSetupSupport.diagnosticSucceeded(TermuxCommandResult(stdout = "NEXARA_TERMUX_OK\n", exitCode = 0)))
             .isTrue()

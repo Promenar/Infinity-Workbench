@@ -1043,6 +1043,7 @@ internal fun InlineToolRow(
     val executing = isExecuting || liveRunning
     val summary = remember(invocations, executing) { toolGroupDisplaySummary(invocations, executing) }
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
+    val runtimeChanges = remember(invocations) { toolGroupRuntimeChanges(invocations) }
     var openedChange by remember { mutableStateOf<com.promenar.nexara.data.model.FileChangeSummary?>(null) }
     val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
     val stateSummaries = invocations.mapNotNull(::stateToolSummary).map { stateToolSummaryText(it) }
@@ -1070,6 +1071,8 @@ internal fun InlineToolRow(
             failureText = if (summary.failedCount > 0) pluralStringResource(R.plurals.chat_step_failed_count, summary.failedCount, summary.failedCount) else null,
             onClick = { isExpanded = !isExpanded },
         )
+        // 关键数据变化不随详情折叠，避免用户错过。
+        if (runtimeChanges.isNotEmpty()) RuntimeChangesNotice(runtimeChanges)
         // 子代理分组卡始终跟在摘要下方，随轮次一起折叠。
         invocations.filter { it.name == com.promenar.nexara.data.subagent.SubagentLimits.TOOL_NAME }.forEach { invocation ->
             invocation.call?.id?.let { stepId -> key("subagent", stepId) { SubagentGroupCard(unscopedStepId(stepId)) } }
@@ -1136,6 +1139,55 @@ internal fun InlineToolRow(
         }
     }
 }
+
+/** 命令改动了运行时关键数据时的提醒：列出前几项位置，其余以数量概括。 */
+@Composable
+internal fun RuntimeChangesNotice(changes: List<String>, modifier: Modifier = Modifier) {
+    val shown = changes.take(RuntimeChangesVisibleLimit)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag(UiTags.CHAT_RUNTIME_CHANGES),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            Icons.Rounded.Warning,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 1.dp).size(16.dp),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                stringResource(R.string.chat_runtime_changes_title),
+                style = NexaraTypography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            shown.forEach { change ->
+                Text(
+                    change,
+                    style = NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (changes.size > shown.size) {
+                val more = changes.size - shown.size
+                Text(
+                    pluralStringResource(R.plurals.chat_runtime_changes_more, more, more),
+                    style = NexaraTypography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private const val RuntimeChangesVisibleLimit = 5
 
 @Composable
 internal fun ExpandableToolText(

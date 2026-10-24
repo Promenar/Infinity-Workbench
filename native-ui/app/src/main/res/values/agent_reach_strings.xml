@@ -9,15 +9,13 @@
     <string name="agent_reach_workspace_unavailable">The workspace is unavailable</string>
 
     <string name="agent_reach_section_paths">Paths</string>
-    <string name="agent_reach_paths_footer">In commands and Termux, / is the device root; commands can\'t see folders under /mnt.</string>
+    <string name="agent_reach_paths_footer">In commands and Termux, / is the device root. Commands reach device-path folders by their real path and can\'t see system-granted folders.</string>
     <string name="agent_reach_path_root">Root for file tools</string>
     <string name="agent_reach_path_workspace_var">Workspace path in commands</string>
     <string name="agent_reach_path_skills">Skills folder; every change asks first</string>
     <string name="agent_reach_path_mnt_empty">No external folders mounted</string>
     <string name="agent_reach_mount_saf">System-granted</string>
     <string name="agent_reach_mount_path">Device path</string>
-    <string name="agent_reach_mount_read_only">Read-only</string>
-    <string name="agent_reach_mount_read_write">Read and write</string>
     <string name="agent_reach_mount_unavailable">Unavailable</string>
 
     <string name="agent_reach_section_backends">Runners</string>
@@ -25,7 +23,7 @@
     <string name="agent_reach_backend_files">File tools</string>
     <string name="agent_reach_backend_files_scope">Workspace, /mnt and /skills</string>
     <string name="agent_reach_backend_builtin">Built-in commands shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">Runs in the workspace; can read and write &brand; data</string>
+    <string name="agent_reach_backend_builtin_scope">Runs as &brand; and can access all app data, not limited to the workspace</string>
     <string name="agent_reach_backend_sandbox">Sandbox exec_js · python_sandbox</string>
     <string name="agent_reach_backend_sandbox_scope">Isolated; file writes ask first</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>
@@ -44,13 +42,9 @@
     <string name="agent_reach_status_no_hosts">No hosts saved</string>
 
     <string name="agent_reach_section_approval">Approvals</string>
-    <string name="agent_reach_approval_footer">SSH hosts, skills folder, permanent deletes and scheduled tasks always ask.</string>
-    <string name="agent_reach_always_allowed">Always-allowed targets</string>
-    <string name="agent_reach_always_allowed_none">None</string>
-    <plurals name="agent_reach_always_allowed_count">
-        <item quantity="one">%1$d applies</item>
-        <item quantity="other">%1$d apply</item>
-    </plurals>
+    <string name="agent_reach_approval_footer">Scheduled tasks, skill-folder changes and SSH host setup always ask.</string>
 
     <string name="agent_reach_section_network">Network</string>
+    <string name="agent_reach_mount_command_visible">Commands can access</string>
+    <string name="agent_reach_mount_files_only">File tools only</string>
 </resources>

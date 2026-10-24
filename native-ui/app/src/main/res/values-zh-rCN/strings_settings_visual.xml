@@ -3,8 +3,8 @@
     <string name="settings_execution_budget">执行轮次与预算</string>
     <string name="settings_local_remote">本机与远端</string>
     <string name="settings_repeat_limit_description">相同工具和参数连续重复调用达到阈值时暂停。</string>
-    <string name="settings_reset_consent_description">下次开启不限轮次全自动执行时需要确认。</string>
-    <string name="settings_consent_reset">已重置不限轮次全自动执行确认</string>
+    <string name="settings_reset_consent_description">下次同时开启不限轮次与完全访问时需要确认。</string>
+    <string name="settings_consent_reset">已重置不限轮次完全访问确认</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_ssh_hosts_count">已配置 %1$d 台主机</string>
     <string name="settings_status_loading">正在读取状态</string>

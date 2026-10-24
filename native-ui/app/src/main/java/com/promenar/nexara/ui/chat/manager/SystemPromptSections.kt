@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager
 import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillMarkdownParser
 import com.promenar.nexara.data.skills.SkillStatus
+import com.promenar.nexara.data.storage.isUserSkills
 
 /**
  * System Prompt 的固定段落。英文书写以保持跨模型的指令遵循稳定；回答语言由身份段要求跟随用户。
@@ -51,6 +52,8 @@ object SystemPromptSections {
         workspaceChanged: Boolean = false,
         /** 目录型工作区的 skills 条目被用户级虚拟目录遮蔽。 */
         workspaceSkillsShadowed: Boolean = false,
+        /** 当前会话可见的挂载；用户技能目录由 `/skills` 单独说明。 */
+        mounts: List<com.promenar.nexara.domain.storage.ExternalMount> = emptyList(),
     ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
@@ -103,6 +106,10 @@ object SystemPromptSections {
                 }
                 appendLine("- The user switched this conversation's workspace earlier. Paths, uuids and hashes in earlier messages may belong to a previous workspace; list or read files again before reusing them.")
             }
+            mountedFolders(mounts)?.let {
+                appendLine()
+                append(it)
+            }
         }
         if (toolNames.any { it in setOf("state_define", "state_update", "state_get", "state_remove") }) {
             appendLine("- 用户要求跟踪游戏状态或写作进度时，用 state_define 定义状态面板，以 state_update 更新，state_get 读取，state_remove 移除；无需额外模型抽取。")
@@ -127,6 +134,25 @@ object SystemPromptSections {
             }
             if ("media_fetch" in toolNames) {
                 appendLine("- Use `media_fetch` to download network media into the workspace.")
+            }
+        }
+    }
+
+    /** 挂载别名与设备路径都由用户输入，截断后写入提示，避免挤占上下文。 */
+    private fun mountedFolders(mounts: List<com.promenar.nexara.domain.storage.ExternalMount>): String? {
+        val visible = mounts.filterNot { it.isUserSkills }.sortedBy { it.alias }
+        if (visible.isEmpty()) return null
+        return buildString {
+            appendLine("### Mounted Folders")
+            appendLine("- The user added these folders to this conversation. File tools reach them at `/mnt/<alias>/` and may read, write and delete inside them.")
+            visible.forEach { mount ->
+                val alias = mount.alias.take(64)
+                val realPath = runCatching { com.promenar.nexara.data.storage.ExternalMountPaths.commandAccess(mount).realPath }.getOrNull()
+                appendLine(when {
+                    mount.unavailableReason != null -> "- `/mnt/$alias/`: currently unavailable; ask the user to check or re-authorize it."
+                    realPath != null -> "- `/mnt/$alias/`: commands reach it at the real path `${realPath.take(256)}`."
+                    else -> "- `/mnt/$alias/`: file tools only. It was authorized through the system folder picker, so shell, Python and Termux commands cannot reach it."
+                })
             }
         }
     }

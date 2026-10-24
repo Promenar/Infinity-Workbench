@@ -17,7 +17,6 @@
     <string name="settings_batch1_termux_ssh_setup_footer">whoami 输出的就是用户名；密码登录需先运行 passwd。</string>
     <string name="settings_batch1_termux_ssh_host_footer">添加 127.0.0.1:8022，填写 whoami 的用户名并选择密码或密钥认证。</string>
     <string name="settings_batch1_termux_key_section">公钥登录</string>
-    <string name="settings_batch1_termux_mount_footer">在系统选择器侧栏选择 Termux，之后 Agent 可通过 /mnt/别名 访问。</string>
     <string name="settings_batch1_backup_core_footer">始终包含%1$s。头像不随备份迁移；包含密钥时必须加密。</string>
     <string name="settings_batch1_backup_local_footer">WebDAV 只在你手动操作时备份或恢复。</string>
     <string name="settings_batch1_local_models_footer">模型在本机运行，对话不离开设备。</string>

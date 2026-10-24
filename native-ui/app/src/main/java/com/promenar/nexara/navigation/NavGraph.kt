@@ -82,7 +82,6 @@ object NavDestinations {
     const val TAILSCALE_CONFIG = "tailscale_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val GIT_CREDENTIALS = "git_credentials"
-    const val TOOL_ALLOWLIST = "tool_allowlist"
     const val BACKGROUND_ACTIVITY = "background_activity"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
@@ -598,7 +597,6 @@ fun NexaraNavGraph(
                 onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
                 onOpenGitCredentials = { navController.navigate(NavDestinations.GIT_CREDENTIALS) },
                 onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
-                onOpenAllowlist = { navController.navigate(NavDestinations.TOOL_ALLOWLIST) },
                 onOpenBackground = { navController.navigate(NavDestinations.BACKGROUND_ACTIVITY) },
                 onOpenNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) },
             )
@@ -616,10 +614,6 @@ fun NexaraNavGraph(
                 onBack = { navController.popBackStack() },
                 onOpenSession = { sessionId -> navController.navigate(NavDestinations.chatHero(sessionId)) },
             )
-        }
-
-        composable(NavDestinations.TOOL_ALLOWLIST) {
-            com.promenar.nexara.ui.settings.ToolAllowlistScreen(onBack = { navController.popBackStack() })
         }
 
         composable(NavDestinations.TAILSCALE_CONFIG) {

@@ -82,7 +82,6 @@ class ChatApprovalLayoutTest {
                     call("write_file", "/notes/b.md"),
                 ),
                 onApproveAll = {},
-                onAlwaysAllow = {},
             )
         }
 
@@ -90,12 +89,10 @@ class ChatApprovalLayoutTest {
             rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE),
             rule.onNodeWithTag(UiTags.CHAT_APPROVAL_DECLINE),
             rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
-            rule.onNodeWithText(resources().getString(R.string.chat_inline_approval_always_allow)),
         )
         assertThat(actions.count { near(actionFill(it), primary) }).isEqualTo(1)
         assertThat(near(actionFill(actions[1]), cardBackground)).isTrue()
         assertThat(near(actionFill(actions[2]), cardBackground)).isTrue()
-        assertThat(near(actionFill(actions[3]), cardBackground)).isTrue()
 
         val pixels = rule.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).captureToImage().toPixelMap()
         var longestWarningRun = 0
@@ -203,6 +200,27 @@ class ChatApprovalLayoutTest {
             abs(actual.blue - expected.blue) < 0.015f
 
     private fun resources() = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+    @Test
+    fun commandAndToolApprovalsCarryDistinctKindNotes() {
+        var toolName by mutableStateOf("shell_exec")
+        content {
+            ApprovalCard(
+                toolName = toolName,
+                description = "",
+                calls = listOf(call(toolName, "/notes/a.md")),
+            )
+        }
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_KIND_COMMAND).assertIsDisplayed()
+        rule.onNodeWithText(resources().getString(R.string.chat_approval_kind_builtin_command)).assertIsDisplayed()
+
+        toolName = "ssh_exec"
+        rule.onNodeWithText(resources().getString(R.string.chat_approval_kind_ssh_command)).assertIsDisplayed()
+
+        toolName = "schedule_create"
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_KIND_TOOL).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_APPROVAL_KIND_COMMAND).assertDoesNotExist()
+    }
 
     private fun call(name: String, path: String, highRisk: Boolean = false) = ApprovalDisplayCall(
         name = name,

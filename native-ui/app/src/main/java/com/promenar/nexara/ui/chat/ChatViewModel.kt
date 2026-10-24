@@ -2086,11 +2086,6 @@ class ChatViewModel(
         submitApproval(sessionId, expectedRequest, approved = true, intervention = intervention)
     }
 
-    fun alwaysAllowTarget(expectedRequest: ApprovalRequest) {
-        val sessionId = _currentSessionId.value ?: return
-        submitApproval(sessionId, expectedRequest, approved = true, intervention = null, rememberTarget = true)
-    }
-
     /**
      * 批准当前批次中剩余的全部调用：按队列逐个精确批准，最后一个决定后由审批管理器统一继续生成。
      * 新一轮生成产生的审批（属于其它助手消息）不在本次批准范围内。
@@ -2126,7 +2121,6 @@ class ChatViewModel(
         expectedRequest: ApprovalRequest,
         approved: Boolean,
         intervention: String?,
-        rememberTarget: Boolean = false,
     ) {
         if (!approvalSubmissionMutex.tryLock()) return
         _isApprovalSubmitting.value = true
@@ -2138,7 +2132,6 @@ class ChatViewModel(
                     expectedRequest = expectedRequest,
                     approved = approved,
                     intervention = intervention,
-                    rememberTarget = rememberTarget,
                 )
             } finally {
                 try {

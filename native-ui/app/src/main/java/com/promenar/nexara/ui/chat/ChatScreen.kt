@@ -260,7 +260,6 @@ data class ChatScreenActions(
     val onOpenTurnMemory: (String) -> Unit = {},
     val onApprove: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onApproveAll: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
-    val onAlwaysAllowTarget: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
@@ -771,7 +770,6 @@ fun ChatScreenContent(
                                 },
                                 onApprove = { actions.onApprove(request) },
                                 onApproveAll = { actions.onApproveAll(request) },
-                                onAlwaysAllow = { actions.onAlwaysAllowTarget(request) },
                                 onDecline = { actions.onDecline(request) },
                             )
                         }

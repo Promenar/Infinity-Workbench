@@ -29,13 +29,11 @@ internal data class SkillsSettingsVisualState(
     val loopLimit: Int,
     val tokenLimit: Int,
     val repeatLimit: Int,
-    val approveScriptWrites: Boolean,
     val sshHostCount: Int? = null,
     val termuxAvailability: TermuxAvailability? = null,
     val retryLimit: Int = com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
     val gitCredentialCount: Int? = null,
     val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
-    val allowlistCount: Int? = null,
     /** 共享局域网与本机白名单条数；尚未读取时为 null。 */
     val networkHostCount: Int? = null,
 )
@@ -46,13 +44,11 @@ internal data class SkillsSettingsVisualActions(
     val onRepeatLimitChange: (Int) -> Unit = {},
     val onRetryLimitChange: (Int) -> Unit = {},
     val onResetConsent: () -> Unit = {},
-    val onApproveScriptWritesChange: (Boolean) -> Unit = {},
     val onOpenNetworkAccess: () -> Unit = {},
     val onOpenSsh: () -> Unit = {},
     val onOpenTermux: () -> Unit = {},
     val onOpenGitCredentials: () -> Unit = {},
     val onOpenTailscale: () -> Unit = {},
-    val onOpenAllowlist: () -> Unit = {},
     val onOpenBackground: () -> Unit = {},
 )
 
@@ -65,10 +61,6 @@ internal fun SkillsSettingsHeaderContent(
 ) {
     Column(modifier) {
         AgentRuntimeSettingsCard(state, actions)
-        ScriptRuntimeSettingsCard(
-            approveWrites = state.approveScriptWrites,
-            onApproveWritesChange = actions.onApproveScriptWritesChange,
-        )
         NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
             NexaraSettingsItem(
                 icon = Icons.Rounded.Public,
@@ -174,18 +166,6 @@ internal fun AgentRuntimeSettingsCard(
             title = stringResource(R.string.p0_reset_consent),
             subtitle = stringResource(R.string.tools_reset_consent_desc),
             onClick = actions.onResetConsent,
-        )
-        NexaraSettingsItem(
-            icon = ToolAllowlistEntryIcon,
-            title = stringResource(R.string.tool_allowlist_entry),
-            subtitle = when (val count = state.allowlistCount) {
-                null -> stringResource(R.string.settings_status_loading)
-                0 -> stringResource(R.string.tool_allowlist_entry_empty)
-                else -> pluralStringResource(R.plurals.tool_allowlist_entry_count, count, count)
-            },
-            onClick = actions.onOpenAllowlist,
-            showChevron = true,
-            modifier = Modifier.testTag("tool_allowlist_entry"),
         )
     }
 }

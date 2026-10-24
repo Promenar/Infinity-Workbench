@@ -190,8 +190,7 @@ private fun PathSection(state: AgentReachState) {
             state.mounts.forEach { mount ->
                 val attributes = listOf(
                     stringResource(if (mount.source == ReachMountSource.PATH) R.string.agent_reach_mount_path else R.string.agent_reach_mount_saf),
-                    stringResource(if (mount.global) R.string.mount_scope_global else R.string.mount_scope_current),
-                    stringResource(if (mount.readOnly) R.string.agent_reach_mount_read_only else R.string.agent_reach_mount_read_write),
+                    stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_command_visible else R.string.agent_reach_mount_files_only),
                 ) + listOfNotNull(if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null)
                 PathRow("/mnt/${mount.alias}", attributes.joinToString(" · "), "agent_reach_path_mount")
             }
@@ -262,22 +261,13 @@ private fun ApprovalSection(state: AgentReachState) {
             ),
             subtitle = stringResource(
                 when (state.executionMode) {
-                    ExecutionMode.WORKSPACE -> R.string.common_mode_workspace
-                    ExecutionMode.FULL_ACCESS -> R.string.common_mode_full_access
+                    ExecutionMode.WORKSPACE -> R.string.common_mode_workspace_desc
+                    ExecutionMode.FULL_ACCESS -> R.string.common_mode_full_access_desc
                 },
             ),
             icon = Icons.Rounded.VerifiedUser,
-            subtitleMaxLines = 2,
+            subtitleMaxLines = 3,
             modifier = Modifier.testTag("agent_reach_mode"),
-        )
-        NexaraSettingsRowLayout(
-            title = stringResource(R.string.agent_reach_always_allowed),
-            subtitle = when (val count = state.alwaysAllowedCount) {
-                null -> stringResource(R.string.settings_status_loading)
-                0 -> stringResource(R.string.agent_reach_always_allowed_none)
-                else -> pluralStringResource(R.plurals.agent_reach_always_allowed_count, count, count)
-            },
-            leadingSpacer = true,
         )
     }
 }

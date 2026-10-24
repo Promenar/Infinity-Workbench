@@ -20,9 +20,9 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 
 private val Mounts = listOf(
-    ExternalMount("m1", "termux-home", "saf_tree", "tree-1", null, readOnly = false, createdAt = 1),
-    ExternalMount("m2", "documents", "real_path", "/storage/emulated/0/Documents", "s1", readOnly = true, createdAt = 2),
-    ExternalMount("m3", "sdcard-backup", "saf_tree", "tree-3", null, readOnly = true, createdAt = 3, unavailableReason = "revoked"),
+    ExternalMount("m1", "termux-home", "saf_tree", "tree-1", "s1", createdAt = 1),
+    ExternalMount("m2", "documents", "real_path", "/storage/emulated/0/Documents", "s1", createdAt = 2),
+    ExternalMount("m3", "sdcard-backup", "saf_tree", "tree-3", "s1", createdAt = 3, unavailableReason = "revoked"),
 )
 
 /** 与 NexaraBottomSheet 全高面板一致的底色与左右留白；页头由内容自带。 */
@@ -72,16 +72,12 @@ fun externalMountFormPreview() = MountSheetFrame {
         source = ExternalMountSource.RealPath,
         alias = "documents",
         sourcePath = "/storage/emulated/0/Documents",
-        readOnly = true,
-        sessionOnly = true,
         hasCurrentSession = true,
         realPathPermission = false,
         busy = false,
         notice = null,
         onAliasChanged = {},
         onPathChanged = {},
-        onReadOnlyChanged = {},
-        onSessionOnlyChanged = {},
         onGrantAccess = {},
         onBack = {},
         onConfirm = {},

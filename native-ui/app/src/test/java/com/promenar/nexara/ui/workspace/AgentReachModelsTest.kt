@@ -2,7 +2,6 @@ package com.promenar.nexara.ui.workspace
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
-import com.promenar.nexara.data.repository.ToolAllowlistEntry
 import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.domain.network.AgentNetworkSnapshot
 import com.promenar.nexara.domain.network.NetworkAccessState
@@ -38,8 +37,8 @@ class AgentReachModelsTest {
         )
         val reach = reachMounts(mounts)
         assertThat(reach.map { it.alias }).containsExactly("broken", "downloads", "termux-home").inOrder()
-        assertThat(reach.first { it.alias == "downloads" }).isEqualTo(ReachMount("downloads", ReachMountSource.PATH, global = false, readOnly = false, unavailable = false))
-        assertThat(reach.first { it.alias == "termux-home" }.global).isFalse()
+        assertThat(reach.first { it.alias == "downloads" }).isEqualTo(ReachMount("downloads", ReachMountSource.PATH, commandAccessible = true, unavailable = false))
+        assertThat(reach.first { it.alias == "termux-home" }.commandAccessible).isFalse()
         assertThat(reach.first { it.alias == "broken" }.unavailable).isTrue()
     }
 
@@ -63,21 +62,6 @@ class AgentReachModelsTest {
         val ready = reachBackends(pythonAvailable = true, termuxEnabled = false, termuxAvailability = null, sshHostCount = 3)
         assertThat(ready.first { it.kind == ReachBackendKind.SSH }).isEqualTo(ReachBackend(ReachBackendKind.SSH, ReachBackendStatus.READY, 3))
         assertThat(reachBackends(true, false, null, null).first { it.kind == ReachBackendKind.SSH }.status).isEqualTo(ReachBackendStatus.LOADING)
-    }
-
-    @Test
-    fun `always allowed count includes global, this session and the bound workspace only`() {
-        val entries = listOf(
-            entry(null),
-            entry("session:s1"),
-            entry("session:s2"),
-            entry("workspace:w1"),
-            entry("workspace:w2"),
-            entry("mount:m1"),
-        )
-        assertThat(alwaysAllowedCount(entries, "s1", "w1")).isEqualTo(3)
-        assertThat(alwaysAllowedCount(entries, "s1", null)).isEqualTo(2)
-        assertThat(alwaysAllowedCount(emptyList(), "s1", "w1")).isEqualTo(0)
     }
 
     @Test
@@ -112,5 +96,4 @@ class AgentReachModelsTest {
     private fun mount(alias: String, source: String, sessionId: String, unavailable: String? = null) =
         ExternalMount("id-$alias", alias, source, "src-$alias", sessionId, 1L, unavailable)
 
-    private fun entry(scopeKey: String?) = ToolAllowlistEntry("id-$scopeKey", "write_file", "/notes.md", scopeKey, 1L, null)
 }

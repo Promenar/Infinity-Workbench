@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.layout.widthIn
+import com.promenar.nexara.domain.tool.CommandToolClassification
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraHapticEvent
@@ -257,20 +258,19 @@ private fun subagentElapsed(ms: Long): String {
 fun SubagentApprovalDialog(broker: SubagentApprovalBroker, sessionTitle: (String) -> String? = { null }) {
     val requests by broker.pending.collectAsState()
     val request = requests.firstOrNull() ?: return
-    var remember by remember(request.id) { mutableStateOf(false) }
     val title = sessionTitle(request.sessionId)?.takeIf(String::isNotBlank)
     val haptics = LocalNexaraHaptics.current
     LaunchedEffect(request.id) { haptics.perform(NexaraHapticEvent.ATTENTION) }
     AlertDialog(
         onDismissRequest = {},
         title = { Text(stringResource(R.string.subagent_approval_title, subagentName(request.subagentPreset, request.subagentIndex))) },
-        text = { SubagentApprovalContent(request, title, remember, onRememberChange = { remember = it }) },
+        text = { SubagentApprovalContent(request, title) },
         confirmButton = {
             TextButton(
                 modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("SUBAGENT_APPROVAL_ALLOW"),
                 onClick = {
                     haptics.perform(NexaraHapticEvent.CONFIRM)
-                    broker.resolve(request.id, true, remember)
+                    broker.resolve(request.id, true)
                 },
             ) {
                 Text(stringResource(R.string.subagent_approval_allow))
@@ -290,23 +290,17 @@ fun SubagentApprovalDialog(broker: SubagentApprovalBroker, sessionTitle: (String
     )
 }
 
-/**
- * 审批卡正文：先交代来源会话与子代理任务，再按聊天内审批卡的样式给出动作、风险类别、执行位置与完整预览；
- * 无法确定目标时不提供“记住”。
- */
+/** 审批卡正文：先交代来源会话与子代理任务，再按聊天内审批卡的样式给出动作、类别、执行位置与完整预览。 */
 @Composable
 internal fun SubagentApprovalContent(
     request: SubagentApproval,
     sessionTitle: String?,
-    remember: Boolean,
-    onRememberChange: (Boolean) -> Unit,
 ) {
     val highRisk = request.risk == ToolRisk.PROCESS || request.risk == ToolRisk.DELETE
     val target = request.target
     // 命令正文在下方完整展示时，标题行只给执行位置。
     val headerTarget = target?.let { ToolExecutionTargets.processScope(it) ?: ToolExecutionTargets.display(it) }
         ?: approvalFixedWriteTarget(request.toolName)
-    val builtinExec = request.toolName == "shell_exec" || request.toolName == "python_exec"
     Column(
         modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()).testTag("SUBAGENT_APPROVAL"),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
@@ -327,30 +321,17 @@ internal fun SubagentApprovalContent(
             highRisk = highRisk,
             target = approvalHeaderTarget(request.toolName, headerTarget),
         )
+        ApprovalKindNote(request.toolName)
         if (request.preview.isNotBlank()) ApprovalTextBlock(request.preview)
-        val riskLines = buildList {
-            if (builtinExec) add(stringResource(R.string.chat_approval_builtin_exec_warning))
-            else if (highRisk && target != null) add(stringResource(R.string.chat_approval_high_risk_target_warning))
+        // 命令的访问范围已由类别条说明。
+        if (highRisk && target != null && CommandToolClassification.backendFor(request.toolName) == null) {
+            ApprovalRiskLine(stringResource(R.string.chat_approval_high_risk_target_warning))
         }
-        riskLines.forEach { ApprovalRiskLine(it) }
         Text(
             stringResource(R.string.subagent_approval_timeout_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (request.canRemember) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .toggleable(value = remember, role = Role.Checkbox, onValueChange = onRememberChange),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(checked = remember, onCheckedChange = null)
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.subagent_approval_remember), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            }
-        }
     }
 }
 

@@ -374,11 +374,6 @@ class SettingsViewModel(
     val taskTokenLimit = MutableStateFlow(prefs.getInt("task_token_limit", 0))
     val toolLoopRepeatLimit = MutableStateFlow(prefs.getInt("tool_loop_repeat_limit", 3))
     val streamRetryLimit = MutableStateFlow(readStreamRetryLimit())
-    // 设置卡片的兼容绑定由前端清理，运行时不再提供写入审批设置。
-    val scriptApproveFileWrites = MutableStateFlow(false)
-
-    fun updateScriptApproveFileWrites(@Suppress("UNUSED_PARAMETER") value: Boolean) = Unit
-
     fun updateTaskTokenLimit(value: Int) = updateRuntimeInt("task_token_limit", value.coerceIn(0, 10_000_000), taskTokenLimit)
     fun updateToolLoopRepeatLimit(value: Int) = updateRuntimeInt("tool_loop_repeat_limit", value.coerceIn(2, 20), toolLoopRepeatLimit)
     fun updateStreamRetryLimit(value: Int) = updateRuntimeInt(

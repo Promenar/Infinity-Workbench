@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.exec.PackagedPython
-import com.promenar.nexara.data.repository.ToolAllowlistEntry
 import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.data.termux.TermuxPreferences
 import com.promenar.nexara.data.workspace.SessionWorkspace
@@ -29,11 +28,9 @@ import kotlinx.coroutines.withContext
 
 /** 汇总会话 Agent 可达范围所需的现有数据源；每次打开面板重新解析工作区与 Termux 状态。 */
 internal class AgentReachViewModel(
-    private val sessionId: String,
     private val resolveWorkspace: suspend () -> SessionWorkspace,
     mounts: Flow<List<ExternalMount>>,
     sshHostCount: Flow<Int>,
-    allowlist: Flow<List<ToolAllowlistEntry>>,
     network: Flow<AgentNetworkSnapshot>,
     private val pythonAvailable: () -> Boolean,
     private val termuxEnabled: () -> Boolean,
@@ -53,16 +50,12 @@ internal class AgentReachViewModel(
         workspace,
         mounts.map(::reachMounts).onStart { emit(emptyList()) },
         backendInputs,
-        allowlist.map<List<ToolAllowlistEntry>, List<ToolAllowlistEntry>?> { it }.onStart { emit(null) },
         network.map<AgentNetworkSnapshot, AgentNetworkSnapshot?> { it }.onStart { emit(null) },
-    ) { workspace, mounts, backends, entries, network ->
+    ) { workspace, mounts, backends, network ->
         AgentReachState(
             workspace = workspace,
             mounts = mounts,
             backends = backends,
-            alwaysAllowedCount = entries?.let {
-                alwaysAllowedCount(it, sessionId, (workspace as? SessionWorkspaceUi.Directory)?.workspaceId)
-            },
             network = network,
             sideload = sideload,
         )
@@ -90,11 +83,9 @@ internal class AgentReachViewModel(
                 val app = application as NexaraApplication
                 val preferences = app.getSharedPreferences("nexara_settings", android.content.Context.MODE_PRIVATE)
                 return AgentReachViewModel(
-                    sessionId = sessionId,
                     resolveWorkspace = { app.sessionWorkspaceResolver.resolve(sessionId) },
                     mounts = app.externalFolderManager.observeMounts(sessionId),
                     sshHostCount = app.sshHostStore.observeHosts().map { it.size },
-                    allowlist = app.toolAllowlistStore.entries,
                     network = app.agentNetworkAccess.snapshot,
                     pythonAvailable = { PackagedPython.from(app).isAvailable },
                     termuxEnabled = { TermuxPreferences.isEnabled(preferences) },

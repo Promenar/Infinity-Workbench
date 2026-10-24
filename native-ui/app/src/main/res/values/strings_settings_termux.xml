@@ -24,7 +24,6 @@
     <string name="termux_step_external_apps">2 · Allow external apps</string>
     <string name="termux_step_permission">3 · Grant command permission</string>
     <string name="termux_step_ssh">4 · SSH and public keys</string>
-    <string name="termux_step_mount">5 · Mount the home folder</string>
     <string name="termux_step_complete">Complete</string>
     <string name="termux_step_pending">Setup required</string>
     <string name="termux_step_optional">Optional</string>
@@ -50,15 +49,7 @@
     <string name="termux_key_copy_description">Select a key, then copy its public key or the command that adds it to authorized_keys. Paste the result in Termux.</string>
     <string name="termux_copy_public_key">Copy public key</string>
     <string name="termux_copy_key_command">Copy authorized_keys command</string>
-    <string name="termux_mount_count">Saved mounts: %1$d</string>
-    <string name="termux_mount_description">Use the system folder picker to grant access to the Termux home folder or a subfolder. All sessions can use /mnt/alias after mounting. All-files access is not required.</string>
-    <string name="termux_mount_alias">Unique mount alias</string>
-    <string name="termux_mount_alias_hint">Do not use paths or the reserved names mnt and .nexara.</string>
-    <string name="termux_mount_read_only">Read-only mount</string>
-    <string name="termux_mount_read_only_description">Turn off to allow &brand; to write to the selected folder.</string>
-    <string name="termux_choose_folder">Choose Termux folder</string>
     <string name="termux_picker_hint">If the picker does not open in Termux, select Termux in its sidebar. Choose another alias if the name is already in use.</string>
-    <string name="termux_mount_path">/mnt/%1$s (%2$s)</string>
     <string name="termux_read_only">Read only</string>
     <string name="termux_read_write">Read and write</string>
     <string name="termux_background_section">Background execution and child processes</string>
@@ -96,10 +87,7 @@
     <string name="termux_error_permission_denied">Command permission has not been granted. Allow it in &brand; app info → Permissions.</string>
     <string name="termux_error_picker_empty">The system did not return folder access. Choose the folder again.</string>
     <string name="termux_error_picker_provider">Choose the Termux home folder or one of its subfolders in the system picker.</string>
-    <string name="termux_error_mount">Could not mount the Termux folder. Select it again and allow the required file access.</string>
-    <string name="termux_mounted_notice">Mounted at /mnt/%1$s (%2$s), available to all sessions.</string>
     <string name="termux_error_hosts">Could not read SSH hosts. Open SSH settings to check.</string>
-    <string name="termux_error_mounts">Could not read existing mounts. Open folder management to check.</string>
     <string name="termux_error_save_integration">Could not save Termux integration settings. Try again.</string>
     <string name="termux_enabled_notice">Termux integration enabled.</string>
     <string name="termux_disabled_notice">Termux integration disabled.</string>
@@ -110,14 +98,9 @@
     <string name="termux_error_permission_request">Could not request permission. Open &brand; app info to grant it manually.</string>
     <string name="termux_error_app_details">Could not open app info. Find &brand; permissions in system settings.</string>
     <string name="termux_error_alias_control">The alias cannot contain line breaks or control characters.</string>
-    <string name="termux_error_alias_conflict">This mount alias is already in use. Choose another name.</string>
     <string name="termux_error_alias_invalid">Enter a valid alias without paths or reserved names.</string>
     <string name="termux_error_picker">Could not open the folder picker. Confirm Termux is installed and has been opened once.</string>
     <string name="termux_error_key_code">Could not read the SSH public key (%1$s). Check the key in SSH host settings.</string>
-    <string name="termux_error_mount_path">The mount path or alias is invalid. Select the Termux folder again.</string>
-    <string name="termux_error_mount_write_permission">Termux did not grant write access. Choose a read-only mount or grant access again.</string>
-    <string name="termux_error_grant_limit">The persistent folder access limit has been reached. Remove unused mounts first.</string>
-    <string name="termux_error_mount_unavailable">The Termux folder is unavailable. Open Termux and grant access again.</string>
     <string name="termux_error_system_permission">The system denied the required permission. Check access in app info and try again.</string>
     <string name="termux_command_diagnostic" translatable="false">printf \'NEXARA_TERMUX_OK\\n\'</string>
     <string name="termux_command_external_apps" translatable="false">mkdir -p ~/.termux &amp;&amp; touch ~/.termux/termux.properties &amp;&amp; sed -i \'/^[[:space:]]*allow-external-apps[[:space:]]*=/d\' ~/.termux/termux.properties &amp;&amp; printf \'\\nallow-external-apps=true\\n\' &gt;&gt; ~/.termux/termux.properties &amp;&amp; termux-reload-settings</string>
@@ -125,4 +108,6 @@
     <string name="termux_command_password" translatable="false">passwd</string>
     <string name="termux_command_sshd" translatable="false">sshd -o ListenAddress=127.0.0.1</string>
     <string name="termux_command_wake_lock" translatable="false">termux-wake-lock\ntermux-wake-unlock</string>
+    <string name="termux_step_files">5 · Let the Agent use Termux files</string>
+    <string name="termux_files_description">Mounts belong to a session. In a chat, open External folders, choose Authorize a folder, and pick Termux in the system picker. File tools then use /mnt/alias/; commands run by Termux keep using the Termux home folder.</string>
 </resources>

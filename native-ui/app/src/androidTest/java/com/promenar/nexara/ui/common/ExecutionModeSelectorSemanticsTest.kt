@@ -22,19 +22,15 @@ class ExecutionModeSelectorSemanticsTest {
     fun exposesRadioSelectionAndMinimumTouchTarget() {
         composeRule.setContent {
             NexaraTheme {
-                ExecutionModeSelector(selected = ExecutionMode.SEMI, onSelect = {})
+                ExecutionModeSelector(selected = ExecutionMode.WORKSPACE, onSelect = {})
             }
         }
 
-        composeRule.onNodeWithText("Auto")
-            .assertIsSelectable()
-            .assertIsNotSelected()
-            .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithText("Semi")
+        composeRule.onNodeWithText("Workspace")
             .assertIsSelectable()
             .assertIsSelected()
             .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithText("Manual")
+        composeRule.onNodeWithText("Full access")
             .assertIsSelectable()
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
@@ -45,13 +41,12 @@ class ExecutionModeSelectorSemanticsTest {
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
                 NexaraTheme {
-                    ExecutionModeSelector(selected = ExecutionMode.AUTO, onSelect = {})
+                    ExecutionModeSelector(selected = ExecutionMode.FULL_ACCESS, onSelect = {})
                 }
             }
         }
 
-        composeRule.onNodeWithText("Auto").assertIsSelected().assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithText("Semi").assertIsNotSelected().assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithText("Manual").assertIsNotSelected().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithText("Full access").assertIsSelected().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithText("Workspace").assertIsNotSelected().assertHeightIsAtLeast(48.dp)
     }
 }

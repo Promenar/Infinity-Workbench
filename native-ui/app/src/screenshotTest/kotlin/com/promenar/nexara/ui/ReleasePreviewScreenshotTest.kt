@@ -992,7 +992,6 @@ fun chatApprovalWritePreviewReleasePreview() {
             ApprovalCard(
                 toolName = "patch_file",
                 description = "执行模式：半自动",
-                onAlwaysAllow = {},
                 calls = listOf(
                     ApprovalDisplayCall(
                         name = "patch_file",

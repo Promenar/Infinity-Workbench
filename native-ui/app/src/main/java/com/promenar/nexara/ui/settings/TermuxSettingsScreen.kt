@@ -85,8 +85,6 @@ import com.promenar.nexara.data.ssh.SshKeyGenerator
 import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.data.termux.TermuxCommandResult
 import com.promenar.nexara.data.termux.TermuxPreferences
-import com.promenar.nexara.domain.storage.ExternalFolderException
-import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.ui.common.NexaraCommandBlock
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
@@ -500,6 +498,18 @@ internal fun TermuxSettingsContent(
             }
         }
         item {
+            // 挂载只属于会话：这里只说明入口，不在设置页创建挂载。
+            NexaraSettingsSection(title = stringResource(R.string.termux_step_files)) {
+                TermuxSectionBody {
+                    Text(
+                        stringResource(R.string.termux_files_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        item {
             NexaraSettingsSection(
                 title = stringResource(R.string.termux_background_section),
                 footer = listOf(
@@ -622,13 +632,6 @@ private fun termuxGuidance(errorCode: String?, fallback: String?): String? = whe
 private fun termuxSetupFailure(resources: Resources, failure: Exception, fallback: String): String = when (failure) {
     is CancellationException -> throw failure
     is SshFailure -> resources.getString(R.string.termux_error_key_code, failure.code)
-    is ExternalFolderException -> resources.getString(when (failure.code) {
-        "CONFLICT" -> R.string.termux_error_alias_conflict
-        "INVALID_PATH" -> R.string.termux_error_mount_path
-        "READ_ONLY" -> R.string.termux_error_mount_write_permission
-        "GRANT_LIMIT" -> R.string.termux_error_grant_limit
-        else -> R.string.termux_error_mount_unavailable
-    })
     is SecurityException -> resources.getString(R.string.termux_error_system_permission)
     else -> fallback
 }

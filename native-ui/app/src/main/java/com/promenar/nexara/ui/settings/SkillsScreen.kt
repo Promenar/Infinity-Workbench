@@ -141,7 +141,6 @@ fun SkillsScreen(
     onOpenTermux: () -> Unit = {},
     onOpenGitCredentials: () -> Unit = {},
     onOpenTailscale: () -> Unit = {},
-    onOpenAllowlist: () -> Unit = {},
     onOpenBackground: () -> Unit = {},
     onOpenNetworkAccess: () -> Unit = {},
 ) {
@@ -161,8 +160,6 @@ fun SkillsScreen(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { agentSkillsViewModel.import(it) } }
 
-    val allowlistEntries by (context.applicationContext as com.promenar.nexara.NexaraApplication)
-        .toolAllowlistStore.entries.collectAsState()
     val presetSkills by viewModel.skills.collectAsState()
     val userSkills by viewModel.userSkills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
@@ -170,7 +167,6 @@ fun SkillsScreen(
     val tokenLimit by viewModel.taskTokenLimit.collectAsState()
     val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
     val retryLimit by viewModel.streamRetryLimit.collectAsState()
-    val approveWrites by viewModel.scriptApproveFileWrites.collectAsState()
     val application = context.applicationContext as NexaraApplication
     val networkSnapshot by application.agentNetworkAccess.snapshot.collectAsState()
     val sshHosts by remember(application) {
@@ -223,13 +219,12 @@ fun SkillsScreen(
 
                 SkillsSettingsHeaderContent(
                     state = SkillsSettingsVisualState(
-                        loopLimit, tokenLimit, repeatLimit, approveWrites,
+                        loopLimit, tokenLimit, repeatLimit,
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
                         retryLimit = retryLimit,
                         gitCredentialCount = gitCredentialCount,
                         tailscaleState = tailscaleState,
-                        allowlistCount = allowlistEntries.size,
                         networkHostCount = networkSnapshot.lanHosts.size,
                     ),
                     actions = SkillsSettingsVisualActions(
@@ -241,13 +236,11 @@ fun SkillsScreen(
                             viewModel.resetUnlimitedAutoConsent()
                             scope.launch { snackbarHost.showSnackbar(resetMessage) }
                         },
-                        onApproveScriptWritesChange = viewModel::updateScriptApproveFileWrites,
                         onOpenNetworkAccess = onOpenNetworkAccess,
                         onOpenSsh = onOpenSsh,
                         onOpenTermux = onOpenTermux,
                         onOpenGitCredentials = onOpenGitCredentials,
                         onOpenTailscale = onOpenTailscale,
-                        onOpenAllowlist = onOpenAllowlist,
                         onOpenBackground = onOpenBackground,
                     ),
                 )

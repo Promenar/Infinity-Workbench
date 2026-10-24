@@ -29,28 +29,26 @@ fun agentReachPrivateLightPreview() = AgentReachPreview(dark = false, shared = f
 @Composable
 fun agentReachSharedDarkPreview() = AgentReachPreview(dark = true, shared = true)
 
-/** 私有工作区：无挂载、无 Python、Termux 未启用、白名单为空；共享工作区：带挂载、全部后端可用、tailnet 已连接。 */
+/** 私有工作区：无挂载、无 Python、Termux 未启用；共享工作区：带挂载、全部后端可用、tailnet 已连接。 */
 @Composable
 private fun AgentReachPreview(dark: Boolean, shared: Boolean) {
     val state = if (shared) {
         AgentReachState(
             workspace = SessionWorkspaceUi.Directory("w1", "nexara-notes", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/Nexara/nexara-notes"),
             mounts = listOf(
-                ReachMount("downloads", ReachMountSource.PATH, global = false, readOnly = true, unavailable = false),
-                ReachMount("termux-home", ReachMountSource.SAF, global = true, readOnly = false, unavailable = false),
-                ReachMount("old-photos", ReachMountSource.SAF, global = true, readOnly = true, unavailable = true),
+                ReachMount("downloads", ReachMountSource.PATH, commandAccessible = true, unavailable = false),
+                ReachMount("termux-home", ReachMountSource.SAF, commandAccessible = false, unavailable = false),
+                ReachMount("old-photos", ReachMountSource.SAF, commandAccessible = false, unavailable = true),
             ),
             backends = reachBackends(true, true, TermuxAvailability(true, "0.119.1", true), 2),
-            executionMode = ExecutionMode.AUTO,
-            alwaysAllowedCount = 3,
+            executionMode = ExecutionMode.FULL_ACCESS,
             network = previewNetworkSnapshot(configured = true),
         )
     } else {
         AgentReachState(
             workspace = SessionWorkspaceUi.Private,
             backends = reachBackends(false, false, null, 0),
-            executionMode = ExecutionMode.SEMI,
-            alwaysAllowedCount = 0,
+            executionMode = ExecutionMode.WORKSPACE,
             network = previewNetworkSnapshot(configured = false),
         )
     }
