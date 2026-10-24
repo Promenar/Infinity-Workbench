@@ -232,7 +232,6 @@
     <string name="resource_explorer_importing">Importing</string>
     <string name="resource_explorer_import_files">Import Files</string>
     <string name="resource_explorer_workspace_root">Workspace</string>
-    <string name="resource_explorer_tab_files">Files</string>
     <string name="resource_explorer_recycle_bin">Recycle Bin</string>
     <string name="resource_explorer_recycle_bin_count">Recycle Bin (%1$d)</string>
     <string name="resource_explorer_retry_document">Retry %1$s</string>
@@ -261,7 +260,7 @@
     <string name="files_no_available_folders">No available folders</string>
     <string name="files_root_directory">Root Folder</string>
     <string name="files_empty_title">No files yet</string>
-    <string name="files_empty_subtitle">Workspace files are created automatically when AI operations need them.</string>
+    <string name="files_empty_subtitle">Import files, or let AI create them in the chat.</string>
     <string name="files_time_just_now">Just now</string>
     <string name="files_time_minutes_ago">%1$d min ago</string>
     <string name="files_time_hours_ago">%1$d hr ago</string>

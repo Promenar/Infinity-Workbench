@@ -10,6 +10,7 @@ import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
 import com.promenar.nexara.ui.workspace.SessionWorkspaceBar
 import com.promenar.nexara.ui.workspace.AgentReachSheet
 import com.promenar.nexara.data.workspace.WorkspaceSwitchResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,42 +31,38 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.HourglassTop
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.UploadFile
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
-import com.promenar.nexara.ui.common.NexaraTabItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -89,6 +86,8 @@ import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraNavigationHeader
+import com.promenar.nexara.ui.theme.hierarchicalTransition
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.git.GitChangesSheet
 import com.promenar.nexara.ui.git.GitEntrySummary
@@ -97,7 +96,6 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.workspace.workspaceKindLabel
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ResourceExplorerSheet(
@@ -132,7 +130,7 @@ fun ResourceExplorerSheet(
     val gitEntry by viewModel.gitEntry.collectAsStateWithLifecycle()
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
     val directory by viewModel.directory.collectAsStateWithLifecycle()
-    var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
+    var showRecycle by rememberSaveable(sessionId) { mutableStateOf(false) }
     var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
     var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
     val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
@@ -158,7 +156,7 @@ fun ResourceExplorerSheet(
     ) {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
-                selectedTab = selectedTab,
+                showRecycle = showRecycle,
                 searchQuery = searchQuery,
                 recycleBinCount = recycleBinCount,
                 workspaceReady = workspaceRootUuid != null,
@@ -181,7 +179,8 @@ fun ResourceExplorerSheet(
                 },
                 onRetryImport = viewModel::retryImport,
                 onClearImportResults = viewModel::clearImportResults,
-                onTabSelected = { selectedTab = it },
+                onOpenRecycle = { showRecycle = true },
+                onCloseRecycle = { showRecycle = false },
                 onRetryLoad = viewModel::retryLoadSession,
             ),
             filesContent = {
@@ -192,6 +191,7 @@ fun ResourceExplorerSheet(
                     DirectoryWorkspaceBrowser(
                         rootTitle = directoryMode.displayName,
                         state = directory,
+                        extraActions = { ResourceExplorerRecycleAction(count = null, onClick = { showRecycle = true }) },
                         onNavigate = viewModel::openDirectory,
                         onOpenFile = viewModel::openDirectoryFile,
                         onCloseFile = viewModel::closeDirectoryFile,
@@ -237,6 +237,8 @@ fun ResourceExplorerSheet(
                     onRetryLoad = viewModel::retryLoadSession,
                     onClearSearch = { viewModel.updateSearchQuery("") },
                     initialFolderPath = initialFolderPath,
+                    onImport = { filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) }
+                        .takeIf { workspaceRootUuid != null && !isImporting },
                 )
             },
             recycleBinContent = {
@@ -291,19 +293,9 @@ fun ResourceExplorerSheet(
     }
 }
 
-internal enum class ResourceExplorerTab(val page: Int) {
-    Files(0),
-    RecycleBin(1),
-    ;
-
-    companion object {
-        fun fromPage(page: Int): ResourceExplorerTab =
-            entries.firstOrNull { it.page == page } ?: Files
-    }
-}
-
 internal data class ResourceExplorerSheetState(
-    val selectedTab: ResourceExplorerTab = ResourceExplorerTab.Files,
+    /** 回收站是当前工作区的子页，从文件页工具栏进入。 */
+    val showRecycle: Boolean = false,
     val searchQuery: String = "",
     val recycleBinCount: Int = 0,
     val workspaceReady: Boolean = false,
@@ -325,7 +317,8 @@ internal data class ResourceExplorerSheetActions(
     val onImportFiles: () -> Unit = {},
     val onRetryImport: (android.net.Uri) -> Unit = {},
     val onClearImportResults: () -> Unit = {},
-    val onTabSelected: (ResourceExplorerTab) -> Unit = {},
+    val onOpenRecycle: () -> Unit = {},
+    val onCloseRecycle: () -> Unit = {},
     val onRetryLoad: () -> Unit = {},
     val onOpenGitPanel: () -> Unit = {},
     val onChooseWorkspace: () -> Unit = {},
@@ -340,105 +333,75 @@ internal fun ResourceExplorerSheetContent(
     recycleBinContent: @Composable () -> Unit,
     directoryRecycleContent: @Composable () -> Unit = { DirectoryRecycleInfo() },
 ) {
-    val pagerState = rememberPagerState(
-        initialPage = state.selectedTab.page,
-        pageCount = { ResourceExplorerTab.entries.size },
-    )
-    val currentSelectedTab by rememberUpdatedState(state.selectedTab)
-    val currentOnTabSelected by rememberUpdatedState(actions.onTabSelected)
-
-    LaunchedEffect(state.selectedTab) {
-        if (pagerState.currentPage != state.selectedTab.page) {
-            pagerState.animateScrollToPage(state.selectedTab.page)
-        }
-    }
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }
-            .distinctUntilChanged()
-            .collect { page ->
-                val tab = ResourceExplorerTab.fromPage(page)
-                if (tab != currentSelectedTab) currentOnTabSelected(tab)
-            }
-    }
-
-    Column(
+    BackHandler(enabled = state.showRecycle, onBack = actions.onCloseRecycle)
+    AnimatedContent(
+        targetState = state.showRecycle,
+        transitionSpec = { hierarchicalTransition { if (it) 1 else 0 } },
         modifier = Modifier
             .fillMaxSize()
             .testTag(UiTags.RESOURCE_EXPLORER_ROOT),
-    ) {
-        val tabs = listOf(
-            NexaraTabItem(
-                title = stringResource(R.string.resource_explorer_tab_files),
-                icon = Icons.Rounded.Folder,
-                testTag = UiTags.RESOURCE_EXPLORER_TAB_FILES,
-            ),
-            NexaraTabItem(
-                title = if (state.recycleBinCount > 0) {
-                    stringResource(
-                        R.string.resource_explorer_recycle_bin_count,
-                        state.recycleBinCount,
-                    )
-                } else {
-                    stringResource(R.string.resource_explorer_recycle_bin)
-                },
-                icon = Icons.Rounded.DeleteForever,
-                testTag = UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN,
-            ),
+        label = "resource_explorer_page",
+    ) { recycle ->
+        if (recycle) {
+            ResourceExplorerRecyclePage(state, actions, recycleBinContent, directoryRecycleContent)
+        } else {
+            ResourceExplorerFilesPage(state = state, actions = actions, filesContent = filesContent)
+        }
+    }
+}
+
+@Composable
+private fun ResourceExplorerRecyclePage(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+    recycleBinContent: @Composable () -> Unit,
+    directoryRecycleContent: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize().testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_PAGE)) {
+        NexaraNavigationHeader(
+            title = stringResource(R.string.resource_explorer_recycle_bin),
+            onBack = actions.onCloseRecycle,
+            backButtonTag = UiTags.RESOURCE_EXPLORER_RECYCLE_BACK,
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Small),
         )
-
-        NexaraCapsuleTabRow(
-            tabs = tabs,
-            selectedIndex = state.selectedTab.page,
-            onTabSelected = { page ->
-                actions.onTabSelected(ResourceExplorerTab.fromPage(page))
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
-        )
-
-        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .testTag(UiTags.RESOURCE_EXPLORER_PAGER),
-        ) { page ->
-            when (ResourceExplorerTab.fromPage(page)) {
-                ResourceExplorerTab.Files -> ResourceExplorerFilesPage(
-                    state = state,
-                    actions = actions,
-                    filesContent = filesContent,
+        // 目录工作区说明、加载、失败与回收站列表之间交叉淡入。
+        val recyclePhase = when {
+            state.workspaceMode is ResourceExplorerWorkspaceMode.Directory ||
+                state.workspaceMode is ResourceExplorerWorkspaceMode.Unavailable -> 0
+            state.isLoading -> 1
+            state.hasLoadError -> 2
+            else -> 3
+        }
+        AnimatedContent(
+            targetState = recyclePhase,
+            transitionSpec = { NexaraMotion.fadeThrough() },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            label = "resource_explorer_recycle_phase",
+        ) { phase ->
+            when (phase) {
+                0 -> directoryRecycleContent()
+                1 -> ResourceExplorerSessionState(isLoading = true)
+                2 -> ResourceExplorerSessionState(
+                    isLoading = false,
+                    onRetry = actions.onRetryLoad,
                 )
-                ResourceExplorerTab.RecycleBin -> {
-                    // 目录工作区说明、加载、失败与回收站列表之间交叉淡入。
-                    val recyclePhase = when {
-                        state.workspaceMode is ResourceExplorerWorkspaceMode.Directory ||
-                            state.workspaceMode is ResourceExplorerWorkspaceMode.Unavailable -> 0
-                        state.isLoading -> 1
-                        state.hasLoadError -> 2
-                        else -> 3
-                    }
-                    AnimatedContent(
-                        targetState = recyclePhase,
-                        transitionSpec = { NexaraMotion.fadeThrough() },
-                        modifier = Modifier.fillMaxSize(),
-                        label = "resource_explorer_recycle_phase",
-                    ) { phase ->
-                        when (phase) {
-                            0 -> directoryRecycleContent()
-                            1 -> ResourceExplorerSessionState(isLoading = true)
-                            2 -> ResourceExplorerSessionState(
-                                isLoading = false,
-                                onRetry = actions.onRetryLoad,
-                            )
-                            else -> recycleBinContent()
-                        }
-                    }
-                }
+                else -> recycleBinContent()
             }
+        }
+    }
+}
+
+/** 工具栏中的回收站入口；[count] 为 null 时不显示数量。 */
+@Composable
+internal fun ResourceExplorerRecycleAction(count: Int?, onClick: () -> Unit) {
+    val label = if (count != null && count > 0) {
+        stringResource(R.string.resource_explorer_recycle_bin_count, count)
+    } else {
+        stringResource(R.string.resource_explorer_recycle_bin)
+    }
+    IconButton(onClick = onClick, modifier = Modifier.testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_ENTRY)) {
+        BadgedBox(badge = { if (count != null && count > 0) Badge { Text(count.toString()) } }) {
+            Icon(Icons.Rounded.DeleteOutline, contentDescription = label)
         }
     }
 }
@@ -571,36 +534,17 @@ private fun ResourceExplorerPrivateFilesPage(
     actions: ResourceExplorerSheetActions,
     filesContent: @Composable () -> Unit,
 ) {
-    // 按窗口高度而非面板剩余高度判断：键盘弹出会压缩面板高度，若随之切换布局，
-    // 搜索框会被重建而丢失焦点，键盘随即收起。
-    val compactLandscape = LocalConfiguration.current.screenHeightDp < 480 && LocalDensity.current.fontScale < 1.5f
     Column(modifier = Modifier.fillMaxSize()) {
         ResourceExplorerWorkspaceBar(state, actions)
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-        Box(modifier = Modifier.fillMaxWidth()) {
-            if (compactLandscape) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-                ) {
-                    ResourceExplorerSearch(state, actions, Modifier.weight(1f))
-                    ResourceExplorerImportAction(state, actions)
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                ) {
-                    ResourceExplorerSearch(state, actions, Modifier.fillMaxWidth())
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        ResourceExplorerImportAction(state, actions)
-                    }
-                }
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+        ) {
+            ResourceExplorerSearch(state, actions, Modifier.weight(1f))
+            ResourceExplorerImportAction(state, actions)
+            ResourceExplorerRecycleAction(count = state.recycleBinCount, onClick = actions.onOpenRecycle)
         }
 
         val shownImports = remember { arrayOfNulls<List<ShareImportItem>>(1) }
@@ -645,21 +589,22 @@ private fun ResourceExplorerImportAction(
     state: ResourceExplorerSheetState,
     actions: ResourceExplorerSheetActions,
 ) {
-    FilledTonalButton(
+    IconButton(
         onClick = actions.onImportFiles,
         enabled = state.workspaceReady && !state.isImporting,
-        modifier = Modifier
-            .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
-            .testTag(UiTags.RESOURCE_EXPLORER_IMPORT),
+        modifier = Modifier.testTag(UiTags.RESOURCE_EXPLORER_IMPORT),
     ) {
-        Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.size(NexaraSpacing.Small))
-        Text(
-            stringResource(
-                if (state.isImporting) R.string.resource_explorer_importing
-                else R.string.resource_explorer_import_files,
-            ),
-        )
+        if (state.isImporting) {
+            val importing = stringResource(R.string.resource_explorer_importing)
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(20.dp)
+                    .semantics { contentDescription = importing },
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(Icons.Rounded.UploadFile, contentDescription = stringResource(R.string.resource_explorer_import_files))
+        }
     }
 }
 

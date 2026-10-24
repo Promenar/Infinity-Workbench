@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,7 +77,6 @@ import com.promenar.nexara.ui.chat.taskPanelUiState
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetActions
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
-import com.promenar.nexara.ui.chat.ResourceExplorerTab
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RagDetailsSheetContent
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
@@ -2652,7 +2653,6 @@ fun resourceExplorerFilesImportEnglishReleasePreview() {
     ResourceExplorerReleasePreviewContainer {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
-                selectedTab = ResourceExplorerTab.Files,
                 recycleBinCount = 1,
                 workspaceReady = true,
                 importItems = PREVIEW_RESOURCE_IMPORT_RESULTS,
@@ -2664,6 +2664,37 @@ fun resourceExplorerFilesImportEnglishReleasePreview() {
                     workspaceRepo = PREVIEW_RESOURCE_REPOSITORY,
                     rootFiles = files,
                     nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                )
+            },
+            recycleBinContent = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Resource Explorer empty Chinese",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun resourceExplorerEmptyChineseReleasePreview() {
+    ResourceExplorerReleasePreviewContainer {
+        ResourceExplorerSheetContent(
+            state = ResourceExplorerSheetState(
+                recycleBinCount = 3,
+                workspaceReady = true,
+            ),
+            actions = ResourceExplorerSheetActions(),
+            filesContent = {
+                FilesPanel(
+                    workspaceRootUuid = PREVIEW_RESOURCE_ROOT_ID,
+                    workspaceRepo = PREVIEW_RESOURCE_REPOSITORY,
+                    rootFiles = emptyList(),
+                    nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                    onImport = {},
                 )
             },
             recycleBinContent = {},
@@ -2685,7 +2716,7 @@ fun resourceExplorerRecycleRunningChineseLargeFontReleasePreview() {
     ResourceExplorerReleasePreviewContainer {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
-                selectedTab = ResourceExplorerTab.RecycleBin,
+                showRecycle = true,
                 recycleBinCount = 1,
                 workspaceReady = true,
             ),
@@ -2724,7 +2755,7 @@ fun resourceExplorerRecycleDeleteConfirmChineseLargeFontReleasePreview() {
     ResourceExplorerReleasePreviewContainer {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
-                selectedTab = ResourceExplorerTab.RecycleBin,
+                showRecycle = true,
                 recycleBinCount = 1,
                 workspaceReady = true,
             ),
@@ -2764,7 +2795,7 @@ fun resourceExplorerRecycleFailureLandscapeReleasePreview() {
     ResourceExplorerReleasePreviewContainer {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
-                selectedTab = ResourceExplorerTab.RecycleBin,
+                showRecycle = true,
                 recycleBinCount = 2,
                 workspaceReady = true,
             ),
@@ -3567,8 +3598,11 @@ private fun ResourceExplorerReleasePreviewContainer(content: @Composable () -> U
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.size(16.dp))
-            Box(modifier = Modifier.fillMaxSize()) {
-                content()
+            // 与 NexaraBottomSheet 默认的 contentColorFor(surfaceContainer) 保持一致。
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    content()
+                }
             }
         }
     }

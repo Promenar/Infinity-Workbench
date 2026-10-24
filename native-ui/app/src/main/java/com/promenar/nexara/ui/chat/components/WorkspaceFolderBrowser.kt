@@ -42,6 +42,8 @@ import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FolderBreadcrumbsBar
 import com.promenar.nexara.ui.theme.hierarchicalTransition
 import androidx.compose.animation.AnimatedContent
+import com.promenar.nexara.ui.theme.NexaraMotion
+import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.navigateToCrumb
 import com.promenar.nexara.ui.testing.UiTags
@@ -107,6 +109,7 @@ internal fun WorkspaceFolderBrowser(
     onRetryLoad: () -> Unit,
     onClearSearch: () -> Unit,
     initialFolderPath: String? = null,
+    onImport: (() -> Unit)? = null,
 ) {
     var folderStack by rememberSaveable(workspaceRootUuid) { mutableStateOf(listOf<FolderCrumb>()) }
     val atRoot = folderStack.isEmpty()
@@ -137,16 +140,19 @@ internal fun WorkspaceFolderBrowser(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (searchQuery.isBlank()) {
-            FolderBreadcrumbsBar(
-                folderStack = folderStack,
-                rootTitle = rootTitle,
-                onNavigateBack = { folderStack = folderStack.dropLast(1) },
-                onNavigateToCrumb = { index -> folderStack = folderStack.navigateToCrumb(index) },
-                modifier = Modifier
-                    .padding(horizontal = NexaraSpacing.Small)
-                    .testTag(UiTags.RESOURCE_EXPLORER_BREADCRUMBS),
-                backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
-            )
+            // 工作区名称已在顶部工作区栏显示，根部不再重复；进入子文件夹后才出现返回与路径。
+            AnimatedVisibility(visible = !atRoot, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                FolderBreadcrumbsBar(
+                    folderStack = folderStack,
+                    rootTitle = rootTitle,
+                    onNavigateBack = { folderStack = folderStack.dropLast(1) },
+                    onNavigateToCrumb = { index -> folderStack = folderStack.navigateToCrumb(index) },
+                    modifier = Modifier
+                        .padding(horizontal = NexaraSpacing.Small)
+                        .testTag(UiTags.RESOURCE_EXPLORER_BREADCRUMBS),
+                    backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
+                )
+            }
             // 页头保持不动，目录内容按进入或返回的方向横向切换。
             AnimatedContent(
                 targetState = folderStack,
@@ -174,6 +180,7 @@ internal fun WorkspaceFolderBrowser(
                             folderStack = shownStack + FolderCrumb(folderId, folderName)
                         },
                         onMediaFileClick = onMediaFileClick,
+                        onImport = onImport.takeIf { shownAtRoot },
                     )
                 }
             }

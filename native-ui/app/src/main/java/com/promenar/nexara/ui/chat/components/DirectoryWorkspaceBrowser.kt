@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -101,6 +102,8 @@ internal fun DirectoryWorkspaceBrowser(
     onOpenMedia: ((ExternalFolderEntry) -> Unit)? = null,
     rootHeader: @Composable () -> Unit = {},
     fileActions: DirectoryFileActions? = null,
+    /** 追加在工具栏末尾的入口，例如回收站。 */
+    extraActions: @Composable RowScope.() -> Unit = {},
 ) {
     val selected = state.selectedFile
     val parent = parentDirectoryPath(state.path)
@@ -142,6 +145,7 @@ internal fun DirectoryWorkspaceBrowser(
                 modifier = Modifier,
                 rootHeader = rootHeader,
                 fileActions = fileActions,
+                extraActions = extraActions,
             )
         }
     }
@@ -157,6 +161,7 @@ private fun DirectoryListView(
     modifier: Modifier,
     rootHeader: @Composable () -> Unit,
     fileActions: DirectoryFileActions?,
+    extraActions: @Composable RowScope.() -> Unit,
 ) = Column(modifier.fillMaxSize()) {
     val crumbs = directoryCrumbs(state.path)
     var naming by remember { mutableStateOf<DirectoryNaming?>(null) }
@@ -183,6 +188,7 @@ private fun DirectoryListView(
             IconButton(onClick = onRefresh, enabled = !state.isLoading) {
                 Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.resource_explorer_directory_refresh))
             }
+            extraActions()
         },
     )
     AnimatedVisibility(visible = crumbs.isEmpty(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {

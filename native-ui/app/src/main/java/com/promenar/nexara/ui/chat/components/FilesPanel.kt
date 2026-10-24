@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
@@ -71,6 +72,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -182,6 +184,8 @@ internal fun FilesPanel(
     isLoading: Boolean = false,
     hasLoadError: Boolean = false,
     onRetryLoad: (() -> Unit)? = null,
+    /** 根目录为空时在空状态中提供导入入口。 */
+    onImport: (() -> Unit)? = null,
     externalSelectedIds: MutableList<String>? = null,
     showSelectionOverlay: Boolean = true,
     onFolderClick: ((String, String) -> Unit)? = null,
@@ -435,7 +439,7 @@ internal fun FilesPanel(
                     modifier = stateModifier,
                     onRetry = onRetryLoad,
                 )
-                FilesPanelUiState.Empty -> EmptyFilesState(stateModifier)
+                FilesPanelUiState.Empty -> EmptyFilesState(stateModifier, onImport)
                 FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(stateModifier)
                 FilesPanelUiState.Content -> Surface(
                     modifier = stateModifier
@@ -1220,7 +1224,7 @@ private fun SearchEmptyFilesState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyFilesState(modifier: Modifier = Modifier) {
+private fun EmptyFilesState(modifier: Modifier = Modifier, onImport: (() -> Unit)? = null) {
     Column(
         modifier = modifier.fillMaxWidth().padding(32.dp),
         verticalArrangement = Arrangement.Center,
@@ -1247,6 +1251,14 @@ private fun EmptyFilesState(modifier: Modifier = Modifier) {
             style = NexaraTypography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (onImport != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onImport, modifier = Modifier.testTag(UiTags.RESOURCE_EXPLORER_EMPTY_IMPORT)) {
+                Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(stringResource(R.string.resource_explorer_import_files))
+            }
+        }
     }
 }
 

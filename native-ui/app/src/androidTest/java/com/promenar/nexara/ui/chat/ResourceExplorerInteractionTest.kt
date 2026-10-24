@@ -26,7 +26,6 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -35,8 +34,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.then
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
@@ -66,15 +63,16 @@ class ResourceExplorerInteractionTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
 
     @Test
-    fun selectingRecycleBinHidesFilesSearchAndUpdatesExplicitTabState() {
-        var selectedTab by mutableStateOf(ResourceExplorerTab.Files)
+    fun recycleEntryOpensRecyclePageAndBackReturnsToFiles() {
+        var showRecycle by mutableStateOf(false)
 
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
                 ResourceExplorerSheetContent(
-                    state = state(selectedTab = selectedTab),
+                    state = state(showRecycle = showRecycle),
                     actions = ResourceExplorerSheetActions(
-                        onTabSelected = { selectedTab = it },
+                        onOpenRecycle = { showRecycle = true },
+                        onCloseRecycle = { showRecycle = false },
                     ),
                     filesContent = {},
                     recycleBinContent = {},
@@ -83,38 +81,18 @@ class ResourceExplorerInteractionTest {
         }
 
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN).performClick()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_ENTRY).performClick()
         rule.waitForIdle()
 
-        assertThat(selectedTab).isEqualTo(ResourceExplorerTab.RecycleBin)
+        assertThat(showRecycle).isTrue()
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertDoesNotExist()
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN).assertIsDisplayed()
-    }
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_PAGE).assertIsDisplayed()
 
-    @Test
-    fun swipingPagerToRecycleBinUpdatesExternalTabAndRemovesSearch() {
-        var selectedTab by mutableStateOf(ResourceExplorerTab.Files)
-
-        rule.setContent {
-            NexaraTheme(dynamicColor = false) {
-                ResourceExplorerSheetContent(
-                    state = state(selectedTab = selectedTab),
-                    actions = ResourceExplorerSheetActions(
-                        onTabSelected = { selectedTab = it },
-                    ),
-                    filesContent = {},
-                    recycleBinContent = {},
-                )
-            }
-        }
-
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_PAGER)
-            .performTouchInput { swipeLeft() }
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_BACK).performClick()
         rule.waitForIdle()
 
-        assertThat(selectedTab).isEqualTo(ResourceExplorerTab.RecycleBin)
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertDoesNotExist()
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN).assertIsSelected()
+        assertThat(showRecycle).isFalse()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertIsDisplayed()
     }
 
     @Test
@@ -123,7 +101,7 @@ class ResourceExplorerInteractionTest {
             NexaraTheme(dynamicColor = false) {
                 ResourceExplorerSheetContent(
                     state = state(
-                        selectedTab = ResourceExplorerTab.RecycleBin,
+                        showRecycle = true,
                         isLoading = true,
                     ),
                     actions = ResourceExplorerSheetActions(),
@@ -160,7 +138,7 @@ class ResourceExplorerInteractionTest {
             NexaraTheme(dynamicColor = false) {
                 ResourceExplorerSheetContent(
                     state = state(
-                        selectedTab = ResourceExplorerTab.RecycleBin,
+                        showRecycle = true,
                         hasLoadError = true,
                     ),
                     actions = ResourceExplorerSheetActions(
@@ -231,7 +209,7 @@ class ResourceExplorerInteractionTest {
             NexaraTheme(dynamicColor = false) {
                 ResourceExplorerSheetContent(
                     state = state(
-                        selectedTab = ResourceExplorerTab.RecycleBin,
+                        showRecycle = true,
                         importItems = listOf(importItem()),
                     ),
                     actions = ResourceExplorerSheetActions(),
@@ -355,7 +333,7 @@ class ResourceExplorerInteractionTest {
                         modifier = Modifier.fillMaxHeight(),
                     ) {
                         ResourceExplorerSheetContent(
-                            state = state(selectedTab = ResourceExplorerTab.RecycleBin),
+                            state = state(showRecycle = true),
                             actions = ResourceExplorerSheetActions(),
                             filesContent = {},
                             recycleBinContent = {
@@ -409,8 +387,7 @@ class ResourceExplorerInteractionTest {
         listOf(
             UiTags.RESOURCE_EXPLORER_SEARCH,
             UiTags.RESOURCE_EXPLORER_IMPORT,
-            UiTags.RESOURCE_EXPLORER_TAB_FILES,
-            UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN,
+            UiTags.RESOURCE_EXPLORER_RECYCLE_ENTRY,
         ).forEach { tag ->
             rule.onNodeWithTag(tag)
                 .assertIsDisplayed()
@@ -447,12 +424,12 @@ class ResourceExplorerInteractionTest {
     private fun hasAncestorTag(tag: String) = androidx.compose.ui.test.hasAnyAncestor(hasTestTag(tag))
 
     private fun state(
-        selectedTab: ResourceExplorerTab = ResourceExplorerTab.Files,
+        showRecycle: Boolean = false,
         importItems: List<ShareImportItem> = emptyList(),
         isLoading: Boolean = false,
         hasLoadError: Boolean = false,
     ) = ResourceExplorerSheetState(
-        selectedTab = selectedTab,
+        showRecycle = showRecycle,
         searchQuery = "",
         recycleBinCount = 2,
         workspaceReady = true,
