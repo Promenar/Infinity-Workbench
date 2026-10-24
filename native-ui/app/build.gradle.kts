@@ -1,12 +1,15 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
 import com.promenar.nexara.buildlogic.BuildTailnetBinary
+import com.promenar.nexara.buildlogic.BuildLinuxProbe
 import com.promenar.nexara.buildlogic.FetchVerifiedFile
 import com.promenar.nexara.buildlogic.GenerateLauncherIcons
 import com.promenar.nexara.buildlogic.PackagedPythonRelease
 import com.promenar.nexara.buildlogic.PackagedPythonWheels
 import com.promenar.nexara.buildlogic.PreparePackagedPython
 import com.promenar.nexara.buildlogic.PreparePackagedSite
+import com.promenar.nexara.buildlogic.PrepareLinuxProbeAssets
+import com.promenar.nexara.buildlogic.LinuxProbeInputs
 import groovy.json.JsonSlurper
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -275,8 +278,35 @@ val buildTailnetBinary = tailnetGoTargets.mapValues { (abi, target) ->
     }
 }
 
+// Linux P0 输入固定摘要，只有 sideloadDebug 依赖这些任务。
+val linuxRuntimeProperties = LinuxProbeInputs.load(file("linux/linux-runtime.properties").toPath())
+val linuxProbeFetches = listOf("proot", "talloc", "alpine").associateWith { name ->
+    tasks.register<FetchVerifiedFile>("fetchLinuxProbe${name.replaceFirstChar { it.uppercaseChar() }}") {
+        url.set(linuxRuntimeProperties.getProperty("$name.url"))
+        sha256.set(linuxRuntimeProperties.getProperty("$name.sha256"))
+        outputFile.set(layout.buildDirectory.file("linux-downloads/$name.tar.gz"))
+    }
+}
+val buildLinuxProbe = tasks.register<BuildLinuxProbe>("buildLinuxProbe") {
+    prootArchive.set(linuxProbeFetches.getValue("proot").flatMap { it.outputFile })
+    tallocArchive.set(linuxProbeFetches.getValue("talloc").flatMap { it.outputFile })
+    prootVersion.set(linuxRuntimeProperties.getProperty("proot.version"))
+    buildSources.set(layout.projectDirectory.dir("linux"))
+    ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
+    outputDirectory.set(layout.buildDirectory.dir("generated/linuxProbe/jniLibs"))
+}
+val prepareLinuxProbeAssets = tasks.register<PrepareLinuxProbeAssets>("prepareLinuxProbeAssets") {
+    archive.set(linuxProbeFetches.getValue("alpine").flatMap { it.outputFile })
+    runtimeProperties.set(layout.projectDirectory.file("linux/linux-runtime.properties"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/linuxProbe/assets"))
+}
+
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    if (variant.name == "sideloadDebug") {
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(buildLinuxProbe, BuildLinuxProbe::getOutputDirectory)
+        variant.sources.assets?.addGeneratedSourceDirectory(prepareLinuxProbeAssets, PrepareLinuxProbeAssets::getOutputDirectory)
+    }
     // 只为变体实际打包的 ABI 准备 Python。未设 abiFilters 的通用包（Release）只带 arm64-v8a：
     // x86_64 Python 约 11.5 MB 只服务 x86_64 设备，通用 APK 需为发行校验的 50 MB 上限留出余量。
     val variantAbis = android.defaultConfig.ndk.abiFilters + android.buildTypes.getByName(variant.buildType!!).ndk.abiFilters
@@ -478,6 +508,13 @@ android {
         }
     }
 
+}
+
+// AGP 9 的目录 API 不提供过滤，按编译任务排除其它变体的探针及其测试。
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (!name.startsWith("compileSideloadDebug")) {
+        exclude("**/debug/linuxprobe/**")
+    }
 }
 
 // 插件在变体注册期间设置目录；待所有项目完成配置后绑定共用基线，避免被覆盖。

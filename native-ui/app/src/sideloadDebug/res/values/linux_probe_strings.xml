@@ -1,0 +1,13 @@
+<resources>
+    <string name="linux_probe_title">Linux P0 probe</string>
+    <string name="linux_probe_location">Results: files/linux/probe-result.json. Tap a step to expand its output.</string>
+    <string name="linux_probe_run">Run all probes</string>
+    <string name="linux_probe_running">Running…</string>
+    <string name="linux_probe_startup">Startup: %1$d/20 passed · median %2$s ms · p90 %3$s ms</string>
+    <string name="linux_probe_status_running">Running</string>
+    <string name="linux_probe_status_passed">Passed</string>
+    <string name="linux_probe_status_failed">Failed</string>
+    <string name="linux_probe_status_timeout">Timed out</string>
+    <string name="linux_probe_status_skipped">Skipped</string>
+    <string name="linux_probe_status_cancelled">Cancelled</string>
+</resources>

@@ -1,0 +1,7 @@
+#ifndef BUILD_H
+#define BUILD_H
+#undef VERSION
+#define VERSION "@PROOT_VERSION@"
+#cmakedefine HAVE_PROCESS_VM
+#cmakedefine HAVE_SECCOMP_FILTER
+#endif
