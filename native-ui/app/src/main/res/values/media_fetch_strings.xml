@@ -1,4 +1,4 @@
 <resources>
     <string name="skill_media_fetch">Download media</string>
-    <string name="skill_media_fetch_desc">Save network images, video and audio to the conversation workspace</string>
+    <string name="skill_media_fetch_desc">Download images, video and audio to the workspace</string>
 </resources>

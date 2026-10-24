@@ -103,14 +103,6 @@ internal fun TokenUsageScreenContent(
                 .verticalScroll(rememberScrollState())
                 .padding(contentPadding),
         ) {
-        Text(
-            text = stringResource(R.string.token_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         state.error?.let { error ->
             Text(
                 text = stringResource(

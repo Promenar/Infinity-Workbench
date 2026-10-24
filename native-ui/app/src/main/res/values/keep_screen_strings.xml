@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="keep_screen_setting_title">Keep screen on while generating</string>
-    <string name="keep_screen_setting_summary">Screen stays on while a reply generates</string>
     <string name="keep_screen_toggle_cd">Keep screen on</string>
     <string name="keep_screen_toggle_on">On for this reply</string>
     <string name="keep_screen_toggle_off">Off for this reply</string>

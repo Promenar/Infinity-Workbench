@@ -4,15 +4,15 @@
     <plurals name="git_credentials_entry_count">
         <item quantity="other">已保存 %1$d 个主机</item>
     </plurals>
-    <string name="git_credentials_entry_empty">内置 git 的 HTTPS 令牌</string>
+    <string name="git_credentials_entry_empty">未配置</string>
     <string name="git_credentials_title">Git 凭据</string>
     <string name="git_credentials_saved_section">已保存的凭据</string>
-    <string name="git_credentials_description">内置 git 克隆、拉取、推送这些主机上的 HTTPS 仓库时自动使用。令牌加密保存在本机，不进入备份，也不会出现在命令、环境变量或模型上下文中。</string>
+    <string name="git_credentials_description">访问这些主机的 HTTPS 仓库时自动使用。令牌加密保存在本机，模型看不到，也不随备份迁移。</string>
     <string name="git_credentials_empty">尚未保存 Git 凭据</string>
     <string name="git_credentials_saved_subtitle">用户 %1$s · 已保存令牌</string>
     <string name="git_credentials_update_token">更换令牌</string>
     <string name="git_credentials_delete_action">删除 %1$s 的凭据</string>
-    <string name="git_credentials_token_hint">保存已存在的主机会替换其用户名与令牌。GitHub 请使用对 Contents 有读写权限的细粒度令牌；GitLab、Gitea 的访问令牌用法相同。</string>
+    <string name="git_credentials_token_hint">保存已存在的主机会覆盖原令牌。GitHub 请使用对 Contents 有读写权限的细粒度令牌。</string>
     <string name="git_credentials_host_label">主机</string>
     <string name="git_credentials_username_label">用户名</string>
     <string name="git_credentials_token_label">访问令牌</string>
@@ -29,6 +29,6 @@
     <string name="git_credentials_delete_message">内置 git 将不再以 HTTPS 认证访问 %1$s。</string>
     <string name="git_credentials_delete_confirm">删除</string>
     <string name="git_credentials_ssh_section">SSH 远端</string>
-    <string name="git_credentials_ssh_description">git@主机:路径 与 ssh:// 远端使用已固定主机密钥的 SSH 主机，例如主机 github.com、用户 git。私钥不离开 App。</string>
+    <string name="git_credentials_ssh_description">git@ 和 ssh:// 地址使用已配置的 SSH 主机（如 github.com、用户 git）。</string>
     <string name="git_credentials_add">添加凭据</string>
 </resources>

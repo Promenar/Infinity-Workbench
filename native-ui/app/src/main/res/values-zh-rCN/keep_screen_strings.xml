@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="keep_screen_setting_title">生成时保持亮屏</string>
-    <string name="keep_screen_setting_summary">回复生成期间屏幕不自动熄灭</string>
     <string name="keep_screen_toggle_cd">保持亮屏</string>
     <string name="keep_screen_toggle_on">本次回复保持亮屏</string>
     <string name="keep_screen_toggle_off">本次回复不保持亮屏</string>

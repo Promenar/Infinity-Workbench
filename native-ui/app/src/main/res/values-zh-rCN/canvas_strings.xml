@@ -15,11 +15,11 @@
     <string name="canvas_history_notice">历史版本只读，不能向输入框添加内容。</string>
     <string name="canvas_loading">正在加载画布…</string>
     <string name="canvas_load_error">无法加载画布</string>
-    <string name="canvas_scripts_unavailable">当前为静态预览，更新 Android System WebView 后可启用安全隔离的脚本。</string>
+    <string name="canvas_scripts_unavailable">静态预览。更新 Android System WebView 后可交互。</string>
     <string name="canvas_tool_create">创建画布</string>
     <string name="canvas_tool_create_description">创建有版本记录的 HTML 图表、看板或交互工具。</string>
     <string name="canvas_tool_update">更新画布</string>
-    <string name="canvas_tool_update_description">整体替换或用文本补丁修改会话画布。</string>
+    <string name="canvas_tool_update_description">修改画布</string>
     <string name="canvas_tool_read">读取画布</string>
     <string name="canvas_tool_read_description">读取画布源码与版本信息。</string>
     <string name="canvas_tool_list">列出画布</string>

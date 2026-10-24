@@ -7,7 +7,7 @@
         <item quantity="other">%d 个目标始终允许</item>
     </plurals>
     <string name="tool_allowlist_section">始终允许</string>
-    <string name="tool_allowlist_footer">在审批卡片上选择“始终允许”后加入。所有会话中相同的调用不再询问；文件类目标只在所属工作区生效。</string>
+    <string name="tool_allowlist_footer">所有会话生效；文件类只在原工作区生效。</string>
     <string name="tool_allowlist_empty">还没有条目。在审批卡片上选择“始终允许”，相同工具与目标就不再询问。</string>
     <string name="tool_allowlist_scope_global">所有会话</string>
     <string name="tool_allowlist_scope_workspace">工作区 %1$s</string>

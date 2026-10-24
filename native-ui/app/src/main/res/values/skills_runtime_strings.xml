@@ -16,7 +16,7 @@
     <string name="skills_runtime_toggle_cd">Enable %1$s</string>
     <string name="skills_runtime_trust">Trust</string>
     <string name="skills_runtime_trust_title">Trust %1$s?</string>
-    <string name="skills_runtime_trust_message">The instructions in %1$s will be offered to the model in this workspace. If the content changes, you will be asked again.</string>
+    <string name="skills_runtime_trust_message">Once trusted, the instructions in %1$s are given to the model. You\'ll be asked again if they change.</string>
     <string name="skills_runtime_acknowledge">Confirm changes</string>
     <string name="skills_runtime_detail_path">Path</string>
     <string name="skills_runtime_detail_status">Status</string>
@@ -27,11 +27,9 @@
     <string name="skills_runtime_error">Skill action failed: %1$s</string>
     <string name="sheet_tool_section_usage">Tool use</string>
     <string name="sheet_tool_tools_enabled">Use tools</string>
-    <string name="sheet_tool_tools_enabled_desc">When off, this session offers no tools to the model.</string>
-    <string name="sheet_tool_time_injection_desc">Each request includes the current date and time.</string>
     <string name="skills_runtime_edit">Edit</string>
     <string name="skills_restore_notice_title">Skills restored</string>
-    <string name="skills_restore_notice_git">Git history for these skill repositories exceeded the backup limit and was not restored. The files are back; to keep syncing, clone them again into the same folder.</string>
+    <string name="skills_restore_notice_git">These skills\' files are back, but their Git history isn\'t. Clone them again to keep syncing.</string>
     <string name="skills_restore_notice_remote">Remote: %1$s</string>
     <string name="skills_restore_notice_branch">Branch %1$s</string>
     <string name="skills_restore_notice_commit">Commit %1$s</string>

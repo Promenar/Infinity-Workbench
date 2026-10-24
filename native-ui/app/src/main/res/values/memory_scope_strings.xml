@@ -26,9 +26,9 @@
     <string name="document_scope_knowledge_base_desc">Also documents in the Library</string>
     <string name="document_scope_all_desc">Includes files in other sessions\' workspaces</string>
     <string name="agent_memory_section">Memory and knowledge</string>
-    <string name="agent_memory_section_footer">The value on the right is the widest scope a session can choose. Changes apply to retrieval right away; new-session defaults only affect sessions created later.</string>
+    <string name="agent_memory_section_footer">The right side is the widest scope a chat can pick. Defaults only affect new chats.</string>
     <string name="agent_memory_share">Let other assistants read this assistant\'s memory</string>
-    <string name="agent_memory_share_desc">When off, this assistant is private: other assistants never read its memory or graph conversation evidence, even at All assistants.</string>
+    <string name="agent_memory_share_desc">When off, other assistants can\'t read this assistant\'s memory.</string>
     <string name="agent_memory_share_short">Turn off to make this assistant private</string>
     <string name="agent_memory_default_heading">New session default</string>
     <string name="agent_memory_cap_heading">Session limit</string>

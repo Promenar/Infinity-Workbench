@@ -11,16 +11,16 @@
     <string name="settings_batch1_memory_generation">记忆生成</string>
     <string name="settings_batch1_network_forwarding">网络转发</string>
     <string name="settings_batch1_backup_options">归档选项</string>
-    <string name="settings_batch1_context_footer">压缩时折叠较早的工具结果并总结历史，保留最近 %1$d 轮；完整记录保留在会话中。</string>
-    <string name="settings_batch1_termux_intro_footer">SSH 与目录挂载可独立配置；命令需在 Termux 中粘贴执行，并遵循会话审批。诊断验证权限与结果回传。</string>
-    <string name="settings_batch1_termux_permission_footer">允许“在 Termux 环境中运行命令”权限；未弹出申请时，到应用详情的“权限 → 其它权限”查找。返回此页会刷新状态。</string>
-    <string name="settings_batch1_termux_ssh_setup_footer">在 Termux 执行命令；whoami 输出用户名，密码登录需运行 passwd。sshd 仅监听本机，首次连接前须核对主机指纹。</string>
+    <string name="settings_batch1_context_footer">超过阈值时压缩较早的对话，保留最近 %1$d 轮，聊天记录不受影响。</string>
+    <string name="settings_batch1_termux_intro_footer">按步骤把命令粘贴到 Termux 执行；SSH 和文件夹按需配置。</string>
+    <string name="settings_batch1_termux_permission_footer">没有弹出授权时，到应用详情“权限 → 其它权限”中开启。</string>
+    <string name="settings_batch1_termux_ssh_setup_footer">whoami 输出的就是用户名；密码登录需先运行 passwd。</string>
     <string name="settings_batch1_termux_ssh_host_footer">添加 127.0.0.1:8022，填写 whoami 的用户名并选择密码或密钥认证。</string>
     <string name="settings_batch1_termux_key_section">公钥登录</string>
-    <string name="settings_batch1_termux_mount_footer">系统选择器授权目录（侧栏可选 Termux），以 /mnt/别名 访问，无需所有文件权限。关闭只读可写，别名冲突时更名。</string>
-    <string name="settings_batch1_backup_core_footer">固定包含%1$s；密钥可选，头像不迁移。包含密钥时须加密；加密适用于本机与 WebDAV。</string>
-    <string name="settings_batch1_backup_local_footer">数据默认保存在本机；WebDAV 仅供手动备份与恢复。可设置密码加密，包含密钥时必须加密。</string>
-    <string name="settings_batch1_local_models_footer">启用引擎后可在设备上运行已导入的 GGUF 模型，保护隐私并降低延迟。</string>
+    <string name="settings_batch1_termux_mount_footer">在系统选择器侧栏选择 Termux，之后 Agent 可通过 /mnt/别名 访问。</string>
+    <string name="settings_batch1_backup_core_footer">始终包含%1$s。头像不随备份迁移；包含密钥时必须加密。</string>
+    <string name="settings_batch1_backup_local_footer">WebDAV 只在你手动操作时备份或恢复。</string>
+    <string name="settings_batch1_local_models_footer">模型在本机运行，对话不离开设备。</string>
     <string name="settings_batch1_agent_skills_footer">任务匹配时加载 SKILL.md 指令与参考资料；技能包本身不执行代码。</string>
     <string name="settings_batch1_termux_enable_diagnostic_summary">开启后可运行诊断</string>
 </resources>

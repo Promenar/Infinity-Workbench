@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="skill_view_media">查看工作区媒体</string>
-    <string name="skill_view_media_desc">按当前模型能力查看图片、音频与视频，支持带时间戳的视频关键帧</string>
+    <string name="skill_view_media_desc">查看图片、音频和视频（取决于模型）</string>
 </resources>

@@ -14,7 +14,7 @@
     <string name="state_add_item">添加条目</string>
     <string name="state_remove_item">移除条目 %1$d</string>
     <string name="state_board_empty_value">空</string>
-    <string name="state_invalid_value">请检查数值：有限且绝对值不超过10¹²；进度值在0到正数上限之间；文字最多2000字；列表最多50项，每项1～200字。</string>
+    <string name="state_invalid_value">数值超出范围或内容过长，请检查。</string>
     <string name="state_save_failed">保存失败，面板可能已更新，请关闭编辑后重新打开。</string>
     <string name="state_created">已创建状态面板：%1$s</string>
     <string name="state_defined">已定义状态面板：%1$s</string>

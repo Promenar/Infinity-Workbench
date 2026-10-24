@@ -8,7 +8,7 @@
     <string name="subagent_approval_remember">Always allow this target</string>
     <string name="subagent_approval_allow">Allow</string>
     <string name="subagent_approval_deny">Deny</string>
-    <string name="subagent_approval_timeout_hint">If not handled within 10 minutes, the subagent stops and reports a failure to the main agent.</string>
+    <string name="subagent_approval_timeout_hint">The subagent stops if this isn\'t handled within 10 minutes.</string>
     <string name="subagent_preset_explorer">Explorer %1$d</string>
     <string name="subagent_default_name">Subagent %1$d</string>
     <string name="subagent_group_single">Subagent</string>
@@ -42,7 +42,7 @@
     <string name="subagent_elapsed_minutes">%1$dm %2$ds</string>
     <string name="subagent_tokens">%1$s tokens</string>
     <string name="skill_agent_task">Subagents</string>
-    <string name="skill_agent_task_desc">Let the agent delegate up to 3 parallel subtasks to subagents with fresh context; they follow this session\'s approval rules and each uses extra model calls</string>
+    <string name="skill_agent_task_desc">Hand up to 3 subtasks to parallel subagents, using extra model calls</string>
     <string name="subagent_approval_session_label">Session</string>
     <string name="subagent_approval_task_label">Task</string>
     <string name="subagent_status_failed_elapsed">Failed · %1$s</string>

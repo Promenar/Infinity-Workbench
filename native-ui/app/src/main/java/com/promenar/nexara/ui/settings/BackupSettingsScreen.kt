@@ -427,14 +427,6 @@ internal fun BackupSettingsScreenContent(
     NexaraSettingsPageLayout(title = stringResource(R.string.backup_title), onBack = onNavigateBack) { paddingValues ->
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth(), contentPadding = paddingValues) {
             item {
-                Text(
-                    text = stringResource(R.string.backup_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-            item {
                 backupOperationText(uiState.operation)?.let { status ->
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(

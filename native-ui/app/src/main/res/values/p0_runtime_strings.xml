@@ -6,14 +6,14 @@
     <string name="p0_runtime_limits">Long task controls</string>
     <string name="p0_token_limit">Tokens per task</string>
     <string name="p0_repeat_limit">Repeat limit</string>
-    <string name="p0_runtime_limits_desc">Token limits include input and output across all requests in a task. Providers without usage reports use estimates. A final summary request may exceed the limit. Large outputs are stored privately and can be read with read_tool_output.</string>
+    <string name="p0_runtime_limits_desc">Total tokens across all requests in a task. The task stops when it\'s reached.</string>
     <string name="p0_reset_consent">Reset authorization</string>
     <string name="p0_decrease_setting">Decrease %1$s</string>
     <string name="p0_increase_setting">Increase %1$s</string>
     <string name="p0_auto_confirm_title">Allow unlimited automatic execution?</string>
-    <string name="p0_auto_confirm_body">Tools will run continuously without individual confirmations, including writes, deletions and external calls. You can stop the task at any time. Token limits and repeated call detection remain active. This confirmation is saved on this device and can be reset in tool settings.</string>
+    <string name="p0_auto_confirm_body">Writes, deletions and external calls won\'t ask each time. You can stop anytime, and token limits still apply.</string>
     <string name="p0_loop_title">Repeated tool calls detected</string>
-    <string name="p0_loop_body">The same tool and arguments have repeated consecutively. Continue to reset detection and run this batch, or stop the task.</string>
+    <string name="p0_loop_body">The agent keeps repeating the same call and may be stuck in a loop.</string>
     <string name="p0_continue">Continue</string>
     <string name="p0_progress">Round %1$d, %2$d calls, %3$d tokens%4$s</string>
     <string name="p0_estimated">" (estimated)"</string>

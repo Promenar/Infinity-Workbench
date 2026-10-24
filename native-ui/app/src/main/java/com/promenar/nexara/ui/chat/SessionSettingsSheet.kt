@@ -513,7 +513,6 @@ internal fun SessionToolsContent(
         NexaraSettingsSection(title = stringResource(R.string.sheet_tool_section_usage)) {
             SettingsToggle(
                 stringResource(R.string.sheet_tool_tools_enabled),
-                description = stringResource(R.string.sheet_tool_tools_enabled_desc),
                 checked = options.toolsEnabled,
                 icon = Icons.Rounded.Build,
                 onCheckedChange = { onToolToggle("toolsEnabled", it) },
@@ -531,7 +530,6 @@ internal fun SessionToolsContent(
         NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
             SettingsToggle(
                 stringResource(R.string.sheet_tool_time_injection),
-                description = stringResource(R.string.sheet_tool_time_injection_desc),
                 checked = options.enableTimeInjection,
                 icon = Icons.Rounded.Timer,
                 onCheckedChange = { onToolToggle("timeInjection", it) },
@@ -668,8 +666,7 @@ internal fun SessionContextSettingsSection(
     NexaraSettingsSection(
         title = stringResource(R.string.sheet_settings_section_context),
         modifier = modifier.testTag("session_context_management"),
-        footer = stringResource(R.string.settings_batch1_context_footer, retainedTurns) +
-            (compressionUnavailableReason?.let { "\n$it" } ?: ""),
+        footer = stringResource(R.string.settings_batch1_context_footer, retainedTurns),
     ) {
         NexaraNumericSetting(
             title = stringResource(R.string.sheet_settings_summary_threshold), value = thresholdPercent,

@@ -23,7 +23,7 @@
     <string name="agent_jobs_empty">本会话还没有后台任务</string>
     <string name="agent_jobs_limit_label">仅前台运行</string>
     <string name="agent_jobs_limit_title">离开应用后可能暂停</string>
-    <string name="agent_jobs_limit_body">Play 版不提供后台保活，切到其它应用后任务可能被系统暂停或结束。侧载版会以常驻通知保持运行。</string>
+    <string name="agent_jobs_limit_body">离开应用后，任务可能被系统暂停。</string>
     <string name="agent_jobs_stop">停止任务</string>
     <string name="agent_jobs_open_log">在工作区中打开日志</string>
     <string name="agent_jobs_runner_shell">Shell</string>
@@ -42,7 +42,7 @@
     <string name="agent_schedules_empty">本会话还没有定时任务</string>
     <string name="agent_schedules_limit_label">系统择时</string>
     <string name="agent_schedules_limit_title">后台由系统决定具体时刻</string>
-    <string name="agent_schedules_limit_body">&brand; 在前台时按设定时刻执行。退到后台后，Play 版由系统择时，可能延后几分钟，最短每 15 分钟一次；侧载版可使用精确闹钟。</string>
+    <string name="agent_schedules_limit_body">离开应用后由系统决定执行时间，可能延后几分钟。</string>
     <string name="agent_schedules_exact">精确</string>
     <string name="agent_schedules_grant_exact">授权精确闹钟</string>
     <string name="agent_schedules_enabled">已启用</string>
@@ -80,21 +80,21 @@
     <string name="settings_background_entry_subtitle">后台任务、定时任务与运行条件</string>
     <string name="settings_background_conditions">运行条件</string>
     <string name="settings_background_keep_alive">离开应用后继续运行</string>
-    <string name="settings_background_keep_alive_on">后台任务与定时触发的回复在后台完成</string>
+    <string name="settings_background_keep_alive_on">已开启</string>
     <string name="settings_background_keep_alive_foreground">仅在应用位于前台时保证运行</string>
     <string name="settings_background_exact">精确闹钟</string>
-    <string name="settings_background_exact_granted">已授权，退到后台时由精确闹钟触发，最短每 5 分钟一次</string>
-    <string name="settings_background_exact_denied">未授权，退到后台时由系统择时；点按授权</string>
-    <string name="settings_background_exact_system">退到后台时由系统择时，最短每 15 分钟一次</string>
+    <string name="settings_background_exact_granted">已授权，按时执行</string>
+    <string name="settings_background_exact_denied">未授权，离开应用后可能延后执行</string>
+    <string name="settings_background_exact_system">离开应用后可能延后执行</string>
     <string name="settings_background_battery">电池优化</string>
     <string name="settings_background_battery_unrestricted">不受限制</string>
-    <string name="settings_background_battery_restricted">受限制，后台运行可能被推迟；点按调整</string>
+    <string name="settings_background_battery_restricted">受限制，后台任务可能延后</string>
     <string name="settings_background_notifications">通知</string>
     <string name="settings_background_notifications_on">已允许</string>
-    <string name="settings_background_notifications_off">未允许，任务结束与定时回复不会提醒；点按开启</string>
-    <string name="settings_background_jobs_footer">每个会话最多同时运行 3 个，全部会话最多 6 个。</string>
+    <string name="settings_background_notifications_off">未允许，任务完成时不提醒</string>
+    <string name="settings_background_jobs_footer">每个会话最多同时 3 个，共 6 个。</string>
     <string name="settings_background_jobs_empty">没有后台任务</string>
-    <string name="settings_background_schedules_footer">每个会话最多启用 5 个，全部会话最多 20 个。定时任务只保存在本机，不进入备份。</string>
+    <string name="settings_background_schedules_footer">每个会话最多 5 个，共 20 个；不随备份迁移。</string>
     <string name="settings_background_schedules_empty">没有定时任务</string>
     <string name="settings_background_untitled_session">未命名会话</string>
 </resources>

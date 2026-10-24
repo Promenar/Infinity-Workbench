@@ -29,10 +29,10 @@
     <string name="termux_step_pending">待配置</string>
     <string name="termux_step_optional">可选</string>
     <string name="termux_step_attention">需要检查</string>
-    <string name="termux_install_description">从 F-Droid 或 GitHub 安装，结果回传需要可识别且不低于 0.109 的版本号。安装后打开 Termux，等待初始化完成。</string>
+    <string name="termux_install_description">从 F-Droid 或 GitHub 安装 0.109 以上版本，装好后打开一次。</string>
     <string name="termux_fdroid">F-Droid</string>
     <string name="termux_github">GitHub</string>
-    <string name="termux_external_apps_description">在 Termux 中执行以下命令，设置 allow-external-apps=true 并重新加载配置。</string>
+    <string name="termux_external_apps_description">在 Termux 中运行上方命令，让 &brand; 能向 Termux 发送命令。</string>
     <string name="termux_external_apps_verified">诊断已确认外部应用调用与结果回传。</string>
     <string name="termux_external_apps_unverified">执行命令后，请运行上方诊断测试确认此步骤。</string>
     <string name="termux_permission_description">允许 &brand; 使用“在 Termux 环境中运行命令”权限。若系统没有弹出申请，请在应用详情的“权限 → 其它权限”中查找。返回此页会自动刷新状态。</string>
@@ -62,9 +62,9 @@
     <string name="termux_read_only">只读</string>
     <string name="termux_read_write">可读写</string>
     <string name="termux_background_section">后台运行与子进程限制</string>
-    <string name="termux_background_description">Android 12 及以上可能结束应用派生的子进程，终端可能显示 signal 9。Android 14 及以上的部分设备可在“开发者选项”中找到“停用子进程限制”；具体名称和可用性由系统决定。关闭开发者选项可能恢复限制。</string>
-    <string name="termux_wake_lock_description">长任务可在 Termux 中运行 termux-wake-lock 保持 CPU 唤醒，任务结束后运行 termux-wake-unlock 释放。唤醒锁会增加耗电，且不能解除子进程限制或厂商的后台管理。</string>
-    <string name="termux_background_hint">如任务在后台中断或无法启动，可检查 &brand; 与 Termux 的电池与后台运行设置（ColorOS 等系统需设为“完全允许后台行为”），并将 Termux 保持在通知栏中。</string>
+    <string name="termux_background_description">Android 12 起，系统可能结束长任务（显示 signal 9）。部分 Android 14 设备可在开发者选项中开启“停用子进程限制”。</string>
+    <string name="termux_wake_lock_description">长任务可运行 termux-wake-lock 防止休眠，结束后运行 termux-wake-unlock。会增加耗电。</string>
+    <string name="termux_background_hint">任务在后台中断时，请把 &brand; 和 Termux 都设为“完全允许后台行为”。</string>
     <string name="termux_diagnostic_success">诊断成功，命令结果已回传。</string>
     <string name="termux_diagnostic_failure">诊断未通过，请按下方提示检查配置。</string>
     <string name="termux_exit_code">退出码：%1$s</string>
@@ -79,13 +79,13 @@
     <string name="termux_guidance_version">请安装可识别版本号的 Termux 0.109 或更高版本，以接收命令结果。</string>
     <string name="termux_guidance_permission">请在此页或 &brand; 的系统应用权限页授予 RUN_COMMAND 权限。</string>
     <string name="termux_guidance_external_apps">请在 Termux 的 ~/.termux/termux.properties 设置 allow-external-apps=true，执行 termux-reload-settings 后重试诊断。</string>
-    <string name="termux_guidance_internal">Termux 未完成执行；请在 Termux 检查初始化、命令路径、工作目录及后台进程状态。</string>
+    <string name="termux_guidance_internal">Termux 未完成执行，请打开 Termux 检查。</string>
     <string name="termux_guidance_command_failed">命令返回非零退出码；请检查 stderr 和命令参数。</string>
     <string name="termux_guidance_malformed">Termux 未回传有效结果包；请更新 Termux 并重新运行诊断命令。</string>
     <string name="termux_guidance_integration_disabled">请先在设置 → 工具 → Termux 接入与诊断启用 Termux 集成。</string>
-    <string name="termux_guidance_start_failed">无法启动 Termux 后台命令；请确认 Termux 已初始化、集成开关已开启。ColorOS、MIUI 等系统还需在应用耗电管理中把 &brand; 和 Termux 都设为“完全允许后台行为”，重新安装后可能需要再次设置。</string>
+    <string name="termux_guidance_start_failed">无法启动 Termux 命令。请确认已开启集成，并把 &brand; 和 Termux 都设为“完全允许后台行为”。</string>
     <string name="termux_guidance_invalid_arguments">请检查命令、绝对工作目录、输入长度与 1–600 秒的超时参数。</string>
-    <string name="termux_guidance_timeout">本地等待已超时；命令可能仍在运行。RUN_COMMAND 没有按请求停止后台命令的公开接口，请在 Termux 中检查并停止对应进程；也请检查 allow-external-apps 开关和后台进程限制。</string>
+    <string name="termux_guidance_timeout">等待超时，命令可能仍在运行，请到 Termux 中检查并结束它。</string>
     <string name="termux_error_status">无法读取 Termux 状态，请稍后刷新。</string>
     <string name="termux_error_clipboard">剪贴板不可用</string>
     <string name="termux_error_key">无法读取 SSH 公钥，请在 SSH 主机设置中检查密钥。</string>

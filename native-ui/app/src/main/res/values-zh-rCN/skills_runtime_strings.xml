@@ -16,7 +16,7 @@
     <string name="skills_runtime_toggle_cd">启用 %1$s</string>
     <string name="skills_runtime_trust">信任</string>
     <string name="skills_runtime_trust_title">信任技能 %1$s？</string>
-    <string name="skills_runtime_trust_message">%1$s 中的指令会在当前工作区提供给模型；内容变化后需要重新信任。</string>
+    <string name="skills_runtime_trust_message">信任后，%1$s 中的指令会提供给模型；内容变化后需重新确认。</string>
     <string name="skills_runtime_acknowledge">确认修改</string>
     <string name="skills_runtime_detail_path">路径</string>
     <string name="skills_runtime_detail_status">状态</string>
@@ -27,11 +27,9 @@
     <string name="skills_runtime_error">技能操作失败：%1$s</string>
     <string name="sheet_tool_section_usage">工具使用</string>
     <string name="sheet_tool_tools_enabled">启用工具</string>
-    <string name="sheet_tool_tools_enabled_desc">关闭后，本会话不向模型提供任何工具。</string>
-    <string name="sheet_tool_time_injection_desc">每次请求都附带当前日期时间。</string>
     <string name="skills_runtime_edit">编辑</string>
     <string name="skills_restore_notice_title">技能已恢复</string>
-    <string name="skills_restore_notice_git">以下技能仓库的 Git 历史超出备份上限，没有随备份恢复。文件已经恢复；如需继续同步，请重新 clone 到同一目录。</string>
+    <string name="skills_restore_notice_git">以下技能的文件已恢复，但 Git 历史未恢复。需要同步时请重新 clone。</string>
     <string name="skills_restore_notice_remote">远端：%1$s</string>
     <string name="skills_restore_notice_branch">分支 %1$s</string>
     <string name="skills_restore_notice_commit">提交 %1$s</string>

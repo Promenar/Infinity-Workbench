@@ -160,11 +160,10 @@ class DocEditorPerformanceTest {
             "<string name=\"doc_editor_preview_truncated\">文档较大，预览已截断，编辑和保存不受影响。</string>",
         )
         assertThat(english).contains(
-            "approximately the first 16K characters are previewed. The full text remains intact; " +
-                "saving and copying always use the complete content.",
+            "only about the first 16K characters are previewed. Saving and copying use the full text.",
         )
         assertThat(chinese).contains(
-            "仅预览约前 16K 字符。全文仍完整保留，保存和复制始终使用未截断的完整内容。",
+            "只预览前约 1.6 万字。保存和复制不受影响。",
         )
     }
 

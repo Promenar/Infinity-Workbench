@@ -139,7 +139,6 @@ internal fun RagAdvancedScreenContent(
 
             NexaraSettingsSection(
                 title = stringResource(R.string.settings_retrieval_graph_section),
-                footer = stringResource(R.string.rag_advanced_desc),
             ) {
                 NexaraSettingsItem(
                     icon = Icons.Rounded.AccountTree,

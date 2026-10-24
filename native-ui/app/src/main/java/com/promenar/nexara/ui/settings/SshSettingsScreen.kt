@@ -451,7 +451,7 @@ internal fun SshSettingsContent(
             item("notes") {
                 NexaraSettingsSection(
                     title = stringResource(R.string.ssh_visual_notes_section),
-                    footer = listOf(stringResource(R.string.ssh_backup_notice), stringResource(R.string.ssh_termux_notice)).joinToString("\n"),
+                    footer = stringResource(R.string.ssh_backup_notice),
                 ) {}
             }
         }

@@ -2,14 +2,13 @@
 <resources>
     <!-- SSH 页面简体中文资源。 -->
     <string name="ssh_settings_title">SSH 主机</string>
-    <string name="ssh_settings_description">为终端和 SSH 工具配置主机，工具仅接收别名。</string>
-    <string name="ssh_backup_notice">SSH 主机配置与凭据仅保留在当前设备，不进入导出备份。</string>
-    <string name="ssh_termux_notice">使用本机 Termux 终端时，先在 Termux 中运行 sshd，再添加主机 127.0.0.1、端口 8022，并填写 Termux 用户名。</string>
+    <string name="ssh_settings_description">Agent 只能看到主机别名，看不到密码和密钥。</string>
+    <string name="ssh_backup_notice">主机和凭据不随备份迁移。</string>
     <string name="ssh_add_host">添加主机</string>
     <string name="ssh_edit_host">编辑主机</string>
     <string name="ssh_no_hosts">尚未配置 SSH 主机。</string>
     <string name="ssh_alias">主机别名</string>
-    <string name="ssh_alias_help">使用 1–48 个小写 ASCII 字符，以字母开头，后续可用字母、数字、下划线或连字符。此别名对工具可见。</string>
+    <string name="ssh_alias_help">小写字母开头，可含数字、_ 和 -，最多 48 个字符。</string>
     <string name="ssh_hostname">主机名或 IP 地址</string>
     <string name="ssh_port">SSH 端口</string>
     <string name="ssh_username">用户名</string>
@@ -19,13 +18,13 @@
     <string name="ssh_password">密码</string>
     <string name="ssh_passphrase">私钥口令（可选）</string>
     <string name="ssh_import_key">导入 OpenSSH 私钥</string>
-    <string name="ssh_key_import_help">选择不超过 64 KiB 的 OpenSSH 私钥文件。导入后可填写私钥口令。</string>
+    <string name="ssh_key_import_help">选择 OpenSSH 私钥文件。</string>
     <string name="ssh_key_imported">私钥已临时载入内存。保存后将加密存储在当前设备。</string>
     <string name="ssh_generate_save_copy">生成密钥、保存并复制公钥</string>
-    <string name="ssh_generate_help">生成 Ed25519 密钥，保存时替换主机凭据，仅复制公钥。请把公钥加入服务器的 authorized_keys 文件。</string>
+    <string name="ssh_generate_help">保存后，请把公钥加入服务器的 authorized_keys。</string>
     <string name="ssh_keep_credential_hint">凭据字段留空时保留已存凭据。导入或生成密钥可替换凭据。</string>
     <string name="ssh_keep_terminal">退出时保留终端</string>
-    <string name="ssh_keep_terminal_help">重进页面时复用会话。空闲 10 分钟后关闭；应用进程结束时连接关闭。</string>
+    <string name="ssh_keep_terminal_help">离开页面后保留终端，空闲 10 分钟断开。</string>
     <string name="ssh_keep_enabled">退出时保留终端，空闲 10 分钟后关闭。</string>
     <string name="ssh_close_on_exit">离开页面时关闭终端。</string>
     <string name="ssh_open_terminal">打开终端</string>
@@ -38,7 +37,7 @@
     <string name="ssh_fingerprint_matches">主机当前提供的指纹与已保存指纹一致。</string>
     <string name="ssh_trust_title">信任此主机指纹？</string>
     <string name="ssh_changed_title">主机指纹已变化</string>
-    <string name="ssh_compare_fingerprint">接受前，请与可信服务器控制台核对密钥类型和 SHA256 指纹。密钥变化可能表示连接到了另一台服务器。</string>
+    <string name="ssh_compare_fingerprint">请与服务器核对指纹。指纹变化可能意味着连到了另一台服务器。</string>
     <string name="ssh_previous_fingerprint">已保存的密钥</string>
     <string name="ssh_presented_fingerprint">当前提供的密钥</string>
     <string name="ssh_trust">信任指纹</string>
@@ -55,10 +54,10 @@
     <string name="ssh_agent_manage_title">允许 Agent 管理 SSH 主机</string>
     <string name="ssh_agent_manage_summary_on">每次变更都需你审批</string>
     <string name="ssh_agent_manage_summary_off">Agent 只能连接已配置的主机</string>
-    <string name="ssh_agent_manage_description">开启后，Agent 可新增、修改、删除主机，并为密码主机配置免密登录；每次变更都需你逐次审批，密码与主机指纹始终由你亲自输入和确认。</string>
+    <string name="ssh_agent_manage_description">每次变更都需你批准，密码和指纹始终由你输入和确认。</string>
     <string name="ssh_cancel">取消</string>
     <string name="ssh_forward_configure">本地端口转发</string>
-    <string name="ssh_forward_loopback_only">仅绑定当前设备的 127.0.0.1，目标地址由 SSH 主机解析。</string>
+    <string name="ssh_forward_loopback_only">只有本机能访问此端口。</string>
     <string name="ssh_forward_local_port">本地端口（1–65535）</string>
     <string name="ssh_forward_remote_host">目标主机名</string>
     <string name="ssh_forward_remote_port">目标端口（1–65535）</string>
