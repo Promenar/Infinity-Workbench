@@ -75,6 +75,20 @@ class TurnCollapseTest {
     }
 
     @Test
+    fun `命令报告的关键数据变化进入收起摘要`() {
+        val steps = toolCall("s1", "shell_exec", 1_000).let { (call, result) ->
+            listOf(call, result.copy(content = "{\"exit_code\":0,\"runtime_changes\":[\"files/agent_skills/p (added)\"]}"))
+        }
+        val messages = listOf(
+            Message("a1", MessageRole.ASSISTANT, "", executionSteps = steps, toolCalls = listOf(ToolCall("s1", "shell_exec", "{}"))),
+            Message("tool-1", MessageRole.TOOL, "结果", toolCallId = "s1", name = "shell_exec"),
+            Message("final", MessageRole.ASSISTANT, "完成"),
+        )
+        assertThat(requireNotNull(plan(messages)).summary.runtimeChanges).containsExactly("files/agent_skills/p (added)")
+        assertThat(requireNotNull(plan(agentTurn())).summary.runtimeChanges).isEmpty()
+    }
+
+    @Test
     fun `只有思考的回复也收起且不计工具步数`() {
         val messages = listOf(Message("only", MessageRole.ASSISTANT, "答案", reasoning = "推理过程"))
         val plan = requireNotNull(plan(messages))

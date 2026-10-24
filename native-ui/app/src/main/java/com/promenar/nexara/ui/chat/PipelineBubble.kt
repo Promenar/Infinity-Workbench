@@ -254,6 +254,10 @@ fun PipelineBubble(
                 fontSize = fontSize,
                 onToggle = { processExpanded = !processExpanded },
             )
+            // 展开后由对应工具行显示，避免同一提示出现两次。
+            if (!processExpanded && collapsePlan.summary.runtimeChanges.isNotEmpty()) {
+                RuntimeChangesNotice(collapsePlan.summary.runtimeChanges, Modifier.padding(top = 4.dp))
+            }
         }
         visibleSteps.forEachIndexed { index, step ->
             val isLastInGroup = index == visibleSteps.lastIndex

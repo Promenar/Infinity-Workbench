@@ -23,7 +23,7 @@
     <string name="agent_reach_backend_builtin">内置命令 shell_exec · python_exec</string>
     <string name="agent_reach_backend_builtin_scope">以 &brand; 身份运行，可访问全部应用数据，不受工作区限制</string>
     <string name="agent_reach_backend_sandbox">隔离脚本 exec_js · python_sandbox</string>
-    <string name="agent_reach_backend_sandbox_scope">隔离运行，写文件需批准</string>
+    <string name="agent_reach_backend_sandbox_scope">隔离运行，只能访问工作区路径</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>
     <string name="agent_reach_backend_termux_scope">在 Termux 主目录运行，看不到工作区</string>
     <string name="agent_reach_backend_termux_scope_shared">在 Termux 主目录运行，可访问工作区</string>
