@@ -45,7 +45,6 @@ private val Batch1ToolsState = SkillsSettingsVisualState(
     loopLimit = 50,
     tokenLimit = 0,
     repeatLimit = 3,
-    scriptHosts = "",
     approveScriptWrites = true,
     sshHostCount = 0,
     termuxAvailability = TermuxAvailability(false, null, false),

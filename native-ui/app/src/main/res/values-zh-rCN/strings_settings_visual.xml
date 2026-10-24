@@ -13,11 +13,6 @@
     <string name="settings_termux_unsupported_version">已安装，版本待更新</string>
     <string name="settings_termux_permission_required">已安装 · 待授权</string>
     <string name="settings_termux_available">已安装 · 已授权</string>
-    <string name="settings_hosts_empty">未设置</string>
-    <string name="settings_hosts_review">配置待检查</string>
-    <string name="settings_hosts_count">已设置 %1$d 条</string>
-    <string name="settings_hosts_invalid">最多填写 64 个精确主机名或 IP，不含协议、端口、路径或通配符。</string>
-    <string name="settings_hosts_saved">已保存局域网主机白名单</string>
     <string name="settings_command_label">命令</string>
     <string name="settings_copy_command">复制命令</string>
     <string name="settings_command_copied">命令已复制</string>

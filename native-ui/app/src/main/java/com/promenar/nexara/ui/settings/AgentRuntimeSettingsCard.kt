@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.WifiProtectedSetup
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.WorkHistory
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -28,7 +29,6 @@ internal data class SkillsSettingsVisualState(
     val loopLimit: Int,
     val tokenLimit: Int,
     val repeatLimit: Int,
-    val scriptHosts: String,
     val approveScriptWrites: Boolean,
     val sshHostCount: Int? = null,
     val termuxAvailability: TermuxAvailability? = null,
@@ -36,6 +36,8 @@ internal data class SkillsSettingsVisualState(
     val gitCredentialCount: Int? = null,
     val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
     val allowlistCount: Int? = null,
+    /** 共享局域网与本机白名单条数；尚未读取时为 null。 */
+    val networkHostCount: Int? = null,
 )
 
 internal data class SkillsSettingsVisualActions(
@@ -45,8 +47,7 @@ internal data class SkillsSettingsVisualActions(
     val onRetryLimitChange: (Int) -> Unit = {},
     val onResetConsent: () -> Unit = {},
     val onApproveScriptWritesChange: (Boolean) -> Unit = {},
-    val onSaveScriptHosts: (String) -> String? = { null },
-    val onScriptHostsSaved: () -> Unit = {},
+    val onOpenNetworkAccess: () -> Unit = {},
     val onOpenSsh: () -> Unit = {},
     val onOpenTermux: () -> Unit = {},
     val onOpenGitCredentials: () -> Unit = {},
@@ -65,13 +66,22 @@ internal fun SkillsSettingsHeaderContent(
     Column(modifier) {
         AgentRuntimeSettingsCard(state, actions)
         ScriptRuntimeSettingsCard(
-            storedHosts = state.scriptHosts,
             approveWrites = state.approveScriptWrites,
             onApproveWritesChange = actions.onApproveScriptWritesChange,
-            onSaveHosts = actions.onSaveScriptHosts,
-            onSaved = actions.onScriptHostsSaved,
         )
         NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
+            NexaraSettingsItem(
+                icon = Icons.Rounded.Public,
+                title = stringResource(R.string.network_access_title),
+                subtitle = when (val count = state.networkHostCount) {
+                    null -> stringResource(R.string.settings_status_loading)
+                    0 -> stringResource(R.string.network_access_entry_empty)
+                    else -> pluralStringResource(R.plurals.network_access_entry_count, count, count)
+                },
+                onClick = actions.onOpenNetworkAccess,
+                showChevron = true,
+                modifier = Modifier.testTag("network_access_entry"),
+            )
             NexaraSettingsItem(
                 icon = Icons.Rounded.WorkHistory,
                 title = stringResource(R.string.settings_background_title),

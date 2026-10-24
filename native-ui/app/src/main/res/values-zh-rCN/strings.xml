@@ -971,9 +971,6 @@
     <string name="script_runtime_title">脚本运行时</string>
     <string name="script_approve_writes">脚本写入审批</string>
     <string name="script_approve_writes_desc">脚本写入审批默认开启；关闭后写入沿用脚本本身的审批，删除始终单独审批。</string>
-    <string name="script_lan_hosts">局域网主机白名单</string>
-    <string name="script_lan_hosts_desc">默认为空。每行填写精确主机名或 IP，不含协议、端口和路径；脚本仍须显式启用 allow_network。</string>
-    <string name="script_save_hosts">保存白名单</string>
     <string name="script_write_approval">脚本文件写入审批</string>
     <string name="script_approval_session">来源会话：%1$s</string>
     <string name="script_delete_approval">脚本文件删除审批</string>

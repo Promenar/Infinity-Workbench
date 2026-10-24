@@ -1,0 +1,116 @@
+package com.promenar.nexara.ui.workspace
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.repository.ToolAllowlistEntry
+import com.promenar.nexara.data.termux.TermuxAvailability
+import com.promenar.nexara.domain.network.AgentNetworkSnapshot
+import com.promenar.nexara.domain.network.NetworkAccessState
+import com.promenar.nexara.domain.network.NetworkTargetClass
+import com.promenar.nexara.domain.storage.ExternalMount
+import com.promenar.nexara.ui.settings.NetworkCellMeaning
+import com.promenar.nexara.ui.settings.NetworkCellTone
+import com.promenar.nexara.ui.settings.networkCell
+import org.junit.Test
+
+class AgentReachModelsTest {
+    @Test
+    fun `workspace traits follow the protection each workspace kind actually has`() {
+        assertThat(workspaceTraits(null)).isEqualTo(WorkspaceTraits(tracked = true, backedUp = true, termuxVisible = false, survivesUninstall = false))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_PROJECT)).isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_SHARED)).isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = true, survivesUninstall = true))
+    }
+
+    @Test
+    fun `unavailable and loading workspaces expose no traits`() {
+        assertThat(SessionWorkspaceUi.Loading.traits).isNull()
+        assertThat(SessionWorkspaceUi.Unavailable("w", null, null, null, "gone").traits).isNull()
+        assertThat(SessionWorkspaceUi.Directory("w", "repo", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/repo").traits?.termuxVisible).isTrue()
+    }
+
+    @Test
+    fun `mounts hide the reserved skills alias and list session mounts before global ones`() {
+        val mounts = listOf(
+            mount("skills", "builtin_skills", null),
+            mount("termux-home", "saf_tree", null),
+            mount("downloads", "real_path", "s1", readOnly = true),
+            mount("broken", "saf_tree", "s1", unavailable = "revoked"),
+        )
+        val reach = reachMounts(mounts)
+        assertThat(reach.map { it.alias }).containsExactly("broken", "downloads", "termux-home").inOrder()
+        assertThat(reach.first { it.alias == "downloads" }).isEqualTo(ReachMount("downloads", ReachMountSource.PATH, global = false, readOnly = true, unavailable = false))
+        assertThat(reach.first { it.alias == "termux-home" }.global).isTrue()
+        assertThat(reach.first { it.alias == "broken" }.unavailable).isTrue()
+    }
+
+    @Test
+    fun `termux status is disabled before the integration is turned on`() {
+        assertThat(termuxReachStatus(false, TermuxAvailability(true, "0.119.1", true))).isEqualTo(ReachBackendStatus.DISABLED)
+        assertThat(termuxReachStatus(true, null)).isEqualTo(ReachBackendStatus.LOADING)
+        assertThat(termuxReachStatus(true, TermuxAvailability(false, null, false))).isEqualTo(ReachBackendStatus.NOT_INSTALLED)
+        assertThat(termuxReachStatus(true, TermuxAvailability(true, "0.108.0", true))).isEqualTo(ReachBackendStatus.UNSUPPORTED_VERSION)
+        assertThat(termuxReachStatus(true, TermuxAvailability(true, "0.119.1", false))).isEqualTo(ReachBackendStatus.PERMISSION_REQUIRED)
+        assertThat(termuxReachStatus(true, TermuxAvailability(true, "0.119.1", true))).isEqualTo(ReachBackendStatus.READY)
+    }
+
+    @Test
+    fun `backends report missing python and missing ssh hosts`() {
+        val backends = reachBackends(pythonAvailable = false, termuxEnabled = false, termuxAvailability = null, sshHostCount = 0)
+        assertThat(backends.map { it.kind }).containsExactlyElementsIn(ReachBackendKind.entries).inOrder()
+        assertThat(backends.first { it.kind == ReachBackendKind.BUILTIN }.status).isEqualTo(ReachBackendStatus.SHELL_ONLY)
+        assertThat(backends.first { it.kind == ReachBackendKind.SANDBOX }.status).isEqualTo(ReachBackendStatus.JS_ONLY)
+        assertThat(backends.first { it.kind == ReachBackendKind.SSH }.status).isEqualTo(ReachBackendStatus.NO_HOSTS)
+        val ready = reachBackends(pythonAvailable = true, termuxEnabled = false, termuxAvailability = null, sshHostCount = 3)
+        assertThat(ready.first { it.kind == ReachBackendKind.SSH }).isEqualTo(ReachBackend(ReachBackendKind.SSH, ReachBackendStatus.READY, 3))
+        assertThat(reachBackends(true, false, null, null).first { it.kind == ReachBackendKind.SSH }.status).isEqualTo(ReachBackendStatus.LOADING)
+    }
+
+    @Test
+    fun `always allowed count includes global, this session and the bound workspace only`() {
+        val entries = listOf(
+            entry(null),
+            entry("session:s1"),
+            entry("session:s2"),
+            entry("workspace:w1"),
+            entry("workspace:w2"),
+            entry("mount:m1"),
+        )
+        assertThat(alwaysAllowedCount(entries, "s1", "w1")).isEqualTo(3)
+        assertThat(alwaysAllowedCount(entries, "s1", null)).isEqualTo(2)
+        assertThat(alwaysAllowedCount(emptyList(), "s1", "w1")).isEqualTo(0)
+    }
+
+    @Test
+    fun `network cells reflect the current allowlist and tailnet state`() {
+        val empty = snapshot()
+        assertThat(networkCell(NetworkTargetClass.LAN, NetworkAccessState.ALLOWLIST_ONLY, empty).meaning).isEqualTo(NetworkCellMeaning.ALLOWLIST_EMPTY)
+        assertThat(networkCell(NetworkTargetClass.LAN, NetworkAccessState.ALLOWLIST_ONLY, empty).tone).isEqualTo(NetworkCellTone.CLOSED)
+        val hosts = snapshot(lanHosts = listOf("nas.local", "127.0.0.1"))
+        assertThat(networkCell(NetworkTargetClass.LAN, NetworkAccessState.ALLOWLIST_ONLY, hosts).count).isEqualTo(2)
+        assertThat(networkCell(NetworkTargetClass.LAN, NetworkAccessState.ALLOWLIST_ONLY, hosts).tone).isEqualTo(NetworkCellTone.LIMITED)
+
+        val tailnet = NetworkTargetClass.TAILNET
+        assertThat(networkCell(tailnet, NetworkAccessState.TAILNET_REQUIRED, snapshot(available = false)).meaning).isEqualTo(NetworkCellMeaning.TAILNET_MISSING)
+        assertThat(networkCell(tailnet, NetworkAccessState.TAILNET_REQUIRED, snapshot()).meaning).isEqualTo(NetworkCellMeaning.TAILNET_DISABLED)
+        assertThat(networkCell(tailnet, NetworkAccessState.TAILNET_REQUIRED, snapshot(enabled = true)).meaning).isEqualTo(NetworkCellMeaning.TAILNET_OFFLINE)
+        val running = networkCell(tailnet, NetworkAccessState.TAILNET_REQUIRED, snapshot(enabled = true, running = true))
+        assertThat(running.meaning).isEqualTo(NetworkCellMeaning.TAILNET_READY)
+        assertThat(running.tone).isEqualTo(NetworkCellTone.OPEN)
+
+        assertThat(networkCell(NetworkTargetClass.PUBLIC, NetworkAccessState.DENIED, empty).tone).isEqualTo(NetworkCellTone.CLOSED)
+        assertThat(networkCell(NetworkTargetClass.PUBLIC, NetworkAccessState.UNRESTRICTED, empty).tone).isEqualTo(NetworkCellTone.OPEN)
+        assertThat(networkCell(NetworkTargetClass.PUBLIC, NetworkAccessState.CONFIGURED_ONLY, empty).tone).isEqualTo(NetworkCellTone.LIMITED)
+    }
+
+    private fun snapshot(
+        lanHosts: List<String> = emptyList(),
+        available: Boolean = true,
+        enabled: Boolean = false,
+        running: Boolean = false,
+    ) = AgentNetworkSnapshot(lanHosts, available, enabled, running, emptyList(), emptyList())
+
+    private fun mount(alias: String, source: String, sessionId: String?, readOnly: Boolean = false, unavailable: String? = null) =
+        ExternalMount("id-$alias", alias, source, "src-$alias", sessionId, readOnly, 1L, unavailable)
+
+    private fun entry(scopeKey: String?) = ToolAllowlistEntry("id-$scopeKey", "write_file", "/notes.md", scopeKey, 1L, null)
+}

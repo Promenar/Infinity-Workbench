@@ -375,14 +375,7 @@ class SettingsViewModel(
     val toolLoopRepeatLimit = MutableStateFlow(prefs.getInt("tool_loop_repeat_limit", 3))
     val streamRetryLimit = MutableStateFlow(readStreamRetryLimit())
     private val scriptSettings = com.promenar.nexara.data.script.ScriptSettings(prefs)
-    val scriptLanHosts = MutableStateFlow(scriptSettings.lanHostsText)
     val scriptApproveFileWrites = MutableStateFlow(scriptSettings.approveFileWrites)
-
-    fun updateScriptLanHosts(value: String): String? = try {
-        scriptSettings.lanHostsText = value
-        scriptLanHosts.value = scriptSettings.lanHostsText
-        null
-    } catch (failure: com.promenar.nexara.domain.script.ScriptFailure) { failure.message }
 
     fun updateScriptApproveFileWrites(value: Boolean) {
         scriptSettings.approveFileWrites = value

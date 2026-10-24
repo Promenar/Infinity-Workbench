@@ -972,9 +972,6 @@
     <string name="script_runtime_title">Script runtime</string>
     <string name="script_approve_writes">Approve script writes</string>
     <string name="script_approve_writes_desc">Write approval is on by default. When off, writes follow the script approval; deletion always needs its own approval.</string>
-    <string name="script_lan_hosts">Allowed LAN hosts</string>
-    <string name="script_lan_hosts_desc">Empty by default. One exact hostname or IP per line, without protocol, port, or path. Scripts still require allow_network.</string>
-    <string name="script_save_hosts">Save allowed hosts</string>
     <string name="script_write_approval">Script file write approval</string>
     <string name="script_approval_session">Session: %1$s</string>
     <string name="script_delete_approval">Script file deletion approval</string>

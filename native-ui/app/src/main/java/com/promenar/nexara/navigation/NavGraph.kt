@@ -78,6 +78,7 @@ object NavDestinations {
     const val SKILLS_CONFIG = "skills_config"
     const val SSH_CONFIG = "ssh_config"
     const val TERMUX_CONFIG = "termux_config"
+    const val NETWORK_ACCESS = "network_access"
     const val TAILSCALE_CONFIG = "tailscale_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val GIT_CREDENTIALS = "git_credentials"
@@ -599,6 +600,14 @@ fun NexaraNavGraph(
                 onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
                 onOpenAllowlist = { navController.navigate(NavDestinations.TOOL_ALLOWLIST) },
                 onOpenBackground = { navController.navigate(NavDestinations.BACKGROUND_ACTIVITY) },
+                onOpenNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) },
+            )
+        }
+
+        composable(NavDestinations.NETWORK_ACCESS) {
+            com.promenar.nexara.ui.settings.NetworkAccessSettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
             )
         }
 

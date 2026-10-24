@@ -143,6 +143,7 @@ fun SkillsScreen(
     onOpenTailscale: () -> Unit = {},
     onOpenAllowlist: () -> Unit = {},
     onOpenBackground: () -> Unit = {},
+    onOpenNetworkAccess: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -169,9 +170,9 @@ fun SkillsScreen(
     val tokenLimit by viewModel.taskTokenLimit.collectAsState()
     val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
     val retryLimit by viewModel.streamRetryLimit.collectAsState()
-    val scriptHosts by viewModel.scriptLanHosts.collectAsState()
     val approveWrites by viewModel.scriptApproveFileWrites.collectAsState()
     val application = context.applicationContext as NexaraApplication
+    val networkSnapshot by application.agentNetworkAccess.snapshot.collectAsState()
     val sshHosts by remember(application) {
         application.sshHostStore.observeHosts().flowOn(Dispatchers.IO)
     }.collectAsState(initial = emptyList())
@@ -185,7 +186,6 @@ fun SkillsScreen(
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
     val resetMessage = stringResource(R.string.settings_consent_reset)
-    val hostsSavedMessage = stringResource(R.string.settings_hosts_saved)
     DisposableEffect(lifecycleOwner, application) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -223,13 +223,14 @@ fun SkillsScreen(
 
                 SkillsSettingsHeaderContent(
                     state = SkillsSettingsVisualState(
-                        loopLimit, tokenLimit, repeatLimit, scriptHosts, approveWrites,
+                        loopLimit, tokenLimit, repeatLimit, approveWrites,
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
                         retryLimit = retryLimit,
                         gitCredentialCount = gitCredentialCount,
                         tailscaleState = tailscaleState,
                         allowlistCount = allowlistEntries.size,
+                        networkHostCount = networkSnapshot.lanHosts.size,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -241,8 +242,7 @@ fun SkillsScreen(
                             scope.launch { snackbarHost.showSnackbar(resetMessage) }
                         },
                         onApproveScriptWritesChange = viewModel::updateScriptApproveFileWrites,
-                        onSaveScriptHosts = viewModel::updateScriptLanHosts,
-                        onScriptHostsSaved = { scope.launch { snackbarHost.showSnackbar(hostsSavedMessage) } },
+                        onOpenNetworkAccess = onOpenNetworkAccess,
                         onOpenSsh = onOpenSsh,
                         onOpenTermux = onOpenTermux,
                         onOpenGitCredentials = onOpenGitCredentials,

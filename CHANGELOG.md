@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Agent 可达范围与网络访问
+
+- 会话资源面板的工作区栏新增“Agent 可达范围”：按“工作区 → 路径 → 执行后端 → 审批 → 网络”说明本会话 Agent 此刻能读写哪些位置、`/` 与 `$NEXARA_WORKSPACE`、`/skills`、`/mnt` 在文件工具、命令、Termux、SSH 中各指什么，五类执行方是否可用，当前执行模式与对本会话生效的“始终允许”条目数，以及各工具能访问的网络范围。面板只展示现状，不改变任何授权判定。
+- 设置 → 工具新增“网络访问”页，集中维护局域网与本机白名单，并按工具列出对公网、局域网、本机、tailnet 的访问范围；原脚本设置中的白名单入口移到这里，已保存的白名单原样保留。
+- `web_fetch`、`media_fetch` 与脚本联网改用同一套目标判定：公网直接放行；局域网与本机需加入白名单（`web_fetch` 原先一律拒绝，`media_fetch` 原先放行本机明文与局域网 HTTPS，现均改为需白名单）；tailnet 经内置 Tailscale 代理访问，未连接时直接失败、不回退直连（`web_fetch` 与脚本原先不能访问 tailnet）。每跳重定向重新判定，连接只使用判定时解析出的地址；被拦截时工具结果附错误码和“设置 → 网络访问”指引。
+- `web_fetch` 收到非 200 响应时报告 HTTP 状态码，不再与策略拦截混用同一前缀。
+
 ### 定时任务与系统触发
 
 - AI 可用 `schedule_create`、`schedule_list`、`schedule_pause`、`schedule_resume`、`schedule_cancel` 在当前会话安排单次、固定间隔或五段 cron 任务，用于轮询、检查或提醒；创建无论审批模式都需要你批准，审批卡显示任务名、触发规则、提示内容与接下来三次触发时间。每次到点在会话中插入一条居中的“定时”触发行（可展开看提示），随后发起完整一轮回复，沿用会话当前的审批模式。

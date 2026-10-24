@@ -880,6 +880,13 @@ fun ChatRoute(
             sessionId = sessionId,
             chatViewModel = chatViewModel,
             initialFolderPath = workspaceLocatePath,
+            onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
+                {
+                    activeOverlayToken = null
+                    workspaceLocatePath = null
+                    open()
+                }
+            },
         )
     }
     SessionSettingsSheet(

@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import com.promenar.nexara.ui.workspace.WorkspacePickerSheet
 import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
 import com.promenar.nexara.ui.workspace.SessionWorkspaceBar
+import com.promenar.nexara.ui.workspace.AgentReachSheet
 import com.promenar.nexara.data.workspace.WorkspaceSwitchResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.promenar.nexara.ui.common.NexaraIdentifierText
@@ -103,6 +104,8 @@ fun ResourceExplorerSheet(
     chatViewModel: ChatViewModel,
     /** 打开后定位到的工作区虚拟目录；不存在时定位到最近的已存在上级。 */
     initialFolderPath: String? = null,
+    /** 从“Agent 可达范围”跳转 Tailscale 设置；先关闭资源管理器再导航。 */
+    onOpenTailscaleSettings: (() -> Unit)? = null,
     viewModel: ResourceExplorerViewModel = viewModel(
         factory = ResourceExplorerViewModel.factory(
             LocalContext.current.applicationContext as android.app.Application
@@ -129,6 +132,7 @@ fun ResourceExplorerSheet(
     val directory by viewModel.directory.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
     var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
     val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
     // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
     val workspaceBusy = chatState.isGenerating || chatState.session?.approvalRequest != null
@@ -167,6 +171,7 @@ fun ResourceExplorerSheet(
             ),
             actions = ResourceExplorerSheetActions(
                 onOpenGitPanel = { showGitPanel = true },
+                onOpenReach = { showReach = true },
                 onChooseWorkspace = { pickingWorkspace = true },
                 onUsePrivateWorkspace = { chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched) },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
@@ -240,6 +245,14 @@ fun ResourceExplorerSheet(
             chatViewModel.switchSessionWorkspace(picked.id, onWorkspaceSwitched)
         },
     )
+    if (showReach) {
+        AgentReachSheet(
+            sessionId = sessionId,
+            executionMode = chatState.session?.executionMode,
+            onDismiss = { showReach = false },
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
+        )
+    }
     if (showGitPanel) {
         GitChangesSheet(
             sessionId = sessionId,
@@ -290,6 +303,7 @@ internal data class ResourceExplorerSheetActions(
     val onOpenGitPanel: () -> Unit = {},
     val onChooseWorkspace: () -> Unit = {},
     val onUsePrivateWorkspace: () -> Unit = {},
+    val onOpenReach: (() -> Unit)? = null,
 )
 
 @Composable
@@ -464,6 +478,7 @@ private fun ResourceExplorerWorkspaceBar(
         footnote = footnote,
         onChoose = actions.onChooseWorkspace,
         onUsePrivate = actions.onUsePrivateWorkspace,
+        onOpenReach = actions.onOpenReach,
         modifier = Modifier.fillMaxWidth(),
     )
 }

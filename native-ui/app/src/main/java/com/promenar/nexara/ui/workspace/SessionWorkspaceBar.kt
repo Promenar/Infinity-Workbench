@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forReading
@@ -32,6 +34,8 @@ fun SessionWorkspaceBar(
     footnote: String? = null,
     onChoose: () -> Unit = {},
     onUsePrivate: () -> Unit = {},
+    /** 打开“Agent 可达范围”面板；为 null 时不显示该行。 */
+    onOpenReach: (() -> Unit)? = null,
 ) {
     val canSwitch = !busy && workspace != SessionWorkspaceUi.Loading
     BettboxListGroup(modifier = modifier.testTag("session_workspace_bar")) {
@@ -110,6 +114,16 @@ fun SessionWorkspaceBar(
                     ) { Text(stringResource(R.string.workspace_session_use_private)) }
                 }
             }
+        }
+        if (onOpenReach != null) {
+            NexaraSettingsItem(
+                icon = Icons.Rounded.Explore,
+                title = stringResource(R.string.agent_reach_entry),
+                subtitle = stringResource(R.string.agent_reach_entry_desc),
+                onClick = onOpenReach,
+                showChevron = true,
+                modifier = Modifier.testTag("session_workspace_reach"),
+            )
         }
     }
 }

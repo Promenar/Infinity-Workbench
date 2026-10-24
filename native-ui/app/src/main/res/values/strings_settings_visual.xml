@@ -13,11 +13,6 @@
     <string name="settings_termux_unsupported_version">Installed version needs an update</string>
     <string name="settings_termux_permission_required">Installed · Permission required</string>
     <string name="settings_termux_available">Installed · Permission granted</string>
-    <string name="settings_hosts_empty">Not configured</string>
-    <string name="settings_hosts_review">Review configuration</string>
-    <string name="settings_hosts_count">%1$d allowed hosts</string>
-    <string name="settings_hosts_invalid">Enter up to 64 exact hostnames or IP addresses, without a protocol, port, path, or wildcard.</string>
-    <string name="settings_hosts_saved">Allowed hosts saved</string>
     <string name="settings_command_label">Command</string>
     <string name="settings_copy_command">Copy command</string>
     <string name="settings_command_copied">Command copied</string>
