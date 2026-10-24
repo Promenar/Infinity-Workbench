@@ -148,7 +148,7 @@ class BuiltinCommandRunner(
         val pidFile = processGroupFile ?: File(scratch, "pgid")
         pidFile.parentFile?.mkdirs()
         try {
-            val builder = ProcessBuilder(groupLauncher + listOf(shell, "-c", WRAPPER, "nexara-exec", pidFile.path, bootIdentity().orEmpty(), if (logFile != null && requireBackgroundIdentity) "1" else "0") + request.argv)
+            val builder = ProcessBuilder(launchCommand(request, pidFile, logFile != null && requireBackgroundIdentity))
                 .directory(request.workingDirectory)
                 .redirectErrorStream(logFile != null)
             builder.environment().clear()
@@ -245,6 +245,15 @@ class BuiltinCommandRunner(
         }
     }
 
+    /** 包装脚本先于 proot 执行，宿主工具不能依赖 guest 的 PATH。 */
+    internal fun launchCommand(request: BuiltinCommandRequest, pidFile: File, requireIdentity: Boolean): List<String> =
+        groupLauncher + listOf(shell, "-c", WRAPPER, "nexara-exec", pidFile.path, bootIdentity().orEmpty(),
+            if (requireIdentity) "1" else "0", hostUtility("cat"), hostUtility("mv"), hostUtility("printf")) + request.argv
+
+    private fun hostUtility(name: String): String =
+        listOfNotNull(File(shell).parentFile, File("/system/bin"), File("/usr/bin"), File("/bin"))
+            .map { File(it, name) }.firstOrNull(File::canExecute)?.path ?: File(File(shell).parentFile, name).path
+
     private enum class WaitOutcome { EXITED, TIMED_OUT, STOPPED }
     private class WaitResult(val outcome: WaitOutcome, val pausedNanos: Long)
 
@@ -319,13 +328,13 @@ class BuiltinCommandRunner(
         const val SIGKILL = 9
         const val SIGTERM = 15
         private const val SIGNAL_EXIT_BASE = 128
-        /** $1 为进程组号文件；写入失败时不执行命令。 */
+        /** $1 为进程组号文件，$4/$5/$6 为宿主 cat/mv/printf；写入失败时不执行命令。 */
         private const val WRAPPER = "echo \$\$ > \"\$1\" || exit 125; " +
             "if [ -r /proc/\$\$/stat ]; then " +
-            "__nexara_stat=\$(cat /proc/\$\$/stat) || exit 125; __nexara_fields=\${__nexara_stat##*) }; " +
-            "(set -- \$__nexara_fields; case \"\${20}\" in ''|*[!0-9]*) exit 125;; esac; printf '%s' \"\${20}\") > \"\$1.start\" || exit 125; " +
-            "{ [ -z \"\$2\" ] || printf '%s\\n' \"\$2\"; cat \"\$1.start\"; } > \"\$1.identity.tmp\" && mv \"\$1.identity.tmp\" \"\$1.identity\" || exit 125; " +
-            "elif [ \"\$3\" = 1 ]; then exit 125; fi; shift 3; exec \"\$@\""
+            "__nexara_stat=\$(\"\$4\" /proc/\$\$/stat) || exit 125; __nexara_fields=\${__nexara_stat##*) }; " +
+            "(__nexara_printf=\$6; set -- \$__nexara_fields; case \"\${20}\" in ''|*[!0-9]*) exit 125;; esac; \"\$__nexara_printf\" '%s' \"\${20}\") > \"\$1.start\" || exit 125; " +
+            "{ [ -z \"\$2\" ] || \"\$6\" '%s\\n' \"\$2\"; \"\$4\" \"\$1.start\"; } > \"\$1.identity.tmp\" && \"\$5\" \"\$1.identity.tmp\" \"\$1.identity\" || exit 125; " +
+            "elif [ \"\$3\" = 1 ]; then exit 125; fi; shift 6; exec \"\$@\""
     }
 }
 

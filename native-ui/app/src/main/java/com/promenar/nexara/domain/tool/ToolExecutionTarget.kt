@@ -16,6 +16,7 @@ object ToolExecutionTargets {
         arguments: String,
         resolvedPaths: Map<String, String> = emptyMap(),
         sshIdentities: Map<String, SshExecutionIdentity> = emptyMap(),
+        usesLinux: Boolean = LinuxExecRouting.agentUsesLinux,
     ): String? {
         val args = runCatching { Json.parseToJsonElement(arguments) as? JsonObject }.getOrNull()
             ?: return null
@@ -55,7 +56,7 @@ object ToolExecutionTargets {
         if (tool.risk == ToolRisk.PROCESS) {
             val host = when (tool.function.name) {
                 "termux_exec" -> "termux"
-                "shell_exec" -> "builtin".takeIf { tool.sourceId == "builtin" }
+                "shell_exec" -> (if (usesLinux) "linux" else "builtin").takeIf { tool.sourceId == "builtin" }
                 else -> null
             } ?: args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null

@@ -950,7 +950,7 @@ internal fun ApprovalCallHeader(
 internal fun ApprovalKindNote(toolName: String, modifier: Modifier = Modifier) {
     val backend = CommandToolClassification.backendFor(toolName)
     val (label, detail) = when (backend) {
-        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON ->
+        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON, CommandToolBackend.LINUX ->
             R.string.chat_approval_kind_builtin_command to R.string.chat_approval_kind_builtin_command_detail
         CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command to R.string.chat_approval_kind_termux_command_detail
         CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command to R.string.chat_approval_kind_ssh_command_detail

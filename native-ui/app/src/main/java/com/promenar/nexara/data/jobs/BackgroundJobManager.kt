@@ -15,10 +15,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class JobAccessException(val code: String, override val message: String) : IllegalArgumentException(message)
-data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean) {
+data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean, val sessionId: String? = null) {
     val workspaceKind: String get() = if (isolated) "private" else if (termuxShared) "shared" else "project"
 }
-class PreparedBackgroundCommand(val request: BuiltinCommandRequest, val close: () -> Unit = {})
+class PreparedBackgroundCommand(
+    val request: BuiltinCommandRequest,
+    val close: () -> Unit = {},
+    val afterRun: suspend () -> Unit = {},
+)
 data class BackgroundJobStatus(val record: BackgroundJobRecord, val tail: JobLogTail, val timedOut: Boolean = false)
 
 /** 唤醒的整个挂起区间由调用者的保活登记覆盖。 */
@@ -71,6 +75,7 @@ class BackgroundJobManager(
     private val now: () -> Long = System::currentTimeMillis,
     private val executionGate: com.promenar.nexara.data.session.SessionExecutionGate? = null,
     private val sessionExists: suspend (String) -> Boolean = { true },
+    private val linuxRuntime: com.promenar.nexara.domain.linux.LinuxRuntime? = null,
 ) : BackgroundJobController {
     private class Active(val control: BuiltinCommandControl = BuiltinCommandControl()) {
         val terminal = CompletableDeferred<Unit>()
@@ -111,14 +116,14 @@ class BackgroundJobManager(
     private suspend fun recover() {
         store.prune()
         for (record in store.all()) {
-            if (!record.running || record.runner == "TERMUX") continue
+            if (!record.running || record.runnerKind == BackgroundJobRunner.TERMUX) continue
             val cleaned=runner.interruptBackground(File(record.runDirectory,"pgid"))
             val reconcileWarning = try { reconcile(record, false, true) } catch (_: Exception) { "工作区恢复失败；任务副本和日志已保留。" }
             val warning=listOfNotNull(reconcileWarning,if(cleaned)null else "应用重启后无法核验旧进程组身份，未发送信号；请确认旧命令已停止。").joinToString(" ").ifEmpty{null}
             store.put(record.copy(state="INTERRUPTED",endedAtMillis=now(),guidance=warning))
         }
         publish()
-        for(record in store.all().filter { it.running && it.runner == "TERMUX" }) monitorTermux(record)
+        for(record in store.all().filter { it.running && it.runnerKind == BackgroundJobRunner.TERMUX }) monitorTermux(record)
     }
     private suspend fun <T> admitted(sessionId:String, block:suspend()->T):T {
         suspend fun checked():T {
@@ -142,7 +147,8 @@ class BackgroundJobManager(
     suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
         require(kind != BackgroundJobRunner.TERMUX)
-        val record=reserve(sessionId,workspaceRootUuid,kind,source,minutes,action)
+        val actualKind = if (kind == BackgroundJobRunner.SHELL && linuxRuntime?.agentUsesLinux == true) BackgroundJobRunner.LINUX else kind
+        val record=reserve(sessionId,workspaceRootUuid,actualKind,source,minutes,action)
         val handle=active.getValue(record.id)
         val started=CompletableDeferred<BackgroundJobRecord>()
         handle.worker=scope.launch(Dispatchers.IO) {
@@ -159,13 +165,27 @@ class BackgroundJobManager(
                         val log=logFile(current)
                         log.parentFile?.mkdirs(); if(!log.exists()) log.createNewFile()
                         reconcile(current,false,false)
-                        command=prepareCommand(kind,source,stdin,location,minutes)
-                        val output=runner.runBackground(command.request,handle.control,log,File(record.runDirectory,"pgid"),onStarted={started.complete(current)},onOutput=sink::emit)
-                        val terminal=when {output.stoppedByUser -> "STOPPED"; output.timedOut -> "TIMED_OUT"; else -> "EXITED"}
-                        finish(current.copy(state=terminal,exitCode=output.exitCode,endedAtMillis=now()),handle)
+                        val prepared=prepareCommand(actualKind,source,stdin,location.copy(sessionId=record.sessionId),minutes)
+                        command=prepared
+                        var linuxRemoved = false
+                        val output = coroutineScope {
+                            val watcher = if (actualKind == BackgroundJobRunner.LINUX) launch {
+                                val runtime = checkNotNull(linuxRuntime)
+                                runtime.state.first { it !is com.promenar.nexara.domain.linux.LinuxRuntimeState.Ready }
+                                linuxRemoved = true
+                                handle.control.requestStop()
+                            } else null
+                            try {
+                                runner.runBackground(prepared.request,handle.control,log,File(record.runDirectory,"pgid"),onStarted={started.complete(current)},onOutput=sink::emit)
+                            } finally {
+                                withContext(NonCancellable) { watcher?.cancelAndJoin(); prepared.afterRun() }
+                            }
+                        }
+                        val terminal=when {linuxRemoved -> "FAILED"; output.stoppedByUser -> "STOPPED"; output.timedOut -> "TIMED_OUT"; else -> "EXITED"}
+                        finish(current.copy(state=terminal,exitCode=output.exitCode,endedAtMillis=now(),guidance=if(linuxRemoved) LINUX_UNAVAILABLE_GUIDANCE else null),handle)
                         if(!started.isCompleted) started.completeExceptionally(JobAccessException("JOB_STOPPED","任务在进程启动前被停止。"))
                     } catch (failure:Exception) {
-                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance="后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
+                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance=if(failure is com.promenar.nexara.domain.linux.LinuxUnavailableException) LINUX_UNAVAILABLE_GUIDANCE else "后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
                         withContext(NonCancellable) {
                             if(store.all().find{it.id==record.id}?.running==true) finish(terminal,handle)
                         }
@@ -310,7 +330,7 @@ class BackgroundJobManager(
             catch(_:Exception) { /* 完成通知失败不能改写真实进程终态。 */ }
         }
     }
-    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,if(record.runner=="PYTHON") ExecRunKind.PYTHON else ExecRunKind.SHELL,record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true)
+    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,when(record.runnerKind) { BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON; BackgroundJobRunner.LINUX -> ExecRunKind.LINUX; else -> ExecRunKind.SHELL },record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true)
     private fun logFile(record:BackgroundJobRecord):File = if(record.isolatedWorkspace) File(record.runDirectory,"output.log") else record.workspaceDirectory?.let { File(it,checkNotNull(record.logWorkspacePath)) } ?: File(record.runDirectory,"output.log")
     private suspend fun owned(sessionId:String,id:String):BackgroundJobRecord {
         initialize()
@@ -321,7 +341,7 @@ class BackgroundJobManager(
     suspend fun status(sessionId:String,id:String):BackgroundJobStatus = withContext(Dispatchers.IO) {
         var record=owned(sessionId,id)
         var warning: String? = null
-        val tail=if(record.runner=="TERMUX") refreshTermux(record) else {
+        val tail=if(record.runnerKind==BackgroundJobRunner.TERMUX) refreshTermux(record) else {
             warning=reconcile(record,false,false)
             readJobLogTail(logFile(record))
         }
@@ -343,7 +363,7 @@ class BackgroundJobManager(
         initialize()
         val record=store.all().find{it.id==jobId && it.running} ?: return@withContext false
         val handle=active[jobId]
-        if(record.runner=="TERMUX") {
+        if(record.runnerKind==BackgroundJobRunner.TERMUX) {
             refreshGate.withLock {
                 val latest=store.all().find{it.id==jobId} ?: return@withLock
                 if(!latest.running) return@withLock
@@ -398,3 +418,5 @@ class BackgroundJobManager(
         }
     }
 }
+
+private const val LINUX_UNAVAILABLE_GUIDANCE = "Linux 环境已卸载、正在维护或不可用，后台任务已失败；请在工具 → Linux 环境中检查后再启动任务。"

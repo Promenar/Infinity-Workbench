@@ -9,12 +9,14 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
-internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
+internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；shell 在 Linux 环境就绪且启用时使用 Linux，否则使用系统 sh；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
 internal fun JsonObject.backgroundRequested() = (this["background"] as? JsonPrimitive)?.booleanOrNull == true
 internal fun backgroundStartJson(record: BackgroundJobRecord): JsonObject = buildJsonObject {
+    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
+    put("runner",record.runnerKind.name.lowercase())
     put("job_id",record.id);put("state",record.state.lowercase());put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
     put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"})
-    val confirmed=record.runner!="TERMUX" || record.termuxPid!=null
+    val confirmed=record.runnerKind!=BackgroundJobRunner.TERMUX || record.termuxPid!=null
     put("launch_confirmed",confirmed)
     put("guidance",if(confirmed) "后台任务已启动；可以继续其它工作，需要结果时用 job_status 或 job_wait；不要循环轮询。" else record.guidance ?: "启动结果尚未确认；请用 job_status 查询或 job_stop 撤销，避免重复执行。")
     record.guidance?.let { put("warning",it) }
@@ -62,10 +64,12 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
         }
     }
     private suspend fun info(record:BackgroundJobRecord):JsonObject {
-        val runtime = if (record.runner == "TERMUX") JsonObject(emptyMap()) else
+        val runtime = if (record.runnerKind == BackgroundJobRunner.TERMUX) JsonObject(emptyMap()) else
             com.promenar.nexara.data.exec.RuntimeDataMonitor.backgroundResult(java.io.File(record.runDirectory), expectResult = !record.running)
         return JsonObject(buildJsonObject {
-        put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
+    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
+    put("runner",record.runnerKind.name.lowercase())
+    put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
         put("summary",record.summary);put("elapsed_seconds",BackgroundJobCompletion.elapsedSeconds(record));put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
         put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"});put("keep_alive",jobs.keepAliveMode)
         record.guidance?.let{put("guidance",it)}

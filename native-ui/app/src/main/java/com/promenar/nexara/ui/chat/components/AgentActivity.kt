@@ -276,6 +276,7 @@ private fun jobMeta(job: BackgroundJob, nowMillis: Long): String {
     val runner = stringResource(
         when (job.runner) {
             BackgroundJobRunner.SHELL -> R.string.agent_jobs_runner_shell
+            BackgroundJobRunner.LINUX -> R.string.linux_b2_runner
             BackgroundJobRunner.PYTHON -> R.string.agent_jobs_runner_python
             BackgroundJobRunner.TERMUX -> R.string.agent_jobs_runner_termux
         },

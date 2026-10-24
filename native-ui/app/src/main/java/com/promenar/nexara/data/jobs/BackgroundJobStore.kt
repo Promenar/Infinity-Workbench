@@ -35,7 +35,9 @@ data class BackgroundJobRecord(
     val guidance: String? = null,
     val isolatedWorkspace: Boolean = false,
 ) {
-    fun job() = BackgroundJob(id,sessionId,BackgroundJobRunner.valueOf(runner),summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,logWorkspacePath,"job:$id")
+    /** 未知执行器按 SHELL 展示，持久化原值保留，不据此启动新命令。 */
+    val runnerKind: BackgroundJobRunner get() = BackgroundJobRunner.entries.firstOrNull { it.name == runner } ?: BackgroundJobRunner.SHELL
+    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,logWorkspacePath,"job:$id")
     val running: Boolean get() = state == "RUNNING"
 }
 

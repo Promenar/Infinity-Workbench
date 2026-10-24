@@ -2,7 +2,7 @@ package com.promenar.nexara.domain.jobs
 
 import kotlinx.coroutines.flow.Flow
 
-enum class BackgroundJobRunner { SHELL, PYTHON, TERMUX }
+enum class BackgroundJobRunner { SHELL, PYTHON, LINUX, TERMUX }
 
 enum class BackgroundJobState {
     RUNNING,

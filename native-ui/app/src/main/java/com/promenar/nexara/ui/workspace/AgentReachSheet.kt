@@ -209,6 +209,7 @@ private fun BackendSection(state: AgentReachState) {
             val (icon, title, scope) = when (backend.kind) {
                 ReachBackendKind.FILES -> Triple(Icons.Rounded.Description, R.string.agent_reach_backend_files, R.string.agent_reach_backend_files_scope)
                 ReachBackendKind.BUILTIN -> Triple(Icons.Rounded.Terminal, R.string.agent_reach_backend_builtin, R.string.agent_reach_backend_builtin_scope)
+                ReachBackendKind.LINUX -> Triple(Icons.Rounded.Terminal, R.string.linux_b2_runner, R.string.agent_reach_backend_builtin_scope)
                 ReachBackendKind.SANDBOX -> Triple(Icons.Rounded.Code, R.string.agent_reach_backend_sandbox, R.string.agent_reach_backend_sandbox_scope)
                 ReachBackendKind.TERMUX -> Triple(
                     Icons.Rounded.PhoneAndroid,
@@ -244,6 +245,9 @@ private fun backendStatusText(backend: ReachBackend): String = when (backend.sta
     ReachBackendStatus.UNSUPPORTED_VERSION -> stringResource(R.string.settings_termux_unsupported_version)
     ReachBackendStatus.NO_HOSTS -> stringResource(R.string.agent_reach_status_no_hosts)
     ReachBackendStatus.LOADING -> stringResource(R.string.settings_status_loading)
+    ReachBackendStatus.INSTALLING -> stringResource(R.string.linux_b2_installing)
+    ReachBackendStatus.BROKEN -> stringResource(R.string.linux_b2_broken)
+    ReachBackendStatus.UNAVAILABLE -> stringResource(R.string.linux_b2_unavailable)
 }
 
 @Composable

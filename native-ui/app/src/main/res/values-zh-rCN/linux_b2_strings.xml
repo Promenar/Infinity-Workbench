@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="linux_b2_runner">Linux</string>
+    <string name="linux_b2_installing">安装或维护中</string>
+    <string name="linux_b2_broken">环境需要修复</string>
+    <string name="linux_b2_unavailable">当前渠道或架构不可用</string>
+</resources>
