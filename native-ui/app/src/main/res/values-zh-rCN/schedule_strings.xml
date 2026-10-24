@@ -16,7 +16,7 @@
     <string name="schedule_approval_target">本会话</string>
     <string name="schedule_approval_invalid">参数未通过校验，批准后也会被拒绝。</string>
     <string name="schedule_approval_exact_denied_title">尚未授权精确闹钟</string>
-    <string name="schedule_approval_exact_denied_body">&brand; 在前台时按设定时刻执行；退到后台后由系统决定具体时刻，最短每 15 分钟一次。在定时任务面板授权精确闹钟后会重新安排。</string>
+    <string name="schedule_approval_exact_denied_body">离开应用后可能延后执行；授权精确闹钟可按时执行。</string>
     <plurals name="schedule_approval_max_runs">
         <item quantity="other">最多 %1$d 次</item>
     </plurals>

@@ -14,7 +14,7 @@
     <string name="state_add_item">Add item</string>
     <string name="state_remove_item">Remove item %1$d</string>
     <string name="state_board_empty_value">Empty</string>
-    <string name="state_invalid_value">Check the value: finite numbers up to 10¹², meter between 0 and a positive maximum, text up to 2000 characters, lists up to 50 nonempty items of 200 characters.</string>
+    <string name="state_invalid_value">A value is out of range or too long. Check it.</string>
     <string name="state_save_failed">Could not save. The panel may have changed. Close the editor and open it again.</string>
     <string name="state_created">State panel created: %1$s</string>
     <string name="state_defined">State panel defined: %1$s</string>

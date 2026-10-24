@@ -285,14 +285,12 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Storage,
                         title = stringResource(R.string.settings_provider_management),
-                        subtitle = stringResource(R.string.settings_provider_management_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.PROVIDER_LIST) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_ENTRY),
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.settings_default_models),
-                        subtitle = stringResource(R.string.settings_batch1_home_default_models_summary),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
                     )
@@ -355,7 +353,6 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.BugReport,
                         title = stringResource(R.string.settings_diagnostics_export),
-                        subtitle = stringResource(R.string.settings_batch1_home_diagnostics_summary),
                         onClick = actions.onExportDiagnostics,
                     )
                 }
@@ -369,7 +366,6 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Info,
                         title = stringResource(R.string.settings_about_nexara),
-                        subtitle = stringResource(R.string.settings_batch1_home_about_summary),
                         onClick = actions.onAboutClick,
                     )
                 }
@@ -388,7 +384,7 @@ internal fun UserSettingsHomeScreenContent(
 private fun UserSettingsNavigationItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {

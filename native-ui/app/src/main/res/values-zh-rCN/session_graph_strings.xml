@@ -1,6 +1,6 @@
 <resources>
     <string name="kg_session_section">对话图谱</string>
-    <string name="kg_session_extraction_footer">每轮回复后在后台抽取实体与关系。抽取模型与预算沿用下方的文档抽取设置；可见范围由会话设置的图谱档位决定。</string>
+    <string name="kg_session_extraction_footer">每轮回复后抽取实体与关系，模型和预算沿用下方文档抽取设置。</string>
     <string name="kg_session_extraction_title">从对话抽取知识图谱</string>
     <string name="kg_session_extraction_desc">每轮额外调用一次模型</string>
     <string name="turn_graph_status_queued">等待图谱抽取</string>

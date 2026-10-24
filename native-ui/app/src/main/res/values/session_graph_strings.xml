@@ -1,6 +1,6 @@
 <resources>
     <string name="kg_session_section">Chat graph</string>
-    <string name="kg_session_extraction_footer">Extracts entities and relations in the background after each reply, using the extraction model and budget from the document extraction settings below. Who can see the results follows the graph scope in session settings.</string>
+    <string name="kg_session_extraction_footer">Extracts entities and relations after each reply, using the model and budget from the document extraction settings below.</string>
     <string name="kg_session_extraction_title">Extract knowledge graph from chats</string>
     <string name="kg_session_extraction_desc">One extra model call per turn</string>
     <string name="turn_graph_status_queued">Graph extraction queued</string>

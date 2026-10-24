@@ -29,10 +29,10 @@
     <string name="termux_step_pending">Setup required</string>
     <string name="termux_step_optional">Optional</string>
     <string name="termux_step_attention">Needs attention</string>
-    <string name="termux_install_description">Install from F-Droid or GitHub. Result delivery requires a recognizable version number of 0.109 or newer. Open Termux after installation and wait for initialization to finish.</string>
+    <string name="termux_install_description">Install 0.109 or newer from F-Droid or GitHub, then open it once.</string>
     <string name="termux_fdroid">F-Droid</string>
     <string name="termux_github">GitHub</string>
-    <string name="termux_external_apps_description">Run this command in Termux to set allow-external-apps=true and reload the configuration.</string>
+    <string name="termux_external_apps_description">Run the command above in Termux so &brand; can send it commands.</string>
     <string name="termux_external_apps_verified">The diagnostic test confirmed external app access and result delivery.</string>
     <string name="termux_external_apps_unverified">After running the command, use the diagnostic test above to verify this step.</string>
     <string name="termux_permission_description">Allow &brand; to run commands in the Termux environment. If no system prompt appears, open App info → Permissions → Other permissions. Status refreshes when you return to this page.</string>
@@ -62,9 +62,9 @@
     <string name="termux_read_only">Read only</string>
     <string name="termux_read_write">Read and write</string>
     <string name="termux_background_section">Background execution and child processes</string>
-    <string name="termux_background_description">Android 12 and newer may end app child processes, and Termux may show signal 9. Some Android 14 and newer devices offer “Disable child process restrictions” in Developer options. Its name and availability depend on the system. Turning off Developer options may restore the restriction.</string>
-    <string name="termux_wake_lock_description">For long tasks, run termux-wake-lock to keep the CPU awake and termux-wake-unlock when finished. A wake lock increases battery use and does not remove child process limits or manufacturer background restrictions.</string>
-    <string name="termux_background_hint">If a task stops in the background or cannot start, check the battery and background settings of both &brand; and Termux (ColorOS and similar systems need full background activity allowed), and keep the Termux notification visible.</string>
+    <string name="termux_background_description">From Android 12, the system may end long tasks (signal 9). Some Android 14 devices offer “Disable child process restrictions” in Developer options.</string>
+    <string name="termux_wake_lock_description">For long tasks, run termux-wake-lock to stay awake and termux-wake-unlock when done. Uses more battery.</string>
+    <string name="termux_background_hint">If tasks stop in the background, allow full background activity for both &brand; and Termux.</string>
     <string name="termux_diagnostic_success">Diagnostic passed. The command result was delivered.</string>
     <string name="termux_diagnostic_failure">Diagnostic failed. Check the details below.</string>
     <string name="termux_exit_code">Exit code: %1$s</string>
@@ -79,13 +79,13 @@
     <string name="termux_guidance_version">Install Termux 0.109 or newer with a recognizable version number to receive command results.</string>
     <string name="termux_guidance_permission">Grant RUN_COMMAND permission on this page or in the &brand; system app permissions.</string>
     <string name="termux_guidance_external_apps">Set allow-external-apps=true in ~/.termux/termux.properties, run termux-reload-settings, and retry the diagnostic test.</string>
-    <string name="termux_guidance_internal">Termux did not finish execution. Check initialization, the command path, working directory, and background processes in Termux.</string>
+    <string name="termux_guidance_internal">Termux didn\'t finish. Open Termux to check.</string>
     <string name="termux_guidance_command_failed">The command returned a nonzero exit code. Check stderr and the command arguments.</string>
     <string name="termux_guidance_malformed">Termux did not return a valid result package. Update Termux and run the diagnostic command again.</string>
     <string name="termux_guidance_integration_disabled">Enable Termux integration in Settings → Tools → Termux integration and diagnostics.</string>
-    <string name="termux_guidance_start_failed">The Termux background command could not start. Confirm Termux is initialized and integration is enabled. On ColorOS, MIUI and similar systems, set both &brand; and Termux to allow full background activity in battery management; reinstalling may reset this.</string>
+    <string name="termux_guidance_start_failed">Couldn\'t start the Termux command. Check that integration is on and both &brand; and Termux allow full background activity.</string>
     <string name="termux_guidance_invalid_arguments">Check the command, absolute working directory, input length, and timeout of 1–600 seconds.</string>
-    <string name="termux_guidance_timeout">The local wait timed out; the command may still be running. RUN_COMMAND has no public interface to stop a single background request. Check and stop the process in Termux, and check external app access and background process limits.</string>
+    <string name="termux_guidance_timeout">Timed out. The command may still be running; check and stop it in Termux.</string>
     <string name="termux_error_status">Could not read Termux status. Refresh again later.</string>
     <string name="termux_error_clipboard">Clipboard unavailable</string>
     <string name="termux_error_key">Could not read the SSH public key. Check the key in SSH host settings.</string>

@@ -11,7 +11,7 @@
     <string name="settings_retrieval_model_unavailable_short">No default rerank model</string>
     <string name="settings_retrieval_hybrid_short">Vector and keyword matching</string>
     <string name="settings_retrieval_rewrite_short">Rewrite queries for retrieval</string>
-    <string name="settings_retrieval_rerank_managed">Memory and document limits and thresholds are unavailable while reranking is enabled.</string>
+    <string name="settings_retrieval_rerank_managed">Reranking is on, so the limits and thresholds above don\'t apply.</string>
     <string name="settings_retrieval_rerank_batch_title">Documents per rerank call</string>
     <string name="settings_retrieval_jit_short">Fill gaps in graph coverage</string>
     <string name="settings_retrieval_kg_context_title">Context token limit</string>
@@ -21,7 +21,7 @@
     <string name="settings_retrieval_kg_request_output_title">Tokens per request</string>
     <string name="settings_retrieval_kg_duration_title">Time limit (sec)</string>
     <string name="settings_retrieval_kg_confirm_title">Large document threshold</string>
-    <string name="settings_retrieval_kg_budget_footer">Call and output limits apply to each document version. Confirmation is required when estimated calls exceed the threshold.</string>
+    <string name="settings_retrieval_kg_budget_footer">Applied per document. You\'re asked first when estimated calls exceed the threshold.</string>
     <string name="settings_retrieval_agent_rag_short">Chunking and memory settings</string>
     <string name="settings_retrieval_agent_advanced_short">Rerank, rewrite and hybrid search</string>
     <string name="settings_retrieval_agent_actions_section">Agent management</string>

@@ -3,5 +3,5 @@
     <string name="ssh_connections_title">SSH 连接</string>
     <string name="ssh_connections_body">终端或本地转发正在运行，可点停止断开连接。</string>
     <string name="ssh_connections_stop">停止</string>
-    <string name="ssh_cleanup_warning">中断上传后的临时文件未能删除。使用相同主机配置连接会重试清理，也可在服务器检查目标目录。</string>
+    <string name="ssh_cleanup_warning">上传中断，服务器上留有临时文件，下次连接时会自动清理。</string>
 </resources>

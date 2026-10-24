@@ -15,11 +15,11 @@
     <string name="canvas_history_notice">History is read only. It cannot add text to your draft.</string>
     <string name="canvas_loading">Loading canvas…</string>
     <string name="canvas_load_error">Could not load canvas</string>
-    <string name="canvas_scripts_unavailable">Static preview. Update Android System WebView to enable safely isolated scripts.</string>
+    <string name="canvas_scripts_unavailable">Static preview. Update Android System WebView to make it interactive.</string>
     <string name="canvas_tool_create">Create canvas</string>
     <string name="canvas_tool_create_description">Create a versioned HTML chart, dashboard or interactive tool.</string>
     <string name="canvas_tool_update">Update canvas</string>
-    <string name="canvas_tool_update_description">Replace or patch an existing conversation canvas.</string>
+    <string name="canvas_tool_update_description">Edit a canvas</string>
     <string name="canvas_tool_read">Read canvas</string>
     <string name="canvas_tool_read_description">Read canvas source and version metadata.</string>
     <string name="canvas_tool_list">List canvases</string>

@@ -11,7 +11,7 @@
     <string name="settings_retrieval_model_unavailable_short">未配置重排模型</string>
     <string name="settings_retrieval_hybrid_short">融合向量与关键词</string>
     <string name="settings_retrieval_rewrite_short">改写查询提升召回</string>
-    <string name="settings_retrieval_rerank_managed">启用重排时，记忆与文档的数量和阈值不可编辑。</string>
+    <string name="settings_retrieval_rerank_managed">已开启重排序，上方数量与阈值不生效。</string>
     <string name="settings_retrieval_rerank_batch_title">单次重排文档上限</string>
     <string name="settings_retrieval_jit_short">图谱覆盖不足时补充</string>
     <string name="settings_retrieval_kg_context_title">上下文 Token 上限</string>
@@ -21,7 +21,7 @@
     <string name="settings_retrieval_kg_request_output_title">单次输出 Token</string>
     <string name="settings_retrieval_kg_duration_title">抽取时长（秒）</string>
     <string name="settings_retrieval_kg_confirm_title">大文档确认阈值</string>
-    <string name="settings_retrieval_kg_budget_footer">调用与输出上限按每个文档版本计算；预计调用超过确认阈值时，需要先确认。</string>
+    <string name="settings_retrieval_kg_budget_footer">按单个文档计算；预计调用超过确认阈值时先询问你。</string>
     <string name="settings_retrieval_agent_rag_short">分块与记忆配置</string>
     <string name="settings_retrieval_agent_advanced_short">重排、改写与混合检索</string>
     <string name="settings_retrieval_agent_actions_section">助手管理</string>

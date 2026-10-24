@@ -96,7 +96,6 @@ internal fun AdvancedRetrievalScreenContent(
         ) {
             NexaraSettingsSection(
                 title = stringResource(R.string.retrieval_memory_section),
-                footer = listOfNotNull(stringResource(R.string.retrieval_desc), rerankHint).joinToString("\n"),
             ) {
                 NexaraNumericSetting(
                     title = stringResource(R.string.retrieval_memory_limit),
@@ -137,7 +136,6 @@ internal fun AdvancedRetrievalScreenContent(
 
             NexaraSettingsSection(
                 title = stringResource(R.string.retrieval_hybrid_section),
-                footer = stringResource(R.string.retrieval_hybrid_desc),
             ) {
                 SettingsToggle(
                     title = stringResource(R.string.retrieval_hybrid_enable),
@@ -194,7 +192,6 @@ internal fun AdvancedRetrievalScreenContent(
 
             NexaraSettingsSection(
                 title = stringResource(R.string.retrieval_rewrite_section),
-                footer = stringResource(R.string.retrieval_rewrite_desc),
             ) {
                 SettingsToggle(
                     title = stringResource(R.string.retrieval_rewrite_enable),

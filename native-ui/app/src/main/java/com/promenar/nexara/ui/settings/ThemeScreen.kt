@@ -122,7 +122,6 @@ fun ThemeScreenContent(
             item("color") {
                 NexaraSettingsSection(
                     title = stringResource(R.string.theme_accent_color),
-                    footer = if (state.dynamicColorAvailable) stringResource(R.string.theme_dynamic_color_desc) else null,
                 ) {
                     ColorPaletteRow(
                         selectedColor = preferences.primaryColor,
@@ -154,7 +153,6 @@ fun ThemeScreenContent(
                     ) {
                         SettingsToggle(
                             title = stringResource(R.string.theme_pure_black),
-                            description = stringResource(R.string.settings_batch1_pure_black_summary),
                             checked = preferences.pureBlack,
                             onCheckedChange = onPureBlackChange,
                         )
@@ -168,7 +166,6 @@ fun ThemeScreenContent(
                 ) {
                     SettingsToggle(
                         title = stringResource(R.string.theme_text_scale),
-                        description = stringResource(R.string.settings_batch1_text_scale_summary),
                         checked = preferences.textScaleEnabled,
                         onCheckedChange = onTextScaleEnabledChange,
                     )
@@ -196,7 +193,6 @@ fun ThemeScreenContent(
                     )
                     SettingsToggle(
                         title = stringResource(R.string.keep_screen_setting_title),
-                        description = stringResource(R.string.keep_screen_setting_summary),
                         checked = preferences.keepScreenOnWhileGenerating,
                         onCheckedChange = onKeepScreenOnChange,
                         modifier = Modifier.testTag("theme_keep_screen_on_switch"),

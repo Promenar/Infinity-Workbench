@@ -2,7 +2,7 @@
 <resources>
     <string name="onboarding_progress">Step %1$d of 6</string>
     <string name="onboarding_provider_title">Connect an AI provider</string>
-    <string name="onboarding_provider_desc">Add a provider before choosing a model. Your credential stays in secure storage.</string>
+    <string name="onboarding_provider_desc">Add a model provider. Your key stays on this device.</string>
     <string name="onboarding_provider_action">Configure provider</string>
     <string name="onboarding_connection_title">Verify the connection</string>
     <string name="onboarding_connection_desc">A successful connection check is required before continuing.</string>
@@ -15,14 +15,14 @@
     <string name="onboarding_model_probe_failed">This model did not pass the chat capability check. Choose another model or refresh the list.</string>
     <string name="onboarding_model_pending_label">%1$s · verification required</string>
     <string name="onboarding_local_model_unavailable">No loaded local chat model was detected. Open Local Models, load a main model, then test again.</string>
-    <string name="local_inference_release_unavailable">This release does not include local inference. The restored Local provider remains saved but cannot be used; select a cloud provider to continue.</string>
+    <string name="local_inference_release_unavailable">This version doesn\'t support local models. Choose a cloud provider.</string>
     <string name="onboarding_agent_title">Create your first agent</string>
     <string name="onboarding_agent_desc">Give the agent a name. You can customize its instructions later.</string>
     <string name="onboarding_agent_name">Agent name</string>
     <string name="onboarding_agent_default_name">My Agent</string>
     <string name="onboarding_agent_action">Create agent</string>
     <string name="onboarding_first_chat_title">Send your first message</string>
-    <string name="onboarding_first_chat_desc">Setup completes only after the assistant returns a successful reply.</string>
+    <string name="onboarding_first_chat_desc">Setup finishes when the first reply arrives.</string>
     <string name="onboarding_first_chat_action">Open first chat</string>
     <string name="onboarding_action_failed">That step could not be completed. Check the details and try again.</string>
 </resources>

@@ -667,7 +667,6 @@ internal fun ProviderFormContent(
                 animatedFormItem("preset") {
                     NexaraSettingsSection(
                         title = stringResource(R.string.settings_batch1_connection_template),
-                        footer = stringResource(R.string.provider_form_desc),
                     ) { ProviderPresetSelector(state = state, actions = actions) }
                 }
                 if (state.legacyMigrationBlocked) {
@@ -993,7 +992,6 @@ private fun ProviderFormActionsSection(
 private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
     NexaraSettingsSection(
         title = stringResource(R.string.settings_batch1_local_inference),
-        footer = stringResource(R.string.local_models_desc),
     ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp),

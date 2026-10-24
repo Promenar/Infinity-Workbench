@@ -15,7 +15,7 @@
     <string name="kg_budget_request_output">单次请求输出 Token 上限</string>
     <string name="kg_budget_duration">抽取总时长上限（秒）</string>
     <string name="kg_budget_confirm_threshold">预计调用超过此数需确认</string>
-    <string name="kg_budget_partial_hint">达到预算后保留已处理分块并标记部分完成；用量估算会单独标记。</string>
+    <string name="kg_budget_partial_hint">达到预算时保留已处理的部分。</string>
     <string name="kg_source_persistent">持久图</string>
     <string name="kg_source_jit">即时抽取</string>
     <string name="kg_hit_summary">%1$d 个实体 · %2$d 条路径</string>

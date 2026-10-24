@@ -75,7 +75,7 @@
     <string name="params_scheme_rename">Rename</string>
     <string name="params_scheme_delete">Delete scheme</string>
     <string name="params_scheme_delete_title">Delete “%1$s”?</string>
-    <string name="params_scheme_delete_message">Chats and agents using this model can no longer choose it. Those already using it keep their current values.</string>
+    <string name="params_scheme_delete_message">This scheme can\'t be chosen after deletion. Chats already using it keep it.</string>
     <string name="params_scheme_name_title">Scheme name</string>
     <string name="params_scheme_name_placeholder">e.g. Coding</string>
     <string name="params_no_model">Choose a model to save parameter schemes for it.</string>
@@ -172,12 +172,12 @@
     <string name="shared_btn_done">Done</string>
     <string name="shared_btn_retry">Retry</string>
     <string name="startup_recovering_title">Safe recovery in progress</string>
-    <string name="startup_recovering_message">&brand; is checking interrupted local data operations. Keep this screen open until recovery finishes.</string>
+    <string name="startup_recovering_message">Finishing interrupted work. Keep this screen open.</string>
     <string name="startup_blocked_title">Safe recovery needs attention</string>
     <string name="startup_blocked_message">&brand; could not finish restoring local data. Your data remains protected and app features stay locked.</string>
     <string name="startup_blocked_icon_description">Safe recovery blocked</string>
     <string name="restore_not_applied_title">Restore did not complete</string>
-    <string name="restore_not_applied_message">&brand; could not finish restoring the backup and has rolled back every change. Your data is exactly as it was before the restore. You can import the backup again from Settings → Backup.</string>
+    <string name="restore_not_applied_message">The backup wasn\'t restored and your data is unchanged. Import it again from Settings → Backup.</string>
     <string name="restore_not_applied_dismiss">Got it</string>
     <string name="startup_dual_database_title">Two local databases were found</string>
     <string name="startup_dual_database_icon_description">Two local databases need recovery</string>
@@ -196,7 +196,7 @@
     <string name="share_import_later">Later</string>
     <string name="share_import_cancel">Cancel import</string>
     <string name="share_import_cancel_title">Cancel this import?</string>
-    <string name="share_import_cancel_message">Imported files will remain. Unfinished staged copies will be deleted and must be shared again.</string>
+    <string name="share_import_cancel_message">Imported files stay. Share the rest again.</string>
     <string name="share_import_cancel_confirm">Delete staged copy</string>
     <string name="share_import_cancel_back">Keep it</string>
     <string name="share_import_pending_banner">%1$d shared import(s) waiting · Tap to continue</string>
@@ -391,7 +391,6 @@
     <string name="settings_default_models">Default Models</string>
     <string name="settings_default_models_desc">Configure default models for different tasks</string>
     <string name="settings_provider_management">Provider Management</string>
-    <string name="settings_provider_management_desc">Manage external API providers</string>
     <string name="settings_section_ai_models">AI &amp; Models</string>
     <string name="settings_provider_count_summary">%1$d provider(s)</string>
     <string name="settings_default_models_count_summary">%1$d model(s)</string>
@@ -409,7 +408,7 @@
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_section_model_presets">Model Presets</string>
     <string name="settings_model_summary">Quick Model</string>
-    <string name="settings_model_quick_description">Used for session titles, the default model for new sessions and Agents, and the default model for knowledge graph extraction; context compaction always uses the current session model.</string>
+    <string name="settings_model_quick_description">The quick model writes titles and extracts the knowledge graph, and is the default for new chats and agents.</string>
     <string name="settings_model_image">Image Model</string>
     <string name="settings_model_embedding">Embedding Model</string>
     <string name="settings_model_rerank">Rerank Model</string>
@@ -428,12 +427,12 @@
     <string name="settings_skills">Tool Management</string>
     <string name="settings_skills_desc">Configure Agent tools and MCP servers</string>
     <string name="settings_local_models">Local Models</string>
-    <string name="settings_local_models_desc">GGUF on-device · Experimental</string>
+    <string name="settings_local_models_desc">Experimental</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_backup">Backup</string>
     <string name="settings_diagnostics_export">Export diagnostics</string>
     <string name="settings_diagnostics_export_desc">Share a bounded, redacted event log for troubleshooting</string>
-    <string name="settings_backup_desc">Local / WebDAV backup</string>
+    <string name="settings_backup_desc">Local file or WebDAV</string>
     <string name="settings_logs">Logs</string>
     <string name="settings_logs_desc">Record debug info and error logs</string>
     <string name="settings_export_logs">Export Logs</string>
@@ -640,12 +639,12 @@
     <string name="sheet_stats_total">Total Tokens</string>
     <string name="sheet_stats_reset">Reset Stats</string>
     <string name="sheet_stats_disclaimer">Estimated token usage</string>
-    <string name="sheet_tool_time_injection">Time Injection</string>
+    <string name="sheet_tool_time_injection">Tell the model the current time</string>
     <string name="sheet_tool_strict_mode">Strict Mode</string>
     <string name="sheet_tool_skills">Agent Skills</string>
     <string name="sheet_tool_mcp_servers">MCP Servers</string>
     <string name="sheet_tool_session_skills">Session custom skills</string>
-    <string name="sheet_tool_custom_unsandboxed">Selections are saved, but custom scripts are not advertised or executed until a sandbox is available.</string>
+    <string name="sheet_tool_custom_unsandboxed">Custom scripts aren\'t available yet.</string>
     <string name="sheet_tool_user_skills">User Skills</string>
     <string name="sheet_tool_execution_mode">Execution Mode</string>
     <string name="sheet_execution_mode_auto">Auto: All tools run automatically</string>
@@ -655,7 +654,7 @@
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
     <string name="sheet_tool_github_server">GitHub Server</string>
-    <string name="sheet_settings_memory">Session RAG</string>
+    <string name="sheet_settings_memory">Chat memory</string>
     <string name="sheet_settings_docs">Library Search</string>
     <string name="sheet_settings_kg">Knowledge Graph Reasoning</string>
     <string name="sheet_tool_rerank">Retrieval Reranking</string>
@@ -665,7 +664,7 @@
     <string name="sheet_settings_keep_recent_turns">Retained turns</string>
     <string name="sheet_settings_turns_value">%1$d turns</string>
     <string name="sheet_settings_compact_now_description">Fold earlier tool results and summarize history while retaining the most recent %1$d turns.</string>
-    <string name="sheet_settings_context_description">At the threshold, earlier tool results are folded first. If more space is needed, conversations before the most recent %1$d turns are summarized. The complete record stays in the session.</string>
+    <string name="sheet_settings_context_description">Past the threshold, older turns are compacted and the latest %1$d are kept. Chat history is unaffected.</string>
     <string name="sheet_settings_stream_timeout">Request Timeout</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">Max Tokens</string>
@@ -676,7 +675,7 @@
     <string name="sheet_settings_frequency_penalty">Frequency Penalty</string>
     <string name="sheet_settings_advanced_params">Advanced Parameters</string>
     <string name="sheet_settings_rag_disabled">All memory features disabled</string>
-    <string name="sheet_settings_rag_disabled_hint">AI will only use current conversation context</string>
+    <string name="sheet_settings_rag_disabled_hint">Answers from this chat only</string>
 
     <!-- WorkspaceSheet -->
     <string name="workspace_title">Workspace</string>
@@ -723,7 +722,6 @@
 
     <!-- BackupSettingsScreen -->
     <string name="backup_title">Backup &amp; Restore</string>
-    <string name="backup_desc">Manage data security, local export, and manual cloud backups.</string>
     <string name="backup_content_title">Backup Content</string>
     <string name="backup_core_content_summary">Core data is always included; API keys are optional. Device-local profile and agent avatars are not transferred.</string>
     <string name="backup_core_content_fixed">Always included</string>
@@ -758,7 +756,7 @@
     <string name="backup_webdav_pass_label">Password / Token</string>
     <string name="backup_test_connection">Test Connection</string>
     <string name="backup_save_config">Save Configuration</string>
-    <string name="backup_reset_webdav_security">Reset WebDAV Security Configuration</string>
+    <string name="backup_reset_webdav_security">Reset WebDAV settings</string>
     <string name="backup_remote_refresh">Refresh remote backups</string>
     <string name="backup_remote_empty">No remote backups found. Refresh after configuring WebDAV.</string>
     <string name="backup_password_export_title">Encrypt exported backup</string>
@@ -771,39 +769,38 @@
     <string name="backup_password_confirm_hint">Enter the same password again</string>
     <string name="backup_password_mismatch">Passwords do not match</string>
     <string name="backup_restore_password_optional">Leave empty for a backup that does not contain encrypted keys.</string>
-    <string name="backup_status_initializing">Securely reading backup configuration…</string>
-    <string name="backup_status_saving_config">Securely saving WebDAV configuration…</string>
+    <string name="backup_status_initializing">Loading backup settings…</string>
+    <string name="backup_status_saving_config">Saving WebDAV settings…</string>
     <string name="backup_status_testing">Testing connection…</string>
     <string name="backup_status_listing">Loading remote backups…</string>
     <string name="backup_status_uploading">Uploading backup…</string>
-    <string name="backup_status_staging_restore">Validating and staging restore package…</string>
-    <string name="backup_status_cancelling">Securely cleaning the cancelled restore…</string>
-    <string name="backup_status_restarting">Restore is staged. Restarting safely…</string>
+    <string name="backup_status_staging_restore">Checking the backup…</string>
+    <string name="backup_status_cancelling">Cancelling the restore…</string>
+    <string name="backup_status_restarting">Backup ready, restarting…</string>
     <string name="backup_status_success">Operation completed</string>
     <string name="backup_status_remote_listed">Loaded %1$d remote backups</string>
-    <string name="backup_status_config_saved">WebDAV configuration saved securely</string>
+    <string name="backup_status_config_saved">WebDAV settings saved</string>
     <string name="backup_status_password_cleared">WebDAV password cleared</string>
-    <string name="backup_status_config_reset">WebDAV security configuration reset</string>
+    <string name="backup_status_config_reset">WebDAV settings reset</string>
     <string name="backup_status_connection_success">Connection test succeeded</string>
     <string name="backup_status_export_success">Backup exported</string>
     <string name="backup_status_upload_success">Backup uploaded</string>
     <string name="backup_status_success_cleanup_warning">Backup uploaded, but some old remote backups could not be pruned.</string>
     <string name="backup_error_password_required">Encryption requires a password and matching confirmation.</string>
-    <string name="backup_error_configuration_missing">Complete the secure WebDAV configuration first.</string>
-    <string name="backup_error_connection">WebDAV connection failed. Verify the secure configuration.</string>
+    <string name="backup_error_configuration_missing">Set up WebDAV first.</string>
+    <string name="backup_error_connection">WebDAV connection failed. Check the settings.</string>
     <string name="backup_error_remote_list">Remote backups could not be loaded.</string>
     <string name="backup_error_stale_selection">The remote selection expired. Refresh and select it again.</string>
     <string name="backup_error_export">Backup export failed.</string>
     <string name="backup_error_upload">Backup upload failed.</string>
     <string name="backup_error_restore">Backup validation or restore staging failed.</string>
-    <string name="backup_error_restart">Safe restart failed. Retry or cancel the pending restore.</string>
-    <string name="backup_error_cleanup">Pending restore cleanup failed. Data operations remain blocked for safety.</string>
+    <string name="backup_error_restart">Restart failed. Retry or cancel the restore.</string>
+    <string name="backup_error_cleanup">Couldn\'t cancel the restore. Changes are blocked to protect your data.</string>
     <string name="backup_error_document_create">The selected backup document could not be created or opened for writing.</string>
     <string name="backup_error_document_open">The selected backup document could not be opened for reading.</string>
 
     <!-- LocalModelsScreen -->
     <string name="local_models_title">Local Models</string>
-    <string name="local_models_desc">Manage and run on-device lightweight models for maximum privacy and low latency.</string>
     <string name="local_models_enable_engine">Enable Local Engine</string>
     <string name="local_models_engine_subtitle">Required to run downloaded GGUF models</string>
     <string name="local_models_import_title">Import GGUF File</string>
@@ -830,7 +827,6 @@
     <!-- ProviderFormScreen -->
     <string name="provider_form_title_add">Add Provider</string>
     <string name="provider_form_title_edit">Edit Provider</string>
-    <string name="provider_form_desc">Select a provider and configure the credentials needed for integration.</string>
     <string name="provider_form_preset_title">Presets</string>
     <string name="provider_form_config_section">Configuration</string>
     <string name="provider_form_label_name">Name</string>
@@ -846,7 +842,7 @@
     <string name="provider_form_default_provider">Set as Default</string>
     <string name="provider_form_btn_test">Test Connection</string>
     <string name="provider_form_testing">Testing connection…</string>
-    <string name="provider_form_connection_unavailable">This provider does not offer a supported no-cost connection check. You can still save it and enter models manually.</string>
+    <string name="provider_form_connection_unavailable">This provider can\'t be tested. Save it and add models manually.</string>
     <string name="provider_form_test_failed_auth">Authentication failed (check credentials)</string>
     <string name="provider_form_test_failed_network">Network unavailable or connection timeout</string>
     <string name="provider_form_test_failed_endpoint">Invalid endpoint URL</string>
@@ -888,7 +884,7 @@
     <string name="provider_models_capability_computer_use">Computer</string>
     <string name="provider_models_field_model_id">Model ID</string>
     <string name="provider_models_placeholder_model_id">e.g. model-id</string>
-    <string name="provider_models_remote_id_supporting_text">The exact model ID sent to the provider. Use this for providers that cannot list models.</string>
+    <string name="provider_models_remote_id_supporting_text">Model ID sent to the provider</string>
     <string name="provider_models_field_display_name">Display Name</string>
     <string name="provider_models_placeholder_optional">Optional</string>
     <string name="provider_models_tokens_unit">tokens</string>
@@ -919,7 +915,7 @@
     <string name="skills_title">Tool Management</string>
     <string name="skills_desc">Configure capabilities and external tool connections for your AI agents.</string>
     <string name="skills_loop_limit">Execution Loop Limit</string>
-    <string name="skills_loop_limit_desc">Maximum tool-calling rounds per request (1–100). When reached, the assistant stops calling tools and summarizes its progress.</string>
+    <string name="skills_loop_limit_desc">When reached, tools stop and progress is summarized.</string>
     <string name="skills_warning_unlimited">Infinite loop mode enabled. May cause excessive API costs.</string>
     <string name="skills_tab_preset">Built-in</string>
     <string name="skills_tab_user">Skill Packs</string>
@@ -939,9 +935,9 @@
     <string name="skills_mcp_tools">Tools (%1$d)</string>
 
     <string name="skill_web_search">Web Search</string>
-    <string name="skill_web_search_desc">Search using the default search engine</string>
+    <string name="skill_web_search_desc">Search the web with the default engine</string>
     <string name="skill_web_fetch">Web Fetch</string>
-    <string name="skill_web_fetch_desc">Fetch and extract clean main text from a web page using pagination</string>
+    <string name="skill_web_fetch_desc">Read a web page</string>
     <string name="skill_calculator">Calculator</string>
     <string name="skill_calculator_desc">Perform mathematical calculations</string>
     <string name="skill_current_time">Current Time</string>
@@ -951,21 +947,21 @@
     <string name="skill_image_generation">Image Generation</string>
     <string name="skill_image_generation_desc">Generate AI images from text descriptions</string>
     <string name="skill_file_read">File Read</string>
-    <string name="skill_file_read_desc">Read content from a file in the workspace</string>
+    <string name="skill_file_read_desc">Read a file</string>
     <string name="skill_file_write">File Write</string>
-    <string name="skill_file_write_desc">Write or update content to a file in the workspace</string>
+    <string name="skill_file_write_desc">Create or change a file</string>
     <string name="skill_file_list">File List</string>
-    <string name="skill_file_list_desc">List contents of a directory in the workspace</string>
+    <string name="skill_file_list_desc">List a folder</string>
     <string name="skill_file_search">File Search</string>
-    <string name="skill_file_search_desc">Search for content in the workspace files</string>
+    <string name="skill_file_search_desc">Search text in workspace files</string>
     <string name="skill_file_diff">File Diff</string>
-    <string name="skill_file_diff_desc">Compute line-by-line diff between file versions</string>
+    <string name="skill_file_diff_desc">Compare files</string>
     <string name="skill_file_patch">File Patch</string>
-    <string name="skill_file_patch_desc">Apply patch changes to workspace files</string>
+    <string name="skill_file_patch_desc">Edit a file with a patch</string>
     <string name="skill_exec_js">Exec JS</string>
-    <string name="skill_exec_js_desc">Execute JavaScript in an isolated process with workspace and optional network capabilities</string>
+    <string name="skill_exec_js_desc">Run JavaScript in an isolated sandbox</string>
     <string name="skill_run_script">Run script file</string>
-    <string name="skill_run_script_desc">Run workspace .js/.mjs files with relative modules</string>
+    <string name="skill_run_script_desc">Run a JS script from the workspace</string>
     <string name="script_runtime_title">Script runtime</string>
     <string name="script_approve_writes">Approve script writes</string>
     <string name="script_approve_writes_desc">Write approval is on by default. When off, writes follow the script approval; deletion always needs its own approval.</string>
@@ -976,24 +972,24 @@
     <string name="script_allow_file">Allow</string>
     <string name="script_deny_file">Deny</string>
     <string name="skill_initialize_plan">Initialize Plan</string>
-    <string name="skill_initialize_plan_desc">Initialize a new structured agent execution plan</string>
+    <string name="skill_initialize_plan_desc">Create a plan</string>
     <string name="skill_update_plan">Update Plan</string>
-    <string name="skill_update_plan_desc">Update steps in the current execution plan</string>
+    <string name="skill_update_plan_desc">Update plan steps</string>
     <string name="skill_get_plan">Get Plan</string>
-    <string name="skill_get_plan_desc">Retrieve current execution plan details</string>
+    <string name="skill_get_plan_desc">Read the plan</string>
     <string name="skill_drop_plan">Drop Plan</string>
-    <string name="skill_drop_plan_desc">Cancel or drop current execution plan</string>
+    <string name="skill_drop_plan_desc">Cancel the plan</string>
     <string name="skills_configure">Configure</string>
     <string name="skills_edit_skill">Edit Skill Config</string>
-    <string name="skills_mcp_empty">No MCP servers yet.\nExtend agent capabilities via Model Context Protocol.</string>
+    <string name="skills_mcp_empty">No MCP servers yet.\nAdd one to give the agent its tools.</string>
     <string name="skills_edit_custom">Edit Custom Skill</string>
     <string name="search_engine_select">Select Search Engine</string>
-    <string name="search_engine_duckduckgo">DuckDuckGo (Local)</string>
+    <string name="search_engine_duckduckgo">DuckDuckGo (free)</string>
     <string name="search_engine_keenable">Keenable</string>
     <string name="search_api_key_optional">API Key (optional)</string>
-    <string name="search_keenable_keyless_hint">Works without an API key using the shared public quota. Add a key to use your account quota.</string>
-    <string name="search_engine_tavily">Tavily AI (Deep Search)</string>
-    <string name="search_engine_searxng">SearXNG (Privacy Meta-Search)</string>
+    <string name="search_keenable_keyless_hint">Without a key, the shared public quota is used.</string>
+    <string name="search_engine_tavily">Tavily (API key)</string>
+    <string name="search_engine_searxng">SearXNG (instance URL)</string>
     <string name="search_count_label">Result Count</string>
     <string name="search_api_key">API Key</string>
     <string name="search_depth_label">Search Depth</string>
@@ -1010,14 +1006,13 @@
     <string name="theme_primary_btn">Primary Button</string>
     <string name="theme_secondary_btn">Secondary Button</string>
     <string name="theme_dynamic_color">Dynamic Color</string>
-    <string name="theme_dynamic_color_desc">Use colors generated from your wallpaper (Android 12+)</string>
     <string name="theme_dynamic_color_unavailable">Dynamic color is not supported on this Android version</string>
     <string name="theme_dark_mode">Dark appearance</string>
     <string name="theme_pure_black">Pure black background</string>
     <string name="theme_pure_black_desc">Use a true black surface in dark mode</string>
     <string name="theme_text">Text</string>
     <string name="theme_text_scale">Custom text size</string>
-    <string name="theme_text_scale_desc">Scale app text without changing display size</string>
+    <string name="theme_text_scale_desc">Scales text only, not the layout</string>
     <string name="developer_title">Developer panel</string>
     <string name="developer_diagnostics_section">Diagnostics and debugging</string>
     <string name="developer_export_logs">Export runtime logs</string>
@@ -1033,7 +1028,6 @@
 
     <!-- TokenUsageScreen -->
     <string name="token_title">Usage Management</string>
-    <string name="token_desc">Global statistics across all providers and models.</string>
     <string name="token_total_usage">TOTAL USAGE</string>
     <string name="token_tokens">tokens</string>
     <string name="token_clear_history">Clear All History</string>
@@ -1051,7 +1045,7 @@
     <string name="token_clear_confirm_title">Clear Token History</string>
     <string name="token_load_failed">Unable to load token usage.</string>
     <string name="token_clear_failed">Unable to clear token history.</string>
-    <string name="token_clear_confirm_desc">This will permanently erase all token usage statistics. This action cannot be undone.</string>
+    <string name="token_clear_confirm_desc">All usage statistics will be permanently deleted.</string>
     <string name="common_cancel">Cancel</string>
 
     <!-- SettingsViewModel defaults -->
@@ -1065,7 +1059,7 @@
     <string name="rag_home_search">Search documents…</string>
     <string name="rag_home_memory_search">Search memory fragments and facts…</string>
     <string name="rag_home_memory_search_empty">No matching memory fragments found</string>
-    <string name="rag_search_fts_warning">Full-text search is temporarily unavailable. Showing clearly marked title matches.</string>
+    <string name="rag_search_fts_warning">Full-text search is unavailable. Showing title matches only.</string>
     <string name="rag_search_empty">No matching documents</string>
     <string name="rag_search_body_match">Body match</string>
     <string name="rag_search_title_fallback">Title fallback</string>
@@ -1101,7 +1095,7 @@
     <string name="kg_view_global">Global</string>
     <string name="kg_view_session">Session</string>
     <string name="kg_view_document">Document</string>
-    <string name="kg_empty_graph">No graph data yet. Extract knowledge graph from documents to get started.</string>
+    <string name="kg_empty_graph">No graph yet. Choose Extract knowledge graph in a document\'s menu.</string>
     <string name="rag_home_vectorizing">Vectorizing…</string>
     <string name="rag_home_selected_count">%1$d items selected</string>
     <string name="rag_home_clear_all">Clear all</string>
@@ -1132,7 +1126,7 @@
     <string name="doc_editor_preview">Preview</string>
     <string name="doc_editor_preview_truncated">Large document: preview truncated; editing and saving are unaffected.</string>
     <string name="doc_editor_performance_protected_title">Performance protection</string>
-    <string name="doc_editor_performance_protected_description">To keep the editor responsive, approximately the first 16K characters are previewed. The full text remains intact; saving and copying always use the complete content.</string>
+    <string name="doc_editor_performance_protected_description">Long document: only about the first 16K characters are previewed. Saving and copying use the full text.</string>
     <string name="doc_editor_copy_full_content">Copy full content</string>
     <string name="doc_editor_performance_protected_status">Performance protection · Approx. 16K-character preview</string>
     <string name="doc_editor_edit">Edit</string>
@@ -1140,7 +1134,7 @@
     <string name="doc_editor_loading">Loading document</string>
     <string name="doc_editor_loading_description">The editor will appear after the document is loaded safely.</string>
     <string name="doc_editor_load_failed_title">Unable to load document</string>
-    <string name="doc_editor_load_failed_description">The document could not be read. No empty document was created.</string>
+    <string name="doc_editor_load_failed_description">The document couldn\'t be read.</string>
     <string name="doc_editor_retry_load">Retry</string>
     <string name="doc_editor_not_found_title">Document not found</string>
     <string name="doc_editor_not_found_description">This document no longer exists in the workspace.</string>
@@ -1152,7 +1146,7 @@
     <string name="doc_editor_title_rename_failed">The title could not be saved safely. Your local changes are still available.</string>
     <string name="doc_editor_retry_save">Retry save</string>
     <string name="doc_editor_conflict_title">A newer version exists</string>
-    <string name="doc_editor_conflict_description">Your local content is preserved. Copy it or reload the latest version; the remote document will not be overwritten.</string>
+    <string name="doc_editor_conflict_description">The document changed elsewhere. Your text is still here; copy it, then reload.</string>
     <string name="doc_editor_title_conflict_title">Title changed in the workspace</string>
     <string name="doc_editor_title_conflict_description">The current workspace title is “%1$s”. Choose which title to keep; your content edits will remain.</string>
     <string name="doc_editor_use_workspace_title">Use workspace title</string>
@@ -1162,10 +1156,10 @@
     <string name="doc_editor_reload_latest">Reload latest</string>
     <string name="doc_editor_missing_after_save_title">Document disappeared while saving</string>
     <string name="doc_editor_missing_after_save_description">Your local content is preserved, but the workspace document no longer exists.</string>
-    <string name="doc_editor_large_file_warning">Full content was not loaded to protect memory and editing safety.</string>
+    <string name="doc_editor_large_file_warning">The file is too large to load.</string>
     <string name="doc_editor_unsupported_content_warning">This file type is read-only here. Use a compatible viewer or import tool.</string>
     <string name="doc_editor_large_file_read_only_title">Large file safety mode</string>
-    <string name="doc_editor_large_file_read_only_description">This %1$s document is larger than 1 MiB. Only metadata is shown; editing, split view, and saving are disabled.</string>
+    <string name="doc_editor_large_file_read_only_description">This %1$s document is over 1 MiB, so it can be viewed but not edited.</string>
     <string name="doc_editor_large_file_status">Large file · Metadata only</string>
     <string name="doc_editor_dismiss">Dismiss warning</string>
     <string name="doc_editor_typing_placeholder">Start typing…</string>
@@ -1206,7 +1200,6 @@
 
     <!-- RagAdvancedScreen -->
     <string name="rag_advanced_title">Knowledge Graph</string>
-    <string name="rag_advanced_desc">Knowledge graph extraction, retrieval strategies, and cost management for intelligent context augmentation.</string>
     <string name="rag_advanced_kg_section">Knowledge Graph</string>
 
     <string name="rag_advanced_coming_soon">Coming Soon</string>
@@ -1218,7 +1211,7 @@
     <string name="rag_advanced_extract_model">Extraction Model</string>
     <string name="rag_advanced_select_model_placeholder">Select Model</string>
     <string name="rag_advanced_kg_timeout">Extraction Timeout (sec)</string>
-    <string name="rag_advanced_kg_timeout_desc">Per-chunk timeout for KG extraction. Default 120s. Lower values fail faster; higher values accommodate slower models.</string>
+    <string name="rag_advanced_kg_timeout_desc">Extraction timeout per chunk. Raise it for slower models.</string>
     <string name="rag_advanced_jit_section">JIT Micro-Graph</string>
     <string name="rag_advanced_jit_enable">Enable JIT</string>
     <string name="rag_advanced_jit_desc">Dynamically build micro-graphs for each query</string>
@@ -1299,10 +1292,10 @@
     <string name="rag_config_max_embed_tokens_desc">Max input tokens per API call (affects batch size; 8192 default)</string>
     <string name="rag_config_rerank_section">Rerank Model</string>
     <string name="rag_config_rerank_max_per_call">Max Docs Per Rerank Call</string>
-    <string name="rag_config_rerank_max_per_call_desc">Batch size for rerank API (limited by model, typically 32-100)</string>
+    <string name="rag_config_rerank_max_per_call_desc">Usually 32–100, depending on the model</string>
     <string name="rag_config_clear_vectors">Clear Vector Data</string>
     <string name="rag_config_clean_orphans">Clean Orphans</string>
-    <string name="rag_config_clear_message">This will delete all indexed vector data. Knowledge graph data and original documents will not be affected.</string>
+    <string name="rag_config_clear_message">Search needs reindexing after clearing. Original documents are kept.</string>
     <string name="rag_config_clear_only_vectors">Only Clear Vectors</string>
     <string name="rag_config_clear_with_kg">Also Clear KG Data</string>
     <string name="rag_config_clear_all">Clear All</string>
@@ -1311,7 +1304,6 @@
     <!-- AdvancedRetrievalScreen -->
     <string name="retrieval_title">Adv. Retrieval</string>
     <string name="retrieval_title_full">Advanced Retrieval</string>
-    <string name="retrieval_desc">Fine-tune the RAG pipeline parameters to optimize context extraction, relevance filtering, and query execution.</string>
     <string name="retrieval_source_section">Retrieval Sources</string>
     <string name="retrieval_enable_memory">Memory Retrieval</string>
     <string name="retrieval_enable_memory_desc">Include conversation memory vectors in search results</string>
@@ -1324,7 +1316,7 @@
     <string name="retrieval_doc_limit">Top-K Documents</string>
     <string name="retrieval_hybrid_section">Hybrid Search</string>
     <string name="retrieval_hybrid_enable">Enable hybrid search</string>
-    <string name="retrieval_hybrid_desc">Combine dense vector with sparse BM25 matching</string>
+    <string name="retrieval_hybrid_desc">Search by meaning and keywords together</string>
     <string name="retrieval_vector_weight">Vector Weight</string>
     <string name="retrieval_bm25_boost">BM25 Boost</string>
     <string name="retrieval_advanced_features">Advanced Features</string>
@@ -1335,7 +1327,7 @@
     <string name="retrieval_rerank_final">Final Results</string>
     <string name="retrieval_rewrite_section">Query Rewrite</string>
     <string name="retrieval_rewrite_enable">Enable Query Rewrite</string>
-    <string name="retrieval_rewrite_desc">Rewrite user queries for better retrieval accuracy</string>
+    <string name="retrieval_rewrite_desc">Rewrites the question before searching to find more matches</string>
     <string name="retrieval_section_observability">Observability</string>
     <string name="retrieval_show_progress">Show Retrieval Progress</string>
     <string name="retrieval_show_progress_desc">Display progress indicators during retrieval</string>
@@ -1411,9 +1403,9 @@
     <string name="exec_notification_stop">Stop</string>
     <string name="exec_notification_stop_all">Stop all</string>
     <string name="generation_background_unavailable">This response is still generating, but it may stop if you leave the app.</string>
-    <string name="generation_notifications_unavailable">Background generation is active, but notification progress and shortcuts are unavailable. You can enable notifications in system settings.</string>
+    <string name="generation_notifications_unavailable">Notifications are off, so background progress isn\'t shown.</string>
     <string name="generation_notification_permission_title">Keep generation visible</string>
-    <string name="generation_notification_permission_explanation">Allow notifications to see background generation progress and use Stop or Open shortcuts. Your response continues whether you allow or decline.</string>
+    <string name="generation_notification_permission_explanation">Allow notifications to see progress and stop generation from the notification. This reply continues either way.</string>
     <string name="generation_notification_permission_continue">Allow notifications</string>
     <string name="generation_background_service_stopped">The background service failed to start, so this generation has stopped.</string>
 
@@ -1448,7 +1440,7 @@
     <string name="rag_trace_empty_hint">Nothing in the searched memory or documents was similar enough to this question.</string>
     <string name="rag_trace_unavailable_hint">No embedding model is selected, so memory and the Library were not searched. Choose one in Settings → Default Models.</string>
     <string name="rag_trace_no_scope_hint">Memory is off and no documents are selected for this chat.</string>
-    <string name="rag_trace_failed_hint">The Library search hit an error (embedding request or search failed). The reply was generated without it.</string>
+    <string name="rag_trace_failed_hint">Library search failed, so this reply didn\'t use it.</string>
     <string name="rag_details_kind_memory">Memory</string>
     <string name="rag_details_kind_document">Document</string>
     <string name="rag_details_kind_summary">Event</string>
@@ -1503,11 +1495,11 @@
     <string name="agent_avatar_edit">Edit agent avatar</string>
 
     <!-- Release-reachable retrieval availability -->
-    <string name="sheet_tool_gemini_grounding">Gemini web grounding</string>
-    <string name="sheet_settings_rerank_unavailable">No default rerank model is configured. Reranking has been disabled.</string>
+    <string name="sheet_tool_gemini_grounding">Gemini web search</string>
+    <string name="sheet_settings_rerank_unavailable">Set a rerank model in Default models first.</string>
     <string name="retrieval_rerank_model_unconfigured">Model not configured</string>
-    <string name="retrieval_rerank_model_unavailable_message">No rerank model is configured. Reranking improves relevance across multiple retrieval sources. Add a Rerank service in Provider Management and set it as the default rerank model.</string>
-    <string name="agent_retrieval_rerank_model_unavailable_message">No rerank model is configured, so this option is disabled. Add a Rerank model in Provider Management and set it as the default rerank model.</string>
+    <string name="retrieval_rerank_model_unavailable_message">Set a rerank model in Default models first.</string>
+    <string name="agent_retrieval_rerank_model_unavailable_message">Set a rerank model in Default models first.</string>
 
     <!-- Generation failure messages: stable UI mapping only -->
     <string name="generation_failure_network">Could not connect. Check your network and retry.</string>
@@ -1523,10 +1515,10 @@
     <string name="generation_failure_busy">Another conversation is generating. Retry after it finishes.</string>
     <string name="generation_failure_persistence">The response could not be saved. Please retry.</string>
     <string name="generation_failure_tool_budget">The tool budget for this turn is used up and the model gave no summary. Send a message to continue.</string>
-    <string name="generation_failure_tailnet_disabled">Built-in Tailscale is off, so the message was not sent. This model\'s endpoint is inside your tailnet; turn it on and retry, or switch to a model reached over the public internet.</string>
-    <string name="generation_failure_tailnet_needs_login">Built-in Tailscale needs you to sign in. This model\'s endpoint is inside your tailnet; sign in, then retry.</string>
-    <string name="generation_failure_tailnet_failed">Built-in Tailscale could not connect, so the message was not sent. Retry, or switch to a model reached over the public internet.</string>
-    <string name="generation_failure_tailnet_timeout">Built-in Tailscale did not join your tailnet in time, so the message was not sent. Retry later, or switch to a model reached over the public internet.</string>
+    <string name="generation_failure_tailnet_disabled">Built-in Tailscale is off, so the message wasn\'t sent. Turn it on and retry.</string>
+    <string name="generation_failure_tailnet_needs_login">Built-in Tailscale needs sign-in. Sign in and retry.</string>
+    <string name="generation_failure_tailnet_failed">Built-in Tailscale couldn\'t connect, so the message wasn\'t sent.</string>
+    <string name="generation_failure_tailnet_timeout">Built-in Tailscale timed out, so the message wasn\'t sent.</string>
     <string name="network_lights_label">Network</string>
     <string name="network_public_name">Internet</string>
     <string name="network_public_connected_label">Internet</string>
@@ -1567,7 +1559,7 @@
     <string name="tailnet_failure_action_login">Sign in</string>
     <string name="tailnet_failure_action_enable">Turn on</string>
     <string name="provider_api_source_title">API source</string>
-    <string name="provider_api_source_footer">Reach an API gateway inside your tailnet through the app\'s built-in Tailscale; the official Tailscale app isn\'t required. Detected from the endpoint address, or switch manually.</string>
+    <string name="provider_api_source_footer">Reach endpoints in your tailnet through built-in Tailscale, without the official app.</string>
     <string name="provider_api_source_public">Internet</string>
     <string name="provider_api_source_tailnet">Tailscale</string>
     <string name="provider_tailnet_status_connected">Built-in Tailscale connected</string>
@@ -1576,7 +1568,7 @@
     <string name="provider_tailnet_status_needs_login_detail">Sign in to reach addresses in your tailnet.</string>
     <string name="provider_tailnet_status_failed">Built-in Tailscale failed to connect</string>
     <string name="provider_tailnet_status_disabled">Built-in Tailscale is off</string>
-    <string name="provider_tailnet_status_disabled_detail">Turn it on and sign in to reach this address. If the official Tailscale app is running on this device, it can connect directly.</string>
+    <string name="provider_tailnet_status_disabled_detail">Turn it on and sign in to reach this address.</string>
     <string name="provider_tailnet_status_unavailable">This build has no built-in Tailscale</string>
     <string name="provider_tailnet_status_unavailable_detail">Addresses in your tailnet are reachable while the official Tailscale app is running.</string>
     <string name="provider_tailnet_action_enable">Turn on</string>
@@ -1591,7 +1583,7 @@
     <string name="provider_tailnet_peer_field_label">Tailnet device</string>
     <string name="provider_tailnet_peer_field_placeholder">Choose a device to fill in the address</string>
     <string name="provider_tailnet_peer_sheet_title">Choose a tailnet device</string>
-    <string name="provider_tailnet_peer_sheet_footer">The endpoint switches to the device\'s full https name and keeps its path. Only devices with a MagicDNS name are listed.</string>
+    <string name="provider_tailnet_peer_sheet_footer">Switches to the device\'s address and keeps the path.</string>
     <string name="provider_tailnet_peer_offline">Offline</string>
     <string name="generation_failure_unknown">Generation failed. Please retry.</string>
 
@@ -1672,11 +1664,11 @@
     <string name="skill_delete_file">Delete File</string>
     <string name="skill_delete_file_desc">Move workspace files and folders to the recycle bin</string>
     <string name="skill_shell_exec">Shell Command</string>
-    <string name="skill_shell_exec_desc">Run system sh commands directly in the session workspace without Termux; approval follows the execution mode</string>
+    <string name="skill_shell_exec_desc">Run shell commands in the workspace</string>
     <string name="skill_python_exec">Python</string>
-    <string name="skill_python_exec_desc">Run code with the built-in Python 3.14 in the session workspace (arm64 devices); approval follows the execution mode</string>
+    <string name="skill_python_exec_desc">Run Python in the workspace (arm64 devices)</string>
     <string name="skill_python_sandbox">Python sandbox</string>
-    <string name="skill_python_sandbox_desc">Run the built-in Python in an isolated process (arm64 devices): no private data access, no network by default; workspace writes follow script approval settings</string>
+    <string name="skill_python_sandbox_desc">Run Python in an isolated sandbox, offline by default (arm64 devices)</string>
     <string name="agent_skills_intro">Skill packs are reusable task instructions (SKILL.md). When enabled, the assistant loads a skill\'s instructions and reference files only when a task matches it. Skill packs never run code.</string>
     <string name="agent_skills_empty">No skill packs yet. Import a .zip or SKILL.md, or create one.</string>
     <string name="agent_skills_import">Import</string>
@@ -1720,7 +1712,7 @@
     <string name="tailscale_section_node">Built-in Tailscale</string>
     <string name="tailscale_enable">Enable Tailscale</string>
     <string name="tailscale_enable_desc">Runs alongside other VPNs</string>
-    <string name="tailscale_node_footer">Once signed in, model providers, SSH hosts, shell_exec, python_exec (including built-in git) and app HTTPS requests can reach tailnet devices; web_fetch still only reaches the public internet. The node is online only while &brand; is running.</string>
+    <string name="tailscale_node_footer">Once signed in, models, SSH and command tools can reach tailnet devices; web reading stays on the public internet. Online only while &brand; runs.</string>
     <string name="tailscale_unavailable_desc">This build does not include built-in Tailscale.</string>
     <string name="tailscale_phase_unavailable">Not included in this build</string>
     <string name="tailscale_phase_disabled">Off</string>
@@ -1747,7 +1739,7 @@
     <string name="tailscale_auth_key">Auth key</string>
     <string name="tailscale_auth_key_desc">Optional. Signs in without a browser. Stored encrypted on this device and never backed up.</string>
     <string name="tailscale_control_url">Control server</string>
-    <string name="tailscale_control_url_desc">Leave empty to use Tailscale. Enter a Headscale URL for a self-hosted server; changing it signs this device out.</string>
+    <string name="tailscale_control_url_desc">Leave empty for the official server, or enter a Headscale URL. Changing it signs you out.</string>
     <string name="tailscale_control_url_invalid">Enter an http(s) URL without credentials, query or fragment.</string>
     <string name="tailscale_ephemeral">Ephemeral node</string>
     <string name="tailscale_ephemeral_desc">Removed when offline (from next sign-in)</string>

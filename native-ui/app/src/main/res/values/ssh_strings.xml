@@ -2,14 +2,13 @@
 <resources>
     <!-- SSH 页面使用独立资源文件，默认语言为英文。 -->
     <string name="ssh_settings_title">SSH hosts</string>
-    <string name="ssh_settings_description">Configure hosts for terminal and SSH tools. Tools receive only host aliases.</string>
-    <string name="ssh_backup_notice">SSH host settings and credentials stay on this device and are excluded from exported backups.</string>
-    <string name="ssh_termux_notice">For a local Termux terminal, start sshd in Termux, then add host 127.0.0.1 with port 8022 and your Termux username.</string>
+    <string name="ssh_settings_description">The agent sees host aliases only, never passwords or keys.</string>
+    <string name="ssh_backup_notice">Hosts and credentials aren\'t included in backups.</string>
     <string name="ssh_add_host">Add host</string>
     <string name="ssh_edit_host">Edit host</string>
     <string name="ssh_no_hosts">No SSH hosts configured.</string>
     <string name="ssh_alias">Host alias</string>
-    <string name="ssh_alias_help">Use 1–48 lowercase ASCII characters: start with a letter, then letters, digits, _ or -. The alias is visible to tools.</string>
+    <string name="ssh_alias_help">Start with a lowercase letter; digits, _ and - allowed; up to 48 characters.</string>
     <string name="ssh_hostname">Hostname or IP address</string>
     <string name="ssh_port">SSH port</string>
     <string name="ssh_username">Username</string>
@@ -19,13 +18,13 @@
     <string name="ssh_password">Password</string>
     <string name="ssh_passphrase">Private key passphrase (optional)</string>
     <string name="ssh_import_key">Import OpenSSH private key</string>
-    <string name="ssh_key_import_help">Choose an OpenSSH private key file up to 64 KiB. A passphrase can be entered after import.</string>
+    <string name="ssh_key_import_help">Choose an OpenSSH private key file.</string>
     <string name="ssh_key_imported">Private key loaded in memory. Save to store it securely on this device.</string>
     <string name="ssh_generate_save_copy">Generate key, save and copy public key</string>
-    <string name="ssh_generate_help">Generates an Ed25519 key. Saving replaces the host credential; only the public key is copied. Add it to the server authorized_keys file.</string>
+    <string name="ssh_generate_help">After saving, add the public key to the server\'s authorized_keys.</string>
     <string name="ssh_keep_credential_hint">Leave credential fields empty to keep the saved credential. Import or generate a key to replace it.</string>
     <string name="ssh_keep_terminal">Keep terminal on exit</string>
-    <string name="ssh_keep_terminal_help">Reuse the session when returning. Idle sessions close after 10 minutes; app process termination closes connections.</string>
+    <string name="ssh_keep_terminal_help">Keeps the terminal when you leave; disconnects after 10 idle minutes.</string>
     <string name="ssh_keep_enabled">Terminal kept on exit; 10-minute idle timeout.</string>
     <string name="ssh_close_on_exit">Terminal closes when leaving this page.</string>
     <string name="ssh_open_terminal">Open terminal</string>
@@ -38,7 +37,7 @@
     <string name="ssh_fingerprint_matches">The presented host fingerprint matches the saved fingerprint.</string>
     <string name="ssh_trust_title">Trust this host fingerprint?</string>
     <string name="ssh_changed_title">Host fingerprint changed</string>
-    <string name="ssh_compare_fingerprint">Compare this key type and SHA256 fingerprint with a trusted server console before accepting. A changed key may identify a different server.</string>
+    <string name="ssh_compare_fingerprint">Check this fingerprint against the server. A changed fingerprint may mean a different server.</string>
     <string name="ssh_previous_fingerprint">Saved key</string>
     <string name="ssh_presented_fingerprint">Presented key</string>
     <string name="ssh_trust">Trust fingerprint</string>
@@ -55,10 +54,10 @@
     <string name="ssh_agent_manage_title">Let agents manage SSH hosts</string>
     <string name="ssh_agent_manage_summary_on">Every change needs your approval</string>
     <string name="ssh_agent_manage_summary_off">Agents can only connect to configured hosts</string>
-    <string name="ssh_agent_manage_description">When on, agents can add, edit and delete hosts and set up key login for password hosts. Every change needs your approval, and you always enter passwords and confirm fingerprints yourself.</string>
+    <string name="ssh_agent_manage_description">Every change needs your approval. You always enter passwords and confirm fingerprints yourself.</string>
     <string name="ssh_cancel">Cancel</string>
     <string name="ssh_forward_configure">Local port forwarding</string>
-    <string name="ssh_forward_loopback_only">Binds only to 127.0.0.1 on this device. The destination is resolved from the SSH host.</string>
+    <string name="ssh_forward_loopback_only">Only this device can reach this port.</string>
     <string name="ssh_forward_local_port">Local port (1–65535)</string>
     <string name="ssh_forward_remote_host">Destination hostname</string>
     <string name="ssh_forward_remote_port">Destination port (1–65535)</string>

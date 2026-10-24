@@ -16,7 +16,7 @@
     <string name="schedule_approval_target">This chat</string>
     <string name="schedule_approval_invalid">These settings fail validation; the task will be rejected even if approved.</string>
     <string name="schedule_approval_exact_denied_title">Exact alarms not granted</string>
-    <string name="schedule_approval_exact_denied_body">Runs on time while &brand; is open. In the background, the system picks the time, at most every 15 minutes. Grant exact alarms in the scheduled tasks panel to reschedule it.</string>
+    <string name="schedule_approval_exact_denied_body">May run late after you leave the app. Grant exact alarms to run on time.</string>
     <plurals name="schedule_approval_max_runs">
         <item quantity="one">up to %1$d run</item>
         <item quantity="other">up to %1$d runs</item>
