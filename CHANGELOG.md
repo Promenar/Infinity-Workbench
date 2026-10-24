@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 移动工作流能力测试清单
+
+- 新增 `docs/testing/mobile-workflow-capability-checklist.md`，按基础能力、既有远端服务、端到端业务与故障变体组织测试，明确手机直接执行、服务调用和远端调度的交付边界。
+- 提供 15 项高频迭代精简回归、材料与服务登记、执行证据模板和产品/适配/环境缺口分类；清单不构成测试通过声明，不要求手机本地完成重型编译。
+
 ### 按范围授权：工作区与完全访问两档
 
 - 手动、半自动、全自动三种执行模式改为两档权限范围。“工作区”（默认）下，文件工具与隔离脚本只能访问工作区路径，路径内读写、移动、删除都免审批；`shell_exec`、`python_exec`、`termux_exec`、`ssh_exec`、`ssh_session_open`、`ssh_session_send` 逐条审批。“完全访问”下命令也免审批。两档下技能目录变更、`schedule_create` 与 SSH 主机配置都逐次审批，MCP 与 `web_fetch` 都不审批。升级时全自动转为完全访问，半自动与手动转为工作区。

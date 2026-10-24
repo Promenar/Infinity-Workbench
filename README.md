@@ -20,6 +20,8 @@
 
 Android 开发调试与设备验收使用本机启动的专用 AVD；执行位置和设备选择边界见 [PDEC 契约](.pdec/README.md)。
 
+移动端承接桌面项目与创作任务的验收入口见[移动工作流能力测试清单](docs/testing/mobile-workflow-capability-checklist.md)：覆盖技能、工作区、执行、远端服务、业务交付和故障边界，并提供高频迭代精简回归组。清单定义测试目标，通过状态以绑定具体 APK 和环境的执行记录为准。
+
 ## 主要能力
 
 - **多服务商 BYOK 对话**：支持 OpenAI（Chat Completions 与 Responses）、Anthropic、Google Gemini API、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。表格按单元格内容计算列宽（56–280dp，超出换行），总宽超过屏幕时横向滚动，单元格内保留粗体、斜体、行内代码与链接。
