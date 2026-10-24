@@ -56,7 +56,6 @@ internal class WorkspaceCanvasFiles(
     }
 
     override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) = access(sessionId, path) { target, normalized ->
-        if (target.mount?.readOnly == true) throw ExternalFolderException("READ_ONLY", "画布工作区为只读")
         ensureParents(target, normalized)
         targets.checkCurrent(target, normalized)
         val bytes = html.toByteArray(Charsets.UTF_8)

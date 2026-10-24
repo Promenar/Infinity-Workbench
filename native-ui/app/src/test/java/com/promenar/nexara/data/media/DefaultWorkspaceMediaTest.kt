@@ -292,10 +292,12 @@ class DefaultWorkspaceMediaTest {
         for (path in listOf("/skills/a.png", "/skills", "/.agents/skills/a.png", "/.agents/skills", "/mnt/只读/.agents/skills/a.png")) {
             code("PROTECTED_PATH") { service.save("session", payload, MediaOrigin.MCP, targetPath = path) }
         }
-        code("READ_ONLY") { service.save("session", payload, MediaOrigin.MCP, targetPath = "/mnt/只读/a.png") }
         code("INVALID_PATH") { service.save("session", payload, MediaOrigin.MCP, targetPath = "https://host/a") }
         assertThat(opened).isFalse()
         assertThat(album.list()).isEmpty()
+        service.save("session", payload, MediaOrigin.MCP, targetPath = "/mnt/只读/a.png")
+        assertThat(opened).isTrue()
+        assertThat(File(album, "a.png").readBytes()).isEqualTo(png)
     }
 
     @Test fun `流载荷在成功和读取失败时关闭且清理缓存`() = runBlocking {

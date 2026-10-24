@@ -94,12 +94,12 @@ class ExternalTreeTransferTest {
     }
 
     @Test fun `别名可见范围冲突与挂载uuid解析均绑定会话`() {
-        val mount = ExternalMount("id", "termux", "saf_tree", "content://test/tree/root", "session", false, 1)
+        val mount = ExternalMount("id", "termux", "saf_tree", "content://test/tree/root", "session", 1)
         assertThat(ExternalMountPaths.parse("/mnt/termux/a.txt")).isEqualTo("termux" to "/a.txt")
         assertThat(ExternalMountPaths.uuidPath(ExternalMountPaths.uuid(mount, "/a.txt"), listOf(mount)))
             .isEqualTo("/mnt/termux/a.txt")
         assertThat(ExternalMountPaths.uuidPath(ExternalMountPaths.uuid(mount, "/a.txt"), emptyList())).isNull()
-        assertThat(ExternalMountPaths.conflicts(mount.copy(sessionId = null), mount.copy(id = "other"))).isTrue()
+        assertThat(ExternalMountPaths.conflicts(mount, mount.copy(id = "other"))).isTrue()
         assertThat(ExternalMountPaths.conflicts(mount, mount.copy(id = "other", sessionId = "different"))).isFalse()
         assertThrows(ExternalFolderException::class.java) { ExternalMountPaths.parse("/mnt/termux/../private") }
         assertThrows(ExternalFolderException::class.java) { ExternalMountPaths.validateAlias(".nexara-secret") }

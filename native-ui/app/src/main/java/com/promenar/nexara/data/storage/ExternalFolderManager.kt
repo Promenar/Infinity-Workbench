@@ -41,16 +41,16 @@ class ExternalFolderManager(
     private val mutex = Mutex()
     private val recycle = ExternalRecycleStore(File(context.noBackupFilesDir, "external-recycle"))
     private val versions = File(context.noBackupFilesDir, "external-versions")
-    private val skillsMount = ExternalMount(
+    private fun skillsMount(sessionId: String) = ExternalMount(
         ExternalMountPaths.SKILLS_MOUNT_ID, ExternalMountPaths.SKILLS_ALIAS, ExternalMountPaths.SKILLS_SOURCE,
-        "agent_skills", null, readOnly = false, createdAt = 0,
+        "agent_skills", sessionId, createdAt = 0,
     )
     // filesDir 位于 /data/user/0 这一系统符号链接下，目录后端逐级拒绝符号链接，须先取真实路径。
     private val skillsDirectory by lazy { (userSkillsDirectory ?: File(context.filesDir, "agent_skills")).canonicalFile }
     override fun observeMounts(sessionId: String) = dao.observeVisible(sessionId).map { it.map(ExternalMountEntity::model) }
     override suspend fun visible(sessionId: String) = withContext(Dispatchers.IO) {
         // 历史保留别名仍可在管理入口移除，但不作为工具可达路径列出。
-        val models = dao.visible(sessionId).filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMountEntity::model) + skillsMount
+        val models = dao.visible(sessionId).filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMountEntity::model) + skillsMount(sessionId)
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound == null) models else models.filter { bound[it.alias] == it.id }
     }
@@ -69,19 +69,20 @@ class ExternalFolderManager(
         }
     private fun workspaceMount(workspaceId: String, sessionId: String, createdAt: Long, unavailable: String?) = ExternalMount(
         ExternalMountPaths.workspaceMountId(workspaceId), ExternalMountPaths.WORKSPACE_ALIAS, ExternalMountPaths.WORKSPACE_SOURCE,
-        workspaceId, sessionId, readOnly = false, createdAt = createdAt, unavailableReason = unavailable,
+        workspaceId, sessionId, createdAt = createdAt, unavailableReason = unavailable,
     )
     /** 可见挂载加当前工作区挂载，用于 uuid 解析与回收区归属。 */
     private suspend fun namespace(sessionId: String) = visible(sessionId) + listOfNotNull(workspaceMount(sessionId))
 
-    override suspend fun addSaf(alias: String, sessionId: String?, treeUri: String, grantFlags: Int, readOnly: Boolean) =
+    override suspend fun addSaf(alias: String, sessionId: String, treeUri: String, grantFlags: Int) =
         withContext(Dispatchers.IO) { mutex.withLock {
+            requireSession(sessionId)
             val uri = Uri.parse(treeUri)
             if (uri.scheme != "content" || !DocumentsContract.isTreeUri(uri)) fail("INVALID_PATH", "请选择文件夹授权")
-            val mount = newMount(alias, "saf_tree", uri.toString(), sessionId, readOnly)
+            val mount = newMount(alias, "saf_tree", uri.toString(), sessionId)
             checkAlias(mount)
             val held = context.contentResolver.persistedUriPermissions.any { it.uri == uri }
-            takeGrant(uri, grantFlags, readOnly)
+            takeGrant(uri, grantFlags)
             try {
                 requireDirectory(sourceBackend(mount).stat("/"))
                 dao.insert(mount.entity())
@@ -92,10 +93,11 @@ class ExternalFolderManager(
             }
         } }
 
-    override suspend fun addRealPath(alias: String, sessionId: String?, source: String, readOnly: Boolean) =
+    override suspend fun addRealPath(alias: String, sessionId: String, source: String) =
         withContext(Dispatchers.IO) { mutex.withLock {
+            requireSession(sessionId)
             val canonical = RealPathMountSupport.normalizeSource(context, source)
-            val mount = newMount(alias, "real_path", canonical, sessionId, readOnly)
+            val mount = newMount(alias, "real_path", canonical, sessionId)
             checkAlias(mount)
             requireDirectory(sourceBackend(mount).stat("/"))
             dao.insert(mount.entity())
@@ -103,7 +105,7 @@ class ExternalFolderManager(
         } }
 
     override suspend fun remove(mountId: String) = withContext(Dispatchers.IO) { mutex.withLock {
-        if (mountId == skillsMount.id) fail("INVALID_PATH", "不能移除用户级技能根目录")
+        if (mountId == ExternalMountPaths.SKILLS_MOUNT_ID) fail("INVALID_PATH", "不能移除用户级技能根目录")
         val mount = dao.get(mountId) ?: return@withLock
         dao.delete(mountId)
         if (mount.sourceType == "saf_tree") releaseUnused(mount.sourceId)
@@ -120,7 +122,7 @@ class ExternalFolderManager(
         if (!DocumentsContract.isTreeUri(uri) || uri.scheme != "content") fail("INVALID_PATH", "请选择文件夹")
         // 不允许重新授权悄悄把既有审批路径指向另一来源。
         if (treeUri != old.sourceId) fail("CONFLICT", "请选择原挂载文件夹；不同来源请先移除挂载并使用新别名")
-        takeGrant(uri, grantFlags, old.readOnly)
+        takeGrant(uri, grantFlags)
         requireDirectory(sourceBackend(old.model()).stat("/"))
         dao.update(old.copy(unavailableReason = null))
     } }
@@ -185,7 +187,7 @@ class ExternalFolderManager(
     private data class BoundWrite(val mount: ExternalMount, val relativePath: String, val receipt: ExternalFolderEntry)
     private suspend fun writeReceipt(sessionId: String, path: String, bytes: ByteArray, expectedSha256: String?, createOnly: Boolean, bindings: MutableMap<String, String>? = null): BoundWrite =
         withContext(Dispatchers.IO) { mutex.withLock {
-            access(sessionId, path, true, bindings) { mount, backend, relative ->
+            access(sessionId, path, bindings) { mount, backend, relative ->
                 if (relative == "/") fail("INVALID_PATH", "不能覆盖挂载根目录")
                 val receipt = backend.write(relative, bytes, expectedSha256, createOnly).copy(path = path, sha256 = externalSha256(bytes))
                 remember(mount.id, relative, bytes)
@@ -194,7 +196,7 @@ class ExternalFolderManager(
         } }
 
     override suspend fun createDirectory(sessionId: String, path: String): FileEntry = withContext(Dispatchers.IO) { mutex.withLock {
-        access(sessionId, path, true) { _, backend, relative ->
+        access(sessionId, path) { _, backend, relative ->
             if (relative == "/") fail("INVALID_PATH", "不能创建挂载根目录")
             backend.createDirectory(relative)
         }
@@ -203,7 +205,7 @@ class ExternalFolderManager(
 
     override suspend fun delete(sessionId: String, path: String, expectedSha256: String?, irreversible: Boolean) =
         withContext(Dispatchers.IO) { mutex.withLock {
-            access(sessionId, path, true) { mount, backend, relative ->
+            access(sessionId, path) { mount, backend, relative ->
                 if (relative == "/") fail("INVALID_PATH", "不能删除挂载根目录，请在管理界面移除挂载")
                 var tree: ExternalTree? = null
                 try {
@@ -224,7 +226,7 @@ class ExternalFolderManager(
         } }
 
     override suspend fun backupBeforeMove(sessionId: String, path: String): String = withContext(Dispatchers.IO) { mutex.withLock {
-        access(sessionId, path, true) { mount, backend, relative ->
+        access(sessionId, path) { mount, backend, relative ->
             if (relative == "/") fail("INVALID_PATH", "不能移动挂载根目录")
             recycle.save(mount.id, path, ExternalTreeTransfer.capture(backend, relative)).id
         }
@@ -241,7 +243,7 @@ class ExternalFolderManager(
     }
     override suspend fun restore(sessionId: String, recycleId: String) = withContext(Dispatchers.IO) { mutex.withLock {
         val item = recycleItemsUnlocked(sessionId).firstOrNull { it.id == recycleId } ?: fail("NOT_FOUND", "回收副本已过期或不属于当前会话")
-        access(sessionId, item.originalPath, true) { _, backend, relative ->
+        access(sessionId, item.originalPath) { _, backend, relative ->
             ExternalTreeTransfer.copy(recycle.load(item.id), backend, relative)
             recycle.remove(item.id)
         }
@@ -296,8 +298,8 @@ class ExternalFolderManager(
 
         private suspend fun transfer(sourcePath: String, targetPath: String, move: Boolean) = withContext(Dispatchers.IO) {
             mutex.withLock {
-                access(sessionId, sourcePath, true, bindings) { sourceMount, backend, source ->
-                    access(sessionId, targetPath, true, bindings) { targetMount, _, target ->
+                access(sessionId, sourcePath, bindings) { sourceMount, backend, source ->
+                    access(sessionId, targetPath, bindings) { targetMount, _, target ->
                         if (sourceMount.id != targetMount.id) fail("UNSUPPORTED", "直接文件操作不能跨挂载")
                         if (move) backend.move(source, target) else backend.copy(source, target)
                     }
@@ -315,13 +317,13 @@ class ExternalFolderManager(
         }
         override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) = writeReceipt(sessionId, path, content, expectedSha256, createOnly, bindings).receipt
         override suspend fun createDirectory(path: String) = withContext(Dispatchers.IO) { mutex.withLock {
-            access(sessionId, path, true, bindings) { _, backend, relative ->
+            access(sessionId, path, bindings) { _, backend, relative ->
                 if (relative == "/") fail("INVALID_PATH", "不能创建挂载根目录")
                 backend.createDirectory(relative).copy(path = path)
             }
         } }
         override suspend fun delete(path: String, expectedSha256: String?) = withContext(Dispatchers.IO) {
-            access(sessionId, path, true, bindings) { _, backend, relative ->
+            access(sessionId, path, bindings) { _, backend, relative ->
                 if (relative == "/") fail("INVALID_PATH", "不能移动挂载根目录")
                 backend.delete(relative, expectedSha256)
             }
@@ -362,19 +364,18 @@ class ExternalFolderManager(
             return root to normalized
         }
         val (alias, relative) = parsed
-        val mount = if (alias == ExternalMountPaths.SKILLS_ALIAS) skillsMount
+        val mount = if (alias == ExternalMountPaths.SKILLS_ALIAS) skillsMount(sessionId)
             else dao.visible(sessionId).singleOrNull { it.alias == alias }?.model() ?: fail("NOT_FOUND", "挂载点不属于当前会话或已被移除")
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound != null && bound[alias] != mount.id) fail("CONFLICT", "操作期间挂载身份发生变化，请重新读取目标")
         return mount to relative
     }
-    private suspend fun <T> access(sessionId: String, path: String, write: Boolean = false, bindings: MutableMap<String, String>? = null, block: suspend (ExternalMount, ExternalFolderBackend, String) -> T): T {
+    private suspend fun <T> access(sessionId: String, path: String, bindings: MutableMap<String, String>? = null, block: suspend (ExternalMount, ExternalFolderBackend, String) -> T): T {
         val (mount, relative) = resolve(sessionId, path)
         if (bindings != null) synchronized(bindings) {
             val previous = bindings.putIfAbsent(mount.alias, mount.id)
             if (previous != null && previous != mount.id) fail("CONFLICT", "操作期间挂载身份发生变化，已取消后续访问")
         }
-        if (write && mount.readOnly) fail("READ_ONLY", "挂载点为只读，拒绝写入")
         try {
             val result = block(mount, sourceBackend(mount), relative)
             if (mount.unavailableReason != null && !mount.isWorkspaceRoot && !mount.isUserSkills) dao.update(mount.copy(unavailableReason = null).entity())
@@ -412,17 +413,17 @@ class ExternalFolderManager(
             "saf_tree" -> {
                 val uri = Uri.parse(mount.sourceId)
                 val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == uri }
-                if (grant?.isReadPermission != true || !mount.readOnly && !grant.isWritePermission) fail("UNAVAILABLE", "文件夹授权已失效")
+                if (grant?.isReadPermission != true || !grant.isWritePermission) fail("UNAVAILABLE", "文件夹授权已失效")
                 SafExternalFolderBackend(context.contentResolver, uri)
             }
             "real_path" -> RealPathMountSupport.createBackend(context, mount.sourceId)
             else -> fail("UNSUPPORTED", "不支持的挂载来源")
         }
     }
-    private fun takeGrant(uri: Uri, flags: Int, readOnly: Boolean) {
+    private fun takeGrant(uri: Uri, flags: Int) {
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        if (flags and read == 0 || !readOnly && flags and write == 0) fail("READ_ONLY", "提供商未授予所需的读写权限")
+        if (flags and read == 0 || flags and write == 0) fail("READ_ONLY", "提供商未授予所需的读写权限")
         val permissions = context.contentResolver.persistedUriPermissions
         if (permissions.size >= 512 && permissions.none { it.uri == uri }) fail("GRANT_LIMIT", "持久文件夹授权已达上限，请移除不再使用的挂载")
         context.contentResolver.takePersistableUriPermission(uri, flags and (read or write))
@@ -438,17 +439,20 @@ class ExternalFolderManager(
     private suspend fun checkAlias(mount: ExternalMount) {
         if (dao.all().any { ExternalMountPaths.conflicts(mount, it.model()) }) fail("CONFLICT", "别名在会话可见范围内已存在")
     }
-    private fun newMount(alias: String, type: String, source: String, session: String?, readOnly: Boolean) = ExternalMount(
+    private fun newMount(alias: String, type: String, source: String, session: String) = ExternalMount(
         UUID.randomUUID().toString(), ExternalMountPaths.validateAlias(alias), type, source,
-        session?.takeIf(String::isNotBlank), readOnly, System.currentTimeMillis(),
+        session, System.currentTimeMillis(),
     )
+    private fun requireSession(sessionId: String) {
+        if (sessionId.isBlank()) fail("INVALID_SESSION", "新增挂载必须指定会话")
+    }
     private fun requireDirectory(entry: ExternalFolderEntry?) {
         if (entry?.isDirectory != true) fail("UNAVAILABLE", "来源文件夹不可用")
     }
     private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
 }
 
-private fun ExternalMountEntity.model() = ExternalMount(id, alias, sourceType, sourceId, scopeKey.takeIf(String::isNotEmpty), readOnly, createdAt, unavailableReason)
-private fun ExternalMount.entity() = ExternalMountEntity(id, alias, sourceType, sourceId, sessionId.orEmpty(), readOnly, createdAt, unavailableReason)
+private fun ExternalMountEntity.model() = ExternalMount(id, alias, sourceType, sourceId, scopeKey, createdAt, unavailableReason)
+private fun ExternalMount.entity() = ExternalMountEntity(id, alias, sourceType, sourceId, sessionId, false, createdAt, unavailableReason)
 
 internal fun externalSnapshotMime(name: String): String = com.promenar.nexara.share.core.AndroidSafImportRequestFactory.resolveMime(null, name)

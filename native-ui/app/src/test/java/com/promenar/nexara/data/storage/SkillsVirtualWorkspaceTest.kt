@@ -99,7 +99,7 @@ class SkillsVirtualWorkspaceTest {
         assertThrows(ExternalFolderException::class.java) { ExternalMountPaths.validateAlias("skills") }
         assertThrows(ExternalFolderException::class.java) { ExternalMountPaths.parse("/mnt/skills/a") }
         val mount = manager.visible("session").single { it.alias == "skills" }
-        assertThat(manager.visible("another")).contains(mount)
+        assertThat(manager.visible("another")).contains(mount.copy(sessionId = "another"))
         assertThat(ExternalMountPaths.uuidPath(ExternalMountPaths.uuid(mount, "/demo/SKILL.md"), listOf(mount)))
             .isEqualTo("/skills/demo/SKILL.md")
         assertThat(manager.list("session", "/mnt")).isEmpty()

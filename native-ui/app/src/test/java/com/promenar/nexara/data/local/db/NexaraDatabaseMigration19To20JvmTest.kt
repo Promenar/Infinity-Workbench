@@ -196,7 +196,7 @@ class NexaraDatabaseMigration19To20JvmTest {
     }
 
     @Test
-    fun daoVisibilityIncludesGlobalAndOwnSessionWithoutLeakingOtherSessions() = runBlocking<Unit> {
+    fun daoVisibilityIncludesOnlyOwnSessionWithoutLeakingLegacyGlobalRows() = runBlocking<Unit> {
         createHistoricalDatabase()
         val room = openMigratedDatabase()
         try {
@@ -206,16 +206,16 @@ class NexaraDatabaseMigration19To20JvmTest {
             val other = mount("other", "会话资料", "会话乙")
             listOf(global, local, other).forEach { dao.insert(it) }
 
-            assertThat(dao.visible("会话甲")).containsExactly(global, local)
-            assertThat(dao.observeVisible("会话乙").first()).containsExactly(global, other)
-            assertThat(dao.visible("未知会话")).containsExactly(global)
+            assertThat(dao.visible("会话甲")).containsExactly(local)
+            assertThat(dao.observeVisible("会话乙").first()).containsExactly(other)
+            assertThat(dao.visible("未知会话")).isEmpty()
             assertThat(dao.all()).containsExactly(global, local, other)
             assertThat(runCatching { dao.insert(local.copy(id = "duplicate")) }.exceptionOrNull())
                 .isInstanceOf(SQLiteConstraintException::class.java)
             val updated = local.copy(alias = "更新别名", readOnly = true, unavailableReason = "授权已撤销")
             dao.update(updated)
             assertThat(dao.get("local")).isEqualTo(updated)
-            assertThat(dao.visible("会话甲")).containsExactly(global, updated)
+            assertThat(dao.visible("会话甲")).containsExactly(updated)
         } finally {
             room.close()
         }

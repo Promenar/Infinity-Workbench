@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ExternalMountDao {
-    @Query("SELECT * FROM external_mounts WHERE scope_key = '' OR scope_key = :sessionId ORDER BY created_at, id")
+    @Query("SELECT * FROM external_mounts WHERE scope_key != '' AND scope_key = :sessionId ORDER BY created_at, id")
     fun observeVisible(sessionId: String): Flow<List<ExternalMountEntity>>
 
-    @Query("SELECT * FROM external_mounts WHERE scope_key = '' OR scope_key = :sessionId ORDER BY created_at, id")
+    @Query("SELECT * FROM external_mounts WHERE scope_key != '' AND scope_key = :sessionId ORDER BY created_at, id")
     suspend fun visible(sessionId: String): List<ExternalMountEntity>
 
     @Query("SELECT * FROM external_mounts ORDER BY created_at, id")

@@ -260,7 +260,7 @@ class DefaultChatGenerationRuntimeTest {
         val mounts = mockk<com.promenar.nexara.domain.storage.ExternalWorkspaceAccess> {
             coEvery { workspaceMount(any()) } returns null
             coEvery { visible(any()) } returns listOf(com.promenar.nexara.domain.storage.ExternalMount(
-                "builtin:skills", "skills", "builtin_skills", "agent_skills", null, false, 0,
+                "builtin:skills", "skills", "builtin_skills", "agent_skills", "session", 0,
             ))
         }
         for (name in listOf("write_file", "read_file")) {

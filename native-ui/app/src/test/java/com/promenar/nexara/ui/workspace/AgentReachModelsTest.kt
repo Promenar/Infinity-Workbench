@@ -29,17 +29,17 @@ class AgentReachModelsTest {
     }
 
     @Test
-    fun `mounts hide the reserved skills alias and list session mounts before global ones`() {
+    fun `挂载隐藏保留技能别名并按会话别名排序`() {
         val mounts = listOf(
-            mount("skills", "builtin_skills", null),
-            mount("termux-home", "saf_tree", null),
-            mount("downloads", "real_path", "s1", readOnly = true),
+            mount("skills", "builtin_skills", "s1"),
+            mount("termux-home", "saf_tree", "s1"),
+            mount("downloads", "real_path", "s1"),
             mount("broken", "saf_tree", "s1", unavailable = "revoked"),
         )
         val reach = reachMounts(mounts)
         assertThat(reach.map { it.alias }).containsExactly("broken", "downloads", "termux-home").inOrder()
-        assertThat(reach.first { it.alias == "downloads" }).isEqualTo(ReachMount("downloads", ReachMountSource.PATH, global = false, readOnly = true, unavailable = false))
-        assertThat(reach.first { it.alias == "termux-home" }.global).isTrue()
+        assertThat(reach.first { it.alias == "downloads" }).isEqualTo(ReachMount("downloads", ReachMountSource.PATH, global = false, readOnly = false, unavailable = false))
+        assertThat(reach.first { it.alias == "termux-home" }.global).isFalse()
         assertThat(reach.first { it.alias == "broken" }.unavailable).isTrue()
     }
 
@@ -109,8 +109,8 @@ class AgentReachModelsTest {
         running: Boolean = false,
     ) = AgentNetworkSnapshot(lanHosts, available, enabled, running, emptyList(), emptyList())
 
-    private fun mount(alias: String, source: String, sessionId: String?, readOnly: Boolean = false, unavailable: String? = null) =
-        ExternalMount("id-$alias", alias, source, "src-$alias", sessionId, readOnly, 1L, unavailable)
+    private fun mount(alias: String, source: String, sessionId: String, unavailable: String? = null) =
+        ExternalMount("id-$alias", alias, source, "src-$alias", sessionId, 1L, unavailable)
 
     private fun entry(scopeKey: String?) = ToolAllowlistEntry("id-$scopeKey", "write_file", "/notes.md", scopeKey, 1L, null)
 }

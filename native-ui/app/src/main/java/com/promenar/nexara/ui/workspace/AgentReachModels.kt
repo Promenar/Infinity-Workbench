@@ -86,8 +86,8 @@ internal val SessionWorkspaceUi.traits: WorkspaceTraits?
 internal fun ExternalMount.toReach(): ReachMount = ReachMount(
     alias = alias,
     source = if (sourceType == "real_path") ReachMountSource.PATH else ReachMountSource.SAF,
-    global = sessionId == null,
-    readOnly = readOnly,
+    global = false,
+    readOnly = false,
     unavailable = unavailableReason != null,
 )
 

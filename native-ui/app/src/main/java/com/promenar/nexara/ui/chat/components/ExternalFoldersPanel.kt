@@ -163,12 +163,8 @@ private fun ExternalFoldersPanelContent(
     var formSource by rememberSaveable { mutableStateOf<ExternalMountSource?>(null) }
     var alias by rememberSaveable { mutableStateOf("") }
     var sourcePath by rememberSaveable { mutableStateOf("") }
-    var readOnly by rememberSaveable { mutableStateOf(true) }
-    var sessionOnly by rememberSaveable { mutableStateOf(!sessionId.isNullOrBlank()) }
     var pendingAlias by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMountId by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingReadOnly by rememberSaveable { mutableStateOf(true) }
-    var pendingSessionOnly by rememberSaveable { mutableStateOf(false) }
     var pickerActive by rememberSaveable { mutableStateOf(false) }
     var browseMountId by rememberSaveable { mutableStateOf<String?>(null) }
     var removeMountId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -201,8 +197,6 @@ private fun ExternalFoldersPanelContent(
         pickerActive = false
         val requestedAlias = pendingAlias
         val requestedMountId = pendingMountId
-        val requestedReadOnly = pendingReadOnly
-        val requestedScope = externalMountSessionScope(sessionId, pendingSessionOnly)
         pendingAlias = null
         pendingMountId = null
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
@@ -215,10 +209,9 @@ private fun ExternalFoldersPanelContent(
             } else if (requestedAlias != null) {
                 manager.addSaf(
                     alias = requestedAlias,
-                    sessionId = requestedScope,
+                    sessionId = requireNotNull(sessionId?.takeIf(String::isNotBlank)),
                     treeUri = treeUri.toString(),
                     grantFlags = resultIntent.flags,
-                    readOnly = requestedReadOnly,
                 )
             }
             formSource = null
@@ -229,8 +222,6 @@ private fun ExternalFoldersPanelContent(
     val launchTreePicker: (String?, String?) -> Unit = { requestedAlias, requestedMountId ->
         pendingAlias = requestedAlias
         pendingMountId = requestedMountId
-        pendingReadOnly = readOnly
-        pendingSessionOnly = sessionOnly
         pickerActive = true
         notice = null
         try {
@@ -369,8 +360,6 @@ private fun ExternalFoldersPanelContent(
                             while (mounts.any { it.alias == candidate }) candidate = "external" + suffix++
                             alias = candidate
                             sourcePath = ""
-                            readOnly = true
-                            sessionOnly = !sessionId.isNullOrBlank()
                             notice = null
                             formSource = source
                         },
@@ -384,16 +373,16 @@ private fun ExternalFoldersPanelContent(
                         source = current.source,
                         alias = alias,
                         sourcePath = sourcePath,
-                        readOnly = readOnly,
-                        sessionOnly = sessionOnly,
+                        readOnly = false,
+                        sessionOnly = true,
                         hasCurrentSession = !sessionId.isNullOrBlank(),
                         realPathPermission = realPathPermission,
                         busy = busy || pickerActive,
                         notice = notice,
                         onAliasChanged = { alias = it },
                         onPathChanged = { sourcePath = it },
-                        onReadOnlyChanged = { readOnly = it },
-                        onSessionOnlyChanged = { sessionOnly = it },
+                        onReadOnlyChanged = {},
+                        onSessionOnlyChanged = {},
                         onGrantAccess = openAccessSettings,
                         onBack = backToManager,
                         onConfirm = {
@@ -403,9 +392,8 @@ private fun ExternalFoldersPanelContent(
                                 perform {
                                     manager.addRealPath(
                                         alias = alias.trim(),
-                                        sessionId = externalMountSessionScope(sessionId, sessionOnly),
+                                        sessionId = requireNotNull(sessionId?.takeIf(String::isNotBlank)),
                                         source = sourcePath.trim(),
-                                        readOnly = readOnly,
                                     )
                                     formSource = null
                                 }
@@ -583,8 +571,8 @@ private fun ExternalMountRow(
     val meta = listOf(
         "/mnt/" + mount.alias,
         stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
-        stringResource(if (mount.readOnly) R.string.mount_read_only else R.string.mount_read_write),
-        stringResource(if (mount.sessionId == null) R.string.mount_scope_global else R.string.mount_scope_current),
+        stringResource(R.string.mount_read_write),
+        stringResource(R.string.mount_scope_current),
     ).joinToString(" · ")
     NexaraSettingsItem(
         title = mount.alias,
@@ -720,42 +708,14 @@ internal fun ExternalMountFormContent(
                 )
             }
         }
-        NexaraSettingsSection(title = stringResource(R.string.mount_form_section_permission)) {
-            SettingsToggle(
-                title = stringResource(R.string.mount_read_only),
-                description = stringResource(R.string.mount_read_only_desc),
-                checked = readOnly,
-                enabled = !busy,
-                onCheckedChange = onReadOnlyChanged,
-            )
-        }
-        NexaraSettingsSection(title = stringResource(R.string.mount_form_section_scope)) {
-            if (hasCurrentSession) {
-                Column(Modifier.selectableGroup()) {
-                    ExternalMountScopeOption(
-                        label = stringResource(R.string.mount_scope_current),
-                        selected = sessionOnly,
-                        enabled = !busy,
-                        onClick = { onSessionOnlyChanged(true) },
-                    )
-                    ExternalMountScopeOption(
-                        label = stringResource(R.string.mount_scope_global),
-                        selected = !sessionOnly,
-                        enabled = !busy,
-                        onClick = { onSessionOnlyChanged(false) },
-                    )
-                }
-            } else {
-                NexaraSettingsRowLayout(title = stringResource(R.string.mount_scope_global), icon = Icons.Rounded.Public)
-            }
-        }
+
     }
     AnimatedVisibility(visible = busy, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
         LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.Small))
     }
     Button(
         onClick = onConfirm,
-        enabled = !busy && alias.isNotBlank() && (isSaf || (realPathPermission && sourcePath.isNotBlank())),
+        enabled = hasCurrentSession && !busy && alias.isNotBlank() && (isSaf || (realPathPermission && sourcePath.isNotBlank())),
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = NexaraSpacing.Small)

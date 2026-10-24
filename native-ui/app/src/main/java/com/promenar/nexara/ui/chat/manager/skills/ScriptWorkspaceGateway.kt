@@ -89,7 +89,6 @@ class ScriptWorkspaceGateway private constructor(
                         JsonArray(children.filterNot { it.isSystemEntry() }.map { it.asJson() })
                     }
                     "write", "create", "mkdir", "delete" -> {
-                        if (alias != null && currentMounts[alias]?.readOnly == true) throw ScriptFailure("READ_ONLY", "挂载为只读")
                         mutate(operation, path, arguments)
                     }
                     else -> throw ScriptFailure("CAPABILITY_DENIED", "未授权的文件能力")
@@ -143,11 +142,11 @@ class ScriptWorkspaceGateway private constructor(
                 }
             }
         }
-        // 审批可能等待很久，执行前重新核验身份和读写权限；挂载工具会再做后端校验。
+        // 审批可能等待很久，执行前重新核验身份；挂载工具会再做后端校验。
         currentCoroutineContext().ensureActive()
         if (alias != null) {
             val current = (mounts.visible(context.sessionId) + listOfNotNull(mounts.workspaceMount(context.sessionId))).singleOrNull { it.alias == alias }
-            if (current?.id != mountIds[alias] || current?.readOnly != false) throw ScriptFailure("MOUNT_CHANGED", "审批后挂载身份或写入权限已改变")
+            if (current?.id != mountIds[alias]) throw ScriptFailure("MOUNT_CHANGED", "审批后挂载身份已改变")
         }
         val boundContext = object : SkillExecutionContext by context {
             override val approvedExecutionTarget = target

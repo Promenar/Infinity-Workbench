@@ -113,7 +113,6 @@ class DefaultDirectoryWorkspaceFiles(
                         val mount = mounts.workspaceMount(sessionId)
                             ?: throw DirectoryFileOpException(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
                         if (mount.unavailableReason != null) throw DirectoryFileOpException(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
-                        if (mount.readOnly) throw DirectoryFileOpException(DirectoryFileOpCode.READ_ONLY)
                         if (isBusy(sessionId)) throw DirectoryFileOpException(DirectoryFileOpCode.SESSION_BUSY)
                         val bindings = mapOf(mount.alias to mount.id)
                         withContext(ExternalMountOperationBindings(bindings)) {

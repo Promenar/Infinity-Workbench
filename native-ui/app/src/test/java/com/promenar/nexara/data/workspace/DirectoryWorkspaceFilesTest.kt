@@ -480,7 +480,7 @@ class DirectoryWorkspaceFilesTest {
         assertTrue(File(root, "dir/child").exists())
     }
 
-    @Test fun `不可用只读忙碌和意外异常转换为契约错误`() = runBlocking {
+    @Test fun `不可用忙碌和意外异常转换为契约错误`() = runBlocking {
         val (_, mounts) = fixture()
         val mount = mounts.workspaceMount("s")!!
         val override = mockk<ExternalWorkspaceAccess>()
@@ -489,8 +489,6 @@ class DirectoryWorkspaceFilesTest {
         expect(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE) { files.createDirectory("s", "/", "x") }
         coEvery { override.workspaceMount("s") } returns mount.copy(unavailableReason = "离线")
         expect(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE) { files.createDirectory("s", "/", "x") }
-        coEvery { override.workspaceMount("s") } returns mount.copy(readOnly = true)
-        expect(DirectoryFileOpCode.READ_ONLY) { files.createDirectory("s", "/", "x") }
         coEvery { override.workspaceMount("s") } returns mount
         expect(DirectoryFileOpCode.SESSION_BUSY) {
             DefaultDirectoryWorkspaceFiles(override, SessionExecutionGate()) { true }.rename("s", "/a", "b")

@@ -18,13 +18,13 @@ class ExternalFoldersPanelStateTest {
     }
 
     @Test
-    fun `挂载面板只展示全局和当前会话且不泄露其它会话`() {
-        val mounts = listOf(mount("global", null), mount("current", "session-a"), mount("other", "session-b"))
+    fun `挂载面板只展示当前会话且空会话不显示路径`() {
+        val mounts = listOf(mount("current", "session-a"), mount("other", "session-b"))
 
         assertThat(visibleExternalMounts(mounts, "session-a").map { it.id })
-            .containsExactly("global", "current").inOrder()
-        assertThat(visibleExternalMounts(mounts, null).map { it.id }).containsExactly("global")
-        assertThat(visibleExternalMounts(mounts, "").map { it.id }).containsExactly("global")
+            .containsExactly("current")
+        assertThat(visibleExternalMounts(mounts, null).map { it.id }).isEmpty()
+        assertThat(visibleExternalMounts(mounts, "").map { it.id }).isEmpty()
     }
 
     @Test
@@ -35,14 +35,6 @@ class ExternalFoldersPanelStateTest {
         assertThat(parentExternalFolderPath("/mnt/docs", "/mnt/docs-other/a")).isNull()
         assertThat(parentExternalFolderPath("/mnt/docs", "/mnt/docs/../private")).isNull()
         assertThat(parentExternalFolderPath("/mnt/docs", "/mnt/docs/a\\private")).isNull()
-    }
-
-    @Test
-    fun `没有当前会话时不能创建空字符串会话挂载`() {
-        assertThat(externalMountSessionScope("session-a", true)).isEqualTo("session-a")
-        assertThat(externalMountSessionScope("session-a", false)).isNull()
-        assertThat(externalMountSessionScope("", true)).isNull()
-        assertThat(externalMountSessionScope(null, true)).isNull()
     }
 
     @Test
@@ -74,13 +66,12 @@ class ExternalFoldersPanelStateTest {
         assertThat(externalPreviewFileName("a\u0000b.pdf")).isEqualTo("a_b.pdf")
     }
 
-    private fun mount(id: String, sessionId: String?) = ExternalMount(
+    private fun mount(id: String, sessionId: String) = ExternalMount(
         id = id,
         alias = id,
         sourceType = "saf_tree",
         sourceId = "content://provider/tree/$id",
         sessionId = sessionId,
-        readOnly = true,
         createdAt = 0L,
     )
 }

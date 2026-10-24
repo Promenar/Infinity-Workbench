@@ -32,7 +32,7 @@ class ScriptToolRunnerTest {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val mounts = mockk<ExternalWorkspaceAccess> { coEvery { workspaceMount(any()) } returns null }
-        coEvery { mounts.visible(context.sessionId) } returns listOf(ExternalMount("mount", "demo", "saf_tree", "content://synthetic/tree/root", context.sessionId, false, 1))
+        coEvery { mounts.visible(context.sessionId) } returns listOf(ExternalMount("mount", "demo", "saf_tree", "content://synthetic/tree/root", context.sessionId, 1))
         coEvery { mounts.read(context.sessionId, "/mnt/demo/main.js", any()) } answers {
             entered.countDown(); release.await(5, TimeUnit.SECONDS); "result=42".toByteArray()
         }
