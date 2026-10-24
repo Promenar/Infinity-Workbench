@@ -103,7 +103,9 @@ class ScriptHttpClient(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 currentCoroutineContext().ensureActive()
-                if (tailnet && failure is java.io.IOException) throw ScriptFailure("NETWORK_DENIED", "TAILNET_PROXY_ERROR：${AgentNetworkPolicy.TAILNET_GUIDANCE}")
+                if (tailnet && failure is java.io.IOException) com.promenar.nexara.data.network.AgentTailnetProxy.failure(failure).let {
+                    throw ScriptFailure("NETWORK_DENIED", "${it.code}：${it.message}")
+                }
                 throw failure
             }
             finally { cancellation.complete(); call.cancel(); client.connectionPool.evictAll(); client.dispatcher.executorService.shutdown() }

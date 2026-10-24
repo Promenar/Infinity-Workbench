@@ -205,7 +205,7 @@ class WebFetchSkill(
                     } finally { cancellation.cancel() }
                 }
             } catch (failure: java.io.IOException) {
-                if (tailnet) throw NetworkAccessDenied("TAILNET_PROXY_ERROR", AgentNetworkPolicy.TAILNET_GUIDANCE)
+                if (tailnet) throw com.promenar.nexara.data.network.AgentTailnetProxy.failure(failure)
                 throw failure
             }
             if (result.first in setOf(301, 302, 303, 307, 308)) {

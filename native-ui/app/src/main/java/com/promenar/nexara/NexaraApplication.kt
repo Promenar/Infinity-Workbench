@@ -374,6 +374,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             isTailnetHost = tailnetManager::isTailnetHost,
             allowedLanHosts = { agentNetworkSettings.lanHosts },
             tailnetRunning = { tailnetManager.state.value.phase == com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING },
+            cleartextPermitted = { host -> android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host) },
         )
     }
     val agentNetworkAccess: com.promenar.nexara.domain.network.AgentNetworkAccess by lazy {

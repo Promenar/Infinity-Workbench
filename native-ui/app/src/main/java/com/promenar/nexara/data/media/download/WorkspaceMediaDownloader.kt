@@ -114,7 +114,7 @@ class WorkspaceMediaDownloader(
                         }
                     }
                 } catch (failure: IOException) {
-                    if (tailnet) fail("TAILNET_PROXY_ERROR", AgentNetworkPolicy.TAILNET_GUIDANCE)
+                    if (tailnet) com.promenar.nexara.data.network.AgentTailnetProxy.failure(failure).let { fail(it.code, it.message.orEmpty()) }
                     throw failure
                 } finally { cancellation.cancel() }
             }

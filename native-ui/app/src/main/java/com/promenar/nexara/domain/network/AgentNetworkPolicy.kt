@@ -26,6 +26,8 @@ class AgentNetworkPolicy(
     private val resolver: suspend (String) -> Array<InetAddress> = { host ->
         withContext(Dispatchers.IO) { InetAddress.getAllByName(host) }
     },
+    /** Android 网络安全配置对该主机是否允许明文；发行配置只放行 127.0.0.1。 */
+    private val cleartextPermitted: (String) -> Boolean = { true },
 ) {
     suspend fun classify(rawHost: String): AgentNetworkTarget {
         val host = normalizeHost(rawHost)
@@ -50,6 +52,10 @@ class AgentNetworkPolicy(
         if (raw.length > 4096 || scheme !in setOf("http", "https") || uri.rawUserInfo != null || uri.host.isNullOrBlank() ||
             uri.port < -1 || uri.port == 0 || uri.port > 65535) denied("URL_POLICY", "仅支持不含凭据、主机与端口有效的 HTTP/HTTPS URL")
         val destination = classify(uri.host)
+        // 先于白名单判定：系统会拒绝的明文请求，加入白名单也无法访问。
+        if (scheme == "http" && destination.target != NetworkTargetClass.TAILNET && !cleartextPermitted(destination.host)) {
+            denied("CLEARTEXT_BLOCKED", "Android 系统策略只允许明文 http 访问本机 127.0.0.1；请改用 https，或用内置命令 shell_exec / python_exec 访问")
+        }
         when (stateFor(tool, destination.target)) {
             NetworkAccessState.ALLOWLIST_ONLY -> if (destination.host !in allowedLanHosts()) {
                 denied("LAN_HOST_NOT_ALLOWED", "局域网与本机目标需要精确主机授权，请在“设置 → 网络访问”中添加主机白名单")

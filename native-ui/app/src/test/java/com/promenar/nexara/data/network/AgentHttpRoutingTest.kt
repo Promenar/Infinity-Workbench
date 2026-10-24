@@ -59,6 +59,30 @@ class AgentHttpRoutingTest {
         }
     }
 
+    @Test fun `tailnet自签名证书归为证书错误而不是代理不可用`(): Unit = runBlocking {
+        val identity = identity()
+        TlsProxy(identity.context).use { fixture ->
+            val endpoint = AgentNetworkPolicy(tailnetRunning = { true }, resolver = { arrayOf(InetAddress.getByName("100.64.0.9")) })
+                .validate("https://origin.test/file")
+            // 默认信任库不认识临时自签名证书，与真机访问 fnOS 自签名服务的情形一致。
+            val route = AgentHttpRouting.route(OkHttpClient(), endpoint, fixture.routing)
+            val error = assertThrows(java.io.IOException::class.java) {
+                route.client.newCall(route.request(Request.Builder().url(endpoint.uri.toString()).build())).execute().close()
+            }
+            val denied = AgentTailnetProxy.failure(error)
+            assertThat(denied.code).isEqualTo("TAILNET_TLS_ERROR")
+            assertThat(denied.message).doesNotContain("未运行")
+            assertThat(withTimeout(2000) { fixture.connect.await() }).isEqualTo("CONNECT 100.64.0.9:443 HTTP/1.1")
+        }
+    }
+
+    @Test fun `tailnet连接失败保留真实原因`() {
+        val denied = AgentTailnetProxy.failure(java.io.IOException("Unexpected response code for CONNECT: 502"))
+        assertThat(denied.code).isEqualTo("TAILNET_PROXY_ERROR")
+        assertThat(denied.message).contains("CONNECT: 502")
+        assertThat(denied.message).doesNotContain("未运行")
+    }
+
     @Test fun `回环优先的混合地址不能在失败重试时直连tailnet`(): Unit = runBlocking {
         val endpoint = AgentNetworkPolicy(allowedLanHosts = { setOf("mixed.test") }, resolver = {
             arrayOf(InetAddress.getByName("127.0.0.1"), InetAddress.getByName("100.64.0.9"))

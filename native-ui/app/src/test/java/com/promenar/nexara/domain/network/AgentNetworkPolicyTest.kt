@@ -27,6 +27,21 @@ class AgentNetworkPolicyTest {
         }
     }
 
+    @Test fun `系统禁止的明文先于白名单拒绝且只放行配置允许的主机`() = runTest {
+        val policy = AgentNetworkPolicy(
+            allowedLanHosts = { setOf("192.168.1.71", "127.0.0.1") },
+            cleartextPermitted = { it == "127.0.0.1" },
+            resolver = { addresses(it) },
+        )
+        for (url in listOf("http://192.168.1.71:8765/", "http://192.168.2.99/", "http://93.184.216.34/")) {
+            val denied = assertThrows(NetworkAccessDenied::class.java) { kotlinx.coroutines.runBlocking { policy.validate(url) } }
+            assertThat(denied.code).isEqualTo("CLEARTEXT_BLOCKED")
+            assertThat(denied.message).contains("127.0.0.1")
+        }
+        assertThat(policy.validate("http://127.0.0.1:8080/").target).isEqualTo(NetworkTargetClass.LOOPBACK)
+        assertThat(policy.validate("https://192.168.1.71/").target).isEqualTo(NetworkTargetClass.LAN)
+    }
+
     @Test fun `tailnet字面量MagicDNS与已知短名不调用系统DNS`() = runTest {
         val policy = AgentNetworkPolicy(isTailnetHost = { it == "main" }, resolver = { error("不应查询 DNS") })
         for (host in listOf("100.64.0.0", "100.127.255.255", "[fd7a:115c:a1e0::1]", "main.tail.ts.net", "MAIN")) {

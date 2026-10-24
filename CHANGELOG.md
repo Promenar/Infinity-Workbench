@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - 设置 → 工具新增“网络访问”页，集中维护局域网与本机白名单，并按工具列出对公网、局域网、本机、tailnet 的访问范围；原脚本设置中的白名单入口移到这里，已保存的白名单原样保留。
 - `web_fetch`、`media_fetch` 与脚本联网改用同一套目标判定：公网直接放行；局域网与本机需加入白名单（`web_fetch` 原先一律拒绝，`media_fetch` 原先放行本机明文与局域网 HTTPS，现均改为需白名单）；tailnet 经内置 Tailscale 代理访问，未连接时直接失败、不回退直连（`web_fetch` 与脚本原先不能访问 tailnet）。每跳重定向重新判定，连接只使用判定时解析出的地址；被拦截时工具结果附错误码和“设置 → 网络访问”指引。
 - `web_fetch` 收到非 200 响应时报告 HTTP 状态码，不再与策略拦截混用同一前缀。
+- Android 系统策略只允许明文 http 访问本机 127.0.0.1：三类工具对其它明文 http 目标在判定阶段就以 `CLEARTEXT_BLOCKED` 拒绝并给出指引，不再先要求加白名单；网络访问页与白名单编辑面板说明局域网服务需使用 https。
+- 经内置 Tailscale 访问 tailnet 时，目标证书不受信任（如自签名）报 `TAILNET_TLS_ERROR`，其它连接失败的 `TAILNET_PROXY_ERROR` 附带真实原因，不再一律提示“内置 Tailscale 未运行”。
 
 ### 定时任务与系统触发
 

@@ -11,12 +11,12 @@
     </plurals>
 
     <string name="network_section_controls">What you can change</string>
-    <string name="network_section_controls_footer">The allowlist applies to web reading, media downloads and script networking. Tailnet devices are reached through built-in Tailscale and follow its device allowlist.</string>
+    <string name="network_section_controls_footer">The allowlist applies to web reading, media downloads and script networking. Tailnet devices are reached through built-in Tailscale and follow its device allowlist. Android allows plain http only to 127.0.0.1 on this device, so local network services need https.</string>
     <string name="network_section_matrix">Reach by tool</string>
     <string name="network_section_matrix_footer">Built-in commands and Termux use the system network without &brand; checks. SSH connects only to hosts saved in settings.</string>
 
     <string name="network_lan_hosts_title">Local network and device allowlist</string>
-    <string name="network_lan_hosts_desc">Empty by default. One exact host name or IP per line, without scheme, port or path. Use 127.0.0.1 for services on this device.</string>
+    <string name="network_lan_hosts_desc">Empty by default. One exact host name or IP per line, without scheme, port or path. Use 127.0.0.1 for services on this device. Local network services need https; plain http works only for 127.0.0.1.</string>
     <string name="network_lan_hosts_save">Save allowlist</string>
     <string name="network_lan_hosts_invalid">Enter up to 64 exact host names or IPs, without scheme, port, path or wildcards.</string>
     <string name="network_lan_hosts_empty">Not set; local network and this device are blocked</string>
