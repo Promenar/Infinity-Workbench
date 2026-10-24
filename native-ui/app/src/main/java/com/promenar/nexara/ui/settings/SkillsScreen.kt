@@ -143,8 +143,12 @@ fun SkillsScreen(
     onOpenTailscale: () -> Unit = {},
     onOpenBackground: () -> Unit = {},
     onOpenNetworkAccess: () -> Unit = {},
+    onOpenLinux: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val linuxRuntime = (context.applicationContext as com.promenar.nexara.NexaraApplication).linux.runtime
+    val linuxState by linuxRuntime.state.collectAsState()
+    val linuxAgentEnabled by linuxRuntime.agentEnabled.collectAsState()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val agentSkillsViewModel: AgentSkillsViewModel =
         viewModel(factory = AgentSkillsViewModel.factory(context.applicationContext as android.app.Application))
@@ -226,6 +230,8 @@ fun SkillsScreen(
                         gitCredentialCount = gitCredentialCount,
                         tailscaleState = tailscaleState,
                         networkHostCount = networkSnapshot.lanHosts.size,
+                        linuxState = linuxState,
+                        linuxAgentEnabled = linuxAgentEnabled,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
@@ -242,6 +248,7 @@ fun SkillsScreen(
                         onOpenGitCredentials = onOpenGitCredentials,
                         onOpenTailscale = onOpenTailscale,
                         onOpenBackground = onOpenBackground,
+                        onOpenLinux = onOpenLinux,
                     ),
                 )
 

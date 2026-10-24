@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 工具页入口 -->
+    <string name="linux_entry_title">Linux environment</string>
+    <string name="linux_entry_badge_new">New</string>
+    <string name="linux_entry_not_installed">Not installed · Built-in Alpine, about 4 MB</string>
+    <string name="linux_entry_installing">Installing…</string>
+    <string name="linux_entry_interrupted">Installation paused · Tap to continue</string>
+    <string name="linux_entry_ready">Ready · Alpine %1$s</string>
+    <string name="linux_entry_ready_agent_off">Ready · Agent uses system sh</string>
+    <string name="linux_entry_maintaining">Updating…</string>
+    <string name="linux_entry_broken">Needs repair</string>
+    <string name="linux_entry_unsupported_abi">Not supported on this device</string>
+
+    <!-- 通用 -->
+    <string name="linux_title">Linux environment</string>
+    <string name="linux_status_not_installed">Not installed</string>
+    <string name="linux_status_installing">Installing · Step %1$d of %2$d</string>
+    <string name="linux_status_interrupted">Installation paused</string>
+    <string name="linux_status_failed">Installation failed</string>
+    <string name="linux_status_ready">Ready · Alpine %1$s</string>
+    <string name="linux_status_ready_startup">Ready · Alpine %1$s · Starts in %2$s</string>
+    <string name="linux_status_resetting">Resetting…</string>
+    <string name="linux_status_uninstalling">Uninstalling…</string>
+    <string name="linux_status_broken">Needs repair</string>
+    <string name="linux_seconds">%1$.1f s</string>
+    <string name="linux_milliseconds">%1$d ms</string>
+
+    <!-- 不可用 -->
+    <string name="linux_unavailable_distribution_title">Not included in this edition</string>
+    <string name="linux_unavailable_distribution_body">Google Play does not allow apps to download and run native programs, so the built-in Linux environment is only in the sideload edition. You can still run commands through Termux or an SSH host.</string>
+    <string name="linux_unavailable_abi_title">Not supported on this device</string>
+    <string name="linux_unavailable_abi_body">The built-in Linux environment needs a 64-bit ARM (arm64-v8a) device. You can still run commands through Termux or an SSH host.</string>
+    <string name="linux_open_termux">Set up Termux</string>
+    <string name="linux_open_ssh">SSH hosts</string>
+
+    <!-- 安装引导 -->
+    <string name="linux_install_hero_title">A complete Linux for your agent</string>
+    <string name="linux_install_hero_body">Runs Alpine Linux inside Nexara. Once installed, agent commands run in it, apk can install Python, Node, git, build tools and more, and you can use it directly in a terminal. No Termux and no root needed.</string>
+    <string name="linux_install_contents">What gets installed</string>
+    <string name="linux_install_base_title">Alpine Linux %1$s</string>
+    <string name="linux_install_base_subtitle">Built into the app, about 10 MB unpacked, installs offline</string>
+    <string name="linux_install_tools_title">Common tools (optional)</string>
+    <string name="linux_install_tools_subtitle">bash, git, python3, curl · ~60 MB download</string>
+    <string name="linux_install_space_title">Free space</string>
+    <string name="linux_install_space_ok">%1$s free on this device, enough</string>
+    <string name="linux_install_space_low">Only %1$s free; at least %2$s is needed</string>
+    <string name="linux_install_warning">Linux commands run as Nexara and can access app data and the network. In the Workspace mode, every command needs your approval.</string>
+    <string name="linux_install_action">Install</string>
+    <string name="linux_install_alternatives">You can also keep using Termux or SSH hosts</string>
+
+    <!-- 安装进度 -->
+    <string name="linux_step_unpack">Unpack Alpine</string>
+    <string name="linux_step_network">Set up network and certificates</string>
+    <string name="linux_step_tools">Install common tools</string>
+    <string name="linux_step_workspace">Create workspace mapping</string>
+    <string name="linux_step_diagnostics">Run diagnostics</string>
+    <string name="linux_step_unpack_pending">Verify and unpack the built-in system</string>
+    <string name="linux_step_unpack_done">SHA-256 verified · %1$s</string>
+    <string name="linux_step_network_pending">DNS, CA certificates and proxy</string>
+    <string name="linux_step_network_done">DNS %1$s</string>
+    <string name="linux_step_network_vpn">via VPN</string>
+    <string name="linux_step_network_proxy">proxy set</string>
+    <string name="linux_step_tools_pending">bash, git, python3, curl</string>
+    <string name="linux_step_tools_progress">Mirror: %1$s · %2$s of %3$s downloaded</string>
+    <string name="linux_step_tools_progress_unknown">Mirror: %1$s · %2$s downloaded</string>
+    <string name="linux_step_tools_skipped">Skipped; install later from Packages</string>
+    <string name="linux_step_workspace_pending">Session workspace → /workspace</string>
+    <string name="linux_step_diagnostics_pending">Run a test command and measure startup time</string>
+    <string name="linux_step_diagnostics_done">Startup %1$s</string>
+    <string name="linux_step_failed">Failed</string>
+    <string name="linux_live_output">Live output</string>
+    <string name="linux_install_background">Continue in background</string>
+    <string name="linux_install_cancel">Cancel install</string>
+    <string name="linux_install_cancel_note">Unpacked content is kept; you can continue later</string>
+    <string name="linux_install_resume">Continue install</string>
+    <string name="linux_install_paused_note">Installation was cancelled. Finished steps are kept.</string>
+    <string name="linux_progress_label">Installation progress</string>
+
+    <!-- 失败原因 -->
+    <string name="linux_failure_storage">Not enough free space.</string>
+    <string name="linux_failure_asset">The built-in system image is damaged. Reinstall Nexara.</string>
+    <string name="linux_failure_extract">Could not unpack the system.</string>
+    <string name="linux_failure_network">Network error. Check your connection or try another mirror.</string>
+    <string name="linux_failure_packages">Installing packages failed.</string>
+    <string name="linux_failure_diagnostics">Diagnostics failed.</string>
+    <string name="linux_failure_proot">The Linux runtime library is missing. Reinstall Nexara.</string>
+    <string name="linux_failure_rootfs">The Linux system files are damaged.</string>
+    <string name="linux_failure_io">A file operation failed.</string>
+    <string name="linux_failure_details">Details</string>
+
+    <!-- 管理 -->
+    <string name="linux_action_terminal">Terminal</string>
+    <string name="linux_action_files">Files</string>
+    <string name="linux_action_packages">Packages</string>
+    <string name="linux_section_agent">Agent use</string>
+    <string name="linux_agent_toggle_title">Run commands in Linux</string>
+    <string name="linux_agent_toggle_subtitle">shell_exec and jobs; off uses system sh</string>
+    <string name="linux_paths_title">Path mapping</string>
+    <string name="linux_paths_subtitle">Workspace → /workspace · Mounts → /mnt/&lt;alias&gt;</string>
+    <string name="linux_section_storage">Storage · %1$s total</string>
+    <string name="linux_section_storage_loading">Storage</string>
+    <string name="linux_storage_base">Base system %1$s</string>
+    <string name="linux_storage_packages">Packages %1$s</string>
+    <string name="linux_storage_home">Home /root %1$s</string>
+    <string name="linux_storage_cache">Download cache %1$s</string>
+    <string name="linux_storage_clear_cache">Clear download cache</string>
+    <string name="linux_storage_cleared">Freed %1$s</string>
+    <string name="linux_section_maintenance">Network and maintenance</string>
+    <string name="linux_mirror_title">Mirror</string>
+    <string name="linux_mirror_summary_latency">%1$s · %2$s</string>
+    <string name="linux_diagnostics_title">Run diagnostics</string>
+    <string name="linux_diagnostics_never">Not run yet</string>
+    <string name="linux_diagnostics_passed">Last passed · %1$s</string>
+    <string name="linux_diagnostics_failed">Last failed · %1$s</string>
+    <string name="linux_diagnostics_running">Running…</string>
+    <string name="linux_reset_title">Reset environment</string>
+    <string name="linux_reset_subtitle">Removes installed packages and /root and restores the original Alpine; workspace files are not affected</string>
+    <string name="linux_reset_confirm_title">Reset the Linux environment?</string>
+    <string name="linux_reset_confirm_body">Installed packages and everything in /root will be deleted. Files in your workspaces are not affected.</string>
+    <string name="linux_reset_confirm_action">Reset</string>
+    <string name="linux_uninstall_title">Uninstall</string>
+    <string name="linux_uninstall_subtitle">Frees %1$s; the agent switches to system sh</string>
+    <string name="linux_uninstall_subtitle_plain">The agent switches to system sh</string>
+    <string name="linux_uninstall_confirm_title">Uninstall the Linux environment?</string>
+    <string name="linux_uninstall_confirm_body">The whole environment, including installed packages and /root, will be deleted. Files in your workspaces are not affected.</string>
+    <string name="linux_uninstall_confirm_action">Uninstall</string>
+    <string name="linux_broken_body">The environment is installed but cannot start. Reset it to restore the original Alpine, or uninstall it.</string>
+    <string name="linux_operation_failed">Operation failed</string>
+    <string name="linux_open_environment">Go to Linux environment</string>
+
+    <!-- 镜像 -->
+    <string name="linux_mirrors_title">Mirror</string>
+    <string name="linux_mirrors_subtitle">apk downloads packages from here</string>
+    <string name="linux_mirrors_speed_test">Test speed again</string>
+    <string name="linux_mirrors_testing">Testing…</string>
+    <string name="linux_mirror_tuna">Tsinghua University</string>
+    <string name="linux_mirror_ustc">USTC</string>
+    <string name="linux_mirror_aliyun">Alibaba Cloud</string>
+    <string name="linux_mirror_official">Alpine official CDN</string>
+    <string name="linux_mirror_custom">Custom</string>
+    <string name="linux_mirror_custom_hint">Enter an https address; a private mirror on your tailnet works too</string>
+    <string name="linux_mirror_custom_label">Mirror address</string>
+    <string name="linux_mirror_custom_save">Use this mirror</string>
+    <string name="linux_mirror_custom_invalid">Enter an https:// address</string>
+    <string name="linux_mirror_latency_failed">Unreachable</string>
+    <string name="linux_mirror_latency_unknown">Not tested</string>
+    <string name="linux_mirrors_note">Package signatures are always verified with Alpine\'s official keys, so changing mirrors does not affect security. Downloads follow the Network access settings.</string>
+    <string name="linux_mirrors_done">Done</string>
+
+    <!-- 软件包 -->
+    <string name="linux_packages_title">Packages</string>
+    <string name="linux_packages_summary">%1$d installed · %2$d updates</string>
+    <string name="linux_packages_summary_loading">Loading…</string>
+    <string name="linux_packages_upgrade_all">Update all</string>
+    <string name="linux_packages_search_hint">Search packages</string>
+    <string name="linux_packages_filter_all">All</string>
+    <string name="linux_packages_filter_installed">Installed</string>
+    <string name="linux_packages_filter_updates">Updates %1$d</string>
+    <string name="linux_packages_filter_agent">Installed by agent</string>
+    <string name="linux_packages_search_results">Search results · %1$s</string>
+    <string name="linux_packages_installed_section">Installed</string>
+    <string name="linux_packages_install">Install</string>
+    <string name="linux_packages_installing">Installing</string>
+    <string name="linux_packages_remove">Remove</string>
+    <string name="linux_packages_removing">Removing</string>
+    <string name="linux_packages_update">Update</string>
+    <string name="linux_packages_updating">Updating</string>
+    <string name="linux_packages_refreshing">Refreshing index</string>
+    <string name="linux_packages_origin_agent">Installed by agent · Session “%1$s”</string>
+    <string name="linux_packages_origin_agent_unnamed">Installed by agent</string>
+    <string name="linux_packages_origin_preset">Chosen during setup</string>
+    <string name="linux_packages_origin_user">Installed by you</string>
+    <string name="linux_packages_dependency">Dependency</string>
+    <string name="linux_packages_empty">No packages match</string>
+    <string name="linux_packages_search_empty">No packages named “%1$s”</string>
+    <string name="linux_packages_remove_confirm_title">Remove %1$s?</string>
+    <string name="linux_packages_remove_confirm_body">Packages that depend on it may stop working.</string>
+    <string name="linux_packages_refresh">Refresh index</string>
+    <string name="linux_packages_operation_failed">%1$s failed</string>
+    <string name="linux_packages_progress">(%1$d/%2$d)</string>
+</resources>

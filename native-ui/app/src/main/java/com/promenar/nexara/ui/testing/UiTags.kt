@@ -426,6 +426,24 @@ object UiTags {
     fun scheduledTaskToggle(id: String) = "scheduled_task_toggle_$id"
     fun scheduledTaskDelete(id: String) = "scheduled_task_delete_$id"
 
+    // Linux 环境设置
+    const val LINUX_ENTRY = "linux_entry"
+    const val LINUX_INSTALL_BUTTON = "linux_install_button"
+    const val LINUX_INSTALL_TOOLS_TOGGLE = "linux_install_tools_toggle"
+    const val LINUX_INSTALL_CANCEL = "linux_install_cancel"
+    const val LINUX_AGENT_TOGGLE = "linux_agent_toggle"
+    const val LINUX_CLEAR_CACHE = "linux_clear_cache"
+    const val LINUX_MIRROR_ENTRY = "linux_mirror_entry"
+    const val LINUX_DIAGNOSTICS = "linux_diagnostics"
+    const val LINUX_RESET = "linux_reset"
+    const val LINUX_UNINSTALL = "linux_uninstall"
+    const val LINUX_MIRROR_SPEED_TEST = "linux_mirror_speed_test"
+    const val LINUX_MIRROR_CUSTOM_FIELD = "linux_mirror_custom_field"
+    const val LINUX_PACKAGES_SEARCH = "linux_packages_search"
+    const val LINUX_PACKAGES_UPGRADE_ALL = "linux_packages_upgrade_all"
+    fun linuxMirrorRow(id: String) = "linux_mirror_row:$id"
+    fun linuxPackageRow(name: String) = "linux_package_row:$name"
+
     // 会话状态面板
     const val CHAT_STATE_BAR = "chat_state_bar"
     const val CHAT_STATE_SHEET = "chat_state_sheet"

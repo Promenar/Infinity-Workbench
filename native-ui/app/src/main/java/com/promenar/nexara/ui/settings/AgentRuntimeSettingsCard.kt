@@ -36,6 +36,9 @@ internal data class SkillsSettingsVisualState(
     val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
     /** 共享局域网与本机白名单条数；尚未读取时为 null。 */
     val networkHostCount: Int? = null,
+    /** 内置 Linux 环境状态；为 null 或渠道不提供时不显示入口。 */
+    val linuxState: com.promenar.nexara.domain.linux.LinuxRuntimeState? = null,
+    val linuxAgentEnabled: Boolean = true,
 )
 
 internal data class SkillsSettingsVisualActions(
@@ -50,6 +53,7 @@ internal data class SkillsSettingsVisualActions(
     val onOpenGitCredentials: () -> Unit = {},
     val onOpenTailscale: () -> Unit = {},
     val onOpenBackground: () -> Unit = {},
+    val onOpenLinux: () -> Unit = {},
 )
 
 /** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
@@ -62,6 +66,7 @@ internal fun SkillsSettingsHeaderContent(
     Column(modifier) {
         AgentRuntimeSettingsCard(state, actions)
         NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
+            com.promenar.nexara.ui.linux.settings.LinuxEntryRow(state.linuxState, state.linuxAgentEnabled, actions.onOpenLinux)
             NexaraSettingsItem(
                 icon = Icons.Rounded.Public,
                 title = stringResource(R.string.network_access_title),

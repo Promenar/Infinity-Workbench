@@ -78,6 +78,9 @@ object NavDestinations {
     const val SKILLS_CONFIG = "skills_config"
     const val SSH_CONFIG = "ssh_config"
     const val TERMUX_CONFIG = "termux_config"
+    const val LINUX_ENVIRONMENT = "linux_environment"
+    const val LINUX_PACKAGES = "linux_packages"
+    const val LINUX_MIRRORS = "linux_mirrors"
     const val NETWORK_ACCESS = "network_access"
     const val TAILSCALE_CONFIG = "tailscale_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
@@ -599,7 +602,26 @@ fun NexaraNavGraph(
                 onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
                 onOpenBackground = { navController.navigate(NavDestinations.BACKGROUND_ACTIVITY) },
                 onOpenNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) },
+                onOpenLinux = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
             )
+        }
+
+        composable(NavDestinations.LINUX_ENVIRONMENT) {
+            com.promenar.nexara.ui.linux.settings.LinuxEnvironmentScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = {},
+                onOpenFiles = {},
+                onOpenPackages = { navController.navigate(NavDestinations.LINUX_PACKAGES) },
+                onOpenMirrors = { navController.navigate(NavDestinations.LINUX_MIRRORS) },
+                onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
+                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+            )
+        }
+        composable(NavDestinations.LINUX_PACKAGES) {
+            com.promenar.nexara.ui.linux.settings.LinuxPackagesScreen(onBack = { navController.popBackStack() })
+        }
+        composable(NavDestinations.LINUX_MIRRORS) {
+            com.promenar.nexara.ui.linux.settings.LinuxMirrorsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(NavDestinations.NETWORK_ACCESS) {
