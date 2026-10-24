@@ -42,7 +42,10 @@ class LinuxModule(
     val files: LinuxFileSystem by lazy { UnavailableLinuxFiles() }
 
     // ── 本地终端 ──
-    val terminals: LinuxTerminalSessions by lazy { UnavailableLinuxTerminals() }
+    val terminals: LinuxTerminalSessions by lazy {
+        if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) UnavailableLinuxTerminals()
+        else LinuxTerminalSessionsImpl(runtime, scope, host)
+    }
 }
 
 /** 应用提供给 Linux 环境实现的宿主服务。 */

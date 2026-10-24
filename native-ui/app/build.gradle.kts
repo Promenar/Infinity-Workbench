@@ -303,6 +303,10 @@ val prepareLinuxProbeAssets = tasks.register<PrepareLinuxProbeAssets>("prepareLi
 
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    // 本地 PTY 仅供侧载版使用，Play 版继续只保留 Java 终端仿真。
+    if (variant.productFlavors.any { it.first == "distribution" && it.second == "play" }) {
+        variant.packaging.jniLibs.excludes.add("**/libtermux.so")
+    }
     if (variant.name == "sideloadDebug") {
         variant.sources.jniLibs?.addGeneratedSourceDirectory(buildLinuxProbe, BuildLinuxProbe::getOutputDirectory)
         variant.sources.assets?.addGeneratedSourceDirectory(prepareLinuxProbeAssets, PrepareLinuxProbeAssets::getOutputDirectory)
@@ -490,8 +494,6 @@ android {
     // jniLibs 默认目录即 src/main/jniLibs，无需显式配置
 
     packaging {
-        // 远端终端只使用 Java 仿真与渲染，不打包 Termux 的本地进程 JNI 桥。
-        jniLibs.excludes += "**/libtermux.so"
         // 打包的 Python 启动器与扩展需要真实文件路径才能 execve/dlopen，安装时必须解压到 nativeLibraryDir。
         jniLibs.useLegacyPackaging = true
         // libpystdlib.so 与 libpysite.so 是 Python 模块 zip，不是 ELF，跳过符号剥离。
