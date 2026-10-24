@@ -42,9 +42,6 @@
 
     <string name="agent_reach_section_approval">审批</string>
     <string name="agent_reach_approval_footer">SSH 主机、技能目录、永久删除和定时任务始终逐次批准。</string>
-    <string name="agent_reach_mode_auto">直接执行，下方例外除外</string>
-    <string name="agent_reach_mode_semi">读取直接执行，其余需批准</string>
-    <string name="agent_reach_mode_manual">每次调用都需批准</string>
     <string name="agent_reach_always_allowed">始终允许的目标</string>
     <string name="agent_reach_always_allowed_none">无</string>
     <plurals name="agent_reach_always_allowed_count">

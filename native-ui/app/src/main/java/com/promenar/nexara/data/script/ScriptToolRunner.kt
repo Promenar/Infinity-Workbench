@@ -1,7 +1,6 @@
 package com.promenar.nexara.data.script
 
 import com.promenar.nexara.data.rag.FileIndexEventSink
-import com.promenar.nexara.data.repository.ToolAllowlistStore
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -34,7 +33,6 @@ class AndroidScriptToolRunner(
     private val files: IFileOperationRepository,
     private val indexEvents: FileIndexEventSink,
     private val approvals: ScriptFileApprovalBroker,
-    private val grants: ToolAllowlistStore,
     private val settings: ScriptSettings,
     private val sessionWorkspace: (suspend (String) -> SessionWorkspace)? = null,
     private val networkPolicy: com.promenar.nexara.domain.network.AgentNetworkPolicy? = null,
@@ -44,7 +42,7 @@ class AndroidScriptToolRunner(
         try {
             withTimeoutOrNull(ScriptLimits.hostTimeoutMillis(request)) {
                 val (gateway, loaded) = ScriptCapabilityDispatcher.Shared.call {
-                    val access = ScriptWorkspaceGateway.open(context, workspace, mounts, files, indexEvents, approvals, grants, { settings.approveFileWrites }, request.entryPath, sessionWorkspace)
+                    val access = ScriptWorkspaceGateway.open(context, workspace, mounts, files, indexEvents, approvals, request.entryPath, sessionWorkspace)
                     val source = if (request.entryPath == null) request else {
                         val text = access.invoke("read", buildJsonObject { put("path", request.entryPath) }).jsonObject["content"]!!.jsonPrimitive.content
                         request.copy(code = text)

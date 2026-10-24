@@ -74,7 +74,7 @@ class SessionListViewModel(
                 id = sessionId,
                 agentId = agentId,
                 modelId = defaultModelId,
-                executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "semi",
+                executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "workspace",
                 activeSkillIds = agent?.skills.orEmpty(),
                 activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
                 // 参数不复制进会话：生成时逐项回退到助手设置，修改助手后未自定义的会话随之生效。

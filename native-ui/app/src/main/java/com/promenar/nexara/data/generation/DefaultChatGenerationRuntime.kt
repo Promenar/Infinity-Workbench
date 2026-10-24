@@ -809,33 +809,21 @@ internal class DefaultChatGenerationRuntime(
     ): GenerationToolDecision {
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
-        ensureAutomaticConsent(request, session.executionMode.ifEmpty { "semi" })
+        ensureAutomaticConsent(request, session.executionMode.ifEmpty { "workspace" })
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
             call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }) }
         }
-        // UUID 必须先还原当前虚拟路径；技能目录变更在全自动模式也不能跳过审批。
-        val policyPendingIds = contentStrategy
-            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
-            .toMutableSet().apply {
-                // 文件变更的目标无法还原时，无从判断是否落在技能目录，按失败关闭要求审批。
-                calls.filter {
-                    com.promenar.nexara.domain.tool.ToolArgumentApprovalRules.requiresExplicitApproval(it.name, it.arguments, targets[it.id]) ||
-                        com.promenar.nexara.domain.tool.ToolExecutionTargets.isPathMutation(it.name) && targets[it.id] == null
-                }
-                    .forEach { add(it.id) }
-            }
-        val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
-            val call = calls.first { it.id == id }
-            val target = targets[id]
-            val scope = target?.let {
-                com.promenar.nexara.data.repository.ToolAllowlistScopes.resolveForSession(session.id, it, sessionWorkspace, externalFolders)
-            }
-            target == null || scope == null || toolAllowlistStore?.contains(call.name, target, scope.scopeKey) != true
-        }
-        val grantTargets = (policyPendingIds - requestedPendingIds).associateWith { targets.getValue(it)!! }
+        val mode = com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode)
+        val requestedPendingIds = calls.filter { call ->
+            com.promenar.nexara.domain.tool.ToolExecutionPolicy.requiresApproval(
+                mode, call.name, preparedByName[call.name]?.singleOrNull()?.risk ?: contentStrategy.riskForTool(call.name),
+                call.arguments, targets[call.id],
+            )
+        }.mapTo(mutableSetOf()) { it.id }
+        val grantTargets = emptyMap<String, String>()
         val validInvocations = calls.mapNotNull { call ->
             val tool = preparedByName[call.name]?.singleOrNull() ?: return@mapNotNull null
             val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(
@@ -871,7 +859,7 @@ internal class DefaultChatGenerationRuntime(
                 candidates = validInvocations.filter { it.first.id in pendingIds }.map { (call, tool, identity) ->
                     ApprovalCallCandidate(call, tool.risk, identity, executionTarget = targets[call.id])
                 },
-                reason = "Execution mode: ${session.executionMode.ifEmpty { "semi" }}",
+                reason = "Execution mode: ${session.executionMode.ifEmpty { "workspace" }}",
             )
             messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
             val creation = toolLedger.createToolApproval(

@@ -5,20 +5,12 @@ import org.junit.Test
 
 class ExecutionModeCodecTest {
     @Test
-    fun `缺失或未知模式回退为 semi`() {
-        listOf(null, "", "   ", "unknown", "automatic").forEach { raw ->
-            assertThat(ExecutionModeCodec.parseOrSemi(raw)).isEqualTo(ExecutionMode.SEMI)
+    fun `旧值与新值读取后只保存两档范围权限`() {
+        listOf("auto", "full_access", " AUTO ", "FULL_ACCESS").forEach { raw ->
+            assertThat(ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrWorkspace(raw))).isEqualTo("full_access")
         }
-    }
-
-    @Test
-    fun `合法模式忽略大小写并稳定序列化`() {
-        assertThat(ExecutionModeCodec.parseOrSemi("AUTO")).isEqualTo(ExecutionMode.AUTO)
-        assertThat(ExecutionModeCodec.parseOrSemi(" Semi ")).isEqualTo(ExecutionMode.SEMI)
-        assertThat(ExecutionModeCodec.parseOrSemi("manual")).isEqualTo(ExecutionMode.MANUAL)
-
-        assertThat(ExecutionModeCodec.serialize(ExecutionMode.AUTO)).isEqualTo("auto")
-        assertThat(ExecutionModeCodec.serialize(ExecutionMode.SEMI)).isEqualTo("semi")
-        assertThat(ExecutionModeCodec.serialize(ExecutionMode.MANUAL)).isEqualTo("manual")
+        listOf(null, "", "   ", "semi", "manual", "workspace", "unknown", "automatic").forEach { raw ->
+            assertThat(ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrWorkspace(raw))).isEqualTo("workspace")
+        }
     }
 }

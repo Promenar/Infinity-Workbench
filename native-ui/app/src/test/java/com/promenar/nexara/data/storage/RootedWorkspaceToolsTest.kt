@@ -173,7 +173,7 @@ class RootedWorkspaceToolsTest {
         File(repo, "lib").mkdirs()
         File(repo, "lib/data.txt").writeText("hello")
         val gateway = ScriptWorkspaceGateway.open(execution, workspace, manager, files, FileIndexEventSink.None,
-            ScriptFileApprovalBroker(), ToolAllowlistStore(directory.resolve("grants")), { false }, null)
+            ScriptFileApprovalBroker(), null)
         val read = gateway.invoke("read", buildJsonObject { put("path", "/lib/data.txt") }).jsonObject
         assertThat(read.getValue("content").jsonPrimitive.content).isEqualTo("hello")
         gateway.invoke("create", buildJsonObject { put("path", "/lib/out.txt"); put("content", "made") })

@@ -41,6 +41,7 @@ class BuiltinExecService(
     private val sessionWorkspace: suspend (sessionId: String?) -> SessionWorkspace = { SessionWorkspace.Private },
     /** 内置 git 的远端认证作用域：每条命令签发一次性 nonce，命令结束（含超时、取消、异常）即吊销。 */
     private val gitRemote: GitRemoteSessions = GitRemoteSessions.None,
+    private val runtimeDataMonitor: RuntimeDataMonitor? = null,
 ) {
     val pipAvailable: Boolean get() = environment.pipAvailable
 
@@ -139,10 +140,19 @@ class BuiltinExecService(
         val withRemote: (File, String) -> BuiltinCommandRequest = { root, workspaceKind ->
             request(root, workspaceKind).let { it.copy(environment = it.environment + lease.environment) }
         }
+        var runtimeFields = JsonObject(emptyMap())
         suspend fun runCommand(root: File): BuiltinCommandOutput {
-            if (live === ToolLiveOutputSink.None) return runner.run(withRemote(root, workspaceKind), control)
-            val tee = LiveWorkspaceOutput(root, live::emit)
-            return try { runner.run(withRemote(root, workspaceKind), control, tee::accept) } finally { tee.finish() }
+            val commandRequest = withRemote(root, workspaceKind)
+            val before = runtimeDataMonitor?.capture()
+            try {
+                if (live === ToolLiveOutputSink.None) return runner.run(commandRequest, control)
+                val tee = LiveWorkspaceOutput(root, live::emit)
+                return try { runner.run(commandRequest, control, tee::accept) } finally { tee.finish() }
+            } finally {
+                if (before != null) runtimeFields = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    runtimeDataMonitor.changesSince(before)
+                }
+            }
         }
         val held = try {
             keepAlive.hold(run, control::requestStop) {
@@ -165,17 +175,19 @@ class BuiltinExecService(
             return CommandToolResult(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话工作区不可用或正在被删除；请确认会话仍存在后重试。",
+                backendFields = runtimeFields,
             )
         } catch (_: IllegalStateException) {
             return CommandToolResult(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话工作区当前不可修改（可能有尚未恢复的文件操作）；稍后重试，或先用文件工具确认工作区状态。",
+                backendFields = runtimeFields,
             )
         } finally {
             lease.close()
         }
         val outcome = held.value
-        val fields = if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)
+        val fields = JsonObject((if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)) + runtimeFields)
         val output = outcome.value ?: return CommandToolResult(
             errorCode = "EXEC_START_FAILED",
             guidance = "无法启动命令进程；请确认设备上的 /system/bin/sh 与 setsid 可用，或改用 termux_exec。",

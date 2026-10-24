@@ -41,7 +41,7 @@ class AgentHubViewModelTest {
     fun `init loads agents from repository`() = runTest {
         val repo: AgentRepository = mockk()
         val agents = listOf(
-            Agent(id = "a1", name = "Agent1", executionMode = ExecutionMode.SEMI)
+            Agent(id = "a1", name = "Agent1", executionMode = ExecutionMode.WORKSPACE)
         )
         every { repo.observeAll() } returns flowOf(agents)
 
@@ -60,7 +60,7 @@ class AgentHubViewModelTest {
         every { repo.observeAll() } returns flowOf(emptyList())
 
         val defaults = listOf(
-            Agent(id = "d1", name = "Default", executionMode = ExecutionMode.SEMI)
+            Agent(id = "d1", name = "Default", executionMode = ExecutionMode.WORKSPACE)
         )
         AgentHubViewModel(repo, CreateAgentUseCase(repo), defaults)
 
@@ -105,7 +105,7 @@ class AgentHubViewModelTest {
 
     @Test
     fun `deleteAgent removes agent from local state`() = runTest {
-        val agent = Agent(id = "a1", name = "Agent1", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "a1", name = "Agent1", executionMode = ExecutionMode.WORKSPACE)
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
@@ -119,7 +119,7 @@ class AgentHubViewModelTest {
 
     @Test
     fun `togglePin flips pinned state and delegates to repository`() = runTest {
-        val agent = Agent(id = "a1", name = "Agent1", isPinned = false, executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "a1", name = "Agent1", isPinned = false, executionMode = ExecutionMode.WORKSPACE)
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
@@ -131,7 +131,7 @@ class AgentHubViewModelTest {
 
     @Test
     fun `togglePin on pinned agent unpins it`() = runTest {
-        val agent = Agent(id = "a1", name = "Agent1", isPinned = true, executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "a1", name = "Agent1", isPinned = true, executionMode = ExecutionMode.WORKSPACE)
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns flowOf(listOf(agent))
 
@@ -158,7 +158,7 @@ class AgentHubViewModelTest {
             id = "coder",
             name = "稳定 fallback",
             description = "稳定描述",
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
         )
         val displayed = listOf(AgentDisplayItem(coder, "Coding Expert", "Software architecture specialist"))
 
@@ -170,7 +170,7 @@ class AgentHubViewModelTest {
     @Test
     fun `repository emissions continuously refresh cards after returning from edit`() = runTest {
         val stream = MutableStateFlow(
-            listOf(Agent(id = "coder", name = "Old", executionMode = ExecutionMode.SEMI))
+            listOf(Agent(id = "coder", name = "Old", executionMode = ExecutionMode.WORKSPACE))
         )
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns stream
@@ -181,7 +181,7 @@ class AgentHubViewModelTest {
             if (initial.isEmpty()) initial = awaitItem()
             assertThat(initial.single().name).isEqualTo("Old")
 
-            stream.value = listOf(Agent(id = "coder", name = "Saved", executionMode = ExecutionMode.SEMI))
+            stream.value = listOf(Agent(id = "coder", name = "Saved", executionMode = ExecutionMode.WORKSPACE))
 
             assertThat(awaitItem().single().name).isEqualTo("Saved")
         }
@@ -190,7 +190,7 @@ class AgentHubViewModelTest {
     @Test
     fun `room emission publishes text and customization marker atomically`() = runTest {
         val stream = MutableStateFlow(
-            listOf(Agent(id = "coder", name = "Fallback", executionMode = ExecutionMode.SEMI))
+            listOf(Agent(id = "coder", name = "Fallback", executionMode = ExecutionMode.WORKSPACE))
         )
         val repo: AgentRepository = mockk(relaxed = true)
         every { repo.observeAll() } returns stream
@@ -204,7 +204,7 @@ class AgentHubViewModelTest {
                     id = "coder",
                     name = "User Name",
                     nameCustomized = true,
-                    executionMode = ExecutionMode.SEMI,
+                    executionMode = ExecutionMode.WORKSPACE,
                 )
             )
 

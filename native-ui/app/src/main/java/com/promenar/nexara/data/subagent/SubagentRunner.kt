@@ -12,9 +12,7 @@ import com.promenar.nexara.data.remote.protocol.ReasoningReplay
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
 import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
-import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
-import com.promenar.nexara.domain.tool.ToolArgumentApprovalRules
 import com.promenar.nexara.domain.tool.ToolExecutionPolicy
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.domain.tool.ToolLiveOutputSink
@@ -85,7 +83,7 @@ class SubagentRunner(
         suspend fun loop(): SubagentRun {
             val first = session() ?: return finish(run, SubagentStatus.CANCELLED, error = SESSION_GONE, publish = ::update)
             val messages = mutableListOf(
-                ProtocolMessage("system", systemPrompt(preset, SubagentLimits.toolset(host.tools(first), initial.toolProfile))),
+                ProtocolMessage("system", systemPrompt(preset, SubagentLimits.toolset(host.tools(first), initial.toolProfile), first.executionMode)),
                 ProtocolMessage("user", initial.prompt),
             )
             var tokens = 0L
@@ -97,6 +95,7 @@ class SubagentRunner(
                 currentCoroutineContext().ensureActive()
                 val current = session() ?: return finish(run, SubagentStatus.CANCELLED, error = SESSION_GONE, publish = ::update)
                 val tools = SubagentLimits.toolset(host.tools(current), initial.toolProfile)
+                messages[0] = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode))
                 round++
                 val finalRound = round > run.maxSteps || tokens >= run.maxTokens
                 if (finalRound) messages += ProtocolMessage("user", FINAL_ANSWER_PROMPT)
@@ -196,12 +195,9 @@ class SubagentRunner(
         val arguments = resolved.arguments
         val session = sessions() ?: return CallOutcome.SessionGone
         val target = host.target(session, tool, call.arguments)
-        val mode = ExecutionModeCodec.parseOrSemi(session.executionMode.ifEmpty { "semi" })
-        val needsApproval = ToolArgumentApprovalRules.requiresExplicitApproval(call.name, call.arguments, target) ||
-            ToolExecutionTargets.isPathMutation(call.name) && target == null ||
-            ToolExecutionPolicy.requiresApproval(mode, tool.risk) ||
-            mode == ExecutionMode.SEMI && ToolArgumentApprovalRules.requiresApprovalInSemi(call.name, call.arguments)
-        if (needsApproval && (target == null || !host.isGranted(session.id, call.name, target))) {
+        val mode = ExecutionModeCodec.parseOrWorkspace(session.executionMode.ifEmpty { "workspace" })
+        val needsApproval = ToolExecutionPolicy.requiresApproval(mode, call.name, tool.risk, call.arguments, target)
+        if (needsApproval) {
             val preview = approvalPreview(call.name, arguments)
             update(current().copy(status = SubagentStatus.WAITING_APPROVAL, currentTool = call.name), true)
             event(SubagentEvent.Kind.APPROVAL, preview, call.name, false, true)
@@ -222,7 +218,6 @@ class SubagentRunner(
                 event(SubagentEvent.Kind.TOOL_RESULT, TARGET_CHANGED, call.name, true, true)
                 return CallOutcome.Result(TARGET_CHANGED)
             }
-            if (outcome == SubagentApprovalOutcome.APPROVED_REMEMBER) target?.let { host.remember(session.id, call.name, it) }
         }
         val key = "subagent:$stepId:${current().index}:${call.id}"
         val sink = liveOutput?.open(key) ?: ToolLiveOutputSink.None
@@ -327,8 +322,9 @@ class SubagentRunner(
         return RoundResponse(content.toString(), reasoning.toString(), toolCalls, replay, inputTokens, outputTokens, !reported, failure)
     }
 
-    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>): String = buildString {
+    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>, executionMode: String): String = buildString {
         append(SYSTEM_PROMPT)
+        append("\n\n").append(com.promenar.nexara.ui.chat.manager.SystemPromptSections.permissions(ExecutionModeCodec.parseOrWorkspace(executionMode)))
         preset?.let { append("\n\n").append(it.instruction) }
         if (tools.isEmpty()) append("\n\n本次没有可用工具，请直接根据任务内容作答。")
         else append("\n\n").append(WORKSPACE_PATHS)

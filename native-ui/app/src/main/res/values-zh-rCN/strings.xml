@@ -27,9 +27,6 @@
     <string name="common_color_custom">自定义</string>
 
     <!-- ExecutionMode -->
-    <string name="common_mode_auto">自动</string>
-    <string name="common_mode_semi">半自动</string>
-    <string name="common_mode_manual">手动</string>
 
     <!-- ConfirmDialog -->
     <string name="common_btn_confirm">确认</string>
@@ -645,9 +642,6 @@
     <string name="sheet_tool_custom_unsandboxed">自定义脚本暂不可用。</string>
     <string name="sheet_tool_user_skills">用户技能</string>
     <string name="sheet_tool_execution_mode">执行模式</string>
-    <string name="sheet_execution_mode_auto">自动：所有工具自动运行</string>
-    <string name="sheet_execution_mode_semi">半自动：写入文件和高风险工具需要批准</string>
-    <string name="sheet_execution_mode_manual">手动：所有工具都需要批准</string>
     <string name="sheet_tool_code_analysis">代码分析</string>
     <string name="sheet_tool_web_search">Web 搜索</string>
     <string name="sheet_tool_filesystem_server">文件系统服务器</string>
@@ -1757,4 +1751,6 @@
     <string name="tailscale_allowlist_all">全部设备</string>
     <string name="tailscale_allowlist_format">每行或以逗号分隔一项：设备名、MagicDNS 名称或 tailnet IP。</string>
     <string name="tailscale_auth_key_hint">粘贴以 tskey- 开头的 auth key</string>
+    <string name="common_mode_workspace">工作区</string>
+    <string name="common_mode_full_access">完全访问</string>
 </resources>

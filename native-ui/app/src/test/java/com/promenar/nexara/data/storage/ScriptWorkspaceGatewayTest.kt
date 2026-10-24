@@ -46,7 +46,6 @@ class ScriptWorkspaceGatewayTest {
     private val mounts = ExternalFolderManager(context, dao, workspace, FileIndexEventSink.None) { backend }
     private val broker = ScriptFileApprovalBroker()
     private val grants = ToolAllowlistStore(directory.resolve("grants"))
-    private var approveWrites = true
     private val execution = object : SkillExecutionContext {
         override val sessionId = "session"
         override val agentId = "agent"
@@ -55,7 +54,7 @@ class ScriptWorkspaceGatewayTest {
     }
     private suspend fun open(sessionId: String = "session") = ScriptWorkspaceGateway.open(
         object : SkillExecutionContext by execution { override val sessionId = sessionId },
-        workspace, mounts, operations, FileIndexEventSink.None, broker, grants, { approveWrites }, "/mnt/demo/main.mjs",
+        workspace, mounts, operations, FileIndexEventSink.None, broker, "/mnt/demo/main.mjs",
     )
     private fun args(path: String, content: String? = null, hash: String? = null) = buildJsonObject {
         put("path", path); content?.let { put("content", it) }; hash?.let { put("expected_sha256", it) }
@@ -63,7 +62,6 @@ class ScriptWorkspaceGatewayTest {
     @After fun cleanup() { directory.deleteRecursively() }
 
     @Test fun `代理拒绝路径越界和保留名称且历史只读挂载可写`() = runBlocking {
-        approveWrites = false
         val gateway = open()
         for (path in listOf("/mnt/demo/../outside.txt", "/mnt/demo/.nexara/x.txt", "/mnt/demo/.recycle_bin/x.txt")) {
             try { gateway.invoke("read", args(path)); error("应拒绝") } catch (_: ExternalFolderException) { }
@@ -73,32 +71,29 @@ class ScriptWorkspaceGatewayTest {
         assertThat(String(memory.read("/a.txt"))).isEqualTo("x")
     }
 
-    @Test fun `写入先审批并按哈希拒绝冲突且审批期间挂载换源失败`() = runBlocking {
-        memory.write("/a.txt", "old".toByteArray())
-        val gateway = open()
-        val pending = async { runCatching { gateway.invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old"))) } }
-        val approval = broker.pending.first { it.isNotEmpty() }.single()
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("old")
-        row = row.copy(id = "replacement")
-        broker.resolve(approval.id, true)
-        assertThat((pending.await().exceptionOrNull() as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
-    }
-
-    @Test fun `关闭写入二次审批仍执行expected哈希且删除必须独立审批`() = runBlocking {
-        approveWrites = false
+    @Test fun `写入删除免审批且覆盖仍须满足哈希条件`() = runBlocking {
         memory.write("/a.txt", "old".toByteArray())
         val gateway = open()
         try { gateway.invoke("write", args("/mnt/demo/a.txt", "new", "0".repeat(64))); error("应冲突") }
         catch (failure: ScriptFailure) { assertThat(failure.code).isEqualTo("FILE_ERROR") }
         assertThat(String(memory.read("/a.txt"))).isEqualTo("old")
-        gateway.invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old")))
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("new")
-        val deletion = async { gateway.invoke("delete", args("/mnt/demo/a.txt", hash = Sha256Utils.hash("new"))) }
-        val approval = broker.pending.first { it.isNotEmpty() }.single()
-        assertThat(approval.risk).isEqualTo(com.promenar.nexara.domain.tool.ToolRisk.DELETE)
-        deletion.cancelAndJoin()
+        withTimeout(3000) {
+            gateway.invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old")))
+            assertThat(String(memory.read("/a.txt"))).isEqualTo("new")
+            gateway.invoke("delete", args("/mnt/demo/a.txt", hash = Sha256Utils.hash("new")))
+        }
+        assertThat(memory.stat("/a.txt")).isNull()
         assertThat(broker.pending.value).isEmpty()
-        assertThat(memory.stat("/a.txt")).isNotNull()
+    }
+
+    @Test fun `免审批也不能使用换源后的挂载`() = runBlocking {
+        memory.write("/a.txt", "old".toByteArray())
+        val gateway = open()
+        row = row.copy(id = "replacement")
+        val failure = runCatching { gateway.invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old"))) }.exceptionOrNull()
+        assertThat((failure as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("old")
+        assertThat(broker.pending.value).isEmpty()
     }
 
     @Test fun `读取返回实际字节哈希并拒绝越根模块和大小超限`() = runBlocking {
@@ -122,34 +117,18 @@ class ScriptWorkspaceGatewayTest {
             .isEqualTo("export const value = 42")
     }
 
-    @Test fun `脚本批准并记住会话挂载写入且撤销后重询`() = runBlocking {
+    @Test fun `普通写入免审批、不读写旧授权，其它会话不可见该挂载`() = runBlocking {
+        val target = """["path","/mnt/demo/a.txt"]"""
+        grants.add("write_file", target, "mount:mount", "session")
+        val original = grants.entries.value
         memory.write("/a.txt", "old".toByteArray())
-        val first = async { open().invoke("write", args("/mnt/demo/a.txt", "one", Sha256Utils.hash("old"))) }
-        val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }
-        broker.resolve(approval.id, true, true)
-        first.await()
-        assertThat(grants.entries.value.single().scopeKey).isEqualTo("mount:mount")
-        assertThat(grants.entries.value.single().sourceSessionId).isEqualTo("session")
-        val other = runCatching { open("another").invoke("write", args("/mnt/demo/a.txt", "outside", Sha256Utils.hash("one"))) }.exceptionOrNull()
+        withTimeout(3000) {
+            open().invoke("write", args("/mnt/demo/a.txt", "one", Sha256Utils.hash("old")))
+        }
+        val other = runCatching { open("another").invoke("write", args("/mnt/demo/a.txt", "two", Sha256Utils.hash("one"))) }.exceptionOrNull()
         assertThat((other as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
         assertThat(String(memory.read("/a.txt"))).isEqualTo("one")
-        withTimeout(3000) { open().invoke("write", args("/mnt/demo/a.txt", "two", Sha256Utils.hash("one"))) }
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
         assertThat(broker.pending.value).isEmpty()
-        grants.remove(grants.entries.value.single().id)
-        val next = async { open().invoke("write", args("/mnt/demo/a.txt", "three", Sha256Utils.hash("two"))) }
-        withTimeout(3000) { broker.pending.first { it.isNotEmpty() } }
-        next.cancelAndJoin()
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("two")
-    }
-
-    @Test fun `审批期间挂载换源不把原目标记忆到新挂载`() = runBlocking {
-        memory.write("/a.txt", "old".toByteArray())
-        val pending = async { runCatching { open().invoke("write", args("/mnt/demo/a.txt", "new", Sha256Utils.hash("old"))) } }
-        val approval = withTimeout(3000) { broker.pending.first { it.isNotEmpty() }.single() }
-        row = row.copy(id = "replacement")
-        broker.resolve(approval.id, true, true)
-        assertThat((pending.await().exceptionOrNull() as? ScriptFailure)?.code).isEqualTo("MOUNT_CHANGED")
-        assertThat(grants.entries.value).isEmpty()
+        assertThat(grants.entries.value).isEqualTo(original)
     }
 }

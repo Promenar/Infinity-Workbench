@@ -24,6 +24,19 @@ class ChatGenerationContentStrategyTest {
     private val read = ToolCall("call-r", "read_file", "{}")
 
     @Test
+    fun `两档全部类别通过统一审批矩阵`() {
+        val cases = com.promenar.nexara.domain.tool.permissionPolicyCases
+        val strategy = strategy(cases.associate { it.tool to it.risk })
+        listOf("workspace", "full_access").forEach { mode ->
+            val calls = cases.mapIndexed { index, case -> ToolCall("c$index", case.tool, case.arguments) }
+            val expected = cases.mapIndexedNotNull { index, case ->
+                "c$index".takeIf { case.alwaysApprove || case.command && mode == "workspace" }
+            }
+            assertThat(strategy.pendingApprovalIds(calls, mode)).containsExactlyElementsIn(expected).inOrder()
+        }
+    }
+
+    @Test
     fun `让出轮无最终回答也保留完整工具结果及随后用户指令`() {
         val session = Session("s", "agent", messages = listOf(
             Message("u1", MessageRole.USER, "查文件"),
@@ -357,7 +370,7 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
-    fun `审批策略由工具风险元数据驱动且未知风险fail closed`() {
+    fun `普通工具不因风险或旧模式增加审批`() {
         val strategy = strategy(
             mapOf(
                 "safe_alias_not_hardcoded" to ToolRisk.SAFE_READ,
@@ -371,13 +384,9 @@ class ChatGenerationContentStrategyTest {
             ToolCall("unknown", "unknown_legacy_tool", "{}"),
         )
 
-        assertThat(strategy.pendingApprovalIds(calls, "auto")).isEmpty()
-        assertThat(strategy.pendingApprovalIds(calls, "manual"))
-            .containsExactly("safe", "risk", "unknown").inOrder()
-        assertThat(strategy.pendingApprovalIds(calls, "semi"))
-            .containsExactly("risk", "unknown").inOrder()
-        assertThat(strategy.pendingApprovalIds(calls, "invalid-mode"))
-            .containsExactly("risk", "unknown").inOrder()
+        listOf("workspace", "full_access", "auto", "semi", "manual", "invalid-mode").forEach { mode ->
+            assertThat(strategy.pendingApprovalIds(calls, mode)).isEmpty()
+        }
     }
 
     @Test
@@ -398,7 +407,7 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
-    fun `半自动模式下可能携带数据的 web_fetch 需要审批，普通网址放行`() {
+    fun `两档均不因 web_fetch 参数携带数据而审批`() {
         val strategy = strategy(mapOf("web_fetch" to ToolRisk.SAFE_READ))
         fun fetch(id: String, url: String) = ToolCall(id, "web_fetch", """{"url":"$url"}""")
         val calls = listOf(
@@ -411,14 +420,13 @@ class ChatGenerationContentStrategyTest {
             ToolCall("broken", "web_fetch", "not json"),
         )
 
-        assertThat(strategy.pendingApprovalIds(calls, "semi"))
-            .containsExactly("query", "encoded", "userinfo", "long", "broken").inOrder()
-        assertThat(strategy.pendingApprovalIds(calls, "auto")).isEmpty()
-        assertThat(strategy.pendingApprovalIds(calls, "manual")).hasSize(calls.size)
+        listOf("workspace", "full_access", "semi", "auto", "manual").forEach { mode ->
+            assertThat(strategy.pendingApprovalIds(calls, mode)).isEmpty()
+        }
     }
 
     @Test
-    fun `工具禁用后清除旧风险快照并按未知风险审批`() {
+    fun `工具禁用后清除旧风险快照且未知风险免审批`() {
         var enabled = setOf("safe_alias")
         val settings = mockk<SharedPreferences>()
         every { settings.getStringSet(any(), any()) } answers { enabled }
@@ -442,7 +450,7 @@ class ChatGenerationContentStrategyTest {
 
         enabled = emptySet()
         strategy.buildTools(session)
-        assertThat(strategy.pendingApprovalIds(calls, "semi")).containsExactly("safe")
+        assertThat(strategy.pendingApprovalIds(calls, "semi")).isEmpty()
     }
 
     @Test
@@ -534,6 +542,7 @@ class ChatGenerationContentStrategyTest {
     ): DefaultChatGenerationContentStrategy {
         val settings = mockk<SharedPreferences>()
         every { settings.getStringSet(any(), any()) } returns knownTools.keys
+        every { settings.getBoolean(any(), any()) } returns true
         val registry = mockk<SkillRegistry>()
         every { registry.getAllTools() } returns knownTools.map { (name, risk) ->
             ProtocolTool(

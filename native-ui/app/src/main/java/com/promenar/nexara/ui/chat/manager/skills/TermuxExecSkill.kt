@@ -23,7 +23,7 @@ class TermuxExecSkill(
     override val id = "termux_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
-    override val description = "在同机 Termux 的 bash 中通过 -c 执行命令；background:true 用 setsid nohup 启动并立即返回任务号，最长运行 max_runtime_minutes 默认120、上限1440，后台不使用 timeout_seconds；on_exit 默认 notify，长任务优先 wake；可用 job_status/job_wait/job_stop，取消生成不会停止后台任务。日志在共享工作区 jobs/ 或 Termux 私有 ~/.nexara/jobs/；workdir 可省略，默认为 Termux 主目录；也可传绝对路径、~/ 或 \$PREFIX/ 路径。timeout_seconds 默认60，最多600；支持stdin。超时只停止本地等待，命令可能仍在运行，重试前请检查原任务。输出可能被Termux从开头截断，结果含原始长度。"
+    override val description = "以 Termux 身份运行，访问范围由 Termux 权限决定，不受 Nexara 工作区约束；工作区模式逐条审批，完全访问模式免审批，被拒后不要重复。" + "在同机 Termux 的 bash 中通过 -c 执行命令；background:true 用 setsid nohup 启动并立即返回任务号，最长运行 max_runtime_minutes 默认120、上限1440，后台不使用 timeout_seconds；on_exit 默认 notify，长任务优先 wake；可用 job_status/job_wait/job_stop，取消生成不会停止后台任务。日志在共享工作区 jobs/ 或 Termux 私有 ~/.nexara/jobs/；workdir 可省略，默认为 Termux 主目录；也可传绝对路径、~/ 或 \$PREFIX/ 路径。timeout_seconds 默认60，最多600；支持stdin。超时只停止本地等待，命令可能仍在运行，重试前请检查原任务。输出可能被Termux从开头截断，结果含原始长度。"
     override val mcpServerId: String? = null
     override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 bash -c 中执行的非空命令"},"workdir":{"type":"string","description":"可省略，默认 Termux 主目录；或绝对路径、~/、${'$'}PREFIX/ 路径"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA}},"required":["command"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()

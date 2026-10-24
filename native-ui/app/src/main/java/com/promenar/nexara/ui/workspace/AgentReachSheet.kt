@@ -80,7 +80,7 @@ fun AgentReachSheet(
         height = NexaraSheetHeight.Full,
     ) {
         AgentReachContent(
-            state = state.copy(executionMode = ExecutionModeCodec.parseOrSemi(executionMode)),
+            state = state.copy(executionMode = ExecutionModeCodec.parseOrWorkspace(executionMode)),
             actions = AgentReachActions(
                 onEditLanHosts = { editingHosts = true },
                 onOpenTailscale = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
@@ -256,16 +256,14 @@ private fun ApprovalSection(state: AgentReachState) {
         NexaraSettingsRowLayout(
             title = stringResource(
                 when (state.executionMode) {
-                    ExecutionMode.AUTO -> R.string.common_mode_auto
-                    ExecutionMode.SEMI -> R.string.common_mode_semi
-                    ExecutionMode.MANUAL -> R.string.common_mode_manual
+                    ExecutionMode.WORKSPACE -> R.string.common_mode_workspace
+                    ExecutionMode.FULL_ACCESS -> R.string.common_mode_full_access
                 },
             ),
             subtitle = stringResource(
                 when (state.executionMode) {
-                    ExecutionMode.AUTO -> R.string.agent_reach_mode_auto
-                    ExecutionMode.SEMI -> R.string.agent_reach_mode_semi
-                    ExecutionMode.MANUAL -> R.string.agent_reach_mode_manual
+                    ExecutionMode.WORKSPACE -> R.string.common_mode_workspace
+                    ExecutionMode.FULL_ACCESS -> R.string.common_mode_full_access
                 },
             ),
             icon = Icons.Rounded.VerifiedUser,

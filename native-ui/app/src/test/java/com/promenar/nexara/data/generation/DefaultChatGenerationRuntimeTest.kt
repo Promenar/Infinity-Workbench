@@ -244,14 +244,13 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
-    fun `全自动模式中无法解析目标的文件变更要求审批`() = runTest {
+    fun `未知文件目标不引入额外审批且由文件执行层校验`() = runTest {
         val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
         val repository = mockk<com.promenar.nexara.domain.repository.IWorkspaceRepository> {
             coEvery { getByUuid(any(), any()) } returns null
         }
-        // 目标无法还原时不知道是否落在技能目录，按失败关闭处理。
         assertAllowlistDecision(tool, """{"uuid":"missing"}""", """["path","/a.md"]""", "session:current-session",
-            com.promenar.nexara.data.workspace.SessionWorkspace.Private, false,
+            com.promenar.nexara.data.workspace.SessionWorkspace.Private, true,
             executionMode = "auto", policyPending = false, repository = repository)
     }
 
@@ -272,7 +271,7 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
-    fun `全局白名单让其它会话的host完整process及MCP调用免审批`() = runTest {
+    fun `旧白名单不影响命令审批且网页与MCP直接放行`() = runTest {
         val cases = listOf(
             Triple(ProtocolTool(function = ProtocolToolFunction("web_fetch", "", "{}"), risk = ToolRisk.SAFE_READ, runtimeToolId = "web_fetch", sourceId = "builtin"),
                 """{"url":"https://example.com/a"}""", """["host","example.com"]"""),
@@ -282,22 +281,35 @@ class DefaultChatGenerationRuntimeTest {
                 "{}", """["mcp","server","tool"]"""),
         )
         for ((tool, args, target) in cases) {
-            assertAllowlistDecision(tool, args, target, null, testDirectory("other-workspace"), true)
+            assertAllowlistDecision(tool, args, target, null, testDirectory("other-workspace"), tool.function.name != "shell_exec")
         }
         assertAllowlistDecision(cases[1].first, """{"command":"git status && rm x"}""", cases[1].third,
             null, testDirectory("other-workspace"), false)
     }
 
     @Test
-    fun `runtime按目录和私有工作区身份筛选全局白名单`() = runTest {
+    fun `普通文件写入不依赖旧白名单作用域`() = runTest {
         val tool = ProtocolTool(function = ProtocolToolFunction("write_file", "", "{}"), risk = ToolRisk.FILE_WRITE, runtimeToolId = "write_file", sourceId = "builtin")
         val args = """{"path":"/a.md"}"""
         val target = """["path","/a.md"]"""
         assertAllowlistDecision(tool, args, target, "workspace:project", testDirectory("project"), true)
-        assertAllowlistDecision(tool, args, target, "workspace:project", testDirectory("other"), false)
-        assertAllowlistDecision(tool, args, target, "session:other-session", com.promenar.nexara.data.workspace.SessionWorkspace.Private, false)
+        assertAllowlistDecision(tool, args, target, "workspace:project", testDirectory("other"), true)
+        assertAllowlistDecision(tool, args, target, "session:other-session", com.promenar.nexara.data.workspace.SessionWorkspace.Private, true)
         assertAllowlistDecision(tool, args, target, "session:current-session", com.promenar.nexara.data.workspace.SessionWorkspace.Private, true)
-        assertAllowlistDecision(tool, args, target, "workspace:project", com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("project", null, "离线"), false)
+        assertAllowlistDecision(tool, args, target, "workspace:project", com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("project", null, "离线"), true)
+    }
+
+    @Test
+    fun `生成运行时两档全部类别使用统一审批并忽略旧授权`() = runTest {
+        listOf("workspace", "full_access").forEach { mode ->
+            com.promenar.nexara.domain.tool.permissionPolicyCases.forEach { case ->
+                val tool = ProtocolTool(function = ProtocolToolFunction(case.tool, "", "{}"), risk = case.risk,
+                    runtimeToolId = case.tool, sourceId = "builtin")
+                assertAllowlistDecision(tool, case.arguments, """["host","example.com"]""", null,
+                    com.promenar.nexara.data.workspace.SessionWorkspace.Private,
+                    !(case.alwaysApprove || case.command && mode == "workspace"), executionMode = mode)
+            }
+        }
     }
 
     private fun testDirectory(id: String) = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
@@ -346,7 +358,7 @@ class DefaultChatGenerationRuntimeTest {
             coVerify(exactly = 1) {
                 executor.executeTools("current-session", "assistant", any(),
                     if (bypass) setOf("call") else emptySet(), listOf(tool),
-                    if (bypass && policyPending) mapOf("call" to rememberedTarget) else emptyMap())
+                    emptyMap())
             }
         } finally {
             root.deleteRecursively()

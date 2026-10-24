@@ -39,7 +39,7 @@ class CreateAgentUseCaseTest {
         assertEquals("A test agent", captured.description)
         assertEquals("gpt-4", captured.modelId)
         assertEquals("Be helpful", captured.systemPrompt)
-        assertEquals(ExecutionMode.SEMI, captured.executionMode)
+        assertEquals(ExecutionMode.WORKSPACE, captured.executionMode)
         assertTrue(captured.id.startsWith("agent_"))
         assertNotNull(captured.createdAt)
         coVerify(exactly = 1) { repository.create(any()) }

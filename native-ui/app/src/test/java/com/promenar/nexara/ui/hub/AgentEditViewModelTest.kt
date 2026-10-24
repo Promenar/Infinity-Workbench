@@ -72,7 +72,7 @@ class AgentEditViewModelTest {
             useInheritedConfig = false,
             ragConfig = AgentRagConfig(docChunkSize = 999),
             retrievalConfig = AgentRetrievalConfig(memoryLimit = 3),
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
             createdAt = 100L
         )
         every { repo.observeById("a1") } returns flowOf(agent)
@@ -183,7 +183,7 @@ class AgentEditViewModelTest {
     fun `saveAgent delegates to repository update`() = runTest {
         val agent = Agent(
             id = "a1", name = "Original", modelId = "old",
-            executionMode = ExecutionMode.SEMI, skills = listOf("s1"),
+            executionMode = ExecutionMode.WORKSPACE, skills = listOf("s1"),
             createdAt = 100L
         )
         every { repo.observeById("a1") } returns flowOf(agent)
@@ -199,7 +199,7 @@ class AgentEditViewModelTest {
                 saved.id == "a1" &&
                 saved.name == "Updated" &&
                 saved.modelId == "old" &&
-                saved.executionMode == ExecutionMode.SEMI &&
+                saved.executionMode == ExecutionMode.WORKSPACE &&
                 saved.skills == listOf("s1") &&
                 saved.createdAt == 100L
             })
@@ -208,7 +208,7 @@ class AgentEditViewModelTest {
 
     @Test
     fun `saveAgent updates initialAgent state`() = runTest {
-        val agent = Agent(id = "a1", name = "Original", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "a1", name = "Original", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("a1") } returns flowOf(agent)
 
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -274,7 +274,7 @@ class AgentEditViewModelTest {
         val ragConfig = AgentRagConfig()
         val retrievalConfig = AgentRetrievalConfig()
         val agent = Agent(
-            id = "a1", name = "Name", executionMode = ExecutionMode.SEMI,
+            id = "a1", name = "Name", executionMode = ExecutionMode.WORKSPACE,
             useInheritedConfig = false, ragConfig = ragConfig, retrievalConfig = retrievalConfig
         )
         every { repo.observeById("a1") } returns flowOf(agent)
@@ -289,7 +289,7 @@ class AgentEditViewModelTest {
 
     @Test
     fun `hasChanges is true after modifying name`() = runTest {
-        val agent = Agent(id = "a1", name = "Name", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "a1", name = "Name", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("a1") } returns flowOf(agent)
 
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -303,7 +303,7 @@ class AgentEditViewModelTest {
 
     @Test
     fun `saveAgent persists customized text flag with text in one repository update`() = runTest {
-        val agent = Agent(id = "coder", name = "Coder", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "coder", name = "Coder", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("coder") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("coder")
@@ -315,7 +315,7 @@ class AgentEditViewModelTest {
 
     @Test
     fun `saveAgent persists literal edits for non preset agents`() = runTest {
-        val agent = Agent(id = "user-1", name = "Custom", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "user-1", name = "Custom", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("user-1") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
         vm.loadAgent("user-1")
@@ -332,7 +332,7 @@ class AgentEditViewModelTest {
             name = "Coding Expert",
             description = "Stable fallback",
             modelId = "provider::old",
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -359,7 +359,7 @@ class AgentEditViewModelTest {
             id = "coder",
             name = "Coding Expert",
             description = "Stable fallback",
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -375,7 +375,7 @@ class AgentEditViewModelTest {
             id = "coder",
             name = "Coding Expert",
             description = "Stable fallback",
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -398,7 +398,7 @@ class AgentEditViewModelTest {
             id = "coder",
             name = "Coding Expert",
             description = "Stable fallback",
-            executionMode = ExecutionMode.SEMI,
+            executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
@@ -417,7 +417,7 @@ class AgentEditViewModelTest {
 
     @Test
     fun `room update failure leaves text and customization flags uncommitted`() = runTest {
-        val agent = Agent(id = "coder", name = "Coding Expert", executionMode = ExecutionMode.SEMI)
+        val agent = Agent(id = "coder", name = "Coding Expert", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("coder") } returns flowOf(agent)
         coEvery { repo.update(any()) } throws IllegalStateException("room failed")
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))

@@ -122,7 +122,7 @@ class GenerationInteractionStore(private val persistence: HeadlessInteractionPer
 /** 危险组合的接受状态独立于审批授权，不随备份传播到其它设备。 */
 class UnlimitedAutomationConsent(private val prefs: SharedPreferences) {
     fun requiresConfirmation(unlimited: Boolean, executionMode: String): Boolean =
-        unlimited && executionMode == "auto" && !prefs.getBoolean(KEY, false)
+        unlimited && com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(executionMode) == com.promenar.nexara.domain.model.ExecutionMode.FULL_ACCESS && !prefs.getBoolean(KEY, false)
 
     suspend fun confirm() = withContext(Dispatchers.IO) {
         check(prefs.edit().putBoolean(KEY, true).commit()) { "无法保存自动执行确认" }

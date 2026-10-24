@@ -45,9 +45,6 @@
 
     <string name="agent_reach_section_approval">Approvals</string>
     <string name="agent_reach_approval_footer">SSH hosts, skills folder, permanent deletes and scheduled tasks always ask.</string>
-    <string name="agent_reach_mode_auto">Runs directly, except below</string>
-    <string name="agent_reach_mode_semi">Reads run directly; the rest ask</string>
-    <string name="agent_reach_mode_manual">Every call asks</string>
     <string name="agent_reach_always_allowed">Always-allowed targets</string>
     <string name="agent_reach_always_allowed_none">None</string>
     <plurals name="agent_reach_always_allowed_count">

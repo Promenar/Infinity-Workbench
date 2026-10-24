@@ -82,6 +82,7 @@ class BuiltinExecServiceTest {
         clockNanos: () -> Long = System::nanoTime,
         sessionWorkspace: suspend (String?) -> SessionWorkspace = { SessionWorkspace.Private },
         gitRemote: GitRemoteSessions = GitRemoteSessions.None,
+        monitor: RuntimeDataMonitor? = null,
     ) = BuiltinExecService(
         workspace = host,
         runner = BuiltinCommandRunner(
@@ -104,6 +105,7 @@ class BuiltinExecServiceTest {
         keepAlive = keepAlive,
         sessionWorkspace = sessionWorkspace,
         gitRemote = gitRemote,
+        runtimeDataMonitor = monitor,
     )
 
     /** 记录保活请求；[stopOnStart] 模拟用户立即点击通知的停止按钮。 */
@@ -128,6 +130,34 @@ class BuiltinExecServiceTest {
     private fun args(vararg pairs: Pair<String, Any>) = JsonObject(pairs.associate { (key, value) ->
         key to if (value is Int) JsonPrimitive(value) else JsonPrimitive(value.toString())
     })
+
+    @Test
+    fun `shell 和 python 结果均包含关键数据变化且普通运行不增加字段`() = runBlocking<Unit> {
+        val data = File(work, "app-data").apply { mkdirs() }
+        val skill = File(data, "files/agent_skills/foo/SKILL.md").apply { parentFile.mkdirs(); writeText("before") }
+        val monitor = RuntimeDataMonitor(data)
+        val shell = ShellExecSkill(service(monitor = monitor))
+        val changed = json(shell.execute(args("command" to "printf changed >> '${skill.path}'; exit 2"), context).content)
+        assertThat(changed.getValue("runtime_changes").jsonArray.map { it.jsonPrimitive.content })
+            .containsExactly("files/agent_skills/foo/SKILL.md")
+        assertThat(changed.getValue("exit_code").jsonPrimitive.int).isEqualTo(2)
+        assertThat(json(shell.execute(args("command" to "true"), context).content)).doesNotContainKey("runtime_changes")
+
+        val python = listOf("/usr/bin/python3", "/opt/homebrew/bin/python3").firstOrNull { File(it).canExecute() }
+        assumeTrue("需要宿主 Python 验证 python_exec 进程路径", python != null)
+        val packaged = File(work, "packaged-python").apply { mkdirs() }
+        File(packaged, PackagedPython.STDLIB).writeText("")
+        File(packaged, PackagedPython.LAUNCHER).apply {
+            writeText("#!/bin/sh\nunset PYTHONHOME PYTHONPATH\nexec '$python' \"\$@\"\n")
+            setExecutable(true)
+        }
+        val result = PythonExecSkill(service(pythonDir = packaged, monitor = monitor)).execute(
+            args("code" to "from pathlib import Path; Path('${skill.path}').unlink()"), context,
+        )
+        assertThat(result.status).isEqualTo("success")
+        assertThat(json(result.content).getValue("runtime_changes").jsonArray.map { it.jsonPrimitive.content })
+            .containsExactly("files/agent_skills/foo/SKILL.md (deleted)")
+    }
 
     @Test
     fun `shell_exec 在工作区根运行并返回统一结果格式`() = runBlocking<Unit> {

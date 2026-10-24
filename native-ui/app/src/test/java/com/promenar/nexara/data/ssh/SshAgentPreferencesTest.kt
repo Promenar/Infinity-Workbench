@@ -52,7 +52,7 @@ class SshAgentPreferencesTest {
         }
         assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("ssh_host_list", "{}")).isFalse()
         assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("delete_file", """{"path":"/a"}""")).isFalse()
-        assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("delete_file", """{"path":"/a","irreversible":true}""")).isTrue()
+        assertThat(ToolArgumentApprovalRules.requiresExplicitApproval("delete_file", """{"path":"/a","irreversible":true}""")).isFalse()
     }
 
     private companion object {

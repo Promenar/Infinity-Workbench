@@ -38,7 +38,7 @@ object AgentMapper {
         ragConfig = entity.ragConfig,
         retrievalConfig = entity.retrievalConfig,
         useInheritedConfig = entity.useInheritedConfig,
-        executionMode = ExecutionModeCodec.parseOrSemi(entity.executionMode),
+        executionMode = ExecutionModeCodec.parseOrWorkspace(entity.executionMode),
         skills = decodeOrderedIds(entity.skillIds),
         mcpServerIds = decodeOrderedIds(entity.mcpServerIds),
         defaultWorkspaceId = entity.defaultWorkspaceId,

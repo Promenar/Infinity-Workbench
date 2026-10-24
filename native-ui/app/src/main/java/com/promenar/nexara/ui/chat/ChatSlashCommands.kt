@@ -126,9 +126,8 @@ internal fun rememberChatSlashCommands(
                 chatViewModel.updateExecutionMode(ExecutionModeCodec.serialize(action.mode))
                 val label = resources.getString(
                     when (action.mode) {
-                        ExecutionMode.AUTO -> R.string.slash_mode_auto
-                        ExecutionMode.SEMI -> R.string.slash_mode_semi
-                        ExecutionMode.MANUAL -> R.string.slash_mode_manual
+                        ExecutionMode.WORKSPACE -> R.string.common_mode_workspace
+                        ExecutionMode.FULL_ACCESS -> R.string.common_mode_full_access
                     },
                 )
                 feedback(resources.getString(R.string.slash_feedback_mode, label), SnackbarType.SUCCESS)
@@ -189,7 +188,7 @@ internal fun rememberChatSlashCommands(
                     isCompressing = latestCompressing,
                     hasMessages = state.messages.isNotEmpty(),
                     toolsEnabled = state.session?.options?.toolsEnabled ?: true,
-                    executionMode = ExecutionModeCodec.parseOrSemi(state.session?.executionMode),
+                    executionMode = ExecutionModeCodec.parseOrWorkspace(state.session?.executionMode),
                 )
             },
             perform = { latestPerform(it) },

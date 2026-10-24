@@ -15,7 +15,7 @@ data class SlashCommandContext(
     val isCompressing: Boolean = false,
     val hasMessages: Boolean = false,
     val toolsEnabled: Boolean = true,
-    val executionMode: ExecutionMode = ExecutionMode.SEMI,
+    val executionMode: ExecutionMode = ExecutionMode.WORKSPACE,
 )
 
 /** 内置命令解析后的动作；界面层把它映射到现有的 ViewModel 方法、对话框与轻提示。 */
@@ -52,9 +52,8 @@ enum class SlashCommandRejection {
 /** 内置命令的参数解析与可用性判断，纯函数。 */
 object BuiltinSlashCommandResolver {
     private val MODE_ALIASES = mapOf(
-        ExecutionMode.AUTO to setOf("auto", "自动", "全自动"),
-        ExecutionMode.SEMI to setOf("semi", "半自动", "默认", "default"),
-        ExecutionMode.MANUAL to setOf("manual", "手动", "逐个审批"),
+        ExecutionMode.WORKSPACE to setOf("workspace", "工作区", "默认", "default"),
+        ExecutionMode.FULL_ACCESS to setOf("full_access", "full access", "完全访问"),
     )
     private val ON = setOf("on", "开", "开启", "打开", "启用", "enable", "true", "1")
     private val OFF = setOf("off", "关", "关闭", "停用", "禁用", "disable", "false", "0")

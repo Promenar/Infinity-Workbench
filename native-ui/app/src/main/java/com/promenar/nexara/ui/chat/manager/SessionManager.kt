@@ -36,7 +36,7 @@ class SessionManager(
 
     suspend fun addSession(session: Session) {
         val enrichedSession = session.copy(
-            executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(session.executionMode)),
+            executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrWorkspace(session.executionMode)),
             loopStatus = if (session.loopStatus == LoopStatus.IDLE) LoopStatus.COMPLETED else session.loopStatus,
         )
 
@@ -124,7 +124,7 @@ class SessionManager(
     }
 
     suspend fun updateSessionExecutionMode(id: String, mode: String) {
-        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(mode))
+        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrWorkspace(mode))
         updateSession(id, mapOf("executionMode" to normalized))
     }
 
@@ -202,7 +202,7 @@ class SessionManager(
                 "customPrompt" -> result.copy(customPrompt = value as? String)
                 "executionMode" -> result.copy(
                     executionMode = ExecutionModeCodec.serialize(
-                        ExecutionModeCodec.parseOrSemi(value as? String),
+                        ExecutionModeCodec.parseOrWorkspace(value as? String),
                     ),
                 )
                 "loopStatus" -> result.copy(loopStatus = value as? LoopStatus ?: result.loopStatus)
