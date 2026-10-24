@@ -3,7 +3,6 @@ package com.promenar.nexara.data.workspace
 import com.promenar.nexara.data.session.SessionDeletingException
 import com.promenar.nexara.data.session.SessionExecutionGate
 import com.promenar.nexara.data.storage.ExternalMountPaths
-import com.promenar.nexara.data.storage.ExternalTreeTransfer
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
@@ -39,8 +38,8 @@ class DefaultDirectoryWorkspaceFiles(
             val source = mutationPath(path)
             val target = join(source.substringBeforeLast('/').ifEmpty { "/" }, ExternalFolderPaths.validateName(newName))
             requireEntry(backend, source)
-            requireAbsent(backend, target)
-            moveOne(sessionId, backend, source, target)
+            if (source == target) throw DirectoryFileOpException(DirectoryFileOpCode.NAME_EXISTS)
+            backend.move(source, target)
             requireEntry(backend, target)
         }
 
@@ -48,8 +47,7 @@ class DefaultDirectoryWorkspaceFiles(
         batch(sessionId, paths) { backend, raw ->
             val source = mutationPath(raw)
             val target = target(backend, source, targetDirectory)
-            requireAbsent(backend, target)
-            moveOne(sessionId, backend, source, target)
+            backend.move(source, target)
         }
 
     override suspend fun copy(sessionId: String, paths: List<String>, targetDirectory: String): DirectoryBatchResult =
@@ -65,24 +63,17 @@ class DefaultDirectoryWorkspaceFiles(
             while (backend.stat(destination) != null) {
                 destination = join(original.substringBeforeLast('/').ifEmpty { "/" }, "$stem (${suffix++})$extension")
             }
-            backend.validateTree(source)
-            ExternalTreeTransfer.copy(ExternalTreeTransfer.capture(backend, source), backend, destination)
+            backend.copy(source, destination)
         }
 
-    override suspend fun delete(sessionId: String, paths: List<String>): DirectoryBatchResult =
+    override suspend fun delete(sessionId: String, paths: List<String>, permanent: Boolean): DirectoryBatchResult =
         batch(sessionId, paths) { backend, raw ->
             val source = mutationPath(raw)
             requireEntry(backend, source)
             backend.validateTree(source)
-            mounts.delete(sessionId, source, null, irreversible = false)
+            if (permanent) backend.delete(source)
+            else mounts.delete(sessionId, source, null, irreversible = false)
         }
-
-    private suspend fun moveOne(sessionId: String, backend: ExternalFolderBackend, source: String, target: String) {
-        backend.validateTree(source)
-        val backupId = mounts.backupBeforeMove(sessionId, source)
-        ExternalTreeTransfer.move(backend, source, backend, target)
-        mounts.completeMoveBackup(sessionId, backupId)
-    }
 
     private suspend fun target(backend: ExternalFolderBackend, source: String, rawTarget: String): String {
         val directory = path(rawTarget)
@@ -164,6 +155,9 @@ class DefaultDirectoryWorkspaceFiles(
             is ExternalFolderException -> when (failure.code) {
                 "INVALID_PATH" -> DirectoryFileOpCode.NAME_INVALID
                 "NOT_FOUND" -> DirectoryFileOpCode.NOT_FOUND
+                "NAME_EXISTS" -> DirectoryFileOpCode.NAME_EXISTS
+                "TARGET_INSIDE_SOURCE" -> DirectoryFileOpCode.TARGET_INSIDE_SOURCE
+                "RECYCLE_LIMIT", "TOO_LARGE" -> DirectoryFileOpCode.TOO_LARGE
                 "READ_ONLY" -> DirectoryFileOpCode.READ_ONLY
                 "UNAVAILABLE", "MOUNT_CHANGED" -> DirectoryFileOpCode.WORKSPACE_UNAVAILABLE
                 else -> DirectoryFileOpCode.IO

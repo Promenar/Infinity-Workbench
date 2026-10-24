@@ -18,8 +18,8 @@ interface DirectoryWorkspaceFiles {
     /** 逐项复制（目录递归）；同名时自动改为“名称 (2)”等不冲突的名称。 */
     suspend fun copy(sessionId: String, paths: List<String>, targetDirectory: String): DirectoryBatchResult
 
-    /** 删除前备份到挂载回收区，与 Agent 删除同一恢复入口。 */
-    suspend fun delete(sessionId: String, paths: List<String>): DirectoryBatchResult
+    /** 默认先备份，超限返回 [DirectoryFileOpCode.TOO_LARGE] 并保留来源；[permanent] 为 true 时校验后直接删除。 */
+    suspend fun delete(sessionId: String, paths: List<String>, permanent: Boolean = false): DirectoryBatchResult
 }
 
 data class DirectoryBatchResult(
@@ -35,6 +35,7 @@ enum class DirectoryFileOpCode {
     READ_ONLY,
     WORKSPACE_UNAVAILABLE,
     SESSION_BUSY,
+    TOO_LARGE,
     IO,
 }
 

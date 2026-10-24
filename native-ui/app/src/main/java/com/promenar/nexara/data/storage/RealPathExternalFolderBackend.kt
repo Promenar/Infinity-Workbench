@@ -5,6 +5,7 @@ import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
 import android.system.StructStat
+import com.promenar.nexara.data.repository.AndroidWorkspaceFileMoves
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
@@ -25,6 +26,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Path
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.NoSuchFileException
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -171,6 +174,211 @@ class RealPathExternalFolderBackend internal constructor(
         withRoot { root ->
             withParent(root, normalized) { parent, name -> preflightDelete(parent, name, normalized) }
         }
+    }
+
+    override suspend fun move(sourcePath: String, targetPath: String) = io {
+        val source = mutationPath(sourcePath)
+        val target = mutationPath(targetPath)
+        if (forbiddenRoots.any { withinIgnoringCase(it, logical(source)) }) fail("INVALID_PATH", "移动范围包含受保护目录")
+        withRoot { root ->
+            withParent(root, source) { sourceParent, sourceName ->
+                val original = sourceParent.stat(sourceName) ?: fail("NOT_FOUND", "源条目不存在")
+                requireSupported(original)
+                rejectInsideSource(original, source, target)
+                preflightDelete(sourceParent, sourceName, source)
+                withParent(root, target, original.takeIf { it.isDirectory }?.objectId) { targetParent, targetName ->
+                    if (targetParent.stat(targetName) != null) fail("NAME_EXISTS", "同名文件或目录已经存在")
+                    if (sourceParent.stat(sourceName)?.revision != original.revision) fail("CONFLICT", "移动来源在校验期间发生变化")
+                    currentCoroutineContext().ensureActive()
+                    var moved: RealPathFileState? = null
+                    try {
+                        sourceParent.moveNew(sourceName, targetParent, targetName)
+                        moved = targetParent.stat(targetName) ?: fail("CONFLICT", "移动目标在提交后消失")
+                        requireSupported(moved)
+                        if (!sameMovedObject(moved, original)) fail("CONFLICT", "移动来源在提交期间被替换或修改")
+                    } catch (raw: Throwable) {
+                        val failure = moveFailure(raw)
+                        if (moved == null && (raw is FileAlreadyExistsException || raw is NoSuchFileException ||
+                                raw is ErrnoException && raw.errno == OsConstants.EXDEV)) throw failure
+                        withContext(NonCancellable) {
+                            val current = targetParent.stat(targetName)
+                            if (current != null && current.objectId == (moved ?: original).objectId && sourceParent.stat(sourceName) == null) {
+                                restoreMoved(targetParent, targetName, sourceParent, sourceName, current, failure)
+                            } else if (moved != null) {
+                                recoveryRequired(failure)
+                            }
+                        }
+                        throw failure
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun copy(sourcePath: String, targetPath: String) = io {
+        val source = mutationPath(sourcePath)
+        val target = mutationPath(targetPath)
+        withRoot { root ->
+            withParent(root, source) { sourceParent, sourceName ->
+                val original = sourceParent.stat(sourceName) ?: fail("NOT_FOUND", "源条目不存在")
+                requireSupported(original)
+                rejectInsideSource(original, source, target)
+                preflightDelete(sourceParent, sourceName, source)
+                withParent(root, target, original.takeIf { it.isDirectory }?.objectId) { targetParent, targetName ->
+                    if (targetParent.stat(targetName) != null) fail("NAME_EXISTS", "同名文件或目录已经存在")
+                    val created = CopiedNode(".nexara-copy-${UUID.randomUUID()}")
+                    try {
+                        copyNode(sourceParent, sourceName, source, targetParent, created)
+                        currentCoroutineContext().ensureActive()
+                        try { targetParent.moveNew(created.name, targetParent, targetName) }
+                        catch (failure: Throwable) {
+                            if (targetParent.stat(created.name) == null && targetParent.stat(targetName)?.objectId == created.state?.objectId) {
+                                created.name = targetName
+                            }
+                            throw moveFailure(failure)
+                        }
+                        created.name = targetName
+                        val published = targetParent.stat(targetName) ?: fail("CONFLICT", "复制目标在发布后消失")
+                        if (!sameMovedObject(published, checkNotNull(created.state))) fail("CONFLICT", "复制目标在发布期间被替换或修改")
+                    } catch (failure: Throwable) {
+                        withContext(NonCancellable) {
+                            try { rollbackCopy(targetParent, created) }
+                            catch (cleanup: Throwable) { failure.addSuppressed(cleanup); recoveryRequired(failure) }
+                        }
+                        throw failure
+                    }
+                }
+            }
+        }
+    }
+
+    private fun rejectInsideSource(state: RealPathFileState, source: String, target: String) {
+        if (state.isDirectory && (target == source || target.startsWith("$source/"))) {
+            fail("TARGET_INSIDE_SOURCE", "不能将目录放入自身或子目录")
+        }
+    }
+
+    private class CopiedNode(var name: String) {
+        var state: RealPathFileState? = null
+        val children = mutableListOf<CopiedNode>()
+    }
+
+    private suspend fun copyNode(
+        sourceParent: BoundRealPathDirectory, sourceName: String, sourcePath: String,
+        targetParent: BoundRealPathDirectory, created: CopiedNode,
+    ) {
+        currentCoroutineContext().ensureActive()
+        ensureAllowed(sourcePath)
+        val original = sourceParent.stat(sourceName) ?: fail("NOT_FOUND", "源条目不存在")
+        requireSupported(original)
+        if (original.isDirectory) {
+            sourceParent.openDirectory(sourceName).use { source ->
+                if (source.state().objectId != original.objectId) fail("CONFLICT", "复制来源目录被替换")
+                targetParent.createDirectory(created.name)
+                created.state = targetParent.stat(created.name) ?: fail("CONFLICT", "新建目标目录消失")
+                targetParent.openDirectory(created.name).use { target ->
+                    if (target.state().objectId != created.state?.objectId) fail("CONFLICT", "复制目标目录被替换")
+                    for (name in source.names().sorted()) {
+                        if (!visibleName(name)) fail("INVALID_PATH", "复制范围包含内部恢复文件或保留目录")
+                        val child = CopiedNode(name).also { created.children += it }
+                        copyNode(source, name, join(sourcePath, name), target, child)
+                    }
+                    created.state = target.state()
+                }
+                if (targetParent.stat(created.name)?.objectId != created.state?.objectId) fail("CONFLICT", "复制目标目录被替换")
+            }
+        } else {
+            sourceParent.openRead(sourceName).use { source ->
+                val before = source.state()
+                requireFile(before)
+                if (before.revision != original.revision) fail("CONFLICT", "复制来源文件被替换")
+                targetParent.createFile(created.name).use { target ->
+                    created.state = target.state()
+                    try {
+                        copyBounded(source.input, target.output, Long.MAX_VALUE)
+                        target.sync()
+                        if (source.state().revision != before.revision) fail("CONFLICT", "复制期间来源文件发生变化")
+                        if (target.state().size != before.size) fail("IO", "目标副本长度不一致")
+                    } finally {
+                        created.state = target.state()
+                    }
+                }
+                if (targetParent.stat(created.name)?.revision != created.state?.revision) fail("CONFLICT", "复制目标文件被替换或修改")
+            }
+        }
+    }
+
+    private fun rollbackCopy(parent: BoundRealPathDirectory, created: CopiedNode) {
+        val expected = created.state ?: return
+        val current = parent.stat(created.name) ?: return
+        if (current.objectId != expected.objectId || current.isSymbolicLink || current.isDirectory != expected.isDirectory) {
+            fail("RECOVERY_REQUIRED", "复制目标身份发生变化，已保留供人工核查")
+        }
+        val quarantine = ".nexara-copy-cleanup-${UUID.randomUUID()}"
+        try {
+            parent.moveNew(created.name, parent, quarantine)
+            val isolated = parent.stat(quarantine) ?: fail("RECOVERY_REQUIRED", "复制清理目标消失")
+            if (!sameMovedObject(isolated, expected)) fail("RECOVERY_REQUIRED", "复制清理目标被替换或修改")
+            if (isolated.isDirectory) {
+                parent.openDirectory(quarantine).use { directory ->
+                    if (directory.state().objectId != expected.objectId) fail("RECOVERY_REQUIRED", "复制目标目录被替换")
+                    var failure: Throwable? = null
+                    for (child in created.children.asReversed()) {
+                        try { rollbackCopy(directory, child) }
+                        catch (cleanup: Throwable) { if (failure == null) failure = cleanup else failure.addSuppressed(cleanup) }
+                    }
+                    failure?.let { throw it }
+                    if (directory.names().isNotEmpty() || parent.stat(quarantine)?.objectId != expected.objectId) {
+                        fail("RECOVERY_REQUIRED", "复制目标目录发生变化，已保留供人工核查")
+                    }
+                    parent.deleteDirectory(quarantine)
+                }
+            } else {
+                parent.deleteFile(quarantine)
+            }
+        } catch (failure: Throwable) {
+            parent.stat(quarantine)?.let { isolated -> restoreMoved(parent, quarantine, parent, created.name, isolated, failure) }
+            throw failure
+        }
+    }
+
+    private fun sameMovedObject(actual: RealPathFileState, expected: RealPathFileState): Boolean =
+        actual.objectId == expected.objectId && actual.isSymbolicLink == expected.isSymbolicLink &&
+            actual.isDirectory == expected.isDirectory && actual.isRegularFile == expected.isRegularFile &&
+            (actual.isDirectory || actual.contentVersion == expected.contentVersion)
+
+    private fun restoreMoved(
+        source: BoundRealPathDirectory, sourceName: String, target: BoundRealPathDirectory, targetName: String,
+        expected: RealPathFileState, failure: Throwable,
+    ) {
+        try {
+            if (source.stat(sourceName)?.objectId != expected.objectId) fail("RECOVERY_REQUIRED", "待恢复目标身份发生变化")
+            source.moveNew(sourceName, target, targetName)
+        } catch (recovery: Throwable) {
+            if (source.stat(sourceName) == null && target.stat(targetName)?.let { sameMovedObject(it, expected) } == true) return
+            failure.addSuppressed(recovery)
+            recoveryRequired(failure)
+        }
+        val restored = target.stat(targetName)
+        if (restored != null && sameMovedObject(restored, expected)) return
+        if (restored != null && source.stat(sourceName) == null) {
+            try { target.moveNew(targetName, source, sourceName) }
+            catch (recovery: Throwable) { failure.addSuppressed(recovery) }
+        }
+        recoveryRequired(failure)
+    }
+
+    private fun recoveryRequired(failure: Throwable): Nothing {
+        if (failure is CancellationException) throw failure
+        throw ExternalFolderException("RECOVERY_REQUIRED", "文件操作补偿未完成，请核查来源、目标及内部隔离副本").apply { addSuppressed(failure) }
+    }
+
+    private fun moveFailure(failure: Throwable): Throwable = when (failure) {
+        is FileAlreadyExistsException -> ExternalFolderException("NAME_EXISTS", "同名文件或目录已经存在").apply { initCause(failure) }
+        is NoSuchFileException -> ExternalFolderException("NOT_FOUND", "移动源或目标父目录不存在").apply { initCause(failure) }
+        is IOException -> ExternalFolderException("IO", "原子移动失败，请检查存储卷与目录").apply { initCause(failure) }
+        is ErrnoException -> if (failure.errno == OsConstants.EXDEV) ExternalFolderException("IO", "不能跨存储卷原子移动").apply { initCause(failure) } else failure
+        else -> failure
     }
 
     private suspend fun publishNew(parent: BoundRealPathDirectory, temporary: String, name: String): String {
@@ -354,25 +562,30 @@ class RealPathExternalFolderBackend internal constructor(
         } finally { opened.asReversed().forEach { it.close() } }
     }
 
-    private suspend fun <T> withDirectory(root: BoundRealPathDirectory, path: String, action: suspend (BoundRealPathDirectory) -> T): T {
+    private suspend fun <T> withDirectory(root: BoundRealPathDirectory, path: String, excludedDirectoryId: String? = null, action: suspend (BoundRealPathDirectory) -> T): T {
         ensureAllowed(path)
         val opened = mutableListOf<BoundRealPathDirectory>()
         try {
             var directory = root
+            fun checkTarget() {
+                if (excludedDirectoryId != null && directory.state().objectId == excludedDirectoryId) fail("TARGET_INSIDE_SOURCE", "目标目录位于来源内部")
+            }
+            checkTarget()
             if (path != "/") for (name in path.removePrefix("/").split('/')) {
                 currentCoroutineContext().ensureActive()
                 val state = directory.stat(name) ?: fail("NOT_FOUND", "目录不存在")
                 requireSupported(state)
                 if (!state.isDirectory) fail("NOT_DIRECTORY", "目标不是目录")
                 directory = directory.openDirectory(name).also { opened.add(it) }
+                checkTarget()
             }
             return action(directory)
         } finally { opened.asReversed().forEach { it.close() } }
     }
 
-    private suspend fun <T> withParent(root: BoundRealPathDirectory, path: String, action: suspend (BoundRealPathDirectory, String) -> T): T {
+    private suspend fun <T> withParent(root: BoundRealPathDirectory, path: String, excludedDirectoryId: String? = null, action: suspend (BoundRealPathDirectory, String) -> T): T {
         ensureAllowed(path)
-        return withDirectory(root, path.substringBeforeLast('/').ifEmpty { "/" }) { action(it, path.substringAfterLast('/')) }
+        return withDirectory(root, path.substringBeforeLast('/').ifEmpty { "/" }, excludedDirectoryId) { action(it, path.substringAfterLast('/')) }
     }
     private fun checkVersion(current: ExternalFolderEntry?, expected: String?, createOnly: Boolean) {
         if (current?.isDirectory == true || (createOnly && current != null)) fail("CONFLICT", "同名文件或目录已经存在")
@@ -436,6 +649,7 @@ internal interface BoundRealPathDirectory : Closeable {
     fun createFile(name: String): BoundRealPathWrite
     fun createDirectory(name: String)
     fun atomicReplace(source: String, target: String)
+    fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String)
     fun linkNew(source: String, target: String): Boolean
     fun deleteFile(name: String)
     fun deleteDirectory(name: String)
@@ -496,6 +710,20 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
         }
         override fun createDirectory(name: String) = Os.mkdir(child(name), 448)
         override fun atomicReplace(source: String, target: String) = Os.rename(child(source), child(target))
+        override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            val destination = targetDirectory as? AndroidDirectory ?: throw ExternalFolderException("UNSUPPORTED", "移动目标不是同类目录句柄")
+            // 原有句柄使用 O_PATH；桥接还需 fsync，另开绑定到同一目录的可读 FD。
+            val sourceFd = Os.open(base, OsConstants.O_RDONLY or OsConstants.O_CLOEXEC, 0)
+            try {
+                val targetFd = Os.open(destination.base, OsConstants.O_RDONLY or OsConstants.O_CLOEXEC, 0)
+                try {
+                    val sourceDescriptor = ParcelFileDescriptor.dup(sourceFd)
+                    sourceDescriptor.use { from ->
+                        ParcelFileDescriptor.dup(targetFd).use { to -> AndroidWorkspaceFileMoves.moveNoReplace(from.fd, source, to.fd, target) }
+                    }
+                } finally { Os.close(targetFd) }
+            } finally { Os.close(sourceFd) }
+        }
         override fun linkNew(source: String, target: String): Boolean = try { Os.link(child(source), child(target)); true } catch (exception: ErrnoException) {
             // Android 的 SELinux 策略禁止应用创建硬链接，返回 EACCES；与其它“不支持硬链接”的错误一样回退到独占新建。
             if (exception.errno in setOf(OsConstants.EACCES, OsConstants.EPERM, OsConstants.EOPNOTSUPP, OsConstants.ENOSYS, OsConstants.EXDEV)) false else throw exception

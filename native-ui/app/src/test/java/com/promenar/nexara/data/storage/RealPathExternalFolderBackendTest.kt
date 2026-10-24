@@ -17,6 +17,20 @@ class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
 
     override fun createBackend(): ExternalFolderBackend = JvmBoundRealPathFileSystem().backend(temporaryFolder.newFolder().canonicalFile)
 
+    @Test fun `目标祖先目录实际绑定到来源子目录时拒绝复制与移动`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source/nested").mkdirs()
+        File(root, "source/a").writeText("来源")
+        File(root, "alias").mkdir()
+        val fs = JvmBoundRealPathFileSystem()
+        fs.movedDirectories[File(root, "alias").toPath()] = File(root, "source").toPath()
+        val backend = fs.backend(root)
+        expectCode("TARGET_INSIDE_SOURCE") { backend.copy("/source", "/alias/nested/copy") }
+        expectCode("TARGET_INSIDE_SOURCE") { backend.move("/source", "/alias/nested/moved") }
+        assertEquals("来源", File(root, "source/a").readText())
+        assertEquals(emptyList<String>(), File(root, "source/nested").list()!!.toList())
+    }
+
     @Test
     fun rejectsSymbolicLinksForReadWriteListDeleteAndRoot() = runBlocking {
         val root = temporaryFolder.newFolder("root").canonicalFile
