@@ -52,6 +52,7 @@ class BackupPreferenceInventoryTest {
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
             "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
             "data/script/ScriptSettings.kt#preferences" to "nexara_settings",
+            "data/network/AgentNetworkSettings.kt#preferences" to "nexara_settings",
             "ui/settings/LocalModelsViewModel.kt#prefs" to "nexara_settings",
             "ui/settings/SshSettingsScreen.kt#settingsPrefs" to "nexara_settings",
             "ui/settings/SearchConfigViewModel.kt#prefs" to "nexara_search",

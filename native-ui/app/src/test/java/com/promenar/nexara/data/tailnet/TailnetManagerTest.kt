@@ -60,6 +60,7 @@ class TailnetManagerTest {
         val manager = manager()
         manager.start()
         manager.awaitPhase(TailnetPhase.DISABLED)
+        assertThat(manager.agentProxy()).isNull()
         assertThat(manager.isTailnetHost("100.64.0.5")).isFalse()
         assertThat(manager.proxySelector.select(URI("https://100.64.0.5/"))).containsExactly(Proxy.NO_PROXY)
         assertThat(manager.proxySelector.select(URI("https://nas.tail1.ts.net/"))).containsExactly(Proxy.NO_PROXY)
@@ -140,6 +141,7 @@ class TailnetManagerTest {
         assertThat(manager.isTailnetHost("printer")).isFalse()
         children.single().goOnline()
         val running = withTimeout(5_000) { manager.state.first { it.phase == TailnetPhase.RUNNING && it.peers.isNotEmpty() } }
+        assertThat(manager.agentProxy()?.type()).isEqualTo(Proxy.Type.HTTP)
         assertThat(running.summary?.selfName).isEqualTo("phone")
         assertThat(running.peers.map { it.name }).containsExactly("nas", "laptop")
         assertThat(manager.isTailnetHost("nas")).isTrue()
@@ -177,6 +179,7 @@ class TailnetManagerTest {
         manager.awaitPhase(TailnetPhase.NEEDS_LOGIN)
         manager.setEnabled(false)
         manager.awaitPhase(TailnetPhase.DISABLED)
+        assertThat(manager.agentProxy()).isNull()
         assertThat(children.single().stdinClosed).isTrue()
         assertThat(manager.subprocessEnvironment()).isEmpty()
         assertThat(manager.proxySelector.select(URI("https://100.64.0.5/"))).containsExactly(Proxy.NO_PROXY)

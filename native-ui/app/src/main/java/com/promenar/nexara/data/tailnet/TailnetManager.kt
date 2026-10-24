@@ -133,6 +133,11 @@ class TailnetManager(
     override val proxySelector: java.net.ProxySelector = TailnetProxySelector(this)
     override val proxyAuthenticator: okhttp3.Authenticator = TailnetProxyAuthenticator(this)
 
+    override fun agentProxy(): java.net.Proxy? =
+        if (enabled && state.value.phase == TailnetPhase.RUNNING) currentEndpoint()?.let {
+            java.net.Proxy(java.net.Proxy.Type.HTTP, TailnetProxyAddress.of(it))
+        } else null
+
     override fun isTailnetHost(host: String): Boolean =
         enabled && TailnetHosts.isTailnetHost(host, magicDnsSuffix, peerNames)
 

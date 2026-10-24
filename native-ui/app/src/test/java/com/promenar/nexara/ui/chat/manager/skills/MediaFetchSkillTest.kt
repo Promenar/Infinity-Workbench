@@ -3,6 +3,10 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.media.download.WorkspaceMediaDownloader
 import com.promenar.nexara.domain.media.MediaFetchUrlPolicy
+import com.promenar.nexara.domain.network.AgentNetworkPolicy
+import com.promenar.nexara.data.tailnet.DisabledTailnetRouting
+import com.promenar.nexara.data.tailnet.TailnetRouting
+import java.net.InetAddress
 import com.promenar.nexara.domain.media.MediaOrigin
 import com.promenar.nexara.domain.tool.ToolArgumentApprovalRules
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
@@ -43,6 +47,7 @@ class MediaFetchSkillTest {
         connected: Boolean = true,
         cleartext: Boolean = true,
         proxies: List<Proxy> = listOf(Proxy.NO_PROXY),
+        hosts: Set<String> = emptySet(),
         responder: (Request) -> Response = { response(it, mediaTestPng) },
     ): WorkspaceMediaDownloader = WorkspaceMediaDownloader(
         OkHttpClient.Builder().proxySelector(object : ProxySelector() {
@@ -55,6 +60,12 @@ class MediaFetchSkillTest {
         MediaFetchUrlPolicy { it == "main" },
         { connected },
         { cleartext },
+        AgentNetworkPolicy(isTailnetHost = { it == "main" }, allowedLanHosts = { hosts }, tailnetRunning = { connected }, resolver = {
+            arrayOf(InetAddress.getByName(if (it.endsWith(".test")) "93.184.216.34" else it))
+        }),
+        object : TailnetRouting by DisabledTailnetRouting {
+            override fun agentProxy() = proxies.singleOrNull()
+        },
     )
     private fun response(request: Request, bytes: ByteArray = mediaTestPng, mime: String = "image/png", code: Int = 200, location: String? = null, length: Long = bytes.size.toLong()): Response {
         val body = object : ResponseBody() {
@@ -72,6 +83,25 @@ class MediaFetchSkillTest {
     }
     private suspend fun execute(client: WorkspaceMediaDownloader = downloader(), path: String? = null, limit: Long = 100L * 1024 * 1024, url: String = "https://example.test/image") =
         MediaFetchSkill(store, client, limit).execute(buildJsonObject { put("url", url); path?.let { put("path", it) } }, mediaTestContext)
+
+    @Test fun `局域网HTTPS未授权时在发送前拒绝并提示共享白名单入口`() = runTest {
+        val result = execute(url = "https://192.168.1.2/a.png")
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("设置 → 网络访问")
+        assertThat(requests).isEmpty()
+    }
+
+    @Test fun `共享白名单授权后允许局域网HTTPS及回环HTTP`() = runTest {
+        assertThat(execute(downloader(hosts = setOf("192.168.1.2")), url = "https://192.168.1.2/a.png").status).isEqualTo("success")
+        assertThat(execute(downloader(hosts = setOf("127.0.0.1")), url = "http://127.0.0.1/a.png").status).isEqualTo("success")
+    }
+
+    @Test fun `重定向到未授权局域网HTTPS在下一跳发送前拒绝`() = runTest {
+        val result = execute(downloader { response(it, code = 302, location = "https://192.168.1.2/a.png") })
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("LAN_HOST_NOT_ALLOWED")
+        assertThat(requests).hasSize(1)
+    }
 
     @Test fun `下载以流写入指定工作区路径并返回媒体引用与元数据`() = runTest {
         val result = execute(path = "/media/custom.png")
@@ -166,7 +196,7 @@ class MediaFetchSkillTest {
     }
 
     @Test fun `回环也尊重平台明文策略`() = runTest {
-        assertThat(execute(downloader(cleartext = false), url = "http://localhost/a").status).isEqualTo("error")
+        assertThat(execute(downloader(cleartext = false, hosts = setOf("localhost")), url = "http://localhost/a").status).isEqualTo("error")
         assertThat(requests).isEmpty()
     }
 

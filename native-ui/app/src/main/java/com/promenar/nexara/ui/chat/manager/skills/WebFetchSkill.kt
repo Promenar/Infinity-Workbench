@@ -3,31 +3,41 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import org.jsoup.Jsoup
-import java.net.Inet4Address
-import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
+import com.promenar.nexara.data.network.AgentHttpRouting
+import com.promenar.nexara.data.network.awaitAgentResponse
+import com.promenar.nexara.data.tailnet.InstalledTailnetRouting
+import com.promenar.nexara.data.tailnet.TailnetRouting
+import com.promenar.nexara.domain.network.*
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.serialization.json.JsonObject
 import com.promenar.nexara.ui.chat.manager.registry.intArgument
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class WebFetchSkill(
-    private val httpClient: HttpClient,
+    private val httpClient: OkHttpClient,
+    networkPolicy: AgentNetworkPolicy? = null,
+    private val tailnetRouting: TailnetRouting = InstalledTailnetRouting.routing,
     private val addressResolver: suspend (String) -> Array<InetAddress> = { host ->
         withContext(Dispatchers.IO) { InetAddress.getAllByName(host) }
     },
 ) : SkillDefinition {
+    private val networkPolicy = networkPolicy ?: AgentNetworkPolicy(resolver = addressResolver)
     override val id = "web_fetch"
     override val name = "web_fetch"
-    override val description = "Fetch and extract clean main text content from a specific web URL. Use this to read the detailed content of a search result or webpage."
+    override val description = "获取网页并提取正文，适合阅读搜索结果或指定网页。支持公网；局域网与本机目标需在“设置 → 网络访问”中加入白名单；tailnet 需在 Tailscale 设置中启用并连接内置 Tailscale。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
 
@@ -56,16 +66,11 @@ class WebFetchSkill(
         args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val rawUrl = args.stringArgument("url") ?: return ToolResult(id = "err", content = "Missing 'url' argument", status = "error")
+        val rawUrl = args.stringArgument("url") ?: return ToolResult(id = "err", content = "缺少必填参数 url", status = "error")
         val url = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
             "https://$rawUrl"
         } else {
             rawUrl
-        }
-
-        val validationError = validatePublicHttpUrl(url)
-        if (validationError != null) {
-            return ToolResult(id = "err", content = validationError, status = "error")
         }
 
         // 解析并校验 startLine 和 lineCount 分页参数
@@ -76,22 +81,8 @@ class WebFetchSkill(
         val lineCount = rawLineCount.coerceAtLeast(1).coerceAtMost(500) // 最大单次读取 500 行，防爆
 
         return try {
-            val response = httpClient.get(url) {
-                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-                header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                header("Accept-Language", "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2")
-            }
-
-            if (response.status.value != 200) {
-                return ToolResult(
-                    id = "fetch_${System.currentTimeMillis()}",
-                    content = "Failed to fetch webpage. HTTP Status Code: ${response.status.value}",
-                    status = "error"
-                )
-            }
-
-            val html = response.bodyAsText()
-            val doc = Jsoup.parse(html, url)
+            val (finalUrl, html) = fetchHtml(url)
+            val doc = Jsoup.parse(html, finalUrl)
             
             // 1. 获取网页 Title
             val title = doc.title().trim()
@@ -179,37 +170,56 @@ class WebFetchSkill(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: NetworkAccessDenied) {
+            ToolResult(id = "err", content = "Blocked URL [${failure.code}]：${failure.message}", status = "error")
         } catch (e: Exception) {
             ToolResult(
                 id = "fetch_${System.currentTimeMillis()}",
-                content = "Error occurred while fetching or parsing the webpage: ${e.localizedMessage ?: e.message}",
+                content = "网页获取或解析失败：${e.localizedMessage ?: e.message}",
                 status = "error"
             )
         }
     }
 
-    private suspend fun validatePublicHttpUrl(url: String): String? {
-        val uri = try {
-            URI(url)
-        } catch (_: Exception) {
-            return "Invalid URL"
+    private suspend fun fetchHtml(initialUrl: String): Pair<String, String> = withContext(Dispatchers.IO) {
+        var url = initialUrl
+        repeat(6) { hop ->
+            val endpoint = networkPolicy.validate(url, AgentNetworkTool.WEB_FETCH)
+            val tailnet = endpoint.target == NetworkTargetClass.TAILNET
+            val route = AgentHttpRouting.route(httpClient, endpoint, tailnetRouting)
+            val request = Request.Builder().url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2")
+                .get().build()
+            val call = route.client.newCall(route.request(request))
+            val result = try {
+                coroutineScope {
+                    val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
+                        try { awaitCancellation() } finally { call.cancel() }
+                    }
+                    try {
+                        call.awaitAgentResponse().use { response ->
+                            Triple(response.code, response.header("Location"), if (response.code == 200) response.body?.string().orEmpty() else "")
+                        }
+                    } finally { cancellation.cancel() }
+                }
+            } catch (failure: java.io.IOException) {
+                if (tailnet) throw NetworkAccessDenied("TAILNET_PROXY_ERROR", AgentNetworkPolicy.TAILNET_GUIDANCE)
+                throw failure
+            }
+            if (result.first in setOf(301, 302, 303, 307, 308)) {
+                if (hop == 5) throw NetworkAccessDenied("REDIRECT_LIMIT", "网页重定向超过 5 跳")
+                val location = result.second ?: throw NetworkAccessDenied("URL_POLICY", "重定向缺少目标")
+                val reference = runCatching { URI(location) }.getOrNull()
+                if (reference == null || reference.rawUserInfo != null || location.startsWith("///")) throw NetworkAccessDenied("URL_POLICY", "重定向 URL 无效或包含用户信息")
+                url = url.toHttpUrl().resolve(location)?.toString() ?: throw NetworkAccessDenied("URL_POLICY", "重定向 URL 无效")
+            } else {
+                // 非 200 是站点响应而非策略拦截，交给通用错误输出，避免模型误判为需要改白名单。
+                if (result.first != 200) throw java.io.IOException("HTTP ${result.first}")
+                return@withContext url to result.third
+            }
         }
-        val scheme = uri.scheme?.lowercase()
-        if (scheme != "http" && scheme != "https") {
-            return "Unsupported URL scheme: ${uri.scheme}"
-        }
-        val host = uri.host ?: return "Invalid URL: missing host"
-        val addresses = try {
-            addressResolver(host)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            return "Unable to resolve host: ${e.localizedMessage ?: e.message}"
-        }
-        if (addresses.isEmpty() || addresses.any { com.promenar.nexara.domain.network.PublicHttpPolicy.isPrivateOrLocalAddress(it) }) {
-            return "Blocked URL: web_fetch cannot access localhost, private network, link-local, or multicast addresses."
-        }
-        return null
+        throw NetworkAccessDenied("REDIRECT_LIMIT", "网页重定向超过 5 跳")
     }
-
 }

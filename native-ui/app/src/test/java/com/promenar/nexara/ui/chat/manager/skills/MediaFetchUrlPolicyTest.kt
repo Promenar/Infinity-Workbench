@@ -22,9 +22,10 @@ class MediaFetchUrlPolicyTest {
         assertThat(policy.validate("http://example.test/a", "https://example.test/a")).isNotNull()
         assertThat(policy.validate("https://name@main/a", "https://example.test/a")).isNotNull()
     }
-    @Test fun `离线时短节点名仍标识为tailnet避免直连泄漏`() {
+    @Test fun `MagicDNS离线可识别但未知短名交给共享DNS分类`() {
         val offline = MediaFetchUrlPolicy { false }
-        assertThat(offline.isTailnet("main")).isTrue()
+        assertThat(offline.isTailnet("main")).isFalse()
+        assertThat(offline.isTailnet("main.tail.ts.net")).isTrue()
         assertThat(offline.isTailnet("localhost")).isFalse()
         assertThat(offline.isTailnet("127.0.0.1")).isFalse()
     }

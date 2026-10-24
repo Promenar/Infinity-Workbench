@@ -16,6 +16,8 @@ interface TailnetRouting {
     /** OkHttp/Ktor：tailnet 目标走本机 HTTP CONNECT 代理，其它 DIRECT。 */
     val proxySelector: java.net.ProxySelector
     val proxyAuthenticator: okhttp3.Authenticator
+    /** Agent 工具仅使用当前内置代理；未就绪返回 null，不触发启动或系统代理回退。 */
+    fun agentProxy(): Proxy? = null
     /** JSch：tailnet 主机返回 SOCKS5 代理（带凭据），其它 null。 */
     fun jschProxy(host: String): com.jcraft.jsch.Proxy?
     /** 子进程环境：运行中返回代理变量（必须含 NO_PROXY=localhost,127.0.0.1,::1，另一工作包会让内置 git 访问 127.0.0.1 上的本机服务），未运行返回空。 */

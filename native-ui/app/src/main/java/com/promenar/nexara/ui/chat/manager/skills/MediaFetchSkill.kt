@@ -27,7 +27,7 @@ class MediaFetchSkill(
 ) : SkillDefinition {
     override val id = "media_fetch"
     override val name = "media_fetch"
-    override val description = "Download an image, video or audio URL into the conversation workspace and return its virtual path. Supports HTTPS and permitted loopback HTTP; tailnet HTTPS uses built-in Tailscale."
+    override val description = "下载图片、视频或音频到会话工作区并返回虚拟路径。支持 HTTPS 与平台允许的回环 HTTP；局域网与本机需在“设置 → 网络访问”加入白名单，tailnet HTTPS 需在 Tailscale 设置中启用并连接内置 Tailscale。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """
@@ -80,7 +80,8 @@ class MediaFetchSkill(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            ToolResult(resultId, mediaFailureDescription(error), status = "error")
+            val message = if (error is WorkspaceMediaException) "${error.code}：${error.message}" else mediaFailureDescription(error)
+            ToolResult(resultId, message, status = "error")
         }
     }
 }

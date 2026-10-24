@@ -365,6 +365,20 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         sessionExecutionGate.withNewSessionAdmission(sessionId) {
             generationRunnerFactory.createRuntime(sessionId, "context-estimate").estimateContext(sessionId)
         }
+    private val agentNetworkSettings by lazy {
+        com.promenar.nexara.data.network.AgentNetworkSettings(getSharedPreferences(
+            com.promenar.nexara.data.network.AgentNetworkSettings.PREFERENCES_NAME, MODE_PRIVATE))
+    }
+    private val agentNetworkPolicy by lazy {
+        com.promenar.nexara.domain.network.AgentNetworkPolicy(
+            isTailnetHost = tailnetManager::isTailnetHost,
+            allowedLanHosts = { agentNetworkSettings.lanHosts },
+            tailnetRunning = { tailnetManager.state.value.phase == com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING },
+        )
+    }
+    val agentNetworkAccess: com.promenar.nexara.domain.network.AgentNetworkAccess by lazy {
+        com.promenar.nexara.data.network.DefaultAgentNetworkAccess(agentNetworkSettings, tailnetManager, startupScope)
+    }
     val scriptSettings by lazy {
         com.promenar.nexara.data.script.ScriptSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE))
     }
@@ -377,7 +391,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private val scriptToolRunner by lazy {
         com.promenar.nexara.data.script.AndroidScriptToolRunner(scriptRuntime, workspaceRepository, externalFolderManager,
             fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, toolAllowlistStore, scriptSettings,
-            sessionWorkspaceResolver::resolve)
+            sessionWorkspaceResolver::resolve, networkPolicy = agentNetworkPolicy, tailnetRouting = tailnetManager)
     }
     val generationInteractions by lazy {
         com.promenar.nexara.data.generation.GenerationInteractionStore(
@@ -1182,7 +1196,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 com.promenar.nexara.data.ssh.SshAgentPreferences.isHostManagementEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
             }.forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
-            register(WebFetchSkill(httpClient))
+            register(WebFetchSkill(gitRemoteHttpClient, networkPolicy = agentNetworkPolicy, tailnetRouting = tailnetManager))
             register(com.promenar.nexara.ui.chat.manager.skills.ViewMediaSkill(workspaceMediaViewer) { sessionId ->
                 chatStore.getSession(sessionId)?.let { resolveMediaViewTarget(it) }
                     ?: com.promenar.nexara.data.generation.MediaViewTarget()
@@ -2315,6 +2329,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             policy = com.promenar.nexara.domain.media.MediaFetchUrlPolicy(tailnetManager::isTailnetHost),
             tailnetConnected = { tailnetManager.state.value.phase == com.promenar.nexara.data.tailnet.TailnetPhase.RUNNING },
             cleartextPermitted = { host -> android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host) },
+            networkPolicy = agentNetworkPolicy,
+            tailnetRouting = tailnetManager,
         )
     }
 

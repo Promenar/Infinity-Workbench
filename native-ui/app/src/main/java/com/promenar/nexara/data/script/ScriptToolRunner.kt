@@ -37,6 +37,8 @@ class AndroidScriptToolRunner(
     private val grants: ToolAllowlistStore,
     private val settings: ScriptSettings,
     private val sessionWorkspace: (suspend (String) -> SessionWorkspace)? = null,
+    private val networkPolicy: com.promenar.nexara.domain.network.AgentNetworkPolicy? = null,
+    private val tailnetRouting: com.promenar.nexara.data.tailnet.TailnetRouting = com.promenar.nexara.data.tailnet.InstalledTailnetRouting.routing,
 ) : ScriptToolRunner {
     override suspend fun execute(request: ScriptRequest, context: SkillExecutionContext): ScriptResult = withContext(Dispatchers.IO) {
         try {
@@ -51,7 +53,7 @@ class AndroidScriptToolRunner(
                 }
                 val requests = AtomicInteger()
                 val networkBudget = ScriptNetworkBudget()
-                val http = ScriptHttpClient({ settings.lanHosts })
+                val http = ScriptHttpClient({ settings.lanHosts }, tailnetRouting = tailnetRouting, networkPolicy = networkPolicy)
                 val live = context.liveOutput
                 val capabilities = object : ScriptCapabilities {
                     override suspend fun invoke(operation: String, arguments: JsonObject): JsonElement {

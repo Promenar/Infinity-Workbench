@@ -70,7 +70,7 @@ class BuiltInSkillCancellationTest {
         val cancellation = CancellationException("network cancelled")
         val cancellingClient = HttpClient(MockEngine { throw cancellation })
         val cases = listOf(
-            WebFetchSkill(cancellingClient) { throw cancellation } to
+            WebFetchSkill(okhttp3.OkHttpClient()) { throw cancellation } to
                 skillArgs("url" to "https://example.com"),
             WebSearchSkill(appContext, cancellingClient, testSecrets) to skillArgs("query" to "query"),
         )

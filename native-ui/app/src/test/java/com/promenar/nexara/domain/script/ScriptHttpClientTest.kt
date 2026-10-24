@@ -2,6 +2,10 @@ package com.promenar.nexara.domain.script
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.script.ScriptHttpClient
+import com.promenar.nexara.data.network.ConnectProxyFixture
+import com.promenar.nexara.data.tailnet.DisabledTailnetRouting
+import com.promenar.nexara.data.tailnet.TailnetRouting
+import java.net.Proxy
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -64,6 +68,37 @@ class ScriptHttpClientTest {
                 withTimeout(2000) { pending.cancelAndJoin() }
                 assertThat(pending.isCancelled).isTrue()
             } finally { release.countDown() }
+        }
+    }
+
+    @Test fun `tailnet经真实本机CONNECT并调用代理认证且不解析名称`() = runBlocking {
+        ConnectProxyFixture().use { fixture ->
+            val client = ScriptHttpClient({ emptySet() }, tailnetRouting = fixture.routing, tailnetRunning = { true },
+                resolver = { error("tailnet 不应调用系统 DNS") })
+            try { client.fetch(args("https://main.tail.ts.net/test"), ScriptNetworkBudget()); error("代理应返回失败") }
+            catch (failure: ScriptFailure) {
+                assertThat(failure.code).isEqualTo("NETWORK_DENIED")
+                assertThat(failure.message).contains("TAILNET_PROXY_ERROR")
+            }
+            assertThat(withTimeout(2000) { fixture.connect.await() }).isEqualTo("CONNECT main.tail.ts.net:443 HTTP/1.1")
+            assertThat(fixture.authentications.get()).isGreaterThan(0)
+        }
+    }
+
+    @Test fun `tailnet代理回退直连或未运行均结构化拒绝`() = runBlocking {
+        val routing = object : TailnetRouting by DisabledTailnetRouting {
+            override fun isTailnetHost(host: String) = host == "main"
+            override val proxySelector = ConnectProxyFixture.selector(listOf(Proxy.NO_PROXY))
+        }
+        for (running in listOf(false, true)) {
+            val client = ScriptHttpClient({ setOf("main") }, tailnetRouting = routing, tailnetRunning = { running },
+                resolver = { error("tailnet 不应调用系统 DNS") })
+            try { client.fetch(args("https://main/test"), ScriptNetworkBudget()); error("应拒绝直连") }
+            catch (failure: ScriptFailure) {
+                assertThat(failure.code).isEqualTo("NETWORK_DENIED")
+                assertThat(failure.message).contains("TAILNET_OFFLINE")
+                assertThat(failure.message).contains("Tailscale 设置中启用并连接")
+            }
         }
     }
 

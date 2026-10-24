@@ -7,6 +7,8 @@ import com.promenar.nexara.data.media.download.WorkspaceMediaDownloader
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.rag.ImageGenClient
 import com.promenar.nexara.domain.media.*
+import com.promenar.nexara.domain.network.AgentNetworkPolicy
+import java.net.InetAddress
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -29,7 +31,8 @@ class ImageGenerationWorkspaceTest {
     private val downloader = WorkspaceMediaDownloader(OkHttpClient.Builder().addInterceptor {
         Response.Builder().request(it.request()).protocol(Protocol.HTTP_1_1).code(200).message("ok")
             .header("Content-Type", "image/png").body(mediaTestPng.toResponseBody()).build()
-    }.build(), MediaFetchUrlPolicy { false }, { false }, { false })
+    }.build(), MediaFetchUrlPolicy { false }, { false }, { false },
+        AgentNetworkPolicy(resolver = { arrayOf(InetAddress.getByName("93.184.216.34")) }))
 
     private suspend fun generate(vararg images: JsonObject): com.promenar.nexara.data.model.ToolResult {
         val client = HttpClient(MockEngine { respond(buildJsonObject { put("data", JsonArray(images.toList())) }.toString()) })

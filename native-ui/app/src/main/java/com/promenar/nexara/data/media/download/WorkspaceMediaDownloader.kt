@@ -1,13 +1,15 @@
 package com.promenar.nexara.data.media.download
 
 import com.promenar.nexara.data.media.MediaTypeSniffer
+import com.promenar.nexara.data.network.AgentHttpRouting
+import com.promenar.nexara.data.tailnet.InstalledTailnetRouting
+import com.promenar.nexara.data.tailnet.TailnetRouting
+import com.promenar.nexara.domain.network.*
 import com.promenar.nexara.domain.media.*
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.IOException
 import java.net.URI
-import java.net.InetSocketAddress
-import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
@@ -23,6 +25,8 @@ class WorkspaceMediaDownloader(
     private val policy: MediaFetchUrlPolicy,
     private val tailnetConnected: () -> Boolean,
     private val cleartextPermitted: (String) -> Boolean,
+    private val networkPolicy: AgentNetworkPolicy = AgentNetworkPolicy(isTailnetHost = policy::isTailnet, tailnetRunning = tailnetConnected),
+    private val tailnetRouting: TailnetRouting = InstalledTailnetRouting.routing,
 ) {
     private val client = client.newBuilder()
         .followRedirects(false).followSslRedirects(false)
@@ -44,31 +48,22 @@ class WorkspaceMediaDownloader(
         var redirects = 0
         while (true) {
             currentCoroutineContext().ensureActive()
-            policy.validate(current, previous)?.let { fail("URL_POLICY", it) }
-            val uri = URI(current)
-            val host = uri.host
-            val tailnet = policy.isTailnet(host)
-            if (tailnet && !tailnetConnected()) fail("TAILNET_OFFLINE", "内置 Tailscale 未启用或未连接，请先连接后下载媒体")
+            val endpoint = try { networkPolicy.validate(current, AgentNetworkTool.MEDIA_FETCH) }
+            catch (failure: NetworkAccessDenied) { fail(failure.code, failure.message.orEmpty()) }
+            policy.validate(current, previous, endpoint.target)?.let { fail("URL_POLICY", it) }
+            val uri = endpoint.uri
+            val host = endpoint.host
+            val tailnet = endpoint.target == NetworkTargetClass.TAILNET
             if (uri.scheme.equals("http", true)) {
                 // Android 按目标主机检查明文策略；不借助改写地址或放宽全局配置绕过。
-                if (tailnet) fail("TAILNET_CLEARTEXT", "media_fetch 不支持 tailnet 明文 http；请用 python_exec 或 shell_exec 经内置代理下载到会话工作区，或使用 https")
                 if (!cleartextPermitted(host)) fail("CLEARTEXT_BLOCKED", "该回环地址被 Android 明文网络策略拒绝，请使用 127.0.0.1 或 https")
             }
-            val routedClient = if (tailnet) {
-                val proxy = client.proxySelector.select(uri)?.singleOrNull()
-                val address = proxy?.address() as? InetSocketAddress
-                val bytes = address?.address?.address
-                if (proxy?.type() != Proxy.Type.HTTP || bytes == null ||
-                    !bytes.contentEquals(byteArrayOf(127, 0, 0, 1))) {
-                    fail("TAILNET_OFFLINE", "内置 Tailscale 代理不可用，已拒绝回退直连，请检查连接")
-                }
-                // 固定本次调用的本机代理；状态随后变化也不能触发选择器回退。
-                client.newBuilder().proxy(proxy).build()
-            } else client
-            val call = routedClient.newCall(
+            val route = try { AgentHttpRouting.route(client, endpoint, tailnetRouting) }
+            catch (failure: NetworkAccessDenied) { fail(failure.code, failure.message.orEmpty()) }
+            val call = route.client.newCall(route.request(
                 // 部分站点拒绝 OkHttp 默认 UA（403），与 web_fetch 一致使用浏览器式 UA。
                 Request.Builder().url(current).header("User-Agent", BROWSER_USER_AGENT).get().build(),
-            )
+            ))
             val result = coroutineScope {
                 val activeResponse = AtomicReference<Response?>()
                 // 取消在响应头和响应体读取阶段都主动关闭调用，避免阻塞到读取超时。
@@ -84,11 +79,9 @@ class WorkspaceMediaDownloader(
                             val reference = runCatching { URI(location) }.getOrNull()
                                 ?: fail("REDIRECT_LOCATION", "媒体重定向地址无效")
                             if (reference.rawUserInfo != null) fail("URL_POLICY", "媒体 URL 不允许包含用户信息")
-                            if (reference.isAbsolute) policy.validate(location, current)?.let { fail("URL_POLICY", it) }
                             val next = current.toHttpUrl().resolve(location)?.toString()
                                 ?: fail("REDIRECT_LOCATION", "媒体重定向地址无效")
                             // 先检查原始引用，再按 HTTP URL 语义解析，兼容仅查询参数和空引用。
-                            policy.validate(next, current)?.let { fail("URL_POLICY", it) }
                             DownloadResult.Redirect(next)
                         } else {
                             if (!response.isSuccessful) fail("HTTP_ERROR", "媒体下载失败：HTTP ${response.code}")
@@ -120,6 +113,9 @@ class WorkspaceMediaDownloader(
                             }
                         }
                     }
+                } catch (failure: IOException) {
+                    if (tailnet) fail("TAILNET_PROXY_ERROR", AgentNetworkPolicy.TAILNET_GUIDANCE)
+                    throw failure
                 } finally { cancellation.cancel() }
             }
             when (result) {

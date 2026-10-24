@@ -4,7 +4,7 @@ import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 
-/** web_fetch 与脚本联网共用的公网判定，不在各个工具内复制网段规则。 */
+/** Agent 网络目标分类使用的公网判定，不在各个工具内复制网段规则。 */
 object PublicHttpPolicy {
     fun isPrivateOrLocalAddress(address: InetAddress): Boolean {
         if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress) return true
