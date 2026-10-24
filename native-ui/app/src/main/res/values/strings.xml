@@ -1389,6 +1389,8 @@
     <string name="exec_notification_public">&brand; is running a command</string>
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
+    <string name="exec_notification_kind_linux">Linux</string>
+    <string name="exec_notification_kind_terminal">Terminal</string>
     <string name="exec_notification_stop">Stop</string>
     <string name="exec_notification_stop_all">Stop all</string>
     <string name="generation_background_unavailable">This response is still generating, but it may stop if you leave the app.</string>

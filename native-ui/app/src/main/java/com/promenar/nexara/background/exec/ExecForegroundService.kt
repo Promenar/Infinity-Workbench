@@ -120,7 +120,14 @@ class ExecForegroundService : Service() {
             .setContentTitle(title)
             .apply {
                 if (latest != null) {
-                    val kind = getString(if (latest.kind == ExecRunKind.PYTHON) R.string.exec_notification_kind_python else R.string.exec_notification_kind_shell)
+                    val kind = getString(
+                        when (latest.kind) {
+                            ExecRunKind.SHELL -> R.string.exec_notification_kind_shell
+                            ExecRunKind.PYTHON -> R.string.exec_notification_kind_python
+                            ExecRunKind.LINUX -> R.string.exec_notification_kind_linux
+                            ExecRunKind.TERMINAL -> R.string.exec_notification_kind_terminal
+                        },
+                    )
                     setContentText("$kind · ${latest.summary}")
                     setWhen(latest.startedAtMillis)
                     setUsesChronometer(true)

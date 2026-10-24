@@ -1002,6 +1002,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** 内置 Linux 环境（proot + Alpine）；界面与执行层通过它取得 domain/linux 接口的实现。 */
+    val linux by lazy {
+        com.promenar.nexara.data.linux.LinuxModule(this, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+    }
+
     private val runtimeDataMonitor by lazy {
         com.promenar.nexara.data.exec.RuntimeDataMonitor(File(applicationInfo.dataDir))
     }

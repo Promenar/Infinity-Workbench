@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-enum class ExecRunKind { SHELL, PYTHON }
+/** [LINUX] 为在 Linux 环境中运行的 shell 命令，[TERMINAL] 为本地终端会话。 */
+enum class ExecRunKind { SHELL, PYTHON, LINUX, TERMINAL }
 
 /** 运行中内置命令的展示信息；[summary] 已压缩为单行，可直接放进通知。 */
 data class ExecRunInfo(

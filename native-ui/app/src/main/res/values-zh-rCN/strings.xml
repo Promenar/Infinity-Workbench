@@ -1384,6 +1384,8 @@
     <string name="exec_notification_public">&brand; 正在运行命令</string>
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
+    <string name="exec_notification_kind_linux">Linux</string>
+    <string name="exec_notification_kind_terminal">终端</string>
     <string name="exec_notification_stop">停止</string>
     <string name="exec_notification_stop_all">全部停止</string>
     <string name="generation_background_unavailable">当前回复仍在生成，但离开应用后可能中断。</string>
