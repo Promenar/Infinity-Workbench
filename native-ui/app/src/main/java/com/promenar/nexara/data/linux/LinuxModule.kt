@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.linux
 
 import android.content.Context
+import com.promenar.nexara.data.exec.ExecKeepAlive
 import com.promenar.nexara.domain.linux.LinuxFileSystem
 import com.promenar.nexara.domain.linux.LinuxMirrorSettings
 import com.promenar.nexara.domain.linux.LinuxPackageManager
@@ -19,6 +20,7 @@ import java.io.File
 class LinuxModule(
     private val context: Context,
     private val scope: CoroutineScope,
+    private val host: LinuxHostServices,
 ) {
     val paths: LinuxPaths by lazy {
         val rootfs = File(context.filesDir, "linux/alpine")
@@ -42,3 +44,11 @@ class LinuxModule(
     // ── 本地终端 ──
     val terminals: LinuxTerminalSessions by lazy { UnavailableLinuxTerminals() }
 }
+
+/** 应用提供给 Linux 环境实现的宿主服务。 */
+class LinuxHostServices(
+    /** 安装、后台命令与终端会话的前台服务保活。 */
+    val keepAlive: ExecKeepAlive,
+    /** 会话工作区的宿主根目录，不持工作区写锁；会话工作区不可用时为 null。 */
+    val sessionWorkspaceRoot: suspend (sessionId: String) -> File?,
+)
