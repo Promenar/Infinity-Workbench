@@ -94,8 +94,8 @@ class ChatScreenContentStateTest {
         )
 
         rule.onNodeWithTag(UiTags.CHAT_STATE_GENERATING).assertHeightIsAtLeast(100.dp)
-        // 生成中：浮岛顶部展开活动栏，不显示空会话字标，输入框仍可编辑。
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertExists()
+        // 生成中：浮岛顶部出现运行坞，不显示空会话字标，输入框仍可编辑。
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).assertExists()
         rule.onNodeWithTag(UiTags.CHAT_EMPTY_WORDMARK).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.CHAT_INPUT).assertIsEnabled()
         rule.onNodeWithText(resource(R.string.chat_input_placeholder_generating)).assertIsDisplayed()
@@ -177,28 +177,31 @@ class ChatScreenContentStateTest {
             ),
         )
 
-        // 计划条默认显示在输入框上方；关闭后只留状态栏入口，点入口重新打开。
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
+        // 运行坞默认显示在输入框上方；点开运行详情可标记完成或继续处理。
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE).assertDoesNotExist()
-        assertMinimumTouchTarget(UiTags.CHAT_TASK_CLOSE)
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE)
-            .assertContentDescriptionEquals(resource(R.string.chat_task_hide))
-            .performClick()
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertDoesNotExist()
-        assertMinimumTouchTarget(UiTags.CHAT_TASK_CAPSULE)
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
-            .assertContentDescriptionEquals(resource(R.string.chat_task_pending_accessibility, 1))
-            .assertHeightIsAtLeast(28.dp)
-            .performClick()
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
-        assertMinimumTouchTarget(UiTags.CHAT_TASK_PANEL_HEADER)
-        rule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER).performClick()
+        assertMinimumTouchTarget(UiTags.CHAT_RUN_DOCK_MAIN)
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK_MAIN).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).performClick()
         rule.runOnIdle {
             assertThat(completed).isTrue()
             assertThat(continued).isTrue()
         }
+
+        // 详情菜单里隐藏计划后运行坞收起，只留状态栏入口；点入口重新显示运行坞。
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK_MAIN).performClick()
+        assertMinimumTouchTarget(UiTags.CHAT_RUN_SHEET_MENU)
+        rule.onNodeWithTag(UiTags.CHAT_RUN_SHEET_MENU).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_RUN_SHEET).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).assertDoesNotExist()
+        assertMinimumTouchTarget(UiTags.CHAT_TASK_CAPSULE)
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
+            .assertContentDescriptionEquals(resource(R.string.chat_task_pending_accessibility, 1))
+            .assertHeightIsAtLeast(28.dp)
+            .performClick()
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).assertIsDisplayed()
     }
 
     @Test
@@ -217,11 +220,7 @@ class ChatScreenContentStateTest {
             taskPanel = taskPanel,
         )
 
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE).performClick()
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
-            .assertContentDescriptionEquals(resource(R.string.chat_task_generating))
-            .performClick()
-        rule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK_MAIN).performClick()
         rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).assertIsNotEnabled()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertIsNotEnabled()
     }
@@ -233,9 +232,9 @@ class ChatScreenContentStateTest {
         )
         render(uiState = ChatUiState(session = session), taskPanelProvider = { plan })
 
-        // 计划区位于输入框浮岛内部，与输入区共用同一底色容器。
+        // 运行坞位于输入框浮岛内部，与输入区共用同一底色容器。
         val island = rule.onNodeWithTag(UiTags.CHAT_INPUT_BAR_SURFACE).fetchSemanticsNode().boundsInRoot
-        val card = rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).fetchSemanticsNode().boundsInRoot
+        val card = rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).fetchSemanticsNode().boundsInRoot
         assertThat(card.top).isAtLeast(island.top)
         assertThat(card.bottom).isAtMost(island.bottom)
         assertThat(card.width).isWithin(1f).of(island.width)
@@ -244,7 +243,7 @@ class ChatScreenContentStateTest {
         rule.runOnIdle {
             plan = taskPanelUiState(listOf(TaskStep(id = "other", title = "旧计划", status = "done")), isGenerating = false)
         }
-        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_RUN_DOCK).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE).assertDoesNotExist()
     }
 

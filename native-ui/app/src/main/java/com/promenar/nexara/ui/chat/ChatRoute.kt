@@ -249,6 +249,8 @@ fun ChatRoute(
         taskPanelUiState(activeTaskTree, uiState.isGenerating, activeTaskGoal)
     }
     val stateBoard by chatViewModel.stateBoard.collectAsStateWithLifecycle()
+    val subagentApprovals by application.subagentApprovalBroker.pending.collectAsStateWithLifecycle()
+    val pendingSubagentApprovals = subagentApprovals.count { it.sessionId == sessionId }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
@@ -641,12 +643,14 @@ fun ChatRoute(
                 providerDisplayNames = providerDisplayNames,
                 taskPanel = taskPanel,
                 generationProgress = generationProgress?.progress,
+                generationStartedAt = generationProgress?.startedAt,
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
                 turnGraphStates = turnGraphStates,
                 composerQueue = composerQueue,
                 keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
                 slashCommands = slashCommands.commands,
                 stateBoard = stateBoard,
+                pendingSubagentApprovals = pendingSubagentApprovals,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,

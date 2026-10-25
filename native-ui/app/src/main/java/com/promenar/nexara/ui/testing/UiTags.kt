@@ -29,8 +29,6 @@ object UiTags {
     const val CHAT_GENERATING_INDICATOR = "chat_generating_indicator"
     const val CHAT_GENERATION_ACTION = "chat_generation_action"
     const val CHAT_COMPOSER = "chat_composer"
-    const val CHAT_TASK_PANEL_HEADER = "task_floating_panel_header"
-    const val CHAT_TASK_CARD = "chat_task_card"
     const val CHAT_TASK_CAPSULE = "chat_task_capsule"
     const val CHAT_TASK_CONTINUE = "chat_task_continue"
     const val CHAT_TASK_COMPLETE = "chat_task_complete"
@@ -445,7 +443,6 @@ object UiTags {
     fun linuxPackageRow(name: String) = "linux_package_row:$name"
 
     // 会话状态面板
-    const val CHAT_STATE_BAR = "chat_state_bar"
     const val CHAT_STATE_SHEET = "chat_state_sheet"
     const val CHAT_STATE_EDITOR = "chat_state_editor"
     const val CHAT_STATE_VALUE = "chat_state_value"
@@ -455,6 +452,17 @@ object UiTags {
     const val CHAT_STATE_REMOVE_CONFIRM = "chat_state_remove_confirm"
     const val CHAT_STATE_SUMMARY = "chat_state_summary"
     fun stateField(key: String) = "chat_state_field:$key"
+    const val CHAT_STATE_MENU = "chat_state_menu"
+
+    // 运行坞与运行详情
+    const val CHAT_RUN_DOCK = "chat_run_dock"
+    const val CHAT_RUN_DOCK_MAIN = "chat_run_dock_main"
+    const val CHAT_RUN_DOCK_APPROVAL = "chat_run_dock_approval"
+    const val CHAT_RUN_DOCK_JOBS = "chat_run_dock_jobs"
+    const val CHAT_RUN_DOCK_STATE = "chat_run_dock_state"
+    const val CHAT_RUN_SHEET = "chat_run_sheet"
+    const val CHAT_RUN_SHEET_MENU = "chat_run_sheet_menu"
+    fun runSheetTab(name: String) = "chat_run_sheet_tab:$name"
 
     // Linux 文件
     const val LINUX_FILES_HEADER = "linux_files_header"

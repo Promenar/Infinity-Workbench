@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="run_dock_open">Open run details</string>
+    <string name="run_dock_jump_approval_cd">%1$d approvals pending, jump to the first</string>
+    <plurals name="run_dock_pending_approvals">
+        <item quantity="one">%d pending</item>
+        <item quantity="other">%d pending</item>
+    </plurals>
+    <string name="run_dock_waiting_approval">Waiting for approval</string>
+    <string name="run_dock_plan_completed">Plan completed</string>
+    <string name="run_dock_paused">Paused</string>
+    <string name="run_dock_paused_step">Paused · %1$s</string>
+    <string name="run_dock_background">Background activity</string>
+    <string name="run_dock_elapsed_minutes">%1$d min</string>
+    <string name="run_detail_status_running">Running</string>
+    <string name="run_detail_status_done">Completed</string>
+    <string name="run_detail_status_paused">Paused</string>
+    <string name="run_detail_steps_done">%1$d / %2$d steps</string>
+    <string name="run_detail_step_of">Step %1$d of %2$d</string>
+    <string name="run_detail_title_default">This run</string>
+    <string name="run_detail_more">More options</string>
+    <string name="run_detail_tab_plan">Plan</string>
+    <string name="run_detail_tab_background">Background</string>
+    <string name="run_detail_tab_state">State</string>
+    <string name="run_detail_group_done">%1$d/%2$d done</string>
+    <string name="run_detail_current">Current</string>
+    <string name="run_detail_tokens">%1$s tokens</string>
+    <string name="run_detail_stats">This run: %1$s</string>
+    <string name="run_detail_elapsed_seconds">%1$d s elapsed</string>
+    <string name="run_detail_elapsed_minutes">%1$d min %2$02d s elapsed</string>
+    <plurals name="run_detail_rounds">
+        <item quantity="one">%d round</item>
+        <item quantity="other">%d rounds</item>
+    </plurals>
+    <plurals name="run_detail_calls">
+        <item quantity="one">%d call</item>
+        <item quantity="other">%d calls</item>
+    </plurals>
+    <string name="state_board_maintained_by_agent">Maintained by the agent</string>
+    <string name="state_board_updated_at">Updated %1$s</string>
+    <plurals name="state_board_field_count">
+        <item quantity="one">%d field</item>
+        <item quantity="other">%d fields</item>
+    </plurals>
+    <string name="state_board_more">More options</string>
+    <string name="state_board_tag_manual">Edited by you</string>
+    <string name="state_board_tag_recent">Just updated</string>
+    <string name="state_board_manual_note">The agent sees your edits before it updates those fields again.</string>
+    <string name="state_board_edit_note">Tap a field to edit it.</string>
+</resources>

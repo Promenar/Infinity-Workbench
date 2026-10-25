@@ -11,6 +11,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.font.FontWeight
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -34,35 +47,33 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 运行详情“状态”页：面板标题与更新时间、按字段类型排版的卡片（数值与进度两两并排，文本与列表占整行），
+ * 点按卡片编辑；移除收进右上角菜单。刚被 Agent 更新的项高亮，用户改过的项单独标注。
+ */
 @Composable
-fun StateBoardPanel(
+fun StateBoardContent(
     snapshot: StateBoardSnapshot,
     isGenerating: Boolean,
     onEdit: suspend (Long, StateOperation) -> String?,
     onRemove: suspend (Long) -> String?,
     modifier: Modifier = Modifier,
+    onRemoved: () -> Unit = {},
 ) {
     val board = snapshot.board ?: return
-    var expanded by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Pair<StateBoardSnapshot, StateField>?>(null) }
     var confirmingRemove by remember { mutableStateOf(false) }
     var removalError by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    StateBoardBar(board, isGenerating, { expanded = true }, modifier)
-    if (expanded) {
-        ModalBottomSheet(onDismissRequest = { expanded = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            StateBoardDetails(
-                board = board,
-                onEdit = { editing = snapshot to it },
-                onRemove = { confirmingRemove = true },
-                onClose = { expanded = false },
-                isGenerating = isGenerating,
-            )
-            removalError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(NexaraSpacing.Medium)) }
-        }
-    }
+    StateBoardDetails(
+        board = board,
+        onEdit = { editing = snapshot to it },
+        onRemove = { confirmingRemove = true },
+        isGenerating = isGenerating,
+        modifier = modifier,
+        error = removalError,
+    )
     editing?.let { (original, field) ->
         StateFieldEditor(original, field, onDismiss = { editing = null }, onSave = onEdit)
     }
@@ -79,7 +90,7 @@ fun StateBoardPanel(
                         try {
                             removalError = onRemove(revision)
                             confirmingRemove = false
-                            if (removalError == null) expanded = false
+                            if (removalError == null) onRemoved()
                         } finally { removing = false }
                     }
                 }, modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_REMOVE_CONFIRM)) { Text(stringResource(R.string.state_remove)) }
@@ -89,74 +100,233 @@ fun StateBoardPanel(
     }
 }
 
+/** 刚更新的高亮窗口：Agent 写入后这段时间内卡片带淡色底与“刚更新”标签。 */
+internal const val STATE_FIELD_RECENT_MS = 90_000L
+
+/** 数值与进度类字段较窄，两两并排；文本与列表占整行。 */
+internal fun stateFieldRows(fields: List<StateField>): List<List<StateField>> {
+    val rows = mutableListOf<List<StateField>>()
+    var pending: StateField? = null
+    fields.forEach { field ->
+        val compact = field.type == "number" || field.type == "meter"
+        when {
+            compact && pending == null -> pending = field
+            compact -> { rows += listOf(pending!!, field); pending = null }
+            else -> {
+                pending?.let { rows += listOf(it) }
+                pending = null
+                rows += listOf(field)
+            }
+        }
+    }
+    pending?.let { rows += listOf(it) }
+    return rows
+}
+
 @Composable
-fun StateBoardBar(board: StateBoard, isGenerating: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.state_open), onClick = onClick)
-            .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.XSmall)
-            .testTag(UiTags.CHAT_STATE_BAR),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-    ) {
-        Text(board.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        board.fields.take(2).forEach { field ->
-            key(field.key) {
-                StateFieldHighlight(field, isGenerating, Modifier.weight(1f)) {
-                    Text("${field.label} ${stateValueText(field.value, field.unit)}", style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (field.type == "meter") LinearProgressIndicator(progress = { field.progress() }, modifier = Modifier.fillMaxWidth().height(2.dp))
+fun StateBoardDetails(
+    board: StateBoard,
+    onEdit: (StateField) -> Unit,
+    onRemove: () -> Unit,
+    isGenerating: Boolean = false,
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    nowMillis: Long? = null,
+) {
+    var now by remember { mutableLongStateOf(nowMillis ?: System.currentTimeMillis()) }
+    if (nowMillis == null) {
+        LaunchedEffect(board) {
+            while (true) { now = System.currentTimeMillis(); delay(15_000) }
+        }
+    }
+    val lastUpdated = board.fields.maxOfOrNull { it.updatedAt }?.takeIf { it > 0 }
+    val time = lastUpdated?.let { remember(it) { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it)) } }
+    val manual = board.manualKeys.toSet()
+    Column(modifier.fillMaxWidth().testTag(UiTags.CHAT_STATE_SHEET)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(40.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.TableChart, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(board.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = listOfNotNull(
+                        stringResource(R.string.state_board_maintained_by_agent),
+                        time?.let { stringResource(R.string.state_board_updated_at, it) },
+                        pluralStringResource(R.plurals.state_board_field_count, board.fields.size, board.fields.size),
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp).testTag(UiTags.CHAT_STATE_MENU)) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.state_board_more))
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.state_remove), color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = { menu = false; onRemove() },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_REMOVE),
+                    )
                 }
             }
         }
+        Column(
+            Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            stateFieldRows(board.fields).forEach { row ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { field ->
+                        key(field.key) {
+                            StateFieldCard(
+                                field = field,
+                                manual = field.key in manual,
+                                recent = field.key !in manual && field.updatedAt > 0 && now - field.updatedAt in 0..STATE_FIELD_RECENT_MS,
+                                isGenerating = isGenerating,
+                                onEdit = { onEdit(field) },
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
+                    }
+                    if (row.size == 1 && (row[0].type == "number" || row[0].type == "meter")) Spacer(Modifier.weight(1f))
+                }
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Text(
+            text = stringResource(if (manual.isNotEmpty()) R.string.state_board_manual_note else R.string.state_board_edit_note),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp),
+        )
     }
 }
 
 @Composable
-private fun StateFieldHighlight(field: StateField, isGenerating: Boolean, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun StateFieldCard(
+    field: StateField,
+    manual: Boolean,
+    recent: Boolean,
+    isGenerating: Boolean,
+    onEdit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
     val animations = rememberStreamAnimationsEnabled() == true
     var previous by remember(field.key) { mutableStateOf(field.value) }
-    var highlight by remember(field.key) { mutableStateOf(false) }
+    var flash by remember(field.key) { mutableStateOf(false) }
     LaunchedEffect(field.value, animations) {
         val changed = previous != field.value
         previous = field.value
-        highlight = changed && isGenerating && animations
-        if (highlight) { delay(700); highlight = false }
+        flash = changed && isGenerating && animations
+        if (flash) { delay(700); flash = false }
     }
-    val color by animateColorAsState(
-        if (highlight) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        animationSpec = if (animations) tween(180) else snap(), label = "state_field_highlight",
+    val container by animateColorAsState(
+        when {
+            flash -> scheme.primaryContainer
+            recent -> scheme.primaryContainer.copy(alpha = 0.45f).compositeOver(scheme.surfaceContainerHigh)
+            else -> scheme.surfaceContainerHigh
+        },
+        animationSpec = if (animations) tween(180) else snap(), label = "state_field_card",
     )
-    Column(modifier.background(color, MaterialTheme.shapes.small).padding(2.dp), content = content)
+    val editLabel = stringResource(R.string.state_edit, field.label)
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        border = if (recent) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.28f)) else null,
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(role = Role.Button, onClickLabel = editLabel, onClick = onEdit)
+            .testTag(UiTags.stateField(field.key)),
+    ) {
+        Box {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 14.dp, end = 36.dp, top = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(field.label, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (field.type == "list") {
+                        Text("· ${field.value.jsonArray.size}", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                    }
+                    when {
+                        manual -> StateFieldTag(stringResource(R.string.state_board_tag_manual), MaterialTheme.nexaraDomainColors.warningContainer, MaterialTheme.nexaraDomainColors.onWarningContainer)
+                        recent -> StateFieldTag(stringResource(R.string.state_board_tag_recent), scheme.primaryContainer, scheme.onPrimaryContainer)
+                    }
+                }
+                StateFieldValue(field)
+            }
+            Icon(
+                Icons.Rounded.Edit,
+                contentDescription = null,
+                tint = scheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 12.dp).size(16.dp),
+            )
+        }
+    }
 }
 
 @Composable
-fun StateBoardDetails(board: StateBoard, onEdit: (StateField) -> Unit, onRemove: () -> Unit, onClose: () -> Unit = {}, isGenerating: Boolean = false) {
-    Column(Modifier.fillMaxWidth().testTag(UiTags.CHAT_STATE_SHEET)) {
-        Row(Modifier.fillMaxWidth().padding(start = NexaraSpacing.Medium), verticalAlignment = Alignment.CenterVertically) {
-            Text(board.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.state_close)) }
+private fun StateFieldTag(text: String, container: Color, content: Color) {
+    Surface(shape = RoundedCornerShape(8.dp), color = container, contentColor = content) {
+        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp))
+    }
+}
+
+@Composable
+private fun StateFieldValue(field: StateField) {
+    val scheme = MaterialTheme.colorScheme
+    when (field.type) {
+        "number", "meter" -> {
+            val big = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
+            val (main, suffix) = if (field.type == "meter") {
+                val value = field.value.jsonObject
+                value["current"]?.jsonPrimitive?.content.orEmpty() to listOfNotNull("/ ${value["max"]?.jsonPrimitive?.content.orEmpty()}", field.unit).joinToString(" ")
+            } else (field.value as? JsonPrimitive)?.content.orEmpty() to field.unit.orEmpty()
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(main.ifEmpty { "—" }, style = big, color = scheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (suffix.isNotBlank()) Text(suffix, style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(bottom = 3.dp))
+            }
+            if (field.type == "meter") {
+                LinearProgressIndicator(
+                    progress = { field.progress() },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                    trackColor = scheme.outlineVariant.copy(alpha = 0.45f),
+                )
+            }
         }
-        Column(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
-            board.fields.forEach { field ->
-                StateFieldHighlight(field, isGenerating, Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.state_edit, field.label)) { onEdit(field) }
-                    .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small).testTag(UiTags.stateField(field.key))) {
-                    Text(field.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (field.type == "list") {
-                        val items = field.value.jsonArray
-                        if (items.isEmpty()) Text(stringResource(R.string.state_board_empty_value), style = MaterialTheme.typography.bodyMedium)
-                        items.forEach { Text("• ${it.jsonPrimitive.content}", style = MaterialTheme.typography.bodyMedium) }
-                    } else Text(stateValueText(field.value, field.unit), style = MaterialTheme.typography.bodyMedium)
-                    if (field.type == "meter") LinearProgressIndicator(progress = { field.progress() }, modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.XSmall))
+        "list" -> {
+            val items = field.value.jsonArray
+            if (items.isEmpty()) Text(stringResource(R.string.state_board_empty_value), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            items.forEach { item ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.padding(top = 7.dp).size(6.dp).background(scheme.tertiary, CircleShape))
+                    Text(item.jsonPrimitive.content, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurface)
                 }
             }
         }
-        TextButton(onClick = onRemove, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_REMOVE)) {
-            Text(stringResource(R.string.state_remove), color = MaterialTheme.colorScheme.error)
+        else -> {
+            val text = stateValueText(field.value, field.unit)
+            Text(
+                text.ifBlank { stringResource(R.string.state_board_empty_value) },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (text.isBlank()) scheme.onSurfaceVariant else scheme.onSurface,
+            )
         }
-        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 

@@ -9,8 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertContentDescriptionContains
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -37,7 +39,10 @@ import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.GenerationStatus
 import com.promenar.nexara.ui.chat.PostProcessChip
 import com.promenar.nexara.ui.chat.taskPanelUiState
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.chat.components.RunDetailContent
+import com.promenar.nexara.ui.chat.components.RunDetailTab
+import com.promenar.nexara.ui.chat.components.RunDockRow
+import com.promenar.nexara.ui.chat.components.runDockState
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.rag.DocEditorFailureCode
@@ -331,7 +336,7 @@ class AccessibilitySmokeTest {
     }
 
     @Test
-    fun postProcessChipAndTaskFloatingPanelAccessibilityCoverage() {
+    fun postProcessChipAndRunDockAccessibilityCoverage() {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val postProcessLabel = resources.getString(R.string.chat_postprocess_summary)
 
@@ -350,6 +355,7 @@ class AccessibilitySmokeTest {
                 TaskStep(id = "step-1-2", title = "生成脑图", status = "pending"),
             ),
         )
+        val plan = taskPanelUiState(listOf(rootNode), isGenerating = false)!!
         composeRule.setContent {
             NexaraTheme {
                 Column {
@@ -357,12 +363,28 @@ class AccessibilitySmokeTest {
                         task = fakeTask,
                         onRemove = {},
                     )
-                    TaskFloatingPanel(
-                        state = taskPanelUiState(listOf(rootNode), isGenerating = false)!!,
+                    RunDockRow(
+                        state = runDockState(plan, false, 0, 0, 0, null, null)!!,
+                        onOpen = {},
+                        onJumpToApproval = {},
+                    )
+                    RunDetailContent(
+                        initialTab = RunDetailTab.PLAN,
+                        plan = plan,
                         isGenerating = false,
+                        progress = null,
+                        turnStartedAt = null,
+                        activity = null,
+                        stateBoard = null,
+                        onDismiss = {},
                         onContinue = {},
                         onComplete = {},
-                        initiallyExpanded = true,
+                        onHidePlan = {},
+                        onClearPlan = {},
+                        onEditState = { _, _ -> null },
+                        onRemoveState = { null },
+                        modifier = Modifier.weight(1f),
+                        nowMillis = 0L,
                     )
                 }
             }
@@ -372,19 +394,19 @@ class AccessibilitySmokeTest {
 
         composeRule.onNodeWithText(postProcessLabel).assertIsDisplayed()
 
-        // 展开时当前步骤同时出现在计划条标题与步骤列表中，这里校验列表内的步骤。
+        // 当前步骤同时出现在运行坞与运行详情的步骤列表中，这里校验列表内的步骤。
         composeRule.onNode(
             hasText("分析文档结构", substring = true) and hasAnyAncestor(hasTestTag(UiTags.CHAT_TASK_STEP_LIST)),
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("1/2", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag(UiTags.CHAT_RUN_DOCK_MAIN).assertContentDescriptionContains("1/2", substring = true)
         composeRule.onNode(
             hasText("生成脑图", substring = true) and hasAnyAncestor(hasTestTag(UiTags.CHAT_TASK_STEP_LIST)),
         ).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER)
+        composeRule.onNodeWithTag(UiTags.CHAT_RUN_DOCK_MAIN)
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithTag(UiTags.CHAT_TASK_CLOSE)
+        composeRule.onNodeWithTag(UiTags.CHAT_RUN_SHEET_MENU)
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE)

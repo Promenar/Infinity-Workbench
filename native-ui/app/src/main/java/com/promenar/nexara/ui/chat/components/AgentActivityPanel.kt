@@ -1,12 +1,12 @@
 package com.promenar.nexara.ui.chat.components
 
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -16,8 +16,6 @@ import com.promenar.nexara.domain.jobs.BackgroundJob
 import com.promenar.nexara.domain.jobs.BackgroundJobController
 import com.promenar.nexara.domain.schedule.ScheduledTask
 import com.promenar.nexara.domain.schedule.ScheduledTaskController
-import com.promenar.nexara.ui.common.NexaraBottomSheet
-import com.promenar.nexara.ui.common.NexaraSheetHeight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -37,54 +35,79 @@ internal class AgentActivityAccess(
 
 internal val LocalAgentActivity = staticCompositionLocalOf<AgentActivityAccess?> { null }
 
-/** 活动标签与两个面板。时长与“下次触发”每 30 秒且在下次触发时刻刷新，任务运行中每秒刷新运行时长。 */
+/** 当前会话的后台任务与定时任务快照，供运行坞计数与运行详情的“后台”页共用。 */
+internal class AgentActivityState(
+    val access: AgentActivityAccess,
+    val jobs: List<BackgroundJob>,
+    val schedules: List<ScheduledTask>,
+    val nowMillis: Long,
+    val onStop: (String) -> Unit,
+    val onToggleSchedule: (String, Boolean) -> Unit,
+    val onDeleteSchedule: (String) -> Unit,
+) {
+    val summary: AgentActivitySummary get() = summarizeAgentActivity(jobs, schedules, nowMillis)
+    val isEmpty: Boolean get() = jobs.isEmpty() && schedules.isEmpty()
+}
+
+/**
+ * 订阅后台活动。时长与“下次触发”每 30 秒且在下次触发时刻刷新；[fastTick] 为 true（详情面板打开）且有任务运行时每秒刷新。
+ */
 @Composable
-internal fun AgentActivityPanel(modifier: Modifier = Modifier) {
-    val access = LocalAgentActivity.current ?: return
+internal fun rememberAgentActivityState(fastTick: Boolean): AgentActivityState? {
+    val access = LocalAgentActivity.current ?: return null
     val jobsFlow = remember(access.sessionId, access.jobs) { access.jobs?.observe(access.sessionId) ?: flowOf(emptyList()) }
     val schedulesFlow = remember(access.sessionId, access.schedules) { access.schedules?.observe(access.sessionId) ?: flowOf(emptyList()) }
     val jobs by jobsFlow.collectAsState(initial = emptyList<BackgroundJob>())
     val schedules by schedulesFlow.collectAsState(initial = emptyList<ScheduledTask>())
-    var showJobs by remember { mutableStateOf(false) }
-    var showSchedules by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val anyRunning = jobs.any { !it.state.isTerminal }
     val nextFire = schedules.mapNotNull { it.nextFireAtMillis?.takeIf { _ -> it.enabled } }.minOrNull()
-    LaunchedEffect(anyRunning, showJobs, nextFire) {
+    LaunchedEffect(anyRunning, fastTick, nextFire) {
         while (true) {
             now = System.currentTimeMillis()
-            val base = if (anyRunning && showJobs) 1_000L else 30_000L
+            val base = if (anyRunning && fastTick) 1_000L else 30_000L
             delay(nextFire?.let { (it - now).takeIf { untilFire -> untilFire > 0 } }?.coerceAtMost(base) ?: base)
         }
     }
     val scope = rememberCoroutineScope()
-    AgentActivityStrip(
-        summary = summarizeAgentActivity(jobs, schedules, now),
+    return AgentActivityState(
+        access = access,
+        jobs = jobs,
+        schedules = schedules,
         nowMillis = now,
-        onOpenJobs = { showJobs = true },
-        onOpenSchedules = { showSchedules = true },
-        modifier = modifier,
+        onStop = { id -> scope.launch { access.jobs?.stop(id) } },
+        onToggleSchedule = { id, enabled -> scope.launch { if (enabled) access.schedules?.resume(id) else access.schedules?.pause(id) } },
+        onDeleteSchedule = { id -> scope.launch { access.schedules?.delete(id) } },
     )
-    NexaraBottomSheet(show = showJobs, onDismiss = { showJobs = false }, height = NexaraSheetHeight.Full, dragGesturesEnabled = false) {
-        BackgroundJobsContent(
-            jobs = jobs,
-            nowMillis = now,
-            keepAliveAvailable = access.keepAliveAvailable,
-            onStop = { id -> scope.launch { access.jobs?.stop(id) } },
-            onOpenLog = { path -> showJobs = false; access.onOpenLog(path) },
-            modifier = Modifier.fillMaxSize(),
-            liveOutput = access.liveOutput,
-        )
-    }
-    NexaraBottomSheet(show = showSchedules, onDismiss = { showSchedules = false }, height = NexaraSheetHeight.Full, dragGesturesEnabled = false) {
-        ScheduledTasksContent(
-            tasks = schedules,
-            nowMillis = now,
-            exactAlarmAvailable = access.exactAlarmAvailable,
-            onToggle = { id, enabled -> scope.launch { if (enabled) access.schedules?.resume(id) else access.schedules?.pause(id) } },
-            onDelete = { id -> scope.launch { access.schedules?.delete(id) } },
-            onGrantExact = access.onGrantExact,
-            modifier = Modifier.fillMaxSize(),
-        )
+}
+
+/** 运行详情“后台”页：后台任务在上，定时任务在下；只有一类时独占整页。 */
+@Composable
+internal fun AgentActivityTabContent(state: AgentActivityState, onOpenLog: (String) -> Unit, modifier: Modifier = Modifier) {
+    val showJobs = state.jobs.isNotEmpty() || state.schedules.isEmpty()
+    val showSchedules = state.schedules.isNotEmpty()
+    Column(modifier.fillMaxWidth()) {
+        if (showJobs) {
+            BackgroundJobsContent(
+                jobs = state.jobs,
+                nowMillis = state.nowMillis,
+                keepAliveAvailable = state.access.keepAliveAvailable,
+                onStop = state.onStop,
+                onOpenLog = onOpenLog,
+                modifier = Modifier.weight(1f),
+                liveOutput = state.access.liveOutput,
+            )
+        }
+        if (showSchedules) {
+            ScheduledTasksContent(
+                tasks = state.schedules,
+                nowMillis = state.nowMillis,
+                exactAlarmAvailable = state.access.exactAlarmAvailable,
+                onToggle = state.onToggleSchedule,
+                onDelete = state.onDeleteSchedule,
+                onGrantExact = state.access.onGrantExact,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }

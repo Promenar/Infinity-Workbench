@@ -79,7 +79,10 @@ import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RagDetailsSheetContent
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.chat.components.RunDetailContent
+import com.promenar.nexara.ui.chat.components.RunDetailTab
+import com.promenar.nexara.ui.chat.components.RunDockRow
+import com.promenar.nexara.ui.chat.components.runDockState
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPermanentDeleteDialog
 import com.promenar.nexara.ui.chat.components.RecycleOperation
@@ -737,29 +740,49 @@ fun chatTaskChecklistExpandedReleasePreview() {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // 计划区在应用中位于输入框浮岛顶部，预览套用同一底色与圆角。
-            listOf(
-                requireNotNull(taskPanelUiState(tree, isGenerating = false, goal = "完成 0.2 Beta 发布")) to true,
-                requireNotNull(
-                    taskPanelUiState(
-                        tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
-                        isGenerating = false,
-                        goal = "完成 0.2 Beta 发布",
-                    ),
-                ) to false,
-            ).forEach { (state, expanded) ->
+            // 运行坞在应用中位于输入框浮岛顶部，预览套用同一底色与圆角；下方是点开后的运行详情计划页。
+            val paused = requireNotNull(taskPanelUiState(tree, isGenerating = false, goal = "完成 0.2 Beta 发布"))
+            val done = requireNotNull(
+                taskPanelUiState(
+                    tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
+                    isGenerating = false,
+                    goal = "完成 0.2 Beta 发布",
+                ),
+            )
+            listOf(paused, done).forEach { state ->
                 androidx.compose.material3.Surface(
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
-                    TaskFloatingPanel(
-                        state = state,
-                        isGenerating = false,
-                        onContinue = {},
-                        onComplete = {},
-                        initiallyExpanded = expanded,
+                    RunDockRow(
+                        state = requireNotNull(runDockState(state, false, 0, 0, 0, null, null)),
+                        onOpen = {},
+                        onJumpToApproval = {},
                     )
                 }
+            }
+            androidx.compose.material3.Surface(
+                modifier = Modifier.weight(1f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                RunDetailContent(
+                    initialTab = RunDetailTab.PLAN,
+                    plan = paused,
+                    isGenerating = false,
+                    progress = null,
+                    turnStartedAt = null,
+                    activity = null,
+                    stateBoard = null,
+                    onDismiss = {},
+                    onContinue = {},
+                    onComplete = {},
+                    onHidePlan = {},
+                    onClearPlan = {},
+                    onEditState = { _, _ -> null },
+                    onRemoveState = { null },
+                    nowMillis = 0L,
+                )
             }
         }
     }

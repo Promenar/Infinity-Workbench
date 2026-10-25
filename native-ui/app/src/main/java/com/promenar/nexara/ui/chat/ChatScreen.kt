@@ -161,7 +161,6 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.RagOptions
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.chat.components.TaskPanelSizeSpring
 import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
@@ -225,6 +224,8 @@ data class ChatScreenState(
     val providerDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
     val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
+    /** 本次生成任务开始的墙钟时间；没有进行中的任务时为 null。 */
+    val generationStartedAt: Long? = null,
     /** 外观页“完成后折叠过程”，由路由层从外观偏好读取后传入。 */
     val collapseFinishedTurns: Boolean = true,
     /** 当前会话各轮的图谱抽取状态，键为该轮最后一条助手消息。 */
@@ -236,6 +237,8 @@ data class ChatScreenState(
     /** 输入框斜杠命令目录（内置命令与当前会话可用技能）。 */
     val slashCommands: List<com.promenar.nexara.ui.chat.command.SlashCommand> = emptyList(),
     val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
+    /** 当前会话中等待用户决定的子代理审批数。 */
+    val pendingSubagentApprovals: Int = 0,
 )
 
 data class ChatScreenActions(
@@ -886,56 +889,83 @@ fun ChatScreenContent(
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
                             topContent = {
-                                // 生成中的活动统计并入浮岛顶部：有计划时替换计划收起行，没有计划时单独占一行。
+                                // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，统计与清单收进运行详情。
                                 val activity = if (uiState.isGenerating) state.generationProgress ?: GenerationProgress() else null
-                                var lastActivity by remember { mutableStateOf(GenerationProgress()) }
+                                var lastActivity by remember(uiState.session?.id) { mutableStateOf<GenerationProgress?>(null) }
                                 if (activity != null) lastActivity = activity
-                                AnimatedVisibility(
-                                    visible = activity != null && !(taskPanel != null && planBarVisible),
-                                    enter = fadeIn(tween(220, delayMillis = 60)) +
-                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
-                                    exit = fadeOut(tween(160)) +
-                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
-                                ) {
-                                    GenerationActivityRow(
-                                        progress = lastActivity,
-                                        keepScreenOn = state.keepScreenOn,
-                                        onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
-                                    )
+                                var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.nexara.ui.chat.components.RunDetailTab?>(null) }
+                                var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
+                                val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen)
+                                val activitySummary = agentActivity?.summary
+                                val boardTitle = state.stateBoard?.board?.title
+                                val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
+                                    state.pendingSubagentApprovals
+                                val turnStartedAt = state.generationStartedAt?.takeIf { uiState.isGenerating }
+                                var dockNow by remember { mutableStateOf(System.currentTimeMillis()) }
+                                LaunchedEffect(uiState.isGenerating) {
+                                    while (uiState.isGenerating) { dockNow = System.currentTimeMillis(); delay(15_000) }
                                 }
+                                val dock = com.promenar.nexara.ui.chat.components.runDockState(
+                                    plan = lastVisiblePlan.takeIf { taskPanel != null && planBarVisible },
+                                    isGenerating = uiState.isGenerating,
+                                    pendingApprovals = pendingApprovals,
+                                    runningJobs = activitySummary?.runningJobs ?: 0,
+                                    enabledSchedules = activitySummary?.enabledSchedules ?: 0,
+                                    boardTitle = boardTitle,
+                                    elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
+                                )
+                                var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
+                                if (dock != null) lastDock = dock
                                 AnimatedVisibility(
-                                    visible = taskPanel != null && planBarVisible,
+                                    visible = dock != null,
                                     enter = fadeIn(tween(220, delayMillis = 60)) +
                                         expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
                                     exit = fadeOut(tween(160)) +
                                         shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
                                 ) {
-                                    lastVisiblePlan?.let { plan ->
-                                        TaskFloatingPanel(
-                                            state = plan,
-                                            isGenerating = uiState.isGenerating,
-                                            generationProgress = activity,
-                                            keepScreenOn = state.keepScreenOn,
-                                            onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
-                                            onContinue = actions.onContinueTask,
-                                            onComplete = actions.onCompleteTask,
-                                            onClose = {
-                                                if (plan.isCompleted) {
-                                                    actions.onClearCompletedTask()
-                                                } else {
-                                                    hiddenPlanSignature = plan.visibilitySignature()
+                                    lastDock?.let { shown ->
+                                        com.promenar.nexara.ui.chat.components.RunDockRow(
+                                            state = shown,
+                                            onOpen = { tab ->
+                                                hiddenPlanSignature = null
+                                                runSheetTab = tab
+                                                runSheetOpen = true
+                                            },
+                                            onJumpToApproval = {
+                                                scope.launch {
+                                                    val target = if (uiState.approvalRequest != null) listState.layoutInfo.totalItemsCount - 2
+                                                    else listState.layoutInfo.totalItemsCount - 1
+                                                    listState.animateScrollToItem(target.coerceAtLeast(0))
                                                 }
                                             },
+                                            keepScreenOn = state.keepScreenOn.takeIf { uiState.isGenerating },
+                                            onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
                                         )
                                     }
                                 }
-                                com.promenar.nexara.ui.chat.components.AgentActivityPanel()
-                                state.stateBoard?.takeIf { it.board != null }?.let { snapshot ->
-                                    com.promenar.nexara.ui.chat.components.StateBoardPanel(
-                                        snapshot = snapshot,
+                                if (runSheetOpen) {
+                                    val sheetPlan = taskPanel ?: lastVisiblePlan
+                                    com.promenar.nexara.ui.chat.components.RunDetailSheet(
+                                        initialTab = runSheetTab,
+                                        plan = sheetPlan,
                                         isGenerating = uiState.isGenerating,
-                                        onEdit = actions.onEditState,
-                                        onRemove = actions.onRemoveState,
+                                        progress = activity ?: lastActivity,
+                                        turnStartedAt = turnStartedAt,
+                                        activity = agentActivity,
+                                        stateBoard = state.stateBoard?.takeIf { it.board != null },
+                                        onDismiss = { runSheetOpen = false },
+                                        onContinue = actions.onContinueTask,
+                                        onComplete = actions.onCompleteTask,
+                                        onHidePlan = {
+                                            runSheetOpen = false
+                                            hiddenPlanSignature = sheetPlan?.visibilitySignature()
+                                        },
+                                        onClearPlan = {
+                                            runSheetOpen = false
+                                            actions.onClearCompletedTask()
+                                        },
+                                        onEditState = actions.onEditState,
+                                        onRemoveState = actions.onRemoveState,
                                     )
                                 }
                                 // 排队托盘紧贴输入区：自下而上是正在写的、排着的、正在运行的。

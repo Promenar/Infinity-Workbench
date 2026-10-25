@@ -100,7 +100,7 @@ class NavigationMotionContractTest {
 
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).contains("label = \"chat_send_icon\"")
-        assertThat(chat).contains("visible = activity != null")
+        assertThat(chat).contains("visible = dock != null")
 
         val files = source("chat/components/FilesPanel.kt")
         assertThat(files).contains("label = \"files_panel_state\"")
@@ -135,25 +135,25 @@ class NavigationMotionContractTest {
     }
 
     @Test
-    fun `生成活动统计并入输入框浮岛顶部而不是标题栏下的胶囊`() {
-        val activity = source("chat/GenerationActivityRow.kt")
-
-        assertThat(activity).doesNotContain("R.string.p0_progress")
-        // 数值为 0 的段不显示。
-        assertThat(activity).contains("visible = progress.rounds > 0")
-        assertThat(activity).contains("visible = progress.calls > 0")
-        assertThat(activity).contains("visible = progress.tokens > 0")
-        // 读屏读完整一句，而不是逐个图标与数字；窄屏大字号时整段换行。
-        assertThat(activity).contains("clearAndSetSemantics { contentDescription = description }")
-        assertThat(activity).contains("FlowRow(")
-        // 文字与图标按视觉中线对齐。
-        assertThat(activity).contains("LineHeightStyle.Alignment.Center")
+    fun `运行信息收为浮岛顶部一行运行坞，统计进入运行详情`() {
+        val dock = source("chat/components/RunDock.kt")
+        val sheet = source("chat/components/RunDetailSheet.kt")
+        // 运行坞读屏读完整一句；统计数值为 0 的段不显示，整句放在详情面板底部。
+        assertThat(dock).contains("semantics(mergeDescendants = true)")
+        assertThat(sheet).contains("if (progress.rounds > 0)")
+        assertThat(sheet).contains("if (progress.calls > 0)")
+        assertThat(sheet).contains("if (progress.tokens > 0)")
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).doesNotContain("R.string.p0_progress")
         assertThat(chat).doesNotContain("ChatGenerationProgressBar")
-        // 有计划时并入计划面板收起行，没有计划时独立成行。
-        assertThat(chat).contains("generationProgress = activity")
-        assertThat(chat).contains("GenerationActivityRow(")
+        assertThat(chat).doesNotContain("GenerationActivityRow(")
+        assertThat(chat).doesNotContain("TaskFloatingPanel(")
+        assertThat(chat).doesNotContain("StateBoardPanel(")
+        assertThat(chat).contains("RunDockRow(")
+        assertThat(chat).contains("RunDetailSheet(")
+        // 用时取生成任务自身的开始时间；用户消息时间可能早于本次运行（定时触发、继续处理、旧会话）。
+        assertThat(chat).contains("state.generationStartedAt?.takeIf { uiState.isGenerating }")
+        assertThat(source("chat/ChatRoute.kt")).contains("generationStartedAt = generationProgress?.startedAt")
         // 生成中输入框仍可编辑。
         assertThat(chat).contains("enabled = true")
     }

@@ -88,15 +88,24 @@ private val previewJobs = listOf(
 )
 
 @PreviewTest
-@Preview(name = "活动标签与触发消息 浅中360", widthDp = 360, heightDp = 260, locale = "zh-rCN")
+@Preview(name = "运行坞后台与触发消息 浅中360", widthDp = 360, heightDp = 260, locale = "zh-rCN")
 @Composable
-fun agentActivityStripLightChinesePreview() = ActivityPreviewFrame(dark = false) {
+fun runDockBackgroundTriggerLightChinesePreview() = ActivityPreviewFrame(dark = false) {
     Column(Modifier.padding(vertical = NexaraSpacing.Large), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
-        AgentActivityStrip(
-            summary = AgentActivitySummary(runningJobs = 2, latestFinishedJob = null, enabledSchedules = 3, nextFireAtMillis = NOW + 25 * 60_000),
-            nowMillis = NOW,
-            onOpenJobs = {},
-            onOpenSchedules = {},
+        RunDockRow(
+            state = requireNotNull(
+                runDockState(
+                    plan = null,
+                    isGenerating = false,
+                    pendingApprovals = 0,
+                    runningJobs = 2,
+                    enabledSchedules = 3,
+                    boardTitle = null,
+                    elapsedMillis = null,
+                ),
+            ),
+            onOpen = {},
+            onJumpToApproval = {},
         )
         SystemTriggerRow(
             SystemTriggerMessage.Parsed(

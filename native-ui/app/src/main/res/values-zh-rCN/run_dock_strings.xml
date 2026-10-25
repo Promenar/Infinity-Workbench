@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="run_dock_open">打开运行详情</string>
+    <string name="run_dock_jump_approval_cd">%1$d 项待批准，跳到第一项</string>
+    <plurals name="run_dock_pending_approvals">
+        <item quantity="other">%d 项待批准</item>
+    </plurals>
+    <string name="run_dock_waiting_approval">等待审批</string>
+    <string name="run_dock_plan_completed">计划已完成</string>
+    <string name="run_dock_paused">已暂停</string>
+    <string name="run_dock_paused_step">已暂停 · %1$s</string>
+    <string name="run_dock_background">后台任务</string>
+    <string name="run_dock_elapsed_minutes">%1$d 分</string>
+    <string name="run_detail_status_running">进行中</string>
+    <string name="run_detail_status_done">已完成</string>
+    <string name="run_detail_status_paused">已暂停</string>
+    <string name="run_detail_steps_done">%1$d / %2$d 步</string>
+    <string name="run_detail_step_of">第 %1$d / %2$d 步</string>
+    <string name="run_detail_title_default">本次运行</string>
+    <string name="run_detail_more">更多操作</string>
+    <string name="run_detail_tab_plan">计划</string>
+    <string name="run_detail_tab_background">后台</string>
+    <string name="run_detail_tab_state">状态</string>
+    <string name="run_detail_group_done">%1$d/%2$d 已完成</string>
+    <string name="run_detail_current">当前</string>
+    <string name="run_detail_tokens">%1$s Token</string>
+    <string name="run_detail_stats">本次运行 %1$s</string>
+    <string name="run_detail_elapsed_seconds">用时 %1$d 秒</string>
+    <string name="run_detail_elapsed_minutes">用时 %1$d 分 %2$02d 秒</string>
+    <plurals name="run_detail_rounds">
+        <item quantity="other">%d 轮</item>
+    </plurals>
+    <plurals name="run_detail_calls">
+        <item quantity="other">%d 次调用</item>
+    </plurals>
+    <string name="state_board_maintained_by_agent">Agent 维护</string>
+    <string name="state_board_updated_at">%1$s 更新</string>
+    <plurals name="state_board_field_count">
+        <item quantity="other">%d 项</item>
+    </plurals>
+    <string name="state_board_more">更多操作</string>
+    <string name="state_board_tag_manual">你改过</string>
+    <string name="state_board_tag_recent">刚更新</string>
+    <string name="state_board_manual_note">你改过的项，Agent 再更新前会先看到你的修改。</string>
+    <string name="state_board_edit_note">状态由 Agent 维护，点按任一项可以修改。</string>
+</resources>
