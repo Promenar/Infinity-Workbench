@@ -1065,7 +1065,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     }
                 }
             },
-            prepareCommand = { kind, source, stdin, location, minutes -> builtinExecService.prepareBackgroundCommand(kind, source, stdin, location, minutes) },
+            prepareCommand = { kind, source, stdin, location, minutes -> builtinExecService.prepareBackgroundCommand(kind, source, stdin, location, minutes, location.sessionId) },
             reconcile = { record, finished, interrupted ->
                 if (record.isolatedWorkspace || File(record.runDirectory, "baseline.json").isFile) (workspaceRepository as WorkspaceRepository).reconcileBackgroundWorkspace(
                     record.workspaceRootUuid, record.sessionId, record.id, File(record.runDirectory, "workspace"), finished, interrupted)
@@ -1077,6 +1077,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             keepAliveMode = if (com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable) "service" else "foreground_only",
             executionGate = sessionExecutionGate,
             sessionExists = { database.sessionDao().getById(it) != null },
+            linuxRuntime = linux.runtime,
         )
     }
 
@@ -1090,6 +1091,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionWorkspace = sessionWorkspaceResolver::resolve,
             gitRemote = gitRemoteBroker,
             runtimeDataMonitor = runtimeDataMonitor,
+            linuxRuntime = linux.runtime,
+            linuxProvenance = linux.provenance,
+            visibleMounts = externalFolderManager::visible,
+            sessionTitle = { database.sessionDao().getById(it)?.title },
         )
     }
 
@@ -1242,6 +1247,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
+        com.promenar.nexara.domain.tool.LinuxExecRouting.runtime = linux.runtime
         DefaultSkillRegistry().apply {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)

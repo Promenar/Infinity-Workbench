@@ -8,6 +8,8 @@ import com.promenar.nexara.domain.network.AgentNetworkSnapshot
 import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.ui.settings.TermuxEntryStatus
 import com.promenar.nexara.ui.settings.termuxEntryStatus
+import com.promenar.nexara.domain.linux.LinuxRuntimeState
+import com.promenar.nexara.domain.tool.LinuxExecRouting
 
 /**
  * “Agent 可达范围”面板的展示数据：当前会话的 Agent 此刻能碰到的工作区、挂载、执行后端、审批与网络。
@@ -34,7 +36,7 @@ internal data class ReachMount(
     val unavailable: Boolean,
 )
 
-internal enum class ReachBackendKind { FILES, BUILTIN, SANDBOX, TERMUX, SSH }
+internal enum class ReachBackendKind { FILES, BUILTIN, SANDBOX, LINUX, TERMUX, SSH }
 
 internal enum class ReachBackendStatus {
     READY,
@@ -49,10 +51,21 @@ internal enum class ReachBackendStatus {
     /** SSH 未登记任何主机。 */
     NO_HOSTS,
     LOADING,
+    INSTALLING,
+    BROKEN,
+    UNAVAILABLE,
 }
 
 /** [count] 只用于 SSH 的已登记主机数。 */
-internal data class ReachBackend(val kind: ReachBackendKind, val status: ReachBackendStatus, val count: Int? = null)
+internal data class ReachBackend(val kind: ReachBackendKind, val status: ReachBackendStatus, val count: Int? = null, val destination: String? = null)
+
+internal fun linuxReachStatus(state: LinuxRuntimeState, agentEnabled: Boolean): ReachBackendStatus = when (state) {
+    is LinuxRuntimeState.Unavailable -> ReachBackendStatus.UNAVAILABLE
+    is LinuxRuntimeState.NotInstalled -> ReachBackendStatus.NOT_INSTALLED
+    is LinuxRuntimeState.Installing, is LinuxRuntimeState.Maintaining -> ReachBackendStatus.INSTALLING
+    is LinuxRuntimeState.InstallInterrupted, is LinuxRuntimeState.Broken -> ReachBackendStatus.BROKEN
+    is LinuxRuntimeState.Ready -> if (agentEnabled) ReachBackendStatus.READY else ReachBackendStatus.DISABLED
+}
 
 /** 工作区类型决定的保护与可见性，与执行层规则一一对应（见执行后端规格 §3.2、§4.4）。 */
 internal data class WorkspaceTraits(
@@ -106,10 +119,13 @@ internal fun reachBackends(
     termuxEnabled: Boolean,
     termuxAvailability: TermuxAvailability?,
     sshHostCount: Int?,
+    linuxState: LinuxRuntimeState = LinuxExecRouting.state,
+    linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
 ): List<ReachBackend> = listOf(
     ReachBackend(ReachBackendKind.FILES, ReachBackendStatus.READY),
     ReachBackend(ReachBackendKind.BUILTIN, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.SHELL_ONLY),
     ReachBackend(ReachBackendKind.SANDBOX, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.JS_ONLY),
+    ReachBackend(ReachBackendKind.LINUX, linuxReachStatus(linuxState, linuxAgentEnabled), destination = "linux_environment"),
     ReachBackend(ReachBackendKind.TERMUX, termuxReachStatus(termuxEnabled, termuxAvailability)),
     ReachBackend(
         ReachBackendKind.SSH,

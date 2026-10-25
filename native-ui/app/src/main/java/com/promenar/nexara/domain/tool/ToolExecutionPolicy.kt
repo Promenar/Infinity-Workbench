@@ -24,7 +24,8 @@ object ToolExecutionPolicy {
         risk: ToolRisk,
         arguments: String = "{}",
         resolvedTarget: String? = null,
+        usesLinux: Boolean = LinuxExecRouting.agentUsesLinux,
     ): Boolean = risk == ToolRisk.SCHEDULE || toolName == "schedule_create" ||
         ToolArgumentApprovalRules.requiresExplicitApproval(toolName, arguments, resolvedTarget) ||
-        (mode == ExecutionMode.WORKSPACE && CommandToolClassification.backendFor(toolName) != null)
+        (mode == ExecutionMode.WORKSPACE && CommandToolClassification.backendFor(toolName, usesLinux) != null)
 }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="linux_b2_runner">Linux</string>
+    <string name="linux_b2_installing">Installing or maintaining</string>
+    <string name="linux_b2_broken">Environment needs repair</string>
+    <string name="linux_b2_unavailable">Unavailable in this distribution or ABI</string>
+</resources>

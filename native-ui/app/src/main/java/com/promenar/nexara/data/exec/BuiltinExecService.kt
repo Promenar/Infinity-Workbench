@@ -11,6 +11,12 @@ import com.promenar.nexara.domain.tool.CommandToolResult
 import com.promenar.nexara.domain.tool.CommandTruncation
 import com.promenar.nexara.domain.tool.ToolLiveOutputSink
 import com.promenar.nexara.domain.tool.ToolOutputStream
+import com.promenar.nexara.domain.linux.LinuxRuntime
+import com.promenar.nexara.domain.linux.LinuxPackageProvenance
+import com.promenar.nexara.domain.linux.LinuxUnavailableException
+import com.promenar.nexara.domain.storage.ExternalMount
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -42,8 +48,21 @@ class BuiltinExecService(
     /** 内置 git 的远端认证作用域：每条命令签发一次性 nonce，命令结束（含超时、取消、异常）即吊销。 */
     private val gitRemote: GitRemoteSessions = GitRemoteSessions.None,
     private val runtimeDataMonitor: RuntimeDataMonitor? = null,
+    private val linuxRuntime: LinuxRuntime? = null,
+    linuxProvenance: LinuxPackageProvenance? = null,
+    private val visibleMounts: suspend (String) -> List<ExternalMount> = { emptyList() },
+    private val sessionTitle: suspend (String) -> String? = { null },
 ) {
     val pipAvailable: Boolean get() = environment.pipAvailable
+    val agentUsesLinux: Boolean get() = linuxRuntime?.agentUsesLinux == true
+    private val packageProvenance = LinuxExecProvenance(linuxProvenance)
+
+    private suspend fun linuxRequest(root: File, kind: String, sessionId: String?, source: String, stdin: String?, seconds: Int): BuiltinCommandRequest = withContext(Dispatchers.IO) {
+        val system = environment.forWorkspace(root, kind)
+        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")))
+        val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
+        BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment, stdin, seconds)
+    }
 
     suspend fun runShell(
         workspaceRootUuid: String,
@@ -52,7 +71,7 @@ class BuiltinExecService(
         stdin: String?,
         timeoutSeconds: Int,
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
-    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command, live) { root, kind ->
+    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, if (agentUsesLinux) ExecRunKind.LINUX else ExecRunKind.SHELL, command, live, stdin) { root, kind ->
         BuiltinCommandRequest(
             argv = listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", command),
             workingDirectory = root,
@@ -95,6 +114,7 @@ class BuiltinExecService(
         stdin: String?,
         location: com.promenar.nexara.data.jobs.BackgroundJobLocation,
         minutes: Int,
+        sessionId: String? = null,
     ): com.promenar.nexara.data.jobs.PreparedBackgroundCommand {
         if (kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON && !environment.pythonAvailable) {
             throw IllegalArgumentException("当前设备没有内置 Python，请改用 termux_exec 或 ssh_exec。")
@@ -103,6 +123,19 @@ class BuiltinExecService(
         val workspaceKind = location.workspaceKind
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
         return try {
+            if (kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.LINUX) {
+                val runtime = linuxRuntime
+                if (runtime == null || runtime.state.value !is com.promenar.nexara.domain.linux.LinuxRuntimeState.Ready) {
+                    throw LinuxUnavailableException(runtime?.state?.value ?: com.promenar.nexara.domain.linux.LinuxRuntimeState.NotInstalled(0))
+                }
+                val request = linuxRequest(root, workspaceKind, sessionId, source, stdin, minutes * 60)
+                val title = titleOrNull(sessionId)
+                val before = packageProvenance.before()
+                return com.promenar.nexara.data.jobs.PreparedBackgroundCommand(
+                    request.copy(environment = request.environment + lease.environment), lease::close,
+                    afterRun = { packageProvenance.after(before, sessionId, title) },
+                )
+            }
             val python = kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON
             val argv = if (python) listOf(environment.pythonLauncher.path, "-c", source)
                 else listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", source)
@@ -113,6 +146,12 @@ class BuiltinExecService(
         } catch (failure: Throwable) { lease.close(); throw failure }
     }
 
+    private suspend fun titleOrNull(sessionId: String?): String? = withContext(Dispatchers.IO) {
+        try { sessionId?.let { sessionTitle(it) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+    }
+
     private suspend fun execute(
         workspaceRootUuid: String,
         sessionId: String?,
@@ -120,13 +159,21 @@ class BuiltinExecService(
         kind: ExecRunKind,
         source: String,
         live: ToolLiveOutputSink,
+        stdin: String? = null,
         request: (File, String) -> BuiltinCommandRequest,
     ): CommandToolResult {
+        var runtime = if (kind == ExecRunKind.LINUX) "linux" else "system"
+        var fallback: String? = null
+        fun executionFields() = buildJsonObject {
+            put("runtime", runtime)
+            fallback?.let { put("runtime_fallback", it) }
+        }
         val target = sessionWorkspace(sessionId)
         if (target is SessionWorkspace.Unavailable) {
             return CommandToolResult(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话的自选工作区不可用（${target.reason}），命令不会改在会话私有工作区运行；请检查目录与授权，或在会话设置中更换工作区。",
+                backendFields = executionFields(),
             )
         }
         val directory = target as? SessionWorkspace.Directory
@@ -137,20 +184,31 @@ class BuiltinExecService(
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
         // 代理不可用时命令照常执行，内置 git 退回直连。
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
-        val withRemote: (File, String) -> BuiltinCommandRequest = { root, workspaceKind ->
-            request(root, workspaceKind).let { it.copy(environment = it.environment + lease.environment) }
-        }
         var runtimeFields = JsonObject(emptyMap())
         suspend fun runCommand(root: File): BuiltinCommandOutput {
-            val commandRequest = withRemote(root, workspaceKind)
-            val before = runtimeDataMonitor?.capture()
+            val base = if (kind == ExecRunKind.LINUX) {
+                try { linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds) }
+                catch (_: LinuxUnavailableException) {
+                    runtime = "system"
+                    fallback = "Linux 环境在启动前不可用，已使用系统 sh 执行。"
+                    request(root, workspaceKind)
+                }
+            } else request(root, workspaceKind)
+            val commandRequest = base.copy(environment = base.environment + lease.environment)
+            val linux = runtime == "linux"
+            val title = if (linux) titleOrNull(sessionId) else null
+            val packagesBefore = if (linux) packageProvenance.before() else null
+            var before: RuntimeDataMonitor.Snapshot? = null
             try {
+                before = runtimeDataMonitor?.capture()
                 if (live === ToolLiveOutputSink.None) return runner.run(commandRequest, control)
                 val tee = LiveWorkspaceOutput(root, live::emit)
                 return try { runner.run(commandRequest, control, tee::accept) } finally { tee.finish() }
             } finally {
-                if (before != null) runtimeFields = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    runtimeDataMonitor.changesSince(before)
+                if (linux) packageProvenance.after(packagesBefore, sessionId, title)
+                val snapshot = before
+                if (snapshot != null && runtimeDataMonitor != null) runtimeFields = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    runtimeDataMonitor.changesSince(snapshot)
                 }
             }
         }
@@ -175,19 +233,19 @@ class BuiltinExecService(
             return CommandToolResult(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话工作区不可用或正在被删除；请确认会话仍存在后重试。",
-                backendFields = runtimeFields,
+                backendFields = JsonObject(runtimeFields + executionFields()),
             )
         } catch (_: IllegalStateException) {
             return CommandToolResult(
                 errorCode = "EXEC_WORKSPACE_UNAVAILABLE",
                 guidance = "会话工作区当前不可修改（可能有尚未恢复的文件操作）；稍后重试，或先用文件工具确认工作区状态。",
-                backendFields = runtimeFields,
+                backendFields = JsonObject(runtimeFields + executionFields()),
             )
         } finally {
             lease.close()
         }
         val outcome = held.value
-        val fields = JsonObject((if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)) + runtimeFields)
+        val fields = JsonObject((if (directory != null) directoryFields(workspaceKind) else workspaceFields(outcome.changes)) + runtimeFields + executionFields())
         val output = outcome.value ?: return CommandToolResult(
             errorCode = "EXEC_START_FAILED",
             guidance = "无法启动命令进程；请确认设备上的 /system/bin/sh 与 setsid 可用，或改用 termux_exec。",
