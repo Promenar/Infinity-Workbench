@@ -28,6 +28,10 @@ data class GitFileChange(
     val kind: GitChangeKind,
     /** 重命名前的路径；其它类型为空。 */
     val oldPath: String? = null,
+    val addedLines: Int? = null,
+    val removedLines: Int? = null,
+    /** 无法统计行数的原因；未知原因保留原值，便于兼容检查端扩展。 */
+    val linesSkipped: String? = null,
 )
 
 data class GitChangeList(val entries: List<GitFileChange>, val truncated: Boolean = false) {
@@ -49,6 +53,9 @@ data class GitStatus(
     val staged: GitChangeList,
     val unstaged: GitChangeList,
     val untracked: GitChangeList,
+    val tracking: GitTracking = GitTracking(),
+    /** FETCH_HEAD 修改时间，Unix 秒；没有抓取记录时为空。 */
+    val lastFetchSeconds: Long? = null,
 ) {
     /** 三组条目数之和；同一文件同时出现在已暂存与未暂存时计两次。 */
     val changeCount: Int get() = staged.size + unstaged.size + untracked.size
@@ -61,6 +68,26 @@ data class GitStatus(
         GitChangeGroup.UNTRACKED -> untracked
     }
 }
+
+/** 缺字段或无法计数时为空；截断为 true 时不能把未知计数视为零。 */
+data class GitTracking(
+    val upstream: String? = null,
+    val ahead: Int? = null,
+    val behind: Int? = null,
+    val upstreamMissing: Boolean? = null,
+    val truncated: Boolean? = null,
+)
+
+data class GitBranch(
+    val name: String,
+    val current: Boolean = false,
+    val shortSha: String? = null,
+    val authorTimeSeconds: Long? = null,
+    val title: String? = null,
+    val tracking: GitTracking = GitTracking(),
+)
+
+data class GitBranchList(val branches: List<GitBranch> = emptyList(), val truncated: Boolean = false)
 
 /** 某一版本（HEAD、索引、提交或工作区）中的文件内容。 */
 data class GitFileContent(

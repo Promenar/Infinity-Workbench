@@ -20,6 +20,7 @@ import unittest
 import unittest.mock
 
 SITE_DIR = Path(__file__).resolve().parents[2] / "native-ui/app/python/site"
+sys.path.insert(0, str(SITE_DIR))
 MODULE_PATH = SITE_DIR / "nexara_git.py"
 spec = importlib.util.spec_from_file_location("nexara_git", MODULE_PATH)
 nexara_git = importlib.util.module_from_spec(spec)
@@ -476,6 +477,7 @@ class InspectUsageTest(unittest.TestCase):
                 ["read", "--output", str(output)],
                 ["commit", "--output", str(output)],
                 ["log", "--limit", "0", "--output", str(output)],
+                ["branches", "--limit", "0", "--output", str(output)],
             ):
                 stderr = io.StringIO()
                 original = sys.stderr
@@ -786,6 +788,255 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(len(limited["files"]), 1)
         self.assertTrue(limited["files_truncated"])
 
+    def configure_tracking(self, remote: bytes = b"origin", merge: bytes = b"refs/heads/main") -> None:
+        from dulwich.repo import Repo
+
+        with Repo(str(self.work)) as repo:
+            branch = repo.refs.read_ref(b"HEAD")[len(b"ref: refs/heads/"):].strip()
+            config = repo.get_config()
+            config.set((b"branch", branch), b"remote", remote)
+            config.set((b"branch", branch), b"merge", merge)
+            config.write_to_path()
+
+    def fork_commit(self, parents: list[str], title: str) -> str:
+        from dulwich.objects import Commit
+        from dulwich.repo import Repo
+
+        with Repo(str(self.work)) as repo:
+            item = Commit()
+            item.tree = repo[parents[0].encode()].tree
+            item.parents = [sha.encode() for sha in parents]
+            item.author = item.committer = SIGNATURE
+            self.clock += 60
+            item.author_time = item.commit_time = self.clock
+            item.author_timezone = item.commit_timezone = 0
+            item.message = title.encode()
+            repo.object_store.add_object(item)
+            return item.id.decode()
+
+    def test_tracking_divergence_fetch_time_and_read_only(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        base = self.commit("base")
+        local = self.commit("local")
+        remote = self.fork_commit([base], "remote")
+        self.configure_tracking()
+        with Repo(str(self.work)) as repo:
+            repo.refs[b"refs/remotes/origin/main"] = remote.encode()
+        fetch = self.work / ".git/FETCH_HEAD"
+        fetch.write_text(remote + "\n")
+        os.utime(fetch, (1_700_000_123, 1_700_000_123))
+        before = {p.relative_to(self.work): p.read_bytes() for p in (self.work / ".git").rglob("*") if p.is_file()}
+        status = self.inspect("status")
+        self.assertEqual(status["head"], local)
+        self.assertEqual((status.get("upstream"), status.get("ahead"), status.get("behind")), ("origin/main", 1, 1))
+        self.assertIs(status.get("upstream_missing"), False)
+        self.assertIs(status.get("tracking_truncated"), False)
+        self.assertEqual(status.get("last_fetch_seconds"), 1_700_000_123)
+        branches = self.inspect("branches")["branches"]
+        self.assertEqual((branches[0]["ahead"], branches[0]["behind"]), (1, 1))
+        after = {p.relative_to(self.work): p.read_bytes() for p in (self.work / ".git").rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+
+    def test_tracking_absent_missing_detached_and_unborn(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        self.configure_tracking()
+        empty = self.inspect("status")
+        self.assertIsNone(empty.get("upstream"))
+        self.assertIsNone(empty.get("ahead"))
+        self.assertIsNone(empty.get("last_fetch_seconds"))
+        self.assertEqual(self.inspect("branches").get("branches"), [])
+        sha = self.commit("base")
+        missing = self.inspect("status")
+        self.assertEqual(missing.get("upstream"), "origin/main")
+        self.assertIs(missing.get("upstream_missing"), True)
+        self.assertIsNone(missing.get("ahead"))
+        self.assertIsNone(missing.get("behind"))
+        with Repo(str(self.work)) as repo:
+            config = repo.get_config()
+            branch = repo.refs.read_ref(b"HEAD")[len(b"ref: refs/heads/"):].strip()
+            del config[(b"branch", branch)]
+            config.write_to_path()
+        plain = self.inspect("status")
+        self.assertIsNone(plain.get("upstream"))
+        self.assertIs(plain.get("upstream_missing"), False)
+        self.configure_tracking()
+        with Repo(str(self.work)) as repo:
+            repo.refs.remove_if_equals(b"HEAD", None)
+            repo.refs[b"HEAD"] = sha.encode()
+        detached = self.inspect("status")
+        self.assertIsNone(detached.get("upstream"))
+        self.assertIsNone(detached.get("behind"))
+        self.assertFalse(any(b["current"] for b in self.inspect("branches")["branches"]))
+
+    def test_tracking_merge_counts_and_local_upstream(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        base = self.commit("base")
+        local = self.commit("local")
+        remote = self.fork_commit([base], "remote")
+        merged = self.fork_commit([local, remote], "merge")
+        with Repo(str(self.work)) as repo:
+            repo.refs[b"HEAD"] = merged.encode()
+            repo.refs[b"refs/heads/base"] = remote.encode()
+        self.configure_tracking(remote=b".", merge=b"refs/heads/base")
+        status = self.inspect("status")
+        self.assertEqual((status.get("upstream"), status.get("ahead"), status.get("behind")), ("base", 2, 0))
+
+    def test_tracking_count_and_graph_budgets(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        base = self.commit("base")
+        self.commit("one")
+        self.commit("two")
+        self.commit("three")
+        self.configure_tracking()
+        with Repo(str(self.work)) as repo:
+            repo.refs[b"refs/remotes/origin/main"] = base.encode()
+            with unittest.mock.patch.object(nexara_git, "INSPECT_MAX_TRACKING_COUNT", 2, create=True):
+                status = nexara_git._inspect_status(repo, 10)
+            self.assertEqual((status.get("ahead"), status.get("behind"), status.get("tracking_truncated")), (2, 0, True))
+            with unittest.mock.patch.object(nexara_git, "INSPECT_MAX_GRAPH_COMMITS", 1, create=True):
+                status = nexara_git._inspect_status(repo, 10)
+            self.assertIsNone(status.get("ahead"))
+            self.assertIs(status.get("tracking_truncated"), True)
+
+    def test_line_counts_match_git_numstat_for_all_groups(self) -> None:
+        self.init()
+        self.write("both.txt", "keep\nold\nend\n")
+        self.write("deleted.txt", "one\ntwo")
+        self.write("unstaged-delete.txt", "gone\n")
+        self.write("newline.txt", "same\n")
+        self.write("cr.txt", b"one\rtwo\n")
+        self.add("both.txt", "deleted.txt", "unstaged-delete.txt", "newline.txt", "cr.txt")
+        self.commit("base")
+        self.write("both.txt", "keep\nnew\nextra\nend\n")
+        self.write("added.txt", "first\nsecond")
+        self.write("newline.txt", "same")
+        self.write("cr.txt", b"one\rthree\n")
+        self.add("both.txt", "added.txt", "newline.txt", "cr.txt")
+        self.rm("deleted.txt")
+        (self.work / "deleted.txt").unlink()
+        self.write("both.txt", "keep\nnew\nend\n")
+        (self.work / "unstaged-delete.txt").unlink()
+        self.write("fresh.txt", "one\ntwo\n")
+        self.write("empty.txt", b"")
+        status = self.inspect("status")
+        counts = lambda group: {f["path"]: (f.get("added_lines"), f.get("removed_lines")) for f in status[group]}
+        self.assertEqual(counts("staged"), {"both.txt": (2, 1), "added.txt": (2, 0), "deleted.txt": (0, 2), "newline.txt": (1, 1), "cr.txt": (1, 1)})
+        self.assertEqual(counts("unstaged"), {"both.txt": (0, 1), "unstaged-delete.txt": (0, 1)})
+        self.assertEqual(counts("untracked"), {"fresh.txt": (2, 0), "empty.txt": (0, 0)})
+        env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        for group, options in (("staged", ["--cached"]), ("unstaged", [])):
+            reference = subprocess.run(["git", "diff", "--numstat", "--no-renames", *options], cwd=self.work, env=env, check=True, capture_output=True, text=True)
+            expected = {path: (int(added), int(removed)) for added, removed, path in (line.split("\t") for line in reference.stdout.splitlines())}
+            self.assertEqual(counts(group), expected)
+
+    def test_line_counts_skip_binary_large_symlink_and_submodule(self) -> None:
+        from dulwich.index import IndexEntry
+        from dulwich.repo import Repo
+
+        self.init()
+        self.write("binary", b"a\0b\n")
+        self.write("large", b"x" * (512 * 1024 + 1))
+        os.symlink("large", self.work / "link")
+        self.add("binary", "large", "link")
+        with Repo(str(self.work)) as repo:
+            index = repo.open_index()
+            index[b"module"] = IndexEntry((0, 0), (0, 0), 0, 0, 0o160000, 0, 0, 0, b"1" * 40, 0)
+            index.write()
+        status = self.inspect("status")
+        for entry in status["staged"]:
+            self.assertIsNone(entry.get("added_lines"))
+            self.assertIsNone(entry.get("removed_lines"))
+            self.assertEqual(entry.get("lines_skipped"), {"binary": "binary", "large": "too_large", "link": "symlink", "module": "submodule"}[entry["path"]])
+
+    def test_line_count_file_byte_and_diff_work_budgets(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        self.write("a", "old\n")
+        self.add("a")
+        self.commit("base")
+        self.write("a", "new\n")
+        self.add("a")
+        self.write("b", "b\n")
+        with Repo(str(self.work)) as repo:
+            for name, value in (("INSPECT_MAX_STAT_FILES", 1), ("INSPECT_MAX_STAT_BYTES", 3), ("INSPECT_MAX_DIFF_WORK", 0)):
+                with unittest.mock.patch.object(nexara_git, name, value, create=True):
+                    status = nexara_git._inspect_status(repo, 10)
+                target = status["untracked"][0] if name.endswith("FILES") else status["staged"][0]
+                self.assertIsNone(target.get("added_lines"))
+                self.assertEqual(target.get("lines_skipped"), "budget", name)
+
+    def test_line_counts_skip_unstaged_and_untracked_content(self) -> None:
+        self.init()
+        for path in ("binary", "large", "link"):
+            self.write(path, "old\n")
+        self.add("binary", "large", "link")
+        self.commit("base")
+        self.write("binary", b"new\0\n")
+        self.write("large", b"x" * (512 * 1024 + 1))
+        (self.work / "link").unlink()
+        os.symlink("binary", self.work / "link")
+        self.write("new-binary", b"new\0\n")
+        self.write("new-large", b"x" * (512 * 1024 + 1))
+        os.symlink("binary", self.work / "new-link")
+        status = self.inspect("status")
+        for group in ("unstaged", "untracked"):
+            entries = status[group]
+            self.assertEqual(len(entries), 3)
+            for entry in entries:
+                self.assertIsNone(entry.get("added_lines"))
+                self.assertIsNone(entry.get("removed_lines"))
+                name = entry["path"].removeprefix("new-")
+                self.assertEqual(entry.get("lines_skipped"), {"binary": "binary", "large": "too_large", "link": "symlink"}[name])
+
+    def test_tracking_shallow_history_and_equal_tips(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        base = self.commit("base")
+        tip = self.commit("tip")
+        self.configure_tracking()
+        with Repo(str(self.work)) as repo:
+            repo.refs[b"refs/remotes/origin/main"] = tip.encode()
+        equal = self.inspect("status")
+        self.assertEqual((equal.get("ahead"), equal.get("behind"), equal.get("tracking_truncated")), (0, 0, False))
+        with Repo(str(self.work)) as repo:
+            repo.refs[b"refs/remotes/origin/main"] = base.encode()
+        (self.work / ".git/shallow").write_text(tip + "\n")
+        shallow = self.inspect("status")
+        # 与 Git 的本地浅历史视图一致，shallow 根不穿透到其父提交。
+        self.assertEqual((shallow.get("ahead"), shallow.get("behind")), (1, 1))
+
+    def test_branches_are_local_sorted_current_and_limited(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        first = self.commit("first")
+        second = self.commit("second")
+        third = self.fork_commit([first], "third\n\nbody")
+        with Repo(str(self.work)) as repo:
+            current = repo.refs.read_ref(b"HEAD")[len(b"ref: refs/heads/"):].strip().decode()
+            repo.refs[b"refs/heads/old"] = first.encode()
+            repo.refs[b"refs/heads/recent"] = third.encode()
+            repo.refs[b"refs/remotes/origin/hidden"] = third.encode()
+        branches = self.inspect("branches", "--limit", "2")
+        self.assertTrue(branches.get("truncated"))
+        self.assertEqual([b["name"] for b in branches["branches"]], ["recent", current])
+        self.assertEqual([b["current"] for b in branches["branches"]], [False, True])
+        self.assertEqual((branches["branches"][0]["short_sha"], branches["branches"][0]["author_time"], branches["branches"][0]["title"]), (third[:7], self.clock, "third"))
+        all_branches = self.inspect("branches", "--limit", "3")
+        self.assertFalse(all_branches["truncated"])
+        self.assertEqual([b["name"] for b in all_branches["branches"]], ["recent", current, "old"])
+        self.assertEqual(all_branches["branches"][1]["short_sha"], second[:7])
+
     def test_invalid_arguments_are_reported_as_json_errors(self) -> None:
         self.init()
         self.write("a.txt", "a\n")
@@ -837,6 +1088,35 @@ class InspectTest(unittest.TestCase):
             config.write_to_path()
         explicit = self.inspect("status", kind="shared")
         self.assertIn("README.TXT", self.paths(explicit, "untracked"))
+
+
+class NumstatTest(unittest.TestCase):
+    def test_repeated_lines_and_lf_boundaries(self) -> None:
+        from nexara_git_numstat import numstat
+
+        for old, new, expected in (
+            (b"a\na\na\n", b"a\nb\na\na\n", (1, 0)),
+            (b"a\n", b"a", (1, 1)),
+            (b"a\rb\n", b"a\rc\n", (1, 1)),
+            (b"", b"\n", (1, 0)),
+            (b"\xff\n", b"\xfe\n", (1, 1)),
+        ):
+            with self.subTest(old=old, new=new):
+                self.assertEqual(numstat(old, new, lambda: None), expected)
+
+    def test_short_sequences_match_independent_lcs_oracle(self) -> None:
+        import itertools
+        from nexara_git_numstat import numstat
+
+        sequences = [seq for length in range(5) for seq in itertools.product((b"a\n", b"b\n"), repeat=length)]
+        for a in sequences:
+            for b in sequences:
+                table = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+                for i, left in enumerate(a, 1):
+                    for j, right in enumerate(b, 1):
+                        table[i][j] = table[i - 1][j - 1] + 1 if left == right else max(table[i - 1][j], table[i][j - 1])
+                common = table[-1][-1]
+                self.assertEqual(numstat(b"".join(a), b"".join(b), lambda: None), (len(b) - common, len(a) - common), (a, b))
 
 
 TOKEN = "nxt_SyntheticTokenForNexaraTests0123456789"

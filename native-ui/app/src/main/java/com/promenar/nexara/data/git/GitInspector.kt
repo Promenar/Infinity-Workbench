@@ -87,6 +87,9 @@ class GitInspector(
     suspend fun log(target: GitWorkspaceTarget, limit: Int = GitInspectLimits.DEFAULT_COMMITS): GitInspectResult<GitCommitLog> =
         inspect(target, "log", listOf("--limit", limit.toString()), GitInspectJson::parseLog)
 
+    suspend fun branches(target: GitWorkspaceTarget, limit: Int = GitInspectLimits.MAX_ENTRIES): GitInspectResult<GitBranchList> =
+        inspect(target, "branches", listOf("--limit", limit.toString()), GitInspectJson::parseBranches)
+
     suspend fun commit(
         target: GitWorkspaceTarget,
         sha: String,

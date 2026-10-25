@@ -24,6 +24,8 @@ internal object GitInspectJson {
             staged = changeList(dto.staged, dto.stagedTruncated),
             unstaged = changeList(dto.unstaged, dto.unstagedTruncated),
             untracked = changeList(dto.untracked, dto.untrackedTruncated),
+            tracking = GitTracking(dto.upstream, dto.ahead, dto.behind, dto.upstreamMissing, dto.trackingTruncated),
+            lastFetchSeconds = dto.lastFetchSeconds,
         )
     }
 
@@ -44,6 +46,22 @@ internal object GitInspectJson {
 
     fun parseLog(text: String): GitInspectResult<GitCommitLog> = parse(text, LogDto.serializer()) { dto ->
         GitCommitLog(dto.commits.map { it.toSummary() }, dto.truncated)
+    }
+
+    fun parseBranches(text: String): GitInspectResult<GitBranchList> = parse(text, BranchListDto.serializer()) { dto ->
+        GitBranchList(
+            dto.branches.map {
+                GitBranch(
+                    name = it.name,
+                    current = it.current,
+                    shortSha = it.shortSha,
+                    authorTimeSeconds = it.authorTime,
+                    title = it.title,
+                    tracking = GitTracking(it.upstream, it.ahead, it.behind, it.upstreamMissing, it.trackingTruncated),
+                )
+            },
+            dto.truncated,
+        )
     }
 
     fun parseCommit(text: String): GitInspectResult<GitCommitDetail> = parse(text, CommitDetailDto.serializer()) { dto ->
@@ -85,7 +103,7 @@ internal object GitInspectJson {
             "renamed" -> GitChangeKind.RENAMED
             else -> GitChangeKind.MODIFIED
         }
-        return GitFileChange(path, kind, oldPath?.takeIf { kind == GitChangeKind.RENAMED })
+        return GitFileChange(path, kind, oldPath?.takeIf { kind == GitChangeKind.RENAMED }, addedLines, removedLines, linesSkipped)
     }
 
     private fun BlobDto.toContent(): GitFileContent = if (!exists) {
@@ -128,6 +146,9 @@ internal data class EntryDto(
     val path: String,
     val change: String,
     @SerialName("old_path") val oldPath: String? = null,
+    @SerialName("added_lines") val addedLines: Int? = null,
+    @SerialName("removed_lines") val removedLines: Int? = null,
+    @SerialName("lines_skipped") val linesSkipped: String? = null,
 )
 
 @Serializable
@@ -139,12 +160,41 @@ internal data class StatusDto(
     val detached: Boolean = false,
     val head: String? = null,
     val unborn: Boolean = false,
+    val upstream: String? = null,
+    val ahead: Int? = null,
+    val behind: Int? = null,
+    @SerialName("upstream_missing") val upstreamMissing: Boolean? = null,
+    @SerialName("tracking_truncated") val trackingTruncated: Boolean? = null,
+    @SerialName("last_fetch_seconds") val lastFetchSeconds: Long? = null,
     val staged: List<EntryDto> = emptyList(),
     @SerialName("staged_truncated") val stagedTruncated: Boolean = false,
     val unstaged: List<EntryDto> = emptyList(),
     @SerialName("unstaged_truncated") val unstagedTruncated: Boolean = false,
     val untracked: List<EntryDto> = emptyList(),
     @SerialName("untracked_truncated") val untrackedTruncated: Boolean = false,
+) : InspectEnvelope
+
+@Serializable
+internal data class BranchDto(
+    val name: String,
+    val current: Boolean = false,
+    @SerialName("short_sha") val shortSha: String? = null,
+    @SerialName("author_time") val authorTime: Long? = null,
+    val title: String? = null,
+    val upstream: String? = null,
+    val ahead: Int? = null,
+    val behind: Int? = null,
+    @SerialName("upstream_missing") val upstreamMissing: Boolean? = null,
+    @SerialName("tracking_truncated") val trackingTruncated: Boolean? = null,
+)
+
+@Serializable
+internal data class BranchListDto(
+    override val version: Int,
+    override val repository: Boolean,
+    override val error: InspectErrorDto? = null,
+    val branches: List<BranchDto> = emptyList(),
+    val truncated: Boolean = false,
 ) : InspectEnvelope
 
 @Serializable

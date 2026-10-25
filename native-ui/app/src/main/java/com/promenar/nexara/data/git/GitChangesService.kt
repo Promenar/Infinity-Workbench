@@ -55,6 +55,9 @@ class GitChangesService(
     suspend fun commit(sessionId: String, sha: String): GitInspectResult<GitCommitDetail> =
         withTarget(sessionId) { inspector.commit(it, sha) }
 
+    suspend fun branches(sessionId: String): GitInspectResult<GitBranchList> =
+        withTarget(sessionId) { inspector.branches(it) }
+
     /** 已暂存：HEAD 对索引；未暂存：索引对工作区；未跟踪：空对工作区。 */
     suspend fun changeDiff(sessionId: String, group: GitChangeGroup, change: GitFileChange): GitInspectResult<GitDiffSides> =
         withTarget(sessionId) { target ->

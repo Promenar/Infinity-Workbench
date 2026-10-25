@@ -1079,7 +1079,12 @@ INSPECT_MAX_COMMITS = 500
 INSPECT_MAX_BLOB_BYTES = 512 * 1024
 INSPECT_MAX_MESSAGE_BYTES = 64 * 1024
 INSPECT_BINARY_SNIFF = 8000
-INSPECT_OPERATIONS = ("status", "read", "log", "commit")
+INSPECT_MAX_TRACKING_COUNT = 1000
+INSPECT_MAX_GRAPH_COMMITS = 10000
+INSPECT_MAX_STAT_FILES = 200
+INSPECT_MAX_STAT_BYTES = 4 * 1024 * 1024
+INSPECT_MAX_DIFF_WORK = 2000000
+INSPECT_OPERATIONS = ("status", "read", "log", "commit", "branches")
 _HEX_SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _GITLINK_MODE = 0o160000
 
@@ -1197,6 +1202,8 @@ def _inspect_run(options):
             body = {"blobs": [_inspect_blob(repo, *_split_blob_spec(spec)) for spec in options.blob]}
         elif options.operation == "log":
             body = _inspect_log(repo, _clamp(options.limit, INSPECT_DEFAULT_COMMITS, INSPECT_MAX_COMMITS))
+        elif options.operation == "branches":
+            body = _inspect_branches(repo, _clamp(options.limit, INSPECT_DEFAULT_ENTRIES, INSPECT_MAX_ENTRIES))
         else:
             body = _inspect_commit(repo, options.commit, _clamp(options.limit, INSPECT_DEFAULT_ENTRIES, INSPECT_MAX_ENTRIES))
     finally:
@@ -1283,6 +1290,209 @@ def _limited(iterable, limit):
     return items, False
 
 
+class _TrackingGraph:
+    """整次请求共享提交读取预算与父节点缓存，浅克隆以 shallow 边界为根。"""
+    def __init__(self, repo):
+        self.repo = repo
+        self.parents = {}
+        self.provider = repo.parents_provider()
+
+    def reachable(self, start):
+        pending, seen = [start], set()
+        while pending:
+            sha = pending.pop()
+            if sha in seen:
+                continue
+            if sha not in self.parents:
+                if len(self.parents) >= INSPECT_MAX_GRAPH_COMMITS:
+                    return None
+                try:
+                    self.parents[sha] = self.provider.get_parents(sha)
+                except KeyError:
+                    return None
+            seen.add(sha)
+            pending.extend(self.parents[sha])
+        return seen
+
+    def tracking(self, branch, sha):
+        result = {"upstream": None, "ahead": None, "behind": None, "upstream_missing": False, "tracking_truncated": False}
+        if branch is None or sha is None:
+            return result
+        config = self.repo.get_config_stack()
+        try:
+            remote = config.get((b"branch", branch), b"remote")
+            merge = config.get((b"branch", branch), b"merge")
+        except KeyError:
+            return result
+        if not remote or not merge.startswith(HEADS_PREFIX):
+            return result
+        name = merge[len(HEADS_PREFIX):]
+        ref = merge if remote == b"." else b"refs/remotes/" + remote + b"/" + name
+        result["upstream"] = _text(name if remote == b"." else remote + b"/" + name)
+        try:
+            upstream = self.repo.refs[ref]
+        except KeyError:
+            result["upstream_missing"] = True
+            return result
+        if sha == upstream:
+            result.update(ahead=0, behind=0)
+            return result
+        local, other = self.reachable(sha), self.reachable(upstream)
+        if local is None or other is None:
+            # 历史不可完整遍历时不把已见节点误报为精确计数。
+            result["tracking_truncated"] = True
+            return result
+        ahead, behind = len(local - other), len(other - local)
+        result.update(
+            ahead=min(ahead, INSPECT_MAX_TRACKING_COUNT), behind=min(behind, INSPECT_MAX_TRACKING_COUNT),
+            tracking_truncated=ahead > INSPECT_MAX_TRACKING_COUNT or behind > INSPECT_MAX_TRACKING_COUNT,
+        )
+        return result
+
+
+def _inspect_branches(repo, limit):
+    state = _head_state(repo)
+    branches = []
+    for ref in repo.refs.keys(base=HEADS_PREFIX.rstrip(b"/")):
+        commit = _peel_commit(repo, repo.refs[HEADS_PREFIX + ref])
+        branches.append({
+            "name": _text(ref), "current": not state["detached"] and state["branch"] == _text(ref),
+            "short_sha": _text(commit.id[:7]), "author_time": commit.author_time,
+            "title": _commit_summary(commit)["title"], "_sha": commit.id, "_branch": ref,
+        })
+    branches.sort(key=lambda item: (-item["author_time"], item["name"]))
+    truncated = len(branches) > limit
+    graph = _TrackingGraph(repo)
+    branches = branches[:limit]
+    for item in branches:
+        item.update(graph.tracking(item.pop("_branch"), item.pop("_sha")))
+    return {"branches": branches, "truncated": truncated}
+
+
+class _LinesSkipped(Exception):
+    pass
+
+
+class _LineStats:
+    """只为已返回的状态条目读取文本，三组共用文件、字节与差异计算预算。"""
+    def __init__(self, repo, index, head):
+        self.repo, self.index, self.head = repo, index, head
+        self.files = 0
+        self.bytes_left = INSPECT_MAX_STAT_BYTES
+        self.work_left = INSPECT_MAX_DIFF_WORK
+
+    def spend_work(self):
+        if self.work_left <= 0:
+            raise _LinesSkipped("budget")
+        self.work_left -= 1
+
+    def blob(self, mode, sha):
+        import stat as stat_module
+        from dulwich.objects import Blob
+
+        if mode == _GITLINK_MODE:
+            raise _LinesSkipped("submodule")
+        if stat_module.S_ISLNK(mode):
+            raise _LinesSkipped("symlink")
+        blob = self.repo[sha]
+        if not isinstance(blob, Blob):
+            raise _LinesSkipped("not_file")
+        size = blob.raw_length()
+        if size > INSPECT_MAX_BLOB_BYTES:
+            raise _LinesSkipped("too_large")
+        if size > self.bytes_left:
+            raise _LinesSkipped("budget")
+        self.bytes_left -= size
+        return self.text(blob.as_raw_string())
+
+    def text(self, data):
+        if b"\0" in data[:INSPECT_BINARY_SNIFF]:
+            raise _LinesSkipped("binary")
+        return data
+
+    def at_head(self, path):
+        from dulwich.errors import NotTreeError
+        from dulwich.objects import SubmoduleEncountered
+
+        if self.head is None:
+            return b""
+        try:
+            mode, sha = self.repo[self.head.tree].lookup_path(self.repo.__getitem__, path)
+        except (KeyError, NotTreeError, SubmoduleEncountered):
+            return b""
+        return self.blob(mode, sha)
+
+    def at_index(self, path):
+        from dulwich.index import ConflictedIndexEntry
+
+        try:
+            entry = self.index[path]
+        except KeyError:
+            return b""
+        if isinstance(entry, ConflictedIndexEntry):
+            raise _LinesSkipped("conflict")
+        return self.blob(entry.mode, entry.sha)
+
+    def at_worktree(self, path):
+        import stat as stat_module
+
+        # 每层目录与最终文件都拒绝符号链接，避免统计读取工作区之外的内容。
+        directory = os.open(self.repo.path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            parts = path.split(b"/")
+            for part in parts[:-1]:
+                next_directory = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = next_directory
+            info = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+            if stat_module.S_ISLNK(info.st_mode):
+                raise _LinesSkipped("symlink")
+            if not stat_module.S_ISREG(info.st_mode):
+                raise _LinesSkipped("not_file")
+            if info.st_size > INSPECT_MAX_BLOB_BYTES:
+                raise _LinesSkipped("too_large")
+            if info.st_size > self.bytes_left:
+                raise _LinesSkipped("budget")
+            descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            with os.fdopen(descriptor, "rb") as stream:
+                if not stat_module.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise _LinesSkipped("not_file")
+                ceiling = min(INSPECT_MAX_BLOB_BYTES, self.bytes_left)
+                data = stream.read(ceiling + 1)
+            if len(data) > ceiling:
+                raise _LinesSkipped("too_large" if ceiling == INSPECT_MAX_BLOB_BYTES else "budget")
+            self.bytes_left -= len(data)
+            return self.text(data)
+        except FileNotFoundError:
+            return b""
+        finally:
+            os.close(directory)
+
+    def count(self, old, new):
+        from nexara_git_numstat import numstat
+
+        return numstat(old, new, self.spend_work)
+
+    def add(self, group, item):
+        item.update(added_lines=None, removed_lines=None)
+        try:
+            if self.files >= INSPECT_MAX_STAT_FILES or self.bytes_left <= 0:
+                raise _LinesSkipped("budget")
+            self.files += 1
+            path = _tree_path(item["path"])
+            if group == "staged":
+                old, new = self.at_head(path), self.at_index(path)
+            elif group == "unstaged":
+                old, new = self.at_index(path), self.at_worktree(path)
+            else:
+                old, new = b"", self.at_worktree(path)
+            item["added_lines"], item["removed_lines"] = self.count(old, new)
+        except _LinesSkipped as skipped:
+            item["lines_skipped"] = str(skipped)
+        except (OSError, KeyError, _InspectError):
+            item["lines_skipped"] = "read_error"
+
+
 def _inspect_status(repo, limit):
     from dulwich.index import ConflictedIndexEntry, get_unstaged_changes
     from dulwich.porcelain import get_untracked_paths
@@ -1291,6 +1501,14 @@ def _inspect_status(repo, limit):
     index = repo.open_index(config=config)
     head = _head_commit(repo)
     result = _head_state(repo)
+    result.update(_TrackingGraph(repo).tracking(
+        result["branch"].encode("utf-8") if result["branch"] is not None else None,
+        head.id if head is not None else None,
+    ))
+    try:
+        result["last_fetch_seconds"] = int(os.stat(os.path.join(repo.controldir(), "FETCH_HEAD")).st_mtime)
+    except FileNotFoundError:
+        result["last_fetch_seconds"] = None
 
     def staged():
         for (old_path, new_path), _modes, _shas in index.changes_from_tree(
@@ -1326,10 +1544,13 @@ def _inspect_status(repo, limit):
         ):
             yield {"path": path.replace(os.sep, "/"), "change": "added"}
 
+    stats = _LineStats(repo, index, head)
     for name, entries in (("staged", staged()), ("unstaged", unstaged()), ("untracked", untracked())):
         items, truncated = _limited(entries, limit)
         result[name] = sorted(items, key=lambda item: item["path"])
         result[name + "_truncated"] = truncated
+        for item in result[name]:
+            stats.add(name, item)
     return result
 
 
