@@ -1,4 +1,4 @@
-package com.promenar.nexara.debug.linuxprobe
+package com.promenar.nexara.data.linux
 
 import java.io.File
 import java.io.InputStream
@@ -8,7 +8,7 @@ import java.nio.file.Path
 import java.util.zip.GZIPInputStream
 
 /** 只接受 minirootfs 使用的 ustar 类型；路径校验与 Android 系统调用解耦。 */
-internal class SafeTarExtractor(
+class SafeTarExtractor(
     private val symlink: (String, File) -> Unit = { target, file -> Files.createSymbolicLink(file.toPath(), java.nio.file.Paths.get(target)); Unit },
     private val chmod: (File, Int) -> Unit = { _, _ -> },
 ) {

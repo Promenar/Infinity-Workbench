@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(nexara_linux_probe C ASM)
+project(nexara_linux_runtime C ASM)
 
 if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
-    message(FATAL_ERROR "探针只支持 arm64-v8a")
+    message(FATAL_ERROR "Linux 运行时只支持 arm64-v8a")
 endif()
 set(SRC "${PROOT_SOURCE}/src")
 add_compile_options(-O2 -g0 -fPIE -fno-ident
@@ -44,14 +44,14 @@ add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/loader-info.c"
         "-DOUTPUT=${CMAKE_BINARY_DIR}/loader-info.c" -P "${CMAKE_CURRENT_SOURCE_DIR}/loader-info.cmake"
     DEPENDS nxloader "${CMAKE_CURRENT_SOURCE_DIR}/loader-info.cmake")
 
-add_library(talloc_probe OBJECT "${TALLOC_SOURCE}/talloc.c")
-target_include_directories(talloc_probe BEFORE PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/talloc-compat")
-target_compile_definitions(talloc_probe PRIVATE TALLOC_BUILD_VERSION_MAJOR=2 TALLOC_BUILD_VERSION_MINOR=4 TALLOC_BUILD_VERSION_RELEASE=4)
-# 只重命名上游入口；包装入口建立独立会话并记录进程组，Java 仍直接 exec 打包 proot。
+add_library(talloc_runtime OBJECT "${TALLOC_SOURCE}/talloc.c")
+target_include_directories(talloc_runtime BEFORE PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/talloc-compat")
+target_compile_definitions(talloc_runtime PRIVATE TALLOC_BUILD_VERSION_MAJOR=2 TALLOC_BUILD_VERSION_MINOR=4 TALLOC_BUILD_VERSION_RELEASE=4)
+# 入口仅设置父进程死亡信号；会话与进程组由调用方的 setsid 管理。
 set_source_files_properties("${SRC}/cli/cli.c" PROPERTIES COMPILE_DEFINITIONS "main=nx_proot_main")
 # 固定上游文件使用 strcmp/memset 却未包含声明，按文件补头而不放宽编译诊断。
 set_source_files_properties("${SRC}/extension/ashmem_memfd/ashmem_memfd.c" PROPERTIES COMPILE_OPTIONS "-include;string.h")
-add_executable(nxproot ${PROOT_SOURCES} "${CMAKE_BINARY_DIR}/loader-info.c" probe-entry.c $<TARGET_OBJECTS:talloc_probe>)
+add_executable(nxproot ${PROOT_SOURCES} "${CMAKE_BINARY_DIR}/loader-info.c" runtime-entry.c $<TARGET_OBJECTS:talloc_runtime>)
 target_compile_definitions(nxproot PRIVATE "PROOT_UNBUNDLE_LOADER=\"/unavailable\"")
 target_link_libraries(nxproot PRIVATE dl)
 target_link_options(nxproot PRIVATE -pie -Wl,--build-id=none,-z,noexecstack,-z,max-page-size=16384)

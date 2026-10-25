@@ -6,7 +6,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# 只允许侧载渠道声明的权限：所有文件访问，以及内置命令前台服务的 specialUse 类型（Play 待政策评审）。
+# 侧载独有权限：所有文件访问、命令保活与定时触发。
 SIDELOAD_ONLY_PERMISSIONS = (
     "android.permission.MANAGE_EXTERNAL_STORAGE",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
@@ -23,6 +23,9 @@ def check_manifests(play: Path, sideload: Path) -> None:
         raise ValueError("两个风味的 applicationId 必须相同且非空")
     for flavor, manifest, expected in zip(("play", "sideload"), manifests, (False, True)):
         permissions = {item.get(ANDROID_NAME) for item in manifest if item.tag.startswith("uses-permission")}
+        # Play 的媒体依赖也声明网络状态权限；这里只要求 Linux 侧载端具备该权限。
+        if expected and "android.permission.ACCESS_NETWORK_STATE" not in permissions:
+            raise ValueError("sideload 合并清单缺少 Linux DNS 的网络状态权限")
         if flavor == "play" and "android.permission.USE_EXACT_ALARM" in permissions:
             raise ValueError("play 合并清单不得声明 USE_EXACT_ALARM")
         if "android.permission.RECEIVE_BOOT_COMPLETED" not in permissions:
@@ -37,6 +40,8 @@ def check_manifests(play: Path, sideload: Path) -> None:
         services = {service.get(ANDROID_NAME) for service in manifest.iter("service")}
         if (SIDELOAD_ONLY_SERVICE in services) != expected:
             raise ValueError(f"{flavor} 合并清单的内置命令前台服务声明不符合渠道契约")
+        if any("linuxprobe" in activity.get(ANDROID_NAME, "") for activity in manifest.iter("activity")):
+            raise ValueError(f"{flavor} 合并清单不得声明 Linux 探针 Activity")
 
 
 def main() -> int:

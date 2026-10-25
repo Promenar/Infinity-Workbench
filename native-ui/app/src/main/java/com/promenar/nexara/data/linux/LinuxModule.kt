@@ -29,7 +29,13 @@ class LinuxModule(
 
     // ── 运行时：打包的 proot、rootfs 安装与启动参数 ──
     val runtime: LinuxRuntime by lazy {
-        UnavailableLinuxRuntime(LinuxUnavailableReason.DISTRIBUTION, paths)
+        when {
+            !com.promenar.nexara.distribution.DistributionCapabilities.linuxRuntimeAvailable ->
+                UnavailableLinuxRuntime(LinuxUnavailableReason.DISTRIBUTION, paths)
+            android.os.Build.SUPPORTED_ABIS.firstOrNull() != "arm64-v8a" ->
+                UnavailableLinuxRuntime(LinuxUnavailableReason.UNSUPPORTED_ABI, paths)
+            else -> ProcessLinuxRuntime.create(context, scope, paths, host.keepAlive, { packages }, { mirrors })
+        }
     }
 
     // ── 软件包、来源记录与镜像 ──

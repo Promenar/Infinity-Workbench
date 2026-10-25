@@ -1,0 +1,22 @@
+<resources>
+    <string name="linux_runtime_install_summary">Install Linux environment</string>
+    <string name="linux_runtime_reset_summary">Reset Linux environment</string>
+    <string name="linux_runtime_temp_directory">Cannot create the proot temporary directory</string>
+    <string name="linux_runtime_workspace_directory">The workspace must be a bindable host directory</string>
+    <string name="linux_runtime_mount_target">Mount targets must stay within /mnt/</string>
+    <string name="linux_runtime_read_only_mount">proot cannot enforce read-only mounts</string>
+    <string name="linux_runtime_host_mount">Invalid host mount path</string>
+    <string name="linux_runtime_working_directory">The working directory must be an absolute guest path</string>
+    <string name="linux_runtime_rootfs_damaged">The base system or version record is damaged</string>
+    <string name="linux_runtime_storage_required">At least %1$d bytes of free storage are required</string>
+    <string name="linux_runtime_asset_corrupt">Rootfs SHA-256 verification failed</string>
+    <string name="linux_runtime_shell_missing">The rootfs is missing /bin/sh</string>
+    <string name="linux_runtime_data_symlink">The Linux data directory cannot be a symbolic link</string>
+    <string name="linux_runtime_dns_fallback">DNS: using public resolvers as a fallback</string>
+    <string name="linux_runtime_dns_public">Public DNS fallback: %1$s</string>
+    <string name="linux_runtime_dns_vpn">VPN DNS: %1$s</string>
+    <string name="linux_runtime_dns_active">Active network DNS: %1$s</string>
+    <string name="linux_runtime_alpine_ca">Using the Alpine certificate bundle</string>
+    <string name="linux_runtime_timeout">Command timed out</string>
+    <string name="linux_runtime_preference_failed">Cannot save the Linux Agent setting</string>
+</resources>

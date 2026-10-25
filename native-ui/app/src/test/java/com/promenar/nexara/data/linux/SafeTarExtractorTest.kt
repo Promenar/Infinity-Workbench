@@ -1,4 +1,4 @@
-package com.promenar.nexara.debug.linuxprobe
+package com.promenar.nexara.data.linux
 
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -77,7 +77,7 @@ class SafeTarExtractorTest {
     }
 
     @Test fun `离线解包固定Alpine归档并检查真实busybox链接`() {
-        val archive = System.getenv("NEXARA_LINUX_PROBE_TEST_ROOTFS")
+        val archive = System.getenv("NEXARA_LINUX_TEST_ROOTFS")
         assumeTrue(archive != null, "通过环境变量传入本地已校验归档，不在测试中联网")
         java.io.File(requireNotNull(archive)).inputStream().use { SafeTarExtractor().extractGzip(it, root.toFile()) }
         assertTrue(root.resolve("bin/busybox").toFile().length() > 100_000)

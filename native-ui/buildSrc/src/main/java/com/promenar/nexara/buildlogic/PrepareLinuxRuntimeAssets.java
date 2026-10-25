@@ -13,7 +13,7 @@ import java.util.Properties;
 import javax.inject.Inject;
 
 /** 只将已校验的原始 rootfs 与版本信息放进生成的资产目录。 */
-public abstract class PrepareLinuxProbeAssets extends DefaultTask {
+public abstract class PrepareLinuxRuntimeAssets extends DefaultTask {
     @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getArchive();
     @InputFile @PathSensitive(PathSensitivity.NONE)
