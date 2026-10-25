@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Linux 文件浏览 -->
-    <string name="linux_files_title_home">Linux home</string>
-    <string name="linux_files_title_root">Linux file system</string>
-    <string name="linux_files_subtitle_home">Linux environment · Not backed up · Cleared on reset</string>
-    <string name="linux_files_subtitle_root">Linux environment · Whole root · Restored to the built-in system on reset</string>
+    <string name="linux_files_title">Linux files</string>
+    <string name="linux_files_subtitle_home">Home · Not backed up, cleared on reset</string>
+    <string name="linux_files_subtitle_root">Root · Restored to built-in system on reset</string>
+    <string name="linux_files_up">Up one level</string>
     <string name="linux_files_switch">Switch</string>
     <string name="linux_files_switch_to_root">Switch to the whole file system</string>
     <string name="linux_files_switch_to_home">Switch to the Linux home</string>

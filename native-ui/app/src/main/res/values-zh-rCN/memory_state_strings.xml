@@ -3,5 +3,5 @@
     <string name="memory_state_section">对话记忆</string>
     <string name="memory_state_title">提取事件与状态</string>
     <string name="memory_state_desc">每轮额外调用一次模型</string>
-    <string name="memory_state_footer">每轮回复后整理出事件和最新状态，检索记忆时一并提供给模型。需要开启对话记忆并设置嵌入模型。</string>
+    <string name="memory_state_footer">每轮回复后整理事件与最新状态，检索记忆时一并提供。需开启对话记忆并设置嵌入模型。</string>
 </resources>

@@ -8,12 +8,12 @@
     <string name="git_credentials_entry_empty">Not set</string>
     <string name="git_credentials_title">Git credentials</string>
     <string name="git_credentials_saved_section">Saved credentials</string>
-    <string name="git_credentials_description">Used for HTTPS repositories on these hosts. Tokens are encrypted on this device, hidden from the model and not backed up.</string>
+    <string name="git_credentials_description">Used for HTTPS repositories. Tokens are encrypted on this device, hidden from the model and not backed up.</string>
     <string name="git_credentials_empty">No Git credentials saved</string>
     <string name="git_credentials_saved_subtitle">User %1$s · token saved</string>
     <string name="git_credentials_update_token">Replace token</string>
     <string name="git_credentials_delete_action">Delete credentials for %1$s</string>
-    <string name="git_credentials_token_hint">Saving an existing host replaces its token. On GitHub, use a fine-grained token with read and write access to Contents.</string>
+    <string name="git_credentials_token_hint">Saving an existing host replaces its token. GitHub needs a fine-grained token with Contents read and write.</string>
     <string name="git_credentials_host_label">Host</string>
     <string name="git_credentials_username_label">User name</string>
     <string name="git_credentials_token_label">Access token</string>

@@ -60,10 +60,6 @@ data class LinuxTerminalUiState(
     val ready: Boolean get() = runtime is LinuxRuntimeState.Ready
 
     val selectedTab: TerminalTab? get() = tabs.firstOrNull { it.key == selectedKey } ?: tabs.firstOrNull()
-
-    /** 例如“Alpine 3.24.3”；环境未就绪时为 null。 */
-    val environmentLabel: String?
-        get() = (runtime as? LinuxRuntimeState.Ready)?.info?.let { "${it.distribution} ${it.version}".trim() }
 }
 
 /** 向会话写入用户输入；与 [LinuxTerminalSessions] 分开以便测试。 */

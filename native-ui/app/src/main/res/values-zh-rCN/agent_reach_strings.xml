@@ -7,7 +7,7 @@
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
 
     <string name="agent_reach_section_paths">路径</string>
-    <string name="agent_reach_paths_footer">命令和 Termux 里的 / 是设备根目录。设备路径文件夹可用真实路径访问，系统授权的文件夹命令看不到。</string>
+    <string name="agent_reach_paths_footer">命令里的 / 是设备根目录；系统授权的文件夹只有文件工具能访问。</string>
     <string name="agent_reach_path_root">文件工具的根目录</string>
     <string name="agent_reach_path_workspace_var">命令里的工作区路径</string>
     <string name="agent_reach_path_skills">技能目录，每次改动需批准</string>

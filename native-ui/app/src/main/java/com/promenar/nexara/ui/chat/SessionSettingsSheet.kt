@@ -659,7 +659,6 @@ internal fun SessionContextSettingsSection(
     NexaraSettingsSection(
         title = stringResource(R.string.sheet_settings_section_context),
         modifier = modifier.testTag("session_context_management"),
-        footer = stringResource(R.string.settings_batch1_context_footer, retainedTurns),
     ) {
         NexaraNumericSetting(
             title = stringResource(R.string.sheet_settings_summary_threshold), value = thresholdPercent,

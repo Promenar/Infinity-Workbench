@@ -7,12 +7,12 @@
     <string name="git_credentials_entry_empty">未配置</string>
     <string name="git_credentials_title">Git 凭据</string>
     <string name="git_credentials_saved_section">已保存的凭据</string>
-    <string name="git_credentials_description">访问这些主机的 HTTPS 仓库时自动使用。令牌加密保存在本机，模型看不到，也不随备份迁移。</string>
+    <string name="git_credentials_description">HTTPS 仓库自动使用。令牌加密存于本机，模型不可见，不进备份。</string>
     <string name="git_credentials_empty">尚未保存 Git 凭据</string>
     <string name="git_credentials_saved_subtitle">用户 %1$s · 已保存令牌</string>
     <string name="git_credentials_update_token">更换令牌</string>
     <string name="git_credentials_delete_action">删除 %1$s 的凭据</string>
-    <string name="git_credentials_token_hint">保存已存在的主机会覆盖原令牌。GitHub 请使用对 Contents 有读写权限的细粒度令牌。</string>
+    <string name="git_credentials_token_hint">同名主机会覆盖原令牌。GitHub 需对 Contents 有读写权限的细粒度令牌。</string>
     <string name="git_credentials_host_label">主机</string>
     <string name="git_credentials_username_label">用户名</string>
     <string name="git_credentials_token_label">访问令牌</string>

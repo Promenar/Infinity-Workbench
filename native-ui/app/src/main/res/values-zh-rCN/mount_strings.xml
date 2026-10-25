@@ -27,7 +27,7 @@
     <string name="mount_browse">浏览文件夹</string>
     <string name="mount_refresh">刷新挂载</string>
     <string name="mount_recycle_title">挂载回收区</string>
-    <string name="mount_recycle_help">删除副本最多占用 32 MiB、保留 7 天、最多 100 项，恢复后放回源目录。空间不足时默认拒绝删除。</string>
+    <string name="mount_recycle_help">删除的副本保留 7 天（最多 32 MiB、100 项），可恢复到源目录；空间不足时拒绝删除。</string>
     <string name="mount_recycle_empty">没有可恢复的文件</string>
     <string name="mount_restore">恢复</string>
     <string name="mount_directory_empty">这个文件夹是空的</string>
@@ -52,6 +52,6 @@
     <string name="mount_recycle_desc">恢复 Agent 从挂载文件夹中删除的文件</string>
     <string name="mount_more_actions">%1$s 的更多操作</string>
     <string name="mount_form_section_target">文件夹</string>
-    <string name="mount_saf_command_note">只有文件工具能看到此文件夹。通过系统选择器授权的文件夹，命令无法访问。</string>
-    <string name="mount_real_path_command_note">文件工具通过 /mnt/别名/ 访问；命令通过真实路径访问，工作区档下每条命令仍需批准。</string>
+    <string name="mount_saf_command_note">只有文件工具能访问，命令看不到此文件夹。</string>
+    <string name="mount_real_path_command_note">文件工具经 /mnt/别名/ 访问，命令用真实路径访问。</string>
 </resources>

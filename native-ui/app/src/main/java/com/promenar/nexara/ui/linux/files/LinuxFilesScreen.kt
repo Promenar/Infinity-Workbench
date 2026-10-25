@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -278,7 +279,7 @@ private fun LinuxFilesHeader(state: LinuxFilesUiState, actions: LinuxFilesAction
         }
         Column(Modifier.weight(1f)) {
             Text(
-                stringResource(if (state.atHome) R.string.linux_files_title_home else R.string.linux_files_title_root),
+                stringResource(R.string.linux_files_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -290,7 +291,8 @@ private fun LinuxFilesHeader(state: LinuxFilesUiState, actions: LinuxFilesAction
                 stringResource(if (state.atHome) R.string.linux_files_subtitle_home else R.string.linux_files_subtitle_root),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                // 进出目录时顶栏高度不变，下方路径与列表不随文案长短漂移。
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -342,6 +344,14 @@ private fun LinuxPathBar(state: LinuxFilesUiState, actions: LinuxFilesActions) {
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
         modifier = Modifier.fillMaxWidth().padding(start = NexaraSpacing.Small, end = NexaraSpacing.Small),
     ) {
+        FilledTonalIconButton(
+            onClick = { linuxParentPath(state.path)?.let(actions.onNavigate) },
+            enabled = !state.selecting && linuxParentPath(state.path) != null,
+            modifier = Modifier.size(40.dp).testTag(UiTags.LINUX_FILES_UP),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        ) {
+            Icon(Icons.Rounded.ArrowUpward, contentDescription = stringResource(R.string.linux_files_up), modifier = Modifier.size(20.dp))
+        }
         LinuxBreadcrumbs(state.path, enabled = !state.selecting, onNavigate = actions.onNavigate, modifier = Modifier.weight(1f))
         LinuxSortButton(state.sort, actions.onSort)
         val hiddenLabel = stringResource(R.string.linux_files_show_hidden)

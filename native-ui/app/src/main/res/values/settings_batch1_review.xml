@@ -11,7 +11,6 @@
     <string name="settings_batch1_memory_generation">Memory generation</string>
     <string name="settings_batch1_network_forwarding">Network forwarding</string>
     <string name="settings_batch1_backup_options">Archive options</string>
-    <string name="settings_batch1_context_footer">Past the threshold, older turns are compacted and the latest %1$d are kept. Chat history is unaffected.</string>
     <string name="settings_batch1_termux_intro_footer">Paste each command into Termux. SSH and folders are optional.</string>
     <string name="settings_batch1_termux_permission_footer">If no prompt appears, turn it on in app info → Permissions → Other permissions.</string>
     <string name="settings_batch1_termux_ssh_setup_footer">whoami prints your username. For password sign-in, run passwd first.</string>

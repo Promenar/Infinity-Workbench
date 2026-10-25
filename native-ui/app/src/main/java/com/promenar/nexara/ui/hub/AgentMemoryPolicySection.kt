@@ -38,7 +38,7 @@ internal fun AgentMemoryPolicySection(
     var editing by remember { mutableStateOf<ScopeResource?>(null) }
     NexaraSettingsSection(
         title = stringResource(R.string.agent_memory_section),
-        footer = stringResource(R.string.agent_memory_share_desc) + "\n" + stringResource(R.string.agent_memory_section_footer),
+        footer = stringResource(R.string.agent_memory_section_footer),
     ) {
         SettingsToggle(
             title = stringResource(R.string.agent_memory_share),

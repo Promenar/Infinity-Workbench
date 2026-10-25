@@ -8,12 +8,12 @@
     </plurals>
 
     <string name="network_section_controls">可调整的范围</string>
-    <string name="network_section_controls_footer">白名单作用于网页读取、媒体下载与脚本联网。tailnet 设备经内置 Tailscale 访问，并受其中的设备白名单约束。Android 只允许明文 http 访问本机 127.0.0.1，局域网服务需使用 https。</string>
+    <string name="network_section_controls_footer">白名单作用于网页读取、媒体下载与脚本联网；tailnet 设备另受 Tailscale 设备白名单约束。明文 http 只能访问 127.0.0.1。</string>
     <string name="network_section_matrix">各工具的访问范围</string>
-    <string name="network_section_matrix_footer">内置命令与 Termux 的网络不经 &brand; 判定，由系统网络决定；SSH 只连接设置中登记的主机。</string>
+    <string name="network_section_matrix_footer">内置命令与 Termux 的网络由系统决定；SSH 只连已登记的主机。</string>
 
     <string name="network_lan_hosts_title">局域网与本机白名单</string>
-    <string name="network_lan_hosts_desc">默认为空。每行一个精确主机名或 IP，不含协议、端口和路径；本机服务填写 127.0.0.1。局域网服务需使用 https，明文 http 只能访问 127.0.0.1。</string>
+    <string name="network_lan_hosts_desc">每行一个主机名或 IP，不含协议、端口和路径。局域网服务需 https，明文 http 仅限 127.0.0.1。</string>
     <string name="network_lan_hosts_save">保存白名单</string>
     <string name="network_lan_hosts_invalid">最多填写 64 个精确主机名或 IP，不含协议、端口、路径或通配符。</string>
     <string name="network_lan_hosts_empty">未设置，局域网与本机均不可达</string>

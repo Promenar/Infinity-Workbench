@@ -2,7 +2,7 @@
 <resources>
     <string name="skills_runtime_section_user">User skills</string>
     <string name="skills_runtime_section_project">Project skills</string>
-    <string name="skills_runtime_user_footer">Shared by all agents and sessions at /skills. Ask the agent to create or edit skills there.</string>
+    <string name="skills_runtime_user_footer">Shared by all chats at /skills. The agent can create or edit skills there.</string>
     <string name="skills_runtime_project_footer">From this workspace\'s .agents/skills. The model can use a project skill only after you trust it.</string>
     <string name="skills_runtime_user_empty">No skills yet. Ask the agent to create one in /skills, or import one in Settings.</string>
     <string name="skills_runtime_project_empty">This workspace has no skills in .agents/skills.</string>

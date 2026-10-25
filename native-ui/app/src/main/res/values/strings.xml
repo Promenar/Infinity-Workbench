@@ -1759,7 +1759,7 @@
     <string name="common_mode_workspace">Workspace</string>
     <string name="common_mode_full_access">Full access</string>
     <string name="common_mode_workspace_desc">File tools work freely inside the workspace; every command asks first.</string>
-    <string name="common_mode_full_access_desc">Commands also run without asking. They run as &brand; and can access all app data.</string>
+    <string name="common_mode_full_access_desc">Commands also run without asking, as &brand; with access to all app data.</string>
     <string name="chat_runtime_changes_title">Critical app data changed</string>
     <plurals name="chat_runtime_changes_more">
         <item quantity="one">%d more</item>

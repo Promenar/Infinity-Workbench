@@ -3,5 +3,5 @@
     <string name="memory_state_section">Chat memory</string>
     <string name="memory_state_title">Extract events and states</string>
     <string name="memory_state_desc">One extra model call per turn</string>
-    <string name="memory_state_footer">After each reply, records what happened and the latest state, and gives them to the model when chat memory is searched. Requires chat memory and an embedding model.</string>
+    <string name="memory_state_footer">Records events and the latest state after each reply for memory search. Needs chat memory and an embedding model.</string>
 </resources>

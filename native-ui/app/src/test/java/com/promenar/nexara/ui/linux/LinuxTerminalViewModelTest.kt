@@ -80,7 +80,6 @@ class LinuxTerminalViewModelTest {
         assertThat(terminals.opened).containsExactly(LinuxTerminalLocation.Directory("/root") to null)
         val selected = vm.state.value.selectedTab as TerminalTab.Shell
         assertThat(selected.info.ordinal).isEqualTo(1)
-        assertThat(vm.state.value.environmentLabel).isEqualTo("Alpine 3.22")
     }
 
     @Test

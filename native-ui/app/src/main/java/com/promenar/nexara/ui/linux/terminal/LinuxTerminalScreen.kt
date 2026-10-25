@@ -248,14 +248,11 @@ fun LinuxTerminalContent(
                     onToggleAlt = onToggleAlt,
                     onToggleKeyboard = { onToggleKeyboard(imeVisible) },
                 )
-                // 输入时说明让位给终端行数；收起键盘后再显示。
-                if (!imeVisible) FooterNote(R.string.linux_terminal_footer)
             }
             is TerminalTab.AgentJob -> {
                 JobStatusLine(selected, state.jobTails[selected.job.id]?.truncated == true)
-                FooterNote(R.string.linux_terminal_job_footer)
             }
-            null -> FooterNote(R.string.linux_terminal_footer)
+            null -> Unit
         }
     }
 
@@ -274,22 +271,16 @@ fun LinuxTerminalContent(
 
 @Composable
 private fun terminalSubtitle(state: LinuxTerminalUiState): String? {
-    val environment = state.environmentLabel ?: return null
+    // 目录与发行版已由 shell 提示符给出；副标题只标出绑定的会话工作区。
     val workspaceSessionId = when (val tab = state.selectedTab) {
         is TerminalTab.Shell -> (tab.info.location as? LinuxTerminalLocation.SessionWorkspace)?.sessionId
         is TerminalTab.AgentJob -> tab.job.sessionId
         null -> null
-    }
-    val directory = ((state.selectedTab as? TerminalTab.Shell)?.info?.location as? LinuxTerminalLocation.Directory)?.path
-    return when {
-        workspaceSessionId != null -> stringResource(
-            R.string.linux_terminal_subtitle_workspace,
-            environment,
-            state.sessionTitles[workspaceSessionId] ?: stringResource(R.string.linux_terminal_workspace_untitled),
-        )
-        directory != null -> stringResource(R.string.linux_terminal_subtitle_directory, environment, directory)
-        else -> environment
-    }
+    } ?: return null
+    return stringResource(
+        R.string.linux_terminal_subtitle_workspace,
+        state.sessionTitles[workspaceSessionId] ?: stringResource(R.string.linux_terminal_workspace_untitled),
+    )
 }
 
 @Composable
@@ -407,7 +398,6 @@ private fun ColumnScope.EnvironmentNotReady(runtime: LinuxRuntimeState?, onOpenE
             }
         }
     }
-    FooterNote(R.string.linux_terminal_footer)
 }
 
 @Composable
@@ -548,17 +538,6 @@ private fun JobStatusLine(tab: TerminalTab.AgentJob, truncated: Boolean) {
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.XSmall),
-    )
-}
-
-@Composable
-private fun FooterNote(text: Int) {
-    Text(
-        text = stringResource(text),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small),
     )
 }
 

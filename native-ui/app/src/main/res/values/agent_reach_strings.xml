@@ -9,7 +9,7 @@
     <string name="agent_reach_workspace_unavailable">The workspace is unavailable</string>
 
     <string name="agent_reach_section_paths">Paths</string>
-    <string name="agent_reach_paths_footer">In commands and Termux, / is the device root. Commands reach device-path folders by their real path and can\'t see system-granted folders.</string>
+    <string name="agent_reach_paths_footer">In commands, / is the device root. System-granted folders are visible to file tools only.</string>
     <string name="agent_reach_path_root">Root for file tools</string>
     <string name="agent_reach_path_workspace_var">Workspace path in commands</string>
     <string name="agent_reach_path_skills">Skills folder; every change asks first</string>

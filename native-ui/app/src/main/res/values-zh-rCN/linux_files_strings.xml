@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Linux 文件浏览 -->
-    <string name="linux_files_title_home">Linux 主目录</string>
-    <string name="linux_files_title_root">Linux 根目录</string>
-    <string name="linux_files_subtitle_home">Linux 环境 · 不进备份 · 重置时清空</string>
-    <string name="linux_files_subtitle_root">Linux 环境 · 整个根目录 · 重置时恢复为内置系统</string>
+    <string name="linux_files_title">Linux 文件</string>
+    <string name="linux_files_subtitle_home">主目录 · 不进备份，重置时清空</string>
+    <string name="linux_files_subtitle_root">根目录 · 重置时恢复为内置系统</string>
+    <string name="linux_files_up">上一级</string>
     <string name="linux_files_switch">切换</string>
     <string name="linux_files_switch_to_root">切换到整个根目录</string>
     <string name="linux_files_switch_to_home">切换到 Linux 主目录</string>

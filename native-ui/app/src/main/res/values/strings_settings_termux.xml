@@ -46,7 +46,7 @@
     <string name="termux_key_missing">To sign in with a public key, first save a key in SSH host settings.</string>
     <string name="termux_key_available">Saved key available</string>
     <string name="termux_reuse_key">Reuse a saved SSH key</string>
-    <string name="termux_key_copy_description">Select a key, then copy its public key or the command that adds it to authorized_keys. Paste the result in Termux.</string>
+    <string name="termux_key_copy_description">Copy the public key or the command that adds it to authorized_keys, then paste it in Termux.</string>
     <string name="termux_copy_public_key">Copy public key</string>
     <string name="termux_copy_key_command">Copy authorized_keys command</string>
     <string name="termux_picker_hint">If the picker does not open in Termux, select Termux in its sidebar. Choose another alias if the name is already in use.</string>
@@ -109,5 +109,5 @@
     <string name="termux_command_sshd" translatable="false">sshd -o ListenAddress=127.0.0.1</string>
     <string name="termux_command_wake_lock" translatable="false">termux-wake-lock\ntermux-wake-unlock</string>
     <string name="termux_step_files">5 · Let the Agent use Termux files</string>
-    <string name="termux_files_description">Mounts belong to a session. In a chat, open External folders, choose Authorize a folder, and pick Termux in the system picker. File tools then use /mnt/alias/; commands run by Termux keep using the Termux home folder.</string>
+    <string name="termux_files_description">Authorize the Termux folder from a chat\'s External folders. File tools then use /mnt/alias/; Termux commands keep using the Termux home folder.</string>
 </resources>

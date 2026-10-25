@@ -31,15 +31,15 @@
 
     <!-- 不可用 -->
     <string name="linux_unavailable_distribution_title">Not included in this edition</string>
-    <string name="linux_unavailable_distribution_body">Google Play does not allow apps to download and run native programs, so the built-in Linux environment is only in the sideload edition. You can still run commands through Termux or an SSH host.</string>
+    <string name="linux_unavailable_distribution_body">The Google Play edition has no built-in Linux environment. Use Termux or an SSH host to run commands.</string>
     <string name="linux_unavailable_abi_title">Not supported on this device</string>
-    <string name="linux_unavailable_abi_body">The built-in Linux environment needs a 64-bit ARM (arm64-v8a) device. You can still run commands through Termux or an SSH host.</string>
+    <string name="linux_unavailable_abi_body">The built-in Linux environment needs a 64-bit ARM (arm64-v8a) device. Use Termux or an SSH host to run commands.</string>
     <string name="linux_open_termux">Set up Termux</string>
     <string name="linux_open_ssh">SSH hosts</string>
 
     <!-- 安装引导 -->
     <string name="linux_install_hero_title">A complete Linux for your agent</string>
-    <string name="linux_install_hero_body">Runs Alpine Linux inside &brand;. Once installed, agent commands run in it, apk can install Python, Node, git, build tools and more, and you can use it directly in a terminal. No Termux and no root needed.</string>
+    <string name="linux_install_hero_body">Runs Alpine Linux inside &brand;. Agent commands run in it, apk installs Python, Node, git and more, and you can use it in a terminal. No Termux or root needed.</string>
     <string name="linux_install_contents">What gets installed</string>
     <string name="linux_install_base_title">Alpine Linux %1$s</string>
     <string name="linux_install_base_subtitle">Built into the app, about 10 MB unpacked, installs offline</string>
@@ -48,7 +48,7 @@
     <string name="linux_install_space_title">Free space</string>
     <string name="linux_install_space_ok">%1$s free on this device, enough</string>
     <string name="linux_install_space_low">Only %1$s free; at least %2$s is needed</string>
-    <string name="linux_install_warning">Linux commands run as &brand; and can access app data and the network. In the Workspace mode, every command needs your approval.</string>
+    <string name="linux_install_warning">Commands run as &brand; with access to app data and the network. In Workspace mode, each command needs your approval.</string>
     <string name="linux_install_action">Install</string>
     <string name="linux_install_alternatives">You can also keep using Termux or SSH hosts</string>
 
@@ -118,7 +118,7 @@
     <string name="linux_diagnostics_failed">Last failed · %1$s</string>
     <string name="linux_diagnostics_running">Running…</string>
     <string name="linux_reset_title">Reset environment</string>
-    <string name="linux_reset_subtitle">Removes installed packages and /root and restores the original Alpine; workspace files are not affected</string>
+    <string name="linux_reset_subtitle">Removes packages and /root; workspace files stay</string>
     <string name="linux_reset_confirm_title">Reset the Linux environment?</string>
     <string name="linux_reset_confirm_body">Installed packages and everything in /root will be deleted. Files in your workspaces are not affected.</string>
     <string name="linux_reset_confirm_action">Reset</string>
@@ -128,7 +128,7 @@
     <string name="linux_uninstall_confirm_title">Uninstall the Linux environment?</string>
     <string name="linux_uninstall_confirm_body">The whole environment, including installed packages and /root, will be deleted. Files in your workspaces are not affected.</string>
     <string name="linux_uninstall_confirm_action">Uninstall</string>
-    <string name="linux_broken_body">The environment is installed but cannot start. Reset it to restore the original Alpine, or uninstall it.</string>
+    <string name="linux_broken_body">The environment is installed but can\'t start. Reset or uninstall it.</string>
     <string name="linux_operation_failed">Operation failed</string>
     <string name="linux_open_environment">Go to Linux environment</string>
 
@@ -148,7 +148,7 @@
     <string name="linux_mirror_custom_invalid">Enter an https:// address</string>
     <string name="linux_mirror_latency_failed">Unreachable</string>
     <string name="linux_mirror_latency_unknown">Not tested</string>
-    <string name="linux_mirrors_note">Package signatures are always verified with Alpine\'s official keys, so changing mirrors does not affect security. Downloads follow the Network access settings.</string>
+    <string name="linux_mirrors_note">Packages are always verified with Alpine\'s official keys. Downloads follow the Network access settings.</string>
     <string name="linux_mirrors_done">Done</string>
 
     <!-- 软件包 -->

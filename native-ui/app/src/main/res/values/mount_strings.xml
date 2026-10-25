@@ -27,7 +27,7 @@
     <string name="mount_browse">Browse folder</string>
     <string name="mount_refresh">Refresh mounts</string>
     <string name="mount_recycle_title">Mounted folder recycle area</string>
-    <string name="mount_recycle_help">Deleted copies are kept for 7 days, up to 32 MiB and 100 items. Restore returns them to their source folder. Deletion is refused when space is insufficient.</string>
+    <string name="mount_recycle_help">Deleted copies are kept for 7 days (up to 32 MiB and 100 items) and restore to their source folder. Deletion is refused when space runs out.</string>
     <string name="mount_recycle_empty">No recoverable files</string>
     <string name="mount_restore">Restore</string>
     <string name="mount_directory_empty">This folder is empty</string>
@@ -52,6 +52,6 @@
     <string name="mount_recycle_desc">Restore files the Agent deleted from mounted folders</string>
     <string name="mount_more_actions">More actions for %1$s</string>
     <string name="mount_form_section_target">Folder</string>
-    <string name="mount_saf_command_note">Only file tools can see this folder. Commands cannot reach folders authorized through the system picker.</string>
-    <string name="mount_real_path_command_note">File tools use /mnt/alias/. Commands reach it by its real path, and in Workspace mode each command still asks first.</string>
+    <string name="mount_saf_command_note">Only file tools can reach this folder; commands can\'t.</string>
+    <string name="mount_real_path_command_note">File tools use /mnt/alias/; commands use its real path.</string>
 </resources>

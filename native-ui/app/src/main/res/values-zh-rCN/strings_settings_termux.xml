@@ -46,7 +46,7 @@
     <string name="termux_key_missing">如需公钥登录，请先在 SSH 主机设置中保存一份密钥。</string>
     <string name="termux_key_available">有可复用密钥</string>
     <string name="termux_reuse_key">复用已保存的 SSH 密钥</string>
-    <string name="termux_key_copy_description">选择密钥后复制公钥，或复制写入 authorized_keys 的命令，在 Termux 中粘贴执行。</string>
+    <string name="termux_key_copy_description">复制公钥或写入 authorized_keys 的命令，到 Termux 中粘贴执行。</string>
     <string name="termux_copy_public_key">复制公钥</string>
     <string name="termux_copy_key_command">复制公钥写入命令</string>
     <string name="termux_picker_hint">如果选择器未自动定位，请在侧栏中选择 Termux。别名冲突时请换一个名称。</string>
@@ -103,5 +103,5 @@
     <string name="termux_error_key_code">无法读取 SSH 公钥（%1$s），请在 SSH 主机设置中检查密钥。</string>
     <string name="termux_error_system_permission">系统拒绝了所需权限，请在应用详情中检查授权后重试。</string>
     <string name="termux_step_files">5 · 让 Agent 访问 Termux 文件</string>
-    <string name="termux_files_description">挂载属于会话。请在会话中打开“外部文件夹”，选择“授权文件夹”，并在系统选择器中选 Termux。之后文件工具通过 /mnt/别名/ 访问；Termux 运行的命令仍使用 Termux 自己的主目录。</string>
+    <string name="termux_files_description">在会话的“外部文件夹”中授权 Termux 目录后，文件工具经 /mnt/别名/ 访问；Termux 命令仍使用其自己的主目录。</string>
 </resources>

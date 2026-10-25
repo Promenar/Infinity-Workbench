@@ -11,7 +11,6 @@
     <string name="settings_batch1_memory_generation">记忆生成</string>
     <string name="settings_batch1_network_forwarding">网络转发</string>
     <string name="settings_batch1_backup_options">归档选项</string>
-    <string name="settings_batch1_context_footer">超过阈值时压缩较早的对话，保留最近 %1$d 轮，聊天记录不受影响。</string>
     <string name="settings_batch1_termux_intro_footer">按步骤把命令粘贴到 Termux 执行；SSH 和文件夹按需配置。</string>
     <string name="settings_batch1_termux_permission_footer">没有弹出授权时，到应用详情“权限 → 其它权限”中开启。</string>
     <string name="settings_batch1_termux_ssh_setup_footer">whoami 输出的就是用户名；密码登录需先运行 passwd。</string>

@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +49,16 @@ class TerminalBridge(private val context: Context) : TerminalViewClient, Termina
     var textSizeSp: Float = DEFAULT_TEXT_SIZE_SP
         private set
     internal var onTextSizeChanged: (Float) -> Unit = {}
+
+    /** 由 [LocalTerminalPane] 按当前主题写入；会话颜色表在创建、复位和主题切换时套用。 */
+    internal var themeColors: TerminalThemeColors? = null
+
+    /** 返回颜色表是否发生变化。 */
+    internal fun applyTheme(emulator: TerminalEmulator?): Boolean {
+        val theme = themeColors ?: return false
+        val colors = emulator?.mColors ?: return false
+        return TerminalThemeApplier.apply(colors, theme)
+    }
 
     fun scrollToBottom() {
         val target = view ?: return
@@ -99,6 +110,7 @@ class TerminalBridge(private val context: Context) : TerminalViewClient, Termina
     override fun onBell(session: TerminalSession) = Unit
 
     override fun onColorsChanged(session: TerminalSession) {
+        applyTheme(session.emulator)
         view?.invalidate()
     }
 
@@ -148,6 +160,7 @@ class TerminalBridge(private val context: Context) : TerminalViewClient, Termina
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
 
     override fun onEmulatorSet() {
+        applyTheme(view?.mEmulator)
         view?.invalidate()
     }
 
@@ -194,6 +207,8 @@ fun LocalTerminalPane(
     bridge.readAlt = { currentReadAlt() }
     bridge.onTextSizeChanged = { textSizeSp = it }
     val textSizePx = with(density) { textSizeSp.sp.roundToPx() }
+    val themeColors = TerminalThemeColors.from(MaterialTheme.colorScheme)
+    bridge.themeColors = themeColors
 
     DisposableEffect(sessionId, bridge) {
         terminals.attachClient(sessionId, bridge)
@@ -236,6 +251,9 @@ fun LocalTerminalPane(
                 view.onScreenUpdated()
                 bridge.refreshScrollState()
             }
+            // 引用 themeColors 让主题切换时重新执行本块；会话尚未建立终端时由 onEmulatorSet 补上。
+            bridge.themeColors = themeColors
+            if (bridge.applyTheme(view.mEmulator)) view.invalidate()
         },
         onRelease = { view ->
             if (bridge.view === view) bridge.view = null

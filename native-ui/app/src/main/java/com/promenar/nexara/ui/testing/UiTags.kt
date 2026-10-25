@@ -461,6 +461,7 @@ object UiTags {
     const val LINUX_FILES_ROOT_SWITCH = "linux_files_root_switch"
     const val LINUX_FILES_PATH = "linux_files_path"
     const val LINUX_FILES_SORT = "linux_files_sort"
+    const val LINUX_FILES_UP = "linux_files_up"
     const val LINUX_FILES_HIDDEN_TOGGLE = "linux_files_hidden_toggle"
     const val LINUX_FILES_NEW = "linux_files_new"
     const val LINUX_FILES_LIST = "linux_files_list"

@@ -28,7 +28,6 @@
     <string name="agent_memory_section">记忆与知识</string>
     <string name="agent_memory_section_footer">右侧是会话可选的最大范围。默认值只影响之后新建的会话。</string>
     <string name="agent_memory_share">允许其他助手读取本助手的记忆</string>
-    <string name="agent_memory_share_desc">关闭后，其他助手读不到本助手的记忆。</string>
     <string name="agent_memory_share_short">关闭即为私密助手</string>
     <string name="agent_memory_default_heading">新会话默认</string>
     <string name="agent_memory_cap_heading">会话上限</string>

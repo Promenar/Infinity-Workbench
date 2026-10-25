@@ -2,8 +2,7 @@
 <resources>
     <!-- 本地 Linux 终端 -->
     <string name="linux_terminal_title">Terminal</string>
-    <string name="linux_terminal_subtitle_workspace">%1$s · Workspace: %2$s</string>
-    <string name="linux_terminal_subtitle_directory">%1$s · %2$s</string>
+    <string name="linux_terminal_subtitle_workspace">Workspace: %1$s</string>
     <string name="linux_terminal_workspace_untitled">Untitled chat</string>
     <string name="linux_terminal_tab">Terminal %1$d</string>
     <string name="linux_terminal_tab_exited">Terminal %1$d · exited</string>
@@ -19,8 +18,6 @@
     <string name="linux_terminal_key_down">Down</string>
     <string name="linux_terminal_key_left">Left</string>
     <string name="linux_terminal_key_right">Right</string>
-    <string name="linux_terminal_footer">You type terminal commands directly. They skip Agent approval and aren\'t added to the chat.</string>
-    <string name="linux_terminal_job_footer">Agent job output is read-only here.</string>
     <string name="linux_terminal_accessibility">Local Linux terminal</string>
     <string name="linux_terminal_exited">Process exited (code %1$d)</string>
     <string name="linux_terminal_exited_unknown">Process ended</string>

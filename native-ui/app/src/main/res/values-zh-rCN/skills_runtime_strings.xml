@@ -2,7 +2,7 @@
 <resources>
     <string name="skills_runtime_section_user">用户技能</string>
     <string name="skills_runtime_section_project">项目技能</string>
-    <string name="skills_runtime_user_footer">所有 Agent 与会话共用，位于 /skills；可以让 Agent 在其中新建、修改技能。</string>
+    <string name="skills_runtime_user_footer">所有会话共用，位于 /skills；Agent 可在其中新建或修改技能。</string>
     <string name="skills_runtime_project_footer">来自当前工作区的 .agents/skills，信任后模型才能使用。</string>
     <string name="skills_runtime_user_empty">还没有技能。可以让 Agent 在 /skills 中创建，或在设置中导入。</string>
     <string name="skills_runtime_project_empty">当前工作区的 .agents/skills 中没有技能。</string>
