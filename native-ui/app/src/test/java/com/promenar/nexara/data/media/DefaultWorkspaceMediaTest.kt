@@ -98,8 +98,8 @@ class DefaultWorkspaceMediaTest {
 
     private fun real(root: File) = RealPathExternalFolderBackend(root, emptySet(), { true }, fs)
     private fun newService(workspace: IWorkspaceRepository = repo, index: FileIndexEventSink = FileIndexEventSink { events.add(it) }, skillsDirectory: File = skillsRoot,
-        presenter: WorkspaceFilePathPresenter = BuiltinWorkspaceFilePathPresenter) =
-        DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, index, clock, fs, skillsDirectory, presenter)
+        presenter: WorkspaceFilePathPresenter = BuiltinWorkspaceFilePathPresenter, linuxFiles: com.promenar.nexara.domain.linux.LinuxFileSystem? = null) =
+        DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, index, clock, fs, skillsDirectory, presenter, modeFor = if (presenter == BuiltinWorkspaceFilePathPresenter) { id -> com.promenar.nexara.domain.model.SessionRunMode.fromStored(db.sessionDao().getById(id)?.runMode) } else null, directoryBackend = roots::backend, linuxFiles = linuxFiles)
 
     @After fun cleanup() {
         db.close()
@@ -135,6 +135,132 @@ class DefaultWorkspaceMediaTest {
         val failure = try { block(); null } catch (failure: WorkspaceMediaException) { failure }
         assertThat(failure?.code).isEqualTo(expected)
         assertThat(failure?.message).isNotEmpty()
+    }
+
+
+
+
+    @Test fun `Linux私有主根双入口同源且SAF和workspace内同名虚拟根不串根`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        privateFile("/a.png")
+        val home = available("/home/session/a.png")
+        assertThat(available("/workspace/a.png").source).isEqualTo(home.source)
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED)
+        assertThat(saved.path).startsWith("/home/session/media/")
+        val project = bindDirectory()
+        File(project, "session/a.png").apply { parentFile!!.mkdirs(); writeBytes(png) }
+        assertThat((available("/workspace/session/a.png").source as MediaSource.LocalFile).file).isEqualTo(File(project, "session/a.png"))
+        addMount("文档", DocumentsContract.buildTreeDocumentUri(AUTHORITY, "root").toString(), "saf_tree")
+        File(provider.root, "a.png").writeBytes(png)
+        assertThat(service.resolve("session", "/mnt/文档/a.png")).isInstanceOf(MediaResolution.Unavailable::class.java)
+        code("PROTECTED_PATH") { service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/workspace/.agents/skills/a.png") }
+    }
+
+
+    @Test fun `Linux媒体暂存期间主工作区改变时拒绝写入旧根`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        val project = bindDirectory()
+        val next = File(directory, "projects/next").apply { mkdirs() }
+        db.workspaceDao().insert(WorkspaceEntity("next-id", WorkspaceEntity.KIND_PROJECT, "新项目", "next", 1))
+        code("WORKSPACE_UNAVAILABLE") {
+            service.save("session", MediaPayload.Stream {
+                runBlocking { db.sessionDao().update(db.sessionDao().getById("session")!!.copy(workspaceId = "next-id")) }
+                png.inputStream()
+            }, MediaOrigin.GENERATED)
+        }
+        assertThat(File(project, "media").exists()).isFalse()
+        assertThat(File(next, "media").exists()).isFalse()
+    }
+
+
+    @Test fun `Linux同名嵌套目录显式保存只剥一次命名空间前缀`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        val private = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/home/session/home/session/a.png")
+        assertThat(File(privateRoot, "home/session/a.png").readBytes()).isEqualTo(png)
+        assertThat(File(privateRoot, "a.png").exists()).isFalse()
+        assertThat(service.open(available(private.path)).use { it.readBytes() }).isEqualTo(png)
+        val project = bindDirectory()
+        val main = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/workspace/workspace/a.png")
+        assertThat(File(project, "workspace/a.png").readBytes()).isEqualTo(png)
+        assertThat(File(project, "a.png").exists()).isFalse()
+        assertThat(service.open(available(main.path)).use { it.readBytes() }).isEqualTo(png)
+    }
+
+    @Test fun `Linux主根与真实挂载同路径重建不能继承已解析媒体`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        val project = bindDirectory()
+        val album = File(directory, "album").apply { mkdirs() }
+        addMount("相册", album.path)
+        for ((path, rootDirectory) in mapOf("/workspace/a.png" to project, "/mnt/相册/a.png" to album)) {
+            File(rootDirectory, "a.png").writeBytes(png)
+            val resolved = available(path)
+            Files.move(rootDirectory.toPath(), File(rootDirectory.parentFile, rootDirectory.name + "-old").toPath())
+            rootDirectory.mkdir()
+            File(rootDirectory, "a.png").writeBytes(png)
+            assertThat(runCatching { service.open(resolved) }.isFailure).isTrue()
+            assertThat(service.open(available(path)).use { it.readBytes() }).isEqualTo(png)
+        }
+    }
+
+    @Test fun `Linux主根媒体保存使用workspace且同一解析器逐会话读取持久模式`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        val project = bindDirectory()
+        val ref = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED)
+        assertThat(ref.path).startsWith("/workspace/media/")
+        assertThat(File(project, ref.path.removePrefix("/workspace/")).readBytes()).isEqualTo(png)
+        val resolved = available(ref.path)
+        db.sessionDao().updateRunMode("session", "BUILTIN", 2)
+        assertThat(runCatching { service.open(resolved) }.isFailure).isTrue()
+        val builtin = service.save("session", MediaPayload.Bytes(png), MediaOrigin.DOWNLOAD)
+        assertThat(builtin.path).startsWith("/media/")
+    }
+
+    @Test fun `Linux rootfs媒体安全只读且根重建后引用失效`() = runBlocking {
+        db.sessionDao().updateRunMode("session", "LINUX", 2)
+        val rootfs = File(directory, "rootfs").apply { mkdirs() }
+        File(rootfs, "root/a.png").apply { parentFile!!.mkdirs(); writeBytes(png) }
+        val files = com.promenar.nexara.data.linux.LinuxFileSystemImpl(rootfs, { true }, com.promenar.nexara.data.linux.TestLinuxFileMetadata)
+        service = newService(linuxFiles = files)
+        val resolved = available("/root/a.png")
+        assertThat(service.open(resolved).use { it.readBytes() }).isEqualTo(png)
+        code("READ_ONLY") { service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/root/b.png") }
+        Files.createSymbolicLink(File(rootfs, "root/link.png").toPath(), File(rootfs, "root/a.png").toPath())
+        assertThat(service.resolve("session", "/root/link.png")).isInstanceOf(MediaResolution.Unavailable::class.java)
+        Files.move(rootfs.toPath(), File(directory, "old-rootfs").toPath())
+        File(rootfs, "root").mkdirs()
+        File(rootfs, "root/a.png").writeBytes(png)
+        assertThat(runCatching { service.open(resolved) }.isFailure).isTrue()
+    }
+
+    @Test fun `Linux生图和下载返回home路径且可重新打开`() = runBlocking {
+        db.sessionDao().updateRunMode("session", com.promenar.nexara.domain.model.SessionRunMode.LINUX.name, 2)
+        bindDirectory()
+        addMount("相册", File(directory, "album").apply { mkdirs() }.path)
+        for (origin in listOf(MediaOrigin.GENERATED, MediaOrigin.DOWNLOAD)) {
+            val ref = service.save("session", MediaPayload.Bytes(png), origin)
+            assertThat(ref.path).startsWith("/home/session/media/")
+            assertThat(ref.path.startsWith("/session/")).isFalse()
+            assertThat(service.open(available(ref.path)).use { it.readBytes() }).isEqualTo(png)
+        }
+    }
+
+    @Test fun `Linux媒体解析home与workspace和真实挂载且不猜测其它根`() = runBlocking {
+        db.sessionDao().updateRunMode("session", com.promenar.nexara.domain.model.SessionRunMode.LINUX.name, 2)
+        privateFile("/a.png")
+        val project = bindDirectory()
+        File(project, "a.png").writeBytes(png)
+        val album = File(directory, "album").apply { mkdirs() }
+        File(album, "a.png").writeBytes(png)
+        addMount("相册", album.path)
+        for ((path, expected) in mapOf("/home/session/a.png" to File(privateRoot, "a.png"),
+            "/workspace/a.png" to File(project, "a.png"), "/mnt/相册/a.png" to File(album, "a.png"))) {
+            val resolved = available(path)
+            assertThat((resolved.source as MediaSource.LocalFile).file).isEqualTo(expected)
+            assertThat(service.open(resolved).use { it.readBytes() }).isEqualTo(png)
+        }
+        assertThat(service.resolve("session", "/home/session/missing.png")).isInstanceOf(MediaResolution.Unavailable::class.java)
+        assertThat(service.resolve("session", "/session/a.png")).isInstanceOf(MediaResolution.Unavailable::class.java)
+        assertThat(service.resolve("session", "/mnt/missing/a.png")).isInstanceOf(MediaResolution.Unavailable::class.java)
     }
 
     @Test fun `私有路径解析真实来源和索引哈希且读取图片尺寸`() = runBlocking {

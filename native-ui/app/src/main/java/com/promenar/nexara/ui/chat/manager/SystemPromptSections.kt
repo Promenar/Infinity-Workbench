@@ -78,7 +78,7 @@ object SystemPromptSections {
         mounts: List<com.promenar.nexara.domain.storage.ExternalMount> = emptyList(),
         linuxState: LinuxRuntimeState = LinuxExecRouting.state,
         runMode: SessionRunMode = SessionRunMode.BUILTIN,
-        filePathPresenter: com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter = com.promenar.nexara.data.workspace.BuiltinWorkspaceFilePathPresenter,
+        filePathPresenter: com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter = com.promenar.nexara.data.workspace.workspaceFilePathPresenter(runMode),
     ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")

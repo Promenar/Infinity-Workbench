@@ -78,7 +78,7 @@ class WorkspaceCanvasFilesTest {
         }
         canvasFiles = WorkspaceCanvasFiles(
             WorkspaceFileTargetResolver(SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, skills,
-                roots::resolveWorkspace, roots::backend),
+                roots::resolveWorkspace, roots::backend, modeFor = { com.promenar.nexara.domain.model.SessionRunMode.fromStored(db.sessionDao().getById(it)?.runMode) }),
             workspace, operations, mounts, index, fs,
         )
         store = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
@@ -104,6 +104,42 @@ class WorkspaceCanvasFilesTest {
         com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting()
         db.close()
         directory.deleteRecursively()
+    }
+
+
+    @Test fun `画布双向切换模式后保持原镜像并可同步和更新`() = runBlocking {
+        val first = store.create("s", "内置画布", "<html>内置</html>", "m")
+        db.sessionDao().updateRunMode("s", "LINUX", 2)
+        val linux = store.create("s", "Linux画布", "<html>Linux</html>", "m")
+        val updated = store.update("s", first.metadata.id, html = "<html>内置更新</html>")
+        assertThat(updated.metadata.workspacePath).startsWith("/home/session/canvas/")
+        assertThat(store.read("s", first.metadata.id)!!.metadata.workspacePath).startsWith("/home/session/canvas/")
+        assertThat(store.list("s").single { it.id == first.metadata.id }.workspacePath).startsWith("/home/session/canvas/")
+        assertThat(File(privateRoot, "canvas/内置画布.html").readText()).isEqualTo("<html>内置更新</html>")
+        db.sessionDao().updateRunMode("s", "BUILTIN", 3)
+        val root = workspace.ensureSessionRoot("s")
+        val entry = workspace.getByMaterializedPath(root.uuid, "/canvas/Linux画布.html")!!
+        operations.writeFileAtomicExact(root.uuid, entry.uuid, "<html>外部更新</html>", "s", entry.hash)
+        assertThat(store.syncFromWorkspace("s", linux.metadata.id)!!.html).isEqualTo("<html>外部更新</html>")
+        val builtin = store.update("s", linux.metadata.id, html = "<html>镜像更新</html>")
+        assertThat(builtin.metadata.workspacePath).doesNotContain("/home/session")
+        assertThat(builtin.metadata.workspacePath).doesNotContain("/workspace")
+        assertThat(File(privateRoot, "canvas/Linux画布.html").readText()).isEqualTo("<html>镜像更新</html>")
+    }
+
+    @Test fun `Linux画布私有与主工作区路径可写入并从持久元数据重载`() = runBlocking {
+        db.sessionDao().updateRunMode("s", "LINUX", 2)
+        val privateCanvas = store.create("s", "私有画布", "<html>私有</html>", "m")
+        assertThat(privateCanvas.metadata.workspacePath).startsWith("/home/session/canvas/")
+        val project = directoryRoot()
+        val main = store.create("s", "项目画布", "<html>项目</html>", "m")
+        assertThat(main.metadata.workspacePath).startsWith("/workspace/canvas/")
+        assertThat(File(project, main.metadata.workspacePath!!.removePrefix("/workspace/")).readText()).isEqualTo("<html>项目</html>")
+        val restored = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
+        assertThat(restored.read("s", privateCanvas.metadata.id)!!.html).isEqualTo("<html>私有</html>")
+        assertThat(restored.read("s", main.metadata.id)!!.html).isEqualTo("<html>项目</html>")
+        db.sessionDao().update(db.sessionDao().getById("s")!!.copy(workspaceId = null))
+        assertThat(restored.read("s", main.metadata.id)!!.html).isEqualTo("<html>项目</html>")
     }
 
     @Test fun `隔离根画布可读取但更新在发布内部版本前被拒绝`() = runBlocking {

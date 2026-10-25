@@ -39,25 +39,31 @@ class LinuxSessionRootfsBackend(files: LinuxFileSystem) : ExternalFolderBackend 
 
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry = operation {
         val normalized = mutation(path)
+        requireWritable(normalized)
         external(exact().writeContent(normalized, content, expectedSha256 = expectedSha256, createOnly = createOnly), Sha256Utils.hash(content))
     }
 
     override suspend fun createDirectory(path: String): ExternalFolderEntry = operation {
         val normalized = mutation(path)
+        requireWritable(normalized)
         external(files.createDirectory(parent(normalized), normalized.substringAfterLast('/')))
     }
 
     override suspend fun delete(path: String, expectedSha256: String?) = operation {
+        requireWritable(mutation(path))
         validateTree(path)
         exact().deleteChecked(mutation(path), expectedSha256)
     }
 
     override suspend fun move(sourcePath: String, targetPath: String) = operation {
+        requireWritable(mutation(sourcePath))
+        requireWritable(mutation(targetPath))
         validateTree(sourcePath)
         exact().moveExact(mutation(sourcePath), mutation(targetPath))
     }
 
     override suspend fun copy(sourcePath: String, targetPath: String) = operation {
+        requireWritable(mutation(targetPath))
         validateTree(sourcePath)
         exact().copyExact(mutation(sourcePath), mutation(targetPath))
     }
@@ -81,6 +87,11 @@ class LinuxSessionRootfsBackend(files: LinuxFileSystem) : ExternalFolderBackend 
             files.stat(prefix)?.let(::rejectLink)
         }
         return normalized
+    }
+
+    internal suspend fun requireWritable(path: String) {
+        val root = files.hostFile("/") ?: fail("UNAVAILABLE", "Linux 根目录不可用")
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(path = java.io.File(root, path.removePrefix("/")).canonicalPath)
     }
 
     private suspend fun mutation(path: String) = checked(path).also {

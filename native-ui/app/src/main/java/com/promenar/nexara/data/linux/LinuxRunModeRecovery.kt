@@ -280,16 +280,22 @@ class LinuxRunModeDirectoryExportTarget internal constructor(
     directoryName: String,
     private val reconcile: suspend () -> Unit,
     private val access: LinuxFileIo,
+    private val sessionId: String? = null,
+    private val rootId: String? = null,
 ) : LinuxRunModeExportTarget {
-    constructor(parent: File, directoryName: String = "linux-home-export-${UUID.randomUUID()}", reconcile: suspend () -> Unit = {}) :
-        this(parent, directoryName, reconcile, LinuxFileIo(true))
+    constructor(parent: File, directoryName: String = "linux-home-export-${UUID.randomUUID()}", reconcile: suspend () -> Unit = {}, sessionId: String? = null, rootId: String? = null) :
+        this(parent, directoryName, reconcile, LinuxFileIo(true), sessionId, rootId)
 
     private val root = parent.canonicalFile.toPath().resolve(validPart(directoryName))
     override val location: String get() = root.toString()
 
-    override suspend fun createDirectory(relativePath: String) { access.createDirectory(path(relativePath)) }
+    override suspend fun createDirectory(relativePath: String) {
+        requireWritable()
+        access.createDirectory(path(relativePath))
+    }
 
     override suspend fun writeFile(relativePath: String, input: InputStream): Long {
+        requireWritable()
         val target = path(relativePath)
         var created = false
         try {
@@ -313,7 +319,11 @@ class LinuxRunModeDirectoryExportTarget internal constructor(
         }
     }
 
-    override suspend fun complete() = reconcile()
+    override suspend fun complete() { requireWritable(); reconcile() }
+
+    private suspend fun requireWritable() = com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(
+        sessionId = sessionId, rootId = rootId, path = root.toString(),
+    )
 
     private fun path(relative: String): Path {
         if (relative.isEmpty()) return root

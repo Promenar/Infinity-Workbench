@@ -21,13 +21,19 @@ internal data class WorkspaceFileTarget(
     val destination: WorkspaceFileDestinationBinding? = null,
     val directoryBackend: ExternalFolderBackend? = null,
     val privatePathPrefix: String? = null,
+    val linuxNamespace: Boolean = false,
+    val sourceIdentity: String? = null,
+    val accessPrefix: String = "",
 ) {
-    val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, workspaceMount?.id, destination?.workspaceId, destination?.destination?.name)
+    val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, workspaceMount?.id, destination?.workspaceId, destination?.destination?.name, linuxNamespace.toString(), sourceIdentity)
     val mountIds: Map<String, String> get() = listOfNotNull(workspaceMount, mount).associate { it.alias to it.id }
     fun relative(path: String): String = privatePathPrefix?.let { path.removePrefix(it).ifEmpty { "/" } }
         ?: ExternalMountPaths.parse(path)?.second ?: path
     fun materialized(path: String): String = if (root != null || directoryBackend != null) relative(path) else path
-    val virtualRoot: String get() = when {
+    fun accessPath(path: String): String = if (privatePathPrefix != null && (path == privatePathPrefix || path.startsWith("$privatePathPrefix/"))) {
+        (accessPrefix + relative(path).takeUnless { it == "/" }.orEmpty()).ifEmpty { "/" }
+    } else path
+    val virtualRoot: String get() = privatePathPrefix ?: when {
         mount == null || mount.isWorkspaceRoot -> "/"
         mount.isUserSkills -> "/skills"
         else -> "/mnt/${mount.alias}"
@@ -44,6 +50,9 @@ internal class WorkspaceFileTargetResolver(
     private val registeredWorkspace: (suspend (String) -> SessionWorkspace)? = null,
     private val directoryBackend: ((SessionWorkspace.Directory) -> ExternalFolderBackend)? = null,
     private val pathPresenter: WorkspaceFilePathPresenter = BuiltinWorkspaceFilePathPresenter,
+    private val modeFor: (suspend (String) -> com.promenar.nexara.domain.model.SessionRunMode?)? = null,
+    private val linuxFiles: com.promenar.nexara.domain.linux.LinuxFileSystem? = null,
+    private val linuxDirectoryBackend: ((SessionWorkspace.Directory) -> ExternalFolderBackend)? = directoryBackend,
 ) {
     suspend fun defaultDestination(sessionId: String): WorkspaceFileDestinationBinding {
         val current = sessionWorkspace(sessionId)
@@ -58,7 +67,10 @@ internal class WorkspaceFileTargetResolver(
     }
 
     suspend fun present(sessionId: String, destination: WorkspaceFileDestinationBinding, path: String): String =
-        pathPresenter.present(destination.destination, path, sessionWorkspace(sessionId) == SessionWorkspace.Private)
+        presenter(sessionId).present(destination.destination, path, sessionWorkspace(sessionId) == SessionWorkspace.Private && destination.destination != WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE)
+
+    suspend fun presenter(sessionId: String): WorkspaceFilePathPresenter =
+        modeFor?.let { workspaceFilePathPresenter(it(sessionId)) } ?: pathPresenter
 
     suspend fun resolve(
         sessionId: String,
@@ -68,6 +80,22 @@ internal class WorkspaceFileTargetResolver(
         initializeMissingPrivateRoot: Boolean = false,
     ): WorkspaceFileTarget {
         if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
+        val presenter = presenter(sessionId)
+        // 持久镜像绑定逻辑落点；模式切换后先还原已知前缀，再使用当前模式寻址。
+        val effectivePath = if (destination != null) {
+            val relative = workspaceFileRelativePath(path)
+            presenter.present(destination.destination, relative, privatePrimary = false)
+        } else path
+        if (presenter == LinuxWorkspaceFilePathPresenter) {
+            return linuxTarget(sessionId, effectivePath, writing, destination, initializeMissingPrivateRoot)
+        }
+        return builtinTarget(sessionId, effectivePath, writing, destination, initializeMissingPrivateRoot)
+    }
+
+    private suspend fun builtinTarget(
+        sessionId: String, path: String, writing: Boolean, destination: WorkspaceFileDestinationBinding?,
+        initializeMissingPrivateRoot: Boolean,
+    ): WorkspaceFileTarget {
         val privateRelative = pathPresenter.privateRelativePath(path)
         if (privateRelative != null || destination?.destination == WorkspaceDefaultFileDestination.SESSION_PRIVATE) {
             return privateTarget(sessionId, writing, destination, privateRelative?.let { path.removeSuffix(it).ifEmpty { SessionPrivateWorkspacePaths.ROOT } },
@@ -113,6 +141,57 @@ internal class WorkspaceFileTargetResolver(
         return privateTarget(sessionId, writing, initializeMissingPrivateRoot = initializeMissingPrivateRoot)
     }
 
+    private suspend fun linuxTarget(
+        sessionId: String, path: String, writing: Boolean, destination: WorkspaceFileDestinationBinding?,
+        initializeMissingPrivateRoot: Boolean,
+    ): WorkspaceFileTarget {
+        val current = sessionWorkspace(sessionId)
+        val normalized = LinuxSessionPaths.normalize(path)
+        val routed = LinuxSessionPaths.route(normalized, current == SessionWorkspace.Private && destination?.destination != WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE)
+        val target = when (routed.kind) {
+            LinuxSessionPathKind.PRIVATE -> privateTarget(sessionId, writing, destination,
+                if (normalized == LinuxSessionPaths.PRIVATE_ROOT || normalized.startsWith("${LinuxSessionPaths.PRIVATE_ROOT}/")) LinuxSessionPaths.PRIVATE_ROOT else LinuxSessionPaths.WORKSPACE_ROOT,
+                initializeMissingPrivateRoot)
+            LinuxSessionPathKind.WORKSPACE -> {
+                val boundId = destination?.workspaceId
+                val bound = if (boundId != null && (current as? SessionWorkspace.Directory)?.workspace?.id != boundId) {
+                    registeredWorkspace?.invoke(boundId) ?: unavailable("画布原工作区不可用")
+                } else current
+                if (bound !is SessionWorkspace.Directory) unavailable("当前会话工作区不可用，请检查目录与授权")
+                val delegate = linuxDirectoryBackend?.invoke(bound) ?: unavailable("当前会话工作区不可用，请检查目录与授权")
+                val backend = com.promenar.nexara.startup.StartupGuardedExternalFolderBackend(delegate, sessionId) { bound.root }
+                if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = bound.root.canonicalPath)
+                WorkspaceFileTarget(sessionId, null, bound.root, null, directoryBackend = backend,
+                    destination = destination ?: WorkspaceFileDestinationBinding(WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE, bound.workspace.id),
+                    privatePathPrefix = LinuxSessionPaths.WORKSPACE_ROOT)
+            }
+            LinuxSessionPathKind.EXTERNAL -> {
+                val alias = ExternalMountPaths.parse(routed.path)?.first ?: unavailable("挂载已失效或不属于当前会话")
+                val mount = mounts.visible(sessionId).singleOrNull { it.alias == alias }
+                if (mount == null || mount.sourceType != "real_path" && !mount.isUserSkills) unavailable("挂载已失效或不属于当前会话")
+                builtinTarget(sessionId, routed.path, writing, destination, initializeMissingPrivateRoot).let {
+                    if (mount.isUserSkills) it.copy(privatePathPrefix = LinuxSessionPaths.SKILLS_ROOT, accessPrefix = "/skills") else it
+                }
+            }
+            LinuxSessionPathKind.MOUNTS -> WorkspaceFileTarget(sessionId, null, null, null)
+            LinuxSessionPathKind.ROOTFS -> {
+                // 媒体只读 rootfs；文件写入仍由带逐次审批的 Linux 文件工具负责。
+                if (writing) throw ExternalFolderException("READ_ONLY", "目标位置为只读，无法保存媒体")
+                val files = linuxFiles ?: unavailable("Linux 根目录不可用")
+                val backend = LinuxSessionRootfsBackend(files)
+                val directory = files.hostFile("/") ?: unavailable("Linux 根目录不可用")
+                val identity = backend.stat("/")?.identity ?: unavailable("无法绑定 Linux 根目录身份")
+                WorkspaceFileTarget(sessionId, null, directory, null, directoryBackend = backend, sourceIdentity = identity)
+            }
+        }
+        val identity = target.sourceIdentity ?: target.directory?.let { directory ->
+            val attributes = java.nio.file.Files.readAttributes(directory.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!attributes.isDirectory || attributes.isSymbolicLink) unavailable("Linux 目录来源不能是符号链接")
+            attributes.fileKey()?.toString() ?: unavailable("无法绑定 Linux 目录来源身份")
+        }
+        return target.copy(linuxNamespace = true, sourceIdentity = identity)
+    }
+
     private suspend fun privateTarget(
         sessionId: String,
         writing: Boolean,
@@ -129,7 +208,9 @@ internal class WorkspaceFileTargetResolver(
     }
 
     suspend fun checkCurrent(target: WorkspaceFileTarget, path: String) {
-        if (resolve(target.sessionId, path, writing = false, target.destination).identity != target.identity) {
+        val prefix = target.privatePathPrefix
+        val presented = if (target.destination == null && prefix != null && path != prefix && !path.startsWith("$prefix/")) prefix + path.takeUnless { it == "/" }.orEmpty() else path
+        if (resolve(target.sessionId, presented, writing = false, target.destination).identity != target.identity) {
             unavailable("会话工作区或挂载在操作期间发生变化，已停止访问")
         }
     }

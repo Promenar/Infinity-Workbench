@@ -66,6 +66,8 @@ class BuiltinExecService(
         // 私有主工作区已持有根写锁，直接复用当前根，避免回调重新申请同一把锁。
         val home = if (kind == SessionWorkspaceResolver.KIND_PRIVATE) root else sessionId?.let { sessionHome(it) }
             ?: throw IllegalStateException("会话专用空间不可用")
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = root.canonicalPath)
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = home.canonicalPath)
         val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home)
         val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
         BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment, stdin, seconds)
@@ -139,6 +141,7 @@ class BuiltinExecService(
         if (kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON && !environment.pythonAvailable) {
             throw IllegalArgumentException("当前设备没有内置 Python，请改用 termux_exec 或 ssh_exec。")
         }
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId ?: location.sessionId, path = location.commandDirectory.canonicalPath)
         val root = location.commandDirectory
         val workspaceKind = location.workspaceKind
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }

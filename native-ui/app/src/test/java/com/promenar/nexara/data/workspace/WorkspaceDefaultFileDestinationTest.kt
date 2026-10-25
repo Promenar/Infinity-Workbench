@@ -53,4 +53,25 @@ class WorkspaceDefaultFileDestinationTest {
         assertThat(ExternalMountPaths.aliasOf("/session-other/media/a.png", rooted = true)).isEqualTo(ExternalMountPaths.WORKSPACE_ALIAS)
         assertThat(com.promenar.nexara.domain.tool.ToolExecutionTargets.requiresSkillsApproval("write_file", """["path","/session/.agents/skills/demo/SKILL.md"]""")).isTrue()
     }
+    @Test fun `Linux呈现双向识别精确根且模式选择不依赖偏好`() {
+        val linux = workspaceFilePathPresenter(com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+        assertThat(linux).isSameInstanceAs(LinuxWorkspaceFilePathPresenter)
+        for (mode in listOf(null, com.promenar.nexara.domain.model.SessionRunMode.BUILTIN)) {
+            assertThat(workspaceFilePathPresenter(mode)).isSameInstanceAs(BuiltinWorkspaceFilePathPresenter)
+        }
+        for (relative in listOf("/", "/media/a.png")) {
+            for (destination in WorkspaceDefaultFileDestination.entries) {
+                for (privatePrimary in listOf(true, false)) {
+                    val path = linux.present(destination, relative, privatePrimary)
+                    val prefix = if (privatePrimary || destination == WorkspaceDefaultFileDestination.SESSION_PRIVATE) "/home/session" else "/workspace"
+                    assertThat(path).isEqualTo(prefix + relative.takeUnless { it == "/" }.orEmpty())
+                    assertThat(linux.privateRelativePath(path)).isEqualTo(relative)
+                }
+            }
+        }
+        for (path in listOf("/home/session-other/x", "/workspace-other/x", "/session/x", "/root/x")) {
+            assertThat(linux.privateRelativePath(path)).isNull()
+        }
+    }
+
 }

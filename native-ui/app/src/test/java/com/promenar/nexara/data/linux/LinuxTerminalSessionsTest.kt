@@ -24,6 +24,48 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LinuxTerminalSessionsTest {
+
+    @org.junit.After fun resetBarrier() { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting() }
+
+
+    @Test fun `guest绝对符号链接工作目录按rootfs语义检查隔离`() = runTest {
+        val f = fixture()
+        val directory = java.nio.file.Files.createTempDirectory("linux-terminal-isolation").toFile().canonicalFile
+        try {
+            val home = File(directory, "root").apply { mkdirs() }
+            java.nio.file.Files.createSymbolicLink(File(directory, "alias").toPath(), java.nio.file.Path.of("/root"))
+            f.runtime.paths = LinuxPaths(directory, home)
+            val manager = com.promenar.nexara.startup.StartupIssueManager()
+            com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+            manager.bindRoot("root", home.path, "s")
+            manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+                com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root", "工作区")) { error("冲突") }
+            assertThat(runCatching { f.manager.open(LinuxTerminalLocation.Directory("/alias")) }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+            assertThat(f.runtime.specs).isEmpty()
+            assertThat(f.ptys).isEmpty()
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun `隔离会话或物理工作目录时不对账不生成启动规格且不启动PTY`() = runTest {
+        val f = fixture()
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.bindRoot("root", "/workspace-host", "other")
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root", "工作区")) { error("冲突") }
+        assertThat(runCatching { f.manager.open(LinuxTerminalLocation.SessionWorkspace("chat")) }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(f.reconciled).isEmpty()
+        assertThat(f.runtime.specs).isEmpty()
+        assertThat(f.ptys).isEmpty()
+        manager.recover(com.promenar.nexara.startup.StartupStep.SESSION_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.SESSION, "blocked", "会话")) { error("冲突") }
+        assertThat(runCatching { f.manager.open(LinuxTerminalLocation.SessionWorkspace("blocked")) }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(f.reconciled).isEmpty()
+    }
+
     @Test fun `无效目录在生成启动参数前被拒绝`() = runTest {
         val f = fixture()
         for (path in listOf("relative", "", "/tmp\u0000bad")) {
@@ -356,6 +398,7 @@ class LinuxTerminalSessionsTest {
     private class Runtime : LinuxRuntime by UnavailableLinuxRuntime(
         LinuxUnavailableReason.DISTRIBUTION, LinuxPaths(File("/rootfs"), File("/rootfs/root")),
     ) {
+        override var paths = LinuxPaths(File("/rootfs"), File("/rootfs/root"))
         override val state = MutableStateFlow<LinuxRuntimeState>(LinuxRuntimeState.Ready(
             LinuxEnvironmentInfo("Alpine", "test", "aarch64", "test", 0, null),
         ))

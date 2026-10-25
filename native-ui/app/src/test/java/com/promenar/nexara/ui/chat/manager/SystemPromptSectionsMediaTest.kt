@@ -51,4 +51,14 @@ class SystemPromptSectionsMediaTest {
         assertThat(linux).contains("默认保存在会话专用空间（`/home/session`）")
         assertThat(linux).doesNotContain("通过 `/session`")
     }
+    @Test fun `Linux持久模式的默认落点和私有入口不泄漏内置session路径`() {
+        val workspace = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
+            com.promenar.nexara.data.local.db.entity.WorkspaceEntity("ws", "project", "项目", "project", 1), java.io.File("project"))
+        val prompt = SystemPromptSections.toolGuidance(setOf("media_fetch"), false, workspace,
+            runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+        assertThat(prompt).contains("默认保存在主工作区（`/workspace`）")
+        assertThat(prompt).contains("通过 `/home/session`")
+        assertThat(prompt).doesNotContain("`/session`")
+    }
+
 }

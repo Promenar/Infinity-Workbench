@@ -49,7 +49,7 @@ class FileCanvasStore(
         emitAll(locked { load(sessionId) })
     }
 
-    override suspend fun list(sessionId: String): List<CanvasMetadata> = locked { load(sessionId).value }
+    override suspend fun list(sessionId: String): List<CanvasMetadata> = locked { load(sessionId).value.map { presentMetadata(sessionId, it) } }
 
     override suspend fun create(
         sessionId: String,
@@ -73,7 +73,7 @@ class FileCanvasStore(
             throw failure
         }
         state.value = sorted(state.value + metadata)
-        writeToWorkspace(sessionId, CanvasDocument(metadata, html, 1))
+        presentDocument(sessionId, writeToWorkspace(sessionId, CanvasDocument(metadata, html, 1)))
     }
 
     override suspend fun update(
@@ -112,7 +112,7 @@ class FileCanvasStore(
         dir.listFiles().orEmpty().filter { file ->
             file.extension == "html" && file.nameWithoutExtension.toIntOrNull() !in metadata.versions
         }.forEach { it.delete() }
-        writeToWorkspace(sessionId, CanvasDocument(metadata, nextHtml, nextVersion))
+        presentDocument(sessionId, writeToWorkspace(sessionId, CanvasDocument(metadata, nextHtml, nextVersion)))
     }
 
     override suspend fun read(sessionId: String, id: String, version: Int?): CanvasDocument? = locked {
@@ -124,13 +124,23 @@ class FileCanvasStore(
         val dir = canvasDirectory(sessionId, id)
         val source = child(dir, "$selected.html")
         if (!source.isFile) return@locked null
-        CanvasDocument(metadata, readSource(dir, selected), selected)
+        CanvasDocument(presentMetadata(sessionId, metadata), readSource(dir, selected), selected)
     }
 
     override suspend fun syncFromWorkspace(sessionId: String, id: String): CanvasDocument? = locked {
         validateId(id)
-        syncLocked(sessionId, id)
+        syncLocked(sessionId, id)?.let { presentDocument(sessionId, it) }
     }
+
+    private suspend fun presentMetadata(sessionId: String, metadata: CanvasMetadata): CanvasMetadata {
+        val path = metadata.workspacePath ?: return metadata
+        val destination = metadata.workspaceDestination ?: return metadata
+        val presented = workspaceFiles?.defaultPath(sessionId, path, destination) ?: return metadata
+        return metadata.copy(workspacePath = presented)
+    }
+
+    private suspend fun presentDocument(sessionId: String, document: CanvasDocument): CanvasDocument =
+        document.copy(metadata = presentMetadata(sessionId, document.metadata))
 
     override suspend fun deleteSession(sessionId: String) = locked {
         val dir = sessionDirectory(sessionId)
@@ -337,7 +347,7 @@ class FileCanvasStore(
         metadata.createdAt >= 0 && metadata.updatedAt >= metadata.createdAt && metadata.currentVersion > 0 &&
         metadata.versions.isNotEmpty() && metadata.versions.all { it > 0 } &&
         metadata.versions == metadata.versions.distinct().sorted() && metadata.versions.last() == metadata.currentVersion &&
-        (metadata.workspacePath == null || CANVAS_PATH.matches(metadata.workspacePath)) &&
+        (metadata.workspacePath == null || validCanvasWorkspacePath(metadata.workspacePath)) &&
         metadata.versionSources.keys.all { it in metadata.versions }
 
     private fun publish(dir: File, metadata: CanvasMetadata, html: String, workspaceHash: String? = workspaceHash(dir)) {
