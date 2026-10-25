@@ -310,6 +310,10 @@ val prepareLinuxRuntimeAssets = tasks.register<PrepareLinuxRuntimeAssets>("prepa
 
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    // 本地 PTY 仅供侧载版使用，Play 版继续只保留 Java 终端仿真。
+    if (variant.productFlavors.any { it.first == "distribution" && it.second == "play" }) {
+        variant.packaging.jniLibs.excludes.add("**/libtermux.so")
+    }
     // 只为变体实际打包的 ABI 准备 Python。未设 abiFilters 的通用包（Release）只带 arm64-v8a：
     // x86_64 Python 约 11.5 MB 只服务 x86_64 设备，通用 APK 需为发行校验的 50 MB 上限留出余量。
     val variantAbis = android.defaultConfig.ndk.abiFilters + android.buildTypes.getByName(variant.buildType!!).ndk.abiFilters
@@ -497,8 +501,6 @@ android {
     // jniLibs 默认目录即 src/main/jniLibs，无需显式配置
 
     packaging {
-        // 远端终端只使用 Java 仿真与渲染，不打包 Termux 的本地进程 JNI 桥。
-        jniLibs.excludes += "**/libtermux.so"
         // 打包的 Python 启动器与扩展需要真实文件路径才能 execve/dlopen，安装时必须解压到 nativeLibraryDir。
         jniLibs.useLegacyPackaging = true
         // libpystdlib.so 与 libpysite.so 是 Python 模块 zip，不是 ELF，跳过符号剥离。
