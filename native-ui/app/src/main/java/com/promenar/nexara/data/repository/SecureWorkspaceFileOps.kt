@@ -64,6 +64,10 @@ interface WorkspaceFileOps {
     fun captureRootIdentityRestorer(root: Path): () -> Boolean = { false }
     fun migrateInternalStorage(root: Path) = Unit
     fun hasExternalRootIdentity(root: Path): Boolean = false
+    /** 按 nx1 之前的算法逐字核验旧根认领；吻合时返回同一 nonce 与 inode 的现行身份，否则返回 null。 */
+    fun adoptLegacyRootIdentity(root: Path, legacyIdentity: String): String? = null
+    /** 根认领改写为等价现行身份前，把按旧身份寻址的私有元数据移到新身份下；可重入。 */
+    fun adoptLegacyRootPrivateData(legacyIdentity: String, identity: String) = Unit
 }
 
 @kotlinx.serialization.Serializable
@@ -1048,6 +1052,23 @@ class SecureWorkspaceFileOps(
         }
     }
 
+    /**
+     * 旧认领为 `nonce|sha256(完整fileKey字符串)`。只接受目录属性 nonce 与当前完整 fileKey 按旧算法逐字吻合的情形；
+     * 存在根标记文件、属性缺失或设备号已变时无法证明是同一目录，返回 null。
+     */
+    override fun adoptLegacyRootIdentity(root: Path, legacyIdentity: String): String? {
+        if (!LEGACY_ROOT_IDENTITY.matches(legacyIdentity)) return null
+        return openSecure(root, requireIdentity = false).use { secure ->
+            if (readLegacyIdentity(secure) != null) return@use null
+            val operationKey = directoryKey(secure).toString()
+            val nonce = try { rootNonceReader(root, operationKey) } catch (_: UnsupportedOperationException) { null }
+                ?: return@use null
+            val reportedKey = identityFileKey(operationKey).toString()
+            if ("$nonce|${sha256(reportedKey.toByteArray(Charsets.UTF_8))}" != legacyIdentity) return@use null
+            PersistentFileIdentity.encode(nonce, reportedKey)
+        }
+    }
+
     override fun hasExternalRootIdentity(root: Path): Boolean = openSecure(root, requireIdentity = false).use { secure ->
         val key = directoryKey(secure).toString()
         val nonce = try { AndroidWorkspaceCreationProof.withRootDirectory(root, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) } }
@@ -1105,5 +1126,6 @@ class SecureWorkspaceFileOps(
 
     private companion object {
         const val ROOT_IDENTITY_FILE = ".nexara_root_identity"
+        val LEGACY_ROOT_IDENTITY = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[|][0-9a-f]{64}")
     }
 }

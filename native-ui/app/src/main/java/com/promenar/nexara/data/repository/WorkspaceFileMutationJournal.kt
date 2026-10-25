@@ -127,11 +127,13 @@ class WorkspaceFileMutationRecoveryCoordinator(
     private val fileOps: WorkspaceFileOps = SecureWorkspaceFileOps(),
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
+        database.fileEntryDao().getAllWorkspaceRootsForMaintenance().forEach { adoptLegacyRootIdentity(it) }
         recoverEntities(database.workspaceMutationDao().getUnfinished().filterNot(::isSessionDelete))
         cleanupOrphanCreateOwnership(database.fileEntryDao().getAllWorkspaceRootsForMaintenance())
     }
 
     suspend fun recoverRootOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
+        adoptLegacyRootIdentityOrThrow(workspaceRootUuid)
         recoverEntities(
             database.workspaceMutationDao().getUnfinished()
                 .filter { it.workspaceRootUuid == workspaceRootUuid }
@@ -144,6 +146,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
     /** 仅清理已证明与数据库现状一致的移动类 journal，绝不移动或删除用户节点。 */
     suspend fun abandonRootOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
         require(workspaceRootUuid.isNotBlank()) { "工作区根标识不能为空" }
+        adoptLegacyRootIdentityOrThrow(workspaceRootUuid)
         try {
             val root = database.fileEntryDao().getAnyStateByUuidForLifecycle(workspaceRootUuid, workspaceRootUuid)
                 ?: conflict("文件 journal 工作区根不存在")
@@ -188,6 +191,50 @@ class WorkspaceFileMutationRecoveryCoordinator(
             throw WorkspaceMutationRecoveryException("文件 journal 无法安全放弃", failure)
         }
     }
+
+    /**
+     * nx1 格式之前认领的根在数据库中保存 `nonce|sha256(完整fileKey)`。文件端口按旧算法逐字核验当前目录后，
+     * 才把私有区、引用该认领的未完成 journal 与根认领一起改写为等价现行身份；无法核验时全部保持原样。
+     */
+    suspend fun adoptLegacyRootIdentityOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
+        database.fileEntryDao().getAnyStateByUuidForLifecycle(workspaceRootUuid, workspaceRootUuid)
+            ?.let { adoptLegacyRootIdentity(it) }
+    }
+
+    private suspend fun adoptLegacyRootIdentity(root: FileEntry) {
+        val legacy = root.hash
+        if (legacy.isBlank() || PersistentFileIdentity.isValid(legacy)) return
+        val rootPath = File(root.physicalRootPath).toPath()
+        val identity = adoptableIdentity(rootPath, legacy)
+        WorkspaceMutationCoordinator.withBoundRoot(rootPath, identity) {
+            if (adoptableIdentity(rootPath, legacy) != identity) conflict(LEGACY_ROOT_UNVERIFIED)
+            fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
+            // 私有区先于数据库迁移：中断后数据库仍为旧认领，下次启动重新核验并继续；反序会遗留按旧键寻址的私有区。
+            fileOps.adoptLegacyRootPrivateData(legacy, identity)
+            database.withTransaction {
+                if (database.fileEntryDao().getAnyStateByUuidForLifecycle(root.workspaceRootUuid, root.uuid) != root) {
+                    conflict("工作区根在身份格式迁移前发生变化")
+                }
+                database.workspaceMutationDao().getUnfinished().filter { it.workspaceRootUuid == root.uuid }.forEach { row ->
+                    if (Sha256Utils.hash(row.payload) != row.payloadDigest) return@forEach
+                    val payload = (WorkspaceMutationPayloadCodec.decode(row.payloadVersion, row.payload)
+                        as? WorkspaceMutationPayloadResult.Valid)?.payload ?: return@forEach
+                    if (payload.expectedSha256 != legacy) return@forEach
+                    val raw = WorkspaceMutationPayloadCodec.encode(payload.copy(expectedSha256 = identity))
+                    if (database.workspaceMutationDao().replacePayload(row.operationId, row.payloadDigest, raw, Sha256Utils.hash(raw)) != 1) {
+                        conflict("文件 journal 在身份格式迁移期间发生变化")
+                    }
+                }
+                database.fileEntryDao().update(root.copy(hash = identity))
+            }
+        }
+    }
+
+    private fun adoptableIdentity(rootPath: Path, legacy: String): String = try {
+        fileOps.adoptLegacyRootIdentity(rootPath, legacy)
+    } catch (failure: Exception) {
+        throw WorkspaceMutationRecoveryException(LEGACY_ROOT_UNVERIFIED, failure)
+    } ?: conflict(LEGACY_ROOT_UNVERIFIED)
 
     private suspend fun pendingFileMutations(workspaceRootUuid: String): List<WorkspaceMutationEntity> =
         database.workspaceMutationDao().getUnfinished()
@@ -464,6 +511,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
     private fun conflict(message: String): Nothing = throw WorkspaceMutationRecoveryException(message)
 }
 
+internal const val LEGACY_ROOT_UNVERIFIED = "工作区根仍为旧版身份格式，且当前目录无法按旧格式核验，未自动迁移；文件、数据库与恢复记录均已保留"
 internal const val CREATE_OWNERSHIP_DIRECTORY = ".nexara_create_operations"
 internal const val CREATE_STAGED_NODE = "staged-node"
 internal const val CREATE_MANIFEST = "ownership-v1"

@@ -33,6 +33,10 @@ interface WorkspaceMutationDao {
     @Query("DELETE FROM workspace_mutations WHERE operation_id = :operationId AND state = 'PREPARED'")
     suspend fun deletePrepared(operationId: String): Int
 
+    @Query("""UPDATE workspace_mutations SET payload = :payload, payload_digest = :payloadDigest
+        WHERE operation_id = :operationId AND payload_digest = :expectedDigest""")
+    suspend fun replacePayload(operationId: String, expectedDigest: String, payload: String, payloadDigest: String): Int
+
     @Query("DELETE FROM workspace_mutations WHERE workspace_root_uuid = :workspaceRootUuid")
     suspend fun deleteByRoot(workspaceRootUuid: String): Int
 }

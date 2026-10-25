@@ -36,6 +36,8 @@ object DiagnosticRedactor {
         "工作区根标识不能为空", "该 journal 类型需要保留内部恢复证据，不能安全放弃",
         "文件 journal 的根身份或数据库目标无效", "文件 journal 或工作区数据库在检查后发生变化",
         "工作区文件在检查后发生变化", "文件 journal 无法安全放弃", "会话标识不能为空",
+        com.promenar.nexara.data.repository.LEGACY_ROOT_UNVERIFIED, "工作区根在身份格式迁移前发生变化",
+        "文件 journal 在身份格式迁移期间发生变化", "工作区新旧身份的私有区同时存在，拒绝合并",
         "DELETE journal 无法确定恢复范围", "journal payload 摘要不匹配", "journal payload 无效",
         "journal 缺少根身份", "journal 缺少目标路径", "journal stage 目标与 operationId 不匹配",
         "会话 journal 源不是专用根", "会话 journal 仍有暂存节点，不能安全放弃",

@@ -42,6 +42,8 @@ class DiagnosticRedactorTest {
             "多个 Session 指向同一规范工作区根", "工作区根不能是符号链接", "会话工作区绑定已变化",
             "会话根身份或路径不一致", "会话根路径不一致", "工作区数据库父子关系不一致",
             "会话 journal 或数据库状态发生变化，未完成安全放弃",
+            com.promenar.nexara.data.repository.LEGACY_ROOT_UNVERIFIED, "工作区根在身份格式迁移前发生变化",
+            "文件 journal 在身份格式迁移期间发生变化", "工作区新旧身份的私有区同时存在，拒绝合并",
         )
         fixedReasons.forEach { reason ->
             assertThat(DiagnosticRedactor.redact(reason)).isEqualTo(reason)

@@ -34,10 +34,13 @@ internal class StartupWorkspaceRecovery(
                 val scope = StartupIssueScope(StartupScopeKind.SESSION, sessionId, sessions.firstOrNull { it.id == sessionId }?.title?.takeIf(String::isNotBlank) ?: "会话")
                 manager.recover(StartupStep.SESSION_JOURNAL, scope,
                     abandon = {
+                        rootIds.forEach { fileJournal.adoptLegacyRootIdentityOrThrow(it) }
                         sessionJournal.abandonSessionOrThrow(sessionId)
                         rootIds.forEach { recoverRoot(it) }
                     },
                 ) {
+                    // 删除 journal 按根认领核验目录；旧格式认领须先迁移，否则任何根都无法通过核验。
+                    rootIds.forEach { fileJournal.adoptLegacyRootIdentityOrThrow(it) }
                     sessionJournal.recoverSessionOrThrow(sessionId)
                     // 删除事务回滚后继续验证该根；提交删除且根已不存在时没有 writer 可打开。
                     rootIds.forEach { recoverRoot(it) }

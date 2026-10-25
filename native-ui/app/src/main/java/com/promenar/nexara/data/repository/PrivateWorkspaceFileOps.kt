@@ -15,6 +15,9 @@ class PrivateWorkspaceFileOps(
 
     override fun captureRootIdentityRestorer(root: Path): () -> Boolean = delegate.captureRootIdentityRestorer(root)
     override fun hasExternalRootIdentity(root: Path): Boolean = delegate.hasExternalRootIdentity(root)
+    override fun adoptLegacyRootIdentity(root: Path, legacyIdentity: String): String? =
+        delegate.adoptLegacyRootIdentity(root, legacyIdentity)
+    override fun adoptLegacyRootPrivateData(legacyIdentity: String, identity: String) = storage.renameArea(legacyIdentity, identity)
 
     override fun migrateInternalStorage(root: Path) {
         val identity = identity(root)

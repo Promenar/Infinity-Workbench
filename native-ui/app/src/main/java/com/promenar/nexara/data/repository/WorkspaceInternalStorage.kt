@@ -73,6 +73,24 @@ class WorkspaceInternalStorage(
         Files.exists(it, LinkOption.NOFOLLOW_LINKS)
     }
 
+    /** 根身份仅更换编码时把私有区移到新键下；新旧两处同时存在说明数据分叉，拒绝合并。 */
+    internal fun renameArea(from: String, to: String) {
+        val parent = directory("roots")
+        val source = digest(from)
+        val target = digest(to)
+        val hasSource = Files.exists(parent.resolve(source), LinkOption.NOFOLLOW_LINKS)
+        if (Files.exists(parent.resolve(target), LinkOption.NOFOLLOW_LINKS)) {
+            if (hasSource) throw SecurityException("工作区新旧身份的私有区同时存在，拒绝合并")
+            return
+        }
+        if (!hasSource) return
+        val key = secure("roots").use { stream ->
+            stream.getFileAttributeView(Paths.get("."), java.nio.file.attribute.BasicFileAttributeView::class.java,
+                LinkOption.NOFOLLOW_LINKS).readAttributes().fileKey().toString()
+        }
+        metadataPublisher(parent, source, target, key)
+    }
+
     internal fun removeEmptyArea(identity: String) {
         secure("roots").use { it.deleteDirectory(Paths.get(digest(identity))) }
     }
