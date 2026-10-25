@@ -133,6 +133,12 @@ object ToolExecutionTargets {
         return parts.takeIf { it.size == 3 && it[0] == "process" }?.get(1)?.let { display(it) }?.takeIf(String::isNotBlank)
     }
 
+    /** 命令目标是否在 Linux 环境执行；审批卡据此区分 Linux 与内置命令的类别和访问范围说明。 */
+    fun runsInLinux(target: String?): Boolean = target != null && runCatching {
+        val parts = (Json.parseToJsonElement(target) as JsonArray).map { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content }
+        parts.size == 3 && parts[0] == "process" && parts[1] == "linux"
+    }.getOrDefault(false)
+
     fun display(target: String, maxChars: Int = 240): String {
         if (maxChars <= 0) return ""
         val parts = runCatching { Json.parseToJsonElement(target) as? JsonArray }.getOrNull()

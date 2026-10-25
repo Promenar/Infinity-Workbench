@@ -26,6 +26,19 @@ class BuiltinExecToolTargetTest {
         assertThat(ToolExecutionTargets.processScope("not json")).isNull()
     }
 
+    @Test fun `Linux 会话的命令目标归入 Linux 后端，用于审批卡类别`() {
+        val linux = ToolExecutionTargets.extract(
+            ProtocolTool(function = ProtocolToolFunction("shell_exec", "", "{}"), risk = ToolRisk.PROCESS, sourceId = "builtin"),
+            """{"command":"pwd"}""", usesLinux = true,
+        )
+        assertThat(ToolExecutionTargets.runsInLinux(linux)).isTrue()
+        assertThat(CommandToolClassification.backendFor("shell_exec", ToolExecutionTargets.runsInLinux(linux))).isEqualTo(CommandToolBackend.LINUX)
+        assertThat(ToolExecutionTargets.runsInLinux(target("shell_exec", """{"command":"pwd"}"""))).isFalse()
+        assertThat(ToolExecutionTargets.runsInLinux("""["path","linux"]""")).isFalse()
+        assertThat(ToolExecutionTargets.runsInLinux(null)).isFalse()
+        assertThat(ToolExecutionTargets.runsInLinux("not json")).isFalse()
+    }
+
     @Test fun `python_exec 审批绑定完整代码`() {
         assertThat(target("python_exec", """{"code":"print(1)"}"""))
             .isEqualTo("""["process","python","print(1)"]""")

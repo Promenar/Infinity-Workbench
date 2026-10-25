@@ -26,6 +26,7 @@
     <string name="workspace_picker_register_failed">Cannot use this folder: %1$s</string>
 
     <string name="workspace_kind_private">Chat space</string>
+    <string name="workspace_kind_session_dir">Session folder</string>
     <string name="workspace_kind_project">Built-in storage</string>
     <string name="workspace_kind_shared">Device storage</string>
     <string name="workspace_location_project">Built-in / %1$s</string>

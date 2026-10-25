@@ -904,8 +904,10 @@ internal fun ApprovalKindBand(
     where: String?,
     riskLabel: String,
     modifier: Modifier = Modifier,
+    /** 完整授权目标；Linux 会话的命令据此显示为 Linux 命令。 */
+    executionTarget: String? = null,
 ) {
-    val backend = CommandToolClassification.backendFor(toolName)
+    val backend = CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))
     val label = when (backend) {
         CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command
         CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command
@@ -994,8 +996,8 @@ internal fun ApprovalCallTitle(name: String, pending: Boolean) {
 
 /** 类别说明：命令写清以什么身份运行、能触及哪些范围；内置工具说明由 Nexara 按固定规则执行。 */
 @Composable
-internal fun ApprovalKindDetail(toolName: String) {
-    val detail = when (CommandToolClassification.backendFor(toolName)) {
+internal fun ApprovalKindDetail(toolName: String, executionTarget: String? = null) {
+    val detail = when (CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))) {
         CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command_detail
         CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command_detail
         CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command_detail
@@ -1099,7 +1101,7 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String, pen
                 body.isNotBlank() -> ApprovalTextBlock(body)
             }
         }
-        ApprovalKindDetail(call.name)
+        ApprovalKindDetail(call.name, call.executionTarget)
         call.background?.let { BackgroundRunLine(it) }
         // 命令的访问范围已由类别条说明，不再重复通用高风险提示。
         val command = CommandToolClassification.backendFor(call.name) != null
@@ -1250,6 +1252,7 @@ fun ApprovalCard(
                 toolName = first?.name ?: toolName,
                 where = first?.let { approvalCallWhere(it) },
                 riskLabel = first?.riskLabel.orEmpty(),
+                executionTarget = first?.executionTarget,
             )
             Column(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
@@ -1285,7 +1288,7 @@ fun ApprovalCard(
                                 .clip(RoundedCornerShape(14.dp))
                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
                         ) {
-                            ApprovalKindBand(call.name, approvalCallWhere(call), call.riskLabel)
+                            ApprovalKindBand(call.name, approvalCallWhere(call), call.riskLabel, executionTarget = call.executionTarget)
                             Box(Modifier.padding(12.dp)) { ApprovalCallBody(call, "", pending = false) }
                         }
                     }

@@ -23,6 +23,7 @@
     <string name="run_mode_action_builtin">Use built-in mode</string>
     <string name="run_mode_action_later">Later</string>
     <string name="run_mode_working_repair">Repairing Linux…</string>
+    <string name="run_mode_working_install">Installing Linux…</string>
     <string name="run_mode_working_reset">Resetting Linux…</string>
     <string name="run_mode_working_export">Exporting…</string>
     <string name="run_mode_repair_failed_title">Can\'t repair without data loss</string>

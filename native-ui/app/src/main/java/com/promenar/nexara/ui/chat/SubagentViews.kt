@@ -342,6 +342,7 @@ private fun SubagentApprovalBand(request: SubagentApproval) {
         toolName = request.toolName,
         where = approvalHeaderTarget(request.toolName, where),
         riskLabel = approvalRiskLabel(request.risk.name.lowercase()),
+        executionTarget = request.target,
     )
 }
 
@@ -351,7 +352,7 @@ private fun SubagentApprovalBody(request: SubagentApproval) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ApprovalCallTitle(request.toolName, pending = true)
         if (request.preview.isNotBlank()) ApprovalTextBlock(request.preview)
-        ApprovalKindDetail(request.toolName)
+        ApprovalKindDetail(request.toolName, request.target)
         // 命令的访问范围已由类别说明交代。
         if (highRisk && request.target != null && CommandToolClassification.backendFor(request.toolName) == null) {
             ApprovalRiskLine(stringResource(R.string.chat_approval_high_risk_target_warning))

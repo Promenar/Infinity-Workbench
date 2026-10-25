@@ -42,6 +42,19 @@ class GitChangesServiceTest {
         assertThat((service.status("s") as GitInspectResult.Success).value.branch).isEqualTo("main")
     }
 
+    @Test fun `会话私有空间的本地仓库不把目录哈希名当作仓库名`() = runTest {
+        makeRepository()
+        fun named(name: String) = InspectFixtures.status.replace("\"repository\":true", "\"repository\":true,\"repository_name\":\"$name\"")
+        resolution = GitWorkspaceResolution.Ready(GitWorkspaceTarget(root, com.promenar.nexara.data.workspace.SessionWorkspaceResolver.KIND_PRIVATE))
+        runner.respond = { _, _ -> named(root.name) }
+        assertThat((service.status("s") as GitInspectResult.Success).value.repositoryName).isNull()
+        runner.respond = { _, _ -> named("owner/app") }
+        assertThat((service.status("s") as GitInspectResult.Success).value.repositoryName).isEqualTo("owner/app")
+        resolution = GitWorkspaceResolution.Ready(GitWorkspaceTarget(root, "project"))
+        runner.respond = { _, _ -> named(root.name) }
+        assertThat((service.status("s") as GitInspectResult.Success).value.repositoryName).isEqualTo(root.name)
+    }
+
     @Test fun `已暂存差异读取 HEAD 与索引`() = runTest {
         makeRepository()
         runner.respond = { _, args -> InspectFixtures.echoRead(args) }

@@ -197,7 +197,13 @@ internal fun unavailableReason(state: LinuxRuntimeState): RunModeUnavailableReas
 sealed interface RunModeCheckpointStage {
     data class Select(val canChooseLinux: Boolean) : RunModeCheckpointStage
     data class Unavailable(val reason: RunModeUnavailableReason) : RunModeCheckpointStage
-    data class Working(val action: LinuxRecoveryAction, @param:StringRes val step: Int? = null, val fraction: Float? = null) : RunModeCheckpointStage
+    /** [install] 表示修复动作是从“尚未安装”发起的首次安装，标题据此写成安装。 */
+    data class Working(
+        val action: LinuxRecoveryAction,
+        @param:StringRes val step: Int? = null,
+        val fraction: Float? = null,
+        val install: Boolean = false,
+    ) : RunModeCheckpointStage
     /** [canReset] 为 false 表示重置也失败，只剩导出与改用内置。 */
     data class RepairFailed(val failure: LinuxFailure?, val loss: LinuxResetLossSummary?, val canReset: Boolean) : RunModeCheckpointStage
     data object ExportChoice : RunModeCheckpointStage
@@ -209,6 +215,13 @@ internal fun initialStage(check: SessionRunModeCheck): RunModeCheckpointStage? =
     is SessionRunModeCheck.SelectionRequired -> RunModeCheckpointStage.Select(check.canChooseLinux)
     is SessionRunModeCheck.EnvironmentUnavailable -> RunModeCheckpointStage.Unavailable(unavailableReason(check.linuxState))
     is SessionRunModeCheck.Available, SessionRunModeCheck.SessionMissing -> null
+}
+
+@StringRes
+internal fun workingTitle(stage: RunModeCheckpointStage.Working): Int = when (stage.action) {
+    LinuxRecoveryAction.REPAIR -> if (stage.install) R.string.run_mode_working_install else R.string.run_mode_working_repair
+    LinuxRecoveryAction.RESET -> R.string.run_mode_working_reset
+    LinuxRecoveryAction.EXPORT -> R.string.run_mode_working_export
 }
 
 /** 恢复进度事件映射为界面阶段；完成事件由调用方按动作分别处理。 */
@@ -265,9 +278,10 @@ fun RunModeCheckpointSheet(
     }
     fun repair() = scope.launch {
         message = null
+        val install = (stage as? RunModeCheckpointStage.Unavailable)?.reason == RunModeUnavailableReason.NOT_INSTALLED
         try {
             application.linuxRunModeRecovery.repair().collect { event ->
-                progressStage(event)?.let { stage = it }
+                progressStage(event)?.let { stage = it.copy(install = install) }
                 if (event is LinuxRecoveryEvent.Finished) {
                     if (event.result.success) onDismiss()
                     else stage = RunModeCheckpointStage.RepairFailed(event.result.failure, lossSummary(), canReset = true)
@@ -389,11 +403,7 @@ fun RunModeCheckpointContent(
                 LaterAction(actions.onLater)
             }
             is RunModeCheckpointStage.Working -> {
-                Heading(when (stage.action) {
-                    LinuxRecoveryAction.REPAIR -> R.string.run_mode_working_repair
-                    LinuxRecoveryAction.RESET -> R.string.run_mode_working_reset
-                    LinuxRecoveryAction.EXPORT -> R.string.run_mode_working_export
-                }, stage.step?.let { stringResource(it) }.orEmpty())
+                Heading(workingTitle(stage), stage.step?.let { stringResource(it) }.orEmpty())
                 val fraction = stage.fraction
                 if (fraction != null) LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
                 else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

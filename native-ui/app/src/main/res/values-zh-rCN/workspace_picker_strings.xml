@@ -26,6 +26,7 @@
     <string name="workspace_picker_register_failed">无法使用此文件夹：%1$s</string>
 
     <string name="workspace_kind_private">会话专用空间</string>
+    <string name="workspace_kind_session_dir">会话目录</string>
     <string name="workspace_kind_project">内置文件系统</string>
     <string name="workspace_kind_shared">设备文件系统</string>
     <string name="workspace_location_project">内置 / %1$s</string>

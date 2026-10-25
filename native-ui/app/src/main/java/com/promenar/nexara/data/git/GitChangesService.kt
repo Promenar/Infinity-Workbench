@@ -46,7 +46,13 @@ class GitChangesService(
     suspend fun status(sessionId: String): GitInspectResult<GitStatus> = withTarget(sessionId) { target ->
         // 没有 .git 时直接判定，不为每次打开资源管理器启动解释器。
         if (!hasGitDirectory(target.root)) return@withTarget GitInspectResult.Failure(GitInspectError.NotRepository)
-        inspector.status(target)
+        when (val result = inspector.status(target)) {
+            // 私有空间目录名是会话 id 的摘要；没有远端时检查端回落到目录名，对用户没有意义，交由界面以分支作标题。
+            is GitInspectResult.Success -> if (
+                target.kind == SessionWorkspaceResolver.KIND_PRIVATE && result.value.repositoryName == target.root.name
+            ) GitInspectResult.Success(result.value.copy(repositoryName = null)) else result
+            else -> result
+        }
     }
 
     suspend fun log(sessionId: String, limit: Int = GitInspectLimits.DEFAULT_COMMITS): GitInspectResult<GitCommitLog> =

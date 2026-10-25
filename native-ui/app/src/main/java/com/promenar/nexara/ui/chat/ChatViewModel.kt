@@ -2554,12 +2554,13 @@ class ChatViewModel(
             )
             if (result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched) {
                 _workspaceSwitchNotice.value = result
+                val linux = store.getSession(sessionId)?.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX
                 // 聊天流里留下可见记录；该消息不进入模型上下文。
                 runCatching {
                     messageManager.addMessage(
                         sessionId,
                         com.promenar.nexara.data.workspace.WorkspaceSwitchNotice.create(
-                            (workspaceSwitchNoticeTextOverride ?: ::workspaceSwitchNoticeText)(result.from, result.to),
+                            (workspaceSwitchNoticeTextOverride ?: { from, to -> workspaceSwitchNoticeText(from, to, linux) })(result.from, result.to),
                         ),
                     )
                 }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
@@ -2571,10 +2572,12 @@ class ChatViewModel(
     private fun workspaceSwitchNoticeText(
         from: com.promenar.nexara.data.workspace.WorkspaceLabel,
         to: com.promenar.nexara.data.workspace.WorkspaceLabel,
-    ): String = application.getString(R.string.workspace_switch_notice, workspaceLabelText(from), workspaceLabelText(to))
+        linux: Boolean,
+    ): String = application.getString(R.string.workspace_switch_notice, workspaceLabelText(from, linux), workspaceLabelText(to, linux))
 
-    private fun workspaceLabelText(label: com.promenar.nexara.data.workspace.WorkspaceLabel): String = when (label) {
-        com.promenar.nexara.data.workspace.WorkspaceLabel.Private -> application.getString(R.string.workspace_kind_private)
+    private fun workspaceLabelText(label: com.promenar.nexara.data.workspace.WorkspaceLabel, linux: Boolean): String = when (label) {
+        com.promenar.nexara.data.workspace.WorkspaceLabel.Private ->
+            application.getString(if (linux) R.string.workspace_kind_session_dir else R.string.workspace_kind_private)
         is com.promenar.nexara.data.workspace.WorkspaceLabel.Registered -> label.name
         is com.promenar.nexara.data.workspace.WorkspaceLabel.Missing -> application.getString(R.string.workspace_missing_name)
     }

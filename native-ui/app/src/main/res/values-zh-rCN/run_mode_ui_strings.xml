@@ -23,6 +23,7 @@
     <string name="run_mode_action_builtin">改用内置模式</string>
     <string name="run_mode_action_later">稍后</string>
     <string name="run_mode_working_repair">正在修复 Linux 环境…</string>
+    <string name="run_mode_working_install">正在安装 Linux 环境…</string>
     <string name="run_mode_working_reset">正在重置 Linux 环境…</string>
     <string name="run_mode_working_export">正在导出…</string>
     <string name="run_mode_repair_failed_title">无法无损修复</string>

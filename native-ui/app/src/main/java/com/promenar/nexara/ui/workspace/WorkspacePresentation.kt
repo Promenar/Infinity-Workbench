@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.workspace
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
@@ -32,12 +33,20 @@ fun SessionWorkspace.toUi(): SessionWorkspaceUi = when (this) {
     )
 }
 
+/** 当前会话是否固定为 Linux 模式；由聊天页提供，其它入口保持默认值。 */
+val LocalSessionLinuxMode = compositionLocalOf { false }
+
+/** 会话私有空间的名称：Linux 模式称“会话目录”（Linux 内为 /home/session），内置模式称“会话专用空间”。 */
+@Composable
+fun privateWorkspaceLabel(): String =
+    stringResource(if (LocalSessionLinuxMode.current) R.string.workspace_kind_session_dir else R.string.workspace_kind_private)
+
 @Composable
 fun workspaceKindLabel(kind: String?): String = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> stringResource(R.string.workspace_kind_project)
     WorkspaceEntity.KIND_SHARED -> stringResource(R.string.workspace_kind_shared)
     WorkspaceEntity.KIND_LINUX_HOME -> stringResource(R.string.workspace_kind_linux_home)
-    else -> stringResource(R.string.workspace_kind_private)
+    else -> privateWorkspaceLabel()
 }
 
 /**
@@ -60,7 +69,7 @@ internal fun compactSharedPath(location: String): String {
 
 @Composable
 fun workspaceLabelText(label: WorkspaceLabel): String = when (label) {
-    WorkspaceLabel.Private -> stringResource(R.string.workspace_kind_private)
+    WorkspaceLabel.Private -> privateWorkspaceLabel()
     is WorkspaceLabel.Registered -> label.name
     is WorkspaceLabel.Missing -> stringResource(R.string.workspace_missing_name)
 }

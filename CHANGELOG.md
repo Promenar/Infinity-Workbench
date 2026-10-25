@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Linux 会话中生图、下载与画布返回给 Agent 的路径是 `/home/session/…` 或 `/workspace/…`，提示词里的默认落点同样使用 Linux 路径，不再出现内置模式的 `/session` 入口；回复里引用 `/workspace`、`/home/session`、`/mnt/<别名>` 以及 Linux 环境中其它普通文件（只读）的图片与文件卡片可以显示、打开和保存。切换运行模式后已有画布仍写回原来的位置。画布卡片显示的路径随会话模式呈现；画布镜像不在当前主工作区时不再提供“在工作区中定位”。
 - Linux 安装只固定装 bash、ca-certificates、curl；git 与 Python 3（含 pip）为默认勾选的附加包，管理页可补装。命令因缺少程序退出（127）时提示对应的 `apk add`，由 Agent 申请安装，不自动安装也不切换环境。
 - 数据库升级到 27（会话新增可空 `run_mode`），JSON 备份格式升级到 8，旧备份恢复后运行模式为空、按旧会话规则处理。
+- Linux 会话的命令审批卡显示为“Linux 命令”并说明 Alpine 中的访问范围，不再沿用内置命令的说明；资源管理器、可达范围与工作区切换记录中，Linux 会话的私有空间称作“会话目录”（内置模式仍为“会话专用空间”）；首次安装 Linux 的进度标题写作“正在安装”。会话私有空间里没有远端的 Git 仓库，Git 面板不再以目录哈希名作标题，改以分支名作标题。
 
 ### 启动自检：问题只隔离受影响的范围
 

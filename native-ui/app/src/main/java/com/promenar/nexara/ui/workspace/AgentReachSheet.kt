@@ -133,7 +133,7 @@ private fun WorkspaceSection(state: AgentReachState) {
         NexaraSettingsRowLayout(
             title = when (workspace) {
                 SessionWorkspaceUi.Loading -> "…"
-                SessionWorkspaceUi.Private -> stringResource(R.string.workspace_kind_private)
+                SessionWorkspaceUi.Private -> privateWorkspaceLabel()
                 is SessionWorkspaceUi.Directory -> workspace.name
                 is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
             },

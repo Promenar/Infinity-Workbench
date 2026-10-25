@@ -966,7 +966,9 @@ fun ChatRoute(
             },
         )
     }
-    if (activeOverlay == ChatOverlay.Workspace) {
+    if (activeOverlay == ChatOverlay.Workspace) androidx.compose.runtime.CompositionLocalProvider(
+        com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
+    ) {
         ResourceExplorerSheet(
             onDismiss = {
                 activeOverlayToken = null

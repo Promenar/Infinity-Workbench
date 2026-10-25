@@ -56,4 +56,14 @@ class RunModeUiTest {
             .isEqualTo(RunModeCheckpointStage.Working(LinuxRecoveryAction.REPAIR, linuxStepTitle(LinuxInstallStep.COMMON_TOOLS), 0.5f))
         assertThat(progressStage(LinuxRecoveryEvent.Finished(LinuxRecoveryAction.REPAIR, LinuxRecoveryResult(false)))).isNull()
     }
+
+    @Test
+    fun `从未安装发起的修复显示为安装，其它修复仍显示修复`() {
+        assertThat(workingTitle(RunModeCheckpointStage.Working(LinuxRecoveryAction.REPAIR, install = true)))
+            .isEqualTo(com.promenar.nexara.R.string.run_mode_working_install)
+        assertThat(workingTitle(RunModeCheckpointStage.Working(LinuxRecoveryAction.REPAIR)))
+            .isEqualTo(com.promenar.nexara.R.string.run_mode_working_repair)
+        assertThat(workingTitle(RunModeCheckpointStage.Working(LinuxRecoveryAction.RESET, install = true)))
+            .isEqualTo(com.promenar.nexara.R.string.run_mode_working_reset)
+    }
 }
