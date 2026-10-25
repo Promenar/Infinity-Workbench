@@ -42,16 +42,4 @@
     <string name="state_board_tag_recent">刚更新</string>
     <string name="state_board_manual_note">你改过的项，Agent 再更新前会先看到你的修改。</string>
     <string name="state_board_edit_note">状态由 Agent 维护，点按任一项可以修改。</string>
-    <string name="run_side_panel_label">运行侧栏</string>
-    <string name="run_side_idle">空闲</string>
-    <string name="run_side_view_all_steps">查看全部 %1$d 步</string>
-    <plurals name="run_side_jobs_running">
-        <item quantity="other">%d 个运行中</item>
-    </plurals>
-    <plurals name="run_side_schedules">
-        <item quantity="other">%d 个定时任务</item>
-    </plurals>
-    <string name="run_side_artifacts">产物</string>
-    <string name="run_side_git">Git</string>
-    <string name="run_side_open_section">打开%1$s</string>
 </resources>

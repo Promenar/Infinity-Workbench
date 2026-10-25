@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_inspector_label">检视器</string>
+    <string name="chat_inspector_tab_run">运行</string>
+    <string name="chat_inspector_tab_files">文件</string>
+    <string name="chat_inspector_tab_git">Git</string>
+    <string name="chat_inspector_tab_canvas">画布</string>
+    <string name="chat_inspector_toggle">显示或收起检视器</string>
+    <string name="chat_inspector_expand">展开检视器</string>
+    <string name="chat_inspector_collapse">收起检视器</string>
+    <string name="chat_inspector_widen">加宽检视器</string>
+    <string name="chat_inspector_restore_width">恢复检视器宽度</string>
+    <string name="chat_inspector_running">运行中</string>
+    <plurals name="chat_inspector_pending_approvals">
+        <item quantity="other">%d 项操作等待批准</item>
+    </plurals>
+    <plurals name="chat_inspector_count">
+        <item quantity="other">%d 项</item>
+    </plurals>
+    <string name="chat_inspector_approval_detail">批准卡片在输入框上方</string>
+    <string name="chat_inspector_approval_action">跳到审批</string>
+    <string name="chat_inspector_run_empty_title">当前没有运行中的任务</string>
+    <string name="chat_inspector_run_empty_detail">开始生成后，这里显示计划、后台任务与状态面板。</string>
+</resources>

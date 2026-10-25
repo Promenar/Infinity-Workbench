@@ -335,12 +335,14 @@ fun CanvasListContent(
     canvases: List<CanvasMetadata>,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** 检视器页签已写明“画布”，不再重复标题。 */
+    showHeading: Boolean = true,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth().testTag(UiTags.CANVAS_LIST),
         contentPadding = PaddingValues(vertical = NexaraSpacing.Small),
     ) {
-        item(key = "heading") {
+        if (showHeading) item(key = "heading") {
             Text(
                 text = stringResource(R.string.canvas_title),
                 modifier = Modifier

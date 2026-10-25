@@ -31,7 +31,6 @@ private fun PaneHostPreview(mode: NexaraThemeMode) {
                         NexaraPageLayout(
                             title = "资源管理器",
                             onBack = {},
-                            backCloses = LocalNexaraPanePresentation.current == NexaraPanePresentation.Pane,
                             scrollable = false,
                             bodyPadding = PaddingValues(16.dp),
                         ) {
@@ -57,8 +56,8 @@ private fun PaneHostPreview(mode: NexaraThemeMode) {
 @Composable
 fun adaptivePanePageDarkPreview() = PaneHostPreview(NexaraThemeMode.DARK)
 
-// 宽窗口：侧滑面板停靠右侧，主内容让出宽度，根层为关闭图标。
+// 宽窗口：宿主不再覆盖主内容，二级内容交给主内容的浮动检视器；画面只有主内容。
 @PreviewTest
-@Preview(name = "自适应二级内容 宽屏侧栏 浅中840", widthDp = 840, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "自适应二级内容 宽屏交给检视器 浅中840", widthDp = 840, heightDp = 640, locale = "zh-rCN")
 @Composable
-fun adaptivePaneDockedLightPreview() = PaneHostPreview(NexaraThemeMode.LIGHT)
+fun adaptivePaneInspectorLayoutLightPreview() = PaneHostPreview(NexaraThemeMode.LIGHT)

@@ -1,0 +1,335 @@
+package com.promenar.nexara.ui.chat
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowLeft
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowRight
+import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.LocalNexaraPanePresentation
+import com.promenar.nexara.ui.common.NexaraPanePresentation
+import com.promenar.nexara.ui.common.NexaraPaneTags
+import com.promenar.nexara.ui.startup.StartupNotice
+import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.NexaraTypography
+
+/** 检视器页签与边缘条上的角标；[gitAvailable] 为 false（工作区不是 Git 仓库）时不显示 Git 页签。 */
+internal data class ChatInspectorBadges(
+    val running: Boolean = false,
+    val pendingApprovals: Int = 0,
+    /** 有计划、后台任务或状态面板等可看的运行内容。 */
+    val hasRunContent: Boolean = false,
+    val gitAvailable: Boolean = false,
+    val gitChanges: Int = 0,
+    val canvases: Int = 0,
+) {
+    /** 没有运行内容、改动与产物时检视器完全隐藏，只留顶栏入口。 */
+    val hasContent: Boolean get() = running || pendingApprovals > 0 || hasRunContent || gitChanges > 0 || canvases > 0
+
+    fun pages(): List<ChatPage> = ChatPage.entries.filter { it != ChatPage.Git || gitAvailable }
+}
+
+private val ChatPage.icon: ImageVector
+    get() = when (this) {
+        ChatPage.Run -> Icons.Rounded.Checklist
+        ChatPage.Explorer -> Icons.Outlined.Folder
+        ChatPage.Git -> Icons.Rounded.AccountTree
+        ChatPage.Canvas -> Icons.Rounded.Dashboard
+    }
+
+@Composable
+private fun ChatPage.label(): String = stringResource(
+    when (this) {
+        ChatPage.Run -> R.string.chat_inspector_tab_run
+        ChatPage.Explorer -> R.string.chat_inspector_tab_files
+        ChatPage.Git -> R.string.chat_inspector_tab_git
+        ChatPage.Canvas -> R.string.chat_inspector_tab_canvas
+    },
+)
+
+/** 页签名加角标含义，供只有图标的入口朗读。 */
+@Composable
+private fun ChatPage.description(badges: ChatInspectorBadges): String = listOfNotNull(
+    label(),
+    if (this == ChatPage.Run && badges.pendingApprovals > 0) {
+        pluralStringResource(R.plurals.chat_inspector_pending_approvals, badges.pendingApprovals, badges.pendingApprovals)
+    } else null,
+    if (this == ChatPage.Run && badges.running) stringResource(R.string.chat_inspector_running) else null,
+    when (this) {
+        ChatPage.Git -> badges.gitChanges
+        ChatPage.Canvas -> badges.canvases
+        else -> 0
+    }.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.chat_inspector_count, it, it) },
+).joinToString(", ")
+
+/** 页签图标：运行中换成转圈；待批准、Git 改动数与画布数挂在右上角。 */
+@Composable
+private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Color) {
+    val scheme = MaterialTheme.colorScheme
+    BadgedBox(
+        badge = {
+            when {
+                page == ChatPage.Run && badges.pendingApprovals > 0 ->
+                    Badge(containerColor = scheme.tertiary, contentColor = scheme.onTertiary) { Text(badges.pendingApprovals.toString()) }
+                page == ChatPage.Git && badges.gitChanges > 0 ->
+                    Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) { Text(badges.gitChanges.toString()) }
+                page == ChatPage.Canvas && badges.canvases > 0 ->
+                    Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) { Text(badges.canvases.toString()) }
+            }
+        },
+    ) {
+        if (page == ChatPage.Run && badges.running) {
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = scheme.primary)
+            }
+        } else {
+            Icon(page.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+private val InspectorShape = RoundedCornerShape(20.dp)
+
+@Composable
+private fun inspectorBorder() = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+
+/**
+ * 宽窗口会话右侧的浮动检视器：独立圆角卡片，不以竖线切开会话。
+ * 顶部是页签与加宽、收起按钮；当前页签显示图标与名称，其余只显示图标与角标。
+ * 内容以 [NexaraPanePresentation.Inspector] 承载：页面不再贴系统栏留白，根层不重复画顶栏。
+ */
+@Composable
+internal fun ChatInspectorCard(
+    root: ChatPage,
+    badges: ChatInspectorBadges,
+    widened: Boolean,
+    onSelect: (ChatPage) -> Unit,
+    onToggleWiden: () -> Unit,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val paneLabel = stringResource(R.string.chat_inspector_label)
+    Surface(
+        modifier = modifier.semantics { paneTitle = paneLabel }.testTag(NexaraPaneTags.INSPECTOR),
+        shape = InspectorShape,
+        color = MaterialTheme.colorScheme.background,
+        border = inspectorBorder(),
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                badges.pages().forEach { page ->
+                    InspectorTab(page = page, selected = page == root, badges = badges, onClick = { onSelect(page) })
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onToggleWiden, modifier = Modifier.testTag(ChatInspectorTags.WIDEN)) {
+                    Icon(
+                        if (widened) Icons.Rounded.CloseFullscreen else Icons.Rounded.OpenInFull,
+                        contentDescription = stringResource(if (widened) R.string.chat_inspector_restore_width else R.string.chat_inspector_widen),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                IconButton(onClick = onCollapse, modifier = Modifier.testTag(ChatInspectorTags.COLLAPSE)) {
+                    Icon(
+                        Icons.Rounded.KeyboardDoubleArrowRight,
+                        contentDescription = stringResource(R.string.chat_inspector_collapse),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            CompositionLocalProvider(LocalNexaraPanePresentation provides NexaraPanePresentation.Inspector) {
+                Box(Modifier.weight(1f).fillMaxWidth(), content = content)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InspectorTab(page: ChatPage, selected: Boolean, badges: ChatInspectorBadges, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val tint = if (selected) scheme.onSurface else scheme.onSurfaceVariant
+    val description = page.description(badges)
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) scheme.surfaceContainerHigh else Color.Transparent,
+        modifier = Modifier
+            .height(40.dp)
+            .semantics {
+                role = Role.Tab
+                this.selected = selected
+                contentDescription = description
+            }
+            .testTag(ChatInspectorTags.tab(page)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            InspectorIcon(page, badges, tint)
+            if (selected) {
+                Text(page.label(), style = NexaraTypography.labelLarge, color = tint, maxLines = 1)
+            }
+        }
+    }
+}
+
+/**
+ * 检视器收起后的边缘条：贴在会话右缘的竖向胶囊，只有页签图标与角标，点按以该页签展开。
+ * 没有任何内容时整个检视器隐藏，边缘条也不出现。
+ */
+@Composable
+internal fun ChatInspectorStrip(
+    badges: ChatInspectorBadges,
+    onOpen: (ChatPage) -> Unit,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.testTag(NexaraPaneTags.INSPECTOR_STRIP),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.background,
+        border = inspectorBorder(),
+        shadowElevation = 6.dp,
+    ) {
+        Column(Modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            badges.pages().forEach { page ->
+                val description = page.description(badges)
+                IconButton(
+                    onClick = { onOpen(page) },
+                    modifier = Modifier.semantics { contentDescription = description }.testTag(ChatInspectorTags.stripItem(page)),
+                ) {
+                    InspectorIcon(page, badges, MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            HorizontalDivider(
+                modifier = Modifier.width(24.dp).padding(vertical = 2.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            IconButton(onClick = onExpand, modifier = Modifier.testTag(ChatInspectorTags.EXPAND)) {
+                Icon(
+                    Icons.Rounded.KeyboardDoubleArrowLeft,
+                    contentDescription = stringResource(R.string.chat_inspector_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** 运行页签：有待批准的操作时先给出跳转入口；没有运行内容时显示空状态。 */
+@Composable
+internal fun ChatInspectorRunTab(
+    pendingApprovals: Int,
+    onJumpToApproval: () -> Unit,
+    hasRunContent: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier.fillMaxSize()) {
+        if (pendingApprovals > 0) {
+            StartupNotice(
+                title = pluralStringResource(R.plurals.chat_inspector_pending_approvals, pendingApprovals, pendingApprovals),
+                detail = stringResource(R.string.chat_inspector_approval_detail),
+                actionLabel = stringResource(R.string.chat_inspector_approval_action),
+                icon = Icons.Rounded.VerifiedUser,
+                onClick = onJumpToApproval,
+                modifier = Modifier.padding(top = NexaraSpacing.Small).testTag(ChatInspectorTags.APPROVAL),
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (hasRunContent) content() else InspectorEmpty(
+                icon = Icons.Rounded.Checklist,
+                title = stringResource(R.string.chat_inspector_run_empty_title),
+                detail = stringResource(R.string.chat_inspector_run_empty_detail),
+            )
+        }
+    }
+}
+
+@Composable
+private fun InspectorEmpty(icon: ImageVector, title: String, detail: String, iconSize: Dp = 32.dp) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = NexaraSpacing.XLarge),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(iconSize))
+        Spacer(Modifier.height(NexaraSpacing.Medium))
+        Text(title, style = NexaraTypography.titleSmall, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(NexaraSpacing.XSmall))
+        Text(
+            detail,
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+internal object ChatInspectorTags {
+    const val WIDEN = "chat_inspector_widen"
+    const val COLLAPSE = "chat_inspector_collapse"
+    const val EXPAND = "chat_inspector_expand"
+    const val APPROVAL = "chat_inspector_approval"
+    const val TOGGLE = "chat_inspector_toggle"
+    fun tab(page: ChatPage) = "chat_inspector_tab_${page.token}"
+    fun stripItem(page: ChatPage) = "chat_inspector_strip_${page.token}"
+}

@@ -50,8 +50,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.PaddingValues
-import com.promenar.nexara.ui.common.LocalNexaraPanePresentation
-import com.promenar.nexara.ui.common.NexaraPanePresentation
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,7 +102,8 @@ import com.promenar.nexara.ui.theme.NexaraTypography
  */
 @Composable
 fun ResourceExplorerPage(
-    onBack: () -> Unit,
+    /** 为空时（检视器根层）不画顶栏：页签已写明所在页，由收起按钮离开。 */
+    onBack: (() -> Unit)?,
     onOpenGit: () -> Unit,
     /** Git 页关闭时递增；本页据此刷新 Git 入口的分支与改动数。 */
     gitRefreshKey: Int,
@@ -163,7 +162,7 @@ fun ResourceExplorerPage(
     NexaraPageLayout(
         title = stringResource(R.string.resource_explorer_title),
         onBack = onBack,
-        backCloses = LocalNexaraPanePresentation.current == NexaraPanePresentation.Pane,
+        showTopBar = onBack != null,
         scrollable = false,
         bodyPadding = PaddingValues(
             start = NexaraSpacing.ScreenHorizontal,

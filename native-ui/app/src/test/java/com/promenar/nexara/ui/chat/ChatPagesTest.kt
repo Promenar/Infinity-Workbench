@@ -28,4 +28,38 @@ class ChatPagesTest {
         assertThat(restoreChatPages("")).isEmpty()
         assertThat(restoreChatPages("explorer,unknown,git,git")).isEqualTo(pages)
     }
+
+    @Test fun `运行与画布页签可保存恢复，但不进入窄窗口整页层级`() {
+        val pages = listOf(ChatPage.Run)
+        assertThat(restoreChatPages(saveChatPages(pages))).isEqualTo(pages)
+        assertThat(restoreChatPages("canvas")).containsExactly(ChatPage.Canvas)
+        assertThat(chatPageStack(listOf(ChatPage.Run))).isEmpty()
+        assertThat(chatPageStack(listOf(ChatPage.Canvas))).isEmpty()
+        assertThat(chatPageStack(listOf(ChatPage.Explorer, ChatPage.Git))).containsExactly(ChatPage.Explorer, ChatPage.Git).inOrder()
+    }
+
+    @Test fun `顶栏图标在已打开的根层页签上收起，否则以该页签为根打开`() {
+        assertThat(toggleChatInspector(emptyList(), ChatPage.Explorer)).containsExactly(ChatPage.Explorer)
+        assertThat(toggleChatInspector(listOf(ChatPage.Explorer), ChatPage.Explorer)).isEmpty()
+        assertThat(toggleChatInspector(listOf(ChatPage.Run), ChatPage.Explorer)).containsExactly(ChatPage.Explorer)
+        // 资源管理器上叠着 Git 时点文件图标：回到文件根层，而不是收起。
+        assertThat(toggleChatInspector(listOf(ChatPage.Explorer, ChatPage.Git), ChatPage.Explorer)).containsExactly(ChatPage.Explorer)
+    }
+
+    @Test fun `展开检视器沿用上次页签，没有时按是否有运行内容选择`() {
+        assertThat(defaultChatInspectorRoot(ChatPage.Git, hasRunContent = true)).isEqualTo(ChatPage.Git)
+        assertThat(defaultChatInspectorRoot(null, hasRunContent = true)).isEqualTo(ChatPage.Run)
+        assertThat(defaultChatInspectorRoot(null, hasRunContent = false)).isEqualTo(ChatPage.Explorer)
+    }
+
+    @Test fun `检视器角标：没有内容时隐藏，非 Git 仓库不显示 Git 页签`() {
+        assertThat(ChatInspectorBadges().hasContent).isFalse()
+        // 工作区是干净的 Git 仓库不算内容，不为此弹出边缘条。
+        assertThat(ChatInspectorBadges(gitAvailable = true).hasContent).isFalse()
+        assertThat(ChatInspectorBadges(gitAvailable = true, gitChanges = 2).hasContent).isTrue()
+        assertThat(ChatInspectorBadges(pendingApprovals = 1).hasContent).isTrue()
+        assertThat(ChatInspectorBadges(canvases = 1).hasContent).isTrue()
+        assertThat(ChatInspectorBadges().pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Canvas).inOrder()
+        assertThat(ChatInspectorBadges(gitAvailable = true).pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Git, ChatPage.Canvas).inOrder()
+    }
 }

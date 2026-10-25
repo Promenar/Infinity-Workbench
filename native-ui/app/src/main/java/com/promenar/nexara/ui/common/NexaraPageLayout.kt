@@ -44,11 +44,13 @@ fun NexaraPageLayout(
     /** 页面主体内边距；为 null 时使用设置类页面的默认留白。 */
     bodyPadding: PaddingValues? = null,
     actions: @Composable RowScope.() -> Unit = {},
-    /** 返回按钮显示为关闭图标；用于侧滑面板的根层。 */
-    backCloses: Boolean = false,
+    /** 为 false 时不画顶栏；用于检视器的根层，页签已写明所在页。 */
+    showTopBar: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    // 检视器是会话内的浮动卡片，不贴系统栏，不再留系统栏内边距。
+    val insets = if (LocalNexaraPanePresentation.current == NexaraPanePresentation.Inspector) WindowInsets(0) else WindowInsets.systemBars
 
     Scaffold(
         modifier = modifier
@@ -56,7 +58,7 @@ fun NexaraPageLayout(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
+            if (showTopBar) TopAppBar(
                 title = {
                     Column(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
                         Text(
@@ -79,17 +81,18 @@ fun NexaraPageLayout(
                 },
                 navigationIcon = {
                     if (onBack != null) {
-                        NexaraBackButton(onClick = onBack, close = backCloses)
+                        NexaraBackButton(onClick = onBack)
                     }
                 },
                 actions = { actions() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
-                scrollBehavior = scrollBehavior
+                scrollBehavior = scrollBehavior,
+                windowInsets = insets,
             )
         },
-        contentWindowInsets = WindowInsets.systemBars,
+        contentWindowInsets = insets,
     ) { paddingValues ->
         Box(
             modifier = Modifier

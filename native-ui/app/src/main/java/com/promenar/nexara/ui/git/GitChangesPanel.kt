@@ -94,9 +94,11 @@ import com.promenar.nexara.data.git.GitFileChange
 import com.promenar.nexara.data.git.GitStatus
 import com.promenar.nexara.data.git.GitTracking
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.LocalNexaraPanePresentation
 import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
 import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraPanePresentation
 import com.promenar.nexara.ui.common.NexaraTabItem
 import com.promenar.nexara.ui.common.diff.FileDiffModel
 import com.promenar.nexara.ui.common.diff.FileDiffView
@@ -125,15 +127,13 @@ object GitPanelTags {
 }
 
 /**
- * Git 变更的二级页面：由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 承载，窄窗口整页、宽窗口停靠侧栏。
- * 打开时刷新一次，之后由用户手动刷新；页内详情先逐层返回，回到列表后再由 [onExit] 离开。
+ * Git 变更的二级页面：由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 承载，窄窗口整页、宽窗口在会话检视器中。
+ * 打开时刷新一次，之后由用户手动刷新；页内详情先逐层返回，回到列表后再由 [onExit] 离开（为空时根层不显示返回）。
  */
 @Composable
 fun GitChangesPage(
     sessionId: String,
-    onExit: () -> Unit,
-    /** 作为侧栏根层时显示关闭图标。 */
-    exitCloses: Boolean = false,
+    onExit: (() -> Unit)?,
 ) {
     val application = LocalContext.current.applicationContext as NexaraApplication
     val viewModel: GitPanelViewModel = viewModel(
@@ -153,11 +153,14 @@ fun GitChangesPage(
             onOpenCommitFile = viewModel::openCommitFile,
             onBack = { viewModel.back() },
             onExit = onExit,
-            exitCloses = exitCloses,
         ),
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
+            // 检视器是会话内的浮动卡片，不贴系统栏。
+            .then(
+                if (LocalNexaraPanePresentation.current == NexaraPanePresentation.Inspector) Modifier.padding(top = NexaraSpacing.XSmall)
+                else Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+            )
             .padding(horizontal = NexaraSpacing.ScreenHorizontal),
     )
 }
@@ -284,10 +287,7 @@ private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions, now
             exit = shrinkHorizontally(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                NexaraBackButton(
-                    onClick = { if (detail != null) actions.onBack() else actions.onExit?.invoke() },
-                    close = detail == null && actions.exitCloses,
-                )
+                NexaraBackButton(onClick = { if (detail != null) actions.onBack() else actions.onExit?.invoke() })
                 Spacer(modifier = Modifier.width(NexaraSpacing.XSmall))
             }
         }

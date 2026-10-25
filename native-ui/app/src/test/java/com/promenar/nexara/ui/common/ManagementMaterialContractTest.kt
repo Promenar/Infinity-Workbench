@@ -59,7 +59,9 @@ class ManagementMaterialContractTest {
     fun `page layout owns insets and uses opaque material tokens`() {
         val source = source("NexaraPageLayout")
 
-        assertThat(source).contains("contentWindowInsets = WindowInsets.systemBars")
+        // 整页时让出系统栏；放在宽屏检视器卡片里时卡片已避开系统栏，页面不再重复留白。
+        assertThat(source).contains("NexaraPanePresentation.Inspector) WindowInsets(0) else WindowInsets.systemBars")
+        assertThat(source).contains("contentWindowInsets = insets")
         assertThat(source).contains("Modifier.imePadding()")
         assertThat(source).contains("MaterialTheme.colorScheme")
         assertThat(source).contains("MaterialTheme.typography.titleLarge")

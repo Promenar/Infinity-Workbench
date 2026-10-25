@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_inspector_label">Inspector</string>
+    <string name="chat_inspector_tab_run">Run</string>
+    <string name="chat_inspector_tab_files">Files</string>
+    <string name="chat_inspector_tab_git">Git</string>
+    <string name="chat_inspector_tab_canvas">Canvas</string>
+    <string name="chat_inspector_toggle">Show or hide inspector</string>
+    <string name="chat_inspector_expand">Expand inspector</string>
+    <string name="chat_inspector_collapse">Collapse inspector</string>
+    <string name="chat_inspector_widen">Widen inspector</string>
+    <string name="chat_inspector_restore_width">Restore inspector width</string>
+    <string name="chat_inspector_running">running</string>
+    <plurals name="chat_inspector_pending_approvals">
+        <item quantity="one">%d action waiting for approval</item>
+        <item quantity="other">%d actions waiting for approval</item>
+    </plurals>
+    <plurals name="chat_inspector_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <string name="chat_inspector_approval_detail">The approval card is above the message box</string>
+    <string name="chat_inspector_approval_action">Go to approval</string>
+    <string name="chat_inspector_run_empty_title">Nothing is running</string>
+    <string name="chat_inspector_run_empty_detail">Once a reply starts, its plan, background jobs and state board show up here.</string>
+</resources>

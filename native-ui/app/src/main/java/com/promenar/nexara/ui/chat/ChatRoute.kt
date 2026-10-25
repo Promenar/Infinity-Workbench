@@ -327,18 +327,20 @@ fun ChatRoute(
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
     var chatPagesToken by rememberSaveable { mutableStateOf("") }
     val chatPages = restoreChatPages(chatPagesToken)
-    // 收起时仍按最后的层级渲染，退场动画期间内容不消失。
-    var lastChatPages by remember { mutableStateOf(chatPages) }
-    SideEffect { if (chatPages.isNotEmpty()) lastChatPages = chatPages }
-    val shownChatPages = chatPages.ifEmpty { lastChatPages }
-    val openChatPage: (ChatPage) -> Unit = { page -> chatPagesToken = saveChatPages(openChatPageRoot(page)) }
-    val closeTopChatPage: () -> Unit = {
+    // 窄窗口整页与检视器“文件”“Git”页签共用的层级；收起时仍按最后的层级渲染，退场动画期间内容不消失。
+    val pageStack = chatPageStack(chatPages)
+    var lastPageStack by remember { mutableStateOf(pageStack) }
+    SideEffect { if (pageStack.isNotEmpty()) lastPageStack = pageStack }
+    val shownChatPages = pageStack.ifEmpty { lastPageStack }
+    val setChatPages: (List<ChatPage>) -> Unit = { next ->
         val pages = restoreChatPages(chatPagesToken)
-        val next = popChatPage(pages)
         chatPagesToken = saveChatPages(next)
-        if (pages.lastOrNull() == ChatPage.Git) gitRefresh++
-        if (next.isEmpty()) workspaceLocatePath = null
+        // 离开 Git 后刷新顶栏与资源管理器入口的分支与改动；离开资源管理器后不再定位目录。
+        if (ChatPage.Git in pages && ChatPage.Git !in next) gitRefresh++
+        if (ChatPage.Explorer !in next) workspaceLocatePath = null
     }
+    val openChatPage: (ChatPage) -> Unit = { page -> setChatPages(openChatPageRoot(page)) }
+    val closeTopChatPage: () -> Unit = { setChatPages(popChatPage(restoreChatPages(chatPagesToken))) }
     val hasGenerationInteraction = interaction?.sessionId == sessionId
     val activeOverlay = if (hasGenerationInteraction) null else restoreChatOverlay(activeOverlayToken)
     var permissionExplanationTaskId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -671,55 +673,57 @@ fun ChatRoute(
         val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.gitChangesService.status(sessionId) }
         gitSummary = com.promenar.nexara.ui.git.GitEntrySummary.from(status) as? com.promenar.nexara.ui.git.GitEntrySummary.Repository
     }
-    // 资源管理器与 Git 变更：窄窗口为整页二级页面，宽窗口为停靠右侧的侧滑面板；生成中待用户处理时整页让出。
-    com.promenar.nexara.ui.common.NexaraAdaptivePaneHost(
-        paneVisible = chatPages.isNotEmpty(),
-        onBack = closeTopChatPage,
-        coverSuspended = hasGenerationInteraction,
-        pane = {
-            androidx.compose.runtime.CompositionLocalProvider(
-                com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
-            ) {
-                // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
-                ChatPage.entries
-                    .sortedBy { page -> shownChatPages.indexOf(page).let { if (it < 0) Int.MAX_VALUE else it } }
-                    .forEach { page ->
-                        androidx.compose.runtime.key(page) {
-                            NexaraPaneLevel(
-                                key = page.token,
-                                visible = page in shownChatPages,
-                                top = page == shownChatPages.lastOrNull(),
-                            ) {
-                                val rootCloses = shownChatPages.size == 1 &&
-                                    com.promenar.nexara.ui.common.LocalNexaraPanePresentation.current ==
-                                    com.promenar.nexara.ui.common.NexaraPanePresentation.Pane
-                                when (page) {
-                                    ChatPage.Explorer -> ResourceExplorerPage(
-                                        onBack = closeTopChatPage,
-                                        onOpenGit = { chatPagesToken = saveChatPages(pushChatPage(restoreChatPages(chatPagesToken), ChatPage.Git)) },
-                                        gitRefreshKey = gitRefresh,
-                                        sessionId = sessionId,
-                                        chatViewModel = chatViewModel,
-                                        initialFolderPath = workspaceLocatePath,
-                                        onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
-                                            {
-                                                chatPagesToken = ""
-                                                workspaceLocatePath = null
-                                                open()
-                                            }
-                                        },
-                                    )
-                                    ChatPage.Git -> com.promenar.nexara.ui.git.GitChangesPage(
-                                        sessionId = sessionId,
-                                        onExit = closeTopChatPage,
-                                        exitCloses = rootCloses,
-                                    )
-                                }
+    // 资源管理器与 Git 变更的层级：窄窗口整页覆盖会话，宽窗口作为检视器“文件”“Git”页签的内容。
+    val chatPageLevels: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
+        ) {
+            // 检视器根层由页签与收起按钮离开，不再显示返回。
+            val inInspector = com.promenar.nexara.ui.common.LocalNexaraPanePresentation.current ==
+                com.promenar.nexara.ui.common.NexaraPanePresentation.Inspector
+            // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
+            ChatPage.entries
+                .filter { it.isPage }
+                .sortedBy { page -> shownChatPages.indexOf(page).let { if (it < 0) Int.MAX_VALUE else it } }
+                .forEach { page ->
+                    androidx.compose.runtime.key(page) {
+                        NexaraPaneLevel(
+                            key = page.token,
+                            visible = page in shownChatPages,
+                            top = page == shownChatPages.lastOrNull(),
+                        ) {
+                            when (page) {
+                                ChatPage.Explorer -> ResourceExplorerPage(
+                                    onBack = closeTopChatPage.takeUnless { inInspector },
+                                    onOpenGit = { setChatPages(pushChatPage(restoreChatPages(chatPagesToken), ChatPage.Git)) },
+                                    gitRefreshKey = gitRefresh,
+                                    sessionId = sessionId,
+                                    chatViewModel = chatViewModel,
+                                    initialFolderPath = workspaceLocatePath,
+                                    onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
+                                        {
+                                            setChatPages(emptyList())
+                                            open()
+                                        }
+                                    },
+                                )
+                                ChatPage.Git -> com.promenar.nexara.ui.git.GitChangesPage(
+                                    sessionId = sessionId,
+                                    onExit = closeTopChatPage.takeUnless { inInspector && shownChatPages.size == 1 },
+                                )
+                                ChatPage.Run, ChatPage.Canvas -> Unit
                             }
                         }
                     }
-            }
-        },
+                }
+        }
+    }
+    // 窄窗口整页二级页面，生成中待用户处理时让出；宽窗口不覆盖，由会话页的检视器承载。
+    com.promenar.nexara.ui.common.NexaraAdaptivePaneHost(
+        paneVisible = pageStack.isNotEmpty(),
+        onBack = closeTopChatPage,
+        coverSuspended = hasGenerationInteraction,
+        pane = chatPageLevels,
     ) {
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
@@ -754,6 +758,7 @@ fun ChatRoute(
                 gitSummary = gitSummary,
                 startupWritePaused = startupWritePaused,
                 runMode = runModeBadge,
+                inspectorPages = chatPages,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },
@@ -766,6 +771,8 @@ fun ChatRoute(
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { openChatPage(ChatPage.Explorer) },
                 onOpenGit = { openChatPage(ChatPage.Git) },
+                onSetInspectorPages = setChatPages,
+                onInspectorBack = closeTopChatPage,
                 onLocateWorkspacePath = { path ->
                     workspaceLocatePath = path
                     openChatPage(ChatPage.Explorer)
@@ -877,6 +884,7 @@ fun ChatRoute(
             ),
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,
+            inspectorPageContent = chatPageLevels,
         )
     }
     }

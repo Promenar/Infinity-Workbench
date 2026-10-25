@@ -409,7 +409,6 @@ object UiTags {
     const val CANVAS_CARD_INLINE = "canvas_card_inline"
     const val CANVAS_TURN_ARTIFACTS = "canvas_turn_artifacts"
     const val CHAT_GIT_LINE = "chat_git_line"
-    const val CHAT_RUN_SIDE_PANEL = "chat_run_side_panel"
 
     // 系统触发轮次、后台任务与定时任务
     const val SYSTEM_TRIGGER_ROW = "system_trigger_row"

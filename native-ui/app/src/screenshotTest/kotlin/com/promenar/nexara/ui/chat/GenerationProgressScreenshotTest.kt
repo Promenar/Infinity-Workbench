@@ -1,6 +1,12 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import com.promenar.nexara.ui.common.LocalNexaraInspectorLayout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -17,13 +23,10 @@ import com.promenar.nexara.ui.chat.components.RunDetailContent
 import com.promenar.nexara.ui.chat.components.RunDetailTab
 import com.promenar.nexara.ui.chat.components.RunDockRow
 import com.promenar.nexara.ui.chat.components.RunDockTone
-import com.promenar.nexara.ui.chat.components.RunSidePanel
-import com.promenar.nexara.ui.chat.components.AgentActivitySummary
-import com.promenar.nexara.data.canvas.CanvasMetadata
+import com.promenar.nexara.ui.chat.components.runDockState
 import com.promenar.nexara.data.state.StateField
 import com.promenar.nexara.ui.git.GitEntrySummary
 import kotlinx.serialization.json.JsonPrimitive
-import com.promenar.nexara.ui.chat.components.runDockState
 import com.promenar.nexara.ui.theme.*
 
 // 生成中：输入框浮岛顶部是一行运行坞，浮岛描边亮起流光；输入框仍可编辑，占位文字提示可以先写下一条。
@@ -288,75 +291,102 @@ private val sideGit = GitEntrySummary.Repository(
     changeCount = 3, truncated = false, ahead = 2, behind = 1,
 )
 
-// 宽屏（折叠屏展开）生成中：会话列居中，运行信息常驻右侧侧栏，浮岛不再显示运行坞。
+// 宽窗口生成中：运行信息在右侧浮动检视器的“运行”页签，浮岛不再显示运行坞。
+// 内屏（约 814dp）让位后会话不足 480dp，检视器浮在会话右缘之上、底边停在输入区上方；平板横屏会话整体让位。
 @Composable
-private fun WideRunPage(mode: NexaraThemeMode, english: Boolean) {
+private fun WideRunPage(mode: NexaraThemeMode, english: Boolean, pages: List<ChatPage>) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            ChatScreenContent(
-                state = ChatScreenState(
-                    uiState = ChatUiState(
-                        session = Session("wide", "assistant", title = if (english) "Capability probe" else "能力探测", modelId = "deepseek::v4-flash"),
-                        agentName = "Nexara",
-                        messages = progressMessages(english),
-                        isGenerating = true,
-                        status = GenerationStatus.RECEIVING,
+            CompositionLocalProvider(LocalNexaraInspectorLayout provides true) {
+                ChatScreenContent(
+                    state = ChatScreenState(
+                        uiState = ChatUiState(
+                            session = Session("wide", "assistant", title = if (english) "Capability probe" else "能力探测", modelId = "deepseek::v4-flash"),
+                            agentName = "Nexara",
+                            messages = progressMessages(english),
+                            isGenerating = true,
+                            status = GenerationStatus.RECEIVING,
+                        ),
+                        modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
+                        tokenState = ChatViewModel.TokenIndicatorState(used = 21800, max = 128000),
+                        taskPanel = groupedPlan(english),
+                        stateBoard = sideBoard(english),
+                        gitSummary = sideGit,
+                        inspectorPages = pages,
                     ),
-                    modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
-                    tokenState = ChatViewModel.TokenIndicatorState(used = 21800, max = 128000),
-                    taskPanel = groupedPlan(english),
-                    stateBoard = sideBoard(english),
-                    gitSummary = sideGit,
-                ),
-                actions = ChatScreenActions(),
-            )
+                    actions = ChatScreenActions(),
+                )
+            }
         }
     }
 }
 
+// 截图只渲染首帧，输入区高度要等布局后才量到，所以这里卡片底边还压在输入区上；
+// 真机下一帧起底边停在输入区上方 8dp。
 @PreviewTest
-@Preview(name = "宽屏侧栏 深中960", widthDp = 960, heightDp = 720, locale = "zh-rCN")
+@Preview(name = "内屏检视器浮动 深中814", widthDp = 814, heightDp = 898, locale = "zh-rCN")
 @Composable
-fun chatRunSidePanelWideDarkPreview() = WideRunPage(NexaraThemeMode.DARK, english = false)
+fun chatInspectorFloatDarkPreview() = WideRunPage(NexaraThemeMode.DARK, english = false, pages = listOf(ChatPage.Run))
 
 @PreviewTest
-@Preview(name = "宽屏侧栏 浅英884", widthDp = 884, heightDp = 720, locale = "en")
+@Preview(name = "平板检视器让位 浅英1280", widthDp = 1280, heightDp = 800, locale = "en")
 @Composable
-fun chatRunSidePanelWideLightPreview() = WideRunPage(NexaraThemeMode.LIGHT, english = true)
+fun chatInspectorShiftLightPreview() = WideRunPage(NexaraThemeMode.LIGHT, english = true, pages = listOf(ChatPage.Run))
 
-// 侧栏单独：待批准时状态行可点，含后台任务与产物区；大字号下各区标题与计数不重叠。
+@PreviewTest
+@Preview(name = "内屏检视器边缘条 浅中814", widthDp = 814, heightDp = 898, locale = "zh-rCN")
 @Composable
-private fun SidePanelAlone(mode: NexaraThemeMode, english: Boolean) {
+fun chatInspectorStripLightPreview() = WideRunPage(NexaraThemeMode.LIGHT, english = false, pages = emptyList())
+
+// 检视器卡片单独：待批准时运行页签顶部给出跳转入口，页签角标显示待批准数与 Git 改动数；大字号下页签与按钮不重叠。
+@Composable
+private fun InspectorAlone(mode: NexaraThemeMode, english: Boolean) {
     val plan = groupedPlan(english)
-    val canvases = listOf(
-        CanvasMetadata("c1", if (english) "Capability report" else "能力报告", 0, 0, 2, "m1", listOf(1, 2)),
-        CanvasMetadata("c2", if (english) "Tool latency chart" else "工具耗时图", 0, 0, 1, "m2", listOf(1)),
-    )
+    val badges = ChatInspectorBadges(running = true, pendingApprovals = 2, hasRunContent = true, gitAvailable = true, gitChanges = 3, canvases = 2)
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            RunSidePanel(
-                dock = runDockState(plan, true, 1, 1, 1, null, 72_000L),
-                plan = plan,
-                elapsedMillis = 72_000L,
-                activity = AgentActivitySummary(runningJobs = 1, latestFinishedJob = null, enabledSchedules = 1, nextFireAtMillis = null),
-                stateBoard = sideBoard(english),
-                git = sideGit,
-                canvases = canvases,
-                onOpenRun = {},
-                onJumpToApproval = {},
-                onOpenGit = {},
-                onOpenCanvas = {},
-            )
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            Row(Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ChatInspectorCard(
+                    root = ChatPage.Run,
+                    badges = badges,
+                    widened = false,
+                    onSelect = {},
+                    onToggleWiden = {},
+                    onCollapse = {},
+                    modifier = Modifier.width(360.dp).fillMaxHeight(),
+                ) {
+                    ChatInspectorRunTab(pendingApprovals = 2, onJumpToApproval = {}, hasRunContent = true) {
+                        RunDetailContent(
+                            initialTab = RunDetailTab.PLAN,
+                            plan = plan,
+                            isGenerating = true,
+                            turnStartedAt = 0L,
+                            activity = null,
+                            stateBoard = sideBoard(english),
+                            onDismiss = {},
+                            onContinue = {},
+                            onComplete = {},
+                            onHidePlan = {},
+                            onClearPlan = {},
+                            onEditState = { _, _ -> null },
+                            onRemoveState = { null },
+                            modifier = Modifier.fillMaxSize(),
+                            nowMillis = 72_000L,
+                        )
+                    }
+                }
+                ChatInspectorStrip(badges = badges, onOpen = {}, onExpand = {})
+            }
         }
     }
 }
 
 @PreviewTest
-@Preview(name = "运行侧栏 深中", widthDp = 320, heightDp = 900, locale = "zh-rCN")
+@Preview(name = "检视器卡片 深中", widthDp = 440, heightDp = 860, locale = "zh-rCN")
 @Composable
-fun runSidePanelDarkPreview() = SidePanelAlone(NexaraThemeMode.DARK, english = false)
+fun chatInspectorCardDarkPreview() = InspectorAlone(NexaraThemeMode.DARK, english = false)
 
 @PreviewTest
-@Preview(name = "运行侧栏 浅英 大字", widthDp = 320, heightDp = 1100, locale = "en", fontScale = 1.3f)
+@Preview(name = "检视器卡片 浅英 大字", widthDp = 440, heightDp = 1000, locale = "en", fontScale = 1.3f)
 @Composable
-fun runSidePanelLightLargeFontPreview() = SidePanelAlone(NexaraThemeMode.LIGHT, english = true)
+fun chatInspectorCardLightLargeFontPreview() = InspectorAlone(NexaraThemeMode.LIGHT, english = true)

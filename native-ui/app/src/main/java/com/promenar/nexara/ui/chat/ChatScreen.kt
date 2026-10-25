@@ -3,6 +3,16 @@ package com.promenar.nexara.ui.chat
 import com.promenar.nexara.ui.chat.runmode.labelRes
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.material.icons.outlined.ViewSidebar
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.ui.semantics.selected
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Immutable
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
@@ -249,6 +259,8 @@ data class ChatScreenState(
     val startupWritePaused: Boolean = false,
     /** 侧载版顶栏标题旁的运行模式标识；Play 版为 null。 */
     val runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
+    /** 会话二级内容层级；宽窗口下其根即检视器当前页签，为空表示检视器收起。 */
+    val inspectorPages: List<ChatPage> = emptyList(),
 )
 
 data class ChatScreenActions(
@@ -257,6 +269,10 @@ data class ChatScreenActions(
     val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
     val onOpenGit: () -> Unit = {},
+    /** 宽窗口检视器：替换整个层级（打开页签、收起）。 */
+    val onSetInspectorPages: (List<ChatPage>) -> Unit = {},
+    /** 宽窗口检视器的返回：弹出最上层，只剩根层时收起。 */
+    val onInspectorBack: () -> Unit = {},
     /** 打开启动自检问题面板（会话暂停写入提示条的“处理”）。 */
     val onOpenStartupIssues: () -> Unit = {},
     /** 点运行模式标识或菜单项：环境不可用时回到检查点，否则打开模式切换。 */
@@ -320,6 +336,8 @@ fun ChatScreenContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     snackbarData: NexaraSnackbarData? = null,
     attachmentMenuExpandedState: MutableState<Boolean> = remember { mutableStateOf(false) },
+    /** 宽窗口检视器“文件”“Git”页签的内容：由路由层承载资源管理器与 Git 变更的层级。 */
+    inspectorPageContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val uiState = state.uiState
     val inputText = state.inputText
@@ -573,6 +591,14 @@ fun ChatScreenContent(
         val fallbackComposerReserve = if (density.fontScale >= 1.8f) 176.dp else 136.dp
         val fallbackMaximumBottom = rootHeightPx - with(density) { fallbackComposerReserve.toPx() }
 
+        // 宽窗口（折叠屏内屏、平板）：运行、文件、Git 与画布收进右侧浮动检视器；层级为空时检视器收起。
+        val inspectorMode = com.promenar.nexara.ui.common.LocalNexaraInspectorLayout.current
+        val inspectorRoot = state.inspectorPages.firstOrNull()?.takeIf { inspectorMode }
+        val toggleInspectorPage: (ChatPage) -> Unit = { page ->
+            actions.onSetInspectorPages(toggleChatInspector(state.inspectorPages, page))
+        }
+        var lastInspectorRoot by rememberSaveable(uiState.session?.id) { mutableStateOf<String?>(null) }
+        SideEffect { inspectorRoot?.let { lastInspectorRoot = it.token } }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
@@ -581,15 +607,27 @@ fun ChatScreenContent(
                     title = sessionTitle,
                     showDivider = showTopBarDivider,
                     onBack = actions.onNavigateBack,
-                    onWorkspace = actions.onOpenWorkspace,
+                    onWorkspace = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Explorer) }) else actions.onOpenWorkspace,
                     onSettings = actions.onOpenSettings,
                     onSessionPrompt = actions.onOpenPromptEditor,
                     onClearHistory = actions.onOpenClearDialog,
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
-                    onCanvases = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
+                    onCanvases = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Canvas) }) else com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
                     git = state.gitSummary,
-                    onOpenGit = actions.onOpenGit,
+                    onOpenGit = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Git) }) else actions.onOpenGit,
+                    inspector = if (inspectorMode) ChatTopBarInspector(
+                        open = inspectorRoot != null,
+                        filesOpen = inspectorRoot == ChatPage.Explorer,
+                        canvasOpen = inspectorRoot == ChatPage.Canvas,
+                        showCanvas = !com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.canvases.isNullOrEmpty(),
+                        onToggle = {
+                            actions.onSetInspectorPages(
+                                if (inspectorRoot != null) emptyList()
+                                else openChatPageRoot(defaultChatInspectorRoot(lastInspectorRoot?.let { restoreChatPages(it).firstOrNull() }, uiState.isGenerating || state.taskPanel != null)),
+                            )
+                        },
+                    ) else null,
                     runMode = state.runMode,
                     onRunMode = actions.onOpenRunMode,
                 )
@@ -633,7 +671,7 @@ fun ChatScreenContent(
             // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
             var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.nexara.ui.chat.components.RunDetailTab?>(null) }
             var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
-            val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen)
+            val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen || inspectorRoot == ChatPage.Run)
             val activitySummary = agentActivity?.summary
             val boardTitle = state.stateBoard?.board?.title
             val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
@@ -659,11 +697,30 @@ fun ChatScreenContent(
             val sidePlan = taskPanel?.takeIf { planBarVisible && it.totalCount > 0 }
             val sideCanvases = canvasSession?.canvases.orEmpty()
             val sideBoard = state.stateBoard?.takeIf { it.board != null }
-            // 宽屏（折叠屏展开、平板）运行信息常驻右侧侧栏，浮岛不再显示运行坞；只有一行运行状态时不值得占一栏，仍用运行坞。
-            val showRunSidePanel = maxWidth >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowWidth &&
-                maxHeight >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowHeight &&
-                (sidePlan != null || sideBoard != null || state.gitSummary != null || sideCanvases.isNotEmpty() ||
-                    activitySummary?.visible == true)
+            val hasRunContent = sidePlan != null || sideBoard != null || activitySummary?.visible == true || uiState.isGenerating
+            val inspectorBadges = ChatInspectorBadges(
+                running = uiState.isGenerating,
+                pendingApprovals = pendingApprovals,
+                hasRunContent = hasRunContent,
+                gitAvailable = state.gitSummary != null,
+                gitChanges = state.gitSummary?.changeCount ?: 0,
+                canvases = sideCanvases.size,
+            )
+            var inspectorWidened by rememberSaveable { mutableStateOf(false) }
+            val inspectorWidth = com.promenar.nexara.ui.common.nexaraInspectorWidth(maxWidth, inspectorWidened)
+            // 让位后会话仍有足够宽度（平板横屏）时整体让位；否则（折叠屏内屏）浮在会话右缘之上，会话不动。
+            val inspectorFloats = com.promenar.nexara.ui.common.nexaraInspectorPlacement(maxWidth, inspectorWidth) ==
+                com.promenar.nexara.ui.common.NexaraInspectorPlacement.Float
+            // 审批卡在会话列底部；检视器浮在会话之上时会盖住它，新审批到来时先收为边缘条（角标仍提示待批准）。
+            val hasPendingApproval = pendingApprovals > 0
+            LaunchedEffect(hasPendingApproval, inspectorFloats) {
+                if (hasPendingApproval && inspectorFloats && inspectorRoot != null) actions.onSetInspectorPages(emptyList())
+            }
+            val inspectorReserved by animateDpAsState(
+                targetValue = if (inspectorRoot != null && !inspectorFloats) inspectorWidth + com.promenar.nexara.ui.common.NexaraInspectorGutter else 0.dp,
+                animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate),
+                label = "chat_inspector_reserved",
+            )
             val jumpToApproval: () -> Unit = {
                 scope.launch {
                     // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
@@ -677,7 +734,7 @@ fun ChatScreenContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(end = if (showRunSidePanel) com.promenar.nexara.ui.chat.components.RunSidePanelWidth + 1.dp else 0.dp)
+                    .padding(end = inspectorReserved)
                     .imePadding()
                     .then(if (showWordmark) Modifier.trackWordmarkPointer(wordmarkPointer) else Modifier),
             ) {
@@ -977,7 +1034,7 @@ fun ChatScreenContent(
                             topContent = {
                                 // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
                                 AnimatedVisibility(
-                                    visible = dock != null && !showRunSidePanel,
+                                    visible = dock != null && !inspectorMode,
                                     enter = fadeIn(tween(220, delayMillis = 60)) +
                                         expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
                                     exit = fadeOut(tween(160)) +
@@ -1110,25 +1167,96 @@ fun ChatScreenContent(
             }
 
             }
-            if (showRunSidePanel) Row(Modifier.align(Alignment.CenterEnd).fillMaxHeight()) {
-                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                com.promenar.nexara.ui.chat.components.RunSidePanel(
-                    dock = dock,
-                    plan = sidePlan,
-                    elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
-                    activity = activitySummary,
-                    stateBoard = sideBoard,
-                    git = state.gitSummary,
-                    canvases = sideCanvases,
-                    onOpenRun = { tab ->
-                        hiddenPlanSignature = null
-                        runSheetTab = tab
-                        runSheetOpen = true
-                    },
-                    onJumpToApproval = jumpToApproval,
-                    onOpenGit = actions.onOpenGit,
-                    onOpenCanvas = { id -> canvasSession?.open?.invoke(id) },
+            if (inspectorMode) {
+                val composerReserve = with(density) { composerHeightPx.toDp() }
+                // 浮在会话之上时底边停在输入区上方，不挡输入与审批；让位时占满右侧高度。
+                // 与会话列表的底部留白一样直接跟随输入区高度，不做动画，首帧量到高度前也不会先盖住输入区再滑开。
+                val inspectorBottom = if (inspectorFloats) composerReserve + 8.dp else 12.dp
+                val animatedInspectorWidth by animateDpAsState(
+                    targetValue = inspectorWidth,
+                    animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate),
+                    label = "chat_inspector_width",
                 )
+                Box(Modifier.fillMaxSize().imePadding()) {
+                    AnimatedVisibility(
+                        visible = inspectorRoot != null,
+                        enter = slideInHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) { it / 3 } +
+                            fadeIn(tween(NexaraMotion.DurationShort)),
+                        exit = slideOutHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)) { it / 3 } +
+                            fadeOut(tween(NexaraMotion.DurationShort)),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 12.dp, bottom = inspectorBottom)
+                            .width(animatedInspectorWidth)
+                            .fillMaxHeight(),
+                    ) {
+                        // 先于页面内容注册：页内详情、子目录的返回优先，没有可后退的层级时逐层弹出、最后收起。
+                        BackHandler(enabled = inspectorRoot != null, onBack = actions.onInspectorBack)
+                        val shownRoot = inspectorRoot ?: lastInspectorRoot?.let { restoreChatPages(it).firstOrNull() } ?: ChatPage.Run
+                        ChatInspectorCard(
+                            root = shownRoot,
+                            badges = inspectorBadges,
+                            widened = inspectorWidened,
+                            onSelect = { page -> actions.onSetInspectorPages(openChatPageRoot(page)) },
+                            onToggleWiden = { inspectorWidened = !inspectorWidened },
+                            onCollapse = { actions.onSetInspectorPages(emptyList()) },
+                        ) {
+                            when (shownRoot) {
+                                ChatPage.Run -> ChatInspectorRunTab(
+                                    pendingApprovals = pendingApprovals,
+                                    onJumpToApproval = {
+                                        if (inspectorFloats) actions.onSetInspectorPages(emptyList())
+                                        jumpToApproval()
+                                    },
+                                    hasRunContent = hasRunContent,
+                                ) {
+                                    com.promenar.nexara.ui.chat.components.RunDetailContent(
+                                        initialTab = null,
+                                        plan = sidePlan,
+                                        isGenerating = uiState.isGenerating,
+                                        turnStartedAt = turnStartedAt,
+                                        activity = agentActivity,
+                                        stateBoard = sideBoard,
+                                        onDismiss = {},
+                                        onContinue = actions.onContinueTask,
+                                        onComplete = actions.onCompleteTask,
+                                        onHidePlan = { hiddenPlanSignature = sidePlan?.visibilitySignature() },
+                                        onClearPlan = actions.onClearCompletedTask,
+                                        onEditState = actions.onEditState,
+                                        onRemoveState = actions.onRemoveState,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                ChatPage.Canvas -> com.promenar.nexara.ui.canvas.CanvasListContent(
+                                    canvases = sideCanvases,
+                                    onOpen = { id -> canvasSession?.open?.invoke(id) },
+                                    showHeading = false,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                ChatPage.Explorer, ChatPage.Git -> inspectorPageContent()
+                            }
+                        }
+                    }
+                    // 收起后有内容时留一条边缘条；没有任何内容时完全隐藏，只留顶栏入口。
+                    AnimatedVisibility(
+                        visible = inspectorRoot == null && inspectorBadges.hasContent,
+                        enter = fadeIn(tween(NexaraMotion.DurationShort, delayMillis = 90)) +
+                            slideInHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) { it },
+                        exit = fadeOut(tween(NexaraMotion.DurationShort)) +
+                            slideOutHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)) { it },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp),
+                    ) {
+                        ChatInspectorStrip(
+                            badges = inspectorBadges,
+                            onOpen = { page -> actions.onSetInspectorPages(openChatPageRoot(page)) },
+                            onExpand = {
+                                actions.onSetInspectorPages(
+                                    openChatPageRoot(defaultChatInspectorRoot(lastInspectorRoot?.let { restoreChatPages(it).firstOrNull() }, hasRunContent)),
+                                )
+                            },
+                        )
+                    }
+                }
             }
             }
             if (runSheetOpen) {
@@ -1623,6 +1751,8 @@ fun ChatTopBar(
     onOpenGit: () -> Unit = {},
     runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
     onRunMode: () -> Unit = {},
+    /** 宽窗口：文件、画布与检视器开合直接放在顶栏；为 null 时（窄窗口）只有文件入口与菜单。 */
+    inspector: ChatTopBarInspector? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -1701,13 +1831,26 @@ fun ChatTopBar(
             NexaraBackButton(onClick = onBack)
         },
         actions = {
-            IconButton(onClick = onWorkspace) {
+            ChatTopBarAction(selected = inspector?.filesOpen == true, onClick = onWorkspace) {
                 Icon(
                     Icons.Outlined.Folder,
                     stringResource(R.string.chat_cd_workspace),
-                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
+            }
+            if (inspector != null) {
+                if (inspector.showCanvas && onCanvases != null) {
+                    ChatTopBarAction(selected = inspector.canvasOpen, onClick = onCanvases) {
+                        Icon(Icons.Rounded.Dashboard, stringResource(R.string.canvas_title), modifier = Modifier.size(22.dp))
+                    }
+                }
+                ChatTopBarAction(
+                    selected = inspector.open,
+                    onClick = inspector.onToggle,
+                    modifier = Modifier.testTag(ChatInspectorTags.TOGGLE),
+                ) {
+                    Icon(Icons.Outlined.ViewSidebar, stringResource(R.string.chat_inspector_toggle), modifier = Modifier.size(22.dp))
+                }
             }
             Box {
                 IconButton(
@@ -1848,6 +1991,35 @@ fun ChatTopBar(
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant,
         modifier = Modifier.align(Alignment.BottomCenter).alpha(dividerAlpha))
     }
+}
+
+/** 宽窗口顶栏的检视器入口状态。 */
+@Immutable
+data class ChatTopBarInspector(
+    val open: Boolean,
+    val filesOpen: Boolean,
+    val canvasOpen: Boolean,
+    val showCanvas: Boolean,
+    val onToggle: () -> Unit,
+)
+
+/** 顶栏图标按钮；对应的检视器页签展开时以浅色底标出。 */
+@Composable
+private fun ChatTopBarAction(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.semantics { this.selected = selected },
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        content = icon,
+    )
 }
 
 @Composable

@@ -135,10 +135,8 @@ data class GitPanelActions(
     val onOpenCommit: (GitCommitSummary) -> Unit = {},
     val onOpenCommitFile: (GitFileChange) -> Unit = {},
     val onBack: () -> Unit = {},
-    /** 作为二级页面或侧滑面板时离开 Git 的入口；非空时根层也显示返回（或关闭）按钮。 */
+    /** 作为二级页面时离开 Git 的入口；非空时根层也显示返回按钮。检视器根层由页签与收起按钮离开，为空。 */
     val onExit: (() -> Unit)? = null,
-    /** 根层按钮显示为关闭图标（侧滑面板根层）。 */
-    val exitCloses: Boolean = false,
 )
 
 /** 上次抓取距今：按分钟、小时、天取整，时钟回拨视为刚刚。 */

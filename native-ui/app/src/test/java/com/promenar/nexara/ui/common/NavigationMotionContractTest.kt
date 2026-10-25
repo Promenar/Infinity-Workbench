@@ -140,7 +140,6 @@ class NavigationMotionContractTest {
         // 运行坞读屏读完整一句；本次运行统计绑定在回复下方，运行详情与侧栏不再显示。
         assertThat(dock).contains("semantics(mergeDescendants = true)")
         assertThat(source("chat/components/RunDetailSheet.kt")).doesNotContain("GenerationProgress")
-        assertThat(source("chat/components/RunSidePanel.kt")).doesNotContain("GenerationProgress")
         assertThat(source("chat/PipelineBubble.kt")).contains("replyRunStats(group.messages)")
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).doesNotContain("R.string.p0_progress")
@@ -155,11 +154,11 @@ class NavigationMotionContractTest {
         assertThat(source("chat/ChatRoute.kt")).contains("generationStartedAt = generationProgress?.startedAt")
         // 生成中输入框仍可编辑。
         assertThat(chat).contains("enabled = true")
-        // 宽屏运行信息常驻右侧侧栏，浮岛同时隐藏运行坞；侧栏与运行坞共用同一份运行状态与运行详情。
-        assertThat(chat).contains("maxWidth >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowWidth")
-        assertThat(chat).contains("maxHeight >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowHeight")
-        assertThat(chat).contains("visible = dock != null && !showRunSidePanel")
-        assertThat(chat).contains("RunSidePanel(")
+        // 宽窗口运行信息收进浮动检视器的“运行”页签，浮岛同时隐藏运行坞；检视器与运行详情面板共用同一份运行详情正文。
+        assertThat(chat).contains("com.promenar.nexara.ui.common.LocalNexaraInspectorLayout.current")
+        assertThat(chat).contains("visible = dock != null && !inspectorMode")
+        assertThat(chat).contains("ChatInspectorCard(")
+        assertThat(chat).contains("RunDetailContent(")
         assertThat(chat.split("RunDetailSheet(").size - 1).isEqualTo(1)
     }
 
