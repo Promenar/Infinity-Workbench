@@ -1100,6 +1100,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             workspaceDao = database.workspaceDao(),
             projectsRoot = File(filesDir, "projects"),
             sharedAccess = com.promenar.nexara.data.workspace.AndroidSharedWorkspaceAccess(this),
+            linuxHome = com.promenar.nexara.data.workspace.LinuxHomeWorkspaceSource(linux.runtime),
         )
     }
 
@@ -1109,6 +1110,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             projectsRoot = sessionWorkspaceResolver.projectsRoot,
             shared = com.promenar.nexara.data.workspace.AndroidSharedStorageVolumes(this),
             workspaceDao = database.workspaceDao(),
+            linuxHome = com.promenar.nexara.data.workspace.LinuxHomeWorkspaceSource(linux.runtime),
         )
     }
 

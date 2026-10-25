@@ -44,6 +44,7 @@ class SessionWorkspaceResolver(
     val projectsRoot: File,
     private val sharedAccess: SharedWorkspaceAccess,
     private val projectBackend: (File) -> ExternalFolderBackend = ::RealPathExternalFolderBackend,
+    private val linuxHome: LinuxHomeWorkspaceSource? = null,
 ) {
     suspend fun resolve(sessionId: String?): SessionWorkspace = withContext(Dispatchers.IO) {
         val workspaceId = sessionId?.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }?.workspaceId
@@ -66,6 +67,8 @@ class SessionWorkspaceResolver(
                     if (!Files.isDirectory(it.toPath(), NOFOLLOW_LINKS)) throw ExternalFolderException("NOT_FOUND", "项目文件夹不存在")
                 }
                 WorkspaceEntity.KIND_SHARED -> sharedAccess.root(workspace.location)
+                WorkspaceEntity.KIND_LINUX_HOME -> linuxHome?.root(workspace.location)
+                    ?: throw ExternalFolderException("UNAVAILABLE", "Linux 主目录不可用")
                 else -> throw ExternalFolderException("UNSUPPORTED", "未知的工作区类型")
             }
             SessionWorkspace.Directory(workspace, root)
@@ -75,11 +78,16 @@ class SessionWorkspaceResolver(
             SessionWorkspace.Unavailable(workspaceId, workspace, failure.message ?: "目录不可用")
         } catch (_: SecurityException) {
             SessionWorkspace.Unavailable(workspaceId, workspace, "目录访问被拒绝")
+        } catch (_: java.io.IOException) {
+            SessionWorkspace.Unavailable(workspaceId, workspace, "目录不可用")
         }
     }
 
     fun backend(directory: SessionWorkspace.Directory): ExternalFolderBackend = when (directory.kind) {
         WorkspaceEntity.KIND_SHARED -> sharedAccess.backend(directory.root)
+        WorkspaceEntity.KIND_LINUX_HOME -> com.promenar.nexara.data.storage.LinuxHomeExternalFolderBackend(requireNotNull(linuxHome).files) {
+            runCatching { linuxHome?.root(directory.workspace.location) == directory.root }.getOrDefault(false)
+        }
         else -> projectBackend(directory.root)
     }
 
@@ -88,7 +96,8 @@ class SessionWorkspaceResolver(
         const val KIND_PRIVATE = "private"
 
         fun kindOf(workspace: SessionWorkspace): String = when (workspace) {
-            is SessionWorkspace.Directory -> workspace.kind
+            // 现有内置 git 只识别 private/project/shared；Linux 主目录使用私有目录的执行兼容配置。
+            is SessionWorkspace.Directory -> if (workspace.kind == WorkspaceEntity.KIND_LINUX_HOME) WorkspaceEntity.KIND_PROJECT else workspace.kind
             is SessionWorkspace.Unavailable -> workspace.workspace?.kind ?: KIND_PRIVATE
             SessionWorkspace.Private -> KIND_PRIVATE
         }

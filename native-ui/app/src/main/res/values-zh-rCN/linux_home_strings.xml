@@ -1,0 +1,5 @@
+<resources>
+    <string name="linux_files_home">Linux 主目录</string>
+    <string name="linux_files_home_summary">Alpine Linux · /root</string>
+    <string name="linux_files_not_ready">Linux 环境尚未就绪</string>
+</resources>
