@@ -25,7 +25,9 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowRight
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
+import androidx.compose.ui.layout.Layout
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.ripple
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -110,30 +112,51 @@ private fun ChatPage.description(badges: ChatInspectorBadges): String = listOfNo
 ).joinToString(", ")
 
 /** 页签图标：运行中换成转圈；待批准、Git 改动数与画布数挂在右上角。 */
+/**
+ * 页签图标与角标：角标贴在图标右上角外侧，只压住图标右缘 [BadgeOverlap]，数字变宽时向图标内侧多让一点，
+ * 伸出图标右缘始终不超过 [BadgeReach]。[reserveBadge] 为 true 时把伸出部分计入宽度，后面的页签名称不会被压住。
+ */
 @Composable
-private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Color) {
+private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Color, reserveBadge: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
-    BadgedBox(
-        badge = {
-            when {
-                page == ChatPage.Run && badges.pendingApprovals > 0 ->
-                    Badge(containerColor = scheme.tertiary, contentColor = scheme.onTertiary) { Text(badges.pendingApprovals.toString()) }
-                page == ChatPage.Git && badges.gitChanges > 0 ->
-                    Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) { Text(badges.gitChanges.toString()) }
-                page == ChatPage.Canvas && badges.canvases > 0 ->
-                    Badge(containerColor = scheme.primary, contentColor = scheme.onPrimary) { Text(badges.canvases.toString()) }
+    val count = when (page) {
+        ChatPage.Run -> badges.pendingApprovals
+        ChatPage.Git -> badges.gitChanges
+        ChatPage.Canvas -> badges.canvases
+        ChatPage.Explorer -> 0
+    }
+    val badgeColor = if (page == ChatPage.Run) scheme.tertiary else scheme.primary
+    val badgeContent = if (page == ChatPage.Run) scheme.onTertiary else scheme.onPrimary
+    Layout(
+        content = {
+            if (page == ChatPage.Run && badges.running) {
+                Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = scheme.primary)
+                }
+            } else {
+                Icon(page.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            }
+            if (count > 0) {
+                Badge(containerColor = badgeColor, contentColor = badgeContent) { Text(count.toString()) }
             }
         },
-    ) {
-        if (page == ChatPage.Run && badges.running) {
-            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = scheme.primary)
-            }
-        } else {
-            Icon(page.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val icon = measurables[0].measure(loose)
+        val badge = measurables.getOrNull(1)?.measure(loose)
+        val reach = BadgeReach.roundToPx()
+        val badgeX = if (badge == null) 0 else icon.width - maxOf(BadgeOverlap.roundToPx(), badge.width - reach)
+        val width = if (badge != null && reserveBadge) badgeX + badge.width else icon.width
+        layout(width, icon.height) {
+            icon.place(0, 0)
+            badge?.place(badgeX, -BadgeLift.roundToPx())
         }
     }
 }
+
+private val BadgeOverlap = 4.dp
+private val BadgeReach = 12.dp
+private val BadgeLift = 6.dp
 
 private val InspectorShape = RoundedCornerShape(20.dp)
 
@@ -221,7 +244,7 @@ private fun InspectorTab(page: ChatPage, selected: Boolean, badges: ChatInspecto
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            InspectorIcon(page, badges, tint)
+            InspectorIcon(page, badges, tint, reserveBadge = true)
             if (selected) {
                 Text(page.label(), style = NexaraTypography.labelLarge, color = tint, maxLines = 1)
             }
@@ -250,9 +273,19 @@ internal fun ChatInspectorStrip(
         Column(Modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             badges.pages().forEach { page ->
                 val description = page.description(badges)
-                IconButton(
-                    onClick = { onOpen(page) },
-                    modifier = Modifier.semantics { contentDescription = description }.testTag(ChatInspectorTags.stripItem(page)),
+                // 不用 IconButton：它把内容裁成 40dp 圆，伸出图标的角标会被切掉。
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable(
+                            interactionSource = null,
+                            indication = ripple(bounded = false, radius = 20.dp),
+                            role = Role.Button,
+                            onClick = { onOpen(page) },
+                        )
+                        .semantics { contentDescription = description }
+                        .testTag(ChatInspectorTags.stripItem(page)),
+                    contentAlignment = Alignment.Center,
                 ) {
                     InspectorIcon(page, badges, MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -290,6 +323,7 @@ internal fun ChatInspectorRunTab(
                 icon = Icons.Rounded.VerifiedUser,
                 onClick = onJumpToApproval,
                 modifier = Modifier.padding(top = NexaraSpacing.Small).testTag(ChatInspectorTags.APPROVAL),
+                titleMaxLines = 2,
             )
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -301,6 +335,14 @@ internal fun ChatInspectorRunTab(
         }
     }
 }
+
+/** 画布页签没有画布时的空状态，与运行、Git 页签一样在检视器中居中。 */
+@Composable
+internal fun ChatInspectorCanvasEmpty() = InspectorEmpty(
+    icon = ChatPage.Canvas.icon,
+    title = stringResource(R.string.canvas_empty_title),
+    detail = stringResource(R.string.canvas_empty_description),
+)
 
 @Composable
 private fun InspectorEmpty(icon: ImageVector, title: String, detail: String, iconSize: Dp = 32.dp) {

@@ -177,6 +177,7 @@ internal fun StartupNotice(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier,
+    titleMaxLines: Int = 1,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(16.dp)
@@ -195,7 +196,7 @@ internal fun StartupNotice(
     ) {
         StartupIconBadge(icon, size = 32.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = NexaraTypography.labelLarge, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = NexaraTypography.labelLarge, color = colors.onSurface, maxLines = titleMaxLines, overflow = TextOverflow.Ellipsis)
             if (detail != null) {
                 Text(detail, style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }

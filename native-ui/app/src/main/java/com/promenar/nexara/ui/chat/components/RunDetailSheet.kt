@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,6 +60,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.state.StateBoardSnapshot
@@ -329,6 +333,9 @@ private fun RunDetailTabs(
     }
 }
 
+// 两个按钮各占一半宽度、等高；窄的检视器与大字号下文字可换成两行，不截断。
+private val RunPlanFooterButtonPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+
 @Composable
 private fun ColumnScope.RunPlanFooter(
     plan: TaskPanelUiState,
@@ -339,19 +346,21 @@ private fun ColumnScope.RunPlanFooter(
     if (plan.isCompleted) return
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         OutlinedButton(
             onClick = onComplete,
             enabled = !isGenerating,
-            modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_COMPLETE),
-        ) { Text(stringResource(R.string.chat_task_mark_completed), maxLines = 1) }
+            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_COMPLETE),
+            contentPadding = RunPlanFooterButtonPadding,
+        ) { Text(stringResource(R.string.chat_task_mark_completed), textAlign = TextAlign.Center) }
         Button(
             onClick = onContinue,
             enabled = !isGenerating,
-            modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_CONTINUE),
-        ) { Text(stringResource(R.string.chat_task_continue), maxLines = 1) }
+            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_CONTINUE),
+            contentPadding = RunPlanFooterButtonPadding,
+        ) { Text(stringResource(R.string.chat_task_continue), textAlign = TextAlign.Center) }
     }
 }
 

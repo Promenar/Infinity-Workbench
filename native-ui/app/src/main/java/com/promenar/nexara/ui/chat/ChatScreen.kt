@@ -1227,12 +1227,16 @@ fun ChatScreenContent(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                ChatPage.Canvas -> com.promenar.nexara.ui.canvas.CanvasListContent(
-                                    canvases = sideCanvases,
-                                    onOpen = { id -> canvasSession?.open?.invoke(id) },
-                                    showHeading = false,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                ChatPage.Canvas -> if (sideCanvases.isEmpty()) {
+                                    ChatInspectorCanvasEmpty()
+                                } else {
+                                    com.promenar.nexara.ui.canvas.CanvasListContent(
+                                        canvases = sideCanvases,
+                                        onOpen = { id -> canvasSession?.open?.invoke(id) },
+                                        showHeading = false,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                                 ChatPage.Explorer, ChatPage.Git -> inspectorPageContent()
                             }
                         }
