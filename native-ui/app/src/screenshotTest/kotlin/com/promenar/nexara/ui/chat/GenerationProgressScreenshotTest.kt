@@ -17,6 +17,12 @@ import com.promenar.nexara.ui.chat.components.RunDetailContent
 import com.promenar.nexara.ui.chat.components.RunDetailTab
 import com.promenar.nexara.ui.chat.components.RunDockRow
 import com.promenar.nexara.ui.chat.components.RunDockTone
+import com.promenar.nexara.ui.chat.components.RunSidePanel
+import com.promenar.nexara.ui.chat.components.AgentActivitySummary
+import com.promenar.nexara.data.canvas.CanvasMetadata
+import com.promenar.nexara.data.state.StateField
+import com.promenar.nexara.ui.git.GitEntrySummary
+import kotlinx.serialization.json.JsonPrimitive
 import com.promenar.nexara.ui.chat.components.runDockState
 import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.theme.*
@@ -266,3 +272,96 @@ fun emptyChatWordmarkDarkPreview() = EmptyChatPage(NexaraThemeMode.DARK)
 @Preview(name = "空会话字标 浅英360", widthDp = 360, heightDp = 780, locale = "en")
 @Composable
 fun emptyChatWordmarkLightPreview() = EmptyChatPage(NexaraThemeMode.LIGHT)
+
+private fun sideBoard(english: Boolean) = StateBoardSnapshot(
+    3,
+    StateBoard(
+        if (english) "Capability probe" else "能力探测",
+        listOf(
+            StateField("passed", if (english) "Passed" else "已通过", "number", JsonPrimitive(7)),
+            StateField("failed", if (english) "Failed" else "失败", "number", JsonPrimitive(1)),
+            StateField("tool", if (english) "Current tool" else "当前工具", "text", JsonPrimitive("rename_file")),
+            StateField("hidden", if (english) "Hidden" else "不显示", "text", JsonPrimitive("—")),
+        ),
+    ),
+)
+
+private val sideGit = GitEntrySummary.Repository(
+    branch = "feature/run-side-panel", detached = false, headShortSha = "54d8183", unborn = false,
+    changeCount = 3, truncated = false, ahead = 2, behind = 1,
+)
+
+// 宽屏（折叠屏展开）生成中：会话列居中，运行信息常驻右侧侧栏，浮岛不再显示运行坞。
+@Composable
+private fun WideRunPage(mode: NexaraThemeMode, english: Boolean) {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatScreenContent(
+                state = ChatScreenState(
+                    uiState = ChatUiState(
+                        session = Session("wide", "assistant", title = if (english) "Capability probe" else "能力探测", modelId = "deepseek::v4-flash"),
+                        agentName = "Nexara",
+                        messages = progressMessages(english),
+                        isGenerating = true,
+                        status = GenerationStatus.RECEIVING,
+                    ),
+                    modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
+                    tokenState = ChatViewModel.TokenIndicatorState(used = 21800, max = 128000),
+                    generationProgress = GenerationProgress(rounds = 3, calls = 3, tokens = 45_400, estimated = true),
+                    taskPanel = groupedPlan(english),
+                    stateBoard = sideBoard(english),
+                    gitSummary = sideGit,
+                ),
+                actions = ChatScreenActions(),
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "宽屏侧栏 深中960", widthDp = 960, heightDp = 720, locale = "zh-rCN")
+@Composable
+fun chatRunSidePanelWideDarkPreview() = WideRunPage(NexaraThemeMode.DARK, english = false)
+
+@PreviewTest
+@Preview(name = "宽屏侧栏 浅英884", widthDp = 884, heightDp = 720, locale = "en")
+@Composable
+fun chatRunSidePanelWideLightPreview() = WideRunPage(NexaraThemeMode.LIGHT, english = true)
+
+// 侧栏单独：待批准时状态行可点，含后台任务与产物区；大字号下各区标题与计数不重叠。
+@Composable
+private fun SidePanelAlone(mode: NexaraThemeMode, english: Boolean) {
+    val plan = groupedPlan(english)
+    val canvases = listOf(
+        CanvasMetadata("c1", if (english) "Capability report" else "能力报告", 0, 0, 2, "m1", listOf(1, 2)),
+        CanvasMetadata("c2", if (english) "Tool latency chart" else "工具耗时图", 0, 0, 1, "m2", listOf(1)),
+    )
+    NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            RunSidePanel(
+                dock = runDockState(plan, true, 1, 1, 1, null, 72_000L),
+                plan = plan,
+                elapsedMillis = 72_000L,
+                progress = GenerationProgress(rounds = 3, calls = 3, tokens = 45_400, estimated = true),
+                activity = AgentActivitySummary(runningJobs = 1, latestFinishedJob = null, enabledSchedules = 1, nextFireAtMillis = null),
+                stateBoard = sideBoard(english),
+                git = sideGit,
+                canvases = canvases,
+                onOpenRun = {},
+                onJumpToApproval = {},
+                onOpenGit = {},
+                onOpenCanvas = {},
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "运行侧栏 深中", widthDp = 320, heightDp = 900, locale = "zh-rCN")
+@Composable
+fun runSidePanelDarkPreview() = SidePanelAlone(NexaraThemeMode.DARK, english = false)
+
+@PreviewTest
+@Preview(name = "运行侧栏 浅英 大字", widthDp = 320, heightDp = 1100, locale = "en", fontScale = 1.3f)
+@Composable
+fun runSidePanelLightLargeFontPreview() = SidePanelAlone(NexaraThemeMode.LIGHT, english = true)

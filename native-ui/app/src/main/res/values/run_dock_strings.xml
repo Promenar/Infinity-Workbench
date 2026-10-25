@@ -47,4 +47,18 @@
     <string name="state_board_tag_recent">Just updated</string>
     <string name="state_board_manual_note">The agent sees your edits before it updates those fields again.</string>
     <string name="state_board_edit_note">Tap a field to edit it.</string>
+    <string name="run_side_panel_label">Run panel</string>
+    <string name="run_side_idle">Idle</string>
+    <string name="run_side_view_all_steps">View all %1$d steps</string>
+    <plurals name="run_side_jobs_running">
+        <item quantity="one">%d running</item>
+        <item quantity="other">%d running</item>
+    </plurals>
+    <plurals name="run_side_schedules">
+        <item quantity="one">%d schedule</item>
+        <item quantity="other">%d schedules</item>
+    </plurals>
+    <string name="run_side_artifacts">Artifacts</string>
+    <string name="run_side_git">Git</string>
+    <string name="run_side_open_section">Open %1$s</string>
 </resources>

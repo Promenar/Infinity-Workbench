@@ -141,4 +141,29 @@ class RunDockStateTest {
         assertThat(runDetailTabs(hasPlan = false, hasBackground = true, hasState = false))
             .containsExactly(RunDetailTab.BACKGROUND)
     }
+
+    private fun step(id: String, status: TaskPanelStepStatus, group: Boolean = false) =
+        TaskPanelStep(id = id, title = id, status = status, depth = if (group) 0 else 1, isGroup = group)
+
+    @Test fun `侧栏计划区从第一个未完成的叶子步骤起列出，跳过分组行`() {
+        val steps = listOf(
+            step("g1", TaskPanelStepStatus.DONE, group = true),
+            step("a", TaskPanelStepStatus.DONE),
+            step("b", TaskPanelStepStatus.DONE),
+            step("g2", TaskPanelStepStatus.DOING, group = true),
+            step("c", TaskPanelStepStatus.DOING),
+            step("d", TaskPanelStepStatus.TODO),
+            step("e", TaskPanelStepStatus.TODO),
+            step("f", TaskPanelStepStatus.TODO),
+            step("g", TaskPanelStepStatus.TODO),
+        )
+        assertThat(runSidePlanSteps(steps).map { it.id }).containsExactly("c", "d", "e", "f").inOrder()
+        assertThat(runSidePlanSteps(steps, limit = 2).map { it.id }).containsExactly("c", "d").inOrder()
+    }
+
+    @Test fun `侧栏计划全部完成时列出最后几步`() {
+        val steps = listOf("a", "b", "c", "d", "e").map { step(it, TaskPanelStepStatus.DONE) }
+        assertThat(runSidePlanSteps(steps).map { it.id }).containsExactly("b", "c", "d", "e").inOrder()
+        assertThat(runSidePlanSteps(emptyList())).isEmpty()
+    }
 }

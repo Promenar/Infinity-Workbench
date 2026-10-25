@@ -156,6 +156,12 @@ class NavigationMotionContractTest {
         assertThat(source("chat/ChatRoute.kt")).contains("generationStartedAt = generationProgress?.startedAt")
         // 生成中输入框仍可编辑。
         assertThat(chat).contains("enabled = true")
+        // 宽屏运行信息常驻右侧侧栏，浮岛同时隐藏运行坞；侧栏与运行坞共用同一份运行状态与运行详情。
+        assertThat(chat).contains("maxWidth >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowWidth")
+        assertThat(chat).contains("maxHeight >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowHeight")
+        assertThat(chat).contains("visible = dock != null && !showRunSidePanel")
+        assertThat(chat).contains("RunSidePanel(")
+        assertThat(chat.split("RunDetailSheet(").size - 1).isEqualTo(1)
     }
 
     @Test

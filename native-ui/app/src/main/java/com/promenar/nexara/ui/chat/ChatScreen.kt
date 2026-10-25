@@ -104,6 +104,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -597,10 +598,74 @@ fun ChatScreenContent(
         ) { padding ->
             val wordmarkPointer = remember { WordmarkPointer() }
             val showWordmark = shouldShowEmptyWordmark(uiState)
+            val taskPanel = state.taskPanel
+            var hiddenPlanSignature by rememberSaveable(uiState.session?.id) { mutableStateOf<String?>(null) }
+            var planObservedIncomplete by rememberSaveable(uiState.session?.id, taskPanel?.planId) {
+                mutableStateOf(false)
+            }
+            val autoHideDelay = completedPlanAutoHideDelay(taskPanel, uiState.isGenerating, planObservedIncomplete)
+            // 打开会话时就已完成的计划不再出现；本次看着完成的计划停留片刻后自动收起。
+            val planBarVisible = isTaskPlanBarVisible(taskPanel, hiddenPlanSignature) && autoHideDelay != 0L
+            // 退场动画期间计划已不再可见，仍用最后一次可见的状态绘制，避免内容瞬间消失。
+            var lastVisiblePlan by remember(uiState.session?.id) { mutableStateOf<TaskPanelUiState?>(null) }
+            if (taskPanel != null && planBarVisible) lastVisiblePlan = taskPanel
+            LaunchedEffect(taskPanel?.visibilitySignature(), autoHideDelay) {
+                if (taskPanel?.isCompleted == false) planObservedIncomplete = true
+                val delayMs = autoHideDelay?.takeIf { it > 0 } ?: return@LaunchedEffect
+                delay(delayMs)
+                hiddenPlanSignature = taskPanel?.visibilitySignature()
+            }
+            // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，统计与清单收进运行详情。
+            val activity = if (uiState.isGenerating) state.generationProgress ?: GenerationProgress() else null
+            var lastActivity by remember(uiState.session?.id) { mutableStateOf<GenerationProgress?>(null) }
+            if (activity != null) lastActivity = activity
+            var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.nexara.ui.chat.components.RunDetailTab?>(null) }
+            var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
+            val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen)
+            val activitySummary = agentActivity?.summary
+            val boardTitle = state.stateBoard?.board?.title
+            val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
+                state.subagentApprovals.size
+            val turnStartedAt = state.generationStartedAt?.takeIf { uiState.isGenerating }
+            var dockNow by remember { mutableStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(uiState.isGenerating) {
+                while (uiState.isGenerating) { dockNow = System.currentTimeMillis(); delay(15_000) }
+            }
+            val dock = com.promenar.nexara.ui.chat.components.runDockState(
+                plan = lastVisiblePlan.takeIf { taskPanel != null && planBarVisible },
+                isGenerating = uiState.isGenerating,
+                pendingApprovals = pendingApprovals,
+                runningJobs = activitySummary?.runningJobs ?: 0,
+                enabledSchedules = activitySummary?.enabledSchedules ?: 0,
+                boardTitle = boardTitle,
+                elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
+            )
+            var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
+            if (dock != null) lastDock = dock
+            val canvasSession = com.promenar.nexara.ui.canvas.LocalCanvasSession.current
+            // 侧栏计划区与运行坞同一可见规则：隐藏或自动收起的计划不占侧栏。
+            val sidePlan = taskPanel?.takeIf { planBarVisible && it.totalCount > 0 }
+            val sideCanvases = canvasSession?.canvases.orEmpty()
+            val sideBoard = state.stateBoard?.takeIf { it.board != null }
+            // 宽屏（折叠屏展开、平板）运行信息常驻右侧侧栏，浮岛不再显示运行坞；只有一行运行状态时不值得占一栏，仍用运行坞。
+            val showRunSidePanel = maxWidth >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowWidth &&
+                maxHeight >= com.promenar.nexara.ui.chat.components.RunSidePanelMinWindowHeight &&
+                (sidePlan != null || sideBoard != null || state.gitSummary != null || sideCanvases.isNotEmpty() ||
+                    activitySummary?.visible == true)
+            val jumpToApproval: () -> Unit = {
+                scope.launch {
+                    // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
+                    val pendingItems = (if (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting } != null) 1 else 0) +
+                        subagentApprovalGroups.size
+                    val target = listState.layoutInfo.totalItemsCount - 1 - pendingItems
+                    listState.animateScrollToItem(target.coerceAtLeast(0))
+                }
+            }
+            Box(Modifier.fillMaxSize().padding(padding)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(end = if (showRunSidePanel) com.promenar.nexara.ui.chat.components.RunSidePanelWidth + 1.dp else 0.dp)
                     .imePadding()
                     .then(if (showWordmark) Modifier.trackWordmarkPointer(wordmarkPointer) else Modifier),
             ) {
@@ -849,23 +914,6 @@ fun ChatScreenContent(
                 val modelDisplayName = uiState.session?.modelId
                     ?.let(state.modelDisplayNames::get)
                     .orEmpty()
-                val taskPanel = state.taskPanel
-                var hiddenPlanSignature by rememberSaveable(uiState.session?.id) { mutableStateOf<String?>(null) }
-                var planObservedIncomplete by rememberSaveable(uiState.session?.id, taskPanel?.planId) {
-                    mutableStateOf(false)
-                }
-                val autoHideDelay = completedPlanAutoHideDelay(taskPanel, uiState.isGenerating, planObservedIncomplete)
-                // 打开会话时就已完成的计划不再出现；本次看着完成的计划停留片刻后自动收起。
-                val planBarVisible = isTaskPlanBarVisible(taskPanel, hiddenPlanSignature) && autoHideDelay != 0L
-                // 退场动画期间计划已不再可见，仍用最后一次可见的状态绘制，避免内容瞬间消失。
-                var lastVisiblePlan by remember(uiState.session?.id) { mutableStateOf<TaskPanelUiState?>(null) }
-                if (taskPanel != null && planBarVisible) lastVisiblePlan = taskPanel
-                LaunchedEffect(taskPanel?.visibilitySignature(), autoHideDelay) {
-                    if (taskPanel?.isCompleted == false) planObservedIncomplete = true
-                    val delayMs = autoHideDelay?.takeIf { it > 0 } ?: return@LaunchedEffect
-                    delay(delayMs)
-                    hiddenPlanSignature = taskPanel?.visibilitySignature()
-                }
                 ChatComposerStatusBar(
                     taskPanel = taskPanel.takeUnless { planBarVisible },
                     postProcessTasks = state.postProcessTasks,
@@ -916,34 +964,8 @@ fun ChatScreenContent(
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
                             topContent = {
                                 // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，统计与清单收进运行详情。
-                                val activity = if (uiState.isGenerating) state.generationProgress ?: GenerationProgress() else null
-                                var lastActivity by remember(uiState.session?.id) { mutableStateOf<GenerationProgress?>(null) }
-                                if (activity != null) lastActivity = activity
-                                var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.nexara.ui.chat.components.RunDetailTab?>(null) }
-                                var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
-                                val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen)
-                                val activitySummary = agentActivity?.summary
-                                val boardTitle = state.stateBoard?.board?.title
-                                val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
-                                    state.subagentApprovals.size
-                                val turnStartedAt = state.generationStartedAt?.takeIf { uiState.isGenerating }
-                                var dockNow by remember { mutableStateOf(System.currentTimeMillis()) }
-                                LaunchedEffect(uiState.isGenerating) {
-                                    while (uiState.isGenerating) { dockNow = System.currentTimeMillis(); delay(15_000) }
-                                }
-                                val dock = com.promenar.nexara.ui.chat.components.runDockState(
-                                    plan = lastVisiblePlan.takeIf { taskPanel != null && planBarVisible },
-                                    isGenerating = uiState.isGenerating,
-                                    pendingApprovals = pendingApprovals,
-                                    runningJobs = activitySummary?.runningJobs ?: 0,
-                                    enabledSchedules = activitySummary?.enabledSchedules ?: 0,
-                                    boardTitle = boardTitle,
-                                    elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
-                                )
-                                var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
-                                if (dock != null) lastDock = dock
                                 AnimatedVisibility(
-                                    visible = dock != null,
+                                    visible = dock != null && !showRunSidePanel,
                                     enter = fadeIn(tween(220, delayMillis = 60)) +
                                         expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
                                     exit = fadeOut(tween(160)) +
@@ -957,44 +979,11 @@ fun ChatScreenContent(
                                                 runSheetTab = tab
                                                 runSheetOpen = true
                                             },
-                                            onJumpToApproval = {
-                                                scope.launch {
-                                                    // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
-                                                    val pendingItems = (if (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting } != null) 1 else 0) +
-                                                        subagentApprovalGroups.size
-                                                    val target = listState.layoutInfo.totalItemsCount - 1 - pendingItems
-                                                    listState.animateScrollToItem(target.coerceAtLeast(0))
-                                                }
-                                            },
+                                            onJumpToApproval = jumpToApproval,
                                             keepScreenOn = state.keepScreenOn.takeIf { uiState.isGenerating },
                                             onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
                                         )
                                     }
-                                }
-                                if (runSheetOpen) {
-                                    val sheetPlan = taskPanel ?: lastVisiblePlan
-                                    com.promenar.nexara.ui.chat.components.RunDetailSheet(
-                                        initialTab = runSheetTab,
-                                        plan = sheetPlan,
-                                        isGenerating = uiState.isGenerating,
-                                        progress = activity ?: lastActivity,
-                                        turnStartedAt = turnStartedAt,
-                                        activity = agentActivity,
-                                        stateBoard = state.stateBoard?.takeIf { it.board != null },
-                                        onDismiss = { runSheetOpen = false },
-                                        onContinue = actions.onContinueTask,
-                                        onComplete = actions.onCompleteTask,
-                                        onHidePlan = {
-                                            runSheetOpen = false
-                                            hiddenPlanSignature = sheetPlan?.visibilitySignature()
-                                        },
-                                        onClearPlan = {
-                                            runSheetOpen = false
-                                            actions.onClearCompletedTask()
-                                        },
-                                        onEditState = actions.onEditState,
-                                        onRemoveState = actions.onRemoveState,
-                                    )
                                 }
                                 // 排队托盘紧贴输入区：自下而上是正在写的、排着的、正在运行的。
                                 val queue = state.composerQueue
@@ -1108,6 +1097,53 @@ fun ChatScreenContent(
                 }
             }
 
+            }
+            if (showRunSidePanel) Row(Modifier.align(Alignment.CenterEnd).fillMaxHeight()) {
+                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                com.promenar.nexara.ui.chat.components.RunSidePanel(
+                    dock = dock,
+                    plan = sidePlan,
+                    elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
+                    progress = activity ?: lastActivity,
+                    activity = activitySummary,
+                    stateBoard = sideBoard,
+                    git = state.gitSummary,
+                    canvases = sideCanvases,
+                    onOpenRun = { tab ->
+                        hiddenPlanSignature = null
+                        runSheetTab = tab
+                        runSheetOpen = true
+                    },
+                    onJumpToApproval = jumpToApproval,
+                    onOpenGit = actions.onOpenGit,
+                    onOpenCanvas = { id -> canvasSession?.open?.invoke(id) },
+                )
+            }
+            }
+            if (runSheetOpen) {
+                val sheetPlan = taskPanel ?: lastVisiblePlan
+                com.promenar.nexara.ui.chat.components.RunDetailSheet(
+                    initialTab = runSheetTab,
+                    plan = sheetPlan,
+                    isGenerating = uiState.isGenerating,
+                    progress = activity ?: lastActivity,
+                    turnStartedAt = turnStartedAt,
+                    activity = agentActivity,
+                    stateBoard = state.stateBoard?.takeIf { it.board != null },
+                    onDismiss = { runSheetOpen = false },
+                    onContinue = actions.onContinueTask,
+                    onComplete = actions.onCompleteTask,
+                    onHidePlan = {
+                        runSheetOpen = false
+                        hiddenPlanSignature = sheetPlan?.visibilitySignature()
+                    },
+                    onClearPlan = {
+                        runSheetOpen = false
+                        actions.onClearCompletedTask()
+                    },
+                    onEditState = actions.onEditState,
+                    onRemoveState = actions.onRemoveState,
+                )
             }
         }
 
