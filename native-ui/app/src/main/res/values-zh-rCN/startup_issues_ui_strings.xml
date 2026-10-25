@@ -1,17 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <plurals name="startup_issues_banner">
-        <item quantity="other">%1$d 个启动自检问题，相关范围已暂停写入，其它功能不受影响</item>
-    </plurals>
     <string name="startup_issues_view">查看</string>
     <string name="startup_issues_handle">处理</string>
-    <string name="startup_issues_session_paused">这个工作区暂停写入，可以查看文件，Agent 不能修改</string>
     <string name="startup_issues_title">启动自检问题</string>
     <string name="startup_issues_intro">只有受影响的工作区、会话或功能暂停使用。可以重试，或让 Agent 帮忙诊断。</string>
     <string name="startup_issues_none">没有未处理的问题。</string>
     <string name="startup_issues_retry">重试</string>
     <string name="startup_issues_abandon">放弃这次操作</string>
-    <string name="startup_issues_abandon_note">放弃：保留文件现状，只收尾这条未完成的记录。</string>
     <string name="startup_issues_abandon_title">放弃未完成的操作？</string>
     <string name="startup_issues_abandon_message">文件保持现在的样子，应用只收尾这条记录，然后重新检查工作区；仍不一致时继续暂停写入。</string>
     <string name="startup_issues_diagnose">让 Agent 诊断</string>
@@ -39,4 +34,11 @@
     <string name="startup_issue_title_memory">记忆清理失败</string>
     <string name="startup_blocked_detail_label">原因</string>
     <string name="startup_blocked_export">导出诊断</string>
+    <plurals name="startup_issues_banner_title">
+        <item quantity="other">%1$d 个启动自检问题</item>
+    </plurals>
+    <string name="startup_issues_banner_detail">相关范围已暂停写入，其它功能不受影响</string>
+    <string name="startup_issues_session_paused_title">这个工作区暂停写入</string>
+    <string name="startup_issues_session_paused_detail">可以查看文件，Agent 不能修改</string>
+    <string name="startup_issues_abandon_short">放弃</string>
 </resources>

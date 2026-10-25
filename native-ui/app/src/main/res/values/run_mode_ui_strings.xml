@@ -64,13 +64,14 @@
     <string name="run_mode_done">Done</string>
     <string name="run_mode_switch_failed">Couldn\'t switch the run mode. Try again.</string>
     <string name="run_mode_action_failed">Couldn\'t finish. Try again.</string>
-    <plurals name="run_mode_startup_banner">
-        <item quantity="one">Linux is unavailable. %1$d Linux conversation needs attention before it can run commands.</item>
-        <item quantity="other">Linux is unavailable. %1$d Linux conversations need attention before they can run commands.</item>
-    </plurals>
     <string name="run_mode_startup_action">Fix</string>
     <string name="run_mode_folder_real_path_only">Linux conversations can only add folders by device path.</string>
     <string name="run_mode_folder_need_all_files">Allow all-files access to add a device folder.</string>
     <string name="run_mode_folder_mode_required">Choose a run mode before adding folders.</string>
     <string name="run_mode_folder_saf_hidden">Hidden in Linux</string>
+    <string name="run_mode_startup_banner_title">Linux is unavailable</string>
+    <plurals name="run_mode_startup_banner_detail">
+        <item quantity="one">%1$d Linux conversation needs attention before it can run commands.</item>
+        <item quantity="other">%1$d Linux conversations need attention before they can run commands.</item>
+    </plurals>
 </resources>

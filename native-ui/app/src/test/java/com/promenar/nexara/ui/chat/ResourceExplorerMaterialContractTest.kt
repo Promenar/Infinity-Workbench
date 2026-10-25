@@ -39,11 +39,11 @@ class ResourceExplorerMaterialContractTest {
     }
 
     @Test
-    fun `资源管理器仅在工作区覆盖层活动时组合并按生命周期收集`() {
+    fun `资源管理器仅在二级页面层级中组合并按生命周期收集`() {
         val chatRoute = source("src/main/java/com/promenar/nexara/ui/chat/ChatRoute.kt")
         val explorer = source("src/main/java/com/promenar/nexara/ui/chat/ResourceExplorerSheet.kt")
 
-        assertThat(chatRoute).contains("if (activeOverlay == ChatOverlay.Workspace)")
+        assertThat(chatRoute).contains("ChatPage.Explorer -> ResourceExplorerPage(")
         assertThat(explorer).contains("DisposableEffect(sessionId, viewModel)")
         assertThat(explorer).contains("viewModel.deactivateSession()")
         assertThat(explorer).contains("collectAsStateWithLifecycle()")

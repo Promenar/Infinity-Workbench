@@ -22,6 +22,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import com.promenar.nexara.ui.common.NexaraPaneLevel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,9 +64,6 @@ import com.promenar.nexara.data.model.turnMemory
 import kotlinx.coroutines.launch
 
 internal sealed interface ChatOverlay {
-    data object Workspace : ChatOverlay
-    /** 顶栏 Git 行打开的 Git 面板。 */
-    data object Git : ChatOverlay
     data object ModelSettings : ChatOverlay
     /** 会话设置的“工具”页（斜杠命令 /mode 不带参数时打开）。 */
     data object SessionTools : ChatOverlay
@@ -108,8 +107,6 @@ private const val TURN_MEMORY_OVERLAY_PREFIX = "turn_memory:"
 
 internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
-    ChatOverlay.Workspace -> "workspace"
-    ChatOverlay.Git -> "git"
     ChatOverlay.ModelSettings -> "model_settings"
     ChatOverlay.SessionTools -> "session_tools"
     ChatOverlay.PromptEditor -> "prompt_editor"
@@ -121,8 +118,6 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
 }
 
 internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
-    token == "workspace" -> ChatOverlay.Workspace
-    token == "git" -> ChatOverlay.Git
     token == "model_settings" -> ChatOverlay.ModelSettings
     token == "session_tools" -> ChatOverlay.SessionTools
     token == "prompt_editor" -> ChatOverlay.PromptEditor
@@ -330,6 +325,20 @@ fun ChatRoute(
     // 媒体不可用占位请求定位的工作区目录；资源管理器打开后消费。
     var workspaceLocatePath by rememberSaveable { mutableStateOf<String?>(null) }
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var chatPagesToken by rememberSaveable { mutableStateOf("") }
+    val chatPages = restoreChatPages(chatPagesToken)
+    // 收起时仍按最后的层级渲染，退场动画期间内容不消失。
+    var lastChatPages by remember { mutableStateOf(chatPages) }
+    SideEffect { if (chatPages.isNotEmpty()) lastChatPages = chatPages }
+    val shownChatPages = chatPages.ifEmpty { lastChatPages }
+    val openChatPage: (ChatPage) -> Unit = { page -> chatPagesToken = saveChatPages(openChatPageRoot(page)) }
+    val closeTopChatPage: () -> Unit = {
+        val pages = restoreChatPages(chatPagesToken)
+        val next = popChatPage(pages)
+        chatPagesToken = saveChatPages(next)
+        if (pages.lastOrNull() == ChatPage.Git) gitRefresh++
+        if (next.isEmpty()) workspaceLocatePath = null
+    }
     val hasGenerationInteraction = interaction?.sessionId == sessionId
     val activeOverlay = if (hasGenerationInteraction) null else restoreChatOverlay(activeOverlayToken)
     var permissionExplanationTaskId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -620,7 +629,7 @@ fun ChatRoute(
         onInsertText = { text -> chatViewModel.appendCanvasText(sessionId, text) },
         onRevealInWorkspace = { path ->
             workspaceLocatePath = path
-            requestOverlay(ChatOverlay.Workspace)
+            openChatPage(ChatPage.Explorer)
         },
         primaryWorkspaceId = uiState.session?.workspaceId,
     ) {
@@ -662,6 +671,56 @@ fun ChatRoute(
         val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.gitChangesService.status(sessionId) }
         gitSummary = com.promenar.nexara.ui.git.GitEntrySummary.from(status) as? com.promenar.nexara.ui.git.GitEntrySummary.Repository
     }
+    // 资源管理器与 Git 变更：窄窗口为整页二级页面，宽窗口为停靠右侧的侧滑面板；生成中待用户处理时整页让出。
+    com.promenar.nexara.ui.common.NexaraAdaptivePaneHost(
+        paneVisible = chatPages.isNotEmpty(),
+        onBack = closeTopChatPage,
+        coverSuspended = hasGenerationInteraction,
+        pane = {
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
+            ) {
+                // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
+                ChatPage.entries
+                    .sortedBy { page -> shownChatPages.indexOf(page).let { if (it < 0) Int.MAX_VALUE else it } }
+                    .forEach { page ->
+                        androidx.compose.runtime.key(page) {
+                            NexaraPaneLevel(
+                                key = page.token,
+                                visible = page in shownChatPages,
+                                top = page == shownChatPages.lastOrNull(),
+                            ) {
+                                val rootCloses = shownChatPages.size == 1 &&
+                                    com.promenar.nexara.ui.common.LocalNexaraPanePresentation.current ==
+                                    com.promenar.nexara.ui.common.NexaraPanePresentation.Pane
+                                when (page) {
+                                    ChatPage.Explorer -> ResourceExplorerPage(
+                                        onBack = closeTopChatPage,
+                                        onOpenGit = { chatPagesToken = saveChatPages(pushChatPage(restoreChatPages(chatPagesToken), ChatPage.Git)) },
+                                        gitRefreshKey = gitRefresh,
+                                        sessionId = sessionId,
+                                        chatViewModel = chatViewModel,
+                                        initialFolderPath = workspaceLocatePath,
+                                        onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
+                                            {
+                                                chatPagesToken = ""
+                                                workspaceLocatePath = null
+                                                open()
+                                            }
+                                        },
+                                    )
+                                    ChatPage.Git -> com.promenar.nexara.ui.git.GitChangesPage(
+                                        sessionId = sessionId,
+                                        onExit = closeTopChatPage,
+                                        exitCloses = rootCloses,
+                                    )
+                                }
+                            }
+                        }
+                    }
+            }
+        },
+    ) {
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalSubagentRuns provides subagentRuns,
@@ -705,11 +764,11 @@ fun ChatRoute(
                 },
                 onNavigateBack = onNavigateBack,
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
-                onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
-                onOpenGit = { requestOverlay(ChatOverlay.Git) },
+                onOpenWorkspace = { openChatPage(ChatPage.Explorer) },
+                onOpenGit = { openChatPage(ChatPage.Git) },
                 onLocateWorkspacePath = { path ->
                     workspaceLocatePath = path
-                    requestOverlay(ChatOverlay.Workspace)
+                    openChatPage(ChatPage.Explorer)
                 },
                 onOpenSettings = { requestOverlay(ChatOverlay.ModelSettings) },
                 onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
@@ -819,6 +878,7 @@ fun ChatRoute(
             snackbarHostState = snackbarHostState,
             snackbarData = snackbarData,
         )
+    }
     }
     }
 
@@ -955,35 +1015,6 @@ fun ChatRoute(
             initial = stage,
             workspaceId = uiState.session?.workspaceId,
             onDismiss = { runModeCheckpoint = null },
-        )
-    }
-    if (activeOverlay == ChatOverlay.Git) {
-        com.promenar.nexara.ui.git.GitChangesSheet(
-            sessionId = sessionId,
-            onDismiss = {
-                activeOverlayToken = null
-                gitRefresh++
-            },
-        )
-    }
-    if (activeOverlay == ChatOverlay.Workspace) androidx.compose.runtime.CompositionLocalProvider(
-        com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
-    ) {
-        ResourceExplorerSheet(
-            onDismiss = {
-                activeOverlayToken = null
-                workspaceLocatePath = null
-            },
-            sessionId = sessionId,
-            chatViewModel = chatViewModel,
-            initialFolderPath = workspaceLocatePath,
-            onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
-                {
-                    activeOverlayToken = null
-                    workspaceLocatePath = null
-                    open()
-                }
-            },
         )
     }
     SessionSettingsSheet(

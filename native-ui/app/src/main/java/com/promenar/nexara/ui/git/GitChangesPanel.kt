@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.hierarchicalTransition
-import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -93,7 +95,6 @@ import com.promenar.nexara.data.git.GitStatus
 import com.promenar.nexara.data.git.GitTracking
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraBackButton
-import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraTabItem
@@ -123,11 +124,16 @@ object GitPanelTags {
     fun commit(sha: String) = "git_panel_commit_$sha"
 }
 
-/** 资源管理器中打开的 Git 变更面板（全高底部面板）；打开时刷新一次，之后由用户手动刷新。 */
+/**
+ * Git 变更的二级页面：由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 承载，窄窗口整页、宽窗口停靠侧栏。
+ * 打开时刷新一次，之后由用户手动刷新；页内详情先逐层返回，回到列表后再由 [onExit] 离开。
+ */
 @Composable
-fun GitChangesSheet(
+fun GitChangesPage(
     sessionId: String,
-    onDismiss: () -> Unit,
+    onExit: () -> Unit,
+    /** 作为侧栏根层时显示关闭图标。 */
+    exitCloses: Boolean = false,
 ) {
     val application = LocalContext.current.applicationContext as NexaraApplication
     val viewModel: GitPanelViewModel = viewModel(
@@ -136,28 +142,24 @@ fun GitChangesSheet(
     )
     LaunchedEffect(viewModel) { viewModel.open() }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    NexaraBottomSheet(
-        show = true,
-        onDismiss = onDismiss,
-        title = null,
-        height = NexaraSheetHeight.Full,
-        // 面板内的列表与差异视图自带滚动，拖动面板会与内容滚动争抢手势。
-        dragGesturesEnabled = false,
-    ) {
-        BackHandler(enabled = state.detail != null) { viewModel.back() }
-        GitChangesPanel(
-            state = state,
-            actions = GitPanelActions(
-                onRefresh = viewModel::refresh,
-                onSelectTab = viewModel::selectTab,
-                onOpenChange = viewModel::openChange,
-                onOpenCommit = viewModel::openCommit,
-                onOpenCommitFile = viewModel::openCommitFile,
-                onBack = { viewModel.back() },
-            ),
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
+    BackHandler(enabled = state.detail != null) { viewModel.back() }
+    GitChangesPanel(
+        state = state,
+        actions = GitPanelActions(
+            onRefresh = viewModel::refresh,
+            onSelectTab = viewModel::selectTab,
+            onOpenChange = viewModel::openChange,
+            onOpenCommit = viewModel::openCommit,
+            onOpenCommitFile = viewModel::openCommitFile,
+            onBack = { viewModel.back() },
+            onExit = onExit,
+            exitCloses = exitCloses,
+        ),
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = NexaraSpacing.ScreenHorizontal),
+    )
 }
 
 /** 无状态的面板内容；父容器必须给出有界高度（差异视图以 `Dp.Infinity` 视口填满剩余高度）。 */
@@ -277,12 +279,15 @@ private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions, now
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AnimatedVisibility(
-            visible = detail != null,
+            visible = detail != null || actions.onExit != null,
             enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) + fadeIn(),
             exit = shrinkHorizontally(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                NexaraBackButton(onClick = actions.onBack)
+                NexaraBackButton(
+                    onClick = { if (detail != null) actions.onBack() else actions.onExit?.invoke() },
+                    close = detail == null && actions.exitCloses,
+                )
                 Spacer(modifier = Modifier.width(NexaraSpacing.XSmall))
             }
         }

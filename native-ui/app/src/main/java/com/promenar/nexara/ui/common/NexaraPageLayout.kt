@@ -44,6 +44,8 @@ fun NexaraPageLayout(
     /** 页面主体内边距；为 null 时使用设置类页面的默认留白。 */
     bodyPadding: PaddingValues? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    /** 返回按钮显示为关闭图标；用于侧滑面板的根层。 */
+    backCloses: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -77,7 +79,7 @@ fun NexaraPageLayout(
                 },
                 navigationIcon = {
                     if (onBack != null) {
-                        NexaraBackButton(onClick = onBack)
+                        NexaraBackButton(onClick = onBack, close = backCloses)
                     }
                 },
                 actions = { actions() },

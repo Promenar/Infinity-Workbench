@@ -3,12 +3,29 @@ package com.promenar.nexara.ui.startup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.rounded.Article
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -25,7 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -102,13 +118,25 @@ internal fun StartupStep.titleRes(): Int = when (this) {
     StartupStep.MEMORY_CLEANUP -> R.string.startup_issue_title_memory
 }
 
+/**
+ * 技术原因里去掉开头的异常类名（如 `WorkspaceMutationRecoveryException: `），只留可读的说明；
+ * 完整原文保留在诊断记录里。没有可读部分时原样返回。
+ */
+internal fun startupIssueReason(summary: String): String {
+    val match = STARTUP_REASON_PREFIX.find(summary) ?: return summary.trim()
+    return summary.substring(match.range.last + 1).trim().ifEmpty { summary.trim() }
+}
+
+private val STARTUP_REASON_PREFIX = Regex("""^\s*[A-Za-z_$][\w.$]*(Exception|Error)\s*:\s*""")
+
 /** 会话列表顶部：有启动问题时照常进入应用，只提示受影响的范围。 */
 @Composable
 fun StartupIssuesBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    WarningStrip(
-        text = pluralStringResource(R.plurals.startup_issues_banner, count, count),
-        action = stringResource(R.string.startup_issues_view),
-        icon = { Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(18.dp)) },
+    StartupNotice(
+        title = pluralStringResource(R.plurals.startup_issues_banner_title, count, count),
+        detail = stringResource(R.string.startup_issues_banner_detail),
+        actionLabel = stringResource(R.string.startup_issues_view),
+        icon = Icons.Rounded.WarningAmber,
         onClick = onOpen,
         modifier = modifier.testTag(StartupIssuesTags.BANNER),
     )
@@ -117,10 +145,11 @@ fun StartupIssuesBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = Mod
 /** 会话列表顶部：Linux 环境不可用时提示受影响的 Linux 会话数，不阻止进入应用。 */
 @Composable
 fun LinuxUnavailableBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    WarningStrip(
-        text = pluralStringResource(R.plurals.run_mode_startup_banner, count, count),
-        action = stringResource(R.string.run_mode_startup_action),
-        icon = { Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(18.dp)) },
+    StartupNotice(
+        title = stringResource(R.string.run_mode_startup_banner_title),
+        detail = pluralStringResource(R.plurals.run_mode_startup_banner_detail, count, count),
+        actionLabel = stringResource(R.string.run_mode_startup_action),
+        icon = Icons.Rounded.WarningAmber,
         onClick = onOpen,
         modifier = modifier.testTag(StartupIssuesTags.LINUX_BANNER),
     )
@@ -129,41 +158,80 @@ fun LinuxUnavailableBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = 
 /** 会话顶栏下方：该会话或其工作区暂停写入。 */
 @Composable
 fun StartupWritePausedBanner(onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    WarningStrip(
-        text = stringResource(R.string.startup_issues_session_paused),
-        action = stringResource(R.string.startup_issues_handle),
-        icon = { Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) },
+    StartupNotice(
+        title = stringResource(R.string.startup_issues_session_paused_title),
+        detail = stringResource(R.string.startup_issues_session_paused_detail),
+        actionLabel = stringResource(R.string.startup_issues_handle),
+        icon = Icons.Rounded.Lock,
         onClick = onOpen,
         modifier = modifier.testTag(StartupIssuesTags.SESSION_BANNER),
     )
 }
 
+/** 内嵌于列表留白中的提醒卡片：浅色警示底、圆形图标徽标、标题与说明两层，整卡可点按进入处理。 */
 @Composable
-internal fun WarningStrip(text: String, action: String, icon: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier) {
+internal fun StartupNotice(
+    title: String,
+    detail: String?,
+    actionLabel: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.tertiaryContainer)
-            .clickable(role = Role.Button, onClickLabel = action, onClick = onClick)
-            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-            .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
+            .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = NexaraSpacing.XSmall)
+            .clip(shape)
+            .background(colors.tertiary.copy(alpha = 0.10f).compositeOver(colors.surfaceContainer))
+            .border(1.dp, colors.tertiary.copy(alpha = 0.22f), shape)
+            .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick)
+            .heightIn(min = 56.dp)
+            .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Small, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides colors.onTertiaryContainer) {
-            icon()
-            Text(text, style = NexaraTypography.bodySmall, color = colors.onTertiaryContainer, modifier = Modifier.weight(1f))
-            Text(action, style = NexaraTypography.labelMedium, color = colors.onTertiaryContainer)
+        StartupIconBadge(icon, size = 32.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = NexaraTypography.labelLarge, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail != null) {
+                Text(detail, style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = colors.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
+}
+
+@Composable
+private fun StartupIconBadge(icon: ImageVector, size: Dp) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier.size(size).background(colors.tertiary.copy(alpha = 0.16f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(size * 0.56f))
+    }
+}
+
+private fun StartupScopeKind.icon(): ImageVector = when (this) {
+    StartupScopeKind.WORKSPACE_ROOT -> Icons.Rounded.FolderOpen
+    StartupScopeKind.SESSION -> Icons.Rounded.ChatBubbleOutline
+    StartupScopeKind.SUBSYSTEM -> Icons.Rounded.Memory
+    StartupScopeKind.GLOBAL -> Icons.Rounded.Apps
 }
 
 /**
  * 启动问题面板：逐条列出问题与可用处置，底部是“让 Agent 诊断”、诊断记录与导出。
- * [busyIssueId] 非空时该条处置进行中，其余按钮照常可用。
+ * [busyIssueId] 非空时该条处置进行中，其余按钮照常可用；[messageIssueId] 指向的问题在条目内显示处置结果，
+ * 否则 [message] 显示在列表下方。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StartupIssuesSheetContent(
     rows: List<StartupIssueRow>,
@@ -174,83 +242,154 @@ fun StartupIssuesSheetContent(
     onDiagnose: () -> Unit,
     onViewRecords: () -> Unit,
     onExport: () -> Unit,
+    messageIssueId: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small)
+            // 水平留白由面板外壳给出。
+            .padding(bottom = NexaraSpacing.Small)
             .testTag(StartupIssuesTags.SHEET),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
     ) {
-        Text(
-            stringResource(R.string.startup_issues_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.onSurface,
-            modifier = Modifier.semantics { heading() },
-        )
-        Text(stringResource(R.string.startup_issues_intro), style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
+            StartupIconBadge(Icons.Rounded.WarningAmber, size = 40.dp)
+            Text(
+                stringResource(R.string.startup_issues_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onSurface,
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+        }
+        Text(stringResource(R.string.startup_issues_intro), style = NexaraTypography.bodyMedium, color = colors.onSurfaceVariant)
         if (rows.isEmpty()) {
             Text(stringResource(R.string.startup_issues_none), style = NexaraTypography.bodyMedium, color = colors.onSurfaceVariant)
-        }
-        rows.forEach { row ->
-            val issue = row.issue
+        } else {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, colors.outlineVariant, RoundedCornerShape(12.dp))
-                    .padding(NexaraSpacing.Medium)
-                    .testTag(StartupIssuesTags.issue(issue.id)),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colors.surfaceContainerHigh),
             ) {
-                Text(stringResource(issue.step.titleRes()), style = NexaraTypography.bodyMedium, color = colors.onSurface)
-                Text(row.scopeName, style = NexaraTypography.labelMedium, color = colors.onSurfaceVariant)
-                Text(issue.summary, style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                    modifier = Modifier.padding(top = NexaraSpacing.Small),
-                ) {
-                    if (busyIssueId == issue.id) {
-                        CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.CenterVertically), strokeWidth = 2.dp)
-                    } else {
-                        if (StartupIssueAction.RETRY in issue.actions) {
-                            OutlinedButton(
-                                onClick = { onAction(issue, StartupIssueAction.RETRY) },
-                                modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.action(issue.id, StartupIssueAction.RETRY)),
-                            ) { Text(stringResource(R.string.startup_issues_retry)) }
-                        }
-                        if (StartupIssueAction.ABANDON in issue.actions) {
-                            TextButton(
-                                onClick = { onAction(issue, StartupIssueAction.ABANDON) },
-                                modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.action(issue.id, StartupIssueAction.ABANDON)),
-                            ) { Text(stringResource(R.string.startup_issues_abandon)) }
-                        }
-                    }
+                rows.forEachIndexed { index, row ->
+                    if (index > 0) HorizontalDivider(color = colors.outlineVariant.copy(alpha = 0.5f), modifier = Modifier.padding(start = NexaraSpacing.Large))
+                    StartupIssueItem(
+                        row = row,
+                        busy = busyIssueId == row.issue.id,
+                        message = message?.takeIf { messageIssueId == row.issue.id },
+                        onAction = onAction,
+                    )
                 }
             }
         }
-        message?.let { Text(it, style = NexaraTypography.bodySmall, color = colors.primary) }
+        if (message != null && rows.none { it.issue.id == messageIssueId }) {
+            Text(message, style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
+        }
         if (rows.isNotEmpty()) {
-            Button(
-                onClick = onDiagnose,
-                enabled = canDiagnose,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(StartupIssuesTags.DIAGNOSE),
-            ) { Text(stringResource(R.string.startup_issues_diagnose)) }
-            if (!canDiagnose) {
-                Text(stringResource(R.string.startup_issues_diagnose_unavailable), style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
+                Button(
+                    onClick = onDiagnose,
+                    enabled = canDiagnose,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(StartupIssuesTags.DIAGNOSE),
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(stringResource(R.string.startup_issues_diagnose), modifier = Modifier.padding(start = NexaraSpacing.Small))
+                }
+                if (!canDiagnose) {
+                    Text(stringResource(R.string.startup_issues_diagnose_unavailable), style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-            OutlinedButton(onClick = onViewRecords, modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.RECORDS)) {
-                Text(stringResource(R.string.startup_issues_records))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small, Alignment.CenterHorizontally),
+        ) {
+            TextButton(onClick = onViewRecords, modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.RECORDS)) {
+                Icon(Icons.AutoMirrored.Rounded.Article, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.startup_issues_records), modifier = Modifier.padding(start = 6.dp))
             }
-            OutlinedButton(onClick = onExport, modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.EXPORT)) {
+            TextButton(onClick = onExport, modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.EXPORT)) {
                 Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text(stringResource(R.string.startup_issues_export), modifier = Modifier.padding(start = 6.dp))
             }
         }
-        Text(stringResource(R.string.startup_issues_abandon_note), style = NexaraTypography.bodySmall, color = colors.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun StartupIssueItem(
+    row: StartupIssueRow,
+    busy: Boolean,
+    message: String?,
+    onAction: (StartupIssue, StartupIssueAction) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val issue = row.issue
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = NexaraSpacing.Large, end = NexaraSpacing.Small, top = NexaraSpacing.Medium, bottom = NexaraSpacing.XSmall)
+            .testTag(StartupIssuesTags.issue(issue.id)),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+    ) {
+        Text(
+            stringResource(issue.step.titleRes()),
+            style = MaterialTheme.typography.titleSmall,
+            color = colors.onSurface,
+            modifier = Modifier.padding(end = NexaraSpacing.Small),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(issue.scope.kind.icon(), contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            Text(row.scopeName, style = NexaraTypography.labelMedium, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(
+            startupIssueReason(issue.summary),
+            style = NexaraTypography.bodySmall,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(end = NexaraSpacing.Small),
+        )
+        if (message != null) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 2.dp, end = NexaraSpacing.Small),
+            ) {
+                Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = colors.error, modifier = Modifier.size(14.dp).padding(top = 1.dp))
+                Text(message, style = NexaraTypography.bodySmall, color = colors.error)
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (busy) {
+                CircularProgressIndicator(Modifier.padding(end = NexaraSpacing.Medium).size(20.dp), strokeWidth = 2.dp)
+            } else {
+                if (StartupIssueAction.ABANDON in issue.actions) {
+                    TextButton(
+                        onClick = { onAction(issue, StartupIssueAction.ABANDON) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurfaceVariant),
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(StartupIssuesTags.action(issue.id, StartupIssueAction.ABANDON)),
+                    ) { Text(stringResource(R.string.startup_issues_abandon_short)) }
+                }
+                if (StartupIssueAction.RETRY in issue.actions) {
+                    FilledTonalButton(
+                        onClick = { onAction(issue, StartupIssueAction.RETRY) },
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = colors.primary.copy(alpha = 0.14f),
+                            contentColor = colors.primary,
+                        ),
+                        modifier = Modifier.heightIn(min = 40.dp).testTag(StartupIssuesTags.action(issue.id, StartupIssueAction.RETRY)),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(stringResource(R.string.startup_issues_retry), modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -269,6 +408,7 @@ fun StartupIssuesSheet(
     val scope = rememberCoroutineScope()
     var busyIssueId by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageIssueId by remember { mutableStateOf<String?>(null) }
     var confirmAbandon by remember { mutableStateOf<StartupIssue?>(null) }
     var records by remember { mutableStateOf<String?>(null) }
     val resolvedText = stringResource(R.string.startup_issues_resolved)
@@ -279,6 +419,7 @@ fun StartupIssuesSheet(
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
+            messageIssueId = null
             message = runCatching {
                 checkNotNull(app.contentResolver.openOutputStream(uri)).use { app.exportStartupDiagnostics(it) }
             }.fold({ exportedText }, { exportFailedText })
@@ -290,11 +431,13 @@ fun StartupIssuesSheet(
             val result = runCatching { app.resolveStartupIssue(issue.id, action, confirmed) }
                 .getOrElse { StartupIssueResolution.Failed(failedText) }
             busyIssueId = null
+            messageIssueId = issue.id
             when (result) {
                 StartupIssueResolution.ConfirmationRequired -> confirmAbandon = issue
                 StartupIssueResolution.Resolved, StartupIssueResolution.NotFound -> message = resolvedText
                 StartupIssueResolution.UnsupportedAction -> message = failedText
-                is StartupIssueResolution.Failed -> message = "$failedText ${result.summary}"
+                // 条目里的原因已随处置结果更新，这里只给结论，不重复原因。
+                is StartupIssueResolution.Failed -> message = failedText
             }
         }
     }
@@ -304,6 +447,7 @@ fun StartupIssuesSheet(
             rows = issues.map { StartupIssueRow(it, app.startupIssueManager.scopeDisplayName(it.scope)) },
             busyIssueId = busyIssueId,
             message = message,
+            messageIssueId = messageIssueId,
             canDiagnose = agentId != null,
             onAction = { issue, action ->
                 if (action == StartupIssueAction.ABANDON) confirmAbandon = issue else resolve(issue, action, confirmed = false)
@@ -313,7 +457,7 @@ fun StartupIssuesSheet(
                 scope.launch {
                     runCatching { app.createDiagnosticSession(issues.map { it.id }, id) }
                         .onSuccess { session -> onDismiss(); onOpenSession(session.id) }
-                        .onFailure { message = failedText }
+                        .onFailure { messageIssueId = null; message = failedText }
                 }
             },
             onViewRecords = { scope.launch { records = AppDiagnostics.recent().ifBlank { noRecordsText } } },

@@ -3,7 +3,6 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.theme.NexaraMotion
-import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.runtime.remember
 import com.promenar.nexara.ui.workspace.WorkspacePickerSheet
 import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
@@ -50,6 +49,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.PaddingValues
+import com.promenar.nexara.ui.common.LocalNexaraPanePresentation
+import com.promenar.nexara.ui.common.NexaraPanePresentation
+import com.promenar.nexara.ui.common.NexaraPageLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -85,11 +88,9 @@ import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.BettboxListGroup
-import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.theme.hierarchicalTransition
 import com.promenar.nexara.ui.common.NexaraSearchBar
-import com.promenar.nexara.ui.git.GitChangesSheet
 import com.promenar.nexara.ui.git.GitEntrySummary
 import com.promenar.nexara.ui.git.GitWorkspaceEntry
 import com.promenar.nexara.ui.testing.UiTags
@@ -97,9 +98,16 @@ import com.promenar.nexara.ui.workspace.workspaceKindLabel
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 
+/**
+ * 资源管理器二级页面：由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 承载，窄窗口整页、宽窗口停靠侧栏。
+ * Git 变更作为上一层压在本页之上打开，返回后本页的目录位置保持不变。
+ */
 @Composable
-fun ResourceExplorerSheet(
-    onDismiss: () -> Unit,
+fun ResourceExplorerPage(
+    onBack: () -> Unit,
+    onOpenGit: () -> Unit,
+    /** Git 页关闭时递增；本页据此刷新 Git 入口的分支与改动数。 */
+    gitRefreshKey: Int,
     sessionId: String,
     chatViewModel: ChatViewModel,
     /** 打开后定位到的工作区虚拟目录；不存在时定位到最近的已存在上级。 */
@@ -131,7 +139,6 @@ fun ResourceExplorerSheet(
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
     val directory by viewModel.directory.collectAsStateWithLifecycle()
     var showRecycle by rememberSaveable(sessionId) { mutableStateOf(false) }
-    var showGitPanel by rememberSaveable(sessionId) { mutableStateOf(false) }
     var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
     val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
     // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
@@ -148,11 +155,21 @@ fun ResourceExplorerSheet(
         if (uris.isNotEmpty()) viewModel.importDocuments(uris)
     }
 
-    NexaraBottomSheet(
-        show = true,
-        onDismiss = onDismiss,
+    val initialGitRefreshKey = remember { gitRefreshKey }
+    LaunchedEffect(gitRefreshKey) {
+        if (gitRefreshKey != initialGitRefreshKey) viewModel.refreshGitEntry()
+    }
+
+    NexaraPageLayout(
         title = stringResource(R.string.resource_explorer_title),
-        height = NexaraSheetHeight.Full,
+        onBack = onBack,
+        backCloses = LocalNexaraPanePresentation.current == NexaraPanePresentation.Pane,
+        scrollable = false,
+        bodyPadding = PaddingValues(
+            start = NexaraSpacing.ScreenHorizontal,
+            end = NexaraSpacing.ScreenHorizontal,
+            bottom = NexaraSpacing.Large,
+        ),
     ) {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
@@ -170,7 +187,7 @@ fun ResourceExplorerSheet(
                 workspaceSwitchFailed = workspaceSwitchFailed,
             ),
             actions = ResourceExplorerSheetActions(
-                onOpenGitPanel = { showGitPanel = true },
+                onOpenGitPanel = onOpenGit,
                 onOpenReach = { showReach = true },
                 onChooseWorkspace = { pickingWorkspace = true },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
@@ -280,15 +297,6 @@ fun ResourceExplorerSheet(
             executionMode = chatState.session?.executionMode,
             onDismiss = { showReach = false },
             onOpenTailscaleSettings = onOpenTailscaleSettings,
-        )
-    }
-    if (showGitPanel) {
-        GitChangesSheet(
-            sessionId = sessionId,
-            onDismiss = {
-                showGitPanel = false
-                viewModel.refreshGitEntry()
-            },
         )
     }
 }

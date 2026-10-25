@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.startup
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,7 +29,7 @@ private val SampleRows = listOf(
         StartupIssue(
             id = "issue-journal", step = StartupStep.WORKSPACE_JOURNAL, severity = StartupSeverity.ISOLATED,
             scope = StartupIssueScope(StartupScopeKind.WORKSPACE_ROOT, "root-1", "工作环境能力探测"),
-            summary = "移动类 journal 文件布局冲突",
+            summary = "WorkspaceMutationRecoveryException: 移动类 journal 文件布局冲突",
             actions = setOf(StartupIssueAction.RETRY, StartupIssueAction.ABANDON), occurredAt = 0,
         ),
         scopeName = "工作环境能力探测",
@@ -60,7 +61,13 @@ fun startupIssuesDarkPreview() = StartupPreview(NexaraThemeMode.DARK) {
     Spacer(Modifier.height(8.dp))
     StartupWritePausedBanner(onOpen = {})
     Spacer(Modifier.height(16.dp))
-    StartupIssuesSheetContent(SampleRows, busyIssueId = null, message = null, canDiagnose = true, onAction = { _, _ -> }, onDiagnose = {}, onViewRecords = {}, onExport = {})
+    // 面板外壳给出 24dp 水平留白。
+    Column(Modifier.padding(horizontal = 24.dp)) {
+        StartupIssuesSheetContent(
+            SampleRows, busyIssueId = null, message = "问题仍未解决。文件 journal 无法安全放弃", messageIssueId = "issue-journal",
+            canDiagnose = true, onAction = { _, _ -> }, onDiagnose = {}, onViewRecords = {}, onExport = {},
+        )
+    }
 }
 
 @PreviewTest
@@ -69,5 +76,7 @@ fun startupIssuesDarkPreview() = StartupPreview(NexaraThemeMode.DARK) {
 fun startupIssuesLightLargeFontPreview() = StartupPreview(NexaraThemeMode.LIGHT) {
     StartupIssuesBanner(count = 1, onOpen = {})
     Spacer(Modifier.height(16.dp))
-    StartupIssuesSheetContent(SampleRows, busyIssueId = "issue-vectors", message = null, canDiagnose = false, onAction = { _, _ -> }, onDiagnose = {}, onViewRecords = {}, onExport = {})
+    Column(Modifier.padding(horizontal = 24.dp)) {
+        StartupIssuesSheetContent(SampleRows, busyIssueId = "issue-vectors", message = null, canDiagnose = false, onAction = { _, _ -> }, onDiagnose = {}, onViewRecords = {}, onExport = {})
+    }
 }

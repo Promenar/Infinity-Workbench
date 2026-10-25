@@ -61,12 +61,13 @@
     <string name="run_mode_done">完成</string>
     <string name="run_mode_switch_failed">运行模式切换失败，请重试</string>
     <string name="run_mode_action_failed">没有完成，请重试</string>
-    <plurals name="run_mode_startup_banner">
-        <item quantity="other">Linux 环境不可用，%1$d 个 Linux 会话需要处理后才能执行命令</item>
-    </plurals>
     <string name="run_mode_startup_action">处理</string>
     <string name="run_mode_folder_real_path_only">Linux 会话只能按设备路径添加文件夹</string>
     <string name="run_mode_folder_need_all_files">需要允许“所有文件访问”后才能添加设备文件夹</string>
     <string name="run_mode_folder_mode_required">请先选择运行模式再添加文件夹</string>
     <string name="run_mode_folder_saf_hidden">Linux 中不可见</string>
+    <string name="run_mode_startup_banner_title">Linux 环境不可用</string>
+    <plurals name="run_mode_startup_banner_detail">
+        <item quantity="other">%1$d 个 Linux 会话需要处理后才能执行命令</item>
+    </plurals>
 </resources>
