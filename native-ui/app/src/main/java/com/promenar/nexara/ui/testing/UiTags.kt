@@ -490,6 +490,7 @@ object UiTags {
     fun linuxFileRow(path: String) = "linux_file_row:$path"
 
     // Linux 终端与输出
+    const val CHAT_TOOL_FULL_OUTPUT = "chat_tool_full_output"
     const val LINUX_TERMINAL_SCREEN = "linux_terminal_screen"
     const val LINUX_TERMINAL_NEW = "linux_terminal_new"
     const val LINUX_TERMINAL_CLOSE = "linux_terminal_close"

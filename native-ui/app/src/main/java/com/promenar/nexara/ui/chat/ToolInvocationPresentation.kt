@@ -30,6 +30,17 @@ internal data class ToolInvocationPresentation(val steps: List<ExecutionStep>) {
     val results: List<ExecutionStep> get() = steps.filter { it.type == "tool_result" || it.type == "error" }
     val failed: Boolean get() = results.any { it.type == "error" }
     val complete: Boolean get() = results.isNotEmpty()
+
+    /** 命令类工具的结果可在完整输出页查看。 */
+    val isCommand: Boolean get() = com.promenar.nexara.ui.linux.output.CommandOutputParser.isCommandTool(name)
+
+    /** 内置 shell 的结果标明运行在 Linux 环境；旧结果没有运行环境字段，按系统 shell 处理。 */
+    val ranInLinux: Boolean get() = name == "shell_exec" && results.any { result ->
+        result.content?.let {
+            com.promenar.nexara.ui.linux.output.CommandOutputParser.parse(name, call?.toolArgs, it, null).runtime ==
+                com.promenar.nexara.ui.linux.output.CommandRuntime.LINUX
+        } == true
+    }
     val durationMs: Long? get() {
         val start = call?.timestamp?.takeIf { it > 0 } ?: return null
         val end = results.maxOfOrNull { it.timestamp } ?: return null

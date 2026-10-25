@@ -320,25 +320,35 @@ fun NexaraNavGraph(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-            chatDestination(
-                sessionId,
-                { navController.popBackStack() },
-                { branchedSessionId ->
-                    if (branchedSessionId != sessionId) {
-                        navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
+            val linuxNavigation = remember(navController, sessionId) {
+                com.promenar.nexara.ui.linux.LinuxNavigation(
+                    openEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) { launchSingleTop = true } },
+                    openCommandOutput = { messageId, toolCallId ->
+                        navController.navigate(NavDestinations.commandOutput(sessionId, messageId, toolCallId))
+                    },
+                )
+            }
+            CompositionLocalProvider(com.promenar.nexara.ui.linux.LocalLinuxNavigation provides linuxNavigation) {
+                chatDestination(
+                    sessionId,
+                    { navController.popBackStack() },
+                    { branchedSessionId ->
+                        if (branchedSessionId != sessionId) {
+                            navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    {
+                        navController.navigate(NavDestinations.DEFAULT_MODELS) {
                             launchSingleTop = true
                         }
-                    }
-                },
-                {
-                    navController.navigate(NavDestinations.DEFAULT_MODELS) {
-                        launchSingleTop = true
-                    }
-                },
-                { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
-                { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
-                { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
-            )
+                    },
+                    { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
+                    { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
+                    { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
+                )
+            }
         }
 
         composable(

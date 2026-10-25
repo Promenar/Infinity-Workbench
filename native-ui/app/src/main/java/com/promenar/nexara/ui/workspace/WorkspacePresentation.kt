@@ -36,6 +36,7 @@ fun SessionWorkspace.toUi(): SessionWorkspaceUi = when (this) {
 fun workspaceKindLabel(kind: String?): String = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> stringResource(R.string.workspace_kind_project)
     WorkspaceEntity.KIND_SHARED -> stringResource(R.string.workspace_kind_shared)
+    WorkspaceEntity.KIND_LINUX_HOME -> stringResource(R.string.workspace_kind_linux_home)
     else -> stringResource(R.string.workspace_kind_private)
 }
 
@@ -46,6 +47,8 @@ fun workspaceKindLabel(kind: String?): String = when (kind) {
 @Composable
 fun workspaceLocationText(kind: String, location: String): String = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> stringResource(R.string.workspace_location_project, location)
+    // 登记位置带环境代次标记，界面只显示容器内路径。
+    WorkspaceEntity.KIND_LINUX_HOME -> location.substringBefore('#')
     else -> compactSharedPath(location)
 }
 

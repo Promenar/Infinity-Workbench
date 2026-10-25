@@ -55,6 +55,8 @@ internal data class AgentReachActions(
     val onEditLanHosts: () -> Unit = {},
     /** 所在页面无法跳转设置时为 null，Tailscale 行只显示状态。 */
     val onOpenTailscale: (() -> Unit)? = null,
+    /** 非 null 时 Linux 行可点按，进入 Linux 环境页安装、修复或开关。 */
+    val onOpenLinux: (() -> Unit)? = null,
 )
 
 /** 会话资源管理器中的“Agent 可达范围”面板；[executionMode] 为会话保存的执行模式原值。 */
@@ -73,6 +75,7 @@ fun AgentReachSheet(
     LaunchedEffect(viewModel) { viewModel.refresh() }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var editingHosts by remember { mutableStateOf(false) }
+    val linuxNavigation = com.promenar.nexara.ui.linux.LocalLinuxNavigation.current
     NexaraBottomSheet(
         show = true,
         onDismiss = onDismiss,
@@ -84,6 +87,7 @@ fun AgentReachSheet(
             actions = AgentReachActions(
                 onEditLanHosts = { editingHosts = true },
                 onOpenTailscale = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
+                onOpenLinux = linuxNavigation?.let { navigation -> { onDismiss(); navigation.openEnvironment() } },
             ),
         )
     }
@@ -116,7 +120,7 @@ internal fun AgentReachContent(
     ) {
         WorkspaceSection(state)
         PathSection(state)
-        BackendSection(state)
+        BackendSection(state, actions)
         ApprovalSection(state)
         NetworkSection(state, actions)
     }
@@ -199,7 +203,7 @@ private fun PathSection(state: AgentReachState) {
 }
 
 @Composable
-private fun BackendSection(state: AgentReachState) {
+private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
     val traits = state.workspace.traits
     NexaraSettingsSection(
         title = stringResource(R.string.agent_reach_section_backends),
@@ -209,7 +213,7 @@ private fun BackendSection(state: AgentReachState) {
             val (icon, title, scope) = when (backend.kind) {
                 ReachBackendKind.FILES -> Triple(Icons.Rounded.Description, R.string.agent_reach_backend_files, R.string.agent_reach_backend_files_scope)
                 ReachBackendKind.BUILTIN -> Triple(Icons.Rounded.Terminal, R.string.agent_reach_backend_builtin, R.string.agent_reach_backend_builtin_scope)
-                ReachBackendKind.LINUX -> Triple(Icons.Rounded.Terminal, R.string.linux_b2_runner, R.string.agent_reach_backend_builtin_scope)
+                ReachBackendKind.LINUX -> Triple(Icons.Rounded.Terminal, R.string.linux_runner_name, R.string.linux_reach_scope)
                 ReachBackendKind.SANDBOX -> Triple(Icons.Rounded.Code, R.string.agent_reach_backend_sandbox, R.string.agent_reach_backend_sandbox_scope)
                 ReachBackendKind.TERMUX -> Triple(
                     Icons.Rounded.PhoneAndroid,
@@ -218,16 +222,32 @@ private fun BackendSection(state: AgentReachState) {
                 )
                 ReachBackendKind.SSH -> Triple(Icons.Rounded.Dns, R.string.agent_reach_backend_ssh, R.string.agent_reach_backend_ssh_scope)
             }
-            NexaraSettingsRowLayout(
-                title = stringResource(title),
-                // 可用时说明作用范围，不可用时只说状态。
-                subtitle = if (backend.status == ReachBackendStatus.READY && backend.count == null) stringResource(scope)
-                else backendStatusText(backend),
-                icon = icon,
-                subtitleMaxLines = 2,
-                enabled = backend.status != ReachBackendStatus.DISABLED,
-                modifier = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}"),
-            )
+            // 可用时说明作用范围，不可用时只说状态。
+            val subtitle = if (backend.status == ReachBackendStatus.READY && backend.count == null) stringResource(scope)
+            else backendStatusText(backend)
+            val tag = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}")
+            val openLinux = actions.onOpenLinux.takeIf { backend.kind == ReachBackendKind.LINUX && backend.status != ReachBackendStatus.UNAVAILABLE }
+            if (openLinux != null) {
+                // Linux 的安装、修复与开关都在环境页完成，行本身就是去处理的入口。
+                NexaraSettingsItem(
+                    icon = icon,
+                    title = stringResource(title),
+                    subtitle = subtitle,
+                    subtitleMaxLines = 2,
+                    onClick = openLinux,
+                    showChevron = true,
+                    modifier = tag,
+                )
+            } else {
+                NexaraSettingsRowLayout(
+                    title = stringResource(title),
+                    subtitle = subtitle,
+                    icon = icon,
+                    subtitleMaxLines = 2,
+                    enabled = backend.status != ReachBackendStatus.DISABLED,
+                    modifier = tag,
+                )
+            }
         }
     }
 }
@@ -245,9 +265,9 @@ private fun backendStatusText(backend: ReachBackend): String = when (backend.sta
     ReachBackendStatus.UNSUPPORTED_VERSION -> stringResource(R.string.settings_termux_unsupported_version)
     ReachBackendStatus.NO_HOSTS -> stringResource(R.string.agent_reach_status_no_hosts)
     ReachBackendStatus.LOADING -> stringResource(R.string.settings_status_loading)
-    ReachBackendStatus.INSTALLING -> stringResource(R.string.linux_b2_installing)
-    ReachBackendStatus.BROKEN -> stringResource(R.string.linux_b2_broken)
-    ReachBackendStatus.UNAVAILABLE -> stringResource(R.string.linux_b2_unavailable)
+    ReachBackendStatus.INSTALLING -> stringResource(R.string.linux_reach_installing)
+    ReachBackendStatus.BROKEN -> stringResource(R.string.linux_reach_broken)
+    ReachBackendStatus.UNAVAILABLE -> stringResource(R.string.linux_reach_unavailable)
 }
 
 @Composable

@@ -187,7 +187,12 @@ object SystemPromptSections {
         null, com.promenar.nexara.data.workspace.SessionWorkspace.Private -> null
         is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> buildString {
             val shared = workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED
-            val place = if (shared) "a shared device-storage folder at `${workspace.workspace.location}`" else "a Nexara project folder"
+            val place = when {
+                shared -> "a shared device-storage folder at `${workspace.workspace.location}`"
+                workspace.workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME ->
+                    "the Linux environment's home directory `/root` (cleared when the user resets or uninstalls Linux)"
+                else -> "a Nexara project folder"
+            }
             appendLine("### Current Workspace")
             appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `/` is its root; `/mnt/<alias>` mounts stay available.")
             appendLine("- Nexara does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.SdStorage
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -57,6 +58,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.storage.RealPathMountSupport
 import com.promenar.nexara.data.workspace.CreateFolderResult
 import com.promenar.nexara.data.workspace.FolderNameError
+import com.promenar.nexara.data.workspace.LinuxHomeAvailability
 import com.promenar.nexara.data.workspace.WorkspaceDirectoryBrowser
 import com.promenar.nexara.data.workspace.WorkspaceFolder
 import com.promenar.nexara.domain.storage.ExternalFolderException
@@ -105,6 +107,8 @@ data class WorkspacePickerUiState(
     val selectedProject: String? = null,
     val busy: Boolean = false,
     val error: String? = null,
+    /** 侧载渠道才有 Linux 主目录；未就绪时入口可见但不可选。 */
+    val linuxHome: LinuxHomeAvailability = LinuxHomeAvailability.UNSUPPORTED,
 )
 
 /** 选定后由 [WorkspaceDirectoryBrowser] 登记；共享卷之下的路径段转成面包屑，根级“位置”回到起始页。 */
@@ -182,6 +186,9 @@ fun WorkspacePickerSheet(
     var reload by remember { mutableIntStateOf(0) }
     var creating by remember { mutableStateOf(false) }
     var createError by remember { mutableStateOf<FolderNameError?>(null) }
+    var linuxHome by remember { mutableStateOf(LinuxHomeAvailability.UNSUPPORTED) }
+    LaunchedEffect(browser) { linuxHome = browser.linuxHomeAvailability() }
+    val linuxHomeName = stringResource(R.string.workspace_kind_linux_home)
 
     val refreshPermission by rememberUpdatedState {
         permission = browser.hasSharedPermission()
@@ -234,7 +241,7 @@ fun WorkspacePickerSheet(
         page = page, registered = registered, currentWorkspaceId = currentWorkspaceId, showPrivate = onPickPrivate != null,
         sharedSupported = browser.sharedSupported, sharedPermission = permission, sharedRoots = roots,
         folders = folders, loading = loading, loadError = loadError, selectedProject = selectedProject,
-        busy = busy, error = error,
+        busy = busy, error = error, linuxHome = linuxHome,
     )
 
     NexaraBottomSheet(
@@ -254,6 +261,7 @@ fun WorkspacePickerSheet(
             },
             onPickRegistered = onPicked,
             onPickPrivate = { onPickPrivate?.invoke() },
+            onPickLinuxHome = { register { browser.registerLinuxHome(linuxHomeName) } },
             onSelectProject = { selectedProject = it },
             onCreate = {
                 createError = null
@@ -329,6 +337,7 @@ fun WorkspacePickerContent(
     onNavigate: (WorkspacePickerPage) -> Unit = {},
     onPickRegistered: (WorkspaceEntity) -> Unit = {},
     onPickPrivate: () -> Unit = {},
+    onPickLinuxHome: () -> Unit = {},
     onSelectProject: (String) -> Unit = {},
     onCreate: () -> Unit = {},
     onUseFolder: () -> Unit = {},
@@ -377,7 +386,7 @@ fun WorkspacePickerContent(
             contentPadding = PaddingValues(bottom = NexaraSpacing.Large),
         ) {
             when (page) {
-                WorkspacePickerPage.Home -> homeItems(state, volumeLabels, onNavigate, onPickRegistered, onPickPrivate, onGrantPermission)
+                WorkspacePickerPage.Home -> homeItems(state, volumeLabels, onNavigate, onPickRegistered, onPickPrivate, onPickLinuxHome, onGrantPermission)
                 WorkspacePickerPage.Projects -> folderItems(state, onRetry, emptyText = R.string.workspace_picker_projects_empty) { folder ->
                     NexaraSettingsItem(
                         title = folder.name,
@@ -437,6 +446,7 @@ private fun LazyListScope.homeItems(
     onNavigate: (WorkspacePickerPage) -> Unit,
     onPickRegistered: (WorkspaceEntity) -> Unit,
     onPickPrivate: () -> Unit,
+    onPickLinuxHome: () -> Unit,
     onGrantPermission: () -> Unit,
 ) {
     if (state.showPrivate) {
@@ -452,7 +462,8 @@ private fun LazyListScope.homeItems(
             )
         }
     }
-    val (projects, shared) = state.registered.partition { it.kind == WorkspaceEntity.KIND_PROJECT }
+    val projects = state.registered.filter { it.kind == WorkspaceEntity.KIND_PROJECT }
+    val shared = state.registered.filter { it.kind == WorkspaceEntity.KIND_SHARED }
     item(key = "project_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_PROJECT) }
     items(projects, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
     item(key = "projects") {
@@ -465,6 +476,7 @@ private fun LazyListScope.homeItems(
             modifier = Modifier.testTag("workspace_picker_projects"),
         )
     }
+    linuxHomeItems(state, onPickLinuxHome)
     if (!state.sharedSupported && shared.isEmpty()) return
     item(key = "shared_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_SHARED) }
     items(shared, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
@@ -494,6 +506,27 @@ private fun LazyListScope.homeItems(
                 modifier = Modifier.testTag("workspace_picker_volume"),
             )
         }
+    }
+}
+
+/**
+ * Linux 主目录只有一个入口：登记按环境代次去重，重置后旧登记不可用，选择时总是登记当前代次。
+ * 当前会话已绑定任一 Linux 主目录登记时显示为已选。
+ */
+private fun LazyListScope.linuxHomeItems(state: WorkspacePickerUiState, onPick: () -> Unit) {
+    if (state.linuxHome == LinuxHomeAvailability.UNSUPPORTED) return
+    val ready = state.linuxHome == LinuxHomeAvailability.READY
+    item(key = "linux_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_LINUX_HOME) }
+    item(key = "linux_home") {
+        PickerRow(
+            title = stringResource(R.string.workspace_picker_linux_home),
+            subtitle = if (ready) null else stringResource(R.string.workspace_picker_linux_not_ready),
+            selected = state.registered.any { it.kind == WorkspaceEntity.KIND_LINUX_HOME && it.id == state.currentWorkspaceId },
+            enabled = ready && !state.busy,
+            onClick = onPick,
+            leading = { WorkspaceKindIcon(WorkspaceEntity.KIND_LINUX_HOME) },
+            modifier = Modifier.testTag("workspace_picker_linux_home"),
+        )
     }
 }
 
@@ -577,6 +610,7 @@ internal fun WorkspaceKindIcon(kind: String?) {
         imageVector = when (kind) {
             WorkspaceEntity.KIND_PROJECT -> Icons.Rounded.Folder
             WorkspaceEntity.KIND_SHARED -> Icons.Rounded.PhoneAndroid
+            WorkspaceEntity.KIND_LINUX_HOME -> Icons.Rounded.Terminal
             else -> Icons.Rounded.ChatBubbleOutline
         },
         contentDescription = null,

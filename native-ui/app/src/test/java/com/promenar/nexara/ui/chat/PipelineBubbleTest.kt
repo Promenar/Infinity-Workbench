@@ -177,4 +177,27 @@ class PipelineBubbleTest {
         assertThat(pipelineReplyCopyText(steps)).isEqualTo("前段正文\n\n末段正文")
         assertThat(pipelineReplyCopyText(emptyList())).isEmpty()
     }
+
+    @Test
+    fun `command output target maps a scoped call step back to its persisted tool call id`() {
+        val call = ExecutionStep(id = "step-1", type = "tool_call", toolName = "shell_exec", toolCallId = "call_abc")
+        val messages = listOf(
+            Message(id = "msg-1", role = MessageRole.ASSISTANT, content = "", executionSteps = listOf(call)),
+        )
+        assertThat(commandOutputTarget(messages, "msg-1::step-1")).isEqualTo("msg-1" to "call_abc")
+        // 未限定作用域、找不到消息或步骤没有调用 id 时不提供入口。
+        assertThat(commandOutputTarget(messages, "step-1")).isNull()
+        assertThat(commandOutputTarget(messages, "msg-2::step-1")).isNull()
+        val withoutId = listOf(Message(id = "msg-1", role = MessageRole.ASSISTANT, content = "", executionSteps = listOf(call.copy(toolCallId = null))))
+        assertThat(commandOutputTarget(withoutId, "msg-1::step-1")).isNull()
+    }
+
+    @Test
+    fun `shell results are marked linux only when the result says so`() {
+        val call = ExecutionStep(id = "c", type = "tool_call", toolName = "shell_exec", toolArgs = "{\"command\":\"uname\"}", toolCallId = "call")
+        fun result(content: String) = ExecutionStep(id = "r", type = "tool_result", toolName = "shell_exec", toolCallId = "call", content = content)
+        assertThat(ToolInvocationPresentation(listOf(call, result("{\"exit_code\":0,\"stdout\":\"Linux\",\"runtime\":\"linux\"}"))).ranInLinux).isTrue()
+        assertThat(ToolInvocationPresentation(listOf(call, result("{\"exit_code\":0,\"stdout\":\"Linux\"}"))).ranInLinux).isFalse()
+        assertThat(ToolInvocationPresentation(listOf(call, result("{\"exit_code\":0,\"stdout\":\"Linux\"}"))).isCommand).isTrue()
+    }
 }
