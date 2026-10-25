@@ -88,6 +88,7 @@ graph TD
 - **RagOmniIndicator**: 基于磨砂玻璃设计的全能检索指示器，集成在对话流中展示检索深度与进度。
 - **NexaraLogger**: Debug 构建的统一脱敏日志和 Metro 事件边界；Release 入口受 `BuildConfig.DEBUG` 门禁并由 R8 精确剥离，业务源码禁止直接写平台日志或完整堆栈。
 - **AgentHubScreen**: Agent 列表中枢（Super Assistant 已于 2026-05-13 清理）。
+- **会话 Git 只读检查（data/git、ui/git、python/site/nexara_git.py）**: 调用链 `GitChangesService → GitInspector → nexara_git --nexara-inspect`，打包 Python 经 Dulwich 只读本地对象与引用，不联网、不写仓库，输出 JSON `version: 1`，Kotlin 解析忽略未知字段、旧输出缺字段时为空。`status` 另返回 `upstream`、`ahead`/`behind`（各上限 1000）、`upstream_missing`、`tracking_truncated`（遍历 10,000 个提交的预算耗尽或历史缺失时两计数为空，不显示为 0）与 `last_fetch_seconds`（FETCH_HEAD 修改时间）；三组文件带 `added_lines`/`removed_lines`（`nexara_git_numstat.py` 无依赖 Myers 最短编辑，按原始字节 LF 分行，不执行 textconv/过滤器与 `.gitattributes`），超出 200 个条目、4 MiB 读取或 2,000,000 步差异预算以及二进制、符号链接、子模块、冲突时给 `lines_skipped` 原因。`branches --limit N` 列本地分支（作者时间倒序）及其跟踪。界面：`ChatRoute` 在进入会话、每轮生成结束与关闭面板时于 IO 读取一次状态，仓库存在时 `ChatTopBar` 标题下显示“分支 · 改动数 · ↑领先 · ↓落后”，点开 `GitChangesSheet`（页头为分支、上游、HEAD 与上次抓取，领先/落后标签，变更、提交、分支三页，变更行显示增删行数）；底部“拉取并合并 / 提交并推送”经 `onAskAgent` 把请求作为普通消息发给 Agent，由命令工具执行并走审批，生成中不可用；从资源管理器打开时不提供该操作区。
 
 ### 架构决策记录 (ADR)
 - **ADR-001 (2026-05-13)**: **取消 Super Assistant 概念** — 统一 Agent 模型，移除 `isSuperAssistant` 特殊逻辑。✅ 已实施（Phase 3, 2026-05-13）。

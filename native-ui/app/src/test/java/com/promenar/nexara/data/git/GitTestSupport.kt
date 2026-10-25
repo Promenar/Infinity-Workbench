@@ -49,6 +49,14 @@ internal object InspectFixtures {
     const val SHA_A = "1111111111111111111111111111111111111111"
     const val SHA_B = "2222222222222222222222222222222222222222"
 
+    val branches = """
+        {"version":1,"repository":true,"truncated":false,"branches":[
+         {"name":"main","current":true,"short_sha":"2222222","author_time":1700000000,"title":"第二个提交",
+          "upstream":"origin/main","ahead":2,"behind":1,"upstream_missing":false,"tracking_truncated":false},
+         {"name":"topic","current":false,"short_sha":"1111111","author_time":1690000000,"title":"第一个提交",
+          "upstream":null,"ahead":null,"behind":null,"upstream_missing":false,"tracking_truncated":false}]}
+    """.trimIndent()
+
     val status = """
         {"version":1,"repository":true,"branch":"main","detached":false,"head":"$SHA_B","unborn":false,
          "staged":[{"path":"src/App.kt","change":"modified"},{"path":"docs/new.md","change":"added"}],

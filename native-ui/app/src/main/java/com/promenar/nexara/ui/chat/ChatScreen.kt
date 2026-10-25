@@ -145,6 +145,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -239,6 +240,8 @@ data class ChatScreenState(
     val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
     /** 当前会话中等待用户决定的子代理审批，按请求时间排列，在会话流底部以卡片呈现。 */
     val subagentApprovals: List<com.promenar.nexara.data.subagent.SubagentApproval> = emptyList(),
+    /** 会话工作区是 Git 仓库时的分支与改动摘要，显示在顶栏标题下方；否则为 null。 */
+    val gitSummary: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
 )
 
 data class ChatScreenActions(
@@ -246,6 +249,7 @@ data class ChatScreenActions(
     /** 允许或拒绝一项子代理审批（审批 id，是否允许）。 */
     val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
+    val onOpenGit: () -> Unit = {},
     /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
     val onLocateWorkspacePath: (String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
@@ -573,6 +577,8 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                     onCanvases = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
+                    git = state.gitSummary,
+                    onOpenGit = actions.onOpenGit,
                 )
               }
             },
@@ -1567,6 +1573,8 @@ fun ChatTopBar(
     showDivider: Boolean = false,
     windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     onCanvases: (() -> Unit)? = null,
+    git: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
+    onOpenGit: () -> Unit = {},
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -1577,20 +1585,47 @@ fun ChatTopBar(
     )
     Box {
     TopAppBar(
-        expandedHeight = 56.dp,
+        expandedHeight = if (git != null) 64.dp else 56.dp,
         windowInsets = windowInsets,
         title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.chat_menu_rename), onClick = onRename)
-                    .wrapContentHeight(Alignment.CenterVertically)
-                    .testTag("chat_top_title"),
-            )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.heightIn(min = if (git != null) 32.dp else 48.dp)
+                        .clickable(role = Role.Button, onClickLabel = stringResource(R.string.chat_menu_rename), onClick = onRename)
+                        .wrapContentHeight(Alignment.CenterVertically)
+                        .testTag("chat_top_title"),
+                )
+                // 分支 · 改动数 · ↑领先，点开 Git 面板；标题与 Git 行各自是独立的点按目标。
+                if (git != null) {
+                    val line = com.promenar.nexara.ui.git.gitSummaryLine(git, compactChanges = true)
+                    val description = stringResource(R.string.git_top_bar_cd, line)
+                    // 长分支名先从中间缩短，仍放不下时只截分支名，改动数与领先落后始终完整。
+                    val suffix = com.promenar.nexara.ui.git.gitSummarySuffix(git, compactChanges = true)
+                    val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.heightIn(min = 24.dp)
+                            .clickable(role = Role.Button, onClick = onOpenGit)
+                            .clearAndSetSemantics { contentDescription = description }
+                            .testTag(UiTags.CHAT_GIT_LINE),
+                    ) {
+                        Text(
+                            text = com.promenar.nexara.ui.git.shortenMiddle(line.removeSuffix(suffix), 22),
+                            style = style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(text = suffix, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                    }
+                }
+            }
         },
         navigationIcon = {
             NexaraBackButton(onClick = onBack)

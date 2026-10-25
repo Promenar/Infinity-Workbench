@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Git 变更面板的状态：工作区变更三组、最近提交、提交详情与单文件差异。只读；
+ * Git 变更面板的状态：工作区变更三组、最近提交、本地分支、提交详情与单文件差异。只读；
  * 差异模型在 [diffDispatcher]（默认 `Dispatchers.Default`）上构建后再交给视图。
  * 每次导航递增详情或文件令牌，过期任务的结果不会覆盖当前页面。
  */
@@ -35,6 +35,7 @@ class GitPanelViewModel(
 
     private var statusJob: Job? = null
     private var logJob: Job? = null
+    private var branchesJob: Job? = null
     private var detailJob: Job? = null
     private var fileJob: Job? = null
     private var detailToken = 0L
@@ -55,6 +56,7 @@ class GitPanelViewModel(
         loadStatus()
         val current = _state.value
         if (current.tab == GitPanelTab.COMMITS || current.log != null) loadLog()
+        if (current.tab == GitPanelTab.BRANCHES || current.branches != null) loadBranches()
         when (val detail = current.detail) {
             null -> Unit
             is GitPanelDetail.Change -> openChange(detail.group, detail.change)
@@ -69,6 +71,7 @@ class GitPanelViewModel(
     fun selectTab(tab: GitPanelTab) {
         _state.update { it.copy(tab = tab) }
         if (tab == GitPanelTab.COMMITS && _state.value.log == null) loadLog()
+        if (tab == GitPanelTab.BRANCHES && _state.value.branches == null) loadBranches()
     }
 
     fun openChange(group: GitChangeGroup, change: GitFileChange) {
@@ -156,6 +159,15 @@ class GitPanelViewModel(
         logJob = viewModelScope.launch {
             val log = service.log(sessionId).toLoad()
             _state.update { it.copy(log = log) }
+        }
+    }
+
+    private fun loadBranches() {
+        branchesJob?.cancel()
+        _state.update { state -> if (state.branches is GitLoad.Ready) state else state.copy(branches = GitLoad.Loading) }
+        branchesJob = viewModelScope.launch {
+            val branches = service.branches(sessionId).toLoad()
+            _state.update { it.copy(branches = branches) }
         }
     }
 

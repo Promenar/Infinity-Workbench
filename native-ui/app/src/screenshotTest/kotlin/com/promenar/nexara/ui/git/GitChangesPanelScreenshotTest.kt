@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
+import com.promenar.nexara.data.git.GitBranch
+import com.promenar.nexara.data.git.GitBranchList
 import com.promenar.nexara.data.git.GitChangeGroup
 import com.promenar.nexara.data.git.GitChangeKind
 import com.promenar.nexara.data.git.GitChangeList
@@ -24,10 +26,13 @@ import com.promenar.nexara.data.git.GitDiffSides
 import com.promenar.nexara.data.git.GitFileChange
 import com.promenar.nexara.data.git.GitFileContent
 import com.promenar.nexara.data.git.GitStatus
+import com.promenar.nexara.data.git.GitTracking
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
+
+private const val PreviewNow = 1_792_400_300_000L
 
 private val SampleStatus = GitStatus(
     branch = "feature/git-panel",
@@ -36,24 +41,39 @@ private val SampleStatus = GitStatus(
     unborn = false,
     staged = GitChangeList(
         listOf(
-            GitFileChange("native-ui/app/src/main/java/com/promenar/nexara/data/git/GitInspector.kt", GitChangeKind.MODIFIED),
-            GitFileChange("docs/git-panel.md", GitChangeKind.ADDED),
+            GitFileChange("native-ui/app/src/main/java/com/promenar/nexara/data/git/GitInspector.kt", GitChangeKind.MODIFIED, addedLines = 12, removedLines = 4),
+            GitFileChange("docs/git-panel.md", GitChangeKind.ADDED, addedLines = 210, removedLines = 0),
             GitFileChange("src/NewName.kt", GitChangeKind.RENAMED, oldPath = "src/legacy/OldName.kt"),
         ),
     ),
     unstaged = GitChangeList(
         listOf(
-            GitFileChange("native-ui/app/src/main/java/com/promenar/nexara/data/git/GitInspector.kt", GitChangeKind.MODIFIED),
-            GitFileChange("README.md", GitChangeKind.MODIFIED),
-            GitFileChange("scripts/obsolete-build-helper.sh", GitChangeKind.DELETED),
+            GitFileChange("native-ui/app/src/main/java/com/promenar/nexara/data/git/GitInspector.kt", GitChangeKind.MODIFIED, addedLines = 40, removedLines = 18),
+            GitFileChange("README.md", GitChangeKind.MODIFIED, linesSkipped = "binary"),
+            GitFileChange("scripts/obsolete-build-helper.sh", GitChangeKind.DELETED, addedLines = 0, removedLines = 63),
         ),
     ),
     untracked = GitChangeList(
         listOf(
-            GitFileChange("notes/会议记录 2026-10-19.md", GitChangeKind.ADDED),
+            GitFileChange("notes/会议记录 2026-10-19.md", GitChangeKind.ADDED, addedLines = 8, removedLines = 0),
             GitFileChange("tmp/a-very-long-generated-file-name-without-any-natural-break-points-0123456789.json", GitChangeKind.ADDED),
         ),
         truncated = true,
+    ),
+    tracking = GitTracking(upstream = "origin/feature/git-panel", ahead = 2, behind = 1, upstreamMissing = false, truncated = false),
+    lastFetchSeconds = PreviewNow / 1000 - 5 * 60,
+)
+
+private val SampleBranches = GitBranchList(
+    listOf(
+        GitBranch("feature/git-panel", current = true, shortSha = "3f9c2a1", authorTimeSeconds = 1_792_400_000L,
+            title = "feat(git): 只读 Git 变更面板与检查子命令",
+            tracking = GitTracking("origin/feature/git-panel", 2, 1, false, false)),
+        GitBranch("main", shortSha = "a1b2c3d", authorTimeSeconds = 1_792_310_000L,
+            title = "fix(workspace): 共享存储大小写不敏感时只保留一个路径",
+            tracking = GitTracking("origin/main", 0, 0, false, false)),
+        GitBranch("experiment/a-very-long-branch-name-for-wrapping-checks", shortSha = "0f1e2d3", authorTimeSeconds = 1_792_000_000L,
+            title = "Initial commit"),
     ),
 )
 
@@ -113,7 +133,13 @@ private fun PanelPreview(mode: NexaraThemeMode, content: @Composable () -> Unit)
 }
 
 @Composable
-private fun Panel(state: GitPanelUiState) = GitChangesPanel(state = state, actions = GitPanelActions(), modifier = Modifier.fillMaxSize())
+private fun Panel(state: GitPanelUiState, agentBusy: Boolean = false) = GitChangesPanel(
+    state = state,
+    actions = GitPanelActions(onAskAgent = { _, _ -> }),
+    agentBusy = agentBusy,
+    nowMillis = PreviewNow,
+    modifier = Modifier.fillMaxSize(),
+)
 
 private val ChangesState = GitPanelUiState(status = GitLoad.Ready(SampleStatus))
 private val DiffState = ChangesState.copy(
@@ -132,6 +158,18 @@ private val CommitDetailState = CommitsState.copy(
         ),
     ),
 )
+
+private val BranchesState = ChangesState.copy(tab = GitPanelTab.BRANCHES, branches = GitLoad.Ready(SampleBranches))
+
+@PreviewTest
+@Preview(name = "Git 分支 浅中390", widthDp = 390, heightDp = 760, locale = "zh-rCN")
+@Composable
+fun gitBranchesLightPreview() = PanelPreview(NexaraThemeMode.LIGHT) { Panel(BranchesState) }
+
+@PreviewTest
+@Preview(name = "Git 分支 生成中 深英360 大字体", widthDp = 360, heightDp = 860, locale = "en", fontScale = 1.3f)
+@Composable
+fun gitBranchesBusyDarkPreview() = PanelPreview(NexaraThemeMode.DARK) { Panel(BranchesState, agentBusy = true) }
 
 @PreviewTest
 @Preview(name = "Git 变更列表 深中360", widthDp = 360, heightDp = 760, locale = "zh-rCN")

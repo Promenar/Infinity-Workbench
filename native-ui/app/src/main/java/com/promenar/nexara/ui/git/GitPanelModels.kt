@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.git
 
 import androidx.compose.runtime.Immutable
+import com.promenar.nexara.data.git.GitBranchList
 import com.promenar.nexara.data.git.GitChangeGroup
 import com.promenar.nexara.data.git.GitCommitDetail
 import com.promenar.nexara.data.git.GitCommitLog
@@ -10,6 +11,7 @@ import com.promenar.nexara.data.git.GitFileChange
 import com.promenar.nexara.data.git.GitInspectError
 import com.promenar.nexara.data.git.GitInspectResult
 import com.promenar.nexara.data.git.GitStatus
+import com.promenar.nexara.data.git.GitTracking
 import com.promenar.nexara.ui.common.diff.FileChangeKind
 import com.promenar.nexara.ui.common.diff.FileDiffContent
 import com.promenar.nexara.ui.common.diff.FileDiffModel
@@ -61,6 +63,9 @@ sealed interface GitEntrySummary {
         val unborn: Boolean,
         val changeCount: Int,
         val truncated: Boolean,
+        /** 领先上游的提交数；无上游或无法确定时为空。 */
+        val ahead: Int? = null,
+        val behind: Int? = null,
     ) : GitEntrySummary
 
     /** 工作区含 `.git`，但当前 ABI 没有打包 Python。 */
@@ -79,6 +84,8 @@ sealed interface GitEntrySummary {
                     unborn = status.unborn,
                     changeCount = status.changeCount,
                     truncated = status.truncated,
+                    ahead = status.tracking.ahead,
+                    behind = status.tracking.behind,
                 )
             }
             is GitInspectResult.Failure -> when (result.error) {
@@ -90,7 +97,7 @@ sealed interface GitEntrySummary {
     }
 }
 
-enum class GitPanelTab { CHANGES, COMMITS }
+enum class GitPanelTab { CHANGES, COMMITS, BRANCHES }
 
 @Immutable
 data class GitPanelFileDiff(val change: GitFileChange, val diff: GitLoad<FileDiffModel>)
@@ -114,6 +121,8 @@ data class GitPanelUiState(
     val status: GitLoad<GitStatus> = GitLoad.Loading,
     /** 为空表示尚未请求提交列表（切到“最近提交”时才加载）。 */
     val log: GitLoad<GitCommitLog>? = null,
+    /** 为空表示尚未请求本地分支（切到“分支”时才加载）。 */
+    val branches: GitLoad<GitBranchList>? = null,
     val detail: GitPanelDetail? = null,
     /** 已有内容时的后台刷新。 */
     val refreshing: Boolean = false,
@@ -126,7 +135,60 @@ data class GitPanelActions(
     val onOpenCommit: (GitCommitSummary) -> Unit = {},
     val onOpenCommitFile: (GitFileChange) -> Unit = {},
     val onBack: () -> Unit = {},
+    /** 为空时面板不提供交给 Agent 的写操作（例如从资源管理器打开）。 */
+    val onAskAgent: ((GitAgentRequest, String?) -> Unit)? = null,
 )
+
+/** 交给 Agent 执行的 Git 写操作；面板本身只读，按钮只把请求作为一条消息发给 Agent。 */
+enum class GitAgentRequest { PULL_MERGE, COMMIT_PUSH }
+
+/** 上次抓取距今：按分钟、小时、天取整，时钟回拨视为刚刚。 */
+sealed interface GitFetchAge {
+    data object Never : GitFetchAge
+    data object JustNow : GitFetchAge
+    data class Minutes(val value: Int) : GitFetchAge
+    data class Hours(val value: Int) : GitFetchAge
+    data class Days(val value: Int) : GitFetchAge
+}
+
+fun gitFetchAge(lastFetchSeconds: Long?, nowMillis: Long): GitFetchAge {
+    lastFetchSeconds ?: return GitFetchAge.Never
+    val minutes = ((nowMillis / 1000 - lastFetchSeconds) / 60).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> GitFetchAge.JustNow
+        minutes < 60 -> GitFetchAge.Minutes(minutes.toInt())
+        minutes < 24 * 60 -> GitFetchAge.Hours((minutes / 60).toInt())
+        else -> GitFetchAge.Days((minutes / (24 * 60)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+}
+
+/** 超过 [max] 个字符时保留首尾、中间换成省略号，分支名的前缀与末段都有辨识度。 */
+fun shortenMiddle(text: String, max: Int): String {
+    if (text.length <= max || max < 3) return text
+    val keep = max - 1
+    val head = (keep + 1) / 2
+    return text.take(head) + "\u2026" + text.takeLast(keep - head)
+}
+
+/** 检查端单项计数的上限；截断时达到上限的计数显示为“1000+”。 */
+const val GIT_TRACKING_COUNT_CAP = 1000
+
+/** 领先或落后的显示数；为空或 0 时不显示。 */
+fun gitTrackingCount(count: Int?, truncated: Boolean?): String? = when {
+    count == null || count <= 0 -> null
+    truncated == true && count >= GIT_TRACKING_COUNT_CAP -> "$count+"
+    else -> count.toString()
+}
+
+/** 计数因预算耗尽或历史缺失无法确定：截断且两项都为空。 */
+val GitTracking.countsUnknown: Boolean
+    get() = upstream != null && upstreamMissing != true && truncated == true && ahead == null && behind == null
+
+/** 拉取需要一个本地存在的上游。 */
+fun GitStatus.canPull(): Boolean = tracking.upstream != null && tracking.upstreamMissing != true
+
+/** 有工作区改动，或已有未推送的提交。 */
+fun GitStatus.canCommitPush(): Boolean = !isClean || (tracking.ahead ?: 0) > 0
 
 /** 由两侧内容构建差异模型；计算量与文件大小相关，调用方应在 `Dispatchers.Default` 上执行。 */
 object GitDiffModels {

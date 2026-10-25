@@ -45,6 +45,7 @@ class GitPanelViewModelTest {
             "status" -> InspectFixtures.status
             "log" -> InspectFixtures.log
             "commit" -> InspectFixtures.commit
+            "branches" -> InspectFixtures.branches
             "read" -> InspectFixtures.echoRead(args)
             else -> null
         }
@@ -88,6 +89,23 @@ class GitPanelViewModelTest {
         // 刷新时状态与提交列表并行读取，顺序不定。
         assertThat(runner.operations().take(2)).containsExactly("status", "log").inOrder()
         assertThat(runner.operations().drop(2)).containsExactly("status", "log")
+    }
+
+    @Test fun `切到分支页时才读取本地分支，刷新时一并重读`() {
+        val viewModel = track(GitPanelViewModel("s", service))
+        viewModel.open()
+        awaitState(viewModel) { it.status is GitLoad.Ready }
+        assertThat(runner.operations()).doesNotContain("branches")
+
+        viewModel.selectTab(GitPanelTab.BRANCHES)
+        val loaded = awaitState(viewModel) { it.branches is GitLoad.Ready }
+        val branches = (loaded.branches as GitLoad.Ready).value.branches
+        assertThat(branches.map { it.name }).containsExactly("main", "topic").inOrder()
+        assertThat(branches.first().tracking.ahead).isEqualTo(2)
+
+        viewModel.refresh()
+        awaitState(viewModel) { !it.refreshing && runner.operations().count { op -> op == "branches" } == 2 }
+        assertThat(runner.operations()).doesNotContain("log")
     }
 
     @Test fun `未跟踪文件差异在后台构建为新建文件，返回后回到列表`() {

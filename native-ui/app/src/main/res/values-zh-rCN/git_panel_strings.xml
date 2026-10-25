@@ -4,7 +4,7 @@
     <string name="git_panel_entry_cd">打开 Git 变更面板</string>
     <string name="git_panel_refresh">刷新</string>
     <string name="git_panel_tab_changes">变更</string>
-    <string name="git_panel_tab_commits">最近提交</string>
+    <string name="git_panel_tab_commits">提交</string>
     <string name="git_panel_readonly_hint">只读。提交、推送等操作请交给 Agent。</string>
     <string name="git_panel_branch_detached">游离 HEAD %1$s</string>
     <string name="git_panel_branch_unknown">未知分支</string>
@@ -53,4 +53,41 @@
     <string name="git_panel_error_timeout">读取 Git 信息超时</string>
     <string name="git_panel_error_unsafe_path">该路径无法安全显示</string>
     <string name="git_panel_error_failed">无法读取 Git 信息</string>
+    <string name="git_panel_tab_branches">分支</string>
+    <string name="git_panel_tracking">跟踪 %1$s</string>
+    <string name="git_panel_no_upstream">未设置上游分支</string>
+    <string name="git_panel_upstream_missing">上游 %1$s 在本地不存在</string>
+    <string name="git_panel_head">HEAD %1$s</string>
+    <string name="git_panel_fetch_never">尚未抓取</string>
+    <string name="git_panel_fetch_just_now">刚刚抓取</string>
+    <plurals name="git_panel_fetch_minutes">
+        <item quantity="other">上次抓取 %d 分钟前</item>
+    </plurals>
+    <plurals name="git_panel_fetch_hours">
+        <item quantity="other">上次抓取 %d 小时前</item>
+    </plurals>
+    <plurals name="git_panel_fetch_days">
+        <item quantity="other">上次抓取 %d 天前</item>
+    </plurals>
+    <string name="git_panel_ahead">领先 %1$s 个提交</string>
+    <string name="git_panel_behind">落后 %1$s 个提交</string>
+    <string name="git_panel_tracking_unknown">领先与落后数无法确定</string>
+    <string name="git_panel_lines_binary">二进制</string>
+    <string name="git_panel_lines_a11y">新增 %1$d 行，删除 %2$d 行</string>
+    <string name="git_panel_branch_current">当前</string>
+    <string name="git_panel_no_branches">没有本地分支</string>
+    <plurals name="git_panel_branches_truncated">
+        <item quantity="other">仅显示最近 %1$d 个分支</item>
+    </plurals>
+    <string name="git_panel_agent_hint">写操作由 Agent 执行，执行前会请你批准。</string>
+    <string name="git_panel_agent_busy">Agent 正在运行，结束后再交给它执行。</string>
+    <string name="git_panel_action_pull">拉取并合并</string>
+    <string name="git_panel_action_commit_push">提交并推送</string>
+    <string name="git_agent_prompt_pull">请用 git 拉取当前分支的上游 %1$s 并合并到本地分支；如有冲突，先列出冲突文件，再问我怎么处理。</string>
+    <string name="git_agent_prompt_commit_push">请检查当前工作区的 git 改动：先列出要提交的文件，按改动内容写提交说明后提交，再推送到 %1$s。</string>
+    <string name="git_agent_prompt_commit_push_no_upstream">请检查当前工作区的 git 改动：先列出要提交的文件，按改动内容写提交说明后提交。当前分支没有上游，推送前先告诉我要推到哪个远端分支。</string>
+    <plurals name="git_top_bar_changes">
+        <item quantity="other">%d 处改动</item>
+    </plurals>
+    <string name="git_top_bar_cd">打开 Git 面板：%1$s</string>
 </resources>

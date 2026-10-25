@@ -4,7 +4,7 @@
     <string name="git_panel_entry_cd">Open Git changes</string>
     <string name="git_panel_refresh">Refresh</string>
     <string name="git_panel_tab_changes">Changes</string>
-    <string name="git_panel_tab_commits">Recent commits</string>
+    <string name="git_panel_tab_commits">Commits</string>
     <string name="git_panel_readonly_hint">Read-only. Ask the agent to commit, push and so on.</string>
     <string name="git_panel_branch_detached">Detached HEAD %1$s</string>
     <string name="git_panel_branch_unknown">Unknown branch</string>
@@ -59,4 +59,46 @@
     <string name="git_panel_error_timeout">Reading Git data timed out</string>
     <string name="git_panel_error_unsafe_path">This path can\'t be shown safely</string>
     <string name="git_panel_error_failed">Couldn\'t read Git data</string>
+    <string name="git_panel_tab_branches">Branches</string>
+    <string name="git_panel_tracking">Tracking %1$s</string>
+    <string name="git_panel_no_upstream">No upstream branch</string>
+    <string name="git_panel_upstream_missing">Upstream %1$s not found locally</string>
+    <string name="git_panel_head">HEAD %1$s</string>
+    <string name="git_panel_fetch_never">Never fetched</string>
+    <string name="git_panel_fetch_just_now">Fetched just now</string>
+    <plurals name="git_panel_fetch_minutes">
+        <item quantity="one">Fetched %d minute ago</item>
+        <item quantity="other">Fetched %d minutes ago</item>
+    </plurals>
+    <plurals name="git_panel_fetch_hours">
+        <item quantity="one">Fetched %d hour ago</item>
+        <item quantity="other">Fetched %d hours ago</item>
+    </plurals>
+    <plurals name="git_panel_fetch_days">
+        <item quantity="one">Fetched %d day ago</item>
+        <item quantity="other">Fetched %d days ago</item>
+    </plurals>
+    <string name="git_panel_ahead">%1$s ahead</string>
+    <string name="git_panel_behind">%1$s behind</string>
+    <string name="git_panel_tracking_unknown">Ahead/behind unknown</string>
+    <string name="git_panel_lines_binary">Binary</string>
+    <string name="git_panel_lines_a11y">%1$d lines added, %2$d lines removed</string>
+    <string name="git_panel_branch_current">Current</string>
+    <string name="git_panel_no_branches">No local branches</string>
+    <plurals name="git_panel_branches_truncated">
+        <item quantity="one">Showing the most recent %1$d branch</item>
+        <item quantity="other">Showing the most recent %1$d branches</item>
+    </plurals>
+    <string name="git_panel_agent_hint">Write actions are carried out by the agent, which asks for your approval first.</string>
+    <string name="git_panel_agent_busy">The agent is running. Hand this off once it finishes.</string>
+    <string name="git_panel_action_pull">Pull and merge</string>
+    <string name="git_panel_action_commit_push">Commit and push</string>
+    <string name="git_agent_prompt_pull">Use git to pull the upstream %1$s of the current branch and merge it into the local branch. If there are conflicts, list the conflicting files first and ask me how to resolve them.</string>
+    <string name="git_agent_prompt_commit_push">Review the git changes in the current workspace: list the files to be committed first, write a commit message that describes the changes, commit, then push to %1$s.</string>
+    <string name="git_agent_prompt_commit_push_no_upstream">Review the git changes in the current workspace: list the files to be committed first, write a commit message that describes the changes, and commit. The current branch has no upstream, so ask me which remote branch to push to before pushing.</string>
+    <plurals name="git_top_bar_changes">
+        <item quantity="one">%d change</item>
+        <item quantity="other">%d changes</item>
+    </plurals>
+    <string name="git_top_bar_cd">Open Git panel: %1$s</string>
 </resources>

@@ -215,3 +215,30 @@ fun chatTopBarLandscapeSafeInsetsBatch2Preview() = ChatBatch2Frame {
         windowInsets = WindowInsets(left = 28.dp, right = 48.dp),
     )
 }
+
+private val PreviewGitSummary = com.promenar.nexara.ui.git.GitEntrySummary.Repository(
+    branch = "feat/chat-dock", detached = false, headShortSha = "6e3213f", unborn = false,
+    changeCount = 5, truncated = false, ahead = 2, behind = 1,
+)
+
+@PreviewTest
+@Preview(name = "顶栏 Git 行 浅中390", widthDp = 390, heightDp = 80, locale = "zh-rCN")
+@Composable
+fun chatTopBarGitLightChinesePreview() = ChatBatch2Frame(dark = false) {
+    ChatTopBar(
+        title = "重构会话浮岛", onBack = {}, onWorkspace = {}, onSettings = {},
+        onClearHistory = {}, onRename = {}, onDeleteSession = {},
+        git = PreviewGitSummary,
+    )
+}
+
+@PreviewTest
+@Preview(name = "顶栏 Git 行 深英360 大字体", widthDp = 360, heightDp = 96, locale = "en", fontScale = 1.3f)
+@Composable
+fun chatTopBarGitDarkEnglishLargeFontPreview() = ChatBatch2Frame {
+    ChatTopBar(
+        title = "Refactor the chat composer island", onBack = {}, onWorkspace = {}, onSettings = {},
+        onClearHistory = {}, onRename = {}, onDeleteSession = {},
+        git = PreviewGitSummary.copy(branch = "feature/a-very-long-branch-name", changeCount = 1, behind = null),
+    )
+}

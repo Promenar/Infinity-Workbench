@@ -37,9 +37,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Commit
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,6 +80,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.data.git.GitBranch
+import com.promenar.nexara.data.git.GitBranchList
 import com.promenar.nexara.data.git.GitChangeGroup
 import com.promenar.nexara.data.git.GitChangeKind
 import com.promenar.nexara.data.git.GitChangeList
@@ -80,6 +90,7 @@ import com.promenar.nexara.data.git.GitCommitLog
 import com.promenar.nexara.data.git.GitCommitSummary
 import com.promenar.nexara.data.git.GitFileChange
 import com.promenar.nexara.data.git.GitStatus
+import com.promenar.nexara.data.git.GitTracking
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraBottomSheet
@@ -105,6 +116,11 @@ object GitPanelTags {
     const val COMMITS_LIST = "git_panel_commits_list"
     const val COMMIT_FILES = "git_panel_commit_files"
     const val DIFF = "git_panel_diff"
+    const val BRANCHES_LIST = "git_panel_branches_list"
+    const val TRACKING = "git_panel_tracking"
+    const val AGENT_PULL = "git_panel_agent_pull"
+    const val AGENT_COMMIT_PUSH = "git_panel_agent_commit_push"
+    fun branch(name: String) = "git_panel_branch_$name"
     fun change(group: GitChangeGroup, path: String) = "git_panel_change_${group.name.lowercase()}_$path"
     fun commit(sha: String) = "git_panel_commit_$sha"
 }
@@ -114,6 +130,9 @@ object GitPanelTags {
 fun GitChangesSheet(
     sessionId: String,
     onDismiss: () -> Unit,
+    /** 非空时面板底部提供“拉取并合并 / 提交并推送”，把请求作为消息交给 Agent；参数为上游短名。 */
+    onAskAgent: ((GitAgentRequest, String?) -> Unit)? = null,
+    agentBusy: Boolean = false,
 ) {
     val application = LocalContext.current.applicationContext as NexaraApplication
     val viewModel: GitPanelViewModel = viewModel(
@@ -140,7 +159,9 @@ fun GitChangesSheet(
                 onOpenCommit = viewModel::openCommit,
                 onOpenCommitFile = viewModel::openCommitFile,
                 onBack = { viewModel.back() },
+                onAskAgent = onAskAgent,
             ),
+            agentBusy = agentBusy,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -152,9 +173,15 @@ fun GitChangesPanel(
     state: GitPanelUiState,
     actions: GitPanelActions,
     modifier: Modifier = Modifier,
+    agentBusy: Boolean = false,
+    nowMillis: Long? = null,
 ) {
+    val readyStatus = (state.status as? GitLoad.Ready)?.value
     Column(modifier = modifier.testTag(GitPanelTags.ROOT)) {
-        GitPanelHeader(state, actions)
+        GitPanelHeader(state, actions, nowMillis)
+        AnimatedVisibility(visible = state.detail == null && readyStatus != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+            readyStatus?.let { TrackingChips(it.tracking) }
+        }
         AnimatedVisibility(visible = state.refreshing, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.XSmall))
         }
@@ -176,6 +203,10 @@ fun GitChangesPanel(
                                 badge = (shown.status as? GitLoad.Ready)?.value?.takeIf { !it.isClean }?.let { countBadge(it) },
                             ),
                             NexaraTabItem(title = stringResource(R.string.git_panel_tab_commits), icon = Icons.Rounded.Commit),
+                            NexaraTabItem(
+                                title = stringResource(R.string.git_panel_tab_branches),
+                                badge = (shown.branches as? GitLoad.Ready)?.value?.branches?.size?.takeIf { it > 0 }?.toString(),
+                            ),
                         ),
                         selectedIndex = shown.tab.ordinal,
                         onTabSelected = { actions.onSelectTab(GitPanelTab.entries[it]) },
@@ -192,6 +223,7 @@ fun GitChangesPanel(
                         when (tabState.tab) {
                             GitPanelTab.CHANGES -> ChangesContent(tabState.status, actions)
                             GitPanelTab.COMMITS -> CommitsContent(tabState.log ?: GitLoad.Loading, actions)
+                            GitPanelTab.BRANCHES -> BranchesContent(tabState.branches ?: GitLoad.Loading, actions)
                         }
                     }
                 }
@@ -201,6 +233,10 @@ fun GitChangesPanel(
                     if (file != null) DiffContent(file.diff, actions.onRefresh) else CommitDetailContent(detail, actions)
                 }
             }
+        }
+        val askAgent = actions.onAskAgent
+        if (askAgent != null && state.detail == null && readyStatus != null) {
+            AgentActionFooter(readyStatus, agentBusy, askAgent)
         }
     }
 }
@@ -246,7 +282,7 @@ private fun countBadge(status: GitStatus): String =
     if (status.truncated) "${status.changeCount}+" else status.changeCount.toString()
 
 @Composable
-private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions) {
+private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions, nowMillis: Long?) {
     val detail = state.detail
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
@@ -274,14 +310,16 @@ private fun GitPanelHeader(state: GitPanelUiState, actions: GitPanelActions) {
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.RowTwoLineGap)) {
                 when (detail) {
                     null -> {
-                        Text(
-                            text = stringResource(R.string.git_panel_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.semantics { heading() },
-                        )
-                        (shown.status as? GitLoad.Ready)?.value?.let { status ->
-                            BranchLine(status)
+                        val status = (shown.status as? GitLoad.Ready)?.value
+                        if (status == null) {
+                            Text(
+                                text = stringResource(R.string.git_panel_title),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                        } else {
+                            BranchHeader(status, nowMillis)
                         }
                     }
                     is GitPanelDetail.Change -> HeaderTitles(
@@ -353,22 +391,105 @@ private fun HeaderTitles(title: String, subtitle: String, identifier: Boolean) {
     )
 }
 
+/** 列表页页头：分支名、跟踪的上游、HEAD 与上次抓取时间。 */
 @Composable
-private fun BranchLine(status: GitStatus) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
-        Icon(
-            imageVector = Icons.Rounded.AccountTree,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
+private fun BranchHeader(status: GitStatus, nowMillis: Long?) {
+    NexaraIdentifierText(
+        text = branchLabel(status.branch, status.detached, status.head?.take(7), status.unborn),
+        style = NexaraTypography.titleMedium.copy(fontFamily = NexaraMonospace),
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.semantics { heading() },
+    )
+    val tracking = status.tracking
+    val upstream = tracking.upstream
+    if (!status.detached) {
         Text(
-            text = branchLabel(status.branch, status.detached, status.head?.take(7), status.unborn),
+            text = when {
+                upstream == null -> stringResource(R.string.git_panel_no_upstream)
+                tracking.upstreamMissing == true -> stringResource(R.string.git_panel_upstream_missing, upstream)
+                else -> stringResource(R.string.git_panel_tracking, upstream)
+            },
             style = NexaraTypography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            color = if (tracking.upstreamMissing == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+    val now = nowMillis ?: remember(status) { System.currentTimeMillis() }
+    val parts = listOfNotNull(
+        status.head?.take(7)?.let { stringResource(R.string.git_panel_head, it) },
+        fetchAgeLabel(gitFetchAge(status.lastFetchSeconds, now)),
+    )
+    Text(
+        text = parts.joinToString(" · "),
+        style = NexaraTypography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+internal fun fetchAgeLabel(age: GitFetchAge): String = when (age) {
+    GitFetchAge.Never -> stringResource(R.string.git_panel_fetch_never)
+    GitFetchAge.JustNow -> stringResource(R.string.git_panel_fetch_just_now)
+    is GitFetchAge.Minutes -> pluralStringResource(R.plurals.git_panel_fetch_minutes, age.value, age.value)
+    is GitFetchAge.Hours -> pluralStringResource(R.plurals.git_panel_fetch_hours, age.value, age.value)
+    is GitFetchAge.Days -> pluralStringResource(R.plurals.git_panel_fetch_days, age.value, age.value)
+}
+
+/** 领先、落后两枚标签；都为 0 时不占位，计数无法确定时显示一枚中性提示。 */
+@Composable
+private fun TrackingChips(tracking: GitTracking) {
+    val ahead = gitTrackingCount(tracking.ahead, tracking.truncated)
+    val behind = gitTrackingCount(tracking.behind, tracking.truncated)
+    val unknown = tracking.countsUnknown
+    if (ahead == null && behind == null && !unknown) return
+    val domain = MaterialTheme.nexaraDomainColors
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small).testTag(GitPanelTags.TRACKING),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        ahead?.let {
+            TrackingChip(
+                icon = Icons.Rounded.ArrowUpward,
+                text = stringResource(R.string.git_panel_ahead, it),
+                container = MaterialTheme.colorScheme.primaryContainer,
+                content = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        behind?.let {
+            TrackingChip(
+                icon = Icons.Rounded.ArrowDownward,
+                text = stringResource(R.string.git_panel_behind, it),
+                container = domain.warningContainer,
+                content = domain.onWarningContainer,
+            )
+        }
+        if (unknown) {
+            TrackingChip(
+                icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                text = stringResource(R.string.git_panel_tracking_unknown),
+                container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                content = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackingChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, container: Color, content: Color) {
+    Surface(shape = RoundedCornerShape(14.dp), color = container, contentColor = content) {
+        Row(
+            modifier = Modifier.heightIn(min = 28.dp).padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text(text = text, style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Medium), maxLines = 1)
+        }
     }
 }
 
@@ -393,6 +514,8 @@ internal fun changeCountLabel(count: Int, truncated: Boolean): String = when {
 
 @Composable
 private fun ChangesContent(load: GitLoad<GitStatus>, actions: GitPanelActions) = GitLoadContent(load, "git_changes_state") { status ->
+    // 底部有交给 Agent 的操作区时，只读说明由操作区承担。
+    val readonlyHint = if (actions.onAskAgent == null) stringResource(R.string.git_panel_readonly_hint) else null
     when (status) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = status.problem, onRetry = actions.onRefresh)
@@ -401,18 +524,16 @@ private fun ChangesContent(load: GitLoad<GitStatus>, actions: GitPanelActions) =
             if (value.isClean) {
                 GitPanelStateMessage(
                     message = stringResource(if (value.unborn) R.string.git_panel_empty_repository else R.string.git_panel_clean),
-                    hint = stringResource(R.string.git_panel_readonly_hint),
+                    hint = readonlyHint,
                 )
             } else {
+                val hint = listOfNotNull(
+                    if (value.unborn) stringResource(R.string.git_panel_empty_repository) else null,
+                    readonlyHint,
+                )
                 LazyColumn(modifier = Modifier.fillMaxSize().testTag(GitPanelTags.CHANGES_LIST)) {
-                    item(key = "hint", contentType = "hint") {
-                        PanelHint(
-                            text = if (value.unborn) {
-                                stringResource(R.string.git_panel_empty_repository) + "\n" + stringResource(R.string.git_panel_readonly_hint)
-                            } else {
-                                stringResource(R.string.git_panel_readonly_hint)
-                            },
-                        )
+                    if (hint.isNotEmpty()) {
+                        item(key = "hint", contentType = "hint") { PanelHint(text = hint.joinToString("\n")) }
                     }
                     GitChangeGroup.entries.forEach { group ->
                         changeGroup(group, value.group(group), actions)
@@ -443,6 +564,7 @@ private fun LazyListScope.changeGroup(group: GitChangeGroup, list: GitChangeList
     items(list.entries, key = { "${group.name}:${it.path}" }, contentType = { "change" }) { change ->
         ChangeRow(
             change = change,
+            untracked = group == GitChangeGroup.UNTRACKED,
             onClick = { actions.onOpenChange(group, change) },
             modifier = Modifier.testTag(GitPanelTags.change(group, change.path)),
         )
@@ -488,8 +610,11 @@ private fun FooterNote(text: String) {
 }
 
 @Composable
-private fun ChangeRow(change: GitFileChange, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val kindLabel = changeKindLabel(change.kind)
+private fun ChangeRow(change: GitFileChange, onClick: () -> Unit, modifier: Modifier = Modifier, untracked: Boolean = false) {
+    val kindLabel = if (untracked) stringResource(R.string.git_panel_group_untracked) else changeKindLabel(change.kind)
+    val linesA11y = if (change.addedLines != null && change.removedLines != null) {
+        stringResource(R.string.git_panel_lines_a11y, change.addedLines, change.removedLines)
+    } else null
     val name = change.path.substringAfterLast('/')
     val directory = change.path.substringBeforeLast('/', missingDelimiterValue = "")
     Row(
@@ -498,12 +623,12 @@ private fun ChangeRow(change: GitFileChange, onClick: () -> Unit, modifier: Modi
             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
             .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClickLabel = change.path, onClick = onClick)
-            .semantics { contentDescription = "$kindLabel ${change.path}" }
+            .semantics { contentDescription = listOfNotNull(kindLabel, change.path, linesA11y).joinToString(" ") }
             .padding(horizontal = NexaraSpacing.XSmall, vertical = NexaraSpacing.Small),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
-        ChangeKindBadge(change.kind)
+        ChangeKindBadge(change.kind, untracked)
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.RowTwoLineGap)) {
             NexaraIdentifierText(
                 text = name,
@@ -528,12 +653,32 @@ private fun ChangeRow(change: GitFileChange, onClick: () -> Unit, modifier: Modi
                 )
             }
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
+        if (change.addedLines != null || change.removedLines != null || change.linesSkipped == "binary") {
+            LineCounts(change)
+        } else {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** 行数统计：只显示非零的一侧；二进制文件写明，其它无法统计的情况不显示。 */
+@Composable
+private fun LineCounts(change: GitFileChange) {
+    val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
+    if (change.linesSkipped == "binary") {
+        Text(stringResource(R.string.git_panel_lines_binary), style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        return
+    }
+    val added = change.addedLines ?: 0
+    val removed = change.removedLines ?: 0
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (added > 0 || removed == 0) Text("+$added", style = style, color = MaterialTheme.nexaraDomainColors.success, maxLines = 1)
+        if (removed > 0) Text("\u2212$removed", style = style, color = MaterialTheme.colorScheme.error, maxLines = 1)
     }
 }
 
@@ -548,9 +693,9 @@ private fun changeKindLabel(kind: GitChangeKind): String = stringResource(
 )
 
 @Composable
-private fun ChangeKindBadge(kind: GitChangeKind) {
+private fun ChangeKindBadge(kind: GitChangeKind, untracked: Boolean = false) {
     val domain = MaterialTheme.nexaraDomainColors
-    val (letter, color) = when (kind) {
+    val (letter, color) = if (untracked) "?" to MaterialTheme.colorScheme.onSurfaceVariant else when (kind) {
         GitChangeKind.ADDED -> "A" to domain.success
         GitChangeKind.MODIFIED -> "M" to domain.warning
         GitChangeKind.DELETED -> "D" to MaterialTheme.colorScheme.error
@@ -564,6 +709,124 @@ private fun ChangeKindBadge(kind: GitChangeKind) {
         contentAlignment = Alignment.Center,
     ) {
         Text(text = letter, style = NexaraTypography.labelMedium, color = color, fontWeight = FontWeight.Bold)
+    }
+}
+
+// —— 本地分支 ——
+
+@Composable
+private fun BranchesContent(load: GitLoad<GitBranchList>, actions: GitPanelActions) = GitLoadContent(load, "git_branches_state") { branches ->
+    when (branches) {
+        GitLoad.Loading -> GitPanelStateMessage(loading = true)
+        is GitLoad.Failed -> GitPanelStateMessage(problem = branches.problem, onRetry = actions.onRefresh)
+        is GitLoad.Ready -> {
+            val value = branches.value
+            if (value.branches.isEmpty()) {
+                GitPanelStateMessage(message = stringResource(R.string.git_panel_no_branches))
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize().testTag(GitPanelTags.BRANCHES_LIST)) {
+                    items(value.branches, key = { it.name }, contentType = { "branch" }) { branch ->
+                        BranchRow(branch)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    if (value.truncated) {
+                        item(key = "truncated", contentType = "footer") {
+                            FooterNote(pluralStringResource(R.plurals.git_panel_branches_truncated, value.branches.size, value.branches.size))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 分支行只读展示：名称（当前分支带标记）、提交与标题、相对上游的领先落后。 */
+@Composable
+private fun BranchRow(branch: GitBranch) {
+    val ahead = gitTrackingCount(branch.tracking.ahead, branch.tracking.truncated)
+    val behind = gitTrackingCount(branch.tracking.behind, branch.tracking.truncated)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = NexaraSpacing.RowTwoLineHeight)
+            .semantics(mergeDescendants = true) {}
+            .testTag(GitPanelTags.branch(branch.name))
+            .padding(horizontal = NexaraSpacing.XSmall, vertical = NexaraSpacing.Medium),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+    ) {
+        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (branch.current) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = stringResource(R.string.git_panel_branch_current),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
+            NexaraIdentifierText(
+                text = branch.name,
+                style = NexaraTypography.bodyMedium.copy(
+                    fontFamily = NexaraMonospace,
+                    fontWeight = if (branch.current) FontWeight.SemiBold else FontWeight.Normal,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val meta = listOfNotNull(branch.shortSha, branch.title?.takeIf(String::isNotBlank)).joinToString(" · ")
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = meta,
+                    style = NexaraTypography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (ahead != null || behind != null) {
+            Column(horizontalAlignment = Alignment.End) {
+                val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
+                ahead?.let { Text("\u2191$it", style = style, color = MaterialTheme.colorScheme.primary, maxLines = 1) }
+                behind?.let { Text("\u2193$it", style = style, color = MaterialTheme.nexaraDomainColors.warning, maxLines = 1) }
+            }
+        }
+    }
+}
+
+// —— 交给 Agent 的写操作 ——
+
+@Composable
+private fun AgentActionFooter(status: GitStatus, agentBusy: Boolean, onAskAgent: (GitAgentRequest, String?) -> Unit) {
+    val upstream = status.tracking.upstream?.takeIf { status.tracking.upstreamMissing != true }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        Text(
+            text = stringResource(if (agentBusy) R.string.git_panel_agent_busy else R.string.git_panel_agent_hint),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = NexaraSpacing.Medium, bottom = 10.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { onAskAgent(GitAgentRequest.PULL_MERGE, upstream) },
+                enabled = !agentBusy && status.canPull(),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(GitPanelTags.AGENT_PULL),
+            ) {
+                Text(stringResource(R.string.git_panel_action_pull), maxLines = 2, textAlign = TextAlign.Center)
+            }
+            Button(
+                onClick = { onAskAgent(GitAgentRequest.COMMIT_PUSH, upstream) },
+                enabled = !agentBusy && status.canCommitPush(),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(GitPanelTags.AGENT_COMMIT_PUSH),
+            ) {
+                Text(stringResource(R.string.git_panel_action_commit_push), maxLines = 2, textAlign = TextAlign.Center)
+            }
+        }
+        Spacer(Modifier.height(NexaraSpacing.Small))
     }
 }
 
@@ -831,6 +1094,24 @@ private fun GitPanelStateMessage(
 
 // —— 资源管理器入口 ——
 
+/** 分支 · 改动数 · ↑领先 ↓落后；会话顶栏与资源管理器入口共用。 */
+@Composable
+internal fun gitSummaryLine(summary: GitEntrySummary.Repository, compactChanges: Boolean = false): String =
+    branchLabel(summary.branch, summary.detached, summary.headShortSha, summary.unborn) + gitSummarySuffix(summary, compactChanges)
+
+/** 分支名之后的“ · 改动数 · ↑领先 · ↓落后”；顶栏单独排版，让长分支名先被截断。 */
+@Composable
+internal fun gitSummarySuffix(summary: GitEntrySummary.Repository, compactChanges: Boolean = false): String {
+    val changes = if (compactChanges && !summary.truncated && summary.changeCount > 0) {
+        pluralStringResource(R.plurals.git_top_bar_changes, summary.changeCount, summary.changeCount)
+    } else changeCountLabel(summary.changeCount, summary.truncated)
+    return listOfNotNull(
+        changes,
+        gitTrackingCount(summary.ahead, null)?.let { "\u2191$it" },
+        gitTrackingCount(summary.behind, null)?.let { "\u2193$it" },
+    ).joinToString(separator = " · ", prefix = " · ")
+}
+
 /** 会话工作区状态区中的 Git 入口：显示分支与改动数，点击打开 Git 变更面板。[GitEntrySummary.Hidden] 时不显示。 */
 @Composable
 fun GitWorkspaceEntry(
@@ -840,8 +1121,7 @@ fun GitWorkspaceEntry(
 ) {
     val subtitle = when (summary) {
         GitEntrySummary.Hidden -> return
-        is GitEntrySummary.Repository -> branchLabel(summary.branch, summary.detached, summary.headShortSha, summary.unborn) +
-            " · " + changeCountLabel(summary.changeCount, summary.truncated)
+        is GitEntrySummary.Repository -> gitSummaryLine(summary)
         GitEntrySummary.PythonUnavailable -> stringResource(R.string.git_panel_entry_python_unavailable)
         GitEntrySummary.Failed -> stringResource(R.string.git_panel_entry_failed)
     }

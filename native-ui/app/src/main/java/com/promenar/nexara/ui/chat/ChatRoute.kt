@@ -62,6 +62,8 @@ import kotlinx.coroutines.launch
 
 internal sealed interface ChatOverlay {
     data object Workspace : ChatOverlay
+    /** 顶栏 Git 行打开的 Git 面板。 */
+    data object Git : ChatOverlay
     data object ModelSettings : ChatOverlay
     /** 会话设置的“工具”页（斜杠命令 /mode 不带参数时打开）。 */
     data object SessionTools : ChatOverlay
@@ -106,6 +108,7 @@ private const val TURN_MEMORY_OVERLAY_PREFIX = "turn_memory:"
 internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
     ChatOverlay.Workspace -> "workspace"
+    ChatOverlay.Git -> "git"
     ChatOverlay.ModelSettings -> "model_settings"
     ChatOverlay.SessionTools -> "session_tools"
     ChatOverlay.PromptEditor -> "prompt_editor"
@@ -118,6 +121,7 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
 
 internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     token == "workspace" -> ChatOverlay.Workspace
+    token == "git" -> ChatOverlay.Git
     token == "model_settings" -> ChatOverlay.ModelSettings
     token == "session_tools" -> ChatOverlay.SessionTools
     token == "prompt_editor" -> ChatOverlay.PromptEditor
@@ -208,6 +212,8 @@ fun ChatRoute(
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
+    var gitSummary by remember(sessionId) { mutableStateOf<com.promenar.nexara.ui.git.GitEntrySummary.Repository?>(null) }
+    var gitRefresh by remember(sessionId) { mutableStateOf(0) }
     val resolvedDependencies = remember(application, dependencies) {
         dependencies ?: ChatRouteDependencies.production(application)
     }
@@ -620,6 +626,13 @@ fun ChatRoute(
             liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey, showStop = false) },
         )
     }
+    // 会话工作区是 Git 仓库时顶栏显示分支与改动；进入会话、每轮生成结束与关闭 Git 面板时各读一次。
+    LaunchedEffect(sessionId, uiState.isGenerating, gitRefresh) {
+        if (uiState.isGenerating) return@LaunchedEffect
+        // 工作区解析与 .git 判定含文件访问，整体放到 IO。
+        val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.gitChangesService.status(sessionId) }
+        gitSummary = com.promenar.nexara.ui.git.GitEntrySummary.from(status) as? com.promenar.nexara.ui.git.GitEntrySummary.Repository
+    }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalSubagentRuns provides subagentRuns,
@@ -651,11 +664,13 @@ fun ChatRoute(
                 slashCommands = slashCommands.commands,
                 stateBoard = stateBoard,
                 subagentApprovals = sessionSubagentApprovals,
+                gitSummary = gitSummary,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
+                onOpenGit = { requestOverlay(ChatOverlay.Git) },
                 onLocateWorkspacePath = { path ->
                     workspaceLocatePath = path
                     requestOverlay(ChatOverlay.Workspace)
@@ -871,6 +886,31 @@ fun ChatRoute(
                 isDestructive = true,
             )
         }
+    }
+    if (activeOverlay == ChatOverlay.Git) {
+        val resources = androidx.compose.ui.platform.LocalResources.current
+        com.promenar.nexara.ui.git.GitChangesSheet(
+            sessionId = sessionId,
+            onDismiss = {
+                activeOverlayToken = null
+                gitRefresh++
+            },
+            // 写操作作为一条普通消息交给 Agent，由它调用命令工具并走审批；生成中按钮不可用。
+            onAskAgent = { request, upstream ->
+                val prompt = when (request) {
+                    com.promenar.nexara.ui.git.GitAgentRequest.PULL_MERGE ->
+                        upstream?.let { resources.getString(R.string.git_agent_prompt_pull, it) }
+                    com.promenar.nexara.ui.git.GitAgentRequest.COMMIT_PUSH ->
+                        upstream?.let { resources.getString(R.string.git_agent_prompt_commit_push, it) }
+                            ?: resources.getString(R.string.git_agent_prompt_commit_push_no_upstream)
+                }
+                if (prompt != null && !uiState.isGenerating) {
+                    activeOverlayToken = null
+                    chatViewModel.sendMessage(prompt)
+                }
+            },
+            agentBusy = uiState.isGenerating,
+        )
     }
     if (activeOverlay == ChatOverlay.Workspace) {
         ResourceExplorerSheet(
