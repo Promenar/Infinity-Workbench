@@ -76,6 +76,8 @@ object UiTags {
     const val CHAT_TOKEN_INDICATOR = "chat_token_indicator"
     const val CHAT_TOKEN_INDICATOR_VISUAL = "chat_token_indicator_visual"
     const val CHAT_MODEL_LIST = "chat_model_list"
+    const val CHAT_MODEL_QUICK_PICK = "chat_model_quick_pick"
+    const val CHAT_MODEL_QUICK_PICK_MORE = "chat_model_quick_pick_more"
     private const val CHAT_MODEL_OPTION_PREFIX = "chat_model_option:"
 
     fun chatModelOption(modelId: String): String = CHAT_MODEL_OPTION_PREFIX + modelId

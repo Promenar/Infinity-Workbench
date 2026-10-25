@@ -192,9 +192,11 @@ fun RunModePickerSheet(
     linuxSupported: Boolean,
     onDismiss: () -> Unit,
     onSelect: (SessionRunMode) -> Unit,
+    /** 宽窗口下贴着点按的运行模式标识或顶栏菜单弹出。 */
+    popover: com.promenar.nexara.ui.common.NexaraPopoverSpec? = null,
 ) {
     NexaraBottomSheet(show = show, onDismiss = onDismiss, title = stringResource(R.string.run_mode_title), scrollContent = true,
-        modifier = Modifier.testTag(RunModeTags.PICKER)) {
+        modifier = Modifier.testTag(RunModeTags.PICKER), popover = popover) {
         RunModeOptions(selected, linuxSupported) { mode -> onDismiss(); if (mode != selected) onSelect(mode) }
     }
 }

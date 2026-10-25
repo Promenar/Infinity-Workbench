@@ -63,4 +63,12 @@ class ChatOverlayPolicyTest {
 
         assertThat(restoreChatOverlay(saveChatOverlay(overlay))).isEqualTo(overlay)
     }
+
+    @Test
+    fun `模型速选与参数页令牌可跨重建恢复`() {
+        // 折叠或旋转重建后，速选在窄窗口落到会话设置，参数页仍停在参数标签。
+        listOf(ChatOverlay.ModelQuickPick, ChatOverlay.SessionParams, ChatOverlay.ModelSettings, ChatOverlay.SessionTools).forEach { overlay ->
+            assertThat(restoreChatOverlay(saveChatOverlay(overlay))).isEqualTo(overlay)
+        }
+    }
 }

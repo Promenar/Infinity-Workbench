@@ -54,6 +54,9 @@ import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraPopoverAlign
+import com.promenar.nexara.ui.common.NexaraPopoverSide
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
@@ -65,6 +68,10 @@ import kotlinx.coroutines.launch
 
 internal sealed interface ChatOverlay {
     data object ModelSettings : ChatOverlay
+    /** 宽窗口下贴着输入区模型按钮弹出的模型速选；窗口变窄时改为会话设置的“模型”页。 */
+    data object ModelQuickPick : ChatOverlay
+    /** 会话设置的“参数”页（模型速选的“更多会话设置”）。 */
+    data object SessionParams : ChatOverlay
     /** 会话设置的“工具”页（斜杠命令 /mode 不带参数时打开）。 */
     data object SessionTools : ChatOverlay
     data object PromptEditor : ChatOverlay
@@ -108,6 +115,8 @@ private const val TURN_MEMORY_OVERLAY_PREFIX = "turn_memory:"
 internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
     ChatOverlay.ModelSettings -> "model_settings"
+    ChatOverlay.ModelQuickPick -> "model_quick_pick"
+    ChatOverlay.SessionParams -> "session_params"
     ChatOverlay.SessionTools -> "session_tools"
     ChatOverlay.PromptEditor -> "prompt_editor"
     ChatOverlay.ClearHistory -> "clear_history"
@@ -119,6 +128,8 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
 
 internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     token == "model_settings" -> ChatOverlay.ModelSettings
+    token == "model_quick_pick" -> ChatOverlay.ModelQuickPick
+    token == "session_params" -> ChatOverlay.SessionParams
     token == "session_tools" -> ChatOverlay.SessionTools
     token == "prompt_editor" -> ChatOverlay.PromptEditor
     token == "clear_history" -> ChatOverlay.ClearHistory
@@ -322,6 +333,8 @@ fun ChatRoute(
     var selectedImageUriStrings by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     val selectedImageUris = selectedImageUriStrings.map(Uri::parse)
     var activeOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
+    val popoverAnchors = remember { ChatPopoverAnchors() }
+    val wideWindow = com.promenar.nexara.ui.common.rememberNexaraWideWindow()
     // 媒体不可用占位请求定位的工作区目录；资源管理器打开后消费。
     var workspaceLocatePath by rememberSaveable { mutableStateOf<String?>(null) }
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
@@ -726,6 +739,7 @@ fun ChatRoute(
         pane = chatPageLevels,
     ) {
     androidx.compose.runtime.CompositionLocalProvider(
+        LocalChatPopoverAnchors provides popoverAnchors,
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalSubagentRuns provides subagentRuns,
         com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
@@ -778,6 +792,12 @@ fun ChatRoute(
                     openChatPage(ChatPage.Explorer)
                 },
                 onOpenSettings = { requestOverlay(ChatOverlay.ModelSettings) },
+                onOpenModelPicker = {
+                    val anchor = popoverAnchors.model
+                    if (!anchor.consumeRecentDismiss()) {
+                        requestOverlay(if (wideWindow && anchor.bounds != null) ChatOverlay.ModelQuickPick else ChatOverlay.ModelSettings)
+                    }
+                },
                 onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
                 onOpenClearDialog = { requestOverlay(ChatOverlay.ClearHistory) },
                 onOpenRenameDialog = { requestOverlay(ChatOverlay.RenameSession) },
@@ -973,6 +993,7 @@ fun ChatRoute(
                 onOpenGraph = onOpenKnowledgeGraph?.let { open ->
                     { query: String -> activeOverlayToken = null; open(query) }
                 },
+                popover = NexaraPopoverSpec(popoverAnchors.turnMemory, NexaraPopoverSide.Above, NexaraPopoverAlign.Auto, TurnMemoryPopoverWidth),
             )
         }
     }
@@ -1004,6 +1025,7 @@ fun ChatRoute(
         selected = runModeStatus?.mode,
         linuxSupported = linuxSupported,
         onDismiss = { showRunModePicker = false },
+        popover = NexaraPopoverSpec(popoverAnchors.runMode, NexaraPopoverSide.Below, NexaraPopoverAlign.Auto, RunModePopoverWidth),
         onSelect = { mode ->
             runModeScope.launch {
                 try {
@@ -1025,12 +1047,28 @@ fun ChatRoute(
             onDismiss = { runModeCheckpoint = null },
         )
     }
+    // 模型速选只在宽窗口且量到模型按钮时贴着按钮弹出；否则（例如折叠后变窄）落到会话设置的“模型”页。
+    val quickPickPopover = activeOverlay == ChatOverlay.ModelQuickPick && wideWindow && popoverAnchors.model.bounds != null
+    if (quickPickPopover) {
+        ModelQuickPickPopover(
+            anchor = popoverAnchors.model,
+            chatViewModel = chatViewModel,
+            onDismiss = { activeOverlayToken = null },
+            onMoreSettings = { activeOverlayToken = saveChatOverlay(ChatOverlay.SessionParams) },
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
+        )
+    }
     SessionSettingsSheet(
-        show = activeOverlay == ChatOverlay.ModelSettings || activeOverlay == ChatOverlay.SessionTools,
+        show = activeOverlay == ChatOverlay.ModelSettings || activeOverlay == ChatOverlay.SessionTools ||
+            activeOverlay == ChatOverlay.SessionParams || (activeOverlay == ChatOverlay.ModelQuickPick && !quickPickPopover),
         onDismiss = { activeOverlayToken = null },
         chatViewModel = chatViewModel,
         onOpenTailscaleSettings = onOpenTailscaleSettings,
-        initialPage = if (activeOverlay == ChatOverlay.SessionTools) 2 else 0,
+        initialPage = when (activeOverlay) {
+            ChatOverlay.SessionTools -> 2
+            ChatOverlay.SessionParams -> 1
+            else -> 0
+        },
     )
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,
@@ -1042,6 +1080,9 @@ fun ChatRoute(
         mode = EditorMode.DIALOG,
     )
 }
+
+private val TurnMemoryPopoverWidth = 340.dp
+private val RunModePopoverWidth = 300.dp
 
 /** 兼容现有调用；新导航使用 [ChatRoute]。 */
 @Composable

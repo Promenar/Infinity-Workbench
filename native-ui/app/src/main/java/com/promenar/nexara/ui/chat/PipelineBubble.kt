@@ -35,6 +35,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.promenar.nexara.ui.common.NexaraMetaSeparator
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -883,7 +885,20 @@ internal fun AssistantActionRow(
                         )
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             if (!footerStatus.isEmpty && onOpenMemory != null) {
-                                TurnMemoryStatusLabel(footerStatus, onOpenMemory, showText = memoryTextFits)
+                                // “本轮记忆”面板由各轮共用，点按时把这一轮状态的位置交给面板。
+                                val sharedMemoryAnchor = LocalChatPopoverAnchors.current?.turnMemory
+                                val memoryAnchor = rememberNexaraPopoverAnchor()
+                                TurnMemoryStatusLabel(
+                                    footerStatus,
+                                    onClick = {
+                                        if (sharedMemoryAnchor?.consumeRecentDismiss() != true) {
+                                            sharedMemoryAnchor?.pointAt(memoryAnchor)
+                                            onOpenMemory()
+                                        }
+                                    },
+                                    modifier = Modifier.nexaraPopoverAnchor(memoryAnchor),
+                                    showText = memoryTextFits,
+                                )
                                 Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(end = 4.dp).clearAndSetSemantics {})
                             }
                             val statsLabel = stringResource(R.string.generation_stats_open_action)

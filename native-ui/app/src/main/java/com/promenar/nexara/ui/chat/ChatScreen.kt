@@ -85,6 +85,8 @@ import androidx.compose.material.icons.rounded.Add
 import com.promenar.nexara.ui.common.ModelBrandIcon
 import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraMetaSeparator
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -280,6 +282,8 @@ data class ChatScreenActions(
     /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
     val onLocateWorkspacePath: (String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
+    /** 点输入区模型按钮；为 null 时与 [onOpenSettings] 相同。 */
+    val onOpenModelPicker: (() -> Unit)? = null,
     val onOpenPromptEditor: () -> Unit = {},
     val onOpenClearDialog: () -> Unit = {},
     val onOpenRenameDialog: () -> Unit = {},
@@ -1095,7 +1099,7 @@ fun ChatScreenContent(
                             modelId = uiState.session?.modelId,
                             tokenState = tokenState.copy(isGenerating = tokenState.isGenerating || uiState.isGenerating),
                             isCompressing = compressionState.isCompressing,
-                            onModelClick = actions.onOpenSettings,
+                            onModelClick = actions.onOpenModelPicker ?: actions.onOpenSettings,
                             onManualSummary = actions.onManualSummary,
                             reasoningControl = state.reasoningControl,
                             onReasoningChange = actions.onReasoningEffortChange,
@@ -1496,8 +1500,10 @@ internal fun ChatModelSelector(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val anchor = LocalChatPopoverAnchors.current?.model
     Box(
         modifier = modifier.height(40.dp)
+            .then(if (anchor != null) Modifier.nexaraPopoverAnchor(anchor) else Modifier)
             .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sheet_tab_model), onClick = onClick)
             .testTag(UiTags.CHAT_MODEL_SELECTOR),
         contentAlignment = Alignment.CenterStart,
@@ -1759,6 +1765,10 @@ fun ChatTopBar(
     inspector: ChatTopBarInspector? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // 运行模式面板贴着点按的入口弹出：标识或菜单按钮。
+    val runModeAnchor = LocalChatPopoverAnchors.current?.runMode
+    val runModeChipAnchor = rememberNexaraPopoverAnchor()
+    val menuAnchor = rememberNexaraPopoverAnchor()
     
     val dividerAlpha by animateFloatAsState(
         targetValue = if (showDivider) 1f else 0f,
@@ -1789,7 +1799,17 @@ fun ChatTopBar(
                     val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
                     // 运行模式标识只在侧载版出现；模式、分支各是独立的点按目标。
                     if (runMode != null) {
-                        com.promenar.nexara.ui.chat.runmode.RunModeChip(runMode.mode, runMode.unavailable, onClick = onRunMode)
+                        com.promenar.nexara.ui.chat.runmode.RunModeChip(
+                            runMode.mode,
+                            runMode.unavailable,
+                            onClick = {
+                                if (runModeAnchor?.consumeRecentDismiss() != true) {
+                                    runModeAnchor?.pointAt(runModeChipAnchor)
+                                    onRunMode()
+                                }
+                            },
+                            modifier = Modifier.nexaraPopoverAnchor(runModeChipAnchor),
+                        )
                     }
                     if (runMode != null && git != null) {
                         Text(" $NexaraMetaSeparator ", style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1)
@@ -1856,7 +1876,7 @@ fun ChatTopBar(
                     Icon(Icons.Outlined.ViewSidebar, stringResource(R.string.chat_inspector_toggle), modifier = Modifier.size(22.dp))
                 }
             }
-            Box {
+            Box(Modifier.nexaraPopoverAnchor(menuAnchor)) {
                 IconButton(
                     onClick = { showMenu = true },
                     modifier = Modifier.testTag(UiTags.CHAT_OPTIONS),
@@ -1913,6 +1933,7 @@ fun ChatTopBar(
                         },
                         onClick = {
                             showMenu = false
+                            runModeAnchor?.pointAt(menuAnchor)
                             onRunMode()
                         }
                     )

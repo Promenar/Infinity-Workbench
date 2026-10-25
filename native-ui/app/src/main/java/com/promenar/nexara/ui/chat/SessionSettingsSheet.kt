@@ -55,6 +55,8 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -137,15 +139,7 @@ fun SessionSettingsSheet(
 ) {
     if (!show) return
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
-    val providerModels by settingsViewModel.providerModels.collectAsStateWithLifecycle()
-    val providers by settingsViewModel.providers.collectAsStateWithLifecycle()
-    val visibleProviderModels = filterLocalInferenceModels(
-        models = providerModels,
-        localProviderIds = providers.filter { it.protocolType is ProtocolType.Local }.mapTo(mutableSetOf()) { it.id },
-        localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE,
-    )
+    val visibleProviderModels = rememberVisibleProviderModels()
     
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
@@ -225,6 +219,84 @@ fun SessionSettingsSheet(
         }
     }
 }
+
+/** 会话可切换的服务商模型；本机推理不可用时去掉本地服务商的模型。 */
+@Composable
+private fun rememberVisibleProviderModels(): List<ModelInfo> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+    val providerModels by settingsViewModel.providerModels.collectAsStateWithLifecycle()
+    val providers by settingsViewModel.providers.collectAsStateWithLifecycle()
+    return remember(providerModels, providers) {
+        filterLocalInferenceModels(
+            models = providerModels,
+            localProviderIds = providers.filter { it.protocolType is ProtocolType.Local }.mapTo(mutableSetOf()) { it.id },
+            localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE,
+        )
+    }
+}
+
+/**
+ * 宽窗口下点输入区模型按钮弹出的模型速选：与会话设置“模型”页同一列表，选中即关闭；
+ * 底部“更多会话设置”打开完整会话设置（参数页）。
+ */
+@Composable
+internal fun ModelQuickPickPopover(
+    anchor: NexaraPopoverAnchor,
+    chatViewModel: ChatViewModel,
+    onDismiss: () -> Unit,
+    onMoreSettings: () -> Unit,
+    onOpenTailscaleSettings: (() -> Unit)? = null,
+) {
+    val models = rememberVisibleProviderModels()
+    val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    NexaraPopover(
+        show = true,
+        anchor = anchor,
+        onDismissRequest = onDismiss,
+        side = NexaraPopoverSide.Above,
+        align = NexaraPopoverAlign.Start,
+        width = ModelQuickPickWidth,
+        title = stringResource(R.string.chat_model_quick_pick_title),
+        modifier = Modifier.testTag(UiTags.CHAT_MODEL_QUICK_PICK),
+    ) {
+        Box(modifier = Modifier.weight(1f, fill = false).heightIn(max = ModelQuickPickListMaxHeight)) {
+            ModelPanel(
+                selectedModelId = uiState.session?.modelId ?: "",
+                onSelect = { modelId ->
+                    chatViewModel.updateModelId(modelId)
+                    onDismiss()
+                },
+                allModels = models,
+                networkLights = rememberNetworkLightsState(),
+                onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .clickable(role = Role.Button, onClick = onMoreSettings)
+                .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = NexaraSpacing.Small)
+                .testTag(UiTags.CHAT_MODEL_QUICK_PICK_MORE),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        ) {
+            Icon(Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(R.string.chat_model_quick_pick_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private val ModelQuickPickWidth = 360.dp
+private val ModelQuickPickListMaxHeight = 480.dp
 
 @Composable
 internal fun ModelPanel(
@@ -498,6 +570,7 @@ internal fun SessionToolsContent(
         com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(executionMode).name,
     )
     var showModePicker by remember { mutableStateOf(false) }
+    val modePickerAnchor = rememberNexaraPopoverAnchor()
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = NexaraSpacing.ScreenHorizontal, vertical = 16.dp),
@@ -514,8 +587,8 @@ internal fun SessionToolsContent(
             NexaraValueRow(
                 title = stringResource(R.string.sheet_tool_execution_mode),
                 value = stringResource(selectedExecutionMode.labelRes),
-                onClick = { showModePicker = true },
-                modifier = Modifier.testTag("session_execution_mode_picker"),
+                onClick = { if (!modePickerAnchor.consumeRecentDismiss()) showModePicker = true },
+                modifier = Modifier.nexaraPopoverAnchor(modePickerAnchor).testTag("session_execution_mode_picker"),
             )
         }
         skillsSection()
@@ -532,7 +605,8 @@ internal fun SessionToolsContent(
         }
     }
     NexaraBottomSheet(show = showModePicker, onDismiss = { showModePicker = false },
-        title = stringResource(R.string.sheet_tool_execution_mode), scrollContent = true) {
+        title = stringResource(R.string.sheet_tool_execution_mode), scrollContent = true,
+        popover = NexaraPopoverSpec(modePickerAnchor)) {
         ExecutionMode.entries.forEach { mode ->
             val label = stringResource(mode.labelRes)
             NexaraSettingsItem(

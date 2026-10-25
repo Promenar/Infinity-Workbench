@@ -61,6 +61,7 @@ enum class NexaraSheetHeight { Full, Content }
  * 宽窗口（[rememberNexaraWideWindow]，折叠屏内屏、平板）不从底边升起整屏面板，改为居中的圆角对话框：
  * 最宽 640dp，[NexaraSheetHeight.Full] 占窗口高度的 88%，[NexaraSheetHeight.Content] 贴合内容；
  * 点外部与返回按 [properties] 关闭，没有拖动关闭。
+ * 给出 [popover] 且已量到触发控件位置时，宽窗口改为贴着控件的弹出层（[NexaraPopover]），窄窗口不受影响。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,11 +73,34 @@ fun NexaraModalSheet(
     sheetGesturesEnabled: Boolean = true,
     properties: ModalBottomSheetProperties = ModalBottomSheetProperties(),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    popover: NexaraPopoverSpec? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    if (rememberNexaraWideWindow()) {
-        NexaraCenteredSheet(onDismissRequest, height, modifier, properties, containerColor, content)
-        return
+    when (nexaraSheetPresentation(rememberNexaraWideWindow(), popover?.anchor?.bounds != null)) {
+        NexaraSheetPresentation.Popover -> {
+            val spec = requireNotNull(popover)
+            NexaraPopover(
+                show = true,
+                anchor = spec.anchor,
+                onDismissRequest = onDismissRequest,
+                side = spec.side,
+                align = spec.align,
+                width = spec.width,
+                dismissible = properties.shouldDismissOnBackPress || properties.shouldDismissOnClickOutside,
+                modifier = modifier,
+            ) {
+                when (height) {
+                    NexaraSheetHeight.Full -> Column(Modifier.fillMaxWidth().weight(1f, fill = false), content = content)
+                    NexaraSheetHeight.Content -> content()
+                }
+            }
+            return
+        }
+        NexaraSheetPresentation.CenteredDialog -> {
+            NexaraCenteredSheet(onDismissRequest, height, modifier, properties, containerColor, content)
+            return
+        }
+        NexaraSheetPresentation.BottomSheet -> Unit
     }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -186,8 +210,38 @@ fun NexaraBottomSheet(
      * 内容滚动与面板拖动在边界交接时会来回争抢位移，表现为上下抖动；关闭后仍可点外部、返回或按钮关闭。
      */
     dragGesturesEnabled: Boolean = true,
+    /** 宽窗口下贴着触发控件弹出；窄窗口仍是底部上滑面板。 */
+    popover: NexaraPopoverSpec? = null,
     content: @Composable () -> Unit
 ) {
+    val wide = rememberNexaraWideWindow()
+    if (nexaraSheetPresentation(wide, popover?.anchor?.bounds != null) == NexaraSheetPresentation.Popover) {
+        val spec = requireNotNull(popover)
+        NexaraPopover(
+            show = show,
+            anchor = spec.anchor,
+            onDismissRequest = { if (dismissEnabled) onDismiss() },
+            side = spec.side,
+            align = spec.align,
+            width = spec.width,
+            title = title,
+            dismissible = dismissEnabled,
+        ) {
+            Column(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .then(if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                if (title != null) {
+                    Text(text = title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                content()
+            }
+        }
+        return
+    }
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
@@ -197,7 +251,6 @@ fun NexaraBottomSheet(
     // 拖动、返回与点外部关闭时面板已自行收起，这里的 hide 会立即返回。
     var composed by remember { mutableStateOf(show) }
     // 宽窗口是居中对话框，没有下滑退场，直接移除。
-    val wide = rememberNexaraWideWindow()
     LaunchedEffect(show) {
         if (show) {
             composed = true

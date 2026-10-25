@@ -154,6 +154,8 @@ internal fun TurnMemorySheet(
     loadGraph: suspend () -> TurnGraphDetails = { TurnGraphDetails(emptyList(), emptyList()) },
     onRetryGraph: () -> Unit = {},
     onOpenGraph: ((String) -> Unit)? = null,
+    /** 宽窗口下贴着点按的记忆状态弹出。 */
+    popover: com.promenar.nexara.ui.common.NexaraPopoverSpec? = null,
 ) {
     var details by remember { mutableStateOf<TurnMemoryDetails?>(null) }
     LaunchedEffect(state?.status, state?.updatedAt) {
@@ -178,7 +180,7 @@ internal fun TurnMemorySheet(
         }
     }
     val title = stringResource(if (state == null) R.string.turn_graph_title else R.string.turn_memory_title)
-    NexaraBottomSheet(show = true, onDismiss = onDismiss, title = title, scrollContent = true) {
+    NexaraBottomSheet(show = true, onDismiss = onDismiss, title = title, scrollContent = true, popover = popover) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             if (state != null) TurnMemorySheetContent(state, details, onRemove, onRewrite)
             if (graph != null) TurnGraphSheetContent(graph, graphDetails, onRetryGraph, onOpenGraph, showTitle = state != null)
