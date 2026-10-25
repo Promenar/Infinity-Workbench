@@ -70,6 +70,7 @@ import java.util.Locale
 fun AgentHubScreen(
     onNavigateToChat: (String) -> Unit,
     onNavigateToAgentEdit: (String) -> Unit,
+    onOpenLinuxEnvironment: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: AgentHubViewModel = viewModel(
@@ -158,6 +159,14 @@ fun AgentHubScreen(
     val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
     val startupIssues = app?.startupIssues?.collectAsState()?.value.orEmpty()
     var showStartupIssues by remember { mutableStateOf(false) }
+    // 启动时的非阻断提示：Linux 不可用时列出受影响的 Linux 会话数；环境状态变化后重新统计。
+    val linuxState = app?.linux?.runtime?.state?.collectAsState()?.value
+    var linuxAffected by remember { mutableStateOf(0) }
+    LaunchedEffect(app, linuxState) {
+        linuxAffected = if (app == null || !com.promenar.nexara.distribution.DistributionCapabilities.linuxRuntimeAvailable) 0 else runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.sessionRunModes.startupCheck().affectedSessionCount }
+        }.getOrDefault(0)
+    }
     AgentHubScreenContent(
         state = state,
         actions = actions,
@@ -165,6 +174,9 @@ fun AgentHubScreen(
         startupBanner = {
             if (startupIssues.isNotEmpty()) {
                 com.promenar.nexara.ui.startup.StartupIssuesBanner(startupIssues.size, onOpen = { showStartupIssues = true })
+            }
+            if (linuxAffected > 0) {
+                com.promenar.nexara.ui.startup.LinuxUnavailableBanner(linuxAffected, onOpen = onOpenLinuxEnvironment)
             }
         },
     )

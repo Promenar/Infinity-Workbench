@@ -18,6 +18,7 @@ import com.promenar.nexara.domain.linux.LinuxInstallStep
 import com.promenar.nexara.domain.linux.LinuxInstallStepState
 import com.promenar.nexara.domain.linux.LinuxMirrorChoice
 import com.promenar.nexara.domain.linux.LinuxMirrorId
+import com.promenar.nexara.domain.linux.LinuxOptionalPackage
 import com.promenar.nexara.domain.linux.LinuxPackage
 import com.promenar.nexara.domain.linux.LinuxPackageAction
 import com.promenar.nexara.domain.linux.LinuxPackageOperation
@@ -26,6 +27,7 @@ import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.linux.LinuxStepDetail
 import com.promenar.nexara.domain.linux.LinuxStepStatus
 import com.promenar.nexara.domain.linux.LinuxStorageUsage
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.linux.settings.LinuxEnvironmentActions
 import com.promenar.nexara.ui.linux.settings.LinuxEnvironmentContent
@@ -67,11 +69,60 @@ fun linuxInstallFailedPreview() = LinuxEnvironmentPreview(
 @Preview(name = "Linux 环境管理 深色 大字号130", widthDp = 360, heightDp = 1900, locale = "en", fontScale = 1.3f)
 @Composable
 fun linuxManagePreview() = LinuxEnvironmentPreview(
-    LinuxRuntimeState.Ready(
-        LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "5.1.107", 0, LinuxDiagnostics(true, System.currentTimeMillis() - 2 * 3_600_000L, 310, emptyList())),
-    ),
+    previewReady(),
     dark = true,
     usage = LinuxStorageUsage(10 * MB, 186 * MB, 42 * MB, 23 * MB),
+    optionalInstalled = LinuxOptionalPackage.entries.toSet(),
+)
+
+private fun previewReady() = LinuxRuntimeState.Ready(
+    LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "5.1.107", 0, LinuxDiagnostics(true, System.currentTimeMillis() - 2 * 3_600_000L, 310, emptyList())),
+)
+
+@PreviewTest
+@Preview(name = "Linux 安装引导 附加包与默认模式 深色", widthDp = 360, heightDp = 1500, locale = "zh-rCN")
+@Composable
+fun linuxInstallRunModeDarkPreview() = LinuxEnvironmentPreview(
+    LinuxRuntimeState.NotInstalled(118L * 1024 * MB),
+    dark = true,
+    installPackages = setOf(LinuxOptionalPackage.GIT),
+    installDefaultMode = SessionRunMode.BUILTIN,
+)
+
+@PreviewTest
+@Preview(name = "Linux 安装引导 附加包与默认模式 浅色 大字号130", widthDp = 360, heightDp = 1900, locale = "en", fontScale = 1.3f)
+@Composable
+fun linuxInstallRunModeLightPreview() = LinuxEnvironmentPreview(
+    LinuxRuntimeState.NotInstalled(150L * MB),
+    dark = false,
+)
+
+@PreviewTest
+@Preview(name = "Linux 环境管理 默认模式与补装 深色", widthDp = 360, heightDp = 1900, locale = "zh-rCN")
+@Composable
+fun linuxManageRunModeDarkPreview() = LinuxEnvironmentPreview(
+    previewReady(),
+    dark = true,
+    usage = LinuxStorageUsage(10 * MB, 186 * MB, 42 * MB, 23 * MB),
+    defaultMode = SessionRunMode.BUILTIN,
+    optionalInstalled = setOf(LinuxOptionalPackage.GIT),
+    optionalSelection = setOf(LinuxOptionalPackage.PYTHON3),
+    packageOperation = LinuxPackageOperation(
+        LinuxPackageAction.INSTALL, listOf("python3", "py3-pip"), 3, 9, 12 * MB, 18 * MB,
+        "(3/9) Installing python3 (3.13.9-r0)\n  Fetching … 12.0 MB / 18.4 MB",
+    ),
+    installingOptional = true,
+)
+
+@PreviewTest
+@Preview(name = "Linux 环境管理 默认模式与补装 浅色 大字号130", widthDp = 360, heightDp = 2300, locale = "en", fontScale = 1.3f)
+@Composable
+fun linuxManageRunModeLightPreview() = LinuxEnvironmentPreview(
+    previewReady(),
+    dark = false,
+    usage = LinuxStorageUsage(10 * MB, 186 * MB, 42 * MB, 23 * MB),
+    optionalInstalled = emptySet(),
+    optionalSelection = setOf(LinuxOptionalPackage.GIT),
 )
 
 @PreviewTest
@@ -136,15 +187,32 @@ private fun previewProgress(failed: Boolean = false) = LinuxInstallProgress(
 )
 
 @Composable
-private fun LinuxEnvironmentPreview(runtime: LinuxRuntimeState, dark: Boolean, usage: LinuxStorageUsage? = null) =
+private fun LinuxEnvironmentPreview(
+    runtime: LinuxRuntimeState,
+    dark: Boolean,
+    usage: LinuxStorageUsage? = null,
+    defaultMode: SessionRunMode = SessionRunMode.LINUX,
+    installPackages: Set<LinuxOptionalPackage> = LinuxOptionalPackage.entries.toSet(),
+    installDefaultMode: SessionRunMode = SessionRunMode.LINUX,
+    optionalInstalled: Set<LinuxOptionalPackage>? = null,
+    optionalSelection: Set<LinuxOptionalPackage> = emptySet(),
+    packageOperation: LinuxPackageOperation? = null,
+    installingOptional: Boolean = false,
+) =
     PreviewTheme(dark = dark, title = R.string.linux_title) { modifier ->
         LinuxEnvironmentContent(
             state = LinuxEnvironmentUiState(
                 runtime = runtime,
-                agentEnabled = true,
+                defaultMode = defaultMode,
+                installPackages = installPackages,
+                installDefaultMode = installDefaultMode,
                 usage = usage,
                 mirror = LinuxMirrorChoice(LinuxMirrorId.TUNA),
                 mirrorLatencyMs = 32,
+                optionalInstalled = optionalInstalled,
+                optionalSelection = optionalSelection,
+                packageOperation = packageOperation,
+                installingOptional = installingOptional,
             ),
             actions = LinuxEnvironmentActions(),
             modifier = modifier,

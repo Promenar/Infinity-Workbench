@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.chat.runmode.labelRes
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -84,6 +85,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -243,6 +245,8 @@ data class ChatScreenState(
     val gitSummary: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
     /** 本会话或其工作区因启动自检问题暂停写入，顶栏下方显示提示条。 */
     val startupWritePaused: Boolean = false,
+    /** 侧载版顶栏标题旁的运行模式标识；Play 版为 null。 */
+    val runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
 )
 
 data class ChatScreenActions(
@@ -253,6 +257,8 @@ data class ChatScreenActions(
     val onOpenGit: () -> Unit = {},
     /** 打开启动自检问题面板（会话暂停写入提示条的“处理”）。 */
     val onOpenStartupIssues: () -> Unit = {},
+    /** 点运行模式标识或菜单项：环境不可用时回到检查点，否则打开模式切换。 */
+    val onOpenRunMode: () -> Unit = {},
     /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
     val onLocateWorkspacePath: (String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
@@ -582,6 +588,8 @@ fun ChatScreenContent(
                     onCanvases = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
                     git = state.gitSummary,
                     onOpenGit = actions.onOpenGit,
+                    runMode = state.runMode,
+                    onRunMode = actions.onOpenRunMode,
                 )
                 if (state.startupWritePaused) {
                     com.promenar.nexara.ui.startup.StartupWritePausedBanner(onOpen = actions.onOpenStartupIssues)
@@ -1611,6 +1619,8 @@ fun ChatTopBar(
     onCanvases: (() -> Unit)? = null,
     git: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
     onOpenGit: () -> Unit = {},
+    runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
+    onRunMode: () -> Unit = {},
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -1625,17 +1635,24 @@ fun ChatTopBar(
         windowInsets = windowInsets,
         title = {
             Column {
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.heightIn(min = if (git != null) 32.dp else 48.dp)
+                    modifier = Modifier.weight(1f, fill = false)
+                        .heightIn(min = if (git != null) 32.dp else 48.dp)
                         .clickable(role = Role.Button, onClickLabel = stringResource(R.string.chat_menu_rename), onClick = onRename)
                         .wrapContentHeight(Alignment.CenterVertically)
                         .testTag("chat_top_title"),
                 )
+                // 运行模式标识只在侧载版出现；触控区借到 48dp，视觉高度保持标签大小。
+                if (runMode != null) {
+                    com.promenar.nexara.ui.chat.runmode.RunModeChip(runMode.mode, runMode.unavailable, onClick = onRunMode)
+                }
+              }
                 // 分支 · 改动数 · ↑领先，点开 Git 面板；标题与 Git 行各自是独立的点按目标。
                 if (git != null) {
                     val line = com.promenar.nexara.ui.git.gitSummaryLine(git, compactChanges = true)
@@ -1713,6 +1730,26 @@ fun ChatTopBar(
                         onClick = {
                             showMenu = false
                             onSettings()
+                        }
+                    )
+                    if (runMode != null) DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = {
+                            Text(
+                                stringResource(R.string.run_mode_title) + " · " + stringResource(runMode.mode.labelRes()),
+                                style = NexaraTypography.labelLarge,
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onRunMode()
                         }
                     )
                     DropdownMenuItem(

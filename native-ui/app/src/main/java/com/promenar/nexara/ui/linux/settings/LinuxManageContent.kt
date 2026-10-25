@@ -47,7 +47,6 @@ import com.promenar.nexara.domain.linux.LinuxStorageUsage
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
-import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.nexaraDomainColors
@@ -76,23 +75,16 @@ internal fun LinuxManageContent(
             LinuxQuickAction(Icons.Rounded.FolderOpen, stringResource(R.string.linux_action_files), actions.onOpenFiles, Modifier.weight(1f))
             LinuxQuickAction(Icons.Rounded.Inventory2, stringResource(R.string.linux_action_packages), actions.onOpenPackages, Modifier.weight(1f))
         }
-        NexaraSettingsSection(title = stringResource(R.string.linux_section_agent)) {
-            SettingsToggle(
-                title = stringResource(R.string.linux_agent_toggle_title),
-                description = stringResource(R.string.linux_agent_toggle_subtitle),
-                checked = state.agentEnabled,
-                onCheckedChange = actions.onSetAgentEnabled,
-                modifier = Modifier.testTag(UiTags.LINUX_AGENT_TOGGLE),
-            )
+        LinuxDefaultModeSection(state.defaultMode, actions.onSetDefaultMode)
+        LinuxOptionalPackagesSection(state, onToggle = actions.onSetOptionalPackage, onInstall = actions.onInstallOptionalPackages)
+        LinuxStorageSection(state.usage, busy = state.busy, onClearCache = actions.onClearCache)
+        NexaraSettingsSection(title = stringResource(R.string.linux_section_maintenance)) {
             NexaraSettingsRowLayout(
                 title = stringResource(R.string.linux_paths_title),
                 subtitle = stringResource(R.string.linux_paths_subtitle),
                 subtitleIsIdentifier = true,
                 subtitleMaxLines = 2,
             )
-        }
-        LinuxStorageSection(state.usage, busy = state.busy, onClearCache = actions.onClearCache)
-        NexaraSettingsSection(title = stringResource(R.string.linux_section_maintenance)) {
             val mirror = linuxMirrorLabel(state.mirror)
             NexaraSettingsItem(
                 title = stringResource(R.string.linux_mirror_title),

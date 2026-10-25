@@ -19,9 +19,12 @@ import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.testing.UiTags
 
-/** 工具页“本机与远端”中的 Linux 环境入口；渠道不提供时不显示。 */
+/**
+ * 工具页“本机与远端”中的 Linux 环境入口；渠道不提供时不显示。
+ * [defaultModeLinux] 为新会话默认模式是否为 Linux（侧载版与 `LinuxRuntime.agentEnabled` 一致）。
+ */
 @Composable
-internal fun LinuxEntryRow(state: LinuxRuntimeState?, agentEnabled: Boolean, onClick: () -> Unit) {
+internal fun LinuxEntryRow(state: LinuxRuntimeState?, defaultModeLinux: Boolean, onClick: () -> Unit) {
     if (state == null || state == LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION)) return
     val subtitle = when (state) {
         is LinuxRuntimeState.Unavailable -> stringResource(R.string.linux_entry_unsupported_abi)
@@ -29,8 +32,8 @@ internal fun LinuxEntryRow(state: LinuxRuntimeState?, agentEnabled: Boolean, onC
         is LinuxRuntimeState.Installing -> stringResource(R.string.linux_entry_installing)
         is LinuxRuntimeState.InstallInterrupted -> stringResource(R.string.linux_entry_interrupted)
         is LinuxRuntimeState.Ready ->
-            if (agentEnabled) stringResource(R.string.linux_entry_ready, state.info.version)
-            else stringResource(R.string.linux_entry_ready_agent_off)
+            if (defaultModeLinux) stringResource(R.string.linux_run_mode_entry_ready_linux)
+            else stringResource(R.string.linux_run_mode_entry_ready_builtin)
         is LinuxRuntimeState.Maintaining -> stringResource(R.string.linux_entry_maintaining)
         is LinuxRuntimeState.Broken -> stringResource(R.string.linux_entry_broken)
     }

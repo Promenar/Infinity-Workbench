@@ -71,7 +71,7 @@ fun LinuxPackagesScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.failure) {
         val failure = state.failure ?: return@LaunchedEffect
-        val label = resources.getString(packageActionLabel(failure.action))
+        val label = resources.getString(linuxPackageActionLabel(failure.action))
         val detail = failure.result?.failure?.let { resources.getString(linuxFailureText(it.code)) }
         viewModel.consumeFailure()
         snackbar.showSnackbar(listOfNotNull(resources.getString(R.string.linux_packages_operation_failed, label), detail).joinToString(" "))
@@ -151,7 +151,7 @@ internal fun LinuxPackagesContent(state: LinuxPackagesUiState, actions: LinuxPac
             }
         }
         state.operation?.let { operation ->
-            item(key = "operation") { LinuxOutputBox(operationText(operation)) }
+            item(key = "operation") { LinuxOutputBox(linuxPackageOperationText(operation)) }
         }
         if (searchOnly != null || state.searching) {
             item(key = "search-header") {
@@ -275,8 +275,9 @@ private fun filterLabel(filter: LinuxPackageFilter, updates: Int): String = when
     LinuxPackageFilter.AGENT -> stringResource(R.string.linux_packages_filter_agent)
 }
 
+/** 软件包操作的进度摘要与输出尾部；管理页补装附加包时同样使用。 */
 @Composable
-private fun operationText(operation: LinuxPackageOperation): String {
+internal fun linuxPackageOperationText(operation: LinuxPackageOperation): String {
     val head = listOfNotNull(
         stringResource(packageBusyLabel(operation.action)),
         operation.names.joinToString(" ").ifEmpty { null },
@@ -286,7 +287,7 @@ private fun operationText(operation: LinuxPackageOperation): String {
     return if (tail.isBlank()) head else "$head\n$tail"
 }
 
-private fun packageActionLabel(action: LinuxPackageAction): Int = when (action) {
+internal fun linuxPackageActionLabel(action: LinuxPackageAction): Int = when (action) {
     LinuxPackageAction.REFRESH -> R.string.linux_packages_refresh
     LinuxPackageAction.INSTALL -> R.string.linux_packages_install
     LinuxPackageAction.REMOVE -> R.string.linux_packages_remove

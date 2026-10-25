@@ -11,6 +11,7 @@ import com.promenar.nexara.domain.linux.LinuxFailureCode
 import com.promenar.nexara.domain.linux.LinuxInstallStep
 import com.promenar.nexara.domain.linux.LinuxMirrorChoice
 import com.promenar.nexara.domain.linux.LinuxMirrorId
+import com.promenar.nexara.domain.linux.LinuxOptionalPackage
 import java.net.URI
 
 /** 文件大小按系统区域格式（例如 “186 MB”）。 */
@@ -82,6 +83,21 @@ internal fun linuxFailureText(code: LinuxFailureCode): Int = when (code) {
     LinuxFailureCode.IO -> R.string.linux_failure_io
 }
 
-/** 安装前要求的最小剩余空间：解包约 10 MB，加常用工具约 70 MB 与余量。 */
-internal fun linuxRequiredBytes(installCommonTools: Boolean): Long =
-    if (installCommonTools) 200L * 1024 * 1024 else 64L * 1024 * 1024
+/** 基础系统所需空间：解包约 10 MB，加 bash、curl、证书与下载缓存余量。 */
+internal const val LINUX_BASE_REQUIRED_BYTES = 64L * 1024 * 1024
+
+/** git 及其依赖安装后约 15 MB，按下载缓存与余量估算。 */
+internal const val LINUX_GIT_REQUIRED_BYTES = 36L * 1024 * 1024
+
+/** python3 与 py3-pip 安装后约 60 MB，按下载缓存与余量估算；与 git 合计后全选约 200 MB。 */
+internal const val LINUX_PYTHON3_REQUIRED_BYTES = 100L * 1024 * 1024
+
+/** 单项附加包的空间估算。 */
+internal fun linuxOptionalPackageBytes(item: LinuxOptionalPackage): Long = when (item) {
+    LinuxOptionalPackage.GIT -> LINUX_GIT_REQUIRED_BYTES
+    LinuxOptionalPackage.PYTHON3 -> LINUX_PYTHON3_REQUIRED_BYTES
+}
+
+/** 安装前要求的最小剩余空间：基础系统加所勾选的附加包。 */
+internal fun linuxRequiredBytes(selection: Set<LinuxOptionalPackage>): Long =
+    LINUX_BASE_REQUIRED_BYTES + selection.sumOf(::linuxOptionalPackageBytes)

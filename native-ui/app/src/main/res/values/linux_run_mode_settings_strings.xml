@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 安装引导：附加软件包 -->
+    <string name="linux_run_mode_install_base">Base: bash, curl, certificates</string>
+    <string name="linux_run_mode_package_git_title">git</string>
+    <string name="linux_run_mode_package_git_subtitle">Version control · needs about %1$s</string>
+    <string name="linux_run_mode_package_python_title">Python 3 (with pip)</string>
+    <string name="linux_run_mode_package_python_subtitle">Run scripts, install libraries with pip · needs about %1$s</string>
+    <string name="linux_run_mode_install_later_note">You can also add these later in Linux settings.</string>
+
+    <!-- 新会话默认模式 -->
+    <string name="linux_run_mode_default_title">Default mode for new sessions</string>
+    <string name="linux_run_mode_linux_title">Linux</string>
+    <string name="linux_run_mode_linux_subtitle">Commands run in Alpine and can install packages with apk</string>
+    <string name="linux_run_mode_builtin_title">Built-in</string>
+    <string name="linux_run_mode_builtin_subtitle">Uses only the limited built-in tools</string>
+    <string name="linux_run_mode_default_note">Only affects new sessions; switch an existing session from its session menu.</string>
+
+    <!-- 工具页入口 -->
+    <string name="linux_run_mode_entry_ready_linux">Ready · New sessions use Linux</string>
+    <string name="linux_run_mode_entry_ready_builtin">Ready · New sessions use built-in</string>
+
+    <!-- 管理页：补装附加软件包 -->
+    <string name="linux_run_mode_optional_title">Extra packages</string>
+    <string name="linux_run_mode_optional_installed">Installed</string>
+    <string name="linux_run_mode_optional_checking">Checking…</string>
+</resources>

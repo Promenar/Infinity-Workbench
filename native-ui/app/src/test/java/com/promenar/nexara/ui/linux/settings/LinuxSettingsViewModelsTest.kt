@@ -8,6 +8,7 @@ import com.promenar.nexara.domain.linux.LinuxLaunchSpec
 import com.promenar.nexara.domain.linux.LinuxMirrorChoice
 import com.promenar.nexara.domain.linux.LinuxMirrorId
 import com.promenar.nexara.domain.linux.LinuxMirrorSettings
+import com.promenar.nexara.domain.linux.LinuxOptionalPackage
 import com.promenar.nexara.domain.linux.LinuxPackage
 import com.promenar.nexara.domain.linux.LinuxPackageAction
 import com.promenar.nexara.domain.linux.LinuxPackageManager
@@ -19,6 +20,7 @@ import com.promenar.nexara.domain.linux.LinuxProcessLaunch
 import com.promenar.nexara.domain.linux.LinuxRuntime
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.linux.LinuxStorageUsage
+import com.promenar.nexara.domain.model.SessionRunMode
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -119,7 +122,7 @@ class LinuxSettingsViewModelsTest {
     @Test
     fun `environment refreshes usage when ready and serialises maintenance`() = runTest(dispatcher) {
         val runtime = FakeRuntime()
-        val viewModel = LinuxEnvironmentViewModel(runtime, FakeMirrors())
+        val viewModel = environment(runtime)
         advanceUntilIdle()
         assertThat(viewModel.uiState.value.usage).isNull()
 
@@ -150,12 +153,123 @@ class LinuxSettingsViewModelsTest {
     }
 
     @Test
-    fun `install passes the common tools choice`() = runTest(dispatcher) {
+    fun `install passes the optional package selection`() = runTest(dispatcher) {
         val runtime = FakeRuntime()
-        val viewModel = LinuxEnvironmentViewModel(runtime, FakeMirrors())
-        viewModel.setInstallCommonTools(false)
+        val viewModel = environment(runtime)
+        assertThat(viewModel.uiState.value.installPackages).containsExactlyElementsIn(LinuxOptionalPackage.entries)
+        viewModel.setInstallPackage(LinuxOptionalPackage.GIT, false)
         viewModel.install()
-        assertThat(runtime.installs).containsExactly(LinuxInstallOptions(installCommonTools = false))
+        viewModel.setInstallPackage(LinuxOptionalPackage.PYTHON3, false)
+        viewModel.install()
+        assertThat(runtime.installs).containsExactly(
+            LinuxInstallOptions(optionalPackages = setOf(LinuxOptionalPackage.PYTHON3)),
+            LinuxInstallOptions(optionalPackages = emptySet()),
+        ).inOrder()
+        assertThat(runtime.installs.last().packages).containsExactly("bash", "ca-certificates", "curl")
+        assertThat(linuxInstallOptions(LinuxOptionalPackage.entries.toSet()).packages)
+            .containsExactly("bash", "ca-certificates", "curl", "git", "python3", "py3-pip")
+    }
+
+    @Test
+    fun `required space follows the optional selection`() {
+        val mb = 1024L * 1024
+        assertThat(linuxRequiredBytes(emptySet())).isEqualTo(64 * mb)
+        assertThat(linuxRequiredBytes(setOf(LinuxOptionalPackage.GIT))).isEqualTo(100 * mb)
+        assertThat(linuxRequiredBytes(setOf(LinuxOptionalPackage.PYTHON3))).isEqualTo(164 * mb)
+        assertThat(linuxRequiredBytes(LinuxOptionalPackage.entries.toSet())).isEqualTo(200 * mb)
+    }
+
+    @Test
+    fun `first install writes the chosen default mode but resume does not`() = runTest(dispatcher) {
+        val runtime = FakeRuntime()
+        val modes = FakeDefaultModes()
+        val viewModel = environment(runtime, modes = modes)
+        assertThat(viewModel.uiState.value.installDefaultMode).isEqualTo(SessionRunMode.LINUX)
+        viewModel.setInstallDefaultMode(SessionRunMode.BUILTIN)
+        viewModel.install()
+        advanceUntilIdle()
+        assertThat(modes.writes).containsExactly(SessionRunMode.BUILTIN)
+        assertThat(viewModel.uiState.value.defaultMode).isEqualTo(SessionRunMode.BUILTIN)
+
+        runtime.state.value = LinuxRuntimeState.InstallInterrupted(
+            com.promenar.nexara.domain.linux.LinuxInstallProgress(emptyList(), null), failure = null,
+        )
+        viewModel.setInstallDefaultMode(SessionRunMode.LINUX)
+        viewModel.install()
+        advanceUntilIdle()
+        assertThat(runtime.installs).hasSize(2)
+        assertThat(modes.writes).containsExactly(SessionRunMode.BUILTIN)
+    }
+
+    @Test
+    fun `manage page default mode write reports an unsupported mode`() = runTest(dispatcher) {
+        val modes = FakeDefaultModes(linuxSupported = false)
+        val viewModel = environment(FakeRuntime(), modes = modes)
+        assertThat(viewModel.uiState.value.defaultMode).isEqualTo(SessionRunMode.BUILTIN)
+        viewModel.setDefaultMode(SessionRunMode.LINUX)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.notice).isEqualTo(LinuxEnvironmentNotice.Failed(null))
+        viewModel.consumeNotice()
+        viewModel.setDefaultMode(SessionRunMode.BUILTIN)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.notice).isNull()
+        assertThat(modes.writes).containsExactly(SessionRunMode.LINUX, SessionRunMode.BUILTIN).inOrder()
+    }
+
+    @Test
+    fun `optional package counts as installed only when every apk package is present`() {
+        assertThat(installedOptionalPackages(listOf(pkg("git"), pkg("python3")))).containsExactly(LinuxOptionalPackage.GIT)
+        assertThat(installedOptionalPackages(listOf(pkg("python3"), pkg("py3-pip"), pkg("git", installed = false))))
+            .containsExactly(LinuxOptionalPackage.PYTHON3)
+        assertThat(installedOptionalPackages(emptyList())).isEmpty()
+    }
+
+    @Test
+    fun `manage page installs only selected missing optional packages`() = runTest(dispatcher) {
+        val runtime = FakeRuntime()
+        val packages = FakePackages(installed = mutableListOf(pkg("git", explicit = true)))
+        val viewModel = environment(runtime, packages)
+        assertThat(viewModel.uiState.value.optionalInstalled).isNull()
+        runtime.state.value = ready()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.optionalInstalled).containsExactly(LinuxOptionalPackage.GIT)
+
+        viewModel.setOptionalSelected(LinuxOptionalPackage.GIT, true)
+        assertThat(viewModel.uiState.value.optionalSelection).isEmpty()
+        assertThat(viewModel.uiState.value.canInstallOptional).isFalse()
+        viewModel.setOptionalSelected(LinuxOptionalPackage.PYTHON3, true)
+        assertThat(viewModel.uiState.value.canInstallOptional).isTrue()
+        viewModel.installOptionalPackages()
+        advanceUntilIdle()
+        assertThat(packages.installs).containsExactly(listOf("python3", "py3-pip") to LinuxPackageOrigin.Preset)
+        assertThat(viewModel.uiState.value.optionalInstalled).containsExactlyElementsIn(LinuxOptionalPackage.entries)
+        assertThat(viewModel.uiState.value.optionalSelection).isEmpty()
+        assertThat(viewModel.uiState.value.installingOptional).isFalse()
+        assertThat(viewModel.uiState.value.notice).isNull()
+    }
+
+    @Test
+    fun `failed optional install keeps the selection and reports a package failure`() = runTest(dispatcher) {
+        val runtime = FakeRuntime().apply { state.value = ready() }
+        val packages = FakePackages(installed = mutableListOf(), failInstall = true)
+        val viewModel = environment(runtime, packages)
+        advanceUntilIdle()
+        viewModel.setOptionalSelected(LinuxOptionalPackage.GIT, true)
+        viewModel.installOptionalPackages()
+        advanceUntilIdle()
+        val notice = viewModel.uiState.value.notice as LinuxEnvironmentNotice.PackageFailed
+        assertThat(notice.failure.action).isEqualTo(LinuxPackageAction.INSTALL)
+        assertThat(notice.failure.names).containsExactly("git")
+        assertThat(viewModel.uiState.value.optionalSelection).containsExactly(LinuxOptionalPackage.GIT)
+
+        // 其它软件包操作进行中时不再提交。
+        packages.operation.value = LinuxPackageOperation(LinuxPackageAction.INSTALL, listOf("git"), null, null, null, null, "")
+        assertThat(viewModel.uiState.value.canInstallOptional).isFalse()
+        assertThat(isOptionalPackageOperation(packages.operation.value)).isTrue()
+        viewModel.installOptionalPackages()
+        advanceUntilIdle()
+        assertThat(packages.installs).hasSize(1)
+        assertThat(isOptionalPackageOperation(LinuxPackageOperation(LinuxPackageAction.INSTALL, listOf("nodejs"), null, null, null, null, ""))).isFalse()
     }
 
     @Test
@@ -180,6 +294,12 @@ class LinuxSettingsViewModelsTest {
         description: String? = null,
         origin: LinuxPackageOrigin? = null,
     ) = LinuxPackage(name, "1.0-r0", description, 1024, installed, available, explicit, origin)
+
+    private fun environment(
+        runtime: FakeRuntime,
+        packages: FakePackages = FakePackages(installed = mutableListOf()),
+        modes: FakeDefaultModes = FakeDefaultModes(runtime.agentEnabled),
+    ) = LinuxEnvironmentViewModel(runtime, FakeMirrors(), packages, modes)
 
     private fun ready() = LinuxRuntimeState.Ready(
         LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "5.1.107", 0, lastDiagnostics = null),
@@ -207,6 +327,23 @@ class LinuxSettingsViewModelsTest {
         }
         override suspend fun remove(names: List<String>) = LinuxPackageResult(true, 0, "")
         override suspend fun upgrade(names: List<String>) = LinuxPackageResult(true, 0, "")
+    }
+
+    /** 与生产实现一致：默认模式由 Linux 偏好派生，渠道不支持时 LINUX 写入失败。 */
+    private class FakeDefaultModes(
+        private val enabled: MutableStateFlow<Boolean> = MutableStateFlow(true),
+        private val linuxSupported: Boolean = true,
+    ) : LinuxDefaultModeStore {
+        val writes = mutableListOf<SessionRunMode>()
+        override val defaultMode: Flow<SessionRunMode> = enabled.map { currentFor(it) }
+        override fun currentDefaultMode() = currentFor(enabled.value)
+        override suspend fun setDefaultMode(mode: SessionRunMode): Boolean {
+            writes += mode
+            if (mode == SessionRunMode.LINUX && !linuxSupported) return false
+            enabled.value = mode == SessionRunMode.LINUX
+            return true
+        }
+        private fun currentFor(enabled: Boolean) = if (linuxSupported && enabled) SessionRunMode.LINUX else SessionRunMode.BUILTIN
     }
 
     private class FakeMirrors : LinuxMirrorSettings {

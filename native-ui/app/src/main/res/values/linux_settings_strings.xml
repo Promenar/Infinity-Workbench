@@ -9,8 +9,6 @@
     <string name="linux_entry_not_installed">Not installed · Built-in Alpine, about 4 MB</string>
     <string name="linux_entry_installing">Installing…</string>
     <string name="linux_entry_interrupted">Installation paused · Tap to continue</string>
-    <string name="linux_entry_ready">Ready · Alpine %1$s</string>
-    <string name="linux_entry_ready_agent_off">Ready · Agent uses system sh</string>
     <string name="linux_entry_maintaining">Updating…</string>
     <string name="linux_entry_broken">Needs repair</string>
     <string name="linux_entry_unsupported_abi">Not supported on this device</string>
@@ -43,8 +41,6 @@
     <string name="linux_install_contents">What gets installed</string>
     <string name="linux_install_base_title">Alpine Linux %1$s</string>
     <string name="linux_install_base_subtitle">Built into the app, about 10 MB unpacked, installs offline</string>
-    <string name="linux_install_tools_title">Common tools (optional)</string>
-    <string name="linux_install_tools_subtitle">bash, git, python3, curl · ~60 MB download</string>
     <string name="linux_install_space_title">Free space</string>
     <string name="linux_install_space_ok">%1$s free on this device, enough</string>
     <string name="linux_install_space_low">Only %1$s free; at least %2$s is needed</string>
@@ -64,7 +60,7 @@
     <string name="linux_step_network_done">DNS %1$s</string>
     <string name="linux_step_network_vpn">via VPN</string>
     <string name="linux_step_network_proxy">proxy set</string>
-    <string name="linux_step_tools_pending">bash, git, python3, curl</string>
+    <string name="linux_step_tools_pending">Base tools and selected add-ons</string>
     <string name="linux_step_tools_progress">Mirror: %1$s · %2$s of %3$s downloaded</string>
     <string name="linux_step_tools_progress_unknown">Mirror: %1$s · %2$s downloaded</string>
     <string name="linux_step_tools_skipped">Skipped; install later from Packages</string>
@@ -96,9 +92,6 @@
     <string name="linux_action_terminal">Terminal</string>
     <string name="linux_action_files">Files</string>
     <string name="linux_action_packages">Packages</string>
-    <string name="linux_section_agent">Agent use</string>
-    <string name="linux_agent_toggle_title">Run commands in Linux</string>
-    <string name="linux_agent_toggle_subtitle">shell_exec and jobs; off uses system sh</string>
     <string name="linux_paths_title">Path mapping</string>
     <string name="linux_paths_subtitle">Workspace → /workspace · Mounts → /mnt/&lt;alias&gt;</string>
     <string name="linux_section_storage">Storage · %1$s total</string>
@@ -123,8 +116,8 @@
     <string name="linux_reset_confirm_body">Installed packages and everything in /root will be deleted. Files in your workspaces are not affected.</string>
     <string name="linux_reset_confirm_action">Reset</string>
     <string name="linux_uninstall_title">Uninstall</string>
-    <string name="linux_uninstall_subtitle">Frees %1$s; the agent switches to system sh</string>
-    <string name="linux_uninstall_subtitle_plain">The agent switches to system sh</string>
+    <string name="linux_uninstall_subtitle">Frees %1$s. Linux conversations need to switch to built-in mode</string>
+    <string name="linux_uninstall_subtitle_plain">Linux conversations need to switch to built-in mode</string>
     <string name="linux_uninstall_confirm_title">Uninstall the Linux environment?</string>
     <string name="linux_uninstall_confirm_body">The whole environment, including installed packages and /root, will be deleted. Files in your workspaces are not affected.</string>
     <string name="linux_uninstall_confirm_action">Uninstall</string>

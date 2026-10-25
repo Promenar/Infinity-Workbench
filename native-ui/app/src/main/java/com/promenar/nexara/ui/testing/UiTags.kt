@@ -431,9 +431,7 @@ object UiTags {
     // Linux 环境设置
     const val LINUX_ENTRY = "linux_entry"
     const val LINUX_INSTALL_BUTTON = "linux_install_button"
-    const val LINUX_INSTALL_TOOLS_TOGGLE = "linux_install_tools_toggle"
     const val LINUX_INSTALL_CANCEL = "linux_install_cancel"
-    const val LINUX_AGENT_TOGGLE = "linux_agent_toggle"
     const val LINUX_CLEAR_CACHE = "linux_clear_cache"
     const val LINUX_MIRROR_ENTRY = "linux_mirror_entry"
     const val LINUX_DIAGNOSTICS = "linux_diagnostics"

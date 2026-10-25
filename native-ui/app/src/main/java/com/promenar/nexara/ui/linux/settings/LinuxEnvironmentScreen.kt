@@ -63,27 +63,32 @@ import com.promenar.nexara.domain.linux.LinuxInstallProgress
 import com.promenar.nexara.domain.linux.LinuxInstallStep
 import com.promenar.nexara.domain.linux.LinuxInstallStepState
 import com.promenar.nexara.domain.linux.LinuxMaintenance
+import com.promenar.nexara.domain.linux.LinuxOptionalPackage
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.linux.LinuxStepDetail
 import com.promenar.nexara.domain.linux.LinuxStepStatus
 import com.promenar.nexara.domain.linux.LinuxUnavailableReason
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraSettingsGroup
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
-import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 /** 环境页的全部用户操作；预览与截图测试传入空实现。 */
 internal data class LinuxEnvironmentActions(
-    val onSetInstallCommonTools: (Boolean) -> Unit = {},
+    val onSetInstallPackage: (LinuxOptionalPackage, Boolean) -> Unit = { _, _ -> },
+    val onSetInstallDefaultMode: (SessionRunMode) -> Unit = {},
     val onInstall: () -> Unit = {},
     val onCancelInstall: () -> Unit = {},
     val onLeave: () -> Unit = {},
-    val onSetAgentEnabled: (Boolean) -> Unit = {},
+    val onSetDefaultMode: (SessionRunMode) -> Unit = {},
+    val onSetOptionalPackage: (LinuxOptionalPackage, Boolean) -> Unit = { _, _ -> },
+    val onInstallOptionalPackages: () -> Unit = {},
     val onClearCache: () -> Unit = {},
     val onRunDiagnostics: () -> Unit = {},
     val onReset: () -> Unit = {},
@@ -112,7 +117,10 @@ fun LinuxEnvironmentScreen(
         viewModel(factory = LinuxEnvironmentViewModel.factory(context.applicationContext as android.app.Application))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) { viewModel.ensureMirrorLatency() }
+    LaunchedEffect(Unit) {
+        viewModel.ensureMirrorLatency()
+        viewModel.refreshOptionalPackages()
+    }
     LaunchedEffect(state.notice) {
         val message = when (val notice = state.notice) {
             null -> return@LaunchedEffect
@@ -124,6 +132,10 @@ fun LinuxEnvironmentScreen(
                 resources.getString(R.string.linux_operation_failed),
                 notice.detail?.takeIf(String::isNotBlank),
             ).joinToString(": ")
+            is LinuxEnvironmentNotice.PackageFailed -> listOfNotNull(
+                resources.getString(R.string.linux_packages_operation_failed, resources.getString(linuxPackageActionLabel(notice.failure.action))),
+                notice.failure.result?.failure?.let { resources.getString(linuxFailureText(it.code)) },
+            ).joinToString(" ")
         }
         viewModel.consumeNotice()
         snackbar.showSnackbar(message)
@@ -133,11 +145,14 @@ fun LinuxEnvironmentScreen(
             LinuxEnvironmentContent(
                 state = state,
                 actions = LinuxEnvironmentActions(
-                    onSetInstallCommonTools = viewModel::setInstallCommonTools,
+                    onSetInstallPackage = viewModel::setInstallPackage,
+                    onSetInstallDefaultMode = viewModel::setInstallDefaultMode,
                     onInstall = viewModel::install,
                     onCancelInstall = viewModel::cancelInstall,
                     onLeave = onBack,
-                    onSetAgentEnabled = viewModel::setAgentEnabled,
+                    onSetDefaultMode = viewModel::setDefaultMode,
+                    onSetOptionalPackage = viewModel::setOptionalSelected,
+                    onInstallOptionalPackages = viewModel::installOptionalPackages,
                     onClearCache = viewModel::clearDownloadCache,
                     onRunDiagnostics = viewModel::runDiagnostics,
                     onReset = viewModel::reset,
@@ -253,7 +268,7 @@ private fun LinuxInstallGuideContent(
     actions: LinuxEnvironmentActions,
     modifier: Modifier,
 ) {
-    val required = linuxRequiredBytes(state.installCommonTools)
+    val required = linuxRequiredBytes(state.installPackages)
     val enoughSpace = freeBytes >= required
     LinuxPageWithFooter(
         modifier = modifier,
@@ -278,21 +293,30 @@ private fun LinuxInstallGuideContent(
     ) {
         LinuxStatusLine(stringResource(R.string.linux_status_not_installed))
         LinuxHeroCard(stringResource(R.string.linux_install_hero_title), stringResource(R.string.linux_install_hero_body))
-        NexaraSettingsSection(title = stringResource(R.string.linux_install_contents)) {
+        NexaraSettingsSection(
+            title = stringResource(R.string.linux_install_contents),
+            footer = stringResource(R.string.linux_run_mode_install_later_note),
+        ) {
             NexaraSettingsRowLayout(
                 icon = Icons.Rounded.Inventory2,
                 title = stringResource(R.string.linux_install_base_title, LINUX_BUNDLED_ALPINE_VERSION),
                 subtitle = stringResource(R.string.linux_install_base_subtitle),
                 subtitleMaxLines = 2,
             )
-            SettingsToggle(
+            NexaraSettingsRowLayout(
                 icon = Icons.Rounded.Terminal,
-                title = stringResource(R.string.linux_install_tools_title),
-                description = stringResource(R.string.linux_install_tools_subtitle),
-                checked = state.installCommonTools,
-                onCheckedChange = actions.onSetInstallCommonTools,
-                modifier = Modifier.testTag(UiTags.LINUX_INSTALL_TOOLS_TOGGLE),
+                title = stringResource(R.string.linux_run_mode_install_base),
             )
+            LinuxOptionalPackage.entries.forEach { item ->
+                LinuxCheckboxRow(
+                    title = stringResource(linuxOptionalPackageTitle(item)),
+                    subtitle = linuxOptionalPackageSubtitle(item),
+                    checked = item in state.installPackages,
+                    onCheckedChange = { actions.onSetInstallPackage(item, it) },
+                )
+            }
+        }
+        NexaraSettingsGroup {
             NexaraSettingsRowLayout(
                 icon = Icons.Rounded.SdStorage,
                 title = stringResource(R.string.linux_install_space_title),
@@ -309,6 +333,7 @@ private fun LinuxInstallGuideContent(
             )
         }
         LinuxCallout(stringResource(R.string.linux_install_warning))
+        LinuxDefaultModeSection(state.installDefaultMode, actions.onSetInstallDefaultMode)
     }
 }
 

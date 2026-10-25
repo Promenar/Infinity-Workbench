@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 安装引导：附加软件包 -->
+    <string name="linux_run_mode_install_base">基础：bash、curl、证书</string>
+    <string name="linux_run_mode_package_git_title">git</string>
+    <string name="linux_run_mode_package_git_subtitle">版本控制 · 约需 %1$s</string>
+    <string name="linux_run_mode_package_python_title">Python 3（含 pip）</string>
+    <string name="linux_run_mode_package_python_subtitle">运行脚本，用 pip 安装库 · 约需 %1$s</string>
+    <string name="linux_run_mode_install_later_note">以后也能在 Linux 设置里补装。</string>
+
+    <!-- 新会话默认模式 -->
+    <string name="linux_run_mode_default_title">新会话默认模式</string>
+    <string name="linux_run_mode_linux_title">Linux</string>
+    <string name="linux_run_mode_linux_subtitle">命令在 Alpine 中运行，可用 apk 安装软件包</string>
+    <string name="linux_run_mode_builtin_title">内置</string>
+    <string name="linux_run_mode_builtin_subtitle">只使用受限的内置工具</string>
+    <string name="linux_run_mode_default_note">只影响新建的会话；已有会话在会话菜单里切换。</string>
+
+    <!-- 工具页入口 -->
+    <string name="linux_run_mode_entry_ready_linux">就绪 · 新会话默认 Linux</string>
+    <string name="linux_run_mode_entry_ready_builtin">就绪 · 新会话默认内置</string>
+
+    <!-- 管理页：补装附加软件包 -->
+    <string name="linux_run_mode_optional_title">附加软件包</string>
+    <string name="linux_run_mode_optional_installed">已安装</string>
+    <string name="linux_run_mode_optional_checking">正在检查…</string>
+</resources>

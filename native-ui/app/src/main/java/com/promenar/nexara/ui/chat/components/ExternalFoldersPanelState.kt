@@ -13,8 +13,9 @@ internal enum class ExternalMountSource {
 internal fun availableExternalMountSources(
     buildAllFilesAccess: Boolean,
     distributionAllFilesAccess: Boolean,
+    linuxSession: Boolean = false,
 ): List<ExternalMountSource> = buildList {
-    add(ExternalMountSource.Saf)
+    if (!linuxSession) add(ExternalMountSource.Saf)
     if (buildAllFilesAccess && distributionAllFilesAccess) add(ExternalMountSource.RealPath)
 }
 

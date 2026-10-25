@@ -9,8 +9,6 @@
     <string name="linux_entry_not_installed">未安装 · 内置 Alpine，约 4 MB</string>
     <string name="linux_entry_installing">正在安装…</string>
     <string name="linux_entry_interrupted">安装已暂停 · 点按继续</string>
-    <string name="linux_entry_ready">就绪 · Alpine %1$s</string>
-    <string name="linux_entry_ready_agent_off">就绪 · Agent 使用系统 sh</string>
     <string name="linux_entry_maintaining">正在处理…</string>
     <string name="linux_entry_broken">需要修复</string>
     <string name="linux_entry_unsupported_abi">此设备不支持</string>
@@ -43,8 +41,6 @@
     <string name="linux_install_contents">安装内容</string>
     <string name="linux_install_base_title">Alpine Linux %1$s</string>
     <string name="linux_install_base_subtitle">随应用内置，解包后约 10 MB，可离线安装</string>
-    <string name="linux_install_tools_title">常用工具（可选）</string>
-    <string name="linux_install_tools_subtitle">bash、git、python3、curl · 下载约 60 MB</string>
     <string name="linux_install_space_title">可用空间</string>
     <string name="linux_install_space_ok">设备剩余 %1$s，足够</string>
     <string name="linux_install_space_low">设备只剩 %1$s，至少需要 %2$s</string>
@@ -64,7 +60,7 @@
     <string name="linux_step_network_done">DNS %1$s</string>
     <string name="linux_step_network_vpn">经 VPN</string>
     <string name="linux_step_network_proxy">已设置代理</string>
-    <string name="linux_step_tools_pending">bash、git、python3、curl</string>
+    <string name="linux_step_tools_pending">基础工具与所选附加包</string>
     <string name="linux_step_tools_progress">镜像：%1$s · 已下载 %2$s / %3$s</string>
     <string name="linux_step_tools_progress_unknown">镜像：%1$s · 已下载 %2$s</string>
     <string name="linux_step_tools_skipped">已跳过，可稍后在“软件包”中安装</string>
@@ -96,9 +92,6 @@
     <string name="linux_action_terminal">终端</string>
     <string name="linux_action_files">文件</string>
     <string name="linux_action_packages">软件包</string>
-    <string name="linux_section_agent">Agent 使用</string>
-    <string name="linux_agent_toggle_title">命令在 Linux 中运行</string>
-    <string name="linux_agent_toggle_subtitle">shell_exec 与后台任务；关闭改用系统 sh</string>
     <string name="linux_paths_title">路径映射</string>
     <string name="linux_paths_subtitle">工作区 → /workspace · 挂载 → /mnt/&lt;别名&gt;</string>
     <string name="linux_section_storage">存储 · 共 %1$s</string>
@@ -123,8 +116,8 @@
     <string name="linux_reset_confirm_body">已安装的软件包和 /root 中的全部内容都会被删除，工作区中的文件不受影响。</string>
     <string name="linux_reset_confirm_action">重置</string>
     <string name="linux_uninstall_title">卸载</string>
-    <string name="linux_uninstall_subtitle">释放 %1$s，Agent 改用系统 sh</string>
-    <string name="linux_uninstall_subtitle_plain">Agent 改用系统 sh</string>
+    <string name="linux_uninstall_subtitle">释放 %1$s，Linux 会话需改用内置模式</string>
+    <string name="linux_uninstall_subtitle_plain">Linux 会话需改用内置模式</string>
     <string name="linux_uninstall_confirm_title">卸载 Linux 环境？</string>
     <string name="linux_uninstall_confirm_body">整个环境都会被删除，包括已安装的软件包和 /root，工作区中的文件不受影响。</string>
     <string name="linux_uninstall_confirm_action">卸载</string>

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="run_mode_linux">Linux</string>
+    <string name="run_mode_builtin">Built-in</string>
+    <string name="run_mode_unset">Not set</string>
+    <string name="run_mode_title">Run mode</string>
+    <string name="run_mode_chip_cd">Run mode: %1$s</string>
+    <string name="run_mode_chip_unavailable_cd">Run mode: %1$s, environment unavailable</string>
+    <string name="run_mode_linux_desc">Full command line; can install packages</string>
+    <string name="run_mode_builtin_desc">Limited tools; can\'t install packages</string>
+    <string name="run_mode_switch_note">Switching doesn\'t move files. Session files stay available in both modes; in Linux they are at /home/session.</string>
+    <string name="run_mode_select_title">Choose a run mode</string>
+    <string name="run_mode_select_body">This conversation has no run mode yet. After you choose, it changes only when you switch it.</string>
+    <string name="run_mode_unavailable_title">Linux unavailable</string>
+    <string name="run_mode_unavailable_body">This conversation runs in Linux mode. %1$s Fix it before running commands.</string>
+    <string name="run_mode_reason_not_installed">Linux isn\'t installed.</string>
+    <string name="run_mode_reason_interrupted">Linux installation didn\'t finish.</string>
+    <string name="run_mode_reason_broken">Environment files are damaged.</string>
+    <string name="run_mode_reason_busy">The environment is being installed or maintained.</string>
+    <string name="run_mode_reason_unsupported">This device can\'t run Linux.</string>
+    <string name="run_mode_action_repair">Repair environment</string>
+    <string name="run_mode_action_install">Install Linux</string>
+    <string name="run_mode_action_builtin">Use built-in mode</string>
+    <string name="run_mode_action_later">Later</string>
+    <string name="run_mode_working_repair">Repairing Linux…</string>
+    <string name="run_mode_working_reset">Resetting Linux…</string>
+    <string name="run_mode_working_export">Exporting…</string>
+    <string name="run_mode_repair_failed_title">Can\'t repair without data loss</string>
+    <string name="run_mode_repair_failed_body">Resetting erases the Linux system and projects under /root. The session folder /home/session is kept.</string>
+    <string name="run_mode_rebuild_failed_title">Linux can\'t be rebuilt</string>
+    <string name="run_mode_rebuild_failed_body">Export the projects under /root if you need them, then switch to built-in mode.</string>
+    <string name="run_mode_loss_summary">Deletes the Linux system (%1$s), /root (%2$s) and other home folders (%3$s).</string>
+    <plurals name="run_mode_loss_packages">
+        <item quantity="one">%1$d installed package</item>
+        <item quantity="other">%1$d installed packages</item>
+    </plurals>
+    <plurals name="run_mode_loss_unreadable">
+        <item quantity="one">%1$d location couldn\'t be read and isn\'t counted</item>
+        <item quantity="other">%1$d locations couldn\'t be read and aren\'t counted</item>
+    </plurals>
+    <string name="run_mode_action_reset">Reset Linux</string>
+    <string name="run_mode_action_export">Export projects under /root…</string>
+    <string name="run_mode_export_private">Export to session space</string>
+    <string name="run_mode_export_external">Choose a folder…</string>
+    <string name="run_mode_reset_confirm_title">Reset Linux?</string>
+    <string name="run_mode_reset_confirm_message">Installed packages and projects under /root are deleted and can\'t be restored. /home/session is kept.</string>
+    <string name="run_mode_export_done_title">Export finished</string>
+    <string name="run_mode_export_partial_title">Some files weren\'t exported</string>
+    <plurals name="run_mode_export_files">
+        <item quantity="one">Exported %1$d file (%2$s) to %3$s</item>
+        <item quantity="other">Exported %1$d files (%2$s) to %3$s</item>
+    </plurals>
+    <string name="run_mode_export_private_location">session space</string>
+    <string name="run_mode_export_none">This conversation has no Linux home projects to export.</string>
+    <string name="run_mode_export_failures">Not exported:</string>
+    <string name="run_mode_export_reason_link">link skipped</string>
+    <string name="run_mode_export_reason_type">unsupported type</string>
+    <string name="run_mode_export_reason_io">read or write failed</string>
+    <string name="run_mode_export_reason_changed">changed during export</string>
+    <string name="run_mode_export_reason_source">source unavailable</string>
+    <string name="run_mode_export_offer_title">Export Linux home projects?</string>
+    <string name="run_mode_export_offer_body">The main workspace is in the Linux home folder, which built-in mode can\'t use. Export its projects to the session space first.</string>
+    <string name="run_mode_done">Done</string>
+    <string name="run_mode_switch_failed">Couldn\'t switch the run mode. Try again.</string>
+    <string name="run_mode_action_failed">Couldn\'t finish. Try again.</string>
+    <plurals name="run_mode_startup_banner">
+        <item quantity="one">Linux is unavailable. %1$d Linux conversation needs attention before it can run commands.</item>
+        <item quantity="other">Linux is unavailable. %1$d Linux conversations need attention before they can run commands.</item>
+    </plurals>
+    <string name="run_mode_startup_action">Fix</string>
+    <string name="run_mode_folder_real_path_only">Linux conversations can only add folders by device path.</string>
+    <string name="run_mode_folder_need_all_files">Allow all-files access to add a device folder.</string>
+    <string name="run_mode_folder_mode_required">Choose a run mode before adding folders.</string>
+    <string name="run_mode_folder_saf_hidden">Hidden in Linux</string>
+</resources>

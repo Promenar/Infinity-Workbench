@@ -25,7 +25,7 @@
     <string name="agent_jobs_limit_title">离开应用后可能暂停</string>
     <string name="agent_jobs_limit_body">离开应用后，任务可能被系统暂停。</string>
     <string name="agent_jobs_stop">停止任务</string>
-    <string name="agent_jobs_open_log">在工作区中打开日志</string>
+    <string name="agent_jobs_open_log">查看日志</string>
     <string name="agent_jobs_runner_shell">Shell</string>
     <string name="agent_jobs_runner_python">Python</string>
     <string name="agent_jobs_runner_termux">Termux</string>
@@ -97,4 +97,9 @@
     <string name="settings_background_schedules_footer">每个会话最多 5 个，共 20 个；不随备份迁移。</string>
     <string name="settings_background_schedules_empty">没有定时任务</string>
     <string name="settings_background_untitled_session">未命名会话</string>
+    <string name="agent_jobs_log_title">任务日志</string>
+    <string name="agent_jobs_log_loading">正在读取…</string>
+    <string name="agent_jobs_log_truncated">只显示最近的输出。</string>
+    <string name="agent_jobs_log_failed">无法读取日志。</string>
+    <string name="agent_jobs_log_empty">暂无输出。</string>
 </resources>

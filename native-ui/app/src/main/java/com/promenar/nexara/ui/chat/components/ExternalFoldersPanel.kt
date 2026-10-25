@@ -59,6 +59,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -170,9 +171,17 @@ private fun ExternalFoldersPanelContent(
     var removeMountId by rememberSaveable { mutableStateOf<String?>(null) }
     var recycleOpen by rememberSaveable { mutableStateOf(false) }
     var realPathPermission by remember { mutableStateOf(false) }
+    // Linux 会话只能挂载真实路径（以 /mnt/<别名> 绑定进 Linux）；SAF 目录对 Linux 会话的 Agent 不可见。
+    val app = context.applicationContext as? com.promenar.nexara.NexaraApplication
+    val runMode = remember(app, sessionKey) {
+        if (app == null || sessionKey.isBlank()) kotlinx.coroutines.flow.flowOf(null)
+        else app.sessionRunModes.observe(sessionKey)
+    }.collectAsState(initial = null).value?.mode
+    val linuxSession = runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX
     val sources = availableExternalMountSources(
         BuildConfig.ALL_FILES_ACCESS_AVAILABLE,
         DistributionCapabilities.allFilesAccessAvailable,
+        linuxSession = linuxSession,
     )
 
     val perform: (suspend () -> Unit) -> Unit = { action ->
@@ -368,6 +377,7 @@ private fun ExternalFoldersPanelContent(
                         onRemove = { removeMountId = it.id },
                         onGrantRealPath = openAccessSettings,
                         onRecycle = { notice = null; recycleOpen = true },
+                        linuxSession = linuxSession,
                     )
                     is ExternalMountPage.Form -> ExternalMountFormContent(
                         source = current.source,
@@ -459,6 +469,7 @@ internal fun ExternalMountManagerContent(
     onGrantRealPath: (() -> Unit)?,
     onRecycle: () -> Unit,
     modifier: Modifier = Modifier,
+    linuxSession: Boolean = false,
 ) = Column(modifier.fillMaxSize()) {
     NexaraNavigationHeader(
         title = stringResource(R.string.mount_title),
@@ -489,14 +500,18 @@ internal fun ExternalMountManagerContent(
                     )
                 } else {
                     mounts.forEach { mount ->
-                        key(mount.id) { ExternalMountRow(mount, busy, onBrowse, onReauthorize, onRemove, onGrantRealPath) }
+                        key(mount.id) { ExternalMountRow(mount, busy, onBrowse, onReauthorize, onRemove, onGrantRealPath, linuxSession) }
                     }
                 }
             }
         }
         NexaraSettingsSection(
             title = stringResource(R.string.agent_panels_mount_add),
-            footer = stringResource(R.string.mount_system_limits) + "\n" + stringResource(R.string.mount_termux_hint),
+            footer = listOfNotNull(
+                stringResource(R.string.run_mode_folder_real_path_only).takeIf { linuxSession },
+                stringResource(R.string.mount_system_limits),
+                stringResource(R.string.mount_termux_hint),
+            ).joinToString("\n"),
         ) {
             sources.forEach { source ->
                 val saf = source == ExternalMountSource.Saf
@@ -560,6 +575,7 @@ private fun ExternalMountRow(
     onReauthorize: (ExternalMount) -> Unit,
     onRemove: (ExternalMount) -> Unit,
     onGrantRealPath: (() -> Unit)?,
+    linuxSession: Boolean = false,
 ) {
     var menuOpen by remember(mount.id) { mutableStateOf(false) }
     val unavailable = mount.unavailableReason != null
@@ -567,7 +583,11 @@ private fun ExternalMountRow(
     val meta = listOf(
         "/mnt/" + mount.alias,
         stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
-        stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_command_visible else R.string.agent_reach_mount_files_only),
+        stringResource(when {
+            linuxSession && mount.sourceType != "real_path" -> R.string.run_mode_folder_saf_hidden
+            mount.commandAccessible -> R.string.agent_reach_mount_command_visible
+            else -> R.string.agent_reach_mount_files_only
+        }),
     ).joinToString(" · ")
     NexaraSettingsItem(
         title = mount.alias,

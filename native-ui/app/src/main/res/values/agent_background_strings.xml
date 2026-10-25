@@ -29,7 +29,7 @@
     <string name="agent_jobs_limit_title">Runs while &brand; is open</string>
     <string name="agent_jobs_limit_body">Android may pause tasks after you leave the app.</string>
     <string name="agent_jobs_stop">Stop task</string>
-    <string name="agent_jobs_open_log">Open log in workspace</string>
+    <string name="agent_jobs_open_log">View log</string>
     <string name="agent_jobs_runner_shell">Shell</string>
     <string name="agent_jobs_runner_python">Python</string>
     <string name="agent_jobs_runner_termux">Termux</string>
@@ -106,4 +106,9 @@
     <string name="settings_background_schedules_footer">Up to 5 per chat, 20 in total. Not included in backups.</string>
     <string name="settings_background_schedules_empty">No scheduled tasks</string>
     <string name="settings_background_untitled_session">Untitled chat</string>
+    <string name="agent_jobs_log_title">Job log</string>
+    <string name="agent_jobs_log_loading">Loading…</string>
+    <string name="agent_jobs_log_truncated">Showing the most recent output only.</string>
+    <string name="agent_jobs_log_failed">Could not read the log.</string>
+    <string name="agent_jobs_log_empty">No output yet.</string>
 </resources>

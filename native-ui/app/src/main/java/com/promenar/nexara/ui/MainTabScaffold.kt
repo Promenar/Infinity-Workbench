@@ -82,7 +82,8 @@ fun MainTabScaffold(
             ) { tab -> when (tab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
                     onNavigateToChat = onNavigateToChat,
-                    onNavigateToAgentEdit = onNavigateToAgentEdit
+                    onNavigateToAgentEdit = onNavigateToAgentEdit,
+                    onOpenLinuxEnvironment = { onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.LINUX_ENVIRONMENT) },
                 )
                 AppTab.LIBRARY -> com.promenar.nexara.ui.rag.RagHomeScreen(
                     onNavigateToFolder = { folderId, _ ->

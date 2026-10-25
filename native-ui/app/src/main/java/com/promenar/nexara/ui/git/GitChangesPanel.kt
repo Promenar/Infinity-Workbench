@@ -382,13 +382,25 @@ private fun HeaderTitles(title: String, subtitle: String, identifier: Boolean) {
 /** 列表页页头：分支名、跟踪的上游、HEAD 与上次抓取时间。 */
 @Composable
 private fun BranchHeader(status: GitStatus, nowMillis: Long?) {
+    // 有仓库名时以仓库名为标题，分支降为副行；旧检查端不输出仓库名时保持分支标题。
+    val repository = status.repositoryName?.takeIf { it.isNotBlank() }
+    if (repository != null) {
+        NexaraIdentifierText(
+            text = repository,
+            style = NexaraTypography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.semantics { heading() },
+        )
+    }
     NexaraIdentifierText(
         text = branchLabel(status.branch, status.detached, status.head?.take(7), status.unborn),
-        style = NexaraTypography.titleMedium.copy(fontFamily = NexaraMonospace),
+        style = (if (repository == null) NexaraTypography.titleMedium else NexaraTypography.bodyMedium).copy(fontFamily = NexaraMonospace),
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.semantics { heading() },
+        modifier = if (repository == null) Modifier.semantics { heading() } else Modifier,
     )
     val tracking = status.tracking
     val upstream = tracking.upstream

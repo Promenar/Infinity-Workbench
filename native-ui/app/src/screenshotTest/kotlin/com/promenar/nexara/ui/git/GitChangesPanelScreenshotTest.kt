@@ -35,6 +35,7 @@ import com.promenar.nexara.ui.theme.NexaraThemePreferences
 private const val PreviewNow = 1_792_400_300_000L
 
 private val SampleStatus = GitStatus(
+    repositoryName = "promenar/nexara",
     branch = "feature/git-panel",
     detached = false,
     head = "3f9c2a1d8e7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a",

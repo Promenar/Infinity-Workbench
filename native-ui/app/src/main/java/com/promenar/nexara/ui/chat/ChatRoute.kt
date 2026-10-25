@@ -223,6 +223,24 @@ fun ChatRoute(
     val startupIssues by application.startupIssues.collectAsStateWithLifecycle()
     val startupWritePaused = startupIssues.affectsSession(sessionId, uiState.session?.workspaceRootUuid)
     var showStartupIssues by remember(sessionId) { mutableStateOf(false) }
+    // 运行模式：进入会话做一次检查（旧会话在 Linux 可用时首次固定为 Linux），不可用或未选择时弹出检查点；
+    // 之后只观察，不在环境变化时自动弹出或改变模式。
+    val linuxSupported = com.promenar.nexara.distribution.DistributionCapabilities.linuxRuntimeAvailable
+    val runModeStatus by remember(sessionId) { application.sessionRunModes.observe(sessionId) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    var runModeCheckpoint by remember(sessionId) { mutableStateOf<com.promenar.nexara.ui.chat.runmode.RunModeCheckpointStage?>(null) }
+    var showRunModePicker by remember(sessionId) { mutableStateOf(false) }
+    val runModeScope = rememberCoroutineScope()
+    LaunchedEffect(sessionId) {
+        val check = runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.sessionRunModes.check(sessionId) }
+        }.getOrNull()
+        runModeCheckpoint = check?.let { com.promenar.nexara.ui.chat.runmode.initialStage(it) }
+    }
+    val runModeBadge = runModeStatus?.takeIf { linuxSupported }?.let { status ->
+        com.promenar.nexara.ui.chat.runmode.RunModeBadge(status.mode,
+            unavailable = status.check is com.promenar.nexara.data.session.SessionRunModeCheck.EnvironmentUnavailable)
+    }
     val turnGraphStates by chatViewModel.turnGraphStates.collectAsStateWithLifecycle()
     val composerQueue by chatViewModel.composerQueue.collectAsStateWithLifecycle()
     val interaction by application.generationInteractions.pending.collectAsStateWithLifecycle()
@@ -611,6 +629,15 @@ fun ChatRoute(
         exactAlarmGranted = com.promenar.nexara.background.schedule.canScheduleExact(context)
         onPauseOrDispose { }
     }
+    var jobLogReference by remember(sessionId) { mutableStateOf<String?>(null) }
+    jobLogReference?.let { reference ->
+        com.promenar.nexara.ui.chat.components.BackgroundJobLogDialog(
+            controller = application.backgroundJobController,
+            sessionId = sessionId,
+            reference = reference,
+            onDismiss = { jobLogReference = null },
+        )
+    }
     val agentActivity = remember(application, sessionId, exactAlarmGranted) {
         com.promenar.nexara.ui.chat.components.AgentActivityAccess(
             sessionId = sessionId,
@@ -618,10 +645,7 @@ fun ChatRoute(
             schedules = application.scheduledTaskController,
             keepAliveAvailable = com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable,
             exactAlarmAvailable = com.promenar.nexara.distribution.DistributionCapabilities.exactAlarmAvailable,
-            onOpenLog = { path ->
-                workspaceLocatePath = path
-                requestOverlay(ChatOverlay.Workspace)
-            },
+            onOpenLog = { reference -> jobLogReference = reference },
             onGrantExact = if (exactAlarmGranted) null else {
                 com.promenar.nexara.background.schedule.exactAlarmPermissionIntent(context)?.let { intent ->
                     { runCatching { context.startActivity(intent) } }
@@ -669,9 +693,15 @@ fun ChatRoute(
                 subagentApprovals = sessionSubagentApprovals,
                 gitSummary = gitSummary,
                 startupWritePaused = startupWritePaused,
+                runMode = runModeBadge,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },
+                onOpenRunMode = {
+                    val check = runModeStatus?.check
+                    val pending = check?.let { com.promenar.nexara.ui.chat.runmode.initialStage(it) }
+                    if (pending != null) runModeCheckpoint = pending else showRunModePicker = true
+                },
                 onNavigateBack = onNavigateBack,
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
@@ -897,6 +927,32 @@ fun ChatRoute(
             onDismiss = { showStartupIssues = false },
             diagnosisAgentId = { uiState.session?.agentId },
             onOpenSession = onNavigateToSession,
+        )
+    }
+    com.promenar.nexara.ui.chat.runmode.RunModePickerSheet(
+        show = showRunModePicker,
+        selected = runModeStatus?.mode,
+        linuxSupported = linuxSupported,
+        onDismiss = { showRunModePicker = false },
+        onSelect = { mode ->
+            runModeScope.launch {
+                try {
+                    runModeCheckpoint = com.promenar.nexara.ui.chat.runmode.switchRunMode(application, sessionId, mode)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    android.widget.Toast.makeText(context, context.getString(R.string.run_mode_switch_failed), android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+    )
+    runModeCheckpoint?.let { stage ->
+        com.promenar.nexara.ui.chat.runmode.RunModeCheckpointSheet(
+            application = application,
+            sessionId = sessionId,
+            initial = stage,
+            workspaceId = uiState.session?.workspaceId,
+            onDismiss = { runModeCheckpoint = null },
         )
     }
     if (activeOverlay == ChatOverlay.Git) {

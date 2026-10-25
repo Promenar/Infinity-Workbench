@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
@@ -45,7 +44,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.NexaraApplication
@@ -64,6 +62,7 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.launch
 
 object StartupIssuesTags {
+    const val LINUX_BANNER = "startup_linux_banner"
     const val BANNER = "startup_issues_banner"
     const val SESSION_BANNER = "startup_issues_session_banner"
     const val SHEET = "startup_issues_sheet"
@@ -115,6 +114,18 @@ fun StartupIssuesBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = Mod
     )
 }
 
+/** 会话列表顶部：Linux 环境不可用时提示受影响的 Linux 会话数，不阻止进入应用。 */
+@Composable
+fun LinuxUnavailableBanner(count: Int, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    WarningStrip(
+        text = pluralStringResource(R.plurals.run_mode_startup_banner, count, count),
+        action = stringResource(R.string.run_mode_startup_action),
+        icon = { Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        onClick = onOpen,
+        modifier = modifier.testTag(StartupIssuesTags.LINUX_BANNER),
+    )
+}
+
 /** 会话顶栏下方：该会话或其工作区暂停写入。 */
 @Composable
 fun StartupWritePausedBanner(onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -128,7 +139,7 @@ fun StartupWritePausedBanner(onOpen: () -> Unit, modifier: Modifier = Modifier) 
 }
 
 @Composable
-private fun WarningStrip(text: String, action: String, icon: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier) {
+internal fun WarningStrip(text: String, action: String, icon: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = modifier
@@ -326,29 +337,9 @@ fun StartupIssuesSheet(
 
 /** 脱敏诊断记录全文，可选择复制。 */
 @Composable
-fun DiagnosticRecordsDialog(text: String, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.startup_issues_records),
-            message = stringResource(R.string.startup_issues_records_note),
-            confirmText = stringResource(R.string.common_dismiss),
-            cancelText = null,
-            onConfirm = onDismiss,
-            onCancel = onDismiss,
-        ) {
-            SelectionContainer {
-                Text(
-                    text,
-                    style = NexaraTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-                        .verticalScroll(rememberScrollState())
-                        .padding(NexaraSpacing.Small),
-                )
-            }
-        }
-    }
-}
+fun DiagnosticRecordsDialog(text: String, onDismiss: () -> Unit) = com.promenar.nexara.ui.common.MonospaceTextDialog(
+    title = stringResource(R.string.startup_issues_records),
+    message = stringResource(R.string.startup_issues_records_note),
+    text = text,
+    onDismiss = onDismiss,
+)
