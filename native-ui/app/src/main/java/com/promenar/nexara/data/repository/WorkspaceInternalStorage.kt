@@ -23,24 +23,25 @@ class WorkspaceInternalStorage(
     private val privateIdentities = ConcurrentHashMap<Path, String>()
     private val failures = ConcurrentHashMap<String, String>()
 
-    internal fun readIdentity(fileKey: String): String? {
-        val value = read("identities", digest(fileKey))?.toString(Charsets.UTF_8) ?: return null
-        if (!value.substringBefore('\n').matches(Regex("[0-9a-f-]{36}")) || value.substringAfter('\n', "") != fileKey) {
-            recordFailure("identity-$fileKey", "identity-record-incomplete", IllegalStateException())
+    internal fun readIdentity(identity: String): String? {
+        val value = read("identities", digest(identity))?.toString(Charsets.UTF_8) ?: return null
+        val proof = runCatching { PersistentFileIdentity.parseMarker(value) }.getOrNull()
+        if (proof == null || PersistentFileIdentity.encode(proof.first, proof.second) != identity) {
+            recordFailure("identity-$identity", "identity-record-incomplete", IllegalStateException())
             return null
         }
         return value
     }
 
-    internal fun storeIdentity(fileKey: String, value: String) {
-        val existing = readIdentity(fileKey)
+    internal fun storeIdentity(identity: String, value: String) {
+        val existing = readIdentity(identity)
         if (existing != null) {
             if (existing != value) throw SecurityException("私有根身份记录冲突")
             return
         }
         // 调用方已经核验目录FD nonce与Room身份；损坏索引只能隔离，不能充当身份来源。
         secure("identities").use { stream ->
-            val name = digest(fileKey)
+            val name = digest(identity)
             val present = try {
                 stream.getFileAttributeView(Paths.get(name), java.nio.file.attribute.BasicFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS).readAttributes()
@@ -54,9 +55,9 @@ class WorkspaceInternalStorage(
             }
         }
         try {
-            writeNew("identities", digest(fileKey), value.toByteArray(Charsets.UTF_8))
+            writeNew("identities", digest(identity), value.toByteArray(Charsets.UTF_8))
         } catch (race: java.nio.file.FileAlreadyExistsException) {
-            if (readIdentity(fileKey) != value) throw SecurityException("私有根身份并发记录冲突", race)
+            if (readIdentity(identity) != value) throw SecurityException("私有根身份并发记录冲突", race)
         }
     }
 
@@ -77,8 +78,8 @@ class WorkspaceInternalStorage(
     }
 
     internal fun removeIdentity(identity: String) {
-        val key = identity.substringAfterLast('|')
-        require(key.matches(Regex("[0-9a-f]{64}"))) { "工作区身份摘要无效" }
+        require(PersistentFileIdentity.isValid(identity)) { "工作区身份摘要无效" }
+        val key = digest(identity)
         secure("identities").use { stream ->
             try { stream.deleteFile(Paths.get(key)) } catch (_: java.nio.file.NoSuchFileException) { }
         }
@@ -183,13 +184,13 @@ class WorkspaceInternalStorage(
         .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }
 
-/** 只对明确不支持属性能力的文件系统兼容有效旧证明；损坏、冲突与其它IO错误不降级。 */
+/** 只对明确不支持属性能力的文件系统使用已核验的持久标记；损坏、冲突与其它IO错误不降级。 */
 internal fun readWorkspaceIdentityAttribute(
-    validLegacyProof: Boolean,
+    validMarkerProof: Boolean,
     read: () -> String?,
     onUnsupported: (UnsupportedOperationException) -> Unit,
 ): String? = try { read() } catch (failure: UnsupportedOperationException) {
-    if (!validLegacyProof) throw failure
+    if (!validMarkerProof) throw failure
     onUnsupported(failure)
     null
 }

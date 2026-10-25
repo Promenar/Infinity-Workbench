@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.local.db.recovery
 
 import com.promenar.nexara.data.backup.RestoreJournalAuthenticator
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -144,7 +145,7 @@ internal class FileDualDatabaseRecoveryJournal(
                 "双库恢复工作区认领记录无效"
             }
             check(!(tree.activeWorkspace || tree.assetBundle) || tree.targetRootIdentity == null ||
-                tree.targetRootIdentity.matches(Regex("[0-9a-f-]{36}[|][0-9a-f]{64}"))) {
+                PersistentFileIdentity.isValid(tree.targetRootIdentity)) {
                 "双库恢复工作区目标身份无效"
             }
             check(tree.activeWorkspace || tree.assetBundle || tree.targetRootIdentity == null) {
@@ -185,7 +186,7 @@ internal class FileDualDatabaseRecoveryJournal(
         }
         record.databaseMoves.forEach { move ->
             check(move.sourceRelativePath.isSafeRecoveryRelative() && move.retainedRelativePath.isSafeRecoveryRelative() &&
-                move.sha256.isSha256() && move.size >= 0 && move.sourceFileKey.isNotBlank()) {
+                move.sha256.isSha256() && move.size >= 0 && PersistentFileIdentity.isValid(move.sourceFileKey)) {
                 "双库恢复数据库移动回执无效"
             }
         }

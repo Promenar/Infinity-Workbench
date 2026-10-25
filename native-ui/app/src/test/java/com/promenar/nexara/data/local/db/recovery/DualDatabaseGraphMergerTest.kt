@@ -11,6 +11,29 @@ import java.nio.file.Files
 @RunWith(RobolectricTestRunner::class)
 class DualDatabaseGraphMergerTest {
     @Test
+    fun `恢复工作区把持久nonce与inode回执绑定到唯一Room根`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val current = context.getDatabasePath("identity-current-${System.nanoTime()}.db").toPath()
+        val legacy = context.getDatabasePath("identity-legacy-${System.nanoTime()}.db").toPath()
+        try {
+            createSchema(current)
+            createSchema(legacy)
+            SQLiteDatabase.openDatabase(current.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { seed(it, "current") }
+            SQLiteDatabase.openDatabase(legacy.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { seed(it, "legacy") }
+            val identity = "nx1:11111111-2222-4333-8444-555555555555|" + "a".repeat(64)
+            DualDatabaseGraphMerger(RecoveryPathRewriter { _, _, value -> value }, mapOf("/legacy" to identity))
+                .merge(current, legacy, "root-identity")
+            SQLiteDatabase.openDatabase(current.toString(), null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.rawQuery("SELECT hash FROM workspace_files WHERE physical_root_path=? AND parent_uuid IS NULL", arrayOf("/legacy")).use {
+                    assertThat(it.moveToFirst()).isTrue()
+                    assertThat(it.getString(0)).isEqualTo(identity)
+                    assertThat(it.moveToNext()).isFalse()
+                }
+            }
+        } finally { Files.deleteIfExists(current); Files.deleteIfExists(legacy) }
+    }
+
+    @Test
     fun `历史非工作区KG文档不阻断源数据恢复`() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val current = context.getDatabasePath("kg-current-${System.nanoTime()}.db").toPath()

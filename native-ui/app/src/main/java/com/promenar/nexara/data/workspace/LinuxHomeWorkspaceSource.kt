@@ -41,13 +41,15 @@ class LinuxHomeWorkspaceSource internal constructor(private val runtime: LinuxRu
         val home = root()
         val marker = File(home, MARKER).toPath()
         // 目录的 creationTime 在部分 Android 文件系统上退化为 mtime，不能用它标识环境代次。
-        val token = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "")
+        val token = com.promenar.nexara.data.repository.PersistentFileIdentity.marker(UUID.randomUUID().toString(), access.attributes(home.toPath()).fileKey())
         try {
             access.file(marker) { Files.newByteChannel(it, setOf(CREATE_NEW, WRITE, NOFOLLOW_LINKS)) }.use { channel ->
                 val bytes = ByteBuffer.wrap(token.toByteArray(Charsets.US_ASCII))
                 while (bytes.hasRemaining()) channel.write(bytes)
+                (channel as? java.nio.channels.FileChannel)?.force(true) ?: unavailable()
             }
         } catch (_: FileAlreadyExistsException) { /* 相同主目录的并发登记复用同一代次。 */ }
+        access.file(home.toPath()) { java.nio.channels.FileChannel.open(it, READ, NOFOLLOW_LINKS) }.use { it.force(true) }
         return identity(home)
     }
 
@@ -55,13 +57,14 @@ class LinuxHomeWorkspaceSource internal constructor(private val runtime: LinuxRu
         val marker = File(home, MARKER).toPath()
         if (!access.isFile(marker)) unavailable()
         val token = access.file(marker) { Files.newByteChannel(it, setOf(READ, NOFOLLOW_LINKS)) }.use { channel ->
-            if (channel.size() != 64L) unavailable()
-            val bytes = ByteBuffer.allocate(64)
+            if (channel.size() !in 1..1024) unavailable()
+            val bytes = ByteBuffer.allocate(channel.size().toInt())
             while (bytes.hasRemaining()) if (channel.read(bytes) < 0) unavailable()
+            (channel as? java.nio.channels.FileChannel)?.force(true) ?: unavailable()
             String(bytes.array(), Charsets.US_ASCII)
         }
-        if (!Regex("[0-9a-f]{64}").matches(token)) unavailable()
-        return "/root#$token"
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.verifyMarker(token, access.attributes(home.toPath()).fileKey())
+        return "/root#$identity"
     }
 
     private fun unavailable(): Nothing = throw ExternalFolderException("UNAVAILABLE", "Linux 主目录不可用，请检查环境或重新选择工作区")

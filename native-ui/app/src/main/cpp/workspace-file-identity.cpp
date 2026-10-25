@@ -81,6 +81,7 @@ jstring readIdentity(JNIEnv* env, jint borrowedFd, const char* attribute, bool r
             fail(env, "校验身份属性内容", EINVAL); return nullptr;
         }
     }
+    if (root && fsync(file.get()) != 0) { fail(env, "同步根身份属性", errno); return nullptr; }
     return env->NewStringUTF(bytes);
 }
 }
@@ -138,4 +139,16 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeRestoreRoot(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
     createIdentity(env, borrowedFd, token, kRootIdentityAttribute, true, 0);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreatePersistent(
+        JNIEnv* env, jobject, jint borrowedFd, jstring token) {
+    createIdentity(env, borrowedFd, token, "user.nexara_persistent_identity", false, XATTR_CREATE);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeReadPersistent(
+        JNIEnv* env, jobject, jint borrowedFd) {
+    return readIdentity(env, borrowedFd, "user.nexara_persistent_identity", false);
 }

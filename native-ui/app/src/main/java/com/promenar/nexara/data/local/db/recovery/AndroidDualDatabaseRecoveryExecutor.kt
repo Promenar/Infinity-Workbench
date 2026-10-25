@@ -324,6 +324,7 @@ internal class AndroidDualDatabaseRecoveryExecutor(
                     forceDirectory(requireNotNull(target.parent))
                     check(Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) &&
                         Files.size(target) == existing.size && digest(target) == existing.sha256)
+                    requireMoveIdentity(target, existing.sourceFileKey)
                     check(!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) { "已保留数据库文件在原路径再次出现" }
                 } else if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
                     check(existing != null && !Files.exists(source, LinkOption.NOFOLLOW_LINKS) &&
@@ -334,6 +335,7 @@ internal class AndroidDualDatabaseRecoveryExecutor(
                     check(sha == existing.sha256 && Files.size(target) == existing.size) {
                         "事务保留数据库文件与prepared receipt不符"
                     }
+                    requireMoveIdentity(target, existing.sourceFileKey)
                     forceDirectory(requireNotNull(source.parent))
                     forceDirectory(requireNotNull(target.parent))
                     record.current.files.firstOrNull { it.relativePath == source.fileName.toString() }?.let {
@@ -347,15 +349,18 @@ internal class AndroidDualDatabaseRecoveryExecutor(
                 } else {
                     require(Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(source))
                     val sha = digest(source)
-                    val node = snapshotFileSystem().openDirectory(source.parent).use {
-                        requireNotNull(it.node(source.fileName.toString()))
+                    val prepared = snapshotFileSystem().openDirectory(source.parent).use { parent ->
+                        val name = source.fileName.toString()
+                        val node = requireNotNull(parent.node(name))
+                        val identity = parent.persistentIdentity(name)
+                        check(parent.node(name) == node) { "数据库移动认领期间源文件已替换" }
+                        check(existing == null || existing.sourceFileKey == identity) { "数据库移动源身份与prepared回执不符" }
+                        RecoveryMoveReceipt(name, target.fileName.toString(), sha, node.size, identity, false)
                     }
-                    val prepared = RecoveryMoveReceipt(
-                        source.fileName.toString(), target.fileName.toString(), sha, node.size, node.key, false,
-                    )
                     receipts = (receipts.filterNot { it.sourceRelativePath == source.fileName.toString() } + prepared).toMutableList()
                     journal.write(record.copy(databaseMoves = receipts))
                     moveAtomic(source, target)
+                    requireMoveIdentity(target, prepared.sourceFileKey)
                     receipts = (receipts.filterNot { it.sourceRelativePath == source.fileName.toString() } +
                         prepared.copy(completed = true)).toMutableList()
                     journal.write(record.copy(databaseMoves = receipts))
@@ -772,6 +777,12 @@ internal class AndroidDualDatabaseRecoveryExecutor(
                     "恢复rename后节点身份无法确认"
                 }
             }
+        }
+    }
+
+    private fun requireMoveIdentity(path: Path, expected: String) {
+        snapshotFileSystem().openDirectory(path.parent).use { parent ->
+            check(parent.persistentIdentity(path.fileName.toString()) == expected) { "数据库移动回执身份与实际节点不符" }
         }
     }
 

@@ -19,11 +19,13 @@ import org.junit.jupiter.api.io.TempDir
 @OptIn(ExperimentalCoroutinesApi::class)
 class LinuxRunModeRecoveryTest {
     @TempDir lateinit var temporary: Path
-    private val token = "a".repeat(64)
+    private val nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    private val token get() = com.promenar.nexara.data.repository.PersistentFileIdentity.encode(nonce,
+        Files.readAttributes(paths.home.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java).fileKey())
     private val paths get() = linuxTestPaths(temporary.toFile())
 
     private fun source() {
-        File(paths.home, ".nexara-linux-workspace-id").apply { parentFile!!.mkdirs(); writeText(token) }
+        File(paths.home, ".nexara-linux-workspace-id").apply { parentFile!!.mkdirs(); writeText(com.promenar.nexara.data.repository.PersistentFileIdentity.marker(nonce, Files.readAttributes(paths.home.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java).fileKey())) }
         File(paths.home, "good.txt").writeText("keep")
         File(paths.rootfs, "home/user/data").apply { parentFile!!.mkdirs(); writeText("other") }
     }
@@ -85,7 +87,7 @@ class LinuxRunModeRecoveryTest {
         val runtime = Runtime(paths)
         val recovery = LinuxRunModeRecovery(runtime, { "/root#$token" }, LinuxFileIo(), StandardTestDispatcher(testScheduler))
         val summary = recovery.resetLossSummary()
-        assertEquals(68, summary.rootHomeBytes)
+        assertEquals(File(paths.home, ".nexara-linux-workspace-id").length() + 4, summary.rootHomeBytes)
         assertEquals(5, summary.otherHomeBytes)
         assertEquals(listOf("custom"), summary.installedPackages)
         assertTrue(summary.sessionHomePreserved)

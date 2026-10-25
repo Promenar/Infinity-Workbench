@@ -107,8 +107,7 @@ class LinuxSessionRootfsBackend(files: LinuxFileSystem) : ExternalFolderBackend 
     )
     private fun rootIdentity(): String {
         val root = files.hostFile("/") ?: fail("UNAVAILABLE", "Linux 根目录不可用")
-        return Files.readAttributes(root.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS).fileKey()?.toString()
-            ?: fail("UNAVAILABLE", "无法绑定 Linux 根目录身份")
+        return com.promenar.nexara.data.repository.PersistentFileIdentity.read(root.toPath())
     }
     private fun parent(path: String) = path.substringBeforeLast('/').ifEmpty { "/" }
     private suspend fun <T> operation(block: suspend () -> T): T = withContext(Dispatchers.IO) {

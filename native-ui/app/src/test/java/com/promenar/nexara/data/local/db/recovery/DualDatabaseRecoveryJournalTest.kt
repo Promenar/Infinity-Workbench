@@ -8,6 +8,41 @@ import java.security.MessageDigest
 
 class DualDatabaseRecoveryJournalTest {
     @Test
+    fun `工作区发布回执只接受带版本的nonce与inode身份`() {
+        val root = Files.createTempDirectory("dual-db-journal-root-identity")
+        try {
+            val journal = FileDualDatabaseRecoveryJournal(root, DigestAuthenticator)
+            val identity = "nx1:11111111-2222-4333-8444-555555555555|" + "a".repeat(64)
+            val publication = RecoveryTreePublication(
+                role = "current", activeWorkspace = true, ownerSessionId = "session",
+                snapshotTransactionId = "tx-workspace", sourcePath = "/files/workspace",
+                sourceRootIdentity = "b".repeat(64), sourceTreeSha256 = "c".repeat(64),
+                targetRelativePath = "workspaces/root", targetRootIdentity = identity,
+            )
+            journal.write(record().copy(treePublications = listOf(publication)))
+            assertThat(journal.read()?.treePublications?.single()?.targetRootIdentity).isEqualTo(identity)
+            assertThat(runCatching {
+                journal.write(record().copy(treePublications = listOf(publication.copy(targetRootIdentity = identity.removePrefix("nx1:")))))
+            }.isFailure).isTrue()
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `数据库移动回执拒绝含设备号的fileKey`() {
+        val root = Files.createTempDirectory("dual-db-journal-move-identity")
+        try {
+            val journal = FileDualDatabaseRecoveryJournal(root, DigestAuthenticator)
+            val identity = "nx1:11111111-2222-4333-8444-555555555555|" + "a".repeat(64)
+            val move = RecoveryMoveReceipt(CURRENT_DATABASE_NAME, CURRENT_DATABASE_NAME, "b".repeat(64), 10, identity, false)
+            journal.write(record().copy(databaseMoves = listOf(move)))
+            assertThat(journal.read()?.databaseMoves?.single()?.sourceFileKey).isEqualTo(identity)
+            assertThat(runCatching {
+                journal.write(record().copy(databaseMoves = listOf(move.copy(sourceFileKey = "(dev=abc,ino=123)"))))
+            }.isFailure).isTrue()
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun `journal round trips and rejects unknown fields`() {
         val root = Files.createTempDirectory("dual-db-journal")
         try {

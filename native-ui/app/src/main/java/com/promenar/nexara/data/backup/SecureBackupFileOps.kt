@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.backup
 
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.DirectoryStream
@@ -24,6 +25,7 @@ interface RestoreFileOperations {
     }
     fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry>
     fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>)
+    /** expectedFileKey 是持久 nonce 与 inode 身份，完整 fileKey 只在本次删除期间比对。 */
     fun deleteTree(
         parent: Path,
         childName: String,
@@ -90,9 +92,9 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     Paths.get("."),
                     java.nio.file.attribute.BasicFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS,
-                ).readAttributes().fileKey()?.toString()
+                ).readAttributes().fileKey()
                     ?: throw BackupValidationException("恢复 workspace root 缺少 fileKey")
-                val marker = "$nonce\n$key".toByteArray(Charsets.UTF_8)
+                val marker = PersistentFileIdentity.marker(nonce, key).toByteArray(Charsets.UTF_8)
                 current.newByteChannel(
                     Paths.get(".nexara_root_identity"),
                     setOf<OpenOption>(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS),
@@ -104,16 +106,12 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     (channel as? FileChannel)?.force(true)
                         ?: throw BackupValidationException("恢复 workspace identity 不支持 fsync")
                 }
-                "$nonce|${sha256(key.toByteArray(Charsets.UTF_8))}"
+                PersistentFileIdentity.encode(nonce, key)
             } finally {
                 opened.asReversed().forEach { runCatching { it.close() } }
             }
         }
     }
-
-    private fun sha256(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
-        .digest(bytes)
-        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     override fun deleteTree(
         parent: Path,
@@ -122,6 +120,15 @@ internal object SecureBackupFileOps : RestoreFileOperations {
         marker: Pair<String, String>?,
         expectedInventory: Set<RestoreTreeEntry>?,
     ) {
+        val childRoot = parent.resolve(childName)
+        val expectedOperationKey = Files.readAttributes(
+            childRoot,
+            java.nio.file.attribute.BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS,
+        ).fileKey() ?: throw BackupValidationException("待删除恢复目录缺少 fileKey")
+        if (PersistentFileIdentity.read(childRoot) != expectedFileKey) {
+            throw BackupValidationException("待删除恢复目录持久身份已变化")
+        }
         openSecure(parent).use { parentStream ->
             val childPath = Paths.get(childName)
             val child = try {
@@ -135,7 +142,9 @@ internal object SecureBackupFileOps : RestoreFileOperations {
                     java.nio.file.attribute.BasicFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS,
                 ).readAttributes()
-                if (attributes.fileKey()?.toString() != expectedFileKey) {
+                if (attributes.fileKey() != expectedOperationKey ||
+                    PersistentFileIdentity.encode(PersistentFileIdentity.nonce(expectedFileKey), attributes.fileKey()) != expectedFileKey
+                ) {
                     throw BackupValidationException("待删除恢复目录 fileKey 已变化")
                 }
                 expectedInventory?.let { expected ->

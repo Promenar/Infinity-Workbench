@@ -30,7 +30,7 @@ data class WorkspaceEntity(
         /** 只校验记录格式；真实目录的存在性、符号链接与卷归属由目录后端在打开时检查。 */
         fun isValidLocation(kind: String, location: String): Boolean = when (kind) {
             KIND_PROJECT -> PROJECT_NAME.matches(location) && location != "." && location != ".."
-            KIND_LINUX_HOME -> Regex("/root#[0-9a-f]{64}").matches(location)
+            KIND_LINUX_HOME -> location.startsWith("/root#") && com.promenar.nexara.data.repository.PersistentFileIdentity.isValid(location.removePrefix("/root#"))
             KIND_SHARED -> location.length in 2..MAX_SHARED_PATH_LENGTH &&
                 location.startsWith("/") && !location.endsWith("/") &&
                 '\u0000' !in location && '\\' !in location &&

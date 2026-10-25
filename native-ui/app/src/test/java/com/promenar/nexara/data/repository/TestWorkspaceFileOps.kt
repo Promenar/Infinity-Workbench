@@ -11,6 +11,7 @@ class TestWorkspaceFileOps(
     private val identityStorage: WorkspaceInternalStorage? = null,
     private val hook: ((WorkspaceFilePhase) -> Unit)? = null,
 ) : WorkspaceFileOps {
+    var identityFileKeyOverride: ((String) -> String)? = null
     var inspectedFileKeyOverride: ((Path, String) -> String)? = null
 
     /** 业务夹具的属性端口；真实FD/xattr持久性由Android仪器测试证明。 */
@@ -25,31 +26,26 @@ class TestWorkspaceFileOps(
     ): String {
         Files.createDirectories(root)
         requireSafeRoot(root)
-        val key = Files.readAttributes(
-            root,
-            java.nio.file.attribute.BasicFileAttributes::class.java,
-            LinkOption.NOFOLLOW_LINKS,
-        ).fileKey()?.toString() ?: throw SecurityException("测试工作区根缺少 fileKey")
+        val actualKey = Files.readAttributes(root, java.nio.file.attribute.BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).fileKey()
+        val key = identityFileKeyOverride?.invoke(actualKey.toString()) ?: actualKey.toString()
         val marker = root.resolve(".nexara_root_identity")
-        val stored = identityStorage?.readIdentity(key)
-        val actual = if (stored != null) {
-            stored
-        } else if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
-            Files.readAllBytes(marker).toString(Charsets.UTF_8)
-        } else {
+        val existing = if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) Files.readAllBytes(marker).toString(Charsets.UTF_8) else null
+        val nonce = if (existing != null) {
+            val proof = PersistentFileIdentity.parseMarker(existing)
+            if (proof.second != PersistentFileIdentity.inode(key)) throw SecurityException("测试工作区根 inode 不匹配")
+            proof.first
+        } else if (identityStorage != null) PersistentFileIdentity.nonce(PersistentFileIdentity.read(root))
+        else {
             if (!initializeIdentity) throw SecurityException("测试工作区根缺少持久身份标记")
-            "${expectedIdentity ?: UUID.randomUUID()}\n$key".also {
-                if (identityStorage == null) Files.write(marker, it.toByteArray(), java.nio.file.StandardOpenOption.CREATE_NEW)
-            }
+            UUID.randomUUID().toString()
         }
-        if (actual.substringAfter('\n', "") != key) throw SecurityException("测试工作区根 fileKey 不匹配")
-        val nonce = actual.substringBefore('\n')
-        val identity = "$nonce|${com.promenar.nexara.infra.util.Sha256Utils.hash(key)}"
+        val identity = PersistentFileIdentity.encode(nonce, key)
         if (expectedIdentity != null && identity != expectedIdentity) throw SecurityException("测试工作区根认领不匹配")
+        val value = PersistentFileIdentity.marker(nonce, key)
         if (identityStorage != null) {
-            identityStorage.storeIdentity(key, actual)
+            identityStorage.storeIdentity(identity, value)
             Files.deleteIfExists(marker)
-        }
+        } else if (existing == null) Files.write(marker, value.toByteArray(), java.nio.file.StandardOpenOption.CREATE_NEW)
         return identity
     }
 
@@ -74,7 +70,8 @@ class TestWorkspaceFileOps(
             java.nio.file.attribute.BasicFileAttributes::class.java,
             LinkOption.NOFOLLOW_LINKS,
         ).fileKey()?.toString() ?: throw SecurityException("测试节点缺少 fileKey")
-        val fileKey = inspectedFileKeyOverride?.invoke(target, actualKey) ?: actualKey
+        val stable = PersistentFileIdentity.read(target)
+        val fileKey = inspectedFileKeyOverride?.invoke(target, stable) ?: stable
         return if (Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
             WorkspaceNodeIdentity("directory", 0, null, fileKey)
         } else {

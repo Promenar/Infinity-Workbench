@@ -59,7 +59,7 @@ class RoomWorkspaceFileMutationJournal(
         }
         requireSafeRelative(sourceRelativePath)
         requireSafeRelative(targetRelativePath)
-        require(databaseTargetUuid.isNotBlank() && rootIdentity.isNotBlank()) { "文件 journal 身份无效" }
+        require(databaseTargetUuid.isNotBlank() && PersistentFileIdentity.isValid(rootIdentity)) { "文件 journal 身份无效" }
         val operationId = operationIdFactory()
         require(operationId.matches(Regex("[A-Za-z0-9-]{1,64}"))) { "文件 journal operationId 无效" }
         val payload = WorkspaceMutationPayload(
@@ -492,8 +492,9 @@ internal fun requireCurrentCreationProof(manifest: WorkspaceCreateOwnershipManif
     requireCreationToken(manifest.proofToken)
 }
 
-internal fun encodeCreateOwnershipManifest(value: WorkspaceCreateOwnershipManifest): ByteArray =
-    listOf(
+internal fun encodeCreateOwnershipManifest(value: WorkspaceCreateOwnershipManifest): ByteArray {
+    require(PersistentFileIdentity.isValid(value.identity.fileKey)) { "创建归属节点身份格式无效" }
+    return listOf(
         "v${value.proofVersion}",
         value.identity.kind,
         value.identity.sizeBytes.toString(),
@@ -504,6 +505,7 @@ internal fun encodeCreateOwnershipManifest(value: WorkspaceCreateOwnershipManife
             .encodeToString(value.targetRelativePath.toByteArray(Charsets.UTF_8)),
     ).let { if (value.proofToken == null) it else it + value.proofToken }
         .joinToString("\n").toByteArray(Charsets.UTF_8)
+}
 
 internal fun decodeCreateOwnershipManifest(bytes: ByteArray): WorkspaceCreateOwnershipManifest? {
     val parts = bytes.toString(Charsets.UTF_8).split('\n')
@@ -523,7 +525,7 @@ internal fun decodeCreateOwnershipManifest(bytes: ByteArray): WorkspaceCreateOwn
     if ((parts[1] == "file") != (hash != null)) return null
     val fileKey = runCatching {
         java.util.Base64.getUrlDecoder().decode(parts[4]).toString(Charsets.UTF_8)
-    }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+    }.getOrNull()?.takeIf(PersistentFileIdentity::isValid) ?: return null
     return WorkspaceCreateOwnershipManifest(target, WorkspaceNodeIdentity(parts[1], size, hash, fileKey), token,
         parts[0].removePrefix("v").toInt())
 }

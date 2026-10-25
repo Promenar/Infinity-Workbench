@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.local.db.recovery
 
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
@@ -24,7 +25,7 @@ data class SourceSnapshotManifest(
     val files: List<SnapshotFile>,
     val totalBytes: Long,
     val directories: List<String> = emptyList(),
-    val formatVersion: Int = 2,
+    val formatVersion: Int = 3,
 )
 
 data class MaterializedRecoveryTree(val manifest: SourceSnapshotManifest, val rootIdentity: String)
@@ -160,9 +161,9 @@ class RecoverySnapshotStore private constructor(
                             stagedKey = staging.key
                             expected.directories.forEach { ensureRelativeDirectory(staging, it) }
                             transaction.openDirectory(FILES).use { source -> copyFiles(source, staging, expected.files) }
-                            val identity = "${UUID.randomUUID()}|${hash(staging.key.toByteArray(Charsets.UTF_8))}"
+                            val identity = staging.persistentIdentity
                             writeFile(staging, ROOT_IDENTITY,
-                                "${identity.substringBefore('|')}\n${staging.key}".toByteArray(Charsets.UTF_8))
+                                PersistentFileIdentity.marker(PersistentFileIdentity.nonce(identity), staging.key).toByteArray(Charsets.UTF_8))
                             forceTree(staging, expected.directories)
                             staging.force()
                             verifyArchive(transaction, original)
@@ -192,16 +193,17 @@ class RecoverySnapshotStore private constructor(
     }
 
     private fun verifyMaterializedIdentity(directory: SnapshotDirectory, expected: String) {
-        check(expected.matches(Regex("[0-9a-f-]{36}[|][0-9a-f]{64}"))) { "物化目标回执身份格式无效" }
+        check(PersistentFileIdentity.isValid(expected)) { "物化目标回执身份格式无效" }
         val node = directory.node(ROOT_IDENTITY)?.takeUnless { it.directory } ?: error("物化目标缺少根身份")
         check(node.size in 1..1024) { "物化根身份大小无效" }
         val bytes = java.io.ByteArrayOutputStream(node.size.toInt())
         directory.read(ROOT_IDENTITY).use { input ->
             transferBounded(input, node.size, 1024) { buffer, count -> bytes.write(buffer, 0, count) }
         }
-        check(directory.node(ROOT_IDENTITY) == node && bytes.toString("UTF-8") ==
-            "${expected.substringBefore('|')}\n${directory.key}" && expected.substringAfter('|') ==
-            hash(directory.key.toByteArray(Charsets.UTF_8))) { "物化根身份与认证回执或inode不符" }
+        val marker = PersistentFileIdentity.parseMarker(bytes.toString("UTF-8"))
+        check(directory.node(ROOT_IDENTITY) == node &&
+            PersistentFileIdentity.encode(marker.first, marker.second) == expected &&
+            directory.persistentIdentity == expected) { "物化根身份与认证回执或inode不符" }
     }
 
     private fun create(tx: String, sourceRoot: Path, databaseFile: Path?, archiveRoot: Path): SourceSnapshotManifest {
@@ -329,7 +331,7 @@ class RecoverySnapshotStore private constructor(
         visit(source, "")
         val sortedFiles = files.sortedBy { it.relativePath }
         val sortedDirectories = directories.sorted()
-        return SourceSnapshotManifest(tx, hash((source.path.toString() + "\n" + source.key).toByteArray()),
+        return SourceSnapshotManifest(tx, hash((source.path.toString() + "\n" + source.persistentIdentity).toByteArray()),
             inventoryHash(sortedFiles, sortedDirectories), sortedFiles, total, sortedDirectories)
     }
 
@@ -384,7 +386,7 @@ class RecoverySnapshotStore private constructor(
         check(directory.node(MANIFEST) == node) { "目标manifest读取期间变化" }
         val manifest = try { json.decodeFromString<SourceSnapshotManifest>(bytes.toString("UTF-8")) }
             catch (failure: Exception) { throw IllegalStateException("目标manifest无法解析", failure) }
-        check(manifest.formatVersion == 2 && manifest.files.size <= maxFiles && manifest.directories.size <= maxFiles) { "manifest版本或条目限额无效" }
+        check(manifest.formatVersion == 3 && manifest.files.size <= maxFiles && manifest.directories.size <= maxFiles) { "manifest版本或条目限额无效" }
         check(manifest.files == manifest.files.sortedBy { it.relativePath } && manifest.directories == manifest.directories.sorted()) { "manifest顺序无效" }
         check(manifest.files.map { it.relativePath }.distinct().size == manifest.files.size && manifest.directories.distinct().size == manifest.directories.size) { "manifest路径重复" }
         var total = 0L
