@@ -39,6 +39,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.ui.startup.affectsSession
 import com.promenar.nexara.R
 import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_ASKED
 import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_PREFS
@@ -219,6 +220,9 @@ fun ChatRoute(
     }
     val chatViewModel: ChatViewModel = viewModel(factory = resolvedDependencies.viewModelFactory)
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val startupIssues by application.startupIssues.collectAsStateWithLifecycle()
+    val startupWritePaused = startupIssues.affectsSession(sessionId, uiState.session?.workspaceRootUuid)
+    var showStartupIssues by remember(sessionId) { mutableStateOf(false) }
     val turnGraphStates by chatViewModel.turnGraphStates.collectAsStateWithLifecycle()
     val composerQueue by chatViewModel.composerQueue.collectAsStateWithLifecycle()
     val interaction by application.generationInteractions.pending.collectAsStateWithLifecycle()
@@ -664,8 +668,10 @@ fun ChatRoute(
                 stateBoard = stateBoard,
                 subagentApprovals = sessionSubagentApprovals,
                 gitSummary = gitSummary,
+                startupWritePaused = startupWritePaused,
             ),
             actions = ChatScreenActions(
+                onOpenStartupIssues = { showStartupIssues = true },
                 onNavigateBack = onNavigateBack,
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
@@ -885,6 +891,13 @@ fun ChatRoute(
                 isDestructive = true,
             )
         }
+    }
+    if (showStartupIssues) {
+        com.promenar.nexara.ui.startup.StartupIssuesSheet(
+            onDismiss = { showStartupIssues = false },
+            diagnosisAgentId = { uiState.session?.agentId },
+            onOpenSession = onNavigateToSession,
+        )
     }
     if (activeOverlay == ChatOverlay.Git) {
         com.promenar.nexara.ui.git.GitChangesSheet(

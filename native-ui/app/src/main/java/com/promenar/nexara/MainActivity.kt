@@ -146,10 +146,22 @@ open class MainActivity : ComponentActivity() {
                     inlineSessionId = visibleChatSessionId,
                 )
                 val startupState by app.startupState.collectAsStateWithLifecycle()
+                val startupBlockedSummary by app.startupBlockedSummary.collectAsStateWithLifecycle()
+                val startupScope = androidx.compose.runtime.rememberCoroutineScope()
+                val exportDiagnostics = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain"),
+                ) { uri ->
+                    if (uri != null) startupScope.launch {
+                        // 阻断页没有可写的业务界面，导出失败只能留给用户重试。
+                        runCatching { contentResolver.openOutputStream(uri)?.use { app.exportStartupDiagnostics(it) } }
+                    }
+                }
                 StartupGate(
                     state = startupState,
                     onRetry = app::retryStartupRecovery,
                     onRecoverBothDatabases = app::startDualDatabaseRecovery,
+                    blockedDetail = startupBlockedSummary,
+                    onExportDiagnostics = { exportDiagnostics.launch("nexara-diagnostics.txt") },
                 ) {
                     val chatRouteDependencies = remember(app) {
                         provideChatRouteDependencies(app)

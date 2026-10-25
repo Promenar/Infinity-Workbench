@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -37,6 +38,8 @@ object StartupGateTags {
     const val RETRY = "startup-retry"
     const val DUAL_DATABASE = "startup-dual-database"
     const val RECOVER_BOTH = "startup-recover-both"
+    const val BLOCKED_DETAIL = "startup-blocked-detail"
+    const val EXPORT = "startup-export-diagnostics"
 }
 
 @Composable
@@ -44,6 +47,10 @@ fun StartupGate(
     state: BackupStartupState,
     onRetry: () -> Unit,
     onRecoverBothDatabases: () -> Unit,
+    /** 全局关键恢复失败时的脱敏原因；为 null 时只显示通用说明。 */
+    blockedDetail: String? = null,
+    /** 非空时阻断页提供“导出诊断”，不连电脑也能把诊断交给他人排查。 */
+    onExportDiagnostics: (() -> Unit)? = null,
     readyContent: @Composable () -> Unit,
 ) {
     when (state) {
@@ -72,15 +79,37 @@ fun StartupGate(
             title = stringResource(R.string.startup_blocked_title),
             message = stringResource(R.string.startup_blocked_message),
             action = {
-                Button(
-                    onClick = onRetry,
-                    modifier = Modifier
-                        .testTag(StartupGateTags.RETRY)
-                        .heightIn(min = 48.dp),
-                ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.startup_retry))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    blockedDetail?.takeIf(String::isNotBlank)?.let { detail ->
+                        Text(
+                            text = stringResource(R.string.startup_blocked_detail_label) + ": " + detail,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                                .testTag(StartupGateTags.BLOCKED_DETAIL),
+                        )
+                        Spacer(Modifier.height(20.dp))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = onRetry,
+                            modifier = Modifier
+                                .testTag(StartupGateTags.RETRY)
+                                .heightIn(min = 48.dp),
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text(stringResource(R.string.startup_retry))
+                        }
+                        if (onExportDiagnostics != null) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = onExportDiagnostics,
+                                modifier = Modifier.testTag(StartupGateTags.EXPORT).heightIn(min = 48.dp),
+                            ) { Text(stringResource(R.string.startup_blocked_export)) }
+                        }
+                    }
                 }
             },
         )

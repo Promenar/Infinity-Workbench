@@ -154,7 +154,31 @@ fun AgentHubScreen(
             ?.let { app -> app::privateWorkspaceSummary },
     )
 
-    AgentHubScreenContent(state = state, actions = actions, snackbarHostState = snackbarHostState)
+    // 启动自检问题：照常进入，列表顶部提示受影响的范围，点开处置或交给 Agent 诊断。
+    val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
+    val startupIssues = app?.startupIssues?.collectAsState()?.value.orEmpty()
+    var showStartupIssues by remember { mutableStateOf(false) }
+    AgentHubScreenContent(
+        state = state,
+        actions = actions,
+        snackbarHostState = snackbarHostState,
+        startupBanner = {
+            if (startupIssues.isNotEmpty()) {
+                com.promenar.nexara.ui.startup.StartupIssuesBanner(startupIssues.size, onOpen = { showStartupIssues = true })
+            }
+        },
+    )
+    if (showStartupIssues && app != null) {
+        com.promenar.nexara.ui.startup.StartupIssuesSheet(
+            onDismiss = { showStartupIssues = false },
+            diagnosisAgentId = { issues ->
+                issues.firstNotNullOfOrNull { issue ->
+                    allSessions.firstOrNull { it.id == issue.scope.id }?.agentId
+                } ?: displayAgents.firstOrNull()?.agent?.id
+            },
+            onOpenSession = onNavigateToChat,
+        )
+    }
 
     if (state.showAddDialog) {
         AddAgentDialog(
@@ -435,6 +459,8 @@ internal fun AgentHubScreenContent(
     actions: AgentHubScreenActions,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     initialExpandedAgentId: String? = null,
+    /** 标题栏下方的启动自检提示；没有问题时不占位。 */
+    startupBanner: @Composable () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val searching = state.searchActive && state.searchQuery.isNotBlank()
@@ -455,19 +481,22 @@ internal fun AgentHubScreenContent(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            NexaraTabHeader(
-                title = stringResource(R.string.nav_tab_chat),
-                searchActive = state.searchActive,
-                query = state.searchQuery,
-                onQueryChange = actions.onSearch,
-                onSearchActiveChange = actions.onSearchActiveChange.takeIf { state.displayAgents.isNotEmpty() },
-                searchFieldTag = UiTags.HUB_SEARCH,
-            ) {
-                HubNewChatAction(
-                    agents = state.displayAgents,
-                    onCreateSession = actions.onCreateSession,
-                    onRequestAdd = actions.onRequestAdd,
-                )
+            Column {
+                NexaraTabHeader(
+                    title = stringResource(R.string.nav_tab_chat),
+                    searchActive = state.searchActive,
+                    query = state.searchQuery,
+                    onQueryChange = actions.onSearch,
+                    onSearchActiveChange = actions.onSearchActiveChange.takeIf { state.displayAgents.isNotEmpty() },
+                    searchFieldTag = UiTags.HUB_SEARCH,
+                ) {
+                    HubNewChatAction(
+                        agents = state.displayAgents,
+                        onCreateSession = actions.onCreateSession,
+                        onRequestAdd = actions.onRequestAdd,
+                    )
+                }
+                startupBanner()
             }
         },
     ) { paddingValues ->

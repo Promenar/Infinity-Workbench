@@ -241,6 +241,8 @@ data class ChatScreenState(
     val subagentApprovals: List<com.promenar.nexara.data.subagent.SubagentApproval> = emptyList(),
     /** 会话工作区是 Git 仓库时的分支与改动摘要，显示在顶栏标题下方；否则为 null。 */
     val gitSummary: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
+    /** 本会话或其工作区因启动自检问题暂停写入，顶栏下方显示提示条。 */
+    val startupWritePaused: Boolean = false,
 )
 
 data class ChatScreenActions(
@@ -249,6 +251,8 @@ data class ChatScreenActions(
     val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
     val onOpenGit: () -> Unit = {},
+    /** 打开启动自检问题面板（会话暂停写入提示条的“处理”）。 */
+    val onOpenStartupIssues: () -> Unit = {},
     /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
     val onLocateWorkspacePath: (String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
@@ -579,6 +583,9 @@ fun ChatScreenContent(
                     git = state.gitSummary,
                     onOpenGit = actions.onOpenGit,
                 )
+                if (state.startupWritePaused) {
+                    com.promenar.nexara.ui.startup.StartupWritePausedBanner(onOpen = actions.onOpenStartupIssues)
+                }
               }
             },
             snackbarHost = {

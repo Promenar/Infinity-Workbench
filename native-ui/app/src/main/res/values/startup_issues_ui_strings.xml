@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="startup_issues_banner">
+        <item quantity="one">%1$d startup check problem. The affected part is paused for writing; everything else works.</item>
+        <item quantity="other">%1$d startup check problems. The affected parts are paused for writing; everything else works.</item>
+    </plurals>
+    <string name="startup_issues_view">View</string>
+    <string name="startup_issues_handle">Handle</string>
+    <string name="startup_issues_session_paused">This workspace is paused for writing. You can view files, but the agent can\'t change them.</string>
+    <string name="startup_issues_title">Startup check problems</string>
+    <string name="startup_issues_intro">Only the affected workspaces, sessions or features are paused. Retry, or let an agent look into it.</string>
+    <string name="startup_issues_none">No open problems.</string>
+    <string name="startup_issues_retry">Retry</string>
+    <string name="startup_issues_abandon">Discard this operation</string>
+    <string name="startup_issues_abandon_note">Discarding keeps your files as they are and only closes out the unfinished record.</string>
+    <string name="startup_issues_abandon_title">Discard the unfinished operation?</string>
+    <string name="startup_issues_abandon_message">Your files stay exactly as they are now. Nexara only closes out the record, then checks the workspace again. If it still isn\'t consistent, it stays paused.</string>
+    <string name="startup_issues_diagnose">Let an agent diagnose</string>
+    <string name="startup_issues_diagnose_unavailable">Create an assistant first to diagnose with an agent.</string>
+    <string name="startup_issues_records">Diagnostic records</string>
+    <string name="startup_issues_records_note">Redacted: no keys, message content or file content.</string>
+    <string name="startup_issues_no_records">No records yet.</string>
+    <string name="startup_issues_export">Export</string>
+    <string name="startup_issues_exported">Diagnostics exported.</string>
+    <string name="startup_issues_export_failed">Couldn\'t export diagnostics.</string>
+    <string name="startup_issues_resolved">Problem resolved.</string>
+    <string name="startup_issues_failed">Still not resolved.</string>
+    <string name="startup_issue_title_data">Data recovery didn\'t finish</string>
+    <string name="startup_issue_title_inventory">Couldn\'t check workspaces</string>
+    <string name="startup_issue_title_adoption">Couldn\'t take over an old workspace</string>
+    <string name="startup_issue_title_file_operation">A file operation didn\'t finish</string>
+    <string name="startup_issue_title_session_delete">A session deletion didn\'t finish</string>
+    <string name="startup_issue_title_recycle">Recycle bin cleanup didn\'t finish</string>
+    <string name="startup_issue_title_tool_ledger">Tool records couldn\'t be restored</string>
+    <string name="startup_issue_title_vectors">Indexing queue couldn\'t be restored</string>
+    <string name="startup_issue_title_background">Background jobs couldn\'t be restored</string>
+    <string name="startup_issue_title_confirmations">Background confirmations couldn\'t be restored</string>
+    <string name="startup_issue_title_schedules">Scheduled tasks couldn\'t be restored</string>
+    <string name="startup_issue_title_catalog">Model catalog update failed</string>
+    <string name="startup_issue_title_memory">Memory cleanup failed</string>
+    <string name="startup_blocked_detail_label">Reason</string>
+    <string name="startup_blocked_export">Export diagnostics</string>
+</resources>

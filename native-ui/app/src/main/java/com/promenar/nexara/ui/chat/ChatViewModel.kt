@@ -1872,12 +1872,19 @@ class ChatViewModel(
                         sessionManager.updateSession(sessionId, mapOf("ragOptions" to defaultOptions))
                     }
                     if (hydrated.workspaceRootUuid.isNullOrBlank()) {
-                        val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
-                        hydrated = hydrated.copy(workspaceRootUuid = root.uuid, workspacePath = root.physicalRootPath)
-                        sessionManager.updateSession(
-                            sessionId,
-                            mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
-                        )
+                        // 会话被启动自检隔离时不建根，仍可只读打开查看内容。
+                        val root = try {
+                            (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+                        } catch (_: com.promenar.nexara.startup.StartupIsolationException) {
+                            null
+                        }
+                        if (root != null) {
+                            hydrated = hydrated.copy(workspaceRootUuid = root.uuid, workspacePath = root.physicalRootPath)
+                            sessionManager.updateSession(
+                                sessionId,
+                                mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+                            )
+                        }
                     }
                     store.update { state ->
                         if (state.sessions.any { it.id == sessionId }) state
