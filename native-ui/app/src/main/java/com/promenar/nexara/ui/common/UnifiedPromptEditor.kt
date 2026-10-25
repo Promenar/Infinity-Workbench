@@ -185,7 +185,9 @@ fun UnifiedPromptEditor(
     title: String = "",
     placeholder: String = "",
     mode: EditorMode = EditorMode.DIALOG,
-    fontSize: Int = 13
+    fontSize: Int = 13,
+    /** 为 false 时只保留编辑页，不显示 Markdown 预览页签（例如编辑脚本与配置文件）。 */
+    showPreviewTab: Boolean = true,
 ) {
     if (!show) return
 
@@ -535,7 +537,7 @@ fun UnifiedPromptEditor(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
-            TabBar()
+            if (showPreviewTab) TabBar()
 
             Box(
                 modifier = Modifier

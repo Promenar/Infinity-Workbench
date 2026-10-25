@@ -81,6 +81,10 @@ object NavDestinations {
     const val LINUX_ENVIRONMENT = "linux_environment"
     const val LINUX_PACKAGES = "linux_packages"
     const val LINUX_MIRRORS = "linux_mirrors"
+    const val LINUX_TERMINAL = "linux_terminal?session={session}&dir={dir}&cmd={cmd}"
+    const val LINUX_FILES = "linux_files?path={path}"
+    const val LINUX_FILE = "linux_file?path={path}"
+    const val COMMAND_OUTPUT = "command_output/{sessionId}/{messageId}/{toolCallId}"
     const val NETWORK_ACCESS = "network_access"
     const val TAILSCALE_CONFIG = "tailscale_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
@@ -103,6 +107,15 @@ object NavDestinations {
     @Suppress("UNUSED_PARAMETER")
     fun ragFolder(folderId: String) = "rag_folder/$folderId"
     fun knowledgeGraph(query: String) = "knowledge_graph?query=${android.net.Uri.encode(query)}"
+    fun linuxTerminal(sessionId: String? = null, directory: String? = null, command: String? = null) =
+        "linux_terminal" + query("session" to sessionId, "dir" to directory, "cmd" to command)
+    fun linuxFiles(path: String? = null) = "linux_files" + query("path" to path)
+    fun linuxFile(path: String) = "linux_file" + query("path" to path)
+    fun commandOutput(sessionId: String, messageId: String, toolCallId: String) =
+        "command_output/${android.net.Uri.encode(sessionId)}/${android.net.Uri.encode(messageId)}/${android.net.Uri.encode(toolCallId)}"
+    private fun query(vararg params: Pair<String, String?>) = params.filter { it.second != null }
+        .joinToString("&", prefix = "?") { (key, value) -> "$key=${android.net.Uri.encode(value)}" }
+        .takeIf { it != "?" }.orEmpty()
     fun subagentViewer(sessionId: String, stepId: String, index: Int) =
         "subagent/${android.net.Uri.encode(sessionId)}/${android.net.Uri.encode(stepId)}/$index"
 }
@@ -609,8 +622,8 @@ fun NexaraNavGraph(
         composable(NavDestinations.LINUX_ENVIRONMENT) {
             com.promenar.nexara.ui.linux.settings.LinuxEnvironmentScreen(
                 onBack = { navController.popBackStack() },
-                onOpenTerminal = {},
-                onOpenFiles = {},
+                onOpenTerminal = { navController.navigate(NavDestinations.linuxTerminal()) },
+                onOpenFiles = { navController.navigate(NavDestinations.linuxFiles()) },
                 onOpenPackages = { navController.navigate(NavDestinations.LINUX_PACKAGES) },
                 onOpenMirrors = { navController.navigate(NavDestinations.LINUX_MIRRORS) },
                 onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
@@ -622,6 +635,62 @@ fun NexaraNavGraph(
         }
         composable(NavDestinations.LINUX_MIRRORS) {
             com.promenar.nexara.ui.linux.settings.LinuxMirrorsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            NavDestinations.LINUX_TERMINAL,
+            arguments = listOf("session", "dir", "cmd").map { name ->
+                navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
+            },
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            val command = args?.getString("cmd")
+            val request = args?.getString("session")?.let {
+                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.SessionWorkspace(it), command)
+            } ?: args?.getString("dir")?.let {
+                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.Directory(it), command)
+            }
+            com.promenar.nexara.ui.linux.terminal.LinuxTerminalScreen(
+                request = request,
+                onBack = { navController.popBackStack() },
+                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
+            )
+        }
+        composable(
+            NavDestinations.LINUX_FILES,
+            arguments = listOf(navArgument("path") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { backStackEntry ->
+            com.promenar.nexara.ui.linux.files.LinuxFilesScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
+                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
+                initialPath = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
+                onOpenFile = { navController.navigate(NavDestinations.linuxFile(it)) },
+            )
+        }
+        composable(
+            NavDestinations.LINUX_FILE,
+            arguments = listOf(navArgument("path") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            com.promenar.nexara.ui.linux.files.LinuxFileScreen(
+                path = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
+            )
+        }
+        composable(
+            NavDestinations.COMMAND_OUTPUT,
+            arguments = listOf("sessionId", "messageId", "toolCallId").map { navArgument(it) { type = NavType.StringType } },
+        ) { backStackEntry ->
+            val args = requireNotNull(backStackEntry.arguments)
+            com.promenar.nexara.ui.linux.output.CommandOutputScreen(
+                source = com.promenar.nexara.ui.linux.output.CommandOutputSource(
+                    sessionId = requireNotNull(args.getString("sessionId")),
+                    messageId = requireNotNull(args.getString("messageId")),
+                    toolCallId = requireNotNull(args.getString("toolCallId")),
+                ),
+                onBack = { navController.popBackStack() },
+                onRerunInTerminal = { command, sessionId -> navController.navigate(NavDestinations.linuxTerminal(sessionId = sessionId, command = command)) },
+            )
         }
 
         composable(NavDestinations.NETWORK_ACCESS) {
