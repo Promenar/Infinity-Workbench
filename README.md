@@ -70,7 +70,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 
 环境就绪且“命令在 Linux 中运行”开启时，`shell_exec` 在 Alpine 中以 Nexara 身份运行：工作区映射为 `/workspace`，有真实路径的外部挂载为 `/mnt/<别名>`，用户级技能为 `/mnt/skills`；SAF 授权的挂载只对文件工具可见。Linux 命令不受工作区路径约束，“工作区”档逐条审批，“完全访问”档免审批。关闭开关或环境未就绪时回到系统 `/system/bin/sh`，结果中的 `runtime` 字段说明实际环境。`python_exec` 与 `python_sandbox` 使用打包 Python，与 Alpine 中的 `python3` 和 pip 包相互独立。
 
-重置会清空 `/root` 与已安装软件包、恢复初始系统，会话工作区不受影响；绑定到旧 `/root` 的会话需重新选择工作区。proot 下文件元数据密集的操作（大量小文件解包、编译）比原生慢。当前 Alpine 中原生 git 不使用 Nexara 保存的 HTTPS 凭据与 SSH 桥，需要认证的推拉可暂时关闭“命令在 Linux 中运行”，由系统 sh 中的内置 git 完成。
+重置会清空 `/root` 与已安装软件包、恢复初始系统，会话工作区不受影响；绑定到旧 `/root` 的会话需重新选择工作区。proot 下文件元数据密集的操作（大量小文件解包、编译）比原生慢。Linux 进程继承设备时区；Alpine 默认 Git 全局忽略文件中有一段 Nexara 受管规则，忽略工作区内部的 `.recycle_bin/` 与 `.nexara*`（自行设置 `core.excludesFile` 时不生效），Git 面板也不显示这些路径。当前 Alpine 中原生 git 不使用 Nexara 保存的 HTTPS 凭据与 SSH 桥，需要认证的推拉可暂时关闭“命令在 Linux 中运行”，由系统 sh 中的内置 git 完成。
 
 ## Termux 接入
 

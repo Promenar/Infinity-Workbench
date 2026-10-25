@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 内置 Linux：时区与工作区内部文件
+
+- Linux 命令、后台任务与本地终端的新进程继承设备当前时区（生成不依赖 zoneinfo 的 POSIX `TZ`；夏令时规则无法表达时退回启动时的固定偏移），`date` 与沙箱内 `git commit` 不再按 UTC 记录。
+- 会话工作区的内部文件（`.recycle_bin/` 回收站、`.nexara*` 命令标记）不再出现在 Git 面板的变更、未跟踪与提交文件列表中；Alpine 默认 Git 全局忽略文件（`/root/.config/git/ignore`）维护受管块忽略这些路径，沙箱内 `git add -A` 不再把它们加入用户仓库。不改用户仓库的 `.gitignore` 与 `.git/info/exclude`；用户自行设置 `core.excludesFile` 时该保护不生效，已被提交的内部文件不做清理。
+
 ### 会话界面：真机核对修正
 
 - 运行坞只显示状态面板或只显示后台任务时，点按直接打开运行详情的对应页，不再总是落到计划页。
