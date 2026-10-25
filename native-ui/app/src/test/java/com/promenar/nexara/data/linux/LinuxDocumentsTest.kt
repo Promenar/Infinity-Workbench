@@ -63,6 +63,7 @@ class LinuxDocumentsTest {
             assertThat(cursor.count).isEqualTo(1)
             cursor.moveToFirst()
             assertThat(cursor.getLong(cursor.getColumnIndexOrThrow(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES))).isAtLeast(0)
+            assertThat(cursor.getInt(cursor.getColumnIndexOrThrow(DocumentsContract.Root.COLUMN_ICON))).isNotEqualTo(0)
         }
         state.value = LinuxRuntimeState.NotInstalled(10)
         provider.queryRoots(null).use { cursor ->

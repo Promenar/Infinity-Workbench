@@ -16,4 +16,6 @@
     <string name="workspace_picker_linux_not_ready">请先安装或修复 Linux 环境</string>
     <string name="workspace_tag_not_backed_up">不进备份</string>
     <string name="workspace_tag_cleared_on_reset">重置时清空</string>
+    <string name="linux_reach_paths_footer">Linux 命令里的 / 是 Alpine 根目录：工作区在 /workspace，挂载在 /mnt/&lt;别名&gt;。Termux 里的 / 是设备根目录。</string>
+    <string name="linux_reach_backend_builtin_python">内置 Python python_exec</string>
 </resources>

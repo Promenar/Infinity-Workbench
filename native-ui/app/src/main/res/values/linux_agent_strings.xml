@@ -16,4 +16,6 @@
     <string name="workspace_picker_linux_not_ready">Install or repair the Linux environment first</string>
     <string name="workspace_tag_not_backed_up">Not backed up</string>
     <string name="workspace_tag_cleared_on_reset">Cleared on reset</string>
+    <string name="linux_reach_paths_footer">In Linux commands, / is the Alpine root: the workspace is /workspace and mounts are /mnt/&lt;alias&gt;. In Termux, / is the device root.</string>
+    <string name="linux_reach_backend_builtin_python">Built-in Python python_exec</string>
 </resources>

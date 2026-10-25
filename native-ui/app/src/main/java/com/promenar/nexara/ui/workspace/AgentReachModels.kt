@@ -102,6 +102,10 @@ internal fun ExternalMount.toReach(): ReachMount = ReachMount(
     unavailable = unavailableReason != null,
 )
 
+/** Linux 就绪且开启时 shell_exec 在 Alpine 中运行，命令路径按 guest 视角解释，内置进程只剩 python_exec。 */
+internal fun List<ReachBackend>.linuxRunsShell(): Boolean =
+    any { it.kind == ReachBackendKind.LINUX && it.status == ReachBackendStatus.READY }
+
 /** 用户级技能以保留别名 `skills` 出现在挂载列表中，面板单独说明，不作为普通挂载重复列出。 */
 internal fun reachMounts(mounts: List<ExternalMount>): List<ReachMount> =
     mounts.filterNot { it.alias == ExternalMountPaths.SKILLS_ALIAS }.map(ExternalMount::toReach).sortedBy { it.alias }

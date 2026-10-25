@@ -51,6 +51,8 @@ open class LinuxDocumentsProvider : DocumentsProvider() {
                     Root.COLUMN_DOCUMENT_ID to LinuxDocumentsIds.encode("/root"),
                     Root.COLUMN_TITLE to context!!.getString(R.string.linux_files_home),
                     Root.COLUMN_SUMMARY to context!!.getString(R.string.linux_files_home_summary),
+                    // 系统文件选择器在根列表中用它区分来源应用。
+                    Root.COLUMN_ICON to R.mipmap.ic_launcher,
                     Root.COLUMN_FLAGS to (Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY),
                     Root.COLUMN_MIME_TYPES to "*/*",
                     Root.COLUMN_AVAILABLE_BYTES to paths.access.directory(home.toPath()) { it.toFile().usableSpace },
@@ -165,7 +167,7 @@ open class LinuxDocumentsProvider : DocumentsProvider() {
     private fun missing(): Nothing = throw FileNotFoundException("Linux 主目录或文档不可用")
 
     companion object {
-        private val ROOT_COLUMNS = arrayOf(Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID, Root.COLUMN_TITLE, Root.COLUMN_SUMMARY, Root.COLUMN_FLAGS, Root.COLUMN_MIME_TYPES, Root.COLUMN_AVAILABLE_BYTES)
+        private val ROOT_COLUMNS = arrayOf(Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID, Root.COLUMN_TITLE, Root.COLUMN_SUMMARY, Root.COLUMN_ICON, Root.COLUMN_FLAGS, Root.COLUMN_MIME_TYPES, Root.COLUMN_AVAILABLE_BYTES)
         private val DOCUMENT_COLUMNS = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_FLAGS, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED)
     }
 }

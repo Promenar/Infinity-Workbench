@@ -143,7 +143,8 @@ internal class LinuxTerminalSessionsImpl(
                 }
                 if (initialCommand != null) {
                     // 终端回显只含字面反斜杠；只有 shell 执行 printf 后才会产生真正的 OSC 标记。
-                    write(entry, " printf '\\033]0;${entry.marker}\\007\\033]0;\\007'\r")
+                    // 同一输出随后清屏并清空滚动区，擦掉握手命令的两次回显（tty 与行编辑器）。
+                    write(entry, " printf '\\033]0;${entry.marker}\\007\\033]0;\\007\\033[H\\033[2J\\033[3J'\r")
                     // 初始命令提交前不暴露 TerminalSession，避免页面输入与自动输入拼接。
                     withTimeout(30_000) { entry.inputSubmitted.await() }
                 }

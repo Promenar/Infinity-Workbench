@@ -180,6 +180,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 - 侧载渠道在 arm64-v8a 设备上另带 proot + Alpine 3.24.3 minirootfs（设计与决策见 `.agent/plans/2026-10-24-linux-runtime.md`）。用户在设置中安装并开启“Agent 使用 Linux”后，`LinuxExecRouting` 判定环境 Ready 时 `shell_exec` 改在 Alpine 中执行；环境未安装、安装中、损坏或关闭时仍走第 4 节的内置 shell。`python_exec`、`python_sandbox` 与 git（dulwich）不受影响。
 - 路径映射：会话工作区为 `/workspace`，会话挂载为 `/mnt/<别名>`，选择 Linux 主目录作为工作区时为 `/root`。结果格式沿用第 3.1 节，`runtime` 字段标明 LINUX，审批卡片以独立类别提示“在 Linux 环境中执行”。
 - Play 渠道不打包 proot、rootfs 与 `libtermux.so`，Linux 运行时恒为 `Unavailable(DISTRIBUTION)`；`scripts/verify-release-apk.py --distribution` 对两个渠道分别校验。
+- 真机（PKH110，ColorOS 16.1，2026-10-25）：Linux 后台任务启动 `specialUse` 前台服务后回到桌面，Hans 仍很快冻结整个应用 uid（proot 与 guest 进程停在 `do_freezer_trap`），回到前台后任务继续并正常合入工作区；默认电池策略下长时间 Linux 后台任务需要用户允许应用后台运行。
 
 ## 5. Termux 与 SSH 后端（D）
 

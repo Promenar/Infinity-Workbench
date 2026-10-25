@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.workspace
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.termux.TermuxAvailability
+import com.promenar.nexara.domain.linux.LinuxEnvironmentInfo
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.domain.network.AgentNetworkSnapshot
@@ -76,6 +77,17 @@ class AgentReachModelsTest {
         assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION))).isNull()
         assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.UNSUPPORTED_ABI))?.status).isEqualTo(ReachBackendStatus.UNAVAILABLE)
         assertThat(linux(LinuxRuntimeState.NotInstalled(0))?.status).isEqualTo(ReachBackendStatus.NOT_INSTALLED)
+    }
+
+    @Test
+    fun `shell is attributed to linux only when the environment is ready and enabled`() {
+        val ready = LinuxRuntimeState.Ready(LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "test", 1, null))
+        fun runsShell(state: LinuxRuntimeState, enabled: Boolean) =
+            reachBackends(true, false, null, 0, linuxState = state, linuxAgentEnabled = enabled).linuxRunsShell()
+        assertThat(runsShell(ready, enabled = true)).isTrue()
+        assertThat(runsShell(ready, enabled = false)).isFalse()
+        assertThat(runsShell(LinuxRuntimeState.NotInstalled(0), enabled = true)).isFalse()
+        assertThat(runsShell(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION), enabled = true)).isFalse()
     }
 
     @Test

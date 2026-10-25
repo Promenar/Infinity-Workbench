@@ -19,6 +19,7 @@ class LinuxLaunchDnsTest {
         assertFalse(result.fallback)
         val file = File(root, "etc/resolv.conf")
         assertTrue(file.readText().contains("nameserver 10.0.0.53\n"))
+        assertEquals("rw-r--r--", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(file.toPath())))
         val fallback = writer(LinuxDnsSnapshot(emptyList())).refresh()
         assertTrue(fallback.fallback)
         assertTrue(file.readText().contains("nameserver 1.1.1.1\n"))

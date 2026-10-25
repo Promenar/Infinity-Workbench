@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -36,6 +37,8 @@ class LinuxLaunchDns(
         try {
             val body = servers.joinToString("\n", postfix = "\n") { "nameserver $it" }
             Files.write(temporary, (PREFIX + digest(body) + "\n" + body).toByteArray())
+            // createTempFile 默认 0600；guest 中的非 root 用户也需要读取解析配置。
+            Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r--r--"))
             LinuxRootfsFiles.safePath(rootfs, "etc/resolv.conf")
             Files.move(temporary, target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
         } finally { Files.deleteIfExists(temporary) }

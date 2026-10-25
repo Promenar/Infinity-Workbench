@@ -96,7 +96,14 @@ class LinuxEnvironmentViewModel(
 
     fun refreshUsage() {
         viewModelScope.launch {
-            val usage = runCatching { runtime.storageUsage() }.getOrNull() ?: return@launch
+            val usage = try {
+                runtime.storageUsage()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                com.promenar.nexara.utils.NexaraLogger.logError("LinuxEnvironment.storageUsage", error)
+                return@launch
+            }
             local.update { it.copy(usage = usage) }
         }
     }

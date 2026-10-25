@@ -144,6 +144,8 @@ class LinuxTerminalSessionsTest {
         assertThat(f.manager.sessions.value).isEmpty()
         assertThat(pty.writes).hasSize(1)
         assertThat(pty.writes.single()).doesNotContain("echo hello")
+        // 握手输出同时清屏与清空滚动区，界面接管时看不到握手命令的回显。
+        assertThat(pty.writes.single()).endsWith("\\033[H\\033[2J\\033[3J'\r")
         pty.client.onTextChanged(null)
         pty.emitTitle("ordinary prompt")
         runCurrent()

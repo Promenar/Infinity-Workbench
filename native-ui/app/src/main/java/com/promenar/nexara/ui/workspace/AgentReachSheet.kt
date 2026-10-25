@@ -183,7 +183,8 @@ private fun PathRow(path: String, meaning: String, tag: String) {
 private fun PathSection(state: AgentReachState) {
     NexaraSettingsSection(
         title = stringResource(R.string.agent_reach_section_paths),
-        footer = stringResource(R.string.agent_reach_paths_footer),
+        // Linux 接管 shell_exec 时，命令看到的是 Alpine 根目录而不是设备根目录。
+        footer = stringResource(if (state.backends.linuxRunsShell()) R.string.linux_reach_paths_footer else R.string.agent_reach_paths_footer),
     ) {
         PathRow("/", stringResource(R.string.agent_reach_path_root), "agent_reach_path_root")
         PathRow("\$NEXARA_WORKSPACE", stringResource(R.string.agent_reach_path_workspace_var), "agent_reach_path_workspace_var")
@@ -205,6 +206,7 @@ private fun PathSection(state: AgentReachState) {
 @Composable
 private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
     val traits = state.workspace.traits
+    val builtinTitle = if (state.backends.linuxRunsShell()) R.string.linux_reach_backend_builtin_python else R.string.agent_reach_backend_builtin
     NexaraSettingsSection(
         title = stringResource(R.string.agent_reach_section_backends),
         footer = stringResource(R.string.agent_reach_backends_footer),
@@ -212,7 +214,7 @@ private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
         state.backends.forEach { backend ->
             val (icon, title, scope) = when (backend.kind) {
                 ReachBackendKind.FILES -> Triple(Icons.Rounded.Description, R.string.agent_reach_backend_files, R.string.agent_reach_backend_files_scope)
-                ReachBackendKind.BUILTIN -> Triple(Icons.Rounded.Terminal, R.string.agent_reach_backend_builtin, R.string.agent_reach_backend_builtin_scope)
+                ReachBackendKind.BUILTIN -> Triple(Icons.Rounded.Terminal, builtinTitle, R.string.agent_reach_backend_builtin_scope)
                 ReachBackendKind.LINUX -> Triple(Icons.Rounded.Terminal, R.string.linux_runner_name, R.string.linux_reach_scope)
                 ReachBackendKind.SANDBOX -> Triple(Icons.Rounded.Code, R.string.agent_reach_backend_sandbox, R.string.agent_reach_backend_sandbox_scope)
                 ReachBackendKind.TERMUX -> Triple(

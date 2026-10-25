@@ -47,9 +47,10 @@ class LinuxLaunchTest {
         assertEquals("custom", launch.environment["HTTPS_PROXY"])
         assertEquals("1", launch.environment["PIP_BREAK_SYSTEM_PACKAGES"])
         assertEquals("C.UTF-8", launch.environment["LANG"])
-        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "HOME", "PATH", "LANG", "TERM", "PIP_BREAK_SYSTEM_PACKAGES", "HTTPS_PROXY"), launch.environment.keys)
+        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "HOME", "PATH", "LANG", "TERM", "PIP_BREAK_SYSTEM_PACKAGES", "SHELL", "HTTPS_PROXY"), launch.environment.keys)
         assertFalse(launch.environment.containsKey("NEXARA_WORKSPACE"))
         assertEquals(listOf("-w", "/root", "/bin/sh", "-l"), launch.arguments.takeLast(4))
+        assertEquals("/bin/sh", launch.environment["SHELL"])
     }
 
     @Test fun `有bash时选择登录bash且支持容器内工作目录`() {
@@ -57,6 +58,7 @@ class LinuxLaunchTest {
         File(root, "bin/bash").writeText("shell")
         val launch = builder().build(LinuxLaunchSpec(emptyList(), workingDirectory = "/tmp"))
         assertEquals(listOf("-w", "/tmp", "/bin/bash", "-l"), launch.arguments.takeLast(4))
+        assertEquals("/bin/bash", launch.environment["SHELL"])
         File(root, "bin/bash").delete()
         Files.createSymbolicLink(File(root, "bin/bash").toPath(), temporary.resolve("outside"))
         assertEquals(listOf("/bin/sh", "-l"), builder().build(LinuxLaunchSpec(emptyList())).arguments.takeLast(2))
@@ -90,5 +92,17 @@ class LinuxLaunchTest {
         Files.delete(link)
         Files.createSymbolicLink(link, Path.of("/bin/busybox/../busybox"))
         assertFalse(LinuxRootfsFiles.isGuestFile(root, link.toFile()))
+    }
+
+    @Test fun `占用统计跳过不可读目录与链接而不整体失败`() {
+        File(root, "usr").mkdirs()
+        File(root, "usr/data").writeBytes(ByteArray(100))
+        Files.createSymbolicLink(File(root, "usr/link").toPath(), Path.of("/usr/data"))
+        val locked = File(root, "tmp/locked").apply { mkdirs() }
+        File(locked, "hidden").writeBytes(ByteArray(7))
+        locked.setReadable(false, false)
+        try {
+            assertEquals(100, LinuxRootfsFiles.size(root))
+        } finally { locked.setReadable(true, false) }
     }
 }

@@ -4,8 +4,13 @@ import com.promenar.nexara.data.tailnet.InstalledTailnetRouting
 import com.promenar.nexara.domain.linux.LinuxLaunchSpec
 import com.promenar.nexara.domain.linux.LinuxProcessLaunch
 import java.io.File
+import java.io.IOException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 
 /** 调用方在 IO 线程准备目录；参数逐项传递，不经过宿主 shell 拼接。 */
 class LinuxLaunchBuilder(
@@ -46,6 +51,8 @@ class LinuxLaunchBuilder(
             "PROOT_LOADER" to proot.loader.path, "PROOT_TMP_DIR" to tmp.path,
             "HOME" to "/root", "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "LANG" to "C.UTF-8", "TERM" to "xterm-256color", "PIP_BREAK_SYSTEM_PACKAGES" to "1",
+            // 与默认登录 shell 一致；脚本和编辑器据此启动子 shell。
+            "SHELL" to shell,
         )
         if (spec.workspace != null) environment["NEXARA_WORKSPACE"] = "/workspace"
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
@@ -102,10 +109,18 @@ internal object LinuxRootfsFiles {
         }
     }
 
+    /** guest 进程可能正在增删文件；统计时消失或不可读的条目按 0 计，不让整次统计失败。 */
     fun size(file: File): Long {
         if (!Files.exists(file.toPath(), NOFOLLOW_LINKS)) return 0
-        return Files.walk(file.toPath()).use { stream ->
-            stream.filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }.mapToLong { Files.size(it) }.sum()
-        }
+        var total = 0L
+        Files.walkFileTree(file.toPath(), object : SimpleFileVisitor<Path>() {
+            override fun visitFile(path: Path, attributes: BasicFileAttributes): FileVisitResult {
+                if (attributes.isRegularFile) total += attributes.size()
+                return FileVisitResult.CONTINUE
+            }
+            override fun visitFileFailed(path: Path, error: IOException) = FileVisitResult.CONTINUE
+            override fun postVisitDirectory(directory: Path, error: IOException?) = FileVisitResult.CONTINUE
+        })
+        return total
     }
 }
