@@ -32,17 +32,17 @@ class FilePatchSkill(
 ) : SkillDefinition {
     override val id = "patch_file"
     override val name = "patch_file"
-    override val description = "按行号编辑文件，行号以 read_file 输出前缀为准（1-based）。支持 replace_lines、insert_after（afterLine=0 表示插到开头）、delete_lines；建议为替换/删除提供 expectedContent 校验原文。用 uuid 或 path 指定文件，带乐观锁冲突检测。"
+    override val description = "按行号编辑文件，行号以 read_file 输出前缀为准（1-based）。支持 replace_lines、insert_after（afterLine=0 表示插到开头）、delete_lines；建议为替换/删除提供 expectedContent 校验原文。用 uuid 或 path 指定文件，带乐观锁冲突检测。" + " " + WORKSPACE_VERSION_REQUIREMENT
     override val mcpServerId: String? = null
     override val risk = ToolRisk.PATCH
-    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"path":{"type":"string","description":"文件路径"},"expectedHash":{"type":"string","description":"乐观锁基础版本hash"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"},"expectedContent":{"type":"string","description":"替换或删除范围的精确原文上下文"}},"required":["action"]}}},"required":["expectedHash","operations"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"path":{"type":"string","description":"文件路径"},"expectedHash":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"expected_sha256":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"},"expectedContent":{"type":"string","description":"替换或删除范围的精确原文上下文"}},"required":["action"]}}},"required":["operations"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
         if (resolveError != null) return resolveError
         val uuid = resolvedUuid!!
-        val expectedHash = args.stringArgument("expectedHash")
-            ?: return ToolResult("err", "缺少 expectedHash", "error")
+        workspaceVersionError(id, args)?.let { return it }
+        val expectedHash = workspaceExpectedHash(args)!!
 
         val operationsRaw = args.arrayArgument("operations")
         if (operationsRaw == null) {

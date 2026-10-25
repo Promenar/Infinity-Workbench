@@ -9,14 +9,14 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-private const val STATE_VALUE_SCHEMA = """{"description":"text 为字符串；number 为数值；meter 为 {current:数值,max:正数}；list 为字符串数组"}"""
+private const val STATE_VALUE_SCHEMA = """{"description":"text 为字符串；number 为数值；meter 为 {current:数值,max:正数}；list 为字符串数组，也接受非空字符串并作为单项列表，每项最多200字、总计最多50项"}"""
 
 class StateDefineSkill(repo: StateBoardRepository) : StateBoardSkill(repo, "state_define",
     "定义状态面板，跟踪游戏状态或写作进度。title 最多80字，fields 1～20项，key 以字母开头、最多40字且唯一；label 最多40字。重定义保留同 key 现值，可增删、改名、排序；同 key 不可改类型。新字段省略 value 时使用空值，meter 默认0/100。text 最多2000字，list 最多50项且每项200字；数值有限且绝对值不超过10^12。",
     """{"type":"object","properties":{"title":{"type":"string"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","meter","list"]},"value":$STATE_VALUE_SCHEMA,"unit":{"type":"string","description":"number/meter 可选单位，最多16字"}},"required":["key","label","type"],"additionalProperties":false}}},"required":["title","fields"],"additionalProperties":false}""")
 
 class StateUpdateSkill(repo: StateBoardRepository) : StateBoardSkill(repo, "state_update",
-    "原子批量更新状态面板，一次1～50项。set 设置完整 value；increment 对 number 或 meter.current 加上 value（负数为减少）；append/remove 对 list 追加/移除 value 字符串数组；clear 清空（meter 保留 max）。所有操作合法才写入，返回前后值。剧情或进度改变字段时先更新再回复。",
+    "原子批量更新状态面板，一次1～50项。set 设置完整 value；increment 对 number 或 meter.current 加上 value（负数为减少）；list 的 set/append/remove 接受字符串数组或作为单项列表的非空字符串，每项最多200字、总计最多50项；append/remove 追加/移除列表项；clear 清空（meter 保留 max）。所有操作合法才写入，返回前后值。剧情或进度改变字段时先更新再回复。",
     """{"type":"object","properties":{"operations":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"op":{"type":"string","enum":["set","increment","append","remove","clear"]},"value":$STATE_VALUE_SCHEMA},"required":["key","op"],"additionalProperties":false}}},"required":["operations"],"additionalProperties":false}""")
 
 class StateGetSkill(repo: StateBoardRepository) : StateBoardSkill(repo, "state_get", "读取当前会话完整状态面板及字段 key、类型、现值、单位和更新时间。", """{"type":"object","properties":{},"additionalProperties":false}""")

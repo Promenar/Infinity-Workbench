@@ -19,6 +19,20 @@ import org.junit.jupiter.api.Test
 class ScriptHttpClientTest {
     private fun args(url: String) = buildJsonObject { put("url", url) }
 
+    @Test fun `重复响应头保留全部值并以逗号合并且不暴露Cookie`() = runBlocking {
+        Fixture { socket ->
+            socket.getOutputStream().apply {
+                write("HTTP/1.1 200 OK\r\nX-Trace: first\r\nx-trace: second\r\nSet-Cookie: private=value\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                flush()
+            }
+        }.use { fixture ->
+            val client = ScriptHttpClient({ setOf("127.0.0.1") }, { true }) { arrayOf(InetAddress.getByName(it)) }
+            val headers = client.fetch(args("http://127.0.0.1:${fixture.port}"), ScriptNetworkBudget())["headers"]!!.jsonObject
+            assertThat(headers.entries.single { it.key.equals("x-trace", true) }.value).isEqualTo(JsonPrimitive("first, second"))
+            assertThat(headers.keys.none { it.equals("set-cookie", true) }).isTrue()
+        }
+    }
+
     @Test fun `真实HTTP读取使用固定DNS且返回状态正文与请求头`() = runBlocking {
         Fixture { socket -> respond(socket, "hello") }.use { fixture ->
             var resolutions = 0

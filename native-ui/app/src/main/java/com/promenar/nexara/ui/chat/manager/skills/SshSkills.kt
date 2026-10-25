@@ -152,11 +152,27 @@ internal fun sshGuidance(code: String): String = when (code.removePrefix("SSH_")
     "INVALID_COMMAND", "INVALID_READ_RANGE", "INVALID_WAIT", "INVALID_SHA256", "INPUT_TOO_LARGE", "WRITE_TOO_LARGE" ->
         "参数不符合工具定义的取值范围，请按工具说明修正后重试。"
     "HOST_NOT_FOUND" -> "主机别名未配置，请只使用用户在设置中创建的主机别名。"
-    "CREDENTIAL_MISSING", "INVALID_PRIVATE_KEY", "INVALID_KEY_PASSPHRASE", "UNSUPPORTED_USER_KEY", "UNSUPPORTED_KEY_FORMAT", "UNSUPPORTED_KEY_CIPHER" ->
+    "CREDENTIAL_MISSING" ->
+        "主机配置缺少当前认证方式所需的凭据，需要用户在设置中补充口令或私钥；不要重试。"
+    "INVALID_PRIVATE_KEY", "INVALID_KEY_PASSPHRASE", "UNSUPPORTED_USER_KEY", "UNSUPPORTED_KEY_FORMAT", "UNSUPPORTED_KEY_CIPHER" ->
         "主机凭据不可用，需要用户在设置中重新配置凭据；不要重试。"
-    "HOST_KEY_UNTRUSTED", "HOST_KEY_CHANGED", "HOST_CONFIGURATION_CHANGED", "HOST_AUTHORIZATION_CHANGED" ->
+    "HOST_KEY_UNTRUSTED" ->
+        "主机指纹尚未确认，需要用户通过可信渠道确认指纹并在设置中信任；不要重试。"
+    "HOST_KEY_CHANGED" ->
+        "主机指纹与已信任值不匹配，需要用户通过可信渠道核对指纹，再在设置中处理；不要重试。"
+    "HOST_CONFIGURATION_CHANGED", "HOST_AUTHORIZATION_CHANGED" ->
         "主机指纹或配置未经确认，需要用户在设置中处理；不要重试。"
-    "AUTH_OR_CONNECTION_FAILED", "CONNECTION_FAILED", "HOST_UNAVAILABLE", "TIMEOUT" ->
+    "CONNECTION_REFUSED" ->
+        "连接被拒绝，目标端口上的 SSH 服务可能未启动；请用户检查 SSH 服务、端口配置及防火墙，服务可用后再重试。"
+    "DNS_FAILED" ->
+        "无法解析主机域名，请检查设置中的地址、DNS 和 tailnet 连接，确认解析恢复后再重试。"
+    "HOST_UNREACHABLE" ->
+        "主机网络不可达，请检查网络、VPN/tailnet 连接和路由，并确认主机在线后再重试。"
+    "TIMEOUT" ->
+        "SSH 连接或文件操作超时，请检查网络、目标 SSH 服务和主机负载；操作结果可能未知，重试写入前先检查远端状态。"
+    "AUTH_REJECTED" ->
+        "SSH 认证被拒绝，需要用户核对设置中的用户名、凭据及远端账号的认证权限；不要重试。"
+    "AUTH_OR_CONNECTION_FAILED", "CONNECTION_FAILED", "HOST_UNAVAILABLE" ->
         "连接或认证失败，请确认主机在线后再重试一次；仍失败时请用户检查设置中的主机配置。"
     "SESSION_NOT_FOUND" -> "会话不存在或已关闭，请先用 ssh_session_open 打开新会话。"
     "SESSION_LIMIT", "CONNECTION_LIMIT", "CLEANUP_BACKLOG_LIMIT" -> "已达到并发上限，请先用 ssh_session_close 关闭不再使用的会话。"

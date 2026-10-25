@@ -39,11 +39,22 @@ class MountedWorkspaceSkill(
     private val captureFileChanges: Boolean = true,
     private val privateReader: PrivateWorkspaceReader = PrivateWorkspaceReader.Default,
 ) : SkillDefinition by original {
-    override val description = original.description + " 支持用户级技能 /skills/... 与 /mnt/<别名>/... 挂载路径；挂载文件使用 expected_sha256（兼容 expectedHash）校验版本。"
+    override val description = original.description + " 支持用户级技能 /skills/... 与 /mnt/<别名>/... 挂载路径。" + when (original.id) {
+        "delete_file" -> " 删除文件时 expectedHash 或 expected_sha256 为可选版本校验，取自 read_file 的 Hash 或 sha256；目录不支持文件版本参数。"
+        "move_file" -> " 涉及挂载路径的来源文件可提供 expectedHash 或 expected_sha256（取自 read_file 的 Hash 或 sha256）校验来源版本；私有工作区移动不校验内容版本。"
+        else -> ""
+    }
     override val parametersSchema: String = run {
         val schema = Json.parseToJsonElement(original.parametersSchema).jsonObject
         val properties = schema["properties"]?.jsonObject.orEmpty().toMutableMap()
-        properties["expected_sha256"] = buildJsonObject { put("type", "string"); put("description", "读取返回的 sha256；与 expectedHash 等价") }
+        if (original.id in setOf("write_file", "patch_file", "delete_file", "move_file")) {
+            val versionDescription = if (original.id in setOf("write_file", "patch_file")) WORKSPACE_VERSION_REQUIREMENT
+                else if (original.id == "delete_file") "删除文件的可选版本校验，取自 read_file 的 Hash 或 sha256；目录不支持文件版本参数"
+                else "涉及挂载路径的来源文件可选版本校验，取自 read_file 的 Hash 或 sha256；私有工作区移动不校验内容版本"
+            for (parameter in listOf("expectedHash", "expected_sha256")) {
+                properties[parameter] = buildJsonObject { put("type", "string"); put("description", versionDescription) }
+            }
+        }
         if (original.id == "delete_file") properties["irreversible"] = buildJsonObject {
             put("type", "boolean"); put("description", "回收区不足时显式永久删除，必须重新 DELETE 审批并显示不可恢复")
         }
@@ -109,6 +120,9 @@ class MountedWorkspaceSkill(
                     val usedAliases = listOfNotNull(sourcePath?.takeIf { sourceMounted }, parentPath?.takeIf { parentMounted }, destinationParent?.takeIf { destinationMounted })
                         .mapNotNull(::aliasOf)
                     if (usedAliases.any { it !in approvedMountIds }) fail("CONFLICT", "批准目标缺少挂载或工作区身份，请重新审批")
+                }
+                if (original.id in setOf("write_file", "patch_file")) {
+                    workspaceVersionError(original.id, routedArgs)?.let { return@bound it }
                 }
                 // 改动摘要只用于界面展示：写入前快照在执行前读取，失败不影响工具本身。
                 val capture = if (!captureFileChanges) null else FileChangeCapture.begin(
@@ -182,12 +196,13 @@ class MountedWorkspaceSkill(
         catch (failure: ExternalFolderException) {
             ToolResult("mount_error", "${failure.code}：${failure.message}", "error")
         } catch (failure: WorkspaceTextPolicyException) { workspaceTextFailureResult(original.id, failure) }
-        catch (_: SecurityException) { workspaceToolError(original.id, "路径或文件夹授权不可用，请检查挂载状态") }
+        catch (failure: SecurityException) { workspaceMutationFailureResult(original.id, failure) }
+        catch (failure: Exception) { workspaceMutationFailureResult(original.id, failure) }
     }
 
     private suspend fun move(context: SkillExecutionContext, source: String, destination: String, expected: String?, sourceMounted: Boolean, destinationMounted: Boolean): ToolResult {
         ExternalFolderPaths.normalize(source); ExternalFolderPaths.normalize(destination)
-        if (destination == source || destination.startsWith(source.trimEnd('/') + "/")) fail("INVALID_PATH", "不能移动到自身或子目录")
+        if (destination != source && destination.startsWith(source.trimEnd('/') + "/")) fail("INVALID_PATH", "不能移动到子目录")
         val privateBackend = PrivateWorkspaceTransferBackend(workspace, context.workspaceRootUuid, indexEvents)
         val bindings = kotlinx.coroutines.currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
             ?: mounts.namespaceBindings(context.sessionId)
@@ -201,6 +216,10 @@ class MountedWorkspaceSkill(
         if (expected != null) {
             val bytes = sourceBackend.read(source, ExternalTreeTransfer.MAX_BYTES)
             if (Sha256Utils.hash(bytes) != expected) fail("CONFLICT", "expected_sha256 与来源不一致")
+        }
+        if (destination == source) {
+            sourceBackend.stat(source) ?: fail("NOT_FOUND", "源条目不存在")
+            return ToolResult("mount_move", "目标路径未变化：$source")
         }
         val backupId = if (sourceMounted) mounts.backupBeforeMove(context.sessionId, source) else null
         ExternalTreeTransfer.move(sourceBackend, source, targetBackend, destination, expected)
@@ -467,6 +486,7 @@ private class FileChangeCapture private constructor(
                         val newName = args.stringArgument("newName")?.trim()?.takeIf(String::isNotEmpty)
                         val destination = (destinationParent ?: source.substringBeforeLast('/').ifEmpty { "/" }).trimEnd('/') +
                             "/" + (newName ?: source.substringAfterLast('/'))
+                        if (destination == source) return null
                         FileChangeCapture(toolId, reader, destination, source, null)
                     }
                     else -> {

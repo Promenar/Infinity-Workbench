@@ -31,6 +31,16 @@ class CanvasSkillsTest {
         override val assistantMessageId = "assistant-message"
     }
 
+    @Test fun `创建与更新的模型可见描述要求窄屏可读和宽表格容器`() = runTest {
+        val store = FileCanvasStore(folder.root, StandardTestDispatcher(testScheduler))
+        for (skill in listOf(CanvasCreateSkill(store), CanvasUpdateSkill(store))) {
+            assertThat(skill.description).contains("320–420 CSS px")
+            assertThat(skill.description).contains("overflow-x: auto")
+            assertThat(skill.description).contains("换行")
+            assertThat(skill.description).contains("不要使用超过容器的固定宽度")
+        }
+    }
+
     @Test fun `工作区失败工具仍成功并返回警告路径恢复后读取导入修改`() = runTest {
         var fail = true
         val content = mutableMapOf<String, ByteArray>()

@@ -30,6 +30,6 @@ class DefaultSkillRegistry : SkillRegistry {
             skills.values.filter { it.id in resolvedAllowedIds }
         }
         
-        return filteredSkills.map(SkillDefinition::toProtocolTool)
+        return filteredSkills.filter { it.isAvailable }.map(SkillDefinition::toProtocolTool)
     }
 }

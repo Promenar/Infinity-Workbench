@@ -45,6 +45,7 @@ class ImageGenerationSkill(
         "Use this when the user asks to create, draw, or generate an image, illustration, or artwork. " +
         "Provide a detailed prompt describing the desired image content, style, composition, and mood."
     override val mcpServerId: String? = null
+    override val isAvailable: Boolean get() = providerManager.imageModelId.value.isNotBlank()
     override val risk = ToolRisk.EXTERNAL_WRITE
 
     override val parametersSchema = """

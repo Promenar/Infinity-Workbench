@@ -58,6 +58,32 @@ class StateBoardIntegrationTest {
         assertThat(StateRemoveSkill(repo).execute(args("{}"), context).status).isEqualTo("success")
         assertThat(args(StateGetSkill(repo).execute(args("{}"), context).content)["board"]).isEqualTo(JsonNull)
     }
+    @Test fun `列表工具接受单字符串并按数组持久化且空串不写入`() = runBlocking {
+        val defined = StateDefineSkill(repo).execute(args("""{"title":"背包","fields":[{"key":"bag","label":"背包","type":"list","value":"绳子"}]}"""), context)
+        assertThat(defined.status).isEqualTo("success")
+        val updated = StateUpdateSkill(repo).execute(args("""{"operations":[{"key":"bag","op":"set","value":"火把"},{"key":"bag","op":"append","value":"绳子"},{"key":"bag","op":"remove","value":"火把"}]}"""), context)
+        assertThat(updated.status).isEqualTo("success")
+        assertThat(repo.get("s")!!.board!!.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+        val revision = repo.get("s")!!.revision
+        val invalid = StateUpdateSkill(repo).execute(args("""{"operations":[{"key":"bag","op":"set","value":""}]}"""), context)
+        assertThat(invalid.status).isEqualTo("error")
+        assertThat(repo.get("s")!!.revision).isEqualTo(revision)
+        assertThat(repo.get("s")!!.board!!.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+    }
+    @Test fun `列表工具参数说明同时声明字符串数组和非空单字符串`() {
+        val define = StateDefineSkill(repo)
+        val update = StateUpdateSkill(repo)
+        val defineValue = args(define.parametersSchema).getValue("properties").jsonObject
+            .getValue("fields").jsonObject.getValue("items").jsonObject
+            .getValue("properties").jsonObject.getValue("value").jsonObject
+        val updateValue = args(update.parametersSchema).getValue("properties").jsonObject
+            .getValue("operations").jsonObject.getValue("items").jsonObject
+            .getValue("properties").jsonObject.getValue("value").jsonObject
+        for (description in listOf(defineValue, updateValue).map { it.getValue("description").jsonPrimitive.content } + update.description) {
+            assertThat(description).contains("字符串数组")
+            assertThat(description).contains("非空字符串")
+        }
+    }
     @Test fun `工具错误参数上限与缺少助手身份均返回可操作错误且不写入`() = runBlocking {
         val tool = StateDefineSkill(repo)
         for (raw in listOf("{}", """{"title":1,"fields":[]}""", """{"title":"x","fields":[{"key":"hp","label":"hp","type":"unknown"}]}""", """{"title":"x","fields":[1]}""")) {

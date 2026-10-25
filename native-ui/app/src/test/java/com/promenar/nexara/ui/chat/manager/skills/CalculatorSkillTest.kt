@@ -4,6 +4,9 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -61,6 +64,97 @@ class CalculatorSkillTest {
         val result = skill.execute(skillArgs("expression" to "2^3^2"), ctx)
         // 3^2=9, 2^9=512
         assertThat(result.content).isEqualTo("512.0")
+    }
+
+    @Test
+    fun `双星号与混合幂运算均按右结合求值`() = runTest {
+        for (expression in listOf("2**3**2", "2^3**2", "2**3^2")) {
+            val result = skill.execute(skillArgs("expression" to expression), ctx)
+            assertThat(result.status).isEqualTo("success")
+            assertThat(result.content).isEqualTo("512.0")
+        }
+        val fractional = skill.execute(skillArgs("expression" to "2**0.5"), ctx)
+        assertThat(fractional.status).isEqualTo("success")
+        assertThat(fractional.content.toDouble()).isWithin(1e-12).of(1.4142135623730951)
+    }
+
+    @Test
+    fun `常用函数与Math前缀返回相同数学结果`() = runTest {
+        val expressions = mapOf(
+            "sqrt(9)" to 3.0,
+            "abs(-2)" to 2.0,
+            "pow(2, 3)" to 8.0,
+            "min(3, -1, 4)" to -1.0,
+            "max(3, -1, 4)" to 4.0,
+            "round(1.5)" to 2.0,
+            "round(-1.5)" to -1.0,
+            "floor(-1.2)" to -2.0,
+            "ceil(-1.2)" to -1.0,
+            "log(E)" to 1.0,
+            "ln(E)" to 1.0,
+            "log10(100)" to 2.0,
+            "sin(PI/2)" to 1.0,
+            "cos(PI)" to -1.0,
+            "tan(PI/4)" to 1.0,
+        )
+        expressions.forEach { (expression, expected) ->
+            for (candidate in listOf(expression, "Math.$expression")) {
+                val result = skill.execute(skillArgs("expression" to candidate), ctx)
+                assertThat(result.status).isEqualTo("success")
+                assertThat(result.content.toDouble()).isWithin(1e-12).of(expected)
+            }
+        }
+    }
+
+    @Test
+    fun `round在半值临界两侧不因浮点加法提前进位`() = runTest {
+        for ((expression, expected) in mapOf(
+            "round(0.49999999999999994)" to 0.0,
+            "Math.round(0.49999999999999994)" to 0.0,
+            "round(0.5000000000000001)" to 1.0,
+            "round(-0.5000000000000001)" to -1.0,
+            "round(-1.5000000000000002)" to -2.0,
+        )) {
+            val result = skill.execute(skillArgs("expression" to expression), ctx)
+            assertThat(result.status).isEqualTo("success")
+            assertThat(result.content.toDouble()).isEqualTo(expected)
+        }
+    }
+
+    @Test
+    fun `常量与嵌套Math函数支持真机复现表达式`() = runTest {
+        for ((expression, expected) in mapOf(
+            "PI" to 3.141592653589793,
+            "Math.PI" to 3.141592653589793,
+            "E" to 2.718281828459045,
+            "Math.E" to 2.718281828459045,
+            "(2**10)/7 + Math.sqrt(2)*1000" to 1560.4992766588095,
+            "Math.max(Math.sqrt(9), Math.pow(2, 3))" to 8.0,
+        )) {
+            val result = skill.execute(skillArgs("expression" to expression), ctx)
+            assertThat(result.status).isEqualTo("success")
+            assertThat(result.content.toDouble()).isWithin(1e-10).of(expected)
+        }
+    }
+
+    @Test
+    fun `模型可见中文语法说明包含运算函数常量与限制`() {
+        assertThat(skill.description).contains("表达式")
+        listOf("+", "-", "*", "/", "%", "^", "**", "右结合", "sqrt", "abs", "pow", "min", "max", "round", "floor", "ceil", "log", "ln", "log10", "sin", "cos", "tan", "PI", "E", "Math.", "自然对数", "弧度", "不支持").forEach {
+            assertThat(skill.description).contains(it)
+        }
+        val expressionDescription = Json.parseToJsonElement(skill.parametersSchema).jsonObject
+            .getValue("properties").jsonObject.getValue("expression").jsonObject
+            .getValue("description").jsonPrimitive.content
+        assertThat(expressionDescription).contains("表达式")
+    }
+
+    @Test
+    fun `无效函数调用和尾随语法必须拒绝而非部分求值`() = runTest {
+        for (expression in listOf("unknown(2)", "Math.random()", "sqrt()", "sqrt(1, 2)", "pow(2)", "min()", "max()", "PI(2)", "2(3)", "2 3", "(2+3", "2+3)", "sqrt(4", "pow(2,)", "2,3", "Math.PI.value")) {
+            val result = skill.execute(skillArgs("expression" to expression), ctx)
+            assertThat(result.status).isEqualTo("error")
+        }
     }
 
     // ── 运算符优先级 ──
@@ -177,7 +271,7 @@ class CalculatorSkillTest {
 
     @Test
     fun `invalid character returns error`() = runTest {
-        val result = skill.execute(skillArgs("expression" to "2+sin(3)"), ctx)
+        val result = skill.execute(skillArgs("expression" to "2+@"), ctx)
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("Unexpected character")
     }
@@ -197,9 +291,6 @@ class CalculatorSkillTest {
     @Test
     fun `mismatched parentheses`() = runTest {
         val result = skill.execute(skillArgs("expression" to "(2+3"), ctx)
-        // parseUnary 在遇到 "(" 内部解析后不要求必须匹配 ")", 可能不报错
-        // 这是解析器的已知局限——不做严格的括号配检查
-        // 不报错时返回成功结果
-        assertThat(result.status).isAnyOf("success", "error")
+        assertThat(result.status).isEqualTo("error")
     }
 }

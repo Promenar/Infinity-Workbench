@@ -121,6 +121,37 @@ class QuickJsScriptEngine : ScriptEngine {
               const encode = JSON.stringify, decode = JSON.parse;
               const host = globalThis.__nexaraHost;
               const call = async (op, args) => decode(await host(op, encode(args)));
+              const responseHeaders = raw => {
+                const original = encode(raw), values = Object.create(null);
+                for (const [key, value] of Object.entries(raw)) {
+                  const name = key.toLowerCase(), text = Array.isArray(value) ? value.join(', ') : String(value);
+                  values[name] = Object.prototype.hasOwnProperty.call(values, name) ? values[name] + ', ' + text : text;
+                }
+                const names = Object.keys(values).sort(), headers = Object.assign(Object.create(null), raw);
+                for (const name of names) Object.defineProperty(headers, name, {
+                  value: values[name], enumerable: Object.prototype.hasOwnProperty.call(raw, name), configurable: true
+                });
+                const entries = function*() { for (const name of names) yield [name, values[name]]; };
+                const method = value => ({value, enumerable:false});
+                const headerName = (value, count) => {
+                  if (count === 0) throw TypeError('缺少响应头名称');
+                  const name = String(value);
+                  if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) throw TypeError('响应头名称无效');
+                  return name.toLowerCase();
+                };
+                Object.defineProperties(headers, {
+                  get: method(function(name) { return values[headerName(name, arguments.length)] ?? null; }),
+                  has: method(function(name) { return Object.prototype.hasOwnProperty.call(values, headerName(name, arguments.length)); }),
+                  keys: method(() => names[Symbol.iterator]()),
+                  values: method(function*() { for (const name of names) yield values[name]; }),
+                  entries: method(entries),
+                  forEach: method((callback, thisArg) => { for (const name of names) callback.call(thisArg, values[name], name, headers); }),
+                  // 保留原始响应头的 JSON 形状，副本避免调用方改写快照。
+                  toJSON: method(() => decode(original)),
+                  [Symbol.iterator]: method(entries)
+                });
+                return Object.freeze(headers);
+              };
               globalThis.__nexaraEncode = async value => {
                 const encoded = encode(await value) ?? 'null';
                 if (encoded.length > ${ScriptLimits.OUTPUT_BYTES}) throw Error('NEXARA_OUTPUT_LIMIT');
@@ -132,7 +163,7 @@ class QuickJsScriptEngine : ScriptEngine {
               }])));
               globalThis.fetch = async (url, options = {}) => {
                 const r = await call('fetch', {url:String(url), ...options});
-                return Object.freeze({url:r.url,status:r.status,ok:r.status>=200&&r.status<300,headers:r.headers,
+                return Object.freeze({url:r.url,status:r.status,ok:r.status>=200&&r.status<300,headers:responseHeaders(r.headers),
                   text:async()=>r.body,json:async()=>decode(r.body)});
               };
               globalThis.fs = Object.freeze({

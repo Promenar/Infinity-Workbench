@@ -47,7 +47,7 @@ object StateBoardEngine {
             require(field.unit == null || field.unit.length <= 16 && field.type in setOf("number", "meter")) { "${field.key} 的单位仅用于 number/meter，最多 16 字。" }
             val existing = old[field.key]
             require(existing == null || existing.type == field.type) { "${field.key} 已为 ${existing?.type} 类型；改变类型请使用新的 key。" }
-            val value = existing?.value ?: field.value.takeUnless { it == JsonNull } ?: defaultValue(field.type)
+            val value = normalizeValue(field.type, existing?.value ?: field.value.takeUnless { it == JsonNull } ?: defaultValue(field.type))
             validateValue(field.type, value)
             field.copy(value = value, updatedAt = existing?.updatedAt ?: now)
         }
@@ -63,7 +63,7 @@ object StateBoardEngine {
             require(index >= 0) { "字段 ${operation.key.take(40)} 不存在；先用 state_get 读取有效 key。" }
             val field = fields[index]
             val value = when (operation.op) {
-                "set" -> operation.value
+                "set" -> normalizeValue(field.type, operation.value)
                 "increment" -> {
                     val delta = numeric(operation.value)
                     when (field.type) {
@@ -74,9 +74,9 @@ object StateBoardEngine {
                 }
                 "append", "remove" -> {
                     require(field.type == "list") { "${field.key} 仅 list 支持 ${operation.op}。" }
-                    validateValue("list", operation.value)
-                    val items = operation.value.jsonArray
-                    JsonArray(if (operation.op == "append") field.value.jsonArray + items else field.value.jsonArray.filterNot { it in items })
+                    val items = normalizeValue("list", operation.value)
+                    validateValue("list", items)
+                    JsonArray(if (operation.op == "append") field.value.jsonArray + items.jsonArray else field.value.jsonArray.filterNot { it in items.jsonArray })
                 }
                 "clear" -> if (field.type == "meter") JsonObject(field.value.jsonObject + ("current" to JsonPrimitive(0))) else defaultValue(field.type)
                 else -> throw IllegalArgumentException("op 仅支持 set、increment、append、remove、clear。")
@@ -102,10 +102,16 @@ object StateBoardEngine {
                 val max = numeric(value.getValue("max"))
                 require(max > 0 && current in 0.0..max) { "meter 需满足 0 ≤ current ≤ max，max > 0。" }
             }
-            "list" -> require(value is JsonArray && value.size <= MAX_ITEMS && value.all { it is JsonPrimitive && it.isString && it.content.isNotBlank() && it.content.length <= MAX_ITEM_TEXT }) { "list 的 value 必须是最多 $MAX_ITEMS 项的字符串数组，每项 1～$MAX_ITEM_TEXT 字。" }
+            "list" -> {
+                val items = normalizeValue(type, value)
+                require(items is JsonArray && items.size <= MAX_ITEMS && items.all { it is JsonPrimitive && it.isString && it.content.isNotBlank() && it.content.length <= MAX_ITEM_TEXT }) { "list 的 value 必须是非空字符串或最多 $MAX_ITEMS 项的字符串数组，每项 1～$MAX_ITEM_TEXT 字。" }
+            }
             else -> throw IllegalArgumentException("type 仅支持 text、number、meter、list。")
         }
     }
+
+    private fun normalizeValue(type: String, value: JsonElement): JsonElement =
+        if (type == "list" && value is JsonPrimitive && value.isString) JsonArray(listOf(value)) else value
 
     private fun numberValue(value: Double): JsonElement {
         require(value.isFinite()) { "运算结果必须是有限数值。" }

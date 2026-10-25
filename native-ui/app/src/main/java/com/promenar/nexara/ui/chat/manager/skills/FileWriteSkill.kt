@@ -23,10 +23,10 @@ class FileWriteSkill(
 ) : SkillDefinition {
     override val id = "write_file"
     override val name = "write_file"
-    override val description = "全量覆盖一个已存在的工作区文件（新建文件请用 create_file）。用 uuid 或 path 指定文件；expectedHash 取自 read_file 或 list_files 返回的 hash，用于乐观锁冲突检测。"
+    override val description = "全量覆盖一个已存在的工作区文件（新建文件请用 create_file）。用 uuid 或 path 指定文件；expectedHash 取自 read_file 或 list_files 返回的 hash，用于乐观锁冲突检测。" + " " + WORKSPACE_VERSION_REQUIREMENT
     override val mcpServerId: String? = null
     override val risk = ToolRisk.FILE_WRITE
-    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"path":{"type":"string","description":"目标文件路径，如 /docs/a.md"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"文件的当前hash(乐观锁)"}},"required":["content","expectedHash"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"path":{"type":"string","description":"目标文件路径，如 /docs/a.md"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"expected_sha256":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"}},"required":["content"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
@@ -34,8 +34,8 @@ class FileWriteSkill(
         val uuid = resolvedUuid!!
         val content = args.stringArgument("content")
             ?: return ToolResult("err", "缺少 content", "error")
-        val expectedHash = args.stringArgument("expectedHash")
-            ?: return ToolResult("err", "缺少 expectedHash", "error")
+        workspaceVersionError(id, args)?.let { return it }
+        val expectedHash = workspaceExpectedHash(args)!!
 
         val result = try {
             fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)

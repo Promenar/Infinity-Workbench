@@ -80,6 +80,44 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `Android权限与原生移动errno返回具体原因且不回显路径`() {
+        val errors = listOf(
+            android.system.ErrnoException("/private/hidden/open", 13) to "权限不足",
+            android.system.ErrnoException("/private/hidden/open", 2) to "条目不存在",
+            java.io.IOException("不覆盖移动失败(errno=13)，未降低文件身份保证") to "权限不足",
+            java.io.IOException("不覆盖移动失败(errno=18)，未降低文件身份保证") to "跨文件系统",
+            java.io.IOException("同步移动源目录失败(errno=13)，未降低文件身份保证") to "IOException",
+            java.io.IOException("不覆盖移动失败(errno=13)，未降低文件身份保证 /private/hidden") to "IOException",
+        )
+        for ((failure, reason) in errors) {
+            val result = com.promenar.nexara.ui.chat.manager.skills.workspaceMutationFailureResult("move_file", failure)
+            assertThat(result.status).isEqualTo("error")
+            com.google.common.truth.Truth.assertWithMessage("异常类型=${failure.javaClass.simpleName}")
+                .that(result.content).contains(reason)
+            assertThat(result.content).doesNotContain("/private/hidden")
+        }
+    }
+
+    @Test
+    fun `同父目录移动不执行物理移动且保留条目时间戳`() = runBlocking<Unit> {
+        insertSession("same-parent", rootA.absolutePath)
+        val delegate = TestWorkspaceFileOps()
+        var moves = 0
+        repo = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(), fileOps = object : WorkspaceFileOps by delegate {
+            override fun move(root: java.nio.file.Path, source: List<String>, target: List<String>): WorkspaceFileRollback {
+                moves++
+                return delegate.move(root, source, target)
+            }
+        })
+        val root = repo.ensureSessionRoot("same-parent")
+        val file = repo.createFileInWorkspace(root.uuid, "same-file", "a.txt", "content", root.uuid, "/a.txt")
+        repo.updateParent(root.uuid, file.uuid, root.uuid)
+        assertThat(moves).isEqualTo(0)
+        assertThat(repo.getByUuid(root.uuid, file.uuid)).isEqualTo(file)
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("content")
+    }
+
+    @Test
     fun `带哈希回收核验真实内容并在版本冲突时保留文件`() = runBlocking<Unit> {
         insertSession("hash-delete", rootA.absolutePath)
         val root = repo.ensureSessionRoot("hash-delete")

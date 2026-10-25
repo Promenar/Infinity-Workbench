@@ -51,12 +51,8 @@ private suspend fun <T> mutationFailure(operation: String, block: suspend () -> 
     block() to null
 } catch (cancelled: CancellationException) {
     throw cancelled
-} catch (_: SecurityException) {
-    null to workspaceToolError(operation, "操作被工作区安全策略拒绝（名称、路径或目标不合法）")
-} catch (failure: IllegalStateException) {
-    null to workspaceToolError(operation, failure.message?.take(200) ?: "工作区状态冲突")
-} catch (_: Exception) {
-    null to workspaceToolError(operation, "工作区操作失败")
+} catch (failure: Exception) {
+    null to workspaceMutationFailureResult(operation, failure)
 }
 
 class CreateFileSkill(
@@ -176,10 +172,12 @@ class MoveFileSkill(
             ) {
                 return workspaceToolError(id, "不能把目录移动到自身或其子目录中")
             }
-            val (_, moveError) = mutationFailure(id) {
-                workspaceRepo.updateParent(context.workspaceRootUuid, target.uuid, parent.uuid)
+            if (parent.uuid != target.parentUuid) {
+                val (_, moveError) = mutationFailure(id) {
+                    workspaceRepo.updateParent(context.workspaceRootUuid, target.uuid, parent.uuid)
+                }
+                if (moveError != null) return moveError
             }
-            if (moveError != null) return moveError
         }
         if (newName != null && newName != target.name) {
             val (renamed, renameError) = mutationFailure(id) {

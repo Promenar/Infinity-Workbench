@@ -598,15 +598,21 @@ class SshRuntime(
                     val credential = store.credential(host) ?: throw SshFailure("CREDENTIAL_MISSING")
                     try {
                         when (host.authType) {
-                            SshAuthType.PASSWORD -> { session.setConfig("PreferredAuthentications", "password"); session.setPassword(credential.password) }
+                            SshAuthType.PASSWORD -> {
+                                if (credential.password.isEmpty()) throw SshFailure("CREDENTIAL_MISSING")
+                                session.setConfig("PreferredAuthentications", "password"); session.setPassword(credential.password)
+                            }
                             SshAuthType.KEY -> {
+                                if (credential.privateKey.isEmpty()) throw SshFailure("CREDENTIAL_MISSING")
                                 session.setConfig("PreferredAuthentications", "publickey")
                                 SshPolicy.validatePrivateKey(credential.privateKey)
                                 client.addIdentity("nexara", credential.privateKey, null, credential.passphrase)
                             }
                         }
                         try { session.connect(CONNECT_TIMEOUT)
-                        } catch (_: Exception) { throw SshFailure(verifier.rejection ?: "AUTH_OR_CONNECTION_FAILED") }
+                        } catch (failure: Exception) {
+                            throw classifySshFailure(failure, verifier.rejection, "AUTH_OR_CONNECTION_FAILED")
+                        }
                         outputFilter = SshOutputFilter(credential)
                     } finally { credential.close(); session.setPassword(null as ByteArray?); client.removeAllIdentity() }
                 }
@@ -689,7 +695,7 @@ class SshRuntime(
             } catch (cancelled: CancellationException) {
                 if (continuation.isActive) continuation.resumeWithException(cancelled)
             } catch (failure: Exception) {
-                if (continuation.isActive) continuation.resumeWithException(failure as? SshFailure ?: SshFailure("SSH_IO_FAILED"))
+                if (continuation.isActive) continuation.resumeWithException(classifySshFailure(failure))
             }
         }
         worker.invokeOnCompletion { if (worker.isCancelled) continuation.cancel(CancellationException("SSH_CANCELLED")) }

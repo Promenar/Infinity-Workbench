@@ -789,6 +789,7 @@ class WorkspaceRepository(
                 throw SecurityException("不允许形成循环目录关系")
             }
             val newPath = joinMaterializedPath(parent.materializedPath, entry.name)
+            if (newPath == entry.materializedPath) return@withRootMutation
             requireMoveTargetAbsent(entry, newPath)
             val now = System.currentTimeMillis()
             val oldPrefix = entry.materializedPath

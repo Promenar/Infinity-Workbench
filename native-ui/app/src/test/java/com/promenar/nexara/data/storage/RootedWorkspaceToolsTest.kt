@@ -79,6 +79,35 @@ class RootedWorkspaceToolsTest {
     private fun args(json: String) = Json.parseToJsonElement(json).jsonObject
     private fun hash(file: File) = Sha256Utils.hash(file.readBytes())
 
+    @Test fun `自选目录与挂载同目录无操作不改动且同目录跨目录改名均成功`() = runBlocking<Unit> {
+        for (base in listOf("", "/mnt/termux")) {
+            val create = skill(CreateFileSkill(workspace, files))
+            assertThat(create.execute(args("""{"parentPath":"${base.ifEmpty { "/" }}","name":"a.txt","content":"content"}"""), execution).status).isEqualTo("success")
+            val move = skill(MoveFileSkill(workspace, FileIndexEventSink.None))
+            val path = "$base/a.txt"
+            val recycleCount = manager.recycleItems("session").size
+            val before = manager.entry("session", path)!!
+            for (name in listOf("", ",\"newName\":\"a.txt\"")) {
+                val result = move.execute(args("""{"path":"$path","newParentPath":"${base.ifEmpty { "/" }}"$name}"""), execution)
+                assertThat(result.status).isEqualTo("success")
+                assertThat(result.fileChanges.orEmpty()).isEmpty()
+            }
+            assertThat(manager.entry("session", path)!!.updatedAt).isEqualTo(before.updatedAt)
+            assertThat(manager.recycleItems("session").size).isEqualTo(recycleCount)
+            assertThat(move.execute(args("""{"path":"$path","newParentPath":"${base.ifEmpty { "/" }}","newName":"b.txt"}"""), execution).status).isEqualTo("success")
+            assertThat(String(manager.read("session", "$base/b.txt", 1024))).isEqualTo("content")
+            assertThat(skill(CreateDirectorySkill(workspace)).execute(args("""{"parentPath":"${base.ifEmpty { "/" }}","name":"target"}"""), execution).status).isEqualTo("success")
+            assertThat(move.execute(args("""{"path":"$base/b.txt","newParentPath":"$base/target","newName":"c.txt"}"""), execution).status).isEqualTo("success")
+            assertThat(String(manager.read("session", "$base/target/c.txt", 1024))).isEqualTo("content")
+            assertThat(create.execute(args("""{"parentPath":"$base/target","name":"occupied.txt","content":"keep"}"""), execution).status).isEqualTo("success")
+            val occupied = move.execute(args("""{"path":"$base/target/c.txt","newParentPath":"$base/target","newName":"occupied.txt"}"""), execution)
+            assertThat(occupied.status).isEqualTo("error")
+            assertThat(String(manager.read("session", "$base/target/c.txt", 1024))).isEqualTo("content")
+            assertThat(String(manager.read("session", "$base/target/occupied.txt", 1024))).isEqualTo("keep")
+
+        }
+    }
+
     @Test fun `十个文件工具在自选目录读写且不触碰私有工作区`() = runBlocking<Unit> {
         File(repo, "mnt").mkdirs()
         val created = skill(CreateFileSkill(workspace, files)).execute(args("""{"name":"a.txt","content":"one\ntwo"}"""), execution)

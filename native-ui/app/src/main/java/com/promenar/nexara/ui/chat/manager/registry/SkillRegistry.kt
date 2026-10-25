@@ -23,6 +23,8 @@ interface SkillDefinition {
     val description: String
     val mcpServerId: String?
     val parametersSchema: String
+    /** 按当前配置决定是否向模型暴露；技能登记与设置列表不受影响。 */
+    val isAvailable: Boolean get() = true
     val risk: ToolRisk get() = ToolRisk.UNKNOWN
     suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult
 }

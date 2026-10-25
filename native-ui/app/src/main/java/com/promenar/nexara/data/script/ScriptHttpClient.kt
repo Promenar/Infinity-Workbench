@@ -92,7 +92,7 @@ class ScriptHttpClient(
                         val responseBytes = buffer.toByteArray()
                         budget.response(responseBytes.size)
                         val responseHeaders = buildJsonObject {
-                            it.headers.names().filterNot { name -> name.equals("Set-Cookie", true) }.take(32).forEach { name -> put(name, it.header(name).orEmpty().take(1024)) }
+                            it.headers.names().filterNot { name -> name.equals("Set-Cookie", true) }.take(32).forEach { name -> put(name, it.headers.values(name).joinToString(", ").take(1024)) }
                         }
                         return@withContext buildJsonObject {
                             put("status", it.code); put("url", url); put("headers", responseHeaders)

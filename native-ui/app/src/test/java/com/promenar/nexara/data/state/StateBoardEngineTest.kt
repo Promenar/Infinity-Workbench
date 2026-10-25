@@ -43,6 +43,47 @@ class StateBoardEngineTest {
         assertThat(result.board.manualKeys).containsExactly("hp", "bag")
         assertThat(StateBoardEngine.update(result.board, listOf(StateOperation("bag", "clear")), 11).board.fields[1].value).isEqualTo(JsonArray(emptyList()))
     }
+    @Test fun `列表初值非空字符串保存为单项数组`() {
+        val initial = board(field("bag", "list", JsonPrimitive("绳子")))
+        assertThat(initial.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+    }
+    @Test fun `列表设值追加移除接受单字符串并返回数组前后值`() {
+        val initial = board(field("bag", "list", JsonArray(listOf(JsonPrimitive("绳子")))))
+        val set = StateBoardEngine.update(initial, listOf(StateOperation("bag", "set", JsonPrimitive("火把"))), 2)
+        assertThat(set.board.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("火把"))))
+        assertThat(set.changes.single().before).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+        assertThat(set.changes.single().after).isEqualTo(JsonArray(listOf(JsonPrimitive("火把"))))
+        val appended = StateBoardEngine.update(set.board, listOf(StateOperation("bag", "append", JsonPrimitive("绳子"))), 3)
+        assertThat(appended.board.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("火把"), JsonPrimitive("绳子"))))
+        val removed = StateBoardEngine.update(appended.board, listOf(StateOperation("bag", "remove", JsonPrimitive("火把"))), 4)
+        assertThat(removed.board.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+    }
+    @Test fun `列表单字符串仍限制非空与单项长度且失败保持原值`() {
+        val initial = board(field("bag", "list", JsonArray(listOf(JsonPrimitive("绳子")))))
+        val longest = "字".repeat(200)
+        val updated = StateBoardEngine.update(initial, listOf(StateOperation("bag", "set", JsonPrimitive(longest))), 2)
+        assertThat(updated.board.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive(longest))))
+        for (invalid in listOf("", " \n\t", "字".repeat(201))) {
+            assertThrows(IllegalArgumentException::class.java) { board(field("bag", "list", JsonPrimitive(invalid))) }
+            for (op in listOf("set", "append", "remove")) {
+                assertThrows(IllegalArgumentException::class.java) {
+                    StateBoardEngine.update(initial, listOf(StateOperation("bag", op, JsonPrimitive(invalid))), 2)
+                }
+            }
+        }
+        assertThat(initial.fields.single().value).isEqualTo(JsonArray(listOf(JsonPrimitive("绳子"))))
+    }
+    @Test fun `列表单字符串追加不能超过五十项并保持整批原子性`() {
+        val initial = board(field(), field("bag", "list", JsonArray(List(50) { JsonPrimitive("item$it") })))
+        assertThrows(IllegalArgumentException::class.java) {
+            StateBoardEngine.update(initial, listOf(
+                StateOperation("hp", "set", number(5)),
+                StateOperation("bag", "append", JsonPrimitive("新物品")),
+            ), 2)
+        }
+        assertThat(initial.fields.first().value).isEqualTo(number(80))
+        assertThat(initial.fields.last().value.jsonArray).hasSize(50)
+    }
     @Test fun `进度条支持增减设值清空并限制范围`() {
         val old = board(field(type = "meter", value = meter(80)))
         val result = StateBoardEngine.update(old, listOf(StateOperation("hp", "increment", number(-15))), 2)
