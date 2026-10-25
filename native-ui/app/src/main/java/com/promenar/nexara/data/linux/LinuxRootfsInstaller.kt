@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.security.MessageDigest
 import java.util.Properties
 
@@ -76,7 +77,10 @@ class LinuxRootfsInstaller(
 
     fun install(force: Boolean = false, preserveConfiguration: Boolean = false): LinuxRootfsRecord {
         recover()
-        if (!force) runCatching { readRecord() }.getOrNull()?.let { return it }
+        if (!force) {
+            runCatching { readRecord() }.getOrNull()?.let { return it }
+            if (Files.exists(paths.rootfs.toPath(), NOFOLLOW_LINKS)) return repairMissingBaseFiles()
+        }
         ensureParent()
         LinuxRootfsFiles.deleteTree(staging)
         val required = metadata.unpackedBytes + STORAGE_MARGIN
@@ -126,6 +130,65 @@ class LinuxRootfsInstaller(
         } finally { LinuxRootfsFiles.deleteTree(staging) }
     }
 
+    /** 只补缺失的内置文件；不覆盖配置、用户目录或 apk 的已装状态。可中断后重复执行。 */
+    fun repairMissingBaseFiles(): LinuxRootfsRecord {
+        recover()
+        ensureParent()
+        val root = paths.rootfs.toPath()
+        if (!Files.isDirectory(root, NOFOLLOW_LINKS)) {
+            throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.ROOTFS_DAMAGED, "Linux 根目录不存在或不是普通目录"))
+        }
+        val repair = File(parent, "alpine.repair")
+        LinuxRootfsFiles.deleteTree(repair)
+        val required = metadata.unpackedBytes + STORAGE_MARGIN
+        if (availableBytes() < required) throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.INSUFFICIENT_STORAGE, messages(LinuxRuntimeMessage.STORAGE_REQUIRED, required)))
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            openAsset().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    interrupted()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            if (hex(digest.digest()) != metadata.sha256) throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.ASSET_CORRUPT, messages(LinuxRuntimeMessage.ASSET_CORRUPT)))
+            try { openAsset().use { extractor.extractGzip(it, repair) } }
+            catch (error: InterruptedException) { throw error }
+            catch (error: Exception) { throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.EXTRACT_FAILED, error.message), error) }
+            require(LinuxRootfsFiles.isGuestFile(repair, File(repair, "bin/sh"))) { messages(LinuxRuntimeMessage.SHELL_MISSING) }
+            Files.walk(repair.toPath()).use { entries ->
+                entries.forEach { source ->
+                    interrupted()
+                    val relative = repair.toPath().relativize(source).toString()
+                    if (relative.isEmpty() || REPAIR_PROTECTED.any { relative == it || relative.startsWith("$it/") }) return@forEach
+                    val base = root.toAbsolutePath().normalize()
+                    val target = SafeTarExtractor.entryPath(base, relative)
+                    SafeTarExtractor.requireNoSymlinks(base, target.parent)
+                    if (!Files.exists(target, NOFOLLOW_LINKS)) {
+                        Files.copy(source, target, NOFOLLOW_LINKS, COPY_ATTRIBUTES)
+                    }
+                }
+            }
+            require(LinuxRootfsFiles.isGuestFile(paths.rootfs, File(paths.rootfs, "bin/sh"))) { messages(LinuxRuntimeMessage.SHELL_MISSING) }
+            val old = runCatching { readProperties() }.getOrNull()
+            val bytes = LinuxRootfsFiles.size(repair) - LinuxRootfsFiles.size(File(repair, "root")) - LinuxRootfsFiles.size(File(repair, "var/cache/apk"))
+            val properties = old ?: Properties()
+            properties.setProperty("version", metadata.version)
+            properties.setProperty("sha256", metadata.sha256)
+            properties.setProperty("baseBytes", bytes.toString())
+            properties.setProperty("installedAtMs", old?.getProperty("installedAtMs")?.toLongOrNull()?.takeIf { it > 0 }?.toString() ?: now().toString())
+            LinuxInstallStep.entries.forEach { properties.remove("step.${it.name}") }
+            properties.setProperty("step.UNPACK", LinuxStepStatus.DONE.name)
+            writeProperties(properties)
+            return validatedRecord()
+        } catch (error: InterruptedException) { throw error }
+        catch (error: LinuxRootfsException) { throw error }
+        catch (error: Exception) { throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.ROOTFS_DAMAGED, error.message), error) }
+        finally { LinuxRootfsFiles.deleteTree(repair) }
+    }
+
     fun completeStep(step: LinuxInstallStep, status: LinuxStepStatus) {
         require(status == LinuxStepStatus.DONE || status == LinuxStepStatus.SKIPPED)
         val properties = readProperties()
@@ -143,7 +206,7 @@ class LinuxRootfsInstaller(
     }
 
     fun createGuestDirectories() {
-        listOf("workspace", "mnt", "root").forEach { Files.createDirectories(LinuxRootfsFiles.safePath(paths.rootfs, it).toPath()) }
+        listOf("workspace", "mnt", "root", "home/session").forEach { Files.createDirectories(LinuxRootfsFiles.safePath(paths.rootfs, it).toPath()) }
     }
 
     fun storageUsage(): LinuxStorageUsage {
@@ -169,7 +232,7 @@ class LinuxRootfsInstaller(
 
     fun uninstall() {
         ensureParent()
-        listOf(paths.rootfs, staging, previous).forEach(LinuxRootfsFiles::deleteTree)
+        listOf(paths.rootfs, staging, previous, File(parent, "alpine.repair")).forEach(LinuxRootfsFiles::deleteTree)
     }
 
     private fun generatedConfiguration(): Map<String, String> {
@@ -217,6 +280,7 @@ class LinuxRootfsInstaller(
         const val STORAGE_MARGIN = 32L * 1024 * 1024
         const val MARKER = ".nexara-rootfs-version"
         val CONFIGURATION = listOf("etc/resolv.conf", "etc/apk/repositories")
+        val REPAIR_PROTECTED = listOf("root", "home", "etc/apk/world", "lib/apk/db", "var/lib/apk", ".nexara-rootfs-version")
         fun interrupted() { if (Thread.currentThread().isInterrupted) throw InterruptedException() }
         fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
         fun hash(text: String) = hex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))

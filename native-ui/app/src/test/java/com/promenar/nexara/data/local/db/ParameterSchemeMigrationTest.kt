@@ -43,7 +43,7 @@ class ParameterSchemeMigrationTest {
                 seed(database, "sessions", mapOf("id" to "broken", "agent_id" to "agent", "title" to "损坏", "inference_params" to "not json"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                .addMigrations(MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                 .allowMainThreadQueries()
                 .build()
             try {
@@ -61,7 +61,7 @@ class ParameterSchemeMigrationTest {
                 room.parameterSchemeDao().upsert(ParameterSchemeEntity("s2", "p::other", "别的模型", "{}", 2, 2))
                 assertThat(room.parameterSchemeDao().observeForModel("p::m").first().map { it.name }).containsExactly("写代码")
                 assertThat(SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use {
-                    it.hasCompleteCurrentRoomSchema(25, NEXARA_SCHEMA_V25_IDENTITY_HASH)
+                    it.hasCompleteCurrentRoomSchema(27, NEXARA_SCHEMA_V27_IDENTITY_HASH)
                 }).isTrue()
             } finally {
                 room.close()

@@ -28,6 +28,8 @@ import java.security.MessageDigest
 class NexaraDatabaseBaselineTest {
     @Test
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V27_IDENTITY_HASH).isEqualTo(exportedSchema(27).identityHash)
+        assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V27_IDENTITY).isEqualTo(exportedSchema(27).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V26_IDENTITY_HASH).isEqualTo(exportedSchema(26).identityHash)
         assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V26_IDENTITY).isEqualTo(exportedSchema(26).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V25_IDENTITY_HASH).isEqualTo(exportedSchema(25).identityHash)
@@ -176,7 +178,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 26): ExportedSchema {
+    private fun exportedSchema(version: Int = 27): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -219,8 +221,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(26)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(26L)
+        assertThat(schema.version).isEqualTo(27)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(27L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(

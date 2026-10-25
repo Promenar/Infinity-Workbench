@@ -42,6 +42,22 @@ class LinuxLaunchTest {
         assertTrue(launch.arguments.contains("${temporary}:/mnt/mnt"))
     }
 
+    @Test fun `会话私有目录每次独立绑定且可以不同于主工作区`() {
+        val workspace = temporary.resolve("project").toFile().apply { mkdirs() }
+        val homes = listOf("chat-a", "chat-b").map { temporary.resolve(it).toFile().apply { mkdirs() } }
+        val launches = homes.map { home -> builder().build(LinuxLaunchSpec(listOf("pwd"), workspace, sessionHome = home)) }
+        launches.forEachIndexed { index, launch ->
+            assertTrue(launch.arguments.contains("${workspace.path}:/workspace"))
+            assertTrue(launch.arguments.contains("${homes[index].path}:/home/session"))
+            assertFalse(launch.arguments.contains("${homes[1 - index].path}:/home/session"))
+        }
+        for (guest in listOf("/home/session", "/home/session/other", "/home/../root")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                builder().build(LinuxLaunchSpec(emptyList(), mounts = listOf(LinuxBind(homes[0], guest))))
+            }
+        }
+    }
+
     @Test fun `白名单环境不继承宿主且用户覆盖最后生效`() {
         val launch = builder().build(LinuxLaunchSpec(emptyList(), environment = mapOf("HOME" to "/root/custom", "HTTPS_PROXY" to "custom")))
         assertEquals("/root/custom", launch.environment["HOME"])
@@ -90,6 +106,15 @@ class LinuxLaunchTest {
         builder().build(LinuxLaunchSpec(emptyList()))
         assertEquals(expected, ignore.readText())
         assertEquals(modified, ignore.lastModified())
+    }
+
+    @Test fun `修复期启动显式禁止维护HOME配置`() {
+        val ignore = File(root, "root/.config/git/ignore").apply { parentFile!!.mkdirs(); writeText("user-only\n") }
+        builder().build(LinuxLaunchSpec(emptyList()), maintainHomeConfiguration = false)
+        assertEquals("user-only\n", ignore.readText())
+        ignore.delete()
+        builder().build(LinuxLaunchSpec(emptyList()), maintainHomeConfiguration = false)
+        assertFalse(ignore.exists())
     }
 
     @Test fun `打包proot必须两个文件均可执行`() {

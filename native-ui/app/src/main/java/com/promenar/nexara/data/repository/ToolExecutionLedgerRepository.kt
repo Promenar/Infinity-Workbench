@@ -199,7 +199,10 @@ object ToolInvocationIdentityFactory {
         if (schema !is ToolSchemaValidation.Valid) {
             return ToolDefinitionDigestResolution.Invalid("工具 schema 无效或包含不支持的关键字")
         }
-        val raw = listOf(
+        if (tool.baseDefinitionDigest?.let { !Regex("[0-9a-f]{64}").matches(it) } == true) {
+            return ToolDefinitionDigestResolution.Invalid("底层工具定义指纹无效")
+        }
+        val raw = (listOf(
             DEFINITION_VERSION,
             runtimeToolId,
             wireName,
@@ -208,7 +211,7 @@ object ToolInvocationIdentityFactory {
             tool.risk.name,
             sourceId,
             tool.mcpServerId.orEmpty(),
-        ).joinToString("\u0000")
+        ) + listOfNotNull(tool.baseDefinitionDigest?.let { "session-source:$it" })).joinToString("\u0000")
         return ToolDefinitionDigestResolution.Valid(
             digest = sha256Hex(raw),
             canonicalSchema = schema.canonicalSchema,

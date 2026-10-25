@@ -82,6 +82,8 @@ data class ProtocolTool(
     @Transient val runtimeToolId: String = "",
     @Transient val sourceId: String = "builtin",
     @Transient val mcpServerId: String? = null,
+    /** 会话说明转换前的底层定义指纹，不发送给模型。 */
+    @Transient val baseDefinitionDigest: String? = null,
 )
 
 @Serializable

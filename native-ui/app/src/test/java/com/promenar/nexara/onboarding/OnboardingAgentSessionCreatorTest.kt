@@ -8,6 +8,25 @@ import org.junit.Test
 
 class OnboardingAgentSessionCreatorTest {
     @Test
+    fun `引导创建后内存态保留仓库确定的运行模式`() = runTest {
+        val store = ChatStore()
+        var persisted: Session? = null
+        createOnboardingAgentSession(
+            modelId = "provider::model",
+            createAgent = { "agent" },
+            newSessionId = { "session" },
+            createSession = { persisted = it.copy(runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX) },
+            loadSession = { persisted },
+            deleteSession = {},
+            deleteAgent = {},
+            chatStore = store,
+            recordCheckpoint = { _, _ -> true },
+        )
+        assertThat(store.getSession("session")!!.runMode)
+            .isEqualTo(com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+    }
+
+    @Test
     fun `Agent 创建失败时仓库和 store 均无残留`() = runTest {
         val agents = mutableSetOf<String>()
         val sessions = mutableMapOf<String, Session>()

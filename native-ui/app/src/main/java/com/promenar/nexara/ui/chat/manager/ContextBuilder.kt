@@ -453,6 +453,7 @@ class ContextBuilder(
         sb.appendLine()
         sb.append(SystemPromptSections.permissions(
             com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode),
+            runMode = session.runMode ?: com.promenar.nexara.domain.model.SessionRunMode.BUILTIN,
         ))
 
         // 3. 工具与工作区运行时契约
@@ -465,6 +466,7 @@ class ContextBuilder(
                 workspaceChanged = session.messages.any { it.isWorkspaceSwitchNotice },
                 workspaceSkillsShadowed = workspaceSkillsShadowed,
                 mounts = params.mounts,
+                runMode = session.runMode ?: com.promenar.nexara.domain.model.SessionRunMode.BUILTIN,
             )
         }
         if (toolGuidance.isNotEmpty()) {

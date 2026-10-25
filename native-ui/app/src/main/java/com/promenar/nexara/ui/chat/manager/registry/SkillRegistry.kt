@@ -45,6 +45,8 @@ fun SkillDefinition.toProtocolTool(): ProtocolTool = ProtocolTool(
 interface SkillExecutionContext {
     val sessionId: String
     val agentId: String
+    /** 该调用准入时的会话模式快照，后端不能把已批准的调用改到其它环境。 */
+    val runMode: com.promenar.nexara.domain.model.SessionRunMode? get() = null
     /** 发起本次工具调用的助手消息，供会话状态版本绑定与会话画布记录来源。 */
     val assistantMessageId: String? get() = null
     val workspacePath: String?

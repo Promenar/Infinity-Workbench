@@ -173,6 +173,8 @@ internal class DefaultChatGenerationRuntime(
     private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
     private val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore? = null,
     private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
+    private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
+    private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
 ) : ChatGenerationRuntime {
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -462,6 +464,10 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
+        runModeCheck?.invoke(request.sessionId)?.let { failure ->
+            handlePreparationFailure(request, failure, null)
+            return GenerationPreparationOutcome.Handled(failure)
+        }
         val reusedRetrieval = cachedRetrieval
         if (reusedRetrieval == null) ui.replaceRagPhases(defaultRagPhases())
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
@@ -826,13 +832,13 @@ internal class DefaultChatGenerationRuntime(
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
-            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }) }
+            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }, linuxFiles) }
         }
         val mode = com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode)
         val requestedPendingIds = calls.filter { call ->
             com.promenar.nexara.domain.tool.ToolExecutionPolicy.requiresApproval(
                 mode, call.name, preparedByName[call.name]?.singleOrNull()?.risk ?: contentStrategy.riskForTool(call.name),
-                call.arguments, targets[call.id],
+                call.arguments, targets[call.id], usesLinux = session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX,
             )
         }.mapTo(mutableSetOf()) { it.id }
         val grantTargets = emptyMap<String, String>()

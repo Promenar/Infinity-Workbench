@@ -46,11 +46,25 @@ class LinuxTerminalSessionsTest {
         val f = fixture()
         val id = f.manager.open(LinuxTerminalLocation.SessionWorkspace("chat"))
         assertThat(f.resolved).containsExactly("chat")
-        assertThat(f.runtime.specs.single()).isEqualTo(LinuxLaunchSpec(emptyList(), File("/workspace-host"), workingDirectory = "/workspace"))
+        assertThat(f.runtime.specs.single()).isEqualTo(LinuxLaunchSpec(emptyList(), File("/workspace-host"), workingDirectory = "/workspace", sessionHome = File("/private-chat")))
         assertThat(f.launches.single()).isEqualTo(f.runtime.launch)
         assertThat(f.manager.sessions.value.single().id).isEqualTo(id)
         assertThat(f.ptys.single().starts).isEqualTo(1)
         assertThat(f.keep.runs.values.single().kind).isEqualTo(ExecRunKind.TERMINAL)
+    }
+
+    @Test fun `会话终端启动和退出均对账且home绑定不受主工作区影响`() = runTest {
+        val f = fixture()
+        f.manager.open(LinuxTerminalLocation.SessionWorkspace("chat"))
+        assertThat(f.reconciled).containsExactly("chat")
+        assertThat(f.runtime.specs.single().sessionHome).isEqualTo(File("/private-chat"))
+        f.ptys.single().finish(0)
+        runCurrent()
+        assertThat(f.reconciled).containsExactly("chat", "chat").inOrder()
+        f.manager.open(LinuxTerminalLocation.Directory("/root"))
+        f.ptys.last().finish(0)
+        runCurrent()
+        assertThat(f.reconciled).hasSize(2)
     }
 
     @Test fun `目录不解析工作区且序号单调递增退出保留直到关闭`() = runTest {
@@ -324,10 +338,12 @@ class LinuxTerminalSessionsTest {
         val ptys = mutableListOf<Pty>()
         val launches = mutableListOf<LinuxProcessLaunch>()
         val resolved = mutableListOf<String>()
+        val reconciled = mutableListOf<String>()
         var workspace: File? = File("/workspace-host")
         var resolveFailure: Exception? = null
         var failStart = false
-        val manager = LinuxTerminalSessionsImpl(runtime, scope.backgroundScope, LinuxHostServices(keep) { id ->
+        val manager = LinuxTerminalSessionsImpl(runtime, scope.backgroundScope, LinuxHostServices(keep,
+            sessionHome = { File("/private-$it") }, reconcileSession = { reconciled += it }) { id ->
             resolved += id
             resolveFailure?.let { throw it }
             workspace

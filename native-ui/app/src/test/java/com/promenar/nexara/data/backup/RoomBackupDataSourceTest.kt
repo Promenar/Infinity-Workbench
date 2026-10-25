@@ -69,6 +69,45 @@ import kotlinx.serialization.json.jsonPrimitive
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
     @Test
+    fun `备份恢复保留固定模式且v6和v7缺字段按旧会话恢复`() = runBlocking {
+        seedCompleteGraph()
+        db.sessionDao().updateRunMode("session-1", "LINUX", 2)
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot))
+        assertThat(db.sessionDao().getById("session-1")!!.runMode).isEqualTo("LINUX")
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        for (version in listOf(6, 7)) {
+            val legacyTables = (if (version == 6) tables - "state_board_versions" else tables) +
+                ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map {
+                    JsonObject(it.jsonObject - "run_mode")
+                }))
+            val historical = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(version),
+                "tables" to JsonObject(legacyTables))).toString().toByteArray()
+            db.clearAllTables()
+            newDataSource().restore(validated(snapshot, database = historical))
+            assertThat(db.sessionDao().getById("session-1")!!.runMode).isNull()
+            assertThat(db.messageDao().getById("message-1")).isNotNull()
+        }
+    }
+
+    @Test
+    fun `v8备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val missingMode = JsonObject(root + ("tables" to JsonObject(tables +
+            ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map {
+                JsonObject(it.jsonObject - "run_mode")
+            }))))).toString().toByteArray()
+        assertThat(runCatching { newDataSource().restore(validated(snapshot, database = missingMode)) }.exceptionOrNull())
+            .isInstanceOf(BackupValidationException::class.java)
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+    }
+
+    @Test
     fun `SSH主机配置和认证材料不进入备份`() = runBlocking {
         seedCompleteGraph()
         db.sshHostDao().insert(com.promenar.nexara.data.local.db.entity.SshHostEntity(
@@ -531,8 +570,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(7)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("7")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(8)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("8")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",

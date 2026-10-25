@@ -9,7 +9,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
-internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；shell 在 Linux 环境就绪且启用时使用 Linux，否则使用系统 sh；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
+internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；shell 使用会话固定运行模式，环境不可用时返回错误；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
 internal fun JsonObject.backgroundRequested() = (this["background"] as? JsonPrimitive)?.booleanOrNull == true
 internal fun backgroundStartJson(record: BackgroundJobRecord): JsonObject = buildJsonObject {
     if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
@@ -35,7 +35,7 @@ internal suspend fun runBackgroundExec(
     val manager=jobs ?: throw JobAccessException("JOB_UNAVAILABLE","后台任务服务不可用，请重新打开应用。")
     val stdin=(args["stdin"] as? JsonPrimitive)?.content
     val record=if(kind==BackgroundJobRunner.TERMUX) manager.startTermux(context.sessionId,context.workspaceRootUuid,source,(args["workdir"] as? JsonPrimitive)?.content?.trim()?.takeUnless{it.isEmpty() || it=="~" || it=="\$HOME"},stdin,minutes,action)
-        else manager.startBuiltin(context.sessionId,context.workspaceRootUuid,kind,source,stdin,minutes,action)
+        else manager.startBuiltin(context.sessionId,context.workspaceRootUuid,kind,source,stdin,minutes,action, expectedMode = context.runMode)
     backgroundStartJson(record)
 }
 internal suspend fun jobToolResult(id:String, body:suspend()->JsonObject):ToolResult = try {

@@ -3,7 +3,7 @@ package com.promenar.nexara.domain.tool
 enum class CommandToolBackend { BUILTIN_SHELL, BUILTIN_PYTHON, LINUX, TERMUX, SSH }
 
 object CommandToolClassification {
-    fun backendFor(toolName: String, usesLinux: Boolean = LinuxExecRouting.agentUsesLinux): CommandToolBackend? = when (toolName) {
+    fun backendFor(toolName: String, usesLinux: Boolean = false): CommandToolBackend? = when (toolName) {
         "shell_exec" -> if (usesLinux) CommandToolBackend.LINUX else CommandToolBackend.BUILTIN_SHELL
         "python_exec" -> CommandToolBackend.BUILTIN_PYTHON
         "termux_exec" -> CommandToolBackend.TERMUX

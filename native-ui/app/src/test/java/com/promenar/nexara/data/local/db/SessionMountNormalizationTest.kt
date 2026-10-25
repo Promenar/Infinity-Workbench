@@ -33,7 +33,7 @@ class SessionMountNormalizationTest {
         }) { room ->
             val dao = room.externalMountDao()
             val all = dao.all()
-            assertThat(room.openHelper.writableDatabase.version).isEqualTo(26)
+            assertThat(room.openHelper.writableDatabase.version).isEqualTo(27)
             assertThat(all).hasSize(6)
             assertThat(all.map { it.id }.distinct()).hasSize(6)
             assertThat(all.map { it.id }).containsNoneOf("global", "global-2")
@@ -114,7 +114,7 @@ class SessionMountNormalizationTest {
         path.parentFile!!.mkdirs()
         try {
             SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
-                val definition = Json.parseToJsonElement(File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/26.json").readText())
+                val definition = Json.parseToJsonElement(File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/27.json").readText())
                     .jsonObject.getValue("database").jsonObject
                 definition.getValue("entities").jsonArray.forEach { raw ->
                     val entity = raw.jsonObject
@@ -125,7 +125,7 @@ class SessionMountNormalizationTest {
                 }
                 definition.getValue("setupQueries").jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
                 seed(db)
-                db.version = 26
+                db.version = 27
             }
             fun open() = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
                 .addCallback(SessionMountNormalizationCallback { throw it }).allowMainThreadQueries().build()

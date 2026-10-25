@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="run_mode_linux_unavailable">This conversation uses Linux mode, but Linux is unavailable. Repair the environment or manually switch the conversation’s run mode.</string>
+    <string name="run_mode_required">Choose a run mode in this conversation first.</string>
+    <string name="run_mode_builtin_tool_blocked">This conversation uses Linux mode. Run Linux commands with shell_exec; do not switch execution environments.</string>
+    <string name="run_mode_install_package">Install the missing package with apk add %1$s (subject to command approval). Do not switch execution environments.</string>
+    <string name="run_mode_search_package">Use apk search to find a package, then install it with apk add (subject to command approval). Do not switch execution environments.</string>
+    <string name="run_mode_changed">The conversation’s run mode changed. This call was not executed. Request the tool again using the current mode.</string>
+</resources>

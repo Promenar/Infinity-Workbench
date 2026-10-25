@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.ToolExecutionLedger
+import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRunner
 import com.promenar.nexara.domain.repository.IAgentRepository
@@ -57,6 +58,8 @@ internal class DefaultChatGenerationRunnerFactory(
     private val tailnetGate: com.promenar.nexara.data.tailnet.TailnetConnectGate? = null,
     private val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore? = null,
     private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
+    private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
+    private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -100,6 +103,8 @@ internal class DefaultChatGenerationRunnerFactory(
             tailnetGate = tailnetGate,
             composerQueueStore = composerQueueStore,
             stateBoardRepository = stateBoardRepository,
+            runModeCheck = runModeCheck,
+            linuxFiles = linuxFiles,
         )
     }
 }

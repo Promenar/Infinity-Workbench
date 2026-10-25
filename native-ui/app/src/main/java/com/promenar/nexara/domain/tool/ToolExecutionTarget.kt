@@ -16,7 +16,7 @@ object ToolExecutionTargets {
         arguments: String,
         resolvedPaths: Map<String, String> = emptyMap(),
         sshIdentities: Map<String, SshExecutionIdentity> = emptyMap(),
-        usesLinux: Boolean = LinuxExecRouting.agentUsesLinux,
+        usesLinux: Boolean = false,
     ): String? {
         val args = runCatching { Json.parseToJsonElement(arguments) as? JsonObject }.getOrNull()
             ?: return null
@@ -115,7 +115,11 @@ object ToolExecutionTargets {
     fun isPathMutation(toolName: String): Boolean = toolName in SKILL_MUTATIONS
 
     fun requiresSkillsApproval(toolName: String, target: String?): Boolean =
-        toolName in SKILL_MUTATIONS && target != null && isSkillsPathTarget(target)
+        toolName in SKILL_MUTATIONS && target != null && (isSkillsPathTarget(target) || runCatching {
+            val parts = Json.parseToJsonElement(target) as? JsonArray
+            val metadata = parts?.lastOrNull() as? JsonObject
+            (metadata?.get("linuxSkills") as? JsonPrimitive)?.booleanOrNull == true
+        }.getOrDefault(false))
 
     /** 清除不可见控制字符与格式控制后按 UTF-16 长度限制显示，保留完整代理对。 */
     /** 进程目标的执行位置（如 builtin、python、termux）；命令正文另行完整展示时用它代替整条目标，避免重复。 */

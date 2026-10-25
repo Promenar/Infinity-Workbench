@@ -22,6 +22,8 @@ class DefaultSessionToolResolver(
         val capabilities = mediaCapabilities(session)
         val canView = capabilities.vision || capabilities.audioInput || capabilities.videoUnderstanding
         return allTools.filter { tool ->
+            if (tool.sourceId == "builtin" && session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX &&
+                tool.runtimeToolId.ifBlank { tool.function.name } in LINUX_HIDDEN_TOOLS) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "view_media" && !canView) return@filter false
             when (tool.sourceId) {
                 // 内置工具只受全局启用状态约束；写入、删除、脚本等风险由会话执行模式统一审批。
@@ -32,6 +34,10 @@ class DefaultSessionToolResolver(
                 "mcp" -> tool.mcpServerId != null && tool.mcpServerId in session.activeMcpServerIds
                 else -> false
             }
-        }
+        }.map { tool -> SessionRunModeToolDefinitions.forSession(tool, session.runMode) }
+    }
+
+    companion object {
+        val LINUX_HIDDEN_TOOLS = setOf("python_exec", "python_sandbox", "exec_js", "run_script", "termux_exec")
     }
 }

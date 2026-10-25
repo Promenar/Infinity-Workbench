@@ -6,6 +6,7 @@ import com.promenar.nexara.data.repository.*
 import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.domain.jobs.*
 import com.promenar.nexara.domain.linux.*
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.domain.tool.*
@@ -33,7 +34,9 @@ class LinuxExecIntegrationTest {
     private lateinit var runner: BuiltinCommandRunner
     private val scopes = mutableListOf<CoroutineScope>()
     private val keepKinds = mutableListOf<ExecRunKind>()
+    private var homeResolutions = 0
     private var reconciles = 0
+    private var mode: SessionRunMode? = SessionRunMode.LINUX
 
     @Before fun setUp() {
         root = Files.createTempDirectory("linux-exec").toFile()
@@ -71,7 +74,7 @@ class LinuxExecIntegrationTest {
         runner = runner,
         environment = BuiltinExecEnvironment(PackagedPython(File(root, "absent")), File(root, "home"), File(root, "tmp"), { null }, inherited = mapOf("PATH" to "/usr/bin:/bin")),
         shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance,
-        visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" },
+        visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" }, sessionMode = { mode }, sessionHome = { homeResolutions++; workspace },
     )
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
@@ -103,14 +106,6 @@ class LinuxExecIntegrationTest {
         assertThat(File(pid.path + ".identity").readText().lines().last()).isEqualTo("123")
     }
 
-    @Test fun `所有运行态和开关的路由只在就绪启用时选择 Linux`() {
-        states().forEach { state ->
-            listOf(true, false).forEach { enabled ->
-                assertThat(LinuxExecRouting.usesLinux(state, enabled)).isEqualTo(state is LinuxRuntimeState.Ready && enabled)
-            }
-        }
-    }
-
     @Test fun `Linux 启动规格绑定工作区真实挂载和技能且不泄漏系统 Python 环境`() = runBlocking<Unit> {
         val mount = File(root, "mounted").apply { mkdirs() }
         val mounts = listOf(
@@ -123,6 +118,8 @@ class LinuxExecIntegrationTest {
         val spec = runtime.specs.single()
         assertThat(spec.argv).containsExactly("/bin/sh", "-c", "printf '%s' \"\$NEXARA_WORKSPACE\"; echo ok > out.txt").inOrder()
         assertThat(spec.workspace).isEqualTo(workspace)
+        assertThat(spec.sessionHome).isEqualTo(workspace)
+        assertThat(homeResolutions).isEqualTo(0)
         assertThat(spec.mounts.map { it.guestPath }).containsExactly("/mnt/资料", "/mnt/skills")
         assertThat(spec.mounts.first().host).isEqualTo(mount)
         assertThat(spec.environment).containsEntry("NEXARA_SKILLS", "/mnt/skills")
@@ -134,26 +131,70 @@ class LinuxExecIntegrationTest {
         assertThat(reconciles).isEqualTo(1)
     }
 
-    @Test fun `运行时不可用回退系统 shell 并注明实际运行环境`() = runBlocking<Unit> {
+    @Test fun `Linux 会话启动前不可用时明确失败且不会执行系统 shell`() = runBlocking<Unit> {
         runtime.unavailableOnPrepare = true
-        val result = shell(service(), "echo fallback > fallback.txt; pwd")
-        assertThat(result.exitCode).isEqualTo(0)
-        assertThat(result.stdout.trim()).isEqualTo("\$NEXARA_WORKSPACE")
-        assertThat(result.toJson()["runtime"]?.jsonPrimitive?.content).isEqualTo("system")
-        assertThat(result.toJson()["runtime_fallback"]?.jsonPrimitive?.content).contains("系统 sh")
-        assertThat(File(workspace, "fallback.txt").readText()).contains("fallback")
-        assertThat(reconciles).isEqualTo(1)
+        val result = shell(service(), "echo forbidden > fallback.txt")
+        assertThat(result.errorCode).isEqualTo("EXEC_LINUX_UNAVAILABLE")
+        assertThat(result.toJson()["runtime"]?.jsonPrimitive?.content).isEqualTo("linux")
+        assertThat(result.toJson()).doesNotContainKey("runtime_fallback")
+        assertThat(File(workspace, "fallback.txt").exists()).isFalse()
     }
 
-    @Test fun `未安装安装中损坏禁用及渠道不可用均实际执行系统 shell`() = runBlocking<Unit> {
+    @Test fun `Linux 会话在每一种不可用状态均拒绝执行且不回退`() = runBlocking<Unit> {
         states().filterNot { it is LinuxRuntimeState.Ready }.forEach { state ->
             runtime.state.value = state
-            assertThat(shell(service(), "printf system").toJson()["runtime"]?.jsonPrimitive?.content).isEqualTo("system")
+            val result = shell(service(), "touch forbidden")
+            assertThat(result.errorCode).isEqualTo("EXEC_LINUX_UNAVAILABLE")
+            assertThat(result.toJson()["runtime"]?.jsonPrimitive?.content).isEqualTo("linux")
         }
-        runtime.state.value = readyState()
-        runtime.agentEnabled.value = false
-        assertThat(shell(service(), "printf disabled").stdout).isEqualTo("disabled")
+        assertThat(File(workspace, "forbidden").exists()).isFalse()
         assertThat(runtime.specs).isEmpty()
+    }
+
+    @Test fun `内置会话不随 Linux 状态或默认设置切换`() = runBlocking<Unit> {
+        mode = SessionRunMode.BUILTIN
+        for (state in states()) {
+            runtime.state.value = state
+            for (enabled in listOf(false, true)) {
+                runtime.agentEnabled.value = enabled
+                assertThat(shell(service(), "printf builtin").stdout).isEqualTo("builtin")
+            }
+        }
+        assertThat(runtime.specs).isEmpty()
+    }
+
+    @Test fun `未确定模式和 Linux 会话的内置 Python 均不可调用`() = runBlocking<Unit> {
+        mode = null
+        assertThat(shell(service(), "touch forbidden").errorCode).isEqualTo("EXEC_RUN_MODE_REQUIRED")
+        assertThat(service().runPython("root", "s", "print(1)", null, 1).errorCode).isEqualTo("EXEC_RUN_MODE_REQUIRED")
+        mode = SessionRunMode.LINUX
+        assertThat(service().runPython("root", "s", "print(1)", null, 1).errorCode).isEqualTo("EXEC_MODE_TOOL_UNAVAILABLE")
+        assertThat(File(workspace, "forbidden").exists()).isFalse()
+    }
+
+    @Test fun `Linux 会话不随新会话默认模式改用系统`() = runBlocking<Unit> {
+        runtime.agentEnabled.value = false
+        assertThat(shell(service(), "printf linux").toJson()["runtime"]?.jsonPrimitive?.content).isEqualTo("linux")
+        assertThat(runtime.specs).hasSize(1)
+    }
+
+    @Test fun `审批后模式改变不得在另一种环境执行命令`() = runBlocking<Unit> {
+        for ((current, expected) in listOf(SessionRunMode.LINUX to SessionRunMode.BUILTIN, SessionRunMode.BUILTIN to SessionRunMode.LINUX)) {
+            mode = current
+            val result = service().runShell("root", "s", "touch forbidden", null, 1, expectedMode = expected)
+            assertThat(result.errorCode).isEqualTo("EXEC_MODE_CHANGED")
+        }
+        assertThat(File(workspace, "forbidden").exists()).isFalse()
+        assertThat(runtime.specs).isEmpty()
+    }
+
+    @Test fun `后台任务在审批后切换模式时拒绝预留或启动`() = runBlocking<Unit> {
+        mode = SessionRunMode.LINUX
+        val jobs = manager(service())
+        val failure = runCatching { jobs.startBuiltin("s", "root", BackgroundJobRunner.SHELL, "touch forbidden", null, 1, BackgroundJobExitAction.NONE, expectedMode = SessionRunMode.BUILTIN) }.exceptionOrNull()
+        assertThat((failure as? JobAccessException)?.code).isEqualTo("EXEC_MODE_CHANGED")
+        assertThat(jobs.list("s")).isEmpty()
+        assertThat(File(workspace, "forbidden").exists()).isFalse()
     }
 
     @Test fun `Linux 输出保留 guest 工作区并虚拟化宿主路径及实时输出`() = runBlocking<Unit> {
@@ -183,7 +224,7 @@ class LinuxExecIntegrationTest {
             assertThat(provenance.events).contains("after")
         }
         val provenance = RecordingProvenance(workspace)
-        runtime.agentEnabled.value = false
+        mode = SessionRunMode.BUILTIN
         shell(service(provenance), "true")
         assertThat(provenance.events).isEmpty()
     }
@@ -235,22 +276,15 @@ class LinuxExecIntegrationTest {
         }
     }
 
-    @Test fun `提示词和工具描述反映当前环境且不影响 Python`() {
-        val exec = service()
-        assertThat(ShellExecSkill(exec).description).contains("Alpine Linux（musl）")
-        for (state in states()) for (enabled in listOf(true, false)) {
-            val prompt = SystemPromptSections.toolGuidance(setOf("shell_exec", "python_exec"), generic = false, linuxState = state, linuxAgentEnabled = enabled)
-            if (LinuxExecRouting.usesLinux(state, enabled)) {
-                listOf("apk add", "pip install", "/workspace", "/mnt/<别名>", "/root", "不进入备份", "元数据密集").forEach { assertThat(prompt).contains(it) }
-                assertThat(prompt).doesNotContain("commands reach it at the real path")
-            } else {
-                assertThat(prompt).contains("/system/bin/sh")
-                assertThat(prompt).doesNotContain("Alpine Linux（musl）")
-            }
-            if (state is LinuxRuntimeState.NotInstalled || state is LinuxRuntimeState.InstallInterrupted) assertThat(prompt).contains("工具 → Linux 环境")
+    @Test fun `提示词按固定会话模式而不按实时状态选择后端`() {
+        for (state in states()) {
+            val linux = SystemPromptSections.toolGuidance(setOf("shell_exec"), generic = false, linuxState = state, runMode = SessionRunMode.LINUX)
+            listOf("apk add", "/workspace", "/home/session", "/mnt/<别名>", "/root", "元数据密集").forEach { assertThat(linux).contains(it) }
+            assertThat(linux).doesNotContain("当前使用系统")
+            val builtin = SystemPromptSections.toolGuidance(setOf("shell_exec", "python_exec"), generic = false, linuxState = state, runMode = SessionRunMode.BUILTIN)
+            assertThat(builtin).contains("/system/bin/sh")
+            assertThat(builtin).doesNotContain("Alpine Linux（musl）")
         }
-        runtime.agentEnabled.value = false
-        assertThat(ShellExecSkill(exec).description).contains("系统 /system/bin/sh")
     }
 
     @Test fun `可达范围列出 Linux 状态和跳转标识`() {
@@ -271,7 +305,7 @@ class LinuxExecIntegrationTest {
         return BackgroundJobManager(scope, BackgroundJobStore(File(root,"store")), File(root,"runs"), runner,
             prepareWorkspace = { BackgroundJobLocation(workspace, workspace, false, false) },
             prepareCommand = { kind, source, stdin, location, minutes -> beforePrepare(); exec.prepareBackgroundCommand(kind, source, stdin, location, minutes, location.sessionId) },
-            keepAlive = keepAlive, linuxRuntime = runtime,
+            keepAlive = keepAlive, linuxRuntime = runtime, sessionMode = { mode },
         )
     }
 
@@ -314,12 +348,12 @@ class LinuxExecIntegrationTest {
         runtime.uninstall()
         val result = manager.waitFor("s", record.id, 5)
         assertThat(result.record.state).isEqualTo("FAILED")
-        assertThat(result.record.guidance).contains("已卸载")
+        assertThat(result.record.guidance).contains("Linux 环境当前不可用")
         assertThat(provenance.events).containsExactly("before", "after", "attribute").inOrder()
     }
 
-    @Test fun `后台开关关闭时 shell 走系统且 Python runner 不变`() = runBlocking<Unit> {
-        runtime.agentEnabled.value = false
+    @Test fun `后台内置会话在 Linux 可用时仍使用系统执行器`() = runBlocking<Unit> {
+        mode = SessionRunMode.BUILTIN
         val manager = manager(service())
         val record = manager.startBuiltin("s", "root", BackgroundJobRunner.SHELL, "echo system", null, 1, BackgroundJobExitAction.NONE)
         assertThat(record.runnerKind).isEqualTo(BackgroundJobRunner.SHELL)

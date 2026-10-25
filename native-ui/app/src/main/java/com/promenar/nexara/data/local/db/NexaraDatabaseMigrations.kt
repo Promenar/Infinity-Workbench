@@ -5,6 +5,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** 历史会话不推断执行环境，由首次进入会话时的检查决定。 */
+val MIGRATION_26_27 = object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE sessions ADD COLUMN run_mode TEXT")
+    }
+}
+
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(

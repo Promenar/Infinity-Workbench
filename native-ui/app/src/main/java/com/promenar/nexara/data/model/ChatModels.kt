@@ -605,6 +605,7 @@ data class Session(
     val activeTaskTreeId: String? = null,
     /** 自选工作区；为空时使用会话私有工作区。 */
     val workspaceId: String? = null,
+    val runMode: com.promenar.nexara.domain.model.SessionRunMode? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

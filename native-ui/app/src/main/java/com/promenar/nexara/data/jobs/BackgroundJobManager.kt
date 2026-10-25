@@ -15,8 +15,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class JobAccessException(val code: String, override val message: String) : IllegalArgumentException(message)
-data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean, val sessionId: String? = null) {
-    val workspaceKind: String get() = if (isolated) "private" else if (termuxShared) "shared" else "project"
+data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean, val sessionId: String? = null, val workspaceKindOverride: String? = null) {
+    val workspaceKind: String get() = workspaceKindOverride ?: if (isolated) "private" else if (termuxShared) "shared" else "project"
 }
 class PreparedBackgroundCommand(
     val request: BuiltinCommandRequest,
@@ -76,6 +76,8 @@ class BackgroundJobManager(
     private val executionGate: com.promenar.nexara.data.session.SessionExecutionGate? = null,
     private val sessionExists: suspend (String) -> Boolean = { true },
     private val linuxRuntime: com.promenar.nexara.domain.linux.LinuxRuntime? = null,
+    private val sessionMode: suspend (String) -> com.promenar.nexara.domain.model.SessionRunMode? = { com.promenar.nexara.domain.model.SessionRunMode.BUILTIN },
+    private val messages: RunModeMessages = RunModeMessages(),
 ) : BackgroundJobController {
     private class Active(val control: BuiltinCommandControl = BuiltinCommandControl()) {
         val terminal = CompletableDeferred<Unit>()
@@ -144,10 +146,16 @@ class BackgroundJobManager(
             store.put(it); active[id]=Active(); publish()
         }
     }
-    suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
+    suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction, expectedMode: com.promenar.nexara.domain.model.SessionRunMode? = null):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
         require(kind != BackgroundJobRunner.TERMUX)
-        val actualKind = if (kind == BackgroundJobRunner.SHELL && linuxRuntime?.agentUsesLinux == true) BackgroundJobRunner.LINUX else kind
+        val mode = sessionMode(sessionId) ?: throw JobAccessException("EXEC_RUN_MODE_REQUIRED", messages(RunModeMessage.MODE_REQUIRED))
+        if (expectedMode != null && mode != expectedMode) throw JobAccessException("EXEC_MODE_CHANGED", messages(RunModeMessage.MODE_CHANGED))
+        val linux = mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX
+        if (linux && kind == BackgroundJobRunner.PYTHON || !linux && kind == BackgroundJobRunner.LINUX) {
+            throw JobAccessException("EXEC_MODE_TOOL_UNAVAILABLE", messages(RunModeMessage.BUILTIN_TOOL_BLOCKED))
+        }
+        val actualKind = if (kind == BackgroundJobRunner.SHELL && linux) BackgroundJobRunner.LINUX else kind
         val record=reserve(sessionId,workspaceRootUuid,actualKind,source,minutes,action)
         val handle=active.getValue(record.id)
         val started=CompletableDeferred<BackgroundJobRecord>()
@@ -182,10 +190,10 @@ class BackgroundJobManager(
                             }
                         }
                         val terminal=when {linuxRemoved -> "FAILED"; output.stoppedByUser -> "STOPPED"; output.timedOut -> "TIMED_OUT"; else -> "EXITED"}
-                        finish(current.copy(state=terminal,exitCode=output.exitCode,endedAtMillis=now(),guidance=if(linuxRemoved) LINUX_UNAVAILABLE_GUIDANCE else null),handle)
+                        finish(current.copy(state=terminal,exitCode=output.exitCode,endedAtMillis=now(),guidance=if(linuxRemoved) messages(RunModeMessage.LINUX_UNAVAILABLE) else if(actualKind == BackgroundJobRunner.LINUX) LinuxMissingCommandGuidance.hint(output.exitCode, readJobLogTail(log).text, messages) else null),handle)
                         if(!started.isCompleted) started.completeExceptionally(JobAccessException("JOB_STOPPED","任务在进程启动前被停止。"))
                     } catch (failure:Exception) {
-                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance=if(failure is com.promenar.nexara.domain.linux.LinuxUnavailableException) LINUX_UNAVAILABLE_GUIDANCE else "后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
+                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance=if(failure is com.promenar.nexara.domain.linux.LinuxUnavailableException) messages(RunModeMessage.LINUX_UNAVAILABLE) else "后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
                         withContext(NonCancellable) {
                             if(store.all().find{it.id==record.id}?.running==true) finish(terminal,handle)
                         }
@@ -418,5 +426,3 @@ class BackgroundJobManager(
         }
     }
 }
-
-private const val LINUX_UNAVAILABLE_GUIDANCE = "Linux 环境已卸载、正在维护或不可用，后台任务已失败；请在工具 → Linux 环境中检查后再启动任务。"

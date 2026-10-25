@@ -121,4 +121,45 @@ class LinuxRootfsInstallerTest {
         assertEquals(0, installer.storageUsage().cacheBytes)
         assertEquals(45, File(paths.home, "user").length())
     }
+
+    @Test fun `损坏标记和shell无损修复保留用户目录配置与包数据库`() {
+        val installer = installer()
+        installer.install()
+        val preserved = mapOf(
+            "root/keep" to "user", "home/guest/keep" to "session",
+            "etc/apk/world" to "my-package\n", "lib/apk/db/installed" to "P:my-package\nV:1\n",
+            "etc/alpine-release" to "user-edited", "usr/bin/my-package" to "custom",
+        )
+        preserved.forEach { (path, text) -> File(paths.rootfs, path).apply { parentFile!!.mkdirs(); writeText(text) } }
+        File(paths.rootfs, "bin/sh").delete()
+        File(paths.rootfs, ".nexara-rootfs-version").delete()
+        installer.repairMissingBaseFiles()
+        assertEquals("test-shell", File(paths.rootfs, "bin/sh").readText())
+        preserved.forEach { (path, text) -> assertEquals(text, File(paths.rootfs, path).readText(), path) }
+        assertNotNull(installer.readRecord())
+    }
+
+    @Test fun `普通安装重试损坏环境不得覆盖用户数据`() {
+        val installer = installer()
+        installer.install()
+        File(paths.home, "keep").writeText("user")
+        File(paths.rootfs, "bin/sh").delete()
+        installer.install()
+        assertEquals("user", File(paths.home, "keep").readText())
+        assertEquals("test-shell", File(paths.rootfs, "bin/sh").readText())
+    }
+
+    @Test fun `修复校验失败或现有链接冲突均保留数据且报告失败`() {
+        installer().install()
+        File(paths.home, "keep").writeText("user")
+        assertEquals(LinuxFailureCode.ASSET_CORRUPT,
+            assertThrows(LinuxRootfsException::class.java) { installer(byteArrayOf(1)).repairMissingBaseFiles() }.failure.code)
+        File(paths.rootfs, "bin/sh").delete()
+        val outside = temporary.resolve("outside").toFile().apply { mkdirs() }
+        File(paths.rootfs, "bin").delete()
+        Files.createSymbolicLink(File(paths.rootfs, "bin").toPath(), outside.toPath())
+        assertThrows(LinuxRootfsException::class.java) { installer().repairMissingBaseFiles() }
+        assertEquals("user", File(paths.home, "keep").readText())
+        assertFalse(File(outside, "sh").exists())
+    }
 }

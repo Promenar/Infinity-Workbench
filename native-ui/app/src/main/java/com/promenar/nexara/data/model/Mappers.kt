@@ -3,6 +3,7 @@ package com.promenar.nexara.data.model
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerializationException
@@ -83,6 +84,7 @@ fun SessionEntity.toDomain(): Session = Session(
     workspaceRootUuid = workspaceRootUuid,
     activeTaskTreeId = activeTaskTreeId,
     workspaceId = workspaceId,
+    runMode = SessionRunMode.fromStored(runMode),
     createdAt = createdAt,
     updatedAt = updatedAt
 )
@@ -114,6 +116,7 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
     workspaceRootUuid = workspaceRootUuid,
     activeTaskTreeId = activeTaskTreeId,
     workspaceId = workspaceId,
+    runMode = runMode?.name,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

@@ -6,23 +6,26 @@ import com.promenar.nexara.data.skills.SkillStatus
 import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.tool.LinuxExecRouting
+import com.promenar.nexara.domain.model.SessionRunMode
 
 /**
  * System Prompt 的固定段落与运行环境说明；回答语言由身份段要求跟随用户。
  * 段落内容只描述运行时真实提供的能力，新增或删除工具时必须同步这里的契约说明。
  */
 object SystemPromptSections {
-    const val LINUX_SHELL_GUIDANCE = "shell_exec 当前在 Alpine Linux（musl）中运行，使用 apk add 安装软件包，pip install 可直接使用。" +
-        "工作区为 /workspace（NEXARA_WORKSPACE=/workspace），有真实路径的可用挂载为 /mnt/<别名>，用户级技能为 /mnt/skills（NEXARA_SKILLS=/mnt/skills）；SAF 挂载只供文件工具访问。" +
-        "/root 是 Linux 主目录，不进入备份；在 Linux 中安装软件包属于正常使用。文件元数据密集操作较慢。" +
-        "Linux 命令以 Nexara 身份运行，不受工作区路径约束；工作区档逐条审批，完全访问档免批。"
+    const val LINUX_SHELL_GUIDANCE = "shell_exec 在本会话固定使用 Alpine Linux（musl），使用 apk add 安装软件包；python3 与 pip 需安装对应可选包。" +
+        "会话专用空间为 /home/session，主工作区为 /workspace（NEXARA_WORKSPACE=/workspace），私有主工作区与会话空间指向同一目录。" +
+        "真实路径挂载为 /mnt/<别名>，用户级技能为 /mnt/skills（NEXARA_SKILLS=/mnt/skills）；SAF 挂载不可见。" +
+        "文件工具与命令使用相同的 Linux 路径，相对路径相对 /workspace；/root、/etc 等绝对路径指向 Linux rootfs。" +
+        "/home/session 保存在 rootfs 之外，重置 Linux 不删除它；/root 不进入备份，重置会清空。文件元数据密集操作较慢。" +
+        "Linux 不可用时返回错误，请用户在会话中处理环境，不能自动改用系统 sh、打包 Python 或其它运行环境。" +
+        "Linux 命令以 Nexara 身份运行，工作区档逐条审批，完全访问档免批。"
 
-    fun shellRuntimeGuidance(state: LinuxRuntimeState, agentEnabled: Boolean): String = when {
-        LinuxExecRouting.usesLinux(state, agentEnabled) -> LINUX_SHELL_GUIDANCE
-        state is LinuxRuntimeState.NotInstalled || state is LinuxRuntimeState.InstallInterrupted ->
-            "shell_exec 当前使用系统 /system/bin/sh；用户可在“工具 → Linux 环境”中安装 Alpine Linux。"
-        else -> "shell_exec 当前使用系统 /system/bin/sh。"
-    }
+    fun shellRuntimeGuidance(state: LinuxRuntimeState, runMode: SessionRunMode = SessionRunMode.BUILTIN): String =
+        if (runMode == SessionRunMode.LINUX) LINUX_SHELL_GUIDANCE +
+            if (state is LinuxRuntimeState.Ready) "" else "当前 Linux 环境不可用，需由用户在会话中修复或手动切换模式。"
+        else "shell_exec 在本会话固定使用系统 /system/bin/sh；不能安装系统软件包。"
+
     const val DEFAULT_IDENTITY =
         "You are Nexara, a capable AI assistant running inside an Android app. " +
             "Reply in the user's language unless they ask otherwise. Be accurate and direct; " +
@@ -36,10 +39,11 @@ object SystemPromptSections {
     fun permissions(
         mode: com.promenar.nexara.domain.model.ExecutionMode,
         linuxState: LinuxRuntimeState = LinuxExecRouting.state,
-        linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
+        runMode: SessionRunMode = SessionRunMode.BUILTIN,
     ): String = buildString {
         appendLine("## Permissions and Runtime Data")
-        appendLine("- File tools and isolated scripts can access only workspace paths, including explicitly exposed /mnt/<alias> mounts and /skills. Paths outside this virtual namespace are invisible to them.")
+        if (runMode == SessionRunMode.LINUX) appendLine("- 文件工具使用 Linux 路径；工作区档对 rootfs 文件变更逐次审批，完全访问档免批。用户技能目录始终逐次审批。")
+        else appendLine("- File tools and isolated scripts can access only workspace paths, including explicitly exposed /mnt/<alias> mounts and /skills. Paths outside this virtual namespace are invisible to them.")
         appendLine("- Built-in shell_exec and python_exec run as the Nexara app identity. They can access all app data and are not constrained to the workspace; Android does not provide a path-level process sandbox here. termux_exec runs as the Termux identity; SSH commands run on the remote host.")
         if (mode == com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE) {
             appendLine("- Current scope: Workspace. Every shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open and ssh_session_send call requires user approval. If rejected, do not repeat the command.")
@@ -49,7 +53,7 @@ object SystemPromptSections {
         appendLine("- In both scopes, schedule_create, skill-directory mutations and SSH host configuration require approval for every call. Other tools do not require execution approval.")
         appendLine("- Critical runtime data includes databases/ (including nexara_v2.db), shared_prefs/, no_backup/, files/agent_skills/, and diagnostic logs (files/nexara_diagnostics.jsonl, files/nexara_logs.txt, files/diag-keep). In either scope, before modifying any of these, explain the purpose and impact in your reply and obtain the user's explicit written consent. Tool approval alone does not replace that consent.")
         appendLine("- Installing pip packages into files/python-user is normal use.")
-        if (LinuxExecRouting.usesLinux(linuxState, linuxAgentEnabled)) appendLine("- 在 Linux 中安装软件包属于正常使用；Linux 主目录 /root 不进入备份。")
+        if (runMode == SessionRunMode.LINUX) appendLine("- 在 Linux 中安装软件包属于正常使用；Linux 主目录 /root 不进入备份。")
         appendLine("- Built-in command results report detected critical-data metadata changes in runtime_changes; runtime_scan_notes describes skipped scans. This is change detection, not an access restriction or proof that unchanged paths were untouched.")
     }
 
@@ -73,7 +77,7 @@ object SystemPromptSections {
         /** 当前会话可见的挂载；用户技能目录由 `/skills` 单独说明。 */
         mounts: List<com.promenar.nexara.domain.storage.ExternalMount> = emptyList(),
         linuxState: LinuxRuntimeState = LinuxExecRouting.state,
-        linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
+        runMode: SessionRunMode = SessionRunMode.BUILTIN,
     ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
@@ -89,10 +93,10 @@ object SystemPromptSections {
             appendLine("- 每次触发都是完整的一轮，应在轮内完成检查；不再需要时调用 schedule_cancel 取消该来源任务。")
         }
         if (generic) return@buildString
-        val usesLinux = LinuxExecRouting.usesLinux(linuxState, linuxAgentEnabled)
+        val usesLinux = runMode == SessionRunMode.LINUX
         if ("shell_exec" in toolNames) {
-            appendLine("- " + shellRuntimeGuidance(linuxState, linuxAgentEnabled))
-            appendLine("- python_exec 与 python_sandbox 使用打包 Python，与 Linux 的 python3 及软件包相互独立。")
+            appendLine("- " + shellRuntimeGuidance(linuxState, runMode))
+            if (!usesLinux) appendLine("- python_exec 与 python_sandbox 使用打包 Python。")
         }
         if (toolNames.any { it.startsWith("canvas_") }) {
             appendLine()
@@ -105,7 +109,9 @@ object SystemPromptSections {
         if (toolNames.any(WORKSPACE_TOOLS::contains)) {
             appendLine()
             appendLine("### Workspace Files")
-            if (workspace == null || workspace == com.promenar.nexara.data.workspace.SessionWorkspace.Private) {
+            if (usesLinux) {
+                appendLine("- 文件工具与 shell 共用 Linux 路径：/workspace 为主工作区，/home/session 为隔离的会话专用空间，/mnt/<别名> 为真实目录挂载，/mnt/skills 为用户技能；其它绝对路径位于 rootfs。相对路径相对 /workspace，路径不允许 ..。")
+            } else if (workspace == null || workspace == com.promenar.nexara.data.workspace.SessionWorkspace.Private) {
                 appendLine("- This conversation has a private workspace. Paths are relative to its root and start with `/` (for example `/notes/plan.md`); file tools accept either `path` or `uuid`.")
             } else {
                 appendLine("- Paths are relative to the current workspace root and start with `/` (for example `/src/main.py`); file tools accept either `path` or `uuid`.")
@@ -117,7 +123,7 @@ object SystemPromptSections {
             appendLine("- `move_file` moves or renames; `delete_file` moves items to the recycle bin, which the user can restore.")
         }
         if (toolNames.any { it in WORKSPACE_TOOLS || it in WORKSPACE_PROCESS_TOOLS }) {
-            currentWorkspace(workspace)?.let {
+            currentWorkspace(workspace, usesLinux)?.let {
                 appendLine()
                 append(it)
             }
@@ -125,7 +131,7 @@ object SystemPromptSections {
                 appendLine("- The workspace root contains a `skills` entry. File tools expose user skills at `/skills`, hiding that workspace entry; access the workspace's own entry as `./skills` through `shell_exec`.")
             }
             if (workspaceChanged) {
-                if (currentWorkspace(workspace) == null) {
+                if (currentWorkspace(workspace, usesLinux) == null) {
                     appendLine()
                     appendLine("### Current Workspace")
                 }
@@ -165,7 +171,7 @@ object SystemPromptSections {
 
     /** 挂载别名与设备路径都由用户输入，截断后写入提示，避免挤占上下文。 */
     private fun mountedFolders(mounts: List<com.promenar.nexara.domain.storage.ExternalMount>, usesLinux: Boolean): String? {
-        val visible = mounts.filterNot { it.isUserSkills }.sortedBy { it.alias }
+        val visible = mounts.filterNot { it.isUserSkills || usesLinux && it.sourceType != "real_path" }.sortedBy { it.alias }
         if (visible.isEmpty()) return null
         return buildString {
             appendLine("### Mounted Folders")
@@ -175,7 +181,7 @@ object SystemPromptSections {
                 val realPath = runCatching { com.promenar.nexara.data.storage.ExternalMountPaths.commandAccess(mount).realPath }.getOrNull()
                 appendLine(when {
                     mount.unavailableReason != null -> "- `/mnt/$alias/`: currently unavailable; ask the user to check or re-authorize it."
-                    realPath != null && usesLinux -> "- `/mnt/$alias/`：Linux shell 可直接访问；打包 Python 与 Termux 使用设备真实路径。"
+                    realPath != null && usesLinux -> "- `/mnt/$alias/`：Linux 命令与文件工具使用同一路径。"
                     realPath != null -> "- `/mnt/$alias/`: commands reach it at the real path `${realPath.take(256)}`."
                     else -> "- `/mnt/$alias/`: file tools only. It was authorized through the system folder picker, so shell, Python and Termux commands cannot reach it."
                 })
@@ -183,7 +189,7 @@ object SystemPromptSections {
         }
     }
 
-    private fun currentWorkspace(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?): String? = when (workspace) {
+    private fun currentWorkspace(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?, usesLinux: Boolean = false): String? = when (workspace) {
         null, com.promenar.nexara.data.workspace.SessionWorkspace.Private -> null
         is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> buildString {
             val shared = workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED
@@ -194,7 +200,7 @@ object SystemPromptSections {
                 else -> "a Nexara project folder"
             }
             appendLine("### Current Workspace")
-            appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `/` is its root; `/mnt/<alias>` mounts stay available.")
+            appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `${if (usesLinux) "/workspace" else "/"}` is its root; `/mnt/<alias>` mounts stay available.")
             appendLine("- Nexara does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")
             if (shared) appendLine("- Shared storage is case-insensitive and does not support symbolic links or executable permissions.")
         }

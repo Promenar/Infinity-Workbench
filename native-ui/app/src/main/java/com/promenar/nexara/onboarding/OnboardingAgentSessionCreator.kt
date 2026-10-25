@@ -19,6 +19,7 @@ internal suspend fun createOnboardingAgentSession(
     deleteAgent: suspend (String) -> Unit,
     chatStore: ChatStore,
     recordCheckpoint: (String, String) -> Boolean,
+    loadSession: suspend (String) -> Session? = { null },
 ): OnboardingAgentSession {
     var agentId: String? = null
     val sessionId = newSessionId()
@@ -35,7 +36,7 @@ internal suspend fun createOnboardingAgentSession(
         )
         sessionCreationAttempted = true
         createSession(session)
-        chatStore.upsertSession(session)
+        chatStore.upsertSession(loadSession(sessionId) ?: session)
         check(recordCheckpoint(createdAgentId, sessionId)) { "首次引导检查点写入失败" }
         return OnboardingAgentSession(createdAgentId, sessionId)
     } catch (error: Throwable) {

@@ -884,6 +884,57 @@ class WorkspaceRepository(
                 }
             }
 
+    override suspend fun relocate(
+        workspaceRootUuid: String,
+        uuid: String,
+        newParentUuid: String,
+        newName: String,
+        expectedName: String?,
+        expectedHash: String?,
+    ): RenameResult = withContext(Dispatchers.IO) {
+        withRootMutation(workspaceRootUuid) {
+            validateName(newName)
+            val entry = dao.getActiveByUuid(workspaceRootUuid, uuid) ?: return@withRootMutation RenameResult.NotFound
+            val parent = dao.getActiveByUuid(workspaceRootUuid, newParentUuid)
+                ?: throw SecurityException("目标父目录不属于当前工作区")
+            if (!parent.isDirectory || parent.inRecycleBin) throw SecurityException("目标父节点不可用")
+            if (entry.uuid == workspaceRootUuid || newParentUuid == uuid ||
+                parent.materializedPath.startsWith(entry.materializedPath.trimEnd('/') + "/")) {
+                throw SecurityException("不允许形成循环目录关系")
+            }
+            val destination = joinMaterializedPath(parent.materializedPath, newName)
+            if (destination == entry.materializedPath) return@withRootMutation RenameResult.Success(entry.name, entry.hash, entry.updatedAt, false)
+            if (expectedName != null && entry.name != expectedName) return@withRootMutation RenameResult.Conflict(expectedName, entry.name)
+            if (expectedHash != null && (entry.isDirectory || entry.hash != expectedHash ||
+                    fileOps.inspect(File(entry.physicalRootPath).toPath(), relative(entry.materializedPath)).sha256 != expectedHash)) {
+                throw IllegalStateException("expected_sha256 与来源不一致，未执行移动")
+            }
+            requireMoveTargetAbsent(entry, destination)
+            val commitClock = clock()
+            val epoch = nextMutationEpoch(commitClock, entry.updatedAt)
+            val oldPrefix = entry.materializedPath
+            val updates = mutableListOf(entry.copy(
+                parentUuid = newParentUuid, name = newName, materializedPath = destination,
+                updatedAt = epoch, vectorizedAt = null, kgExtractedAt = null,
+            ))
+            if (entry.isDirectory) {
+                dao.getSubtree(workspaceRootUuid, oldPrefix, entry.inRecycleBin).filterNot { it.uuid == uuid }.forEach { child ->
+                    updates += child.copy(
+                        materializedPath = destination + child.materializedPath.removePrefix(oldPrefix),
+                        updatedAt = nextMutationEpoch(commitClock, child.updatedAt), vectorizedAt = null, kgExtractedAt = null,
+                    )
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            withContext(NonCancellable) {
+                commitMove(WorkspaceMutationType.MOVE, entry, oldPrefix, destination, updates)
+                RenameResult.Success(newName, entry.hash, epoch, true, updates.filterNot { it.isDirectory }.map {
+                    RenameIndexTarget(it.uuid, it.hash, it.updatedAt)
+                })
+            }
+        }
+    }
+
     override suspend fun <T> runCommandInWorkspace(
         workspaceRootUuid: String,
         sessionId: String?,
@@ -933,6 +984,12 @@ class WorkspaceRepository(
             },
         )
     } }
+
+    /** 终端与 Linux 直接绑定写入后，以磁盘实际内容收敛私有空间索引。 */
+    suspend fun reconcileSessionWorkspace(workspaceRootUuid: String, sessionId: String?): WorkspaceChangeReport =
+        withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+            reconcileCommandLocked(root, before = null, sessionId = sessionId)
+        } }
 
     /** 后台命令使用独立副本；复制与基线采集期间只占用一次根锁。 */
     suspend fun prepareBackgroundWorkspace(

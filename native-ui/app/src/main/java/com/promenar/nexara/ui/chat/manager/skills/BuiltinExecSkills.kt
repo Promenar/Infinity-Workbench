@@ -25,15 +25,12 @@ private fun workspaceNote(linux: Boolean = false): String = "命令以 Nexara �
     "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）；Nexara 被系统暂停的时间不计入超时（结果给出 paused_ms）。" +
     "用户可在通知栏停止命令（error_code 为 EXEC_STOPPED，不要自动重试）。stdout、stderr 各保留尾部 32000 字符。"
 
-/** 本机 shell 工具：Linux 环境就绪且启用时使用 Alpine，否则使用系统 sh。 */
+/** 本机命令由调用所属会话的固定运行模式选择后端。 */
 class ShellExecSkill(private val service: BuiltinExecService, private val jobs: com.promenar.nexara.data.jobs.BackgroundJobManager? = null) : SkillDefinition {
     override val id = "shell_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
-    override val description: String get() = if (service.agentUsesLinux)
-        com.promenar.nexara.ui.chat.manager.SystemPromptSections.LINUX_SHELL_GUIDANCE + workspaceNote(linux = true) +
-            "结果 runtime 为 linux；启动前环境不可用时回退系统 sh，并通过 runtime_fallback 说明。python_exec 与 python_sandbox 使用独立的打包 Python。"
-    else "在本机用系统 /system/bin/sh 执行命令（POSIX sh 与系统 toybox，可用命令随设备不同），无需 Termux；" +
+    override val description: String get() = "在本机用系统 /system/bin/sh 执行命令（POSIX sh 与系统 toybox，可用命令随设备不同），无需 Termux；" +
         "python3/python 调用内置 Python 3.14（仅 arm64 设备）；git 为内置 dulwich 包装，支持 clone/status/add/commit/log/diff/branch/checkout/pull/push 等常用子命令，" +
         "远端只支持 HTTPS，提交前需 git config user.name 与 user.email，不支持的子命令返回 GIT_UNSUPPORTED。" +
         (if (service.pipAvailable) "pip install 可安装纯 Python 包到应用用户目录（含原生扩展的包即使装上也无法导入），安装后可直接 import。" else "") +
@@ -50,7 +47,7 @@ class ShellExecSkill(private val service: BuiltinExecService, private val jobs: 
             val command = (args.getValue("command") as JsonPrimitive).content
             if (command.isBlank()) return@runBuiltin invalid("command 不能为空")
             if (command.length > MAX_COMMAND_CHARS) return@runBuiltin invalid("command 超过 $MAX_COMMAND_CHARS 字符，请把脚本写入工作区文件后执行")
-            service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput)
+            service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput, expectedMode = context.runMode)
         }
 
     }
@@ -88,7 +85,7 @@ class PythonExecSkill(private val service: BuiltinExecService, private val jobs:
                 code.length > MAX_CODE_CHARS -> invalid("code 超过 $MAX_CODE_CHARS 字符，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
                 // 单个 execve 参数上限 128 KiB。
                 code.toByteArray(Charsets.UTF_8).size > MAX_CODE_BYTES -> invalid("code 的 UTF-8 编码超过 $MAX_CODE_BYTES 字节，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
-                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput)
+                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput, expectedMode = context.runMode)
             }
         }
 
@@ -128,7 +125,7 @@ private suspend fun runBuiltin(
     } catch (failure: IllegalArgumentException) {
         invalid(failure.message)
     } catch (failure: Exception) {
-        CommandToolResult(errorCode = "EXEC_FAILED", guidance = "内置执行后端内部错误（${failure::class.java.simpleName}）；可改用 termux_exec 或 ssh_exec。")
+        CommandToolResult(errorCode = "EXEC_FAILED", guidance = "执行后端内部错误（${failure::class.java.simpleName}），请在会话中检查运行环境。")
     }
     return ToolResult(id = "${id}_${UUID.randomUUID()}", content = result.toJson().toString(), status = result.toolStatus)
 }

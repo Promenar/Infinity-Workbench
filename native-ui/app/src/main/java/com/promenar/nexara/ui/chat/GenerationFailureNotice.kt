@@ -34,6 +34,8 @@ object GenerationFailureNotice {
     private const val CODE_TAILNET_NEEDS_LOGIN = "generation.failure.tailnet_needs_login"
     private const val CODE_TAILNET_FAILED = "generation.failure.tailnet_failed"
     private const val CODE_TAILNET_TIMEOUT = "generation.failure.tailnet_timeout"
+    private const val CODE_RUN_MODE_REQUIRED = "generation.failure.run_mode_required"
+    private const val CODE_LINUX_UNAVAILABLE = "generation.failure.linux_unavailable"
     private const val CODE_UNKNOWN = "generation.failure.unknown"
 
     fun from(failure: GenerationFailure): UiStatusNotice {
@@ -58,6 +60,8 @@ object GenerationFailureNotice {
             GenerationFailureCode.BUSY -> CODE_BUSY
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
             GenerationFailureCode.TOOL_BUDGET_EXHAUSTED -> CODE_TOOL_BUDGET
+            GenerationFailureCode.RUN_MODE_REQUIRED -> CODE_RUN_MODE_REQUIRED
+            GenerationFailureCode.LINUX_UNAVAILABLE -> CODE_LINUX_UNAVAILABLE
             GenerationFailureCode.TAILNET_UNAVAILABLE -> when (failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]) {
                 "DISABLED" -> CODE_TAILNET_DISABLED
                 "NEEDS_LOGIN" -> CODE_TAILNET_NEEDS_LOGIN
@@ -131,6 +135,8 @@ object GenerationFailureNotice {
         CODE_TAILNET_NEEDS_LOGIN -> ResolvedStatus(R.string.generation_failure_tailnet_needs_login)
         CODE_TAILNET_FAILED -> ResolvedStatus(R.string.generation_failure_tailnet_failed)
         CODE_TAILNET_TIMEOUT -> ResolvedStatus(R.string.generation_failure_tailnet_timeout)
+        CODE_RUN_MODE_REQUIRED -> ResolvedStatus(R.string.run_mode_required)
+        CODE_LINUX_UNAVAILABLE -> ResolvedStatus(R.string.run_mode_linux_unavailable)
         CODE_UNKNOWN -> ResolvedStatus(R.string.generation_failure_unknown)
         else -> ResolvedStatus(R.string.generation_failure_unknown)
     }

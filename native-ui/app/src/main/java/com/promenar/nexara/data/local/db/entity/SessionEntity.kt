@@ -57,6 +57,9 @@ data class SessionEntity(
     /** 自选工作区；为空时使用 [workspaceRootUuid] 指向的会话私有工作区。 */
     @ColumnInfo(name = "workspace_id")
     val workspaceId: String? = null,
+    /** 为空的历史会话须由运行模式检查明确确定执行环境。 */
+    @ColumnInfo(name = "run_mode")
+    val runMode: String? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")

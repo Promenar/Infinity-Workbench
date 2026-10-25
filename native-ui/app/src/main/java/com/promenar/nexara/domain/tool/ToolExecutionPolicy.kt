@@ -24,8 +24,15 @@ object ToolExecutionPolicy {
         risk: ToolRisk,
         arguments: String = "{}",
         resolvedTarget: String? = null,
-        usesLinux: Boolean = LinuxExecRouting.agentUsesLinux,
+        usesLinux: Boolean = false,
     ): Boolean = risk == ToolRisk.SCHEDULE || toolName == "schedule_create" ||
         ToolArgumentApprovalRules.requiresExplicitApproval(toolName, arguments, resolvedTarget) ||
-        (mode == ExecutionMode.WORKSPACE && CommandToolClassification.backendFor(toolName, usesLinux) != null)
+        (mode == ExecutionMode.WORKSPACE && (CommandToolClassification.backendFor(toolName, usesLinux) != null ||
+            usesLinux && ToolExecutionTargets.isPathMutation(toolName) && isLinuxRootfsTarget(resolvedTarget)))
+
+    private fun isLinuxRootfsTarget(target: String?): Boolean = runCatching {
+        val parts = kotlinx.serialization.json.Json.parseToJsonElement(target ?: return false) as? kotlinx.serialization.json.JsonArray
+        val metadata = parts?.lastOrNull() as? kotlinx.serialization.json.JsonObject
+        (metadata?.get("linuxRootfs") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+    }.getOrDefault(false)
 }

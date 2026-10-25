@@ -8,7 +8,8 @@ import java.util.zip.GZIPOutputStream
 
 internal fun linuxTestArchive(): ByteArray = ByteArrayOutputStream().also { bytes ->
     GZIPOutputStream(bytes).use { gzip ->
-        mapOf("bin/sh" to "test-shell", "etc/alpine-release" to "3.24.3\n", "root/base" to "base").forEach { (name, body) ->
+        mapOf("bin/sh" to "test-shell", "etc/alpine-release" to "3.24.3\n", "root/base" to "base",
+            "etc/apk/world" to "busybox\n", "lib/apk/db/installed" to "P:busybox\nV:1\n\n").forEach { (name, body) ->
             val header = ByteArray(512)
             fun put(offset: Int, value: String) = value.toByteArray().copyInto(header, offset)
             put(0, name); put(100, "0000755"); put(124, body.length.toString(8).padStart(11, '0'))
