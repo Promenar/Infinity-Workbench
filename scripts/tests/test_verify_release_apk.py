@@ -314,6 +314,15 @@ class SensitiveContentVerificationTest(ApkFixtureTestCase):
         )
         verify_release_apk.scan_sensitive_content(apk)
 
+    def test_allows_linux_session_guest_path_but_rejects_other_home_paths(self) -> None:
+        verify_release_apk.scan_sensitive_content(
+            self.make_apk({"classes.dex": b"/home/session/canvas/a.html /workspace/a"})
+        )
+        with self.assertRaises(verify_release_apk.VerificationError):
+            verify_release_apk.scan_sensitive_content(
+                self.make_apk({"classes.dex": b"/home/session/a /home/fixture-user/src"})
+            )
+
 
 class PackagedPythonUpstreamContentTest(ApkFixtureTestCase):
     """官方 CPython 包自带构建机路径与地址常量；豁免只覆盖这些上游值与对应条目。"""

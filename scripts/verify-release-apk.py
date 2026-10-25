@@ -26,7 +26,8 @@ MIN_RATIO_CHECK_BYTES = 1024 * 1024
 
 SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("macOS 用户绝对路径", re.compile(rb"/Users/[A-Za-z0-9._-]+/")),
-    ("Linux 用户绝对路径", re.compile(rb"/home/[A-Za-z0-9._-]+/")),
+    # /home/session 是 Linux 会话在 Alpine 内的固定会话目录，不是构建机或用户路径。
+    ("Linux 用户绝对路径", re.compile(rb"/home/(?!session/)[A-Za-z0-9._-]+/")),
     ("Windows 本机绝对路径", re.compile(rb"(?i)[A-Z]:[\\/](?:Users|Nexara)[\\/]")),
     ("本机 secure_env 路径", re.compile(rb"(?i)(?:secure_env|promenar\.keystore|secure\.properties)")),
     (

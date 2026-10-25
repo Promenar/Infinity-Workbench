@@ -65,4 +65,42 @@ class DiagnosticRedactorTest {
         assertThat(DiagnosticRedactor.safeIdentifier("private-body"))
             .isNotEqualTo(DiagnosticRedactor.safeIdentifier("other-body"))
     }
+
+    @Test
+    fun `包装异常保留脱敏后的原因链与原因调用位置`() {
+        val root = identityMismatch()
+        val io = java.io.IOException("/data/user/0/com.promenar.nexara/files/private-name.txt", root)
+        val wrapper = IllegalStateException("创建 ownership 维护清理失败", io)
+
+        val event = DiagnosticRedactor.sanitize(DiagnosticRedactor.snapshot("WORKSPACE_JOURNAL", wrapper))
+
+        assertThat(event.summary).isEqualTo("IllegalStateException: 创建 ownership 维护清理失败")
+        assertThat(event.causes.map { it.summary }).containsExactly(
+            "IOException: [内容已隐藏]",
+            "SecurityException: 工作区根身份与数据库认领不一致",
+        ).inOrder()
+        assertThat(event.causes.last().frames).isNotEmpty()
+        assertThat(event.toString()).doesNotContain("private-name")
+    }
+
+    @Test
+    fun `系统调用失败只保留函数名与errno描述`() {
+        assertThat(DiagnosticRedactor.summary(java.io.IOException("open failed: EACCES (Permission denied)")))
+            .isEqualTo("IOException: open failed: EACCES (Permission denied)")
+        assertThat(DiagnosticRedactor.summary(java.io.IOException("/sdcard/a.txt: open failed: ENOENT (No such file or directory)")))
+            .isEqualTo("IOException: [内容已隐藏]")
+    }
+
+    @Test
+    fun `原因链有上限且不会因循环引用死循环`() {
+        val first = IllegalStateException("a")
+        val second = IllegalStateException("b", first)
+        first.initCause(second)
+        val deep = (1..10).fold(IllegalStateException("root") as Throwable) { cause, _ -> IllegalStateException("x", cause) }
+
+        assertThat(DiagnosticRedactor.snapshot("WORKSPACE_JOURNAL", second).causes).hasSize(1)
+        assertThat(DiagnosticRedactor.snapshot("WORKSPACE_JOURNAL", deep).causes).hasSize(4)
+    }
+
+    private fun identityMismatch() = SecurityException("工作区根身份与数据库认领不一致")
 }

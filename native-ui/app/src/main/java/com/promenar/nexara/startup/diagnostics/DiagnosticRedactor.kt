@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 object DiagnosticRedactor {
     private const val OMITTED = "[内容已隐藏]"
     private const val APP_PACKAGE = "com.promenar.nexara."
+    private const val MAX_CAUSES = 4
+    private const val MAX_CAUSE_FRAMES = 4
     private val safeMessages = setOf(
         "移动类 journal 文件布局冲突", "移动类 journal 的数据库路径冲突",
         "移动类 journal 的数据库目标不存在", "文件 journal 恢复失败",
@@ -44,7 +46,20 @@ object DiagnosticRedactor {
         "journal 相对路径无效", "journal 路径越界", "journal source 使用保留目录",
         "journal 路径经过符号链接或非目录节点", "journal 目标不是普通目录", "工作区根身份验证失败",
         "数据库恢复失败", "备份恢复失败", "启动恢复失败", "工具台账恢复失败", "向量队列恢复失败",
+        // 工作区文件端口、根身份与创建归属的固定原因，均不含路径或用户内容。
+        "创建 ownership 维护清理失败", "创建回滚隔离节点已存在", "创建归属证明版本不可安全恢复，节点已保留", "创建持久身份只接受普通文件", "创建文件FD与目录绑定不匹配",
+        "创建文件FD缺少稳定身份", "创建文件删除阶段令牌不匹配", "创建文件持久身份属性不匹配", "创建目录FD与目录绑定不匹配", "创建目录FD缺少稳定身份", "创建目录删除阶段令牌不匹配",
+        "创建目录删除阶段证明不匹配", "创建目录包含额外内容，拒绝回滚删除", "创建目录持久标记不匹配", "创建目录标记已变化", "创建节点内容或身份发生变化",
+        "创建身份锚点不支持 SecureDirectoryStream", "创建身份锚点不是目录", "工作区内部目录不是普通目录", "工作区文件无法按数据库哈希恢复", "工作区根目录FD身份与旧标记冲突",
+        "工作区根目录FD身份与私有索引冲突", "工作区根目录在打开期间发生替换", "工作区根目录身份无效", "工作区根缺少受信父目录", "工作区根缺少持久身份标记", "工作区根缺少目录FD身份，拒绝从私有索引重建",
+        "工作区根缺少稳定fileKey", "工作区根缺少进程内数据库身份绑定", "工作区根身份与数据库认领不一致", "工作区根身份标记与目录 fileKey 不一致", "工作区根身份标记过大",
+        "工作区目录缺少稳定 fileKey", "工作区目录路径绑定发生变化", "工作区目录路径绑定无法复核", "工作区目标不可为符号链接", "工作区相对路径无效", "工作区节点缺少 fileKey",
+        "已认领工作区根目录不存在", "当前文件系统不支持 SecureDirectoryStream，拒绝降低路径安全保证", "当前文件系统不支持工作区文件 fsync", "文件端口不支持安全跨根移动",
+        "清理目标不是普通节点", "清理目标不能是符号链接", "私有元数据不支持fsync", "私有元数据目录不能是符号链接", "私有元数据目录无效", "私有工作区元数据目录在打开期间发生替换",
+        "私有工作区元数据缺少安全目录能力", "私有工作区元数据过大", "私有根身份与旧标记冲突", "私有根身份并发记录冲突", "私有根身份记录冲突",
     )
+    /** 系统调用失败只保留函数名、errno 与系统描述，不含路径。 */
+    private val errnoMessage = Regex("[A-Za-z_][A-Za-z0-9_]{0,40} failed: E[A-Z0-9]{1,15} \\([A-Za-z ,'-]{1,60}\\)")
     private val exceptionTypes = setOf(
         "Throwable", "Exception", "RuntimeException", "IllegalStateException", "IllegalArgumentException",
         "UnsupportedOperationException", "SecurityException", "IOException", "FileNotFoundException",
@@ -54,6 +69,8 @@ object DiagnosticRedactor {
         "WorkspaceMutationRecoveryException", "BackupStartupException", "BackupValidationException",
         "StartupCriticalRecoveryException", "StartupIsolationException",
         "SnapshotPublicationUncertainException", "SnapshotStagingRetainedException",
+        "ErrnoException", "FileAlreadyExistsException", "NoSuchFileException", "AccessDeniedException",
+        "FileSystemException", "ExternalFolderException",
     )
     private val startupSteps = setOf(
         "DUAL_DATABASE", "BACKUP_RESTORE", "WRITER_INITIALIZATION", "WORKSPACE_INVENTORY",
@@ -93,6 +110,7 @@ object DiagnosticRedactor {
         val message = error.message
         val safeMessage = when {
             message in safeMessages -> message
+            message != null && errnoMessage.matches(message) -> message
             message != null -> safeSummary(message)?.substringAfter(": ") ?: OMITTED
             else -> OMITTED
         }
@@ -115,13 +133,32 @@ object DiagnosticRedactor {
         step = step.takeIf { it in safeIdentifiers } ?: referenceFor(step),
         exceptionType = exceptionType(error),
         summary = summary(error),
-        frames = error.stackTrace.asSequence().filter { it.className.startsWith(APP_PACKAGE) }
-            .mapNotNull { frame ->
-                safeFrame(frame.className, frame.methodName, frame.fileName, frame.lineNumber)
-            }.take(8).toList(),
+        frames = appFrames(error, 8),
         scopeKind = scopeKind?.takeIf { it in scopeKinds },
         scopeId = scopeId?.takeIf { scopeKind in scopeKinds }?.let(::safeIdentifier),
+        causes = causeChain(error).map { cause ->
+            DiagnosticCause(exceptionType(cause), summary(cause), appFrames(cause, MAX_CAUSE_FRAMES))
+        },
     )
+
+    /** 外层恢复器常把原因包装成统一异常；保留有限的 cause 链才能定位真正失败的检查。 */
+    private fun causeChain(error: Throwable): List<Throwable> {
+        val seen = mutableSetOf<Throwable>(error)
+        return generateSequence(error.cause) { it.cause }.takeWhile { seen.add(it) }.take(MAX_CAUSES).toList()
+    }
+
+    private fun appFrames(error: Throwable, limit: Int): List<String> =
+        error.stackTrace.asSequence().filter { it.className.startsWith(APP_PACKAGE) }
+            .mapNotNull { frame -> safeFrame(frame.className, frame.methodName, frame.fileName, frame.lineNumber) }
+            .take(limit).toList()
+
+    private fun sanitizeFrames(frames: List<String>, limit: Int): List<String> =
+        frames.asSequence().take(limit).mapNotNull { value ->
+            if (value.length > 320) return@mapNotNull null
+            val match = storedFrame.matchEntire(value) ?: return@mapNotNull null
+            val (clazz, method, source, line) = match.destructured
+            safeFrame(clazz, method, source.takeUnless { it == "<source>" }, line.toIntOrNull() ?: 0)
+        }.toList()
 
     internal fun sanitize(event: DiagnosticEvent): DiagnosticEvent = event.copy(
         timestamp = event.timestamp.coerceAtLeast(0),
@@ -130,12 +167,14 @@ object DiagnosticRedactor {
         summary = safeSummary(event.summary) ?: OMITTED,
         scopeKind = event.scopeKind?.takeIf { it in scopeKinds },
         scopeId = event.scopeId?.takeIf { event.scopeKind in scopeKinds }?.let(::safeIdentifier),
-        frames = event.frames.asSequence().take(8).mapNotNull { value ->
-            if (value.length > 320) return@mapNotNull null
-            val match = storedFrame.matchEntire(value) ?: return@mapNotNull null
-            val (clazz, method, source, line) = match.destructured
-            safeFrame(clazz, method, source.takeUnless { it == "<source>" }, line.toIntOrNull() ?: 0)
-        }.toList(),
+        frames = sanitizeFrames(event.frames, 8),
+        causes = event.causes.take(MAX_CAUSES).map { cause ->
+            DiagnosticCause(
+                exceptionType = cause.exceptionType.takeIf { it in exceptionTypes } ?: "Throwable",
+                summary = safeSummary(cause.summary) ?: OMITTED,
+                frames = sanitizeFrames(cause.frames, MAX_CAUSE_FRAMES),
+            )
+        },
     )
 
     internal fun sanitizeIssueSummary(text: String): String {
@@ -174,7 +213,7 @@ object DiagnosticRedactor {
         val separator = value.indexOf(": ")
         if (separator < 0 || value.substring(0, separator) !in exceptionTypes) return null
         val message = value.substring(separator + 2)
-        return value.takeIf { message == OMITTED || message in safeMessages }
+        return value.takeIf { message == OMITTED || message in safeMessages || errnoMessage.matches(message) }
     }
 
     private fun exceptionType(error: Throwable): String {
@@ -207,4 +246,12 @@ internal data class DiagnosticEvent(
     val frames: List<String>,
     val scopeKind: String? = null,
     val scopeId: String? = null,
+    val causes: List<DiagnosticCause> = emptyList(),
+)
+
+@Serializable
+internal data class DiagnosticCause(
+    val exceptionType: String,
+    val summary: String,
+    val frames: List<String>,
 )
