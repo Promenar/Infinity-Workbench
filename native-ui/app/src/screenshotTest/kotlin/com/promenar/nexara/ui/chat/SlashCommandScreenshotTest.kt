@@ -9,7 +9,6 @@ import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillScope
 import com.promenar.nexara.data.skills.SkillStatus
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.command.SlashCommandCatalog
 import com.promenar.nexara.ui.chat.command.rememberBuiltinSlashCommands
 import com.promenar.nexara.ui.theme.*
@@ -78,7 +77,6 @@ private fun SlashCommandPage(
                     inputText = inputText,
                     modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
                     tokenState = ChatViewModel.TokenIndicatorState(used = 9800, max = 128000),
-                    generationProgress = if (generating) GenerationProgress(rounds = 1, calls = 2, tokens = 6_420) else null,
                     composerQueue = if (generating) {
                         ComposerQueueUiState(listOf(QueuedMessageUi("q1", if (english) "Then list the open issues" else "然后列出还没解决的问题")))
                     } else {

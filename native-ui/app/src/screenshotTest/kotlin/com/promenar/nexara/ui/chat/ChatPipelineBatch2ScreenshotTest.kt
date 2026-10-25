@@ -46,12 +46,19 @@ fun chatBatch2UserMessagesDarkPreview() = PipelinePreviewFrame {
 }
 
 @PreviewTest
-@Preview(name = "助手操作行 完成", widthDp = 411, heightDp = 180, locale = "zh-rCN")
+@Preview(name = "助手操作行 完成", widthDp = 411, heightDp = 260, locale = "zh-rCN")
 @Composable
 fun chatBatch2AssistantActionsDarkPreview() = PipelinePreviewFrame {
     AssistantActionRow("Claude Sonnet 4.5", "14:35", false, onCopy = {}, onRegenerate = {}, onBranch = {}, onDelete = {})
     Spacer(Modifier.height(20.dp))
     AssistantActionRow("超长模型展示名称 用于验证模型截断与时间保持可见", "14:36", false, onCopy = {}, onRegenerate = {}, onBranch = {}, onDelete = {})
+    Spacer(Modifier.height(20.dp))
+    // 调用过工具的回复：操作行下方挂本次运行统计。
+    AssistantActionRow(
+        "Claude Opus 5.5", "17:20", false, onCopy = {}, onRegenerate = {}, onBranch = {}, onDelete = {},
+        stats = { error("预览不打开统计") },
+        runStats = ReplyRunStats(rounds = 4, toolCalls = 9, tokens = 18_400, estimated = false, durationMs = 133_000),
+    )
 }
 
 @PreviewTest

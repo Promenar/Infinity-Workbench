@@ -164,7 +164,6 @@ import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.ui.chat.components.TaskPanelSizeSpring
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSnackbarData
@@ -225,7 +224,6 @@ data class ChatScreenState(
     /** 服务商 ID → 显示名，供生成统计浮卡使用。 */
     val providerDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
-    val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
     /** 本次生成任务开始的墙钟时间；没有进行中的任务时为 null。 */
     val generationStartedAt: Long? = null,
     /** 外观页“完成后折叠过程”，由路由层从外观偏好读取后传入。 */
@@ -615,10 +613,7 @@ fun ChatScreenContent(
                 delay(delayMs)
                 hiddenPlanSignature = taskPanel?.visibilitySignature()
             }
-            // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，统计与清单收进运行详情。
-            val activity = if (uiState.isGenerating) state.generationProgress ?: GenerationProgress() else null
-            var lastActivity by remember(uiState.session?.id) { mutableStateOf<GenerationProgress?>(null) }
-            if (activity != null) lastActivity = activity
+            // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
             var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.nexara.ui.chat.components.RunDetailTab?>(null) }
             var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
             val agentActivity = com.promenar.nexara.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen)
@@ -963,7 +958,7 @@ fun ChatScreenContent(
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
                             topContent = {
-                                // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，统计与清单收进运行详情。
+                                // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
                                 AnimatedVisibility(
                                     visible = dock != null && !showRunSidePanel,
                                     enter = fadeIn(tween(220, delayMillis = 60)) +
@@ -1104,7 +1099,6 @@ fun ChatScreenContent(
                     dock = dock,
                     plan = sidePlan,
                     elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
-                    progress = activity ?: lastActivity,
                     activity = activitySummary,
                     stateBoard = sideBoard,
                     git = state.gitSummary,
@@ -1126,7 +1120,6 @@ fun ChatScreenContent(
                     initialTab = runSheetTab,
                     plan = sheetPlan,
                     isGenerating = uiState.isGenerating,
-                    progress = activity ?: lastActivity,
                     turnStartedAt = turnStartedAt,
                     activity = agentActivity,
                     stateBoard = state.stateBoard?.takeIf { it.board != null },

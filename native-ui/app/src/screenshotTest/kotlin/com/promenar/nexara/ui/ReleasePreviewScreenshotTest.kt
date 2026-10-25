@@ -770,7 +770,6 @@ fun chatTaskChecklistExpandedReleasePreview() {
                     initialTab = RunDetailTab.PLAN,
                     plan = paused,
                     isGenerating = false,
-                    progress = null,
                     turnStartedAt = null,
                     activity = null,
                     stateBoard = null,

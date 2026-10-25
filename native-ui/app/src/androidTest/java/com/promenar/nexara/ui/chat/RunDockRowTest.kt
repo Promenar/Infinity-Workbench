@@ -15,7 +15,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.TaskStep
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.components.RunDetailContent
 import com.promenar.nexara.ui.chat.components.RunDetailTab
 import com.promenar.nexara.ui.chat.components.RunDockRow
@@ -108,8 +107,7 @@ class RunDockRowTest {
     }
 
     @Test
-    fun planFooterShowsOnlyNonZeroRunStats() {
-        var progress by mutableStateOf(GenerationProgress(rounds = 2, calls = 5, tokens = 21_846, estimated = true))
+    fun planFooterKeepsActionsWithoutRunStats() {
         rule.setContent {
             NexaraTheme {
                 Column {
@@ -117,7 +115,6 @@ class RunDockRowTest {
                         initialTab = RunDetailTab.PLAN,
                         plan = plan,
                         isGenerating = true,
-                        progress = progress,
                         turnStartedAt = null,
                         activity = null,
                         stateBoard = null,
@@ -134,21 +131,8 @@ class RunDockRowTest {
                 }
             }
         }
-        val resources = context.resources
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertTextEquals(
-            context.getString(
-                R.string.run_detail_stats,
-                listOf(
-                    resources.getQuantityString(R.plurals.run_detail_rounds, 2, 2),
-                    resources.getQuantityString(R.plurals.run_detail_calls, 5, 5),
-                    context.getString(R.string.run_detail_tokens, "≈21.8K"),
-                ).joinToString(" · "),
-            ),
-        )
-        rule.runOnIdle { progress = GenerationProgress(tokens = 1_536) }
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertTextEquals(
-            context.getString(R.string.run_detail_stats, context.getString(R.string.run_detail_tokens, "1.5K")),
-        )
+        // 本次运行统计挂在回复下方，运行详情不再显示。
+        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertExists()
     }
 }

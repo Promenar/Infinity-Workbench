@@ -23,7 +23,32 @@ internal data class GenerationStatsSummary(
     /** 输出合计 ÷ 端到端耗时，单位 Token/秒。 */
     val endToEndTokensPerSecond: Double?,
     val runtime: GenerationRuntimeBreakdown?,
+    /** 组内全部工具调用次数（按调用 ID 合并调用与结果）。 */
+    val toolCalls: Int = 0,
 )
+
+/** 回复下方的本次运行统计；只在这次回复调用过工具时显示。 */
+internal data class ReplyRunStats(
+    val rounds: Int,
+    val toolCalls: Int,
+    /** 主模型输入与输出合计；没有用量记录时为 null。 */
+    val tokens: Long?,
+    val estimated: Boolean,
+    val durationMs: Long?,
+)
+
+/** 列表渲染时每个气泡都会调用：先只数工具调用，没有调用就不计算完整统计。 */
+internal fun replyRunStats(messages: List<Message>): ReplyRunStats? {
+    if (messages.none { message -> toolInvocations(message.executionSteps.orEmpty()).isNotEmpty() }) return null
+    val summary = summarizeGenerationStats(messages)
+    return ReplyRunStats(
+        rounds = summary.rounds,
+        toolCalls = summary.toolCalls,
+        tokens = listOfNotNull(summary.inputTokens, summary.outputTokens).takeIf { it.isNotEmpty() }?.sum(),
+        estimated = summary.estimated,
+        durationMs = summary.endToEndMs,
+    )
+}
 
 /** 运行时间分布；[toolMs] 与 [otherMs] 在工具耗时未知时为 null。 */
 internal data class GenerationRuntimeBreakdown(
@@ -105,5 +130,6 @@ internal fun summarizeGenerationStats(
         generationTokensPerSecond = generationTps,
         endToEndTokensPerSecond = endToEndTps,
         runtime = runtime,
+        toolCalls = messages.sumOf { toolInvocations(it.executionSteps.orEmpty()).size },
     )
 }

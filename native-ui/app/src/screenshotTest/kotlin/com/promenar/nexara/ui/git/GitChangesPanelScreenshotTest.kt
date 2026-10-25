@@ -133,10 +133,9 @@ private fun PanelPreview(mode: NexaraThemeMode, content: @Composable () -> Unit)
 }
 
 @Composable
-private fun Panel(state: GitPanelUiState, agentBusy: Boolean = false) = GitChangesPanel(
+private fun Panel(state: GitPanelUiState) = GitChangesPanel(
     state = state,
-    actions = GitPanelActions(onAskAgent = { _, _ -> }),
-    agentBusy = agentBusy,
+    actions = GitPanelActions(),
     nowMillis = PreviewNow,
     modifier = Modifier.fillMaxSize(),
 )
@@ -167,9 +166,9 @@ private val BranchesState = ChangesState.copy(tab = GitPanelTab.BRANCHES, branch
 fun gitBranchesLightPreview() = PanelPreview(NexaraThemeMode.LIGHT) { Panel(BranchesState) }
 
 @PreviewTest
-@Preview(name = "Git 分支 生成中 深英360 大字体", widthDp = 360, heightDp = 860, locale = "en", fontScale = 1.3f)
+@Preview(name = "Git 分支 深英360 大字体", widthDp = 360, heightDp = 860, locale = "en", fontScale = 1.3f)
 @Composable
-fun gitBranchesBusyDarkPreview() = PanelPreview(NexaraThemeMode.DARK) { Panel(BranchesState, agentBusy = true) }
+fun gitBranchesLargeFontDarkPreview() = PanelPreview(NexaraThemeMode.DARK) { Panel(BranchesState) }
 
 @PreviewTest
 @Preview(name = "Git 变更列表 深中360", widthDp = 360, heightDp = 760, locale = "zh-rCN")

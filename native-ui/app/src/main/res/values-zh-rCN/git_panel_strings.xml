@@ -79,13 +79,6 @@
     <plurals name="git_panel_branches_truncated">
         <item quantity="other">仅显示最近 %1$d 个分支</item>
     </plurals>
-    <string name="git_panel_agent_hint">写操作由 Agent 执行，执行前会请你批准。</string>
-    <string name="git_panel_agent_busy">Agent 正在运行，结束后再交给它执行。</string>
-    <string name="git_panel_action_pull">拉取并合并</string>
-    <string name="git_panel_action_commit_push">提交并推送</string>
-    <string name="git_agent_prompt_pull">请用 git 拉取当前分支的上游 %1$s 并合并到本地分支；如有冲突，先列出冲突文件，再问我怎么处理。</string>
-    <string name="git_agent_prompt_commit_push">请检查当前工作区的 git 改动：先列出要提交的文件，按改动内容写提交说明后提交，再推送到 %1$s。</string>
-    <string name="git_agent_prompt_commit_push_no_upstream">请检查当前工作区的 git 改动：先列出要提交的文件，按改动内容写提交说明后提交。当前分支没有上游，推送前先告诉我要推到哪个远端分支。</string>
     <plurals name="git_top_bar_changes">
         <item quantity="other">%d 处改动</item>
     </plurals>

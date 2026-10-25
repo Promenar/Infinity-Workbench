@@ -655,7 +655,6 @@ fun ChatRoute(
                 reasoningControl = reasoningControl,
                 providerDisplayNames = providerDisplayNames,
                 taskPanel = taskPanel,
-                generationProgress = generationProgress?.progress,
                 generationStartedAt = generationProgress?.startedAt,
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
                 turnGraphStates = turnGraphStates,
@@ -888,28 +887,12 @@ fun ChatRoute(
         }
     }
     if (activeOverlay == ChatOverlay.Git) {
-        val resources = androidx.compose.ui.platform.LocalResources.current
         com.promenar.nexara.ui.git.GitChangesSheet(
             sessionId = sessionId,
             onDismiss = {
                 activeOverlayToken = null
                 gitRefresh++
             },
-            // 写操作作为一条普通消息交给 Agent，由它调用命令工具并走审批；生成中按钮不可用。
-            onAskAgent = { request, upstream ->
-                val prompt = when (request) {
-                    com.promenar.nexara.ui.git.GitAgentRequest.PULL_MERGE ->
-                        upstream?.let { resources.getString(R.string.git_agent_prompt_pull, it) }
-                    com.promenar.nexara.ui.git.GitAgentRequest.COMMIT_PUSH ->
-                        upstream?.let { resources.getString(R.string.git_agent_prompt_commit_push, it) }
-                            ?: resources.getString(R.string.git_agent_prompt_commit_push_no_upstream)
-                }
-                if (prompt != null && !uiState.isGenerating) {
-                    activeOverlayToken = null
-                    chatViewModel.sendMessage(prompt)
-                }
-            },
-            agentBusy = uiState.isGenerating,
         )
     }
     if (activeOverlay == ChatOverlay.Workspace) {

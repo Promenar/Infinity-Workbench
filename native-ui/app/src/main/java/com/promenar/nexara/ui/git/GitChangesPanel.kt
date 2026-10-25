@@ -118,8 +118,6 @@ object GitPanelTags {
     const val DIFF = "git_panel_diff"
     const val BRANCHES_LIST = "git_panel_branches_list"
     const val TRACKING = "git_panel_tracking"
-    const val AGENT_PULL = "git_panel_agent_pull"
-    const val AGENT_COMMIT_PUSH = "git_panel_agent_commit_push"
     fun branch(name: String) = "git_panel_branch_$name"
     fun change(group: GitChangeGroup, path: String) = "git_panel_change_${group.name.lowercase()}_$path"
     fun commit(sha: String) = "git_panel_commit_$sha"
@@ -130,9 +128,6 @@ object GitPanelTags {
 fun GitChangesSheet(
     sessionId: String,
     onDismiss: () -> Unit,
-    /** 非空时面板底部提供“拉取并合并 / 提交并推送”，把请求作为消息交给 Agent；参数为上游短名。 */
-    onAskAgent: ((GitAgentRequest, String?) -> Unit)? = null,
-    agentBusy: Boolean = false,
 ) {
     val application = LocalContext.current.applicationContext as NexaraApplication
     val viewModel: GitPanelViewModel = viewModel(
@@ -159,9 +154,7 @@ fun GitChangesSheet(
                 onOpenCommit = viewModel::openCommit,
                 onOpenCommitFile = viewModel::openCommitFile,
                 onBack = { viewModel.back() },
-                onAskAgent = onAskAgent,
             ),
-            agentBusy = agentBusy,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -173,7 +166,6 @@ fun GitChangesPanel(
     state: GitPanelUiState,
     actions: GitPanelActions,
     modifier: Modifier = Modifier,
-    agentBusy: Boolean = false,
     nowMillis: Long? = null,
 ) {
     val readyStatus = (state.status as? GitLoad.Ready)?.value
@@ -233,10 +225,6 @@ fun GitChangesPanel(
                     if (file != null) DiffContent(file.diff, actions.onRefresh) else CommitDetailContent(detail, actions)
                 }
             }
-        }
-        val askAgent = actions.onAskAgent
-        if (askAgent != null && state.detail == null && readyStatus != null) {
-            AgentActionFooter(readyStatus, agentBusy, askAgent)
         }
     }
 }
@@ -514,8 +502,8 @@ internal fun changeCountLabel(count: Int, truncated: Boolean): String = when {
 
 @Composable
 private fun ChangesContent(load: GitLoad<GitStatus>, actions: GitPanelActions) = GitLoadContent(load, "git_changes_state") { status ->
-    // 底部有交给 Agent 的操作区时，只读说明由操作区承担。
-    val readonlyHint = if (actions.onAskAgent == null) stringResource(R.string.git_panel_readonly_hint) else null
+    // 面板只读：提交、推送等写操作由用户直接告诉 Agent。
+    val readonlyHint = stringResource(R.string.git_panel_readonly_hint)
     when (status) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = status.problem, onRetry = actions.onRefresh)
@@ -794,39 +782,6 @@ private fun BranchRow(branch: GitBranch) {
                 behind?.let { Text("\u2193$it", style = style, color = MaterialTheme.nexaraDomainColors.warning, maxLines = 1) }
             }
         }
-    }
-}
-
-// —— 交给 Agent 的写操作 ——
-
-@Composable
-private fun AgentActionFooter(status: GitStatus, agentBusy: Boolean, onAskAgent: (GitAgentRequest, String?) -> Unit) {
-    val upstream = status.tracking.upstream?.takeIf { status.tracking.upstreamMissing != true }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-        Text(
-            text = stringResource(if (agentBusy) R.string.git_panel_agent_busy else R.string.git_panel_agent_hint),
-            style = NexaraTypography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = NexaraSpacing.Medium, bottom = 10.dp),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { onAskAgent(GitAgentRequest.PULL_MERGE, upstream) },
-                enabled = !agentBusy && status.canPull(),
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(GitPanelTags.AGENT_PULL),
-            ) {
-                Text(stringResource(R.string.git_panel_action_pull), maxLines = 2, textAlign = TextAlign.Center)
-            }
-            Button(
-                onClick = { onAskAgent(GitAgentRequest.COMMIT_PUSH, upstream) },
-                enabled = !agentBusy && status.canCommitPush(),
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(GitPanelTags.AGENT_COMMIT_PUSH),
-            ) {
-                Text(stringResource(R.string.git_panel_action_commit_push), maxLines = 2, textAlign = TextAlign.Center)
-            }
-        }
-        Spacer(Modifier.height(NexaraSpacing.Small))
     }
 }
 

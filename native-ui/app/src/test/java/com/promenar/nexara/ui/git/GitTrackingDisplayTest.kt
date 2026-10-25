@@ -2,9 +2,7 @@ package com.promenar.nexara.ui.git
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.git.GitChangeKind
-import com.promenar.nexara.data.git.GitChangeList
 import com.promenar.nexara.data.git.GitFileChange
-import com.promenar.nexara.data.git.GitStatus
 import com.promenar.nexara.data.git.GitTracking
 import org.junit.Test
 
@@ -44,24 +42,6 @@ class GitTrackingDisplayTest {
         assertThat(short).startsWith("feature/a-")
         assertThat(short).endsWith("anch-name")
         assertThat(short).contains("\u2026")
-    }
-
-    private fun status(changes: Int = 0, tracking: GitTracking = GitTracking()) = GitStatus(
-        branch = "main", detached = false, head = "2222222", unborn = false,
-        staged = GitChangeList(emptyList()),
-        unstaged = GitChangeList(List(changes) { GitFileChange("f$it.kt", GitChangeKind.MODIFIED) }),
-        untracked = GitChangeList(emptyList()),
-        tracking = tracking,
-    )
-
-    @Test fun `拉取需要本地存在的上游，提交推送需要改动或未推送提交`() {
-        assertThat(status().canPull()).isFalse()
-        assertThat(status(tracking = GitTracking("origin/main", 0, 0, false, false)).canPull()).isTrue()
-        assertThat(status(tracking = GitTracking("origin/gone", null, null, true, false)).canPull()).isFalse()
-
-        assertThat(status().canCommitPush()).isFalse()
-        assertThat(status(changes = 1).canCommitPush()).isTrue()
-        assertThat(status(tracking = GitTracking("origin/main", 2, 0, false, false)).canCommitPush()).isTrue()
     }
 
     @Test fun `空文件增删都为 0 时不显示 +0，改显示箭头；二进制与有增删时显示`() {

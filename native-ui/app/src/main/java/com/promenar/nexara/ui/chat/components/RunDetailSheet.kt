@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.state.StateBoardSnapshot
 import com.promenar.nexara.data.state.StateOperation
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.ChatViewModel
 import com.promenar.nexara.ui.chat.TaskPanelStep
 import com.promenar.nexara.ui.chat.TaskPanelStepStatus
@@ -83,7 +82,7 @@ internal fun runDetailTabs(hasPlan: Boolean, hasBackground: Boolean, hasState: B
 }
 
 /**
- * 运行详情：计划、后台任务与状态面板分页查看，本次运行的统计放在计划页底部。
+ * 运行详情：计划、后台任务与状态面板分页查看；本次运行的统计挂在对应回复下方，这里不显示。
  * 标题区写清当前进度与用时；隐藏或清除计划收进右上角菜单。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,7 +91,6 @@ internal fun RunDetailSheet(
     initialTab: RunDetailTab?,
     plan: TaskPanelUiState?,
     isGenerating: Boolean,
-    progress: GenerationProgress?,
     turnStartedAt: Long?,
     activity: AgentActivityState?,
     stateBoard: StateBoardSnapshot?,
@@ -109,7 +107,6 @@ internal fun RunDetailSheet(
             initialTab = initialTab,
             plan = plan,
             isGenerating = isGenerating,
-            progress = progress,
             turnStartedAt = turnStartedAt,
             activity = activity,
             stateBoard = stateBoard,
@@ -132,7 +129,6 @@ internal fun RunDetailContent(
     initialTab: RunDetailTab?,
     plan: TaskPanelUiState?,
     isGenerating: Boolean,
-    progress: GenerationProgress?,
     turnStartedAt: Long?,
     activity: AgentActivityState?,
     stateBoard: StateBoardSnapshot?,
@@ -177,7 +173,7 @@ internal fun RunDetailContent(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
                 RunDetailTab.PLAN -> plan?.let {
-                    RunPlanTab(it, isGenerating, progress, onContinue = { onDismiss(); onContinue() }, onComplete = onComplete)
+                    RunPlanTab(it, isGenerating, onContinue = { onDismiss(); onContinue() }, onComplete = onComplete)
                 }
                 RunDetailTab.BACKGROUND -> activity?.let { state ->
                     AgentActivityTabContent(state, onOpenLog = { path -> onDismiss(); state.access.onOpenLog(path) }, modifier = Modifier.fillMaxSize())
@@ -337,39 +333,25 @@ private fun RunDetailTabs(
 private fun ColumnScope.RunPlanFooter(
     plan: TaskPanelUiState,
     isGenerating: Boolean,
-    progress: GenerationProgress?,
     onContinue: () -> Unit,
     onComplete: () -> Unit,
 ) {
-    val stats = progress?.takeIf { it.rounds > 0 || it.calls > 0 || it.tokens > 0 }?.let { runStatsText(it) }
-    if (stats == null && plan.isCompleted) return
+    if (plan.isCompleted) return
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    Column(
+    Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        stats?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag(UiTags.CHAT_GENERATION_PROGRESS),
-            )
-        }
-        if (!plan.isCompleted) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = onComplete,
-                    enabled = !isGenerating,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_COMPLETE),
-                ) { Text(stringResource(R.string.chat_task_mark_completed), maxLines = 1) }
-                Button(
-                    onClick = onContinue,
-                    enabled = !isGenerating,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_CONTINUE),
-                ) { Text(stringResource(R.string.chat_task_continue), maxLines = 1) }
-            }
-        }
+        OutlinedButton(
+            onClick = onComplete,
+            enabled = !isGenerating,
+            modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_COMPLETE),
+        ) { Text(stringResource(R.string.chat_task_mark_completed), maxLines = 1) }
+        Button(
+            onClick = onContinue,
+            enabled = !isGenerating,
+            modifier = Modifier.weight(1f).height(48.dp).testTag(UiTags.CHAT_TASK_CONTINUE),
+        ) { Text(stringResource(R.string.chat_task_continue), maxLines = 1) }
     }
 }
 
@@ -377,7 +359,6 @@ private fun ColumnScope.RunPlanFooter(
 private fun RunPlanTab(
     plan: TaskPanelUiState,
     isGenerating: Boolean,
-    progress: GenerationProgress?,
     onContinue: () -> Unit,
     onComplete: () -> Unit,
 ) {
@@ -398,7 +379,7 @@ private fun RunPlanTab(
                 }
             }
         }
-        RunPlanFooter(plan, isGenerating, progress, onContinue, onComplete)
+        RunPlanFooter(plan, isGenerating, onContinue, onComplete)
     }
 }
 
@@ -471,17 +452,6 @@ private fun RunPlanStepRow(step: TaskPanelStep, current: Boolean, pulsing: Boole
             Text(stringResource(R.string.run_detail_current), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
-}
-
-@Composable
-internal fun runStatsText(progress: GenerationProgress): String {
-    val tokens = ChatViewModel.formatTokenCount(progress.tokens.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
-    val parts = buildList {
-        if (progress.rounds > 0) add(pluralStringResource(R.plurals.run_detail_rounds, progress.rounds, progress.rounds))
-        if (progress.calls > 0) add(pluralStringResource(R.plurals.run_detail_calls, progress.calls, progress.calls))
-        if (progress.tokens > 0) add(stringResource(R.string.run_detail_tokens, if (progress.estimated) "≈$tokens" else tokens))
-    }
-    return stringResource(R.string.run_detail_stats, parts.joinToString(" · "))
 }
 
 @Composable

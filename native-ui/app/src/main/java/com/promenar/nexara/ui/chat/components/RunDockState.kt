@@ -27,7 +27,7 @@ internal fun runDockDefaultTab(label: RunDockLabel): RunDetailTab? = when (label
 
 /**
  * 输入浮岛顶部唯一一行运行信息：计划、生成、审批、后台任务与状态面板合并显示，
- * 统计与清单收进运行详情面板。各项都没有时返回 null，浮岛不占位。
+ * 清单收进运行详情面板，本次运行统计挂在回复下方。各项都没有时返回 null，浮岛不占位。
  */
 internal data class RunDockUiState(
     val tone: RunDockTone,

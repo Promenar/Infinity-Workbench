@@ -15,6 +15,10 @@
     <plurals name="generation_stats_rounds_total">
         <item quantity="other">%1$d 轮合计</item>
     </plurals>
+    <string name="generation_stats_tool_calls_label">工具调用</string>
+    <plurals name="generation_stats_tool_calls_total">
+        <item quantity="other">%1$d 次</item>
+    </plurals>
     <string name="generation_stats_multi_round_input_note">含每轮重复计入的上下文</string>
     <string name="generation_stats_estimated">估算</string>
     <string name="generation_stats_estimated_description">Token 数为估算值</string>

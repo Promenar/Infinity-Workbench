@@ -89,13 +89,6 @@
         <item quantity="one">Showing the most recent %1$d branch</item>
         <item quantity="other">Showing the most recent %1$d branches</item>
     </plurals>
-    <string name="git_panel_agent_hint">Write actions are carried out by the agent, which asks for your approval first.</string>
-    <string name="git_panel_agent_busy">The agent is running. Hand this off once it finishes.</string>
-    <string name="git_panel_action_pull">Pull and merge</string>
-    <string name="git_panel_action_commit_push">Commit and push</string>
-    <string name="git_agent_prompt_pull">Use git to pull the upstream %1$s of the current branch and merge it into the local branch. If there are conflicts, list the conflicting files first and ask me how to resolve them.</string>
-    <string name="git_agent_prompt_commit_push">Review the git changes in the current workspace: list the files to be committed first, write a commit message that describes the changes, commit, then push to %1$s.</string>
-    <string name="git_agent_prompt_commit_push_no_upstream">Review the git changes in the current workspace: list the files to be committed first, write a commit message that describes the changes, and commit. The current branch has no upstream, so ask me which remote branch to push to before pushing.</string>
     <plurals name="git_top_bar_changes">
         <item quantity="one">%d change</item>
         <item quantity="other">%d changes</item>

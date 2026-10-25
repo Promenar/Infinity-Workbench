@@ -16,6 +16,11 @@
         <item quantity="one">%1$d round total</item>
         <item quantity="other">%1$d rounds total</item>
     </plurals>
+    <string name="generation_stats_tool_calls_label">Tool calls</string>
+    <plurals name="generation_stats_tool_calls_total">
+        <item quantity="one">%1$d call</item>
+        <item quantity="other">%1$d calls</item>
+    </plurals>
     <string name="generation_stats_multi_round_input_note">Includes context resent each round</string>
     <string name="generation_stats_estimated">Estimated</string>
     <string name="generation_stats_estimated_description">Token counts are estimated</string>

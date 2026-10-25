@@ -333,6 +333,10 @@ fun PipelineBubble(
                         )
                     }
                 }
+                // 生成中操作行不显示，统计等回合结束后再算，避免流式输出时反复解析工具步骤。
+                val runStats = remember(group.messages, isGenerating) {
+                    if (isGenerating) null else replyRunStats(group.messages)
+                }
                 val memoryOwner = if (onOpenTurnMemory == null) null
                     else group.assistantMessages.lastOrNull { it.turnMemory != null || it.id in turnGraphStates }
                 AssistantActionRow(
@@ -343,6 +347,7 @@ fun PipelineBubble(
                     graphState = memoryOwner?.let { turnGraphStates[it.id] },
                     onOpenMemory = memoryOwner?.let { owner -> onOpenTurnMemory?.let { open -> { open(owner.id) } } },
                     stats = statsFactory,
+                    runStats = runStats,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
                     onCopyAllProcess = allProcessCopyText?.let { text ->
                         { onCopy?.invoke(text) ?: copyToClipboard(context, text) }
@@ -800,6 +805,8 @@ internal fun AssistantActionRow(
     /** 本轮的图谱抽取状态；记忆已记入或未写入记忆时取代记忆状态显示。 */
     graphState: com.promenar.nexara.data.rag.TurnGraphState? = null,
     onOpenMemory: (() -> Unit)? = null,
+    /** 本次回复调用过工具时的运行统计，显示在操作行下方，点按打开生成统计；为 null 时不显示。 */
+    runStats: ReplyRunStats? = null,
 ) {
     // 生成结束后操作行淡入展开，重新生成时立即收起，不在流式输出期间占位。
     AnimatedVisibility(
@@ -814,113 +821,140 @@ internal fun AssistantActionRow(
         // 锚点坐标只在打开浮卡时读取，用普通引用持有，滚动时不触发重组。
         val statsAnchor = remember { StatsAnchorHolder() }
         val metaStyle = NexaraTypography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box(modifier = modifier.fillMaxWidth().height(36.dp).testTag("CHAT_ASSISTANT_ACTIONS")) {
-            Row(
-                modifier = Modifier.align(Alignment.Center).layout { measurable, constraints ->
-                    val bleed = 17.5.dp.roundToPx()
-                    val row = measurable.measure(constraints.copy(minWidth = constraints.maxWidth + bleed, maxWidth = constraints.maxWidth + bleed))
-                    layout(constraints.maxWidth, row.height) { row.placeRelative(-bleed, 0) }
-                }.fillMaxWidth().wrapContentHeight(unbounded = true).height(48.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopy() }, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_COPY")) {
-                    Icon(Icons.Rounded.ContentCopy, stringResource(R.string.chat_action_copy), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-                if (onRegenerate != null) {
-                    IconButton(onClick = onRegenerate, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_REGENERATE")) {
-                        Icon(Icons.Rounded.Refresh, stringResource(R.string.chat_action_regenerate), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Column(modifier = modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth().height(36.dp).testTag("CHAT_ASSISTANT_ACTIONS")) {
+                Row(
+                    modifier = Modifier.align(Alignment.Center).layout { measurable, constraints ->
+                        val bleed = 17.5.dp.roundToPx()
+                        val row = measurable.measure(constraints.copy(minWidth = constraints.maxWidth + bleed, maxWidth = constraints.maxWidth + bleed))
+                        layout(constraints.maxWidth, row.height) { row.placeRelative(-bleed, 0) }
+                    }.fillMaxWidth().wrapContentHeight(unbounded = true).height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopy() }, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_COPY")) {
+                        Icon(Icons.Rounded.ContentCopy, stringResource(R.string.chat_action_copy), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
-                }
-                Box {
-                    IconButton(
-                        onClick = { showMore = true },
-                        enabled = onBranch != null || onDelete != null || onCopyAllProcess != null,
-                        modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_MORE"),
-                    ) {
-                        Icon(Icons.Rounded.MoreHoriz, stringResource(R.string.chat_step_more_actions), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    }
-                    NexaraDropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
-                        if (onCopyAllProcess != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
-                                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
-                                modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
-                                onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopyAllProcess(); showMore = false },
-                            )
-                        }
-                        if (onBranch != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_action_branch)) },
-                                leadingIcon = { Icon(Icons.Rounded.ForkRight, null, modifier = Modifier.size(18.dp)) },
-                                modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
-                                onClick = { onBranch(); showMore = false },
-                            )
-                        }
-                        if (onDelete != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
-                                onClick = { onDelete(); showMore = false },
-                            )
+                    if (onRegenerate != null) {
+                        IconButton(onClick = onRegenerate, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_REGENERATE")) {
+                            Icon(Icons.Rounded.Refresh, stringResource(R.string.chat_action_regenerate), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
-                }
-                BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                    val footerStatus = TurnFooterStatus(memoryState, graphState)
-                    val memoryLabel = footerStatus.label()
-                    // 宽度不足时记忆状态只保留图标：时间始终完整，模型名其次，最后才是状态文字。
-                    val memoryTextFits = memoryLabel != null && turnMemoryTextFits(
-                        maxWidth = maxWidth, style = metaStyle, memoryLabel = memoryLabel,
-                        modelDisplayName = modelDisplayName, timestamp = timestamp,
-                    )
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        if (!footerStatus.isEmpty && onOpenMemory != null) {
-                            TurnMemoryStatusLabel(footerStatus, onOpenMemory, showText = memoryTextFits)
-                            Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(end = 4.dp).clearAndSetSemantics {})
-                        }
-                        val statsLabel = stringResource(R.string.generation_stats_open_action)
-                        Box(
-                            modifier = if (stats != null) {
-                                Modifier.onGloballyPositioned { statsAnchor.coordinates = it }
-                            } else Modifier,
+                    Box {
+                        IconButton(
+                            onClick = { showMore = true },
+                            enabled = onBranch != null || onDelete != null || onCopyAllProcess != null,
+                            modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_MORE"),
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                                    .then(
-                                        if (stats != null) {
-                                            Modifier.clickable(onClickLabel = statsLabel, role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
-                                                .testTag(UiTags.CHAT_ASSISTANT_STATS_TRIGGER)
-                                        } else Modifier,
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (modelDisplayName.isNotBlank()) {
-                                    Text(
-                                        text = modelDisplayName,
-                                        style = metaStyle,
-                                        modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
-                                }
-                                Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
+                            Icon(Icons.Rounded.MoreHoriz, stringResource(R.string.chat_step_more_actions), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        }
+                        NexaraDropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                            if (onCopyAllProcess != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
+                                    leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
+                                    modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
+                                    onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopyAllProcess(); showMore = false },
+                                )
                             }
-                            if (showStats && stats != null) {
-                                val model = remember { stats() }
-                                val anchorBounds = remember {
-                                    statsAnchor.coordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let {
-                                        androidx.compose.ui.unit.IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
-                                    }
-                                }
-                                GenerationStatsPopup(
-                                    model = model,
-                                    anchorBoundsInWindow = anchorBounds,
-                                    onDismissRequest = { showStats = false },
+                            if (onBranch != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_action_branch)) },
+                                    leadingIcon = { Icon(Icons.Rounded.ForkRight, null, modifier = Modifier.size(18.dp)) },
+                                    modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
+                                    onClick = { onBranch(); showMore = false },
+                                )
+                            }
+                            if (onDelete != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
+                                    onClick = { onDelete(); showMore = false },
                                 )
                             }
                         }
+                    }
+                    BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                        val footerStatus = TurnFooterStatus(memoryState, graphState)
+                        val memoryLabel = footerStatus.label()
+                        // 宽度不足时记忆状态只保留图标：时间始终完整，模型名其次，最后才是状态文字。
+                        val memoryTextFits = memoryLabel != null && turnMemoryTextFits(
+                            maxWidth = maxWidth, style = metaStyle, memoryLabel = memoryLabel,
+                            modelDisplayName = modelDisplayName, timestamp = timestamp,
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            if (!footerStatus.isEmpty && onOpenMemory != null) {
+                                TurnMemoryStatusLabel(footerStatus, onOpenMemory, showText = memoryTextFits)
+                                Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(end = 4.dp).clearAndSetSemantics {})
+                            }
+                            val statsLabel = stringResource(R.string.generation_stats_open_action)
+                            Box(
+                                modifier = if (stats != null) {
+                                    Modifier.onGloballyPositioned { statsAnchor.coordinates = it }
+                                } else Modifier,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                                        .then(
+                                            if (stats != null) {
+                                                Modifier.clickable(onClickLabel = statsLabel, role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
+                                                    .testTag(UiTags.CHAT_ASSISTANT_STATS_TRIGGER)
+                                            } else Modifier,
+                                        ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (modelDisplayName.isNotBlank()) {
+                                        Text(
+                                            text = modelDisplayName,
+                                            style = metaStyle,
+                                            modifier = Modifier.weight(1f, fill = false).testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(NexaraMetaSeparator, style = metaStyle, modifier = Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {})
+                                    }
+                                    Text(timestamp, style = metaStyle, modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA), maxLines = 1)
+                                }
+                                if (showStats && stats != null) {
+                                    val model = remember { stats() }
+                                    val anchorBounds = remember {
+                                        statsAnchor.coordinates?.takeIf { it.isAttached }?.boundsInWindow()?.let {
+                                            androidx.compose.ui.unit.IntRect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
+                                        }
+                                    }
+                                    GenerationStatsPopup(
+                                        model = model,
+                                        anchorBoundsInWindow = anchorBounds,
+                                        onDismissRequest = { showStats = false },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            runStats?.let { run ->
+                // 可见高度 24dp，点按区域向上下各借 12dp 凑足 48dp；向上借到的是同样打开统计的模型名与时间。
+                Box(Modifier.fillMaxWidth().height(24.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .wrapContentHeight(unbounded = true)
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .then(
+                                if (stats != null) {
+                                    Modifier.clickable(onClickLabel = stringResource(R.string.generation_stats_open_action), role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
+                                } else Modifier,
+                            ),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        Text(
+                            text = replyRunStatsText(run),
+                            style = metaStyle.copy(fontFeatureSettings = "tnum"),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            modifier = Modifier.testTag(UiTags.CHAT_GENERATION_PROGRESS),
+                        )
                     }
                 }
             }

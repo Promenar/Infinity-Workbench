@@ -135,14 +135,13 @@ class NavigationMotionContractTest {
     }
 
     @Test
-    fun `运行信息收为浮岛顶部一行运行坞，统计进入运行详情`() {
+    fun `运行信息收为浮岛顶部一行运行坞，统计挂在回复下方`() {
         val dock = source("chat/components/RunDock.kt")
-        val sheet = source("chat/components/RunDetailSheet.kt")
-        // 运行坞读屏读完整一句；统计数值为 0 的段不显示，整句放在详情面板底部。
+        // 运行坞读屏读完整一句；本次运行统计绑定在回复下方，运行详情与侧栏不再显示。
         assertThat(dock).contains("semantics(mergeDescendants = true)")
-        assertThat(sheet).contains("if (progress.rounds > 0)")
-        assertThat(sheet).contains("if (progress.calls > 0)")
-        assertThat(sheet).contains("if (progress.tokens > 0)")
+        assertThat(source("chat/components/RunDetailSheet.kt")).doesNotContain("GenerationProgress")
+        assertThat(source("chat/components/RunSidePanel.kt")).doesNotContain("GenerationProgress")
+        assertThat(source("chat/PipelineBubble.kt")).contains("replyRunStats(group.messages)")
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).doesNotContain("R.string.p0_progress")
         assertThat(chat).doesNotContain("ChatGenerationProgressBar")

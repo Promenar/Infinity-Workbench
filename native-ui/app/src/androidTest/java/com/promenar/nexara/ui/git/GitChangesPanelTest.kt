@@ -1,13 +1,8 @@
 package com.promenar.nexara.ui.git
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -37,43 +32,13 @@ class GitChangesPanelTest {
         tracking = tracking,
     )
 
-    @Test fun footer_handsPullAndCommitToAgentWithUpstream() {
-        val requests = mutableListOf<Pair<GitAgentRequest, String?>>()
+    @Test fun changes_readOnlyHintWithoutWriteActions() {
         val state = GitPanelUiState(status = GitLoad.Ready(status(2, GitTracking("origin/main", 2, 1, false, false))))
-        rule.setContent {
-            NexaraTheme {
-                GitChangesPanel(state, GitPanelActions(onAskAgent = { r, u -> requests += r to u }), Modifier.fillMaxSize())
-            }
-        }
-        rule.onNodeWithTag(GitPanelTags.TRACKING).assertIsDisplayed()
-        rule.onNodeWithTag(GitPanelTags.AGENT_PULL).assertIsEnabled().performClick()
-        rule.onNodeWithTag(GitPanelTags.AGENT_COMMIT_PUSH).assertIsEnabled().performClick()
-        assertThat(requests).containsExactly(
-            GitAgentRequest.PULL_MERGE to "origin/main",
-            GitAgentRequest.COMMIT_PUSH to "origin/main",
-        ).inOrder()
-    }
-
-    @Test fun footer_disabledWhileAgentBusyOrNothingToDo() {
-        var busy by mutableStateOf(true)
-        val clean = GitPanelUiState(status = GitLoad.Ready(status(0, GitTracking())))
-        rule.setContent {
-            NexaraTheme {
-                GitChangesPanel(clean, GitPanelActions(onAskAgent = { _, _ -> }), Modifier.fillMaxSize(), agentBusy = busy)
-            }
-        }
-        rule.onNodeWithTag(GitPanelTags.AGENT_PULL).assertIsNotEnabled()
-        rule.onNodeWithTag(GitPanelTags.AGENT_COMMIT_PUSH).assertIsNotEnabled()
-        busy = false
-        // 没有上游、没有改动也没有未推送提交时仍不可用。
-        rule.onNodeWithTag(GitPanelTags.AGENT_PULL).assertIsNotEnabled()
-        rule.onNodeWithTag(GitPanelTags.AGENT_COMMIT_PUSH).assertIsNotEnabled()
-    }
-
-    @Test fun footer_hiddenWithoutAgentHandoff() {
-        val state = GitPanelUiState(status = GitLoad.Ready(status(1, GitTracking("origin/main", 0, 0, false, false))))
         rule.setContent { NexaraTheme { GitChangesPanel(state, GitPanelActions(), Modifier.fillMaxSize()) } }
-        rule.onNodeWithTag(GitPanelTags.AGENT_PULL).assertDoesNotExist()
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        rule.onNodeWithTag(GitPanelTags.TRACKING).assertIsDisplayed()
+        // 面板只显示状态，提交、推送等写操作由用户直接告诉 Agent。
+        rule.onNodeWithText(context.getString(com.promenar.nexara.R.string.git_panel_readonly_hint), substring = true).assertIsDisplayed()
     }
 
     @Test fun branchesTab_listsLocalBranches() {

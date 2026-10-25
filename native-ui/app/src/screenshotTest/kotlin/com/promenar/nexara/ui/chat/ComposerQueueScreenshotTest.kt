@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.data.model.*
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.theme.*
 
 // 生成中排队：活动栏下方是排队托盘（一条已插队、一条带附件），输入框已写下一条，
@@ -97,7 +96,6 @@ private fun ComposerQueuePage(
                     },
                     modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
                     tokenState = ChatViewModel.TokenIndicatorState(used = 9800, max = 128000),
-                    generationProgress = if (generating) GenerationProgress(rounds = 2, calls = 3, tokens = 9_812) else null,
                     composerQueue = ComposerQueueUiState(
                         items = queueItems(english, generating),
                         pauseReason = if (generating) null else ComposerQueuePauseReason.STOPPED,

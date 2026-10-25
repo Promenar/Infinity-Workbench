@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.canvas.CanvasMetadata
 import com.promenar.nexara.data.state.StateBoardSnapshot
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.chat.TaskPanelStep
 import com.promenar.nexara.ui.chat.TaskPanelStepStatus
 import com.promenar.nexara.ui.chat.TaskPanelUiState
@@ -79,15 +78,14 @@ internal fun runSidePlanSteps(steps: List<TaskPanelStep>, limit: Int = RUN_SIDE_
 }
 
 /**
- * 宽屏运行侧栏：顶部是运行状态与用时，下面依次是计划、后台任务、状态面板、Git 与本会话产物，
- * 底部是本次运行统计。各区点按进入对应的详情（运行详情、Git 面板、画布）。
+ * 宽屏运行侧栏：顶部是运行状态与用时，下面依次是计划、后台任务、状态面板、Git 与本会话产物。
+ * 各区点按进入对应的详情（运行详情、Git 面板、画布）；本次运行统计挂在对应回复下方。
  */
 @Composable
 internal fun RunSidePanel(
     dock: RunDockUiState?,
     plan: TaskPanelUiState?,
     elapsedMillis: Long?,
-    progress: GenerationProgress?,
     activity: AgentActivitySummary?,
     stateBoard: StateBoardSnapshot?,
     git: GitEntrySummary.Repository?,
@@ -176,15 +174,6 @@ internal fun RunSidePanel(
                     canvases.take(3).forEach { canvas -> SideCanvasRow(canvas) { onOpenCanvas(canvas.id) } }
                 }
             }
-        }
-        progress?.takeIf { it.rounds > 0 || it.calls > 0 || it.tokens > 0 }?.let {
-            HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.6f))
-            Text(
-                runStatsText(it),
-                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
         }
     }
 }

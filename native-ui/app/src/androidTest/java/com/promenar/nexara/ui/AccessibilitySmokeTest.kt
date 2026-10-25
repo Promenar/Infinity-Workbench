@@ -372,7 +372,6 @@ class AccessibilitySmokeTest {
                         initialTab = RunDetailTab.PLAN,
                         plan = plan,
                         isGenerating = false,
-                        progress = null,
                         turnStartedAt = null,
                         activity = null,
                         stateBoard = null,

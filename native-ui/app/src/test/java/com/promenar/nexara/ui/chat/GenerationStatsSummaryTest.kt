@@ -163,4 +163,32 @@ class GenerationStatsSummaryTest {
         assertThat(formatStatsDuration(125_000, Locale.US)).isEqualTo(GenerationStatsText(R.string.generation_stats_duration_minutes, listOf(2, 5)))
         assertThat(formatStatsDuration(-3, Locale.US)).isEqualTo(GenerationStatsText(R.string.generation_stats_duration_ms, listOf("0")))
     }
+
+    @Test
+    fun `回复统计只在调用过工具时给出 并按调用合并结果计数`() {
+        assertThat(replyRunStats(listOf(assistant("a", TokenUsage(100, 20, 120))))).isNull()
+
+        val messages = listOf(
+            assistant(
+                "a",
+                TokenUsage(1_000, 100, 1_100, timing = timing(10_000, 10_400, 11_400)),
+                toolSteps("1", 11_500, 12_000) + toolSteps("2", 12_000, 13_500),
+            ),
+            Message("t", MessageRole.TOOL, "结果"),
+            assistant("b", TokenUsage(1_300, 300, 1_600, estimated = true, timing = timing(14_000, 14_600, 16_600)), toolSteps("3", 16_700, 16_800)),
+            assistant("c", TokenUsage(200, 50, 250, timing = timing(17_000, 17_100, 18_000))),
+        )
+
+        assertThat(summarizeGenerationStats(messages).toolCalls).isEqualTo(3)
+        assertThat(replyRunStats(messages)).isEqualTo(
+            ReplyRunStats(rounds = 3, toolCalls = 3, tokens = 2_950, estimated = true, durationMs = 8_000),
+        )
+    }
+
+    @Test
+    fun `回复统计缺用量与计时时对应项为 null`() {
+        val stats = replyRunStats(listOf(assistant("a", tokens = null, steps = toolSteps("1", 1_000, 2_000))))
+
+        assertThat(stats).isEqualTo(ReplyRunStats(rounds = 1, toolCalls = 1, tokens = null, estimated = false, durationMs = null))
+    }
 }

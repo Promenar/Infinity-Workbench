@@ -135,12 +135,7 @@ data class GitPanelActions(
     val onOpenCommit: (GitCommitSummary) -> Unit = {},
     val onOpenCommitFile: (GitFileChange) -> Unit = {},
     val onBack: () -> Unit = {},
-    /** 为空时面板不提供交给 Agent 的写操作（例如从资源管理器打开）。 */
-    val onAskAgent: ((GitAgentRequest, String?) -> Unit)? = null,
 )
-
-/** 交给 Agent 执行的 Git 写操作；面板本身只读，按钮只把请求作为一条消息发给 Agent。 */
-enum class GitAgentRequest { PULL_MERGE, COMMIT_PUSH }
 
 /** 上次抓取距今：按分钟、小时、天取整，时钟回拨视为刚刚。 */
 sealed interface GitFetchAge {
@@ -184,11 +179,6 @@ fun gitTrackingCount(count: Int?, truncated: Boolean?): String? = when {
 val GitTracking.countsUnknown: Boolean
     get() = upstream != null && upstreamMissing != true && truncated == true && ahead == null && behind == null
 
-/** 拉取需要一个本地存在的上游。 */
-fun GitStatus.canPull(): Boolean = tracking.upstream != null && tracking.upstreamMissing != true
-
-/** 有工作区改动，或已有未推送的提交。 */
-fun GitStatus.canCommitPush(): Boolean = !isClean || (tracking.ahead ?: 0) > 0
 
 /** 由两侧内容构建差异模型；计算量与文件大小相关，调用方应在 `Dispatchers.Default` 上执行。 */
 object GitDiffModels {

@@ -24,7 +24,6 @@ import com.promenar.nexara.data.state.StateField
 import com.promenar.nexara.ui.git.GitEntrySummary
 import kotlinx.serialization.json.JsonPrimitive
 import com.promenar.nexara.ui.chat.components.runDockState
-import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.ui.theme.*
 
 // 生成中：输入框浮岛顶部是一行运行坞，浮岛描边亮起流光；输入框仍可编辑，占位文字提示可以先写下一条。
@@ -96,7 +95,6 @@ private fun GenerationProgressPage(
                     ),
                     modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
                     tokenState = ChatViewModel.TokenIndicatorState(used = 21800, max = 128000),
-                    generationProgress = GenerationProgress(rounds = 3, calls = 7, tokens = 21_846, estimated = true),
                     taskPanel = if (withPlan) progressPlan(english) else null,
                 ),
                 actions = ChatScreenActions(),
@@ -207,7 +205,7 @@ private fun groupedPlan(english: Boolean): TaskPanelUiState {
     )
 }
 
-// 运行详情计划页：已完成的分组收为一行，当前步骤高亮；底部是本次运行统计与“标记完成 / 继续处理”。
+// 运行详情计划页：已完成的分组收为一行，当前步骤高亮；底部是“标记完成 / 继续处理”。
 @Composable
 private fun RunDetailPage(mode: NexaraThemeMode, english: Boolean) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
@@ -216,7 +214,6 @@ private fun RunDetailPage(mode: NexaraThemeMode, english: Boolean) {
                 initialTab = RunDetailTab.PLAN,
                 plan = groupedPlan(english),
                 isGenerating = true,
-                progress = GenerationProgress(rounds = 44, calls = 47, tokens = 1_284_000, estimated = true),
                 turnStartedAt = DOCK_NOW - (12 * 60_000L + 4_000L),
                 activity = null,
                 stateBoard = StateBoardSnapshot(1, StateBoard(if (english) "Progress" else "进度", emptyList())),
@@ -307,7 +304,6 @@ private fun WideRunPage(mode: NexaraThemeMode, english: Boolean) {
                     ),
                     modelDisplayNames = mapOf("deepseek::v4-flash" to "DeepSeek V4 Flash"),
                     tokenState = ChatViewModel.TokenIndicatorState(used = 21800, max = 128000),
-                    generationProgress = GenerationProgress(rounds = 3, calls = 3, tokens = 45_400, estimated = true),
                     taskPanel = groupedPlan(english),
                     stateBoard = sideBoard(english),
                     gitSummary = sideGit,
@@ -342,7 +338,6 @@ private fun SidePanelAlone(mode: NexaraThemeMode, english: Boolean) {
                 dock = runDockState(plan, true, 1, 1, 1, null, 72_000L),
                 plan = plan,
                 elapsedMillis = 72_000L,
-                progress = GenerationProgress(rounds = 3, calls = 3, tokens = 45_400, estimated = true),
                 activity = AgentActivitySummary(runningJobs = 1, latestFinishedJob = null, enabledSchedules = 1, nextFireAtMillis = null),
                 stateBoard = sideBoard(english),
                 git = sideGit,
