@@ -1,0 +1,22 @@
+<resources>
+    <string name="linux_runtime_install_summary">安装 Linux 环境</string>
+    <string name="linux_runtime_reset_summary">重置 Linux 环境</string>
+    <string name="linux_runtime_temp_directory">无法创建 proot 临时目录</string>
+    <string name="linux_runtime_workspace_directory">工作区必须是可绑定的宿主目录</string>
+    <string name="linux_runtime_mount_target">挂载目标必须位于 /mnt/ 内</string>
+    <string name="linux_runtime_read_only_mount">proot 无法强制只读挂载</string>
+    <string name="linux_runtime_host_mount">非法宿主挂载路径</string>
+    <string name="linux_runtime_working_directory">工作目录必须是容器内绝对路径</string>
+    <string name="linux_runtime_rootfs_damaged">基础系统或版本标记损坏</string>
+    <string name="linux_runtime_storage_required">至少需要 %1$d 字节可用空间</string>
+    <string name="linux_runtime_asset_corrupt">rootfs SHA-256 校验失败</string>
+    <string name="linux_runtime_shell_missing">rootfs 缺少 /bin/sh</string>
+    <string name="linux_runtime_data_symlink">Linux 数据目录不能是符号链接</string>
+    <string name="linux_runtime_dns_fallback">DNS：使用公共解析器回退</string>
+    <string name="linux_runtime_dns_public">公共 DNS 回退：%1$s</string>
+    <string name="linux_runtime_dns_vpn">VPN DNS：%1$s</string>
+    <string name="linux_runtime_dns_active">活动网络 DNS：%1$s</string>
+    <string name="linux_runtime_alpine_ca">使用 Alpine 自带证书包</string>
+    <string name="linux_runtime_timeout">命令超时</string>
+    <string name="linux_runtime_preference_failed">无法保存 Linux Agent 开关</string>
+</resources>

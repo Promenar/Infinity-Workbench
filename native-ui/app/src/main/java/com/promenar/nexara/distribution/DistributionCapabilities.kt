@@ -13,6 +13,9 @@ object DistributionCapabilities {
     /** 后台任务与触发轮次可由命令前台服务保活（侧载版）；Play 版只在应用可见时保证运行。 */
     val backgroundKeepAliveAvailable: Boolean get() = BuildConfig.DISTRIBUTION == "sideload"
 
+    /** 内置 Linux 用户空间只随侧载渠道发行，设备 ABI 由运行时进一步检查。 */
+    val linuxRuntimeAvailable: Boolean get() = BuildConfig.DISTRIBUTION == "sideload"
+
     internal fun diagnosticFields(): Map<String, Any> = mapOf(
         "distribution" to channel,
         "allFilesAccessAvailable" to allFilesAccessAvailable,

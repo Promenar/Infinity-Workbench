@@ -16,8 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
-/** 仅供侧载 debug 的固定源码交叉编译，下载与编译输出不进入源码目录。 */
-public abstract class BuildLinuxProbe extends DefaultTask {
+/** 用于侧载变体 的固定源码交叉编译，下载与编译输出不进入源码目录。 */
+public abstract class BuildLinuxRuntime extends DefaultTask {
     @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getProotArchive();
     @InputFile @PathSensitive(PathSensitivity.NONE)

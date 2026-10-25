@@ -1,0 +1,94 @@
+package com.promenar.nexara.data.linux
+
+import com.promenar.nexara.domain.linux.LinuxBind
+import com.promenar.nexara.domain.linux.LinuxLaunchSpec
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+
+class LinuxLaunchTest {
+    @TempDir lateinit var temporary: Path
+    private val root get() = temporary.resolve("alpine").toFile().apply { mkdirs() }
+    private fun builder() = LinuxLaunchBuilder(PackagedProot(temporary.resolve("lib").toFile()), root,
+        temporary.resolve("cache").toFile(), tailnetEnvironment = { mapOf("HTTPS_PROXY" to "http://127.0.0.1:8080") })
+
+    @Test fun `构造独立参数工作区和额外挂载`() {
+        val workspace = temporary.resolve("work space").toFile().apply { mkdirs() }
+        val mount = temporary.resolve("data").toFile().apply { mkdirs() }
+        val launch = builder().build(LinuxLaunchSpec(listOf("uname", "-a"), workspace, listOf(LinuxBind(mount, "/mnt/data"))))
+        assertEquals(listOf("--kill-on-exit", "-0", "--link2symlink", "-L", "--sysvipc", "-r", root.path), launch.arguments.take(7))
+        assertTrue(launch.arguments.contains("${workspace.path}:/workspace"))
+        assertTrue(launch.arguments.contains("${mount.path}:/mnt/data"))
+        assertEquals(listOf("-w", "/workspace", "uname", "-a"), launch.arguments.takeLast(4))
+        assertEquals(workspace, launch.hostWorkingDirectory)
+    }
+
+    @Test fun `拒绝mnt越界路径冒号和无法保证的只读挂载`() {
+        val mount = temporary.toFile()
+        listOf("/mnt", "/mnt/../etc", "/mnt/a/../../root", "/mnt2/a", "mnt/a", "/mnt/a:b", "/mnt/a\\b").forEach {
+            assertThrows(IllegalArgumentException::class.java) { builder().build(LinuxLaunchSpec(emptyList(), mounts = listOf(LinuxBind(mount, it)))) }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            builder().build(LinuxLaunchSpec(emptyList(), mounts = listOf(LinuxBind(mount, "/mnt/data", true))))
+        }
+    }
+
+    @Test fun `mnt下名为mnt的目录也是合法挂载点`() {
+        val launch = builder().build(LinuxLaunchSpec(emptyList(), mounts = listOf(LinuxBind(temporary.toFile(), "/mnt/mnt"))))
+        assertTrue(launch.arguments.contains("${temporary}:/mnt/mnt"))
+    }
+
+    @Test fun `白名单环境不继承宿主且用户覆盖最后生效`() {
+        val launch = builder().build(LinuxLaunchSpec(emptyList(), environment = mapOf("HOME" to "/root/custom", "HTTPS_PROXY" to "custom")))
+        assertEquals("/root/custom", launch.environment["HOME"])
+        assertEquals("custom", launch.environment["HTTPS_PROXY"])
+        assertEquals("1", launch.environment["PIP_BREAK_SYSTEM_PACKAGES"])
+        assertEquals("C.UTF-8", launch.environment["LANG"])
+        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "HOME", "PATH", "LANG", "TERM", "PIP_BREAK_SYSTEM_PACKAGES", "HTTPS_PROXY"), launch.environment.keys)
+        assertFalse(launch.environment.containsKey("NEXARA_WORKSPACE"))
+        assertEquals(listOf("-w", "/root", "/bin/sh", "-l"), launch.arguments.takeLast(4))
+    }
+
+    @Test fun `有bash时选择登录bash且支持容器内工作目录`() {
+        File(root, "bin").mkdirs()
+        File(root, "bin/bash").writeText("shell")
+        val launch = builder().build(LinuxLaunchSpec(emptyList(), workingDirectory = "/tmp"))
+        assertEquals(listOf("-w", "/tmp", "/bin/bash", "-l"), launch.arguments.takeLast(4))
+        File(root, "bin/bash").delete()
+        Files.createSymbolicLink(File(root, "bin/bash").toPath(), temporary.resolve("outside"))
+        assertEquals(listOf("/bin/sh", "-l"), builder().build(LinuxLaunchSpec(emptyList())).arguments.takeLast(2))
+    }
+
+    @Test fun `打包proot必须两个文件均可执行`() {
+        val lib = temporary.resolve("lib").toFile().apply { mkdirs() }
+        val proot = PackagedProot(lib)
+        assertFalse(proot.isAvailable)
+        listOf(proot.executable, proot.loader).forEach { it.writeText("elf"); it.setExecutable(true) }
+        assertTrue(proot.isAvailable)
+        proot.loader.delete()
+        assertFalse(proot.isAvailable)
+    }
+
+    @Test fun `guest绝对链接按容器根解析且链接循环被拒绝`() {
+        File(root, "bin").mkdirs()
+        File(root, "bin/busybox").writeText("shell")
+        Files.createSymbolicLink(File(root, "bin/sh").toPath(), Path.of("/bin/busybox"))
+        assertTrue(LinuxRootfsFiles.isGuestFile(root, File(root, "bin/sh")))
+        Files.createSymbolicLink(File(root, "bin/bash").toPath(), Path.of("/bin/bash"))
+        assertFalse(LinuxRootfsFiles.isGuestFile(root, File(root, "bin/bash")))
+    }
+
+    @Test fun `链接中的上级目录不能跳过缺失目录或普通文件`() {
+        File(root, "bin").mkdirs()
+        File(root, "bin/busybox").writeText("shell")
+        val link = File(root, "bin/sh").toPath()
+        Files.createSymbolicLink(link, Path.of("/missing/../bin/busybox"))
+        assertFalse(LinuxRootfsFiles.isGuestFile(root, link.toFile()))
+        Files.delete(link)
+        Files.createSymbolicLink(link, Path.of("/bin/busybox/../busybox"))
+        assertFalse(LinuxRootfsFiles.isGuestFile(root, link.toFile()))
+    }
+}

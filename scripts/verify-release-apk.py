@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""验证 Nexara 侧载 APK 的完整性、版本、签名与常见秘密泄漏。"""
+"""验证 Nexara 发行 APK 的渠道制品、完整性、版本、签名与常见秘密泄漏。"""
 
 from __future__ import annotations
 
@@ -131,6 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-cert-sha256", required=True)
     parser.add_argument("--checksum-output", type=Path)
     parser.add_argument("--max-size-bytes", type=int, default=MAX_APK_BYTES)
+    parser.add_argument("--distribution", choices=("sideload", "play"), default="sideload")
     return parser.parse_args()
 
 
@@ -233,6 +234,34 @@ def verify_no_local_inference_artifacts(apk: Path) -> None:
                 findings.append(normalized_name)
     if findings:
         raise VerificationError(f"APK 包含禁用的本地推理制品：{', '.join(sorted(findings))}")
+
+
+def verify_linux_runtime(apk: Path, distribution: str, properties: Path | None = None) -> None:
+    """侧载要求完整 Linux 制品与固定摘要；Play 禁止携带 Linux 资产或原生程序。"""
+    properties = properties or Path(__file__).resolve().parents[1] / "native-ui/app/linux/linux-runtime.properties"
+    with zipfile.ZipFile(apk) as archive:
+        names = set(archive.namelist())
+        linux_entries = {name for name in names if name.startswith("assets/linux/") or
+                         re.fullmatch(r"lib/[^/]+/libnxproot(?:-loader)?\.so", name)}
+        if distribution == "play":
+            if linux_entries:
+                raise VerificationError("Play APK 包含 Linux 运行时制品")
+            return
+        if distribution != "sideload":
+            raise VerificationError("未知发行渠道")
+        values = dict(line.split("=", 1) for line in properties.read_text(encoding="utf-8").splitlines()
+                      if line.strip() and not line.lstrip().startswith("#"))
+        asset = "assets/" + values["alpine.asset"]
+        required = {"lib/arm64-v8a/libnxproot.so", "lib/arm64-v8a/libnxproot-loader.so", asset}
+        missing = required - names
+        if missing:
+            raise VerificationError(f"侧载 APK 缺少 Linux 制品：{', '.join(sorted(missing))}")
+        digest = hashlib.sha256()
+        with archive.open(asset) as stream:
+            for chunk in iter(lambda: stream.read(READ_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != values["alpine.sha256"].strip().lower():
+            raise VerificationError("Linux rootfs asset SHA-256 不符")
 
 
 def verify_packaged_python_bytecode(apk: Path) -> None:
@@ -450,6 +479,7 @@ def main() -> int:
     verify_no_local_inference_artifacts(apk)
     verify_packaged_python_bytecode(apk)
     verify_tailnet_binary(apk)
+    verify_linux_runtime(apk, args.distribution)
     verify_badging(apk, args.expected_package, args.expected_version_code, args.expected_version_name)
     verify_signature(apk, args.expected_cert_sha256)
     scan_sensitive_content(apk)

@@ -19,11 +19,14 @@ class DistributionManifestTest(unittest.TestCase):
         self.play = Path(self.tmp.name) / "play.xml"
         self.sideload = Path(self.tmp.name) / "sideload.xml"
 
-    def write(self, path, permission=False, package="com.promenar.nexara.native.debug", special_use=None, service=None):
+    def write(self, path, permission=False, package="com.promenar.nexara.native.debug", special_use=None, service=None, network_state=None):
         special_use = permission if special_use is None else special_use
         service = permission if service is None else service
+        network_state = permission if network_state is None else network_state
         items = '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'
         items += '<application><service android:name="com.promenar.nexara.background.schedule.ScheduledTaskJobService" android:permission="android.permission.BIND_JOB_SERVICE" /></application>'
+        if network_state:
+            items += '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />'
         if permission:
             items += '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />'
         if permission:
@@ -38,6 +41,23 @@ class DistributionManifestTest(unittest.TestCase):
         self.write(self.play)
         self.write(self.sideload, True)
         check.check_manifests(self.play, self.sideload)
+
+    def test_linux_requires_sideload_network_state_without_restricting_play(self):
+        self.write(self.play, network_state=True)
+        self.write(self.sideload, True)
+        check.check_manifests(self.play, self.sideload)
+        self.write(self.sideload, True, network_state=False)
+        with self.assertRaises(ValueError):
+            check.check_manifests(self.play, self.sideload)
+
+    def test_rejects_probe_activity_in_both_flavors(self):
+        for path in (self.play, self.sideload):
+            self.write(self.play)
+            self.write(self.sideload, True)
+            content = path.read_text().replace('</manifest>', '<application><activity android:name="com.promenar.nexara.debug.linuxprobe.LinuxProbeActivity" /></application></manifest>')
+            path.write_text(content)
+            with self.assertRaises(ValueError):
+                check.check_manifests(self.play, self.sideload)
 
     def test_rejects_play_permission_and_missing_sideload_permission(self):
         for play_permission, sideload_permission in ((True, True), (False, False)):
