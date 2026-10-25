@@ -74,6 +74,11 @@ import com.promenar.nexara.ui.common.NexaraTabHeader
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraPopoverAlign
+import com.promenar.nexara.ui.common.NexaraPopoverAnchor
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
@@ -101,6 +106,7 @@ fun UserSettingsHomeScreen(
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    val languageAnchor = rememberNexaraPopoverAnchor()
     val avatarCropLauncher = rememberAvatarCropLauncher(
         onCropped = { viewModel.updateUserAvatar(it.toString()) },
         onFailure = viewModel::reportAvatarImportFailure,
@@ -138,7 +144,7 @@ fun UserSettingsHomeScreen(
                 editingName = userName
                 showNameEditor = true
             },
-            onShowLanguageDialog = { showLanguageDialog = true },
+            onShowLanguageDialog = { if (!languageAnchor.consumeRecentDismiss()) showLanguageDialog = true },
             onNavigateToSecondary = onNavigateToSecondary,
             onAboutClick = {
                 context.startActivity(
@@ -160,7 +166,7 @@ fun UserSettingsHomeScreen(
             onExportDiagnostics = exportDiagnostics,
         )
 
-    UserSettingsHomeScreenContent(state = state, actions = actions)
+    UserSettingsHomeScreenContent(state = state, actions = actions, languageAnchor = languageAnchor)
 
     if (showNameEditor) {
         NameEditDialog(
@@ -182,7 +188,8 @@ fun UserSettingsHomeScreen(
                 showLanguageDialog = false
                 activity?.recreate()
             },
-            onDismiss = { showLanguageDialog = false }
+            onDismiss = { showLanguageDialog = false },
+            popover = NexaraPopoverSpec(languageAnchor, align = NexaraPopoverAlign.Auto),
         )
     }
 }
@@ -212,6 +219,8 @@ internal data class UserSettingsHomeScreenActions(
 internal fun UserSettingsHomeScreenContent(
     state: UserSettingsHomeScreenState,
     actions: UserSettingsHomeScreenActions,
+    /** 语言行的位置：宽窗口下语言选择贴着该行弹出。 */
+    languageAnchor: NexaraPopoverAnchor? = null,
 ) {
     NexaraSettingsPageLayout(
         title = stringResource(R.string.settings_title),
@@ -271,6 +280,7 @@ internal fun UserSettingsHomeScreenContent(
                         value = stringResource(if (LocalConfiguration.current.locales[0].language == "en")
                             R.string.settings_language_en else R.string.settings_language_zh),
                         onClick = actions.onShowLanguageDialog,
+                        modifier = if (languageAnchor != null) Modifier.nexaraPopoverAnchor(languageAnchor) else Modifier,
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Palette,
@@ -558,13 +568,15 @@ private fun NameEditDialog(
 internal fun LanguageSelectorSheet(
     currentLanguage: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    popover: NexaraPopoverSpec? = null,
 ) {
     NexaraBottomSheet(
         show = true,
         scrollContent = true,
         onDismiss = onDismiss,
         title = stringResource(R.string.settings_language),
+        popover = popover,
     ) {
                 LanguageOption(
                     label = stringResource(R.string.settings_language_zh),

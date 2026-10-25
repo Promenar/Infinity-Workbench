@@ -68,6 +68,9 @@ import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.forInput
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 
 private val EditorModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val EditorModelTypeLabelResources = listOf(
@@ -116,6 +119,7 @@ internal fun ModelEditorSheet(
     var showDeleteConfirmation by remember(model.id) { mutableStateOf(false) }
     var selectedType by remember(model.id) { mutableStateOf(model.type) }
     var showTypePicker by remember(model.id) { mutableStateOf(false) }
+    val typePickerAnchor = rememberNexaraPopoverAnchor()
     var editName by remember(model.id) { mutableStateOf(model.name) }
     var editRemoteModelId by remember(model.id) { mutableStateOf(model.remoteModelId) }
     var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
@@ -259,8 +263,8 @@ internal fun ModelEditorSheet(
                         title = stringResource(R.string.provider_models_editor_type),
                         value = EditorModelTypes.indexOf(selectedType).takeIf { it >= 0 }
                             ?.let { stringResource(EditorModelTypeLabelResources[it]) } ?: selectedType,
-                        onClick = { showTypePicker = true },
-                        modifier = Modifier.testTag("model_editor_type_picker"),
+                        onClick = { if (!typePickerAnchor.consumeRecentDismiss()) showTypePicker = true },
+                        modifier = Modifier.nexaraPopoverAnchor(typePickerAnchor).testTag("model_editor_type_picker"),
                     )
                 }
             }
@@ -350,29 +354,30 @@ internal fun ModelEditorSheet(
             }
         }
         }
-    }
-
-    NexaraBottomSheet(
-        show = showTypePicker,
-        scrollContent = true,
-        title = stringResource(R.string.provider_models_editor_type),
-        onDismiss = { showTypePicker = false },
-    ) {
-        EditorModelTypeLabelResources.forEachIndexed { index, labelRes ->
-            val type = EditorModelTypes[index]
-            NexaraSettingsItem(
-                horizontalPadding = 0.dp,
-                title = stringResource(labelRes),
-                onClick = {
-                    activeCaps = (activeCaps - EditorAllBaseCapKeys) + (EditorTypeToBaseCaps[type] ?: setOf("chat"))
-                    selectedType = type
-                    showTypePicker = false
-                },
-                modifier = Modifier.testTag(UiTags.providerModelsTypeAction(model.id, type)),
-                role = Role.RadioButton,
-                selected = selectedType == type,
-                trailingContent = { RadioButton(selected = selectedType == type, onClick = null) },
-            )
+        // 类型面板须与编辑器同处一个窗口：宽窗口下它贴着类型行弹出，放在对话框之外会被盖住。
+        NexaraBottomSheet(
+            show = showTypePicker,
+            scrollContent = true,
+            title = stringResource(R.string.provider_models_editor_type),
+            onDismiss = { showTypePicker = false },
+            popover = NexaraPopoverSpec(typePickerAnchor),
+        ) {
+            EditorModelTypeLabelResources.forEachIndexed { index, labelRes ->
+                val type = EditorModelTypes[index]
+                NexaraSettingsItem(
+                    horizontalPadding = 0.dp,
+                    title = stringResource(labelRes),
+                    onClick = {
+                        activeCaps = (activeCaps - EditorAllBaseCapKeys) + (EditorTypeToBaseCaps[type] ?: setOf("chat"))
+                        selectedType = type
+                        showTypePicker = false
+                    },
+                    modifier = Modifier.testTag(UiTags.providerModelsTypeAction(model.id, type)),
+                    role = Role.RadioButton,
+                    selected = selectedType == type,
+                    trailingContent = { RadioButton(selected = selectedType == type, onClick = null) },
+                )
+            }
         }
     }
 

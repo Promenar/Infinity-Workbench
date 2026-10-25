@@ -85,6 +85,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 
 data class ProviderPreset(
     val name: String,
@@ -748,19 +751,24 @@ internal fun ProviderFormContent(
 private fun LazyListScope.animatedFormItem(key: String, content: @Composable () -> Unit) =
     item(key) { Box(Modifier.animateItem()) { content() } }
 
+/** 协议选项带接口路径副标题，弹出层比默认宽一些。 */
+private val ProviderProtocolPopoverWidth = 360.dp
+
 @Composable
 private fun ProviderProtocolSelector(state: ProviderFormUiState, actions: ProviderFormActions) {
+    val anchor = rememberNexaraPopoverAnchor()
     NexaraValueRow(
         title = stringResource(R.string.provider_form_protocol_type),
         value = state.localProtocol.displayName,
-        onClick = { actions.onProtocolMenuExpandedChange(true) },
-        modifier = Modifier.testTag("provider_protocol_picker"),
+        onClick = { if (!anchor.consumeRecentDismiss()) actions.onProtocolMenuExpandedChange(true) },
+        modifier = Modifier.nexaraPopoverAnchor(anchor).testTag("provider_protocol_picker"),
     )
     NexaraBottomSheet(
         show = state.protocolMenuExpanded,
         scrollContent = true,
         title = stringResource(R.string.provider_form_protocol_type),
         onDismiss = { actions.onProtocolMenuExpandedChange(false) },
+        popover = NexaraPopoverSpec(anchor, width = ProviderProtocolPopoverWidth),
     ) {
         CUSTOM_PROTOCOL_OPTIONS.forEach { protocol ->
             NexaraSettingsItem(

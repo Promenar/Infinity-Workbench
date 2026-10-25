@@ -45,6 +45,9 @@ import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NumericSettingKind
 import com.promenar.nexara.ui.common.NumericSettingSpec
 import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 
 @Composable
 fun AdvancedRetrievalScreen(
@@ -242,6 +245,7 @@ internal fun RetrievalStrategySetting(
     onValueChange: (String) -> Unit,
 ) {
     var showPicker by remember { mutableStateOf(false) }
+    val anchor = rememberNexaraPopoverAnchor()
     val options = listOf(
         "hyde" to stringResource(R.string.agent_retrieval_strategy_hyde),
         "multi-query" to stringResource(R.string.agent_retrieval_strategy_multi),
@@ -250,13 +254,15 @@ internal fun RetrievalStrategySetting(
     NexaraValueRow(
         title = stringResource(R.string.agent_retrieval_strategy_label),
         value = options.firstOrNull { it.first == strategy }?.second ?: strategy,
-        onClick = { showPicker = true },
+        onClick = { if (!anchor.consumeRecentDismiss()) showPicker = true },
+        modifier = Modifier.nexaraPopoverAnchor(anchor),
     )
     NexaraBottomSheet(
         show = showPicker,
         scrollContent = true,
         onDismiss = { showPicker = false },
         title = stringResource(R.string.agent_retrieval_strategy_label),
+        popover = NexaraPopoverSpec(anchor),
     ) {
         options.forEach { (id, label) ->
             Row(

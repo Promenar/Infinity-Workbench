@@ -56,6 +56,9 @@ import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraPresetColors
@@ -236,6 +239,7 @@ private fun ThemeModeSelector(
     onModeSelect: (NexaraThemeMode) -> Unit,
 ) {
     var showModes by remember { mutableStateOf(false) }
+    val modesAnchor = rememberNexaraPopoverAnchor()
     val modes = listOf(
         Triple(NexaraThemeMode.SYSTEM, Icons.Rounded.BrightnessAuto, R.string.settings_theme_system),
         Triple(NexaraThemeMode.LIGHT, Icons.Rounded.LightMode, R.string.settings_theme_light),
@@ -244,11 +248,11 @@ private fun ThemeModeSelector(
     NexaraValueRow(
         title = stringResource(R.string.theme_mode),
         value = stringResource(modes.first { it.first == selectedMode }.third),
-        modifier = Modifier.testTag("theme_mode_picker"),
-        onClick = { showModes = true },
+        modifier = Modifier.nexaraPopoverAnchor(modesAnchor).testTag("theme_mode_picker"),
+        onClick = { if (!modesAnchor.consumeRecentDismiss()) showModes = true },
     )
     NexaraBottomSheet(show = showModes, title = stringResource(R.string.theme_mode),
-        onDismiss = { showModes = false }, scrollContent = true) {
+        onDismiss = { showModes = false }, scrollContent = true, popover = NexaraPopoverSpec(modesAnchor)) {
         modes.forEach { (mode, _, titleRes) ->
             val selected = selectedMode == mode
             NexaraSettingsItem(

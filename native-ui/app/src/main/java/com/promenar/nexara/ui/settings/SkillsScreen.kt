@@ -124,6 +124,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 
 /** 技能编辑器的输入；name 为 null 表示新建。 */
 private data class AgentSkillEditorState(
@@ -689,6 +692,7 @@ internal fun SearchConfigContent(
     keenableSecretEditor: @Composable () -> Unit = {},
     tavilySecretEditor: @Composable () -> Unit = {},
 ) {
+    val depthAnchor = rememberNexaraPopoverAnchor()
     var showDepthPicker by remember(searchState.searchEngine) { mutableStateOf(false) }
         Column(
             modifier = Modifier
@@ -751,8 +755,8 @@ internal fun SearchConfigContent(
                             "advanced" -> stringResource(R.string.search_depth_advanced)
                             else -> searchState.searchDepth
                         },
-                        onClick = { showDepthPicker = true },
-                        modifier = Modifier.testTag("search_depth_picker"),
+                        onClick = { if (!depthAnchor.consumeRecentDismiss()) showDepthPicker = true },
+                        modifier = Modifier.nexaraPopoverAnchor(depthAnchor).testTag("search_depth_picker"),
                     )
                 }
             }
@@ -772,6 +776,7 @@ internal fun SearchConfigContent(
         scrollContent = true,
         title = stringResource(R.string.search_depth_label),
         onDismiss = { showDepthPicker = false },
+        popover = NexaraPopoverSpec(depthAnchor),
     ) {
         DepthChip("basic", stringResource(R.string.search_depth_basic), searchState.searchDepth == "basic") {
             onSearchDepthChange("basic")

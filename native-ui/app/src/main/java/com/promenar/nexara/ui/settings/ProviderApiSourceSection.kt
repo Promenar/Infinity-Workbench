@@ -64,6 +64,10 @@ import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.ui.theme.nexaraDomainColors
+import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.nexaraPopoverAnchor
+import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
+import com.promenar.nexara.ui.common.NexaraPopoverAlign
 
 /** 内置 Tailscale 状态行所需的本机信息。 */
 data class ProviderTailnetInfo(
@@ -287,10 +291,11 @@ internal fun TailnetPeerPicker(
     val usable = selectableTailnetPeers(peers)
     if (usable.isEmpty()) return
     var open by rememberSaveable { mutableStateOf(false) }
+    val anchor = rememberNexaraPopoverAnchor()
     val selected = usable.firstOrNull { TailnetEndpoints.matchesPeer(baseUrl, it) }
     val interactions = remember { MutableInteractionSource() }
     LaunchedEffect(interactions) {
-        interactions.interactions.collect { if (it is PressInteraction.Release) open = true }
+        interactions.interactions.collect { if (it is PressInteraction.Release && !anchor.consumeRecentDismiss()) open = true }
     }
     val openLabel = stringResource(R.string.provider_tailnet_peer_sheet_title)
     OutlinedTextField(
@@ -307,6 +312,7 @@ internal fun TailnetPeerPicker(
         interactionSource = interactions,
         modifier = Modifier
             .fillMaxWidth()
+            .nexaraPopoverAnchor(anchor)
             .testTag(PROVIDER_TAILNET_PEERS_TAG)
             .semantics {
                 role = Role.DropdownList
@@ -318,6 +324,7 @@ internal fun TailnetPeerPicker(
         onDismiss = { open = false },
         title = openLabel,
         scrollContent = true,
+        popover = NexaraPopoverSpec(anchor, align = NexaraPopoverAlign.Start),
     ) {
         TailnetPeerOptions(peers = usable, selected = selected) { peer ->
             onPeerSelected(peer)
