@@ -438,6 +438,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val sessionExecutionGate by lazy { com.promenar.nexara.data.session.SessionExecutionGate() }
     private val sessionWorkspaceParent: java.nio.file.Path
         get() = File(filesDir, "session_workspaces").toPath()
+    private val workspaceInternalStorage by lazy {
+        com.promenar.nexara.data.repository.WorkspaceInternalStorage(File(noBackupFilesDir, "workspace-internal").canonicalFile.toPath())
+    }
+    private val privateWorkspaceFileOps by lazy {
+        com.promenar.nexara.data.repository.PrivateWorkspaceFileOps(workspaceInternalStorage)
+    }
     private val workspaceMutationRecoveryCoordinator by lazy {
         com.promenar.nexara.data.repository.WorkspaceMutationRecoveryCoordinator(
             workspaceParent = sessionWorkspaceParent,
@@ -454,25 +460,32 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 }
             },
             verifyRootIdentity = { path, identity ->
-                com.promenar.nexara.data.repository.SecureWorkspaceFileOps().ensureRoot(
+                privateWorkspaceFileOps.ensureRoot(
                     path,
                     initializeIdentity = false,
                     expectedIdentity = identity,
                 )
                 Unit
             },
+            identityIsExternal = true,
+            afterRootDeleted = privateWorkspaceFileOps::removePrivateData,
+            hasExternalRootIdentity = privateWorkspaceFileOps::hasExternalRootIdentity,
         )
     }
     private val workspaceFileMutationJournal by lazy {
         com.promenar.nexara.data.repository.RoomWorkspaceFileMutationJournal(database)
     }
     private val workspaceFileMutationRecoveryCoordinator by lazy {
-        com.promenar.nexara.data.repository.WorkspaceFileMutationRecoveryCoordinator(database)
+        com.promenar.nexara.data.repository.WorkspaceFileMutationRecoveryCoordinator(database, privateWorkspaceFileOps)
     }
     private val sessionDeletionTargetResolver by lazy {
         com.promenar.nexara.data.session.RoomSessionDeletionTargetResolver(
             database,
             sessionWorkspaceParent,
+            verifyIdentity = { path, identity ->
+                privateWorkspaceFileOps.ensureRoot(path, initializeIdentity = false, expectedIdentity = identity)
+                Unit
+            },
         )
     }
     private val privateWorkspaceFileRetention by lazy {
@@ -498,6 +511,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         val journal = com.promenar.nexara.data.session.RoomSessionWorkspaceMutationJournal(
             database,
             sessionWorkspaceParent,
+            verifyIdentity = { path, identity ->
+                privateWorkspaceFileOps.ensureRoot(path, initializeIdentity = false, expectedIdentity = identity)
+                Unit
+            },
+            afterRootDeleted = privateWorkspaceFileOps::removePrivateData,
+            identityIsExternal = true,
         )
         val transaction = com.promenar.nexara.data.session.RoomSessionDeletionTransaction(database)
         com.promenar.nexara.data.session.SessionDeletionCoordinator(
@@ -607,6 +626,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 com.promenar.nexara.data.workspace.WorkspaceFileTargetResolver(
                     sessionRepository, workspaceRepository, externalFolderManager,
                     sessionWorkspaceResolver::resolve, skillCatalog.userRoot,
+                    sessionWorkspaceResolver::resolveWorkspace, sessionWorkspaceResolver::backend,
                 ),
                 workspaceRepository, fileOperationRepository, externalFolderManager, pendingDocumentIndexCoordinator,
             ),
@@ -971,6 +991,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             database.fileEntryDao(),
             database.workspaceSeqDao(),
             File(filesDir, "session_workspaces"),
+            fileOps = privateWorkspaceFileOps,
             deleteCommitter = com.promenar.nexara.data.repository.WorkspaceDeletionTransaction(database)::delete,
             beforeDeleteCommitted = { workspaceRootUuid, ids ->
                 awaitVectorizationQueue().acquireDeleteBarrier(workspaceRootUuid, ids)
@@ -1219,6 +1240,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         FileOperationRepository(
             database.fileEntryDao(),
             database.fileVersionDao(),
+            fileOps = privateWorkspaceFileOps,
             indexEventSink = pendingDocumentIndexCoordinator,
             executionGate = sessionExecutionGate,
         )

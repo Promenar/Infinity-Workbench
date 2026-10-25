@@ -262,6 +262,66 @@ class MediaFetchSkillTest {
         assertThat(store.saved).isEmpty()
     }
 
+    @Test fun `默认媒体在审批后新增用户挂载改变逻辑落点时联网前拒绝`() = runTest {
+        val primary = ExternalMount("ws_project", "", "workspace", "project", "media-session", 1)
+        var visible = emptyList<ExternalMount>()
+        val mounts = mockk<ExternalWorkspaceAccess>()
+        coEvery { mounts.visible(any()) } answers { visible }
+        coEvery { mounts.workspaceMount(any()) } returns primary
+        val current = SessionWorkspace.Directory(com.promenar.nexara.data.local.db.entity.WorkspaceEntity("project", "project", "项目", "project", 1), java.io.File("project"))
+        val skill = MediaFetchSkill(store, downloader(), mounts = mounts, sessionWorkspace = { current })
+        val arguments = """{"url":"https://example.test/a"}"""
+        val approved = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+            com.promenar.nexara.data.model.Session(id = "media-session", agentId = "agent", title = "媒体", workspaceRootUuid = "root"),
+            skill.toProtocolTool(), arguments, null, mounts)!!
+        visible = listOf(ExternalMount("assets", "素材", "real_path", "/assets", "media-session", 1))
+        val bound = object : SkillExecutionContext by mediaTestContext {
+            override val approvedExecutionTarget = approved
+            override val isApprovalBoundExecution = true
+        }
+        val result = skill.execute(Json.parseToJsonElement(arguments).jsonObject, bound)
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("APPROVAL_CHANGED")
+        assertThat(requests).isEmpty()
+        assertThat(store.saved).isEmpty()
+    }
+
+    @Test fun `默认媒体批准冻结逻辑目标主根和挂载集合且旧tuple不能复用`() = runTest {
+        val primary = ExternalMount("ws_project", "", "workspace", "project", "media-session", 1)
+        val assets = ExternalMount("assets", "素材", "real_path", "/assets", "media-session", 1)
+        var visible = listOf(assets)
+        val mounts = mockk<ExternalWorkspaceAccess>()
+        coEvery { mounts.visible(any()) } answers { visible }
+        coEvery { mounts.workspaceMount(any()) } returns primary
+        val current = SessionWorkspace.Directory(com.promenar.nexara.data.local.db.entity.WorkspaceEntity("project", "project", "项目", "project", 1), java.io.File("project"))
+        val skill = MediaFetchSkill(store, downloader(), mounts = mounts, sessionWorkspace = { current })
+        val arguments = """{"url":"https://example.test/a"}"""
+        val approved = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+            com.promenar.nexara.data.model.Session(id = "media-session", agentId = "agent", title = "媒体", workspaceRootUuid = "root"),
+            skill.toProtocolTool(), arguments, null, mounts)!!
+        val frozen = Json.parseToJsonElement(approved).jsonArray.last().jsonObject.getValue("defaultFileDestination").jsonObject
+        assertThat(frozen.getValue("destination").jsonPrimitive.content).isEqualTo("SESSION_PRIVATE")
+        assertThat(frozen.getValue("workspaceId").jsonPrimitive.content).isEqualTo("project")
+        assertThat(frozen.getValue("mountIds").jsonObject.keys).containsAtLeast("", "素材")
+        fun bound(target: String) = object : SkillExecutionContext by mediaTestContext {
+            override val approvedExecutionTarget = target
+            override val isApprovalBoundExecution = true
+        }
+        assertThat(skill.execute(Json.parseToJsonElement(arguments).jsonObject, bound(approved)).status).isEqualTo("success")
+        requests.clear()
+        store.saved.clear()
+        for (state in listOf(emptyList(), listOf(assets.copy(id = "replacement")))) {
+            visible = state
+            val result = skill.execute(Json.parseToJsonElement(arguments).jsonObject, bound(approved))
+            assertThat(result.status).isEqualTo("error")
+            assertThat(result.content).contains("APPROVAL_CHANGED")
+        }
+        visible = listOf(assets)
+        assertThat(skill.execute(Json.parseToJsonElement(arguments).jsonObject, bound("""["path","/media"]""")).status).isEqualTo("error")
+        assertThat(requests).isEmpty()
+        assertThat(store.saved).isEmpty()
+    }
+
     @Test fun `批准的挂载身份通过协程上下文传到保存`() = runTest {
         val mounts = mockk<ExternalWorkspaceAccess>()
         coEvery { mounts.visible(any()) } returns listOf(ExternalMount("old", "assets", "real_path", "/test", "media-session", 1))

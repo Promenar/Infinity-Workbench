@@ -84,7 +84,12 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
             Files.move(child(source), child(target), ATOMIC_MOVE, REPLACE_EXISTING)
         }
         override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
-            beforeOperation?.invoke("move", openedPath.resolve(source))
+            val operation = when {
+                target.startsWith(".nexara-delete-") -> "delete"
+                target.startsWith(".nexara-replace-") -> "replace"
+                else -> "move"
+            }
+            beforeOperation?.invoke(operation, openedPath.resolve(source))
             val destination = targetDirectory as Directory
             Files.move(child(source), destination.child(target))
         }

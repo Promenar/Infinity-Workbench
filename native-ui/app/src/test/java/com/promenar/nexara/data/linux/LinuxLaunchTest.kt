@@ -77,15 +77,15 @@ class LinuxLaunchTest {
         } finally { TimeZone.setDefault(original) }
     }
 
-    @Test fun `启动前创建全局忽略块并保留用户内容且不重复写入`() {
+    @Test fun `启动前仅清理一次旧全局忽略块并保留用户后续修改`() {
         val ignore = File(root, "root/.config/git/ignore")
         ignore.parentFile!!.mkdirs()
-        ignore.writeText("*.local\n# 用户规则")
+        val managed = "# >>> Nexara workspace internal files >>>\n/.nexara*\n/.recycle_bin/\n# <<< Nexara workspace internal files <<<\n"
+        ignore.writeText("*.local\n" + managed + "# 用户规则")
         builder().build(LinuxLaunchSpec(emptyList()))
-        val expected = ignore.readText()
-        assertTrue(expected.startsWith("*.local\n# 用户规则\n"))
-        assertTrue(expected.contains("/.nexara*"))
-        assertTrue(expected.contains("/.recycle_bin/"))
+        assertEquals("*.local\n# 用户规则", ignore.readText())
+        val expected = "*.user\n" + managed
+        ignore.writeText(expected)
         val modified = ignore.lastModified()
         builder().build(LinuxLaunchSpec(emptyList()))
         assertEquals(expected, ignore.readText())

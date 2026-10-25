@@ -51,6 +51,14 @@ class TermuxBackgroundJobs(private val execute: suspend (TermuxCommandRequest) -
 
     fun logPath(handle: TermuxJobHandle): String = TermuxBackgroundJobScripts.logPath(handle)
 
+    /** 运行中的旧任务保留原位置；退出后才迁移，避免破坏看门狗持有的路径。 */
+    suspend fun migrateCompleted(id: String, sharedWorkspace: File?, handle: TermuxJobHandle): TermuxJobHandle {
+        if (sharedWorkspace == null) return handle
+        return TermuxBackgroundJobScripts.parseRecovered(
+            call(TermuxBackgroundJobScripts.migrateCompleted(id, sharedWorkspace), "日志迁移").stdout,
+        ) ?: handle
+    }
+
     private suspend fun call(script: String, action: String): TermuxCommandResult {
         val result = execute(TermuxCommandRequest(script, timeoutSeconds = 15))
         check(result.exitCode == 0 && result.errorCode == null && !result.timedOut && !result.stdoutTruncated) {
@@ -91,7 +99,8 @@ internal object TermuxBackgroundJobScripts {
             for tool in bash setsid nohup base64 tr tail wc date sleep; do
                 command -v "§tool" >/dev/null 2>&1 || exit 70
             done
-            root=${root(sharedWorkspace)}
+            [ ! -L "§HOME/.nexara" ] && [ ! -L "§HOME/.nexara/jobs" ] || exit 74
+            root=${root(null)}
             mkdir -p -- "§root" || exit 71
             root=§(cd -- "§root" && pwd -P) || exit 71
             directory="§root/$id"
@@ -121,6 +130,62 @@ internal object TermuxBackgroundJobScripts {
             [ -f "§directory/ready" ] || abort_start
             pid=§(cat "§directory/pid") || abort_start
             [[ "§pid" =~ ^[0-9]+§ ]] && [ "§pid" -gt 1 ] || abort_start
+            printf '$PROTOCOL\n'
+            printf '%s' "§directory" | base64 | tr -d '\r\n'
+            printf '\n%s\n' "§pid"
+        """.trimIndent().shell()
+    }
+
+    fun migrateCompleted(id: String, sharedWorkspace: File): String {
+        validateId(id)
+        return """
+            set -eu
+            umask 077
+            [ ! -L "§HOME/.nexara" ] && [ ! -L "§HOME/.nexara/jobs" ] || exit 74
+            root=${root(null)}
+            legacy=${quote(File(sharedWorkspace, "jobs/$id").path)}
+            directory="§root/$id"
+            [ ! -L ${quote(File(sharedWorkspace, "jobs").path)} ] && [ ! -L "§legacy" ] || exit 74
+            # 没有退出文件的异常任务也按持久PID身份核验，活进程保持原路径。
+            if [ -d "§legacy" ] && [ ! -f "§legacy.exit" ]; then
+                pid=§(cat "§legacy/pid") || exit 74
+                expected=§(cat "§legacy/identity") || exit 74
+                [[ "§pid" =~ ^[0-9]+§ ]] && [ "§pid" -gt 1 ] && [ -n "§expected" ] || exit 75
+                $identity
+                if matches; then printf '$PROTOCOL\nNONE\n'; exit 0; fi
+            fi
+            if [ ! -d "§legacy" ] && [ ! -d "§directory" ]; then printf '$PROTOCOL\nNONE\n'; exit 0; fi
+            mkdir -p -- "§root"
+            root=§(cd -- "§root" && pwd -P) || exit 71
+            directory="§root/$id"
+            for suffix in .log .exit .cancelled; do
+                source="§legacy§suffix"
+                target="§directory§suffix"
+                [ ! -L "§source" ] && [ ! -L "§target" ] || exit 74
+                if [ -e "§source" ]; then
+                    [ -f "§source" ] || exit 74
+                    if [ -e "§target" ]; then cmp -s -- "§source" "§target" || exit 72
+                    else
+                        temporary=§(mktemp "§root/.migration-$id.XXXXXX") || exit 71
+                        trap 'rm -f -- "§temporary"' EXIT
+                        cat -- "§source" > "§temporary" || exit 71
+                        cmp -s -- "§source" "§temporary" || exit 72
+                        ln -- "§temporary" "§target" || { cmp -s -- "§source" "§target" || exit 72; }
+                        rm -- "§temporary"
+                        trap - EXIT
+                    fi
+                fi
+            done
+            if [ -d "§legacy" ]; then
+                [ ! -L "§legacy" ] && [ ! -e "§directory" ] && [ ! -L "§directory" ] || exit 72
+                mv -- "§legacy" "§directory" || exit 71
+            fi
+            for suffix in .log .exit .cancelled; do
+                source="§legacy§suffix"
+                target="§directory§suffix"
+                if [ -f "§source" ]; then cmp -s -- "§source" "§target" && rm -- "§source" || exit 72; fi
+            done
+            pid=§(cat "§directory/pid")
             printf '$PROTOCOL\n'
             printf '%s' "§directory" | base64 | tr -d '\r\n'
             printf '\n%s\n' "§pid"
@@ -221,10 +286,17 @@ internal object TermuxBackgroundJobScripts {
         val tombstone = if (cancel) ": > \"\$directory.cancelled\" || exit 71" else ""
         val incomplete = if (cancel) "if [ ! -e \"\$directory/pid\" ]; then $noJob; fi" else
             "[ -f \"\$directory/ready\" ] || exit 74"
+        val cancellation = if (cancel) """mkdir -p -- "§root" || exit 71; : > "§root/$id.cancelled" || exit 71""".shell() else ""
+        val legacy = sharedWorkspace?.let {
+            """if [ ! -e "§root/$id" ] && [ -d ${quote(File(it, "jobs/$id").path)} ]; then root=${root(it)}; fi""".shell()
+        }.orEmpty()
         return """
             set -u
             umask 077
-            root=${root(sharedWorkspace)}
+            [ ! -L "§HOME/.nexara" ] && [ ! -L "§HOME/.nexara/jobs" ] || exit 74
+            root=${root(null)}
+            $cancellation
+            $legacy
             $initialize
             root=§(cd -- "§root" && pwd -P) || exit 71
             directory="§root/$id"

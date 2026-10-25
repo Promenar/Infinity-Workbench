@@ -1,6 +1,6 @@
 package com.promenar.nexara.data.repository
 
-/** 仅在已打开的普通文件FD上操作随机持久身份，不通过路径解析或硬链接回退。 */
+/** 仅在已打开的普通文件或目录FD上操作随机持久身份，不通过路径解析或硬链接回退。 */
 @androidx.annotation.Keep
 internal object AndroidWorkspaceFileIdentity {
     init { System.loadLibrary("nexara_workspace_fs") }
@@ -12,6 +12,13 @@ internal object AndroidWorkspaceFileIdentity {
 
     fun read(fd: Int): String? = nativeRead(fd)
 
+    fun createRoot(fd: Int, token: String) { requireCreationToken(token); nativeCreateRoot(fd, token) }
+    fun readRoot(fd: Int): String? = nativeReadRoot(fd)
+    fun restoreRoot(fd: Int, token: String) { requireCreationToken(token); nativeRestoreRoot(fd, token) }
+
     private external fun nativeCreate(fd: Int, token: String)
     private external fun nativeRead(fd: Int): String?
+    private external fun nativeCreateRoot(fd: Int, token: String)
+    private external fun nativeReadRoot(fd: Int): String?
+    private external fun nativeRestoreRoot(fd: Int, token: String)
 }

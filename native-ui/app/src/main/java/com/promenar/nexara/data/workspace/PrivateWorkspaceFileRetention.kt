@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.workspace
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import com.promenar.nexara.data.local.db.dao.WorkspaceDao
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.storage.AndroidRealPathFileSystem
@@ -197,7 +198,7 @@ class PrivateWorkspaceFileRetention internal constructor(
         val nodes = linkedMapOf<String, RealPathFileState>()
         fun visit(directory: BoundRealPathDirectory, prefix: String) {
             for (name in directory.names().sorted()) {
-                if (!includeReserved && (name.startsWith(".nexara", ignoreCase = true) || name.equals(".recycle_bin", ignoreCase = true))) continue
+                if (!includeReserved && (WorkspaceInternalPaths.isReservedName(name))) continue
                 val state = checkNotNull(directory.stat(name)) { "文件在扫描期间消失" }
                 if (state.isSymbolicLink || (!state.isDirectory && !state.isRegularFile)) {
                     check(!includeReserved) { "保留副本包含链接或特殊文件" }

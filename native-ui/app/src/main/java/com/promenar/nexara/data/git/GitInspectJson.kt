@@ -26,6 +26,7 @@ internal object GitInspectJson {
             untracked = changeList(dto.untracked, dto.untrackedTruncated),
             tracking = GitTracking(dto.upstream, dto.ahead, dto.behind, dto.upstreamMissing, dto.trackingTruncated),
             lastFetchSeconds = dto.lastFetchSeconds,
+            repositoryName = dto.repositoryName,
         )
     }
 
@@ -166,6 +167,7 @@ internal data class StatusDto(
     @SerialName("upstream_missing") val upstreamMissing: Boolean? = null,
     @SerialName("tracking_truncated") val trackingTruncated: Boolean? = null,
     @SerialName("last_fetch_seconds") val lastFetchSeconds: Long? = null,
+    @SerialName("repository_name") val repositoryName: String? = null,
     val staged: List<EntryDto> = emptyList(),
     @SerialName("staged_truncated") val stagedTruncated: Boolean = false,
     val unstaged: List<EntryDto> = emptyList(),

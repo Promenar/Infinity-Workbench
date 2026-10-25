@@ -8,6 +8,7 @@ import java.io.OutputStream
 
 /** Robolectric 会隔离 JDK 接口类加载器，因此仓储测试使用可回滚的真实磁盘夹具。 */
 class TestWorkspaceFileOps(
+    private val identityStorage: WorkspaceInternalStorage? = null,
     private val hook: ((WorkspaceFilePhase) -> Unit)? = null,
 ) : WorkspaceFileOps {
     var inspectedFileKeyOverride: ((Path, String) -> String)? = null
@@ -30,18 +31,25 @@ class TestWorkspaceFileOps(
             LinkOption.NOFOLLOW_LINKS,
         ).fileKey()?.toString() ?: throw SecurityException("测试工作区根缺少 fileKey")
         val marker = root.resolve(".nexara_root_identity")
-        val actual = if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
+        val stored = identityStorage?.readIdentity(key)
+        val actual = if (stored != null) {
+            stored
+        } else if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
             Files.readAllBytes(marker).toString(Charsets.UTF_8)
         } else {
             if (!initializeIdentity) throw SecurityException("测试工作区根缺少持久身份标记")
             "${expectedIdentity ?: UUID.randomUUID()}\n$key".also {
-                Files.write(marker, it.toByteArray(), java.nio.file.StandardOpenOption.CREATE_NEW)
+                if (identityStorage == null) Files.write(marker, it.toByteArray(), java.nio.file.StandardOpenOption.CREATE_NEW)
             }
         }
         if (actual.substringAfter('\n', "") != key) throw SecurityException("测试工作区根 fileKey 不匹配")
         val nonce = actual.substringBefore('\n')
         val identity = "$nonce|${com.promenar.nexara.infra.util.Sha256Utils.hash(key)}"
         if (expectedIdentity != null && identity != expectedIdentity) throw SecurityException("测试工作区根认领不匹配")
+        if (identityStorage != null) {
+            identityStorage.storeIdentity(key, actual)
+            Files.deleteIfExists(marker)
+        }
         return identity
     }
 
@@ -80,7 +88,7 @@ class TestWorkspaceFileOps(
     }
 
     override fun listChildren(root: Path, relative: List<String>): List<String> =
-        Files.newDirectoryStream(resolve(root, relative, true)).use { directory ->
+        Files.newDirectoryStream(if (relative.isEmpty()) root else resolve(root, relative, true)).use { directory ->
             directory.map { it.fileName.toString() }
         }
 
@@ -318,6 +326,27 @@ class TestWorkspaceFileOps(
         return rollback(rollback = {
             Files.move(to, from)
         })
+    }
+
+    override fun moveAcrossRoots(sourceRoot: Path, source: List<String>, targetRoot: Path, target: List<String>): WorkspaceFileRollback {
+        if (sourceRoot == targetRoot) return move(sourceRoot, source, target)
+        fun transfer(fromRoot: Path, fromPath: List<String>, toRoot: Path, toPath: List<String>) {
+            val from = resolve(fromRoot, fromPath, true)
+            val to = resolve(toRoot, toPath)
+            if (Files.exists(to, LinkOption.NOFOLLOW_LINKS)) throw java.nio.file.FileAlreadyExistsException(to.toString())
+            val tokens = Files.walk(from).use { nodes -> nodes.map { node ->
+                val key = Files.readAttributes(node, java.nio.file.attribute.BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS).fileKey().toString()
+                key to fileIdentityTokens["${fromRoot.toAbsolutePath().normalize()}|$key"]
+            }.toList() }
+            Files.move(from, to)
+            tokens.forEach { (key, token) -> if (token != null) {
+                fileIdentityTokens.remove("${fromRoot.toAbsolutePath().normalize()}|$key")
+                fileIdentityTokens["${toRoot.toAbsolutePath().normalize()}|$key"] = token
+            } }
+        }
+        transfer(sourceRoot, source, targetRoot, target)
+        return rollback(rollback = { transfer(targetRoot, target, sourceRoot, source) })
     }
 
     override fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback {

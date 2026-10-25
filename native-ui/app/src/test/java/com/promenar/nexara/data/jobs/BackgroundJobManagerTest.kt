@@ -10,6 +10,15 @@ import kotlinx.coroutines.*
 import org.junit.Test
 
 class BackgroundJobManagerTest {
+    @Test fun `后台日志仅保存在应用任务目录且工具读取私有日志`() = fixture { m ->
+        val job = m.startBuiltin("s", "root", BackgroundJobRunner.SHELL, "echo private-output", null, 1, BackgroundJobExitAction.NONE)
+        val result = m.waitFor("s", job.id, 5)
+        assertThat(result.tail.text).contains("private-output")
+        assertThat(File(job.workspaceDirectory!!, "jobs/${job.id}.log").exists()).isFalse()
+        assertThat(File(job.runDirectory, "output.log").readText()).contains("private-output")
+        assertThat(m.readLog("s", job.logWorkspacePath!!).text).contains("private-output")
+        assertThat(runCatching { m.readLog("other", job.logWorkspacePath) }.exceptionOrNull()).isInstanceOf(JobAccessException::class.java)
+    }
     @Test fun `后台立即返回且取消发起轮次不影响任务`() = fixture { m ->
         val started=CompletableDeferred<BackgroundJobRecord>()
         val caller=launch { started.complete(m.startBuiltin("s","root",BackgroundJobRunner.SHELL,"while [ ! -f finish ]; do sleep 0.05; done; echo done",null,1,BackgroundJobExitAction.NONE)); awaitCancellation() }
@@ -21,6 +30,50 @@ class BackgroundJobManagerTest {
         assertThat(result.record.state).isEqualTo("EXITED")
         assertThat(result.tail.text).contains("done")
     }
+    @Test fun `恢复无法核验旧writer停止时保留日志目录项和后续追加`() = runBlocking {
+        val root = Files.createTempDirectory("job-deferred-log").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val workspace = File(root, "workspace").apply { mkdirs() }
+            val run = File(root, "runs/job-a").apply { mkdirs() }
+            File(run, "pgid").writeText("777")
+            val log = File(workspace, "jobs/job-a.log").apply { parentFile!!.mkdirs(); writeText("first\n") }
+            val store = BackgroundJobStore(File(root, "store"))
+            store.put(sample().copy(runDirectory = run.path, workspaceDirectory = workspace.path))
+            java.io.FileOutputStream(log, true).use { writer ->
+                val manager = manager(root, scope, store)
+                manager.initialize()
+                writer.write("after-recovery\n".toByteArray())
+                writer.flush()
+                val status = manager.status("s", "job-a")
+                assertThat(status.record.logMigrationDeferred).isTrue()
+                assertThat(status.tail.text).contains("after-recovery")
+                assertThat(log.exists()).isTrue()
+                assertThat(File(run, "output.log").exists()).isFalse()
+            }
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun `Termux状态查询取消保持原异常且不发额外恢复调用`() = runBlocking {
+        val root = Files.createTempDirectory("job-termux-cancel").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val store = BackgroundJobStore(File(root, "store"))
+            store.put(sample().copy(runner = "TERMUX", state = "EXITED", exitCode = 0,
+                runDirectory = File(root, "runs/job-a").path, termuxDirectory = "/private/jobs/job-a", termuxPid = 123))
+            val cancelled = CancellationException("test-cancel")
+            var calls = 0
+            val backend = com.promenar.nexara.data.termux.TermuxBackgroundJobs { calls++; throw cancelled }
+            val manager = manager(root, scope, store, termux = backend)
+            manager.initialize()
+            val failure = runCatching { manager.status("s", "job-a") }.exceptionOrNull()
+            assertThat(failure).isInstanceOf(CancellationException::class.java)
+            assertThat(failure?.message).isEqualTo("test-cancel")
+            assertThat(calls).isEqualTo(1)
+            assertThat(manager.list("s").single().guidance).isNull()
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
     @Test fun `会话隔离与等待超时取消不停止任务`() = fixture { m ->
         val job=m.startBuiltin("s","root",BackgroundJobRunner.SHELL,"sleep 60",null,1,BackgroundJobExitAction.NONE)
         assertThat(runCatching { m.status("other",job.id) }.exceptionOrNull()).isInstanceOf(JobAccessException::class.java)
@@ -57,7 +110,7 @@ class BackgroundJobManagerTest {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
         try {
             val store=BackgroundJobStore(File(root,"store"))
-            store.put(sample().copy(runDirectory=File(root,"run").path))
+            store.put(sample().copy(runDirectory=File(root,"runs/job-a").path))
             val m=manager(root,scope,store); m.initialize()
             assertThat(m.list("s").single().state).isEqualTo("INTERRUPTED")
         } finally {scope.cancel(); root.deleteRecursively()}

@@ -9,6 +9,7 @@ import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalFolderPaths
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -90,20 +91,23 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
             requireCapability(original, Document.FLAG_SUPPORTS_WRITE, "READ_ONLY", "该文件为只读")
             requireReplacement(original)
         }
-        val temporary = createDocument(parent, ".nexara-write-${UUID.randomUUID()}", original?.mimeType ?: "application/octet-stream")
+        val staging = internalOperationDirectory()
+        var temporary: SafDocument? = null
         var primaryFailure: Throwable? = null
         try {
-            requireCapability(temporary, Document.FLAG_SUPPORTS_DELETE, "UNSUPPORTED", "提供商不能清理临时文档，无法安全写入")
-            writeDocument(temporary, content)
+            val prepared = createDocument(staging, ".nexara-write-${UUID.randomUUID()}", original?.mimeType ?: "application/octet-stream")
+            temporary = prepared
+            requireCapability(prepared, Document.FLAG_SUPPORTS_DELETE, "UNSUPPORTED", "提供商不能清理临时文档，无法安全写入")
+            writeDocument(prepared, content)
             val expectedContent = hash(content)
-            if (digest(temporary) != expectedContent) fail("UNAVAILABLE", "提供商写入校验失败，原文件尚未替换")
+            if (digest(prepared) != expectedContent) fail("UNAVAILABLE", "提供商写入校验失败，原文件尚未替换")
             currentCoroutineContext().ensureActive()
             checkCurrent(parent, name, original, originalHash, createOnly)
             val published = if (original != null) {
-                requireReplacement(temporary)
-                replace(parent, name, original, originalHash!!, temporary, expectedContent)
-            } else if (temporary.supports(Document.FLAG_SUPPORTS_RENAME)) {
-                val renamed = rename(temporary, name)
+                requireReplacement(prepared)
+                replace(parent, staging, name, original, originalHash!!, prepared, expectedContent)
+            } else if (prepared.supports(Document.FLAG_SUPPORTS_RENAME) && prepared.supports(Document.FLAG_SUPPORTS_MOVE)) {
+                val renamed = publishMoved(prepared, staging, parent, name)
                 if (renamed.name != name || child(parent, name)?.id != renamed.id) {
                     fail("CONFLICT", "提供商未能以目标名称发布文档")
                 }
@@ -119,7 +123,8 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
             throw exception
         } finally {
             withContext(NonCancellable) {
-                cleanup(temporary, primaryFailure)
+                temporary?.let { cleanup(it, primaryFailure) }
+                cleanupOperationDirectory(staging, primaryFailure)
             }
         }
     }
@@ -168,17 +173,20 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
         }
     }
 
-    private suspend fun replace(parent: SafDocument, name: String, original: SafDocument, originalHash: String,
+    private suspend fun replace(parent: SafDocument, staging: SafDocument, name: String, original: SafDocument, originalHash: String,
         temporary: SafDocument, expectedContent: String): SafDocument {
         var backup: SafDocument? = null
         var published: SafDocument? = null
+        val backupName = ".nexara-backup-${UUID.randomUUID()}"
         try {
-            backup = rename(original, ".nexara-backup-${UUID.randomUUID()}")
+            backup = moveDocument(original, parent, staging)
+            if (backup.name != name || child(staging, name)?.id != backup.id) fail("UNAVAILABLE", "提供商未能正确隔离原文档")
+            backup = rename(backup, backupName)
             // 重命名后的复核能发现最终检查与旧文档移动之间的内容变化。
             if (digest(backup) != originalHash) fail("CONFLICT", "原文件在提交期间发生变化")
             if (child(parent, name) != null) fail("CONFLICT", "目标名称在提交期间已被占用")
             currentCoroutineContext().ensureActive()
-            published = rename(temporary, name)
+            published = publishMoved(temporary, staging, parent, name)
             if (published.name != name || child(parent, name)?.id != published.id || digest(published) != expectedContent) {
                 fail("UNAVAILABLE", "提供商未能正确发布文档")
             }
@@ -187,23 +195,38 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
             backup = null
             return published
         } catch (exception: Throwable) {
-            var recovered = backup == null
+            val knownBackup = backup
+            var recovered = false
             withContext(NonCancellable) {
                 try {
                     val current = child(parent, name)
+                    val staged = children(staging)
+                    // 重命名可能已提交但未返回新名称，恢复必须刷新句柄并确认仍属于本次隔离目录。
+                    val refreshed = knownBackup?.let {
+                        try { queryDocument(it.uri) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                    }?.takeIf { document -> staged.count { it.id == document.id && it.name == document.name } == 1 }
+                    // 路径型标识重命名后会失效，只按本次唯一备份名或原隔离身份寻找原内容。
+                    val isolated = (refreshed ?: staged.singleOrNull {
+                        it.name == backupName || it.name == name && (knownBackup == null || it.id == knownBackup.id)
+                    })?.takeIf { !it.isDirectory && digest(it) == originalHash }
                     if (published != null && current?.id == published.id && digest(current) == expectedContent) {
                         DocumentsContract.deleteDocument(contentResolver, current.uri)
                     }
-                    if (backup != null && child(parent, name) == null) {
-                        val restored = rename(backup, name)
+                    if (isolated != null && child(parent, name) == null) {
+                        val prepared = if (isolated.name == name) isolated else rename(isolated, name)
+                        val restored = moveDocument(prepared, staging, parent)
                         recovered = restored.name == name && digest(restored) == originalHash
+                    } else if (isolated == null && current?.id == original.id) {
+                        recovered = digest(current) == originalHash
                     }
                 } catch (recoveryFailure: Throwable) {
-                    exception.addSuppressed(recoveryFailure)
+                    if (exception !== recoveryFailure) exception.addSuppressed(recoveryFailure)
                 }
             }
             if (exception is CancellationException) throw exception
-            if (!recovered) fail("UNAVAILABLE", "替换失败，旧内容保留在挂载目录的隐藏备份中，需要人工恢复")
+            if (!recovered) fail("UNAVAILABLE", "替换失败，请核查原位置与 .nexara 内部隔离副本，需要人工恢复")
             throw exception
         }
     }
@@ -258,9 +281,72 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
         return queryDocument(uri)
     }
 
+    private fun moveDocument(document: SafDocument, sourceParent: SafDocument, targetParent: SafDocument): SafDocument {
+        requireCapability(document, Document.FLAG_SUPPORTS_MOVE, "UNSUPPORTED", "提供商不支持跨目录安全移动，现有内容保持原状")
+        requireCapability(targetParent, Document.FLAG_DIR_SUPPORTS_CREATE, "READ_ONLY", "目标目录不允许接收文档")
+        if (child(targetParent, document.name) != null) fail("CONFLICT", "目标名称已经被占用")
+        val uri = DocumentsContract.moveDocument(contentResolver, document.uri, sourceParent.uri, targetParent.uri)
+            ?: fail("UNAVAILABLE", "提供商未能移动文档")
+        return queryDocument(uri)
+    }
+
+    private fun publishMoved(temporary: SafDocument, staging: SafDocument, parent: SafDocument, name: String): SafDocument {
+        // 最终名称先在隐藏目录内准备，避免临时名称短暂出现在用户目录。
+        val renamed = rename(temporary, name)
+        try {
+            return moveDocument(renamed, staging, parent)
+        } catch (failure: Throwable) {
+            try { if (child(staging, name)?.id == renamed.id) cleanup(renamed, failure) }
+            catch (cleanup: Throwable) { if (cleanup !== failure) failure.addSuppressed(cleanup) }
+            throw failure
+        }
+    }
+
+    private suspend fun internalOperationDirectory(): SafDocument {
+        val root = find("/") ?: fail("NOT_FOUND", "挂载根目录不存在")
+        val internal = internalDirectory(root)
+        val operationName = UUID.randomUUID().toString()
+        val operation = createDocument(internal, operationName, Document.MIME_TYPE_DIR)
+        if (operation.name != operationName || child(internal, operationName)?.id != operation.id) fail("CONFLICT", "内部操作目录在创建期间被替换")
+        requireCapability(operation, Document.FLAG_DIR_SUPPORTS_CREATE, "UNSUPPORTED", "提供商不支持内部暂存目录")
+        requireCapability(operation, Document.FLAG_SUPPORTS_DELETE, "UNSUPPORTED", "提供商不支持内部暂存清理")
+        return operation
+    }
+
+    private suspend fun internalDirectory(root: SafDocument): SafDocument {
+        val name = WorkspaceInternalPaths.DIRECTORY
+        val existing = child(root, name)
+        val internal = existing ?: run {
+            requireCapability(root, Document.FLAG_DIR_SUPPORTS_CREATE, "READ_ONLY", "挂载根目录不允许创建内部暂存目录")
+            createDocument(root, name, Document.MIME_TYPE_DIR).also {
+                if (it.name != name || child(root, name)?.id != it.id) fail("CONFLICT", "内部暂存目录在创建期间被替换")
+            }
+        }
+        requireDirectory(internal)
+        requireCapability(internal, Document.FLAG_DIR_SUPPORTS_CREATE, "UNSUPPORTED", "内部暂存目录不允许创建文档")
+        if (existing == null) {
+            val ignore = createDocument(internal, ".gitignore", "text/plain")
+            if (ignore.name != ".gitignore" || child(internal, ".gitignore")?.id != ignore.id) fail("CONFLICT", "内部忽略文件在创建期间被替换")
+            writeDocument(ignore, "*\n".toByteArray())
+        }
+        return internal
+    }
+
+    private fun cleanupOperationDirectory(directory: SafDocument, primaryFailure: Throwable?) {
+        try {
+            if (children(directory).isEmpty()) cleanup(directory, primaryFailure)
+        } catch (failure: CancellationException) {
+            if (primaryFailure == null) throw failure
+            if (primaryFailure !== failure) primaryFailure.addSuppressed(failure)
+        } catch (failure: Exception) {
+            if (primaryFailure !== failure) primaryFailure?.addSuppressed(failure)
+        }
+    }
+
     private fun requireReplacement(document: SafDocument) {
         requireCapability(document, Document.FLAG_SUPPORTS_RENAME, "UNSUPPORTED", "提供商不支持安全重命名，现有内容保持原状")
         requireCapability(document, Document.FLAG_SUPPORTS_DELETE, "UNSUPPORTED", "提供商不支持替换后的安全清理")
+        requireCapability(document, Document.FLAG_SUPPORTS_MOVE, "UNSUPPORTED", "提供商不支持跨目录安全移动，现有内容保持原状")
     }
 
     private fun cleanup(document: SafDocument, primaryFailure: Throwable?) {
@@ -302,17 +388,49 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
     private fun input(document: SafDocument) = contentResolver.openInputStream(document.uri) ?: fail("UNAVAILABLE", "提供商未能打开读取流")
     private fun hash(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
-    private fun find(path: String): SafDocument? {
+    private suspend fun find(path: String): SafDocument? {
         if (treeUri.scheme != ContentResolver.SCHEME_CONTENT || !DocumentsContract.isTreeUri(treeUri)) fail("UNAVAILABLE", "文件夹授权无效，请重新授权")
         val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
         var current = queryDocument(rootUri)
         if (!current.isDirectory) fail("UNAVAILABLE", "挂载来源不是目录")
+        val root = current
+        migrateLegacyTemporaries(root, root, "/")
         if (path == "/") return current
+        var relative = ""
         for (name in path.removePrefix("/").split('/')) {
             requireDirectory(current)
             current = child(current, name) ?: return null
+            relative += "/$name"
+            if (current.isDirectory) migrateLegacyTemporaries(root, current, relative)
         }
         return current
+    }
+
+    private suspend fun migrateLegacyTemporaries(root: SafDocument, parent: SafDocument, parentPath: String) {
+        val documents = try { children(parent).filter { ExternalFolderLegacyTemporaries.matches(it.name) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { ExternalFolderLegacyTemporaries.failed("saf", failure); return }
+        for (document in documents) {
+            currentCoroutineContext().ensureActive()
+            try {
+                requireCapability(document, Document.FLAG_SUPPORTS_MOVE, "UNSUPPORTED", "提供商不支持旧暂存跨目录迁移，已保留原副本")
+                var target = internalDirectory(root)
+                for (name in listOf("legacy") + parentPath.split('/').filter { it.isNotEmpty() }) {
+                    target = child(target, name) ?: run {
+                        requireCapability(target, Document.FLAG_DIR_SUPPORTS_CREATE, "READ_ONLY", "旧暂存目标目录不允许创建")
+                        val created = createDocument(target, name, Document.MIME_TYPE_DIR)
+                        if (created.name != name || child(target, name)?.id != created.id) fail("CONFLICT", "旧暂存目标目录在创建期间被替换")
+                        created
+                    }
+                    requireDirectory(target)
+                }
+                val moved = moveDocument(document, parent, target)
+                if (moved.name != document.name || child(target, document.name)?.id != moved.id) {
+                    fail("UNAVAILABLE", "提供商未按原名称迁移旧暂存，已保留隔离副本")
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { ExternalFolderLegacyTemporaries.failed("saf", failure) }
+        }
     }
 
     private fun child(parent: SafDocument, name: String): SafDocument? {

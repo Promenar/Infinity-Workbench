@@ -9,6 +9,7 @@ import com.promenar.nexara.data.storage.RealPathExternalFolderBackend
 import com.promenar.nexara.data.storage.RealPathFileSystem
 import com.promenar.nexara.data.workspace.WorkspaceFileTarget
 import com.promenar.nexara.data.workspace.WorkspaceFileTargetResolver
+import com.promenar.nexara.data.workspace.WorkspaceFileDestinationBinding
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.WriteResult
@@ -29,6 +30,12 @@ interface CanvasWorkspaceFiles {
     suspend fun exists(sessionId: String, path: String): Boolean
     suspend fun read(sessionId: String, path: String, maxBytes: Int): ByteArray?
     suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?)
+    suspend fun defaultDestination(sessionId: String): WorkspaceFileDestinationBinding? = null
+    suspend fun legacyDestination(sessionId: String, path: String, expectedHash: String): WorkspaceFileDestinationBinding? = defaultDestination(sessionId)
+    suspend fun defaultPath(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?): String = path
+    suspend fun exists(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?): Boolean = exists(sessionId, path)
+    suspend fun read(sessionId: String, path: String, maxBytes: Int, destination: WorkspaceFileDestinationBinding?): ByteArray? = read(sessionId, path, maxBytes)
+    suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?, destination: WorkspaceFileDestinationBinding?) = write(sessionId, path, html, expectedHash)
 }
 
 internal class WorkspaceCanvasFiles(
@@ -39,27 +46,49 @@ internal class WorkspaceCanvasFiles(
     private val indexEvents: FileIndexEventSink,
     private val fileSystem: RealPathFileSystem = AndroidRealPathFileSystem,
 ) : CanvasWorkspaceFiles {
-    override suspend fun exists(sessionId: String, path: String): Boolean = access(sessionId, path) { target, normalized ->
+    override suspend fun defaultDestination(sessionId: String) = targets.defaultDestination(sessionId)
+    override suspend fun legacyDestination(sessionId: String, path: String, expectedHash: String): WorkspaceFileDestinationBinding {
+        val candidates = listOfNotNull(targets.primaryDestination(sessionId),
+            WorkspaceFileDestinationBinding(com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE)).distinct()
+        val matches = candidates.filter { candidate ->
+            try { read(sessionId, path, 1_048_576, candidate)?.let(::canvasSha256) == expectedHash }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { false }
+        }
+        return matches.singleOrNull() ?: throw ExternalFolderException("UNAVAILABLE", "既有画布镜像的原工作区无法唯一核验，源码已保留")
+    }
+    override suspend fun defaultPath(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?): String {
+        val presented = targets.present(sessionId, destination ?: targets.defaultDestination(sessionId), path)
+        return if (presented == ExternalFolderPaths.normalize(path)) path else presented
+    }
+    override suspend fun exists(sessionId: String, path: String) = exists(sessionId, path, null)
+    override suspend fun read(sessionId: String, path: String, maxBytes: Int) = read(sessionId, path, maxBytes, null)
+    override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) = write(sessionId, path, html, expectedHash, null)
+
+    override suspend fun exists(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?): Boolean = access(sessionId, path, destination) { target, normalized ->
         entry(target, normalized) != null || target.root != null &&
             Files.exists(target.directory!!.toPath().resolve(normalized.trimStart('/')), NOFOLLOW_LINKS)
     }
 
-    override suspend fun read(sessionId: String, path: String, maxBytes: Int): ByteArray? = access(sessionId, path) { target, normalized ->
+    override suspend fun read(sessionId: String, path: String, maxBytes: Int, destination: WorkspaceFileDestinationBinding?): ByteArray? = access(sessionId, path, destination) { target, normalized ->
         try {
             val entry = entry(target, normalized) ?: return@access null
             if (entry.isDirectory) throw ExternalFolderException("IS_DIRECTORY", "画布路径指向目录")
-            if (target.mount != null) mounts.read(sessionId, normalized, maxBytes.toLong())
+            if (target.directoryBackend != null) target.directoryBackend.read(normalized, maxBytes.toLong())
+            else if (target.mount != null) mounts.read(sessionId, normalized, maxBytes.toLong())
             else RealPathExternalFolderBackend(target.directory!!, emptySet(), { true }, fileSystem).read(normalized, maxBytes.toLong())
         } catch (failure: ExternalFolderException) {
             if (failure.code == "NOT_FOUND") null else throw failure
         }
     }
 
-    override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) = access(sessionId, path) { target, normalized ->
+    override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?, destination: WorkspaceFileDestinationBinding?) = access(sessionId, path, destination) { target, normalized ->
         ensureParents(target, normalized)
         targets.checkCurrent(target, normalized)
         val bytes = html.toByteArray(Charsets.UTF_8)
-        if (target.mount != null) {
+        if (target.directoryBackend != null) {
+            target.directoryBackend.write(normalized, bytes, expectedHash, createOnly = expectedHash == null)
+        } else if (target.mount != null) {
             mounts.write(sessionId, normalized, bytes, expectedHash, createOnly = expectedHash == null)
         } else {
             val root = target.root ?: throw ExternalFolderException("INVALID_PATH", "画布路径没有工作区根")
@@ -94,9 +123,14 @@ internal class WorkspaceCanvasFiles(
         Unit
     }
 
-    private suspend fun entry(target: WorkspaceFileTarget, path: String): FileEntry? =
-        if (target.mount != null) mounts.entry(target.sessionId, path)
-        else workspace.getByMaterializedPath(target.root!!.uuid, path)
+    private suspend fun entry(target: WorkspaceFileTarget, path: String): FileEntry? = when {
+        target.directoryBackend != null -> target.directoryBackend.stat(path)?.let {
+            FileEntry(it.identity ?: it.path, "", null, it.name, it.sha256.orEmpty(), sizeBytes = it.size, isDirectory = it.isDirectory,
+                physicalRootPath = "", materializedPath = path, createdAt = it.lastModified, updatedAt = it.lastModified)
+        }
+        target.mount != null -> mounts.entry(target.sessionId, path)
+        else -> workspace.getByMaterializedPath(target.root!!.uuid, path)
+    }
 
     private suspend fun ensureParents(target: WorkspaceFileTarget, path: String) {
         var parent = target.virtualRoot
@@ -110,7 +144,8 @@ internal class WorkspaceCanvasFiles(
             }
             targets.checkCurrent(target, path)
             try {
-                if (target.mount != null) mounts.createDirectory(target.sessionId, parent)
+                if (target.directoryBackend != null) target.directoryBackend.createDirectory(parent)
+                else if (target.mount != null) mounts.createDirectory(target.sessionId, parent)
                 else {
                     val parentEntry = entry(target, previous) ?: throw ExternalFolderException("NOT_FOUND", "画布父目录不可用")
                     workspace.createDirectoryInWorkspace(target.root!!.uuid, UUID.randomUUID().toString(), component, parentEntry.uuid, parent)
@@ -123,14 +158,15 @@ internal class WorkspaceCanvasFiles(
         }
     }
 
-    private suspend fun <T> access(sessionId: String, path: String, block: suspend (WorkspaceFileTarget, String) -> T): T = withContext(Dispatchers.IO) {
+    private suspend fun <T> access(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?, block: suspend (WorkspaceFileTarget, String) -> T): T = withContext(Dispatchers.IO) {
         // 元数据中的画布只能落到自身固定目录，不接受 URI、挂载别名或路径穿越。
-        if (!CANVAS_PATH.matches(path)) throw ExternalFolderException("INVALID_PATH", "画布工作区路径无效")
         val normalized = ExternalFolderPaths.normalize(path)
-        val target = targets.resolve(sessionId, normalized, writing = true)
+        val target = targets.resolve(sessionId, normalized, writing = true, destination)
+        val materialized = target.materialized(normalized)
+        if (!CANVAS_PATH.matches(materialized.trimStart('/'))) throw ExternalFolderException("INVALID_PATH", "画布工作区路径无效")
         withContext(ExternalMountOperationBindings(target.mountIds)) {
             targets.checkCurrent(target, normalized)
-            block(target, normalized)
+            block(target, materialized)
         }
     }
 }

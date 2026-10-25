@@ -6,6 +6,9 @@ import com.promenar.nexara.data.model.withinHunkBudget
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.*
 import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths
+import com.promenar.nexara.data.workspace.SessionPrivateWorkspaceRepository
+import com.promenar.nexara.data.workspace.SessionPrivateWorkspaceBackend
 import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.data.storage.ExternalTreeTransfer
 import com.promenar.nexara.data.storage.externalSnapshotMime
@@ -66,13 +69,16 @@ class MountedWorkspaceSkill(
 
     override suspend fun execute(args: JsonObject, invocation: SkillExecutionContext): ToolResult = withContext(Dispatchers.IO) {
         try {
-            // 自选目录工作区以别名为空串的挂载承载 `/`；此时私有工作区的 uuid 与路径都不可达。
+            // 自选工作区以空别名挂载承载 `/`；私有树通过 `/session` 与专用 UUID 命名空间访问。
             val workspaceMount = mounts.workspaceMount(invocation.sessionId)
             val rooted = workspaceMount != null
-            val context = if (workspaceMount == null) invocation else object : SkillExecutionContext by invocation {
-                override val workspaceRootUuid = ExternalMountPaths.uuid(workspaceMount, "/")
+            val privateInvocation = listOf("path", "parentPath", "newParentPath").any { key -> args.stringArgument(key)?.let(SessionPrivateWorkspacePaths::contains) == true } ||
+                listOf("uuid", "parentUuid", "newParentUuid").any { key -> args.stringArgument(key)?.let(SessionPrivateWorkspacePaths::privateUuid) != null }
+            val privateRoot = if (privateInvocation) workspace.ensureSessionRoot(invocation.sessionId) else null
+            val context = if (workspaceMount == null && privateRoot == null) invocation else object : SkillExecutionContext by invocation {
+                override val workspaceRootUuid = privateRoot?.uuid ?: ExternalMountPaths.uuid(requireNotNull(workspaceMount), "/")
             }
-            fun String.external() = rooted || isMounted()
+            fun String.external() = !SessionPrivateWorkspacePaths.contains(this) && (rooted || isMounted())
             fun aliasOf(path: String) = ExternalMountPaths.aliasOf(path, rooted)
             val visibleMountIds = mounts.visible(context.sessionId).associate { it.alias to it.id } +
                 listOfNotNull(workspaceMount).associate { it.alias to it.id }
@@ -90,17 +96,17 @@ class MountedWorkspaceSkill(
                 }
                 val routedArgs = JsonObject(normalized)
                 val repository = MountedWorkspaceRepository(workspace, mounts, context.sessionId, rooted)
-                val operations = MountedFileOperations(files, mounts, context.sessionId, rooted)
+                val operations = MountedFileOperations(files, mounts, context.sessionId, rooted, privateRoot?.uuid)
                 val sourcePath = pathArgument(routedArgs, context, repository, "uuid", "path")
                 // 根工作区的新建默认落在 `/`，与挂载目录同样走外部写入而不是私有工作区的 Room 事务。
                 val parentPath = pathArgument(routedArgs, context, repository, "parentUuid", "parentPath")
                     ?: "/".takeIf { rooted && original.id in setOf("create_file", "create_directory") }
                 val destinationParent = pathArgument(routedArgs, context, repository, "newParentUuid", "newParentPath")
-                val sourceMounted = rooted || (args.stringArgument("uuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
+                val sourceMounted = sourcePath?.let { !SessionPrivateWorkspacePaths.contains(it) && rooted } == true || (args.stringArgument("uuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
                     ?: (sourcePath?.isMounted() == true))
-                val parentMounted = rooted || (args.stringArgument("parentUuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
+                val parentMounted = parentPath?.let { !SessionPrivateWorkspacePaths.contains(it) && rooted } == true || (args.stringArgument("parentUuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
                     ?: (parentPath?.isMounted() == true))
-                val destinationMounted = rooted || (args.stringArgument("newParentUuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
+                val destinationMounted = destinationParent?.let { !SessionPrivateWorkspacePaths.contains(it) && rooted } == true || (args.stringArgument("newParentUuid")?.takeIf(String::isNotBlank)?.let { it.startsWith("external:") }
                     ?: (destinationParent?.isMounted() == true || destinationParent == null && sourceMounted))
                 val resolvedPaths = listOf("uuid" to sourcePath, "parentUuid" to parentPath, "newParentUuid" to destinationParent)
                     .mapNotNull { (key, path) -> routedArgs.stringArgument(key)?.trim()?.takeIf { it.isNotEmpty() && path != null }?.let { it to path!! } }.toMap()
@@ -134,9 +140,10 @@ class MountedWorkspaceSkill(
                     destinationParent = destinationParent,
                 )
                 suspend fun finish(result: ToolResult): ToolResult = capture?.finish(result) ?: result
-                if (original.id in setOf("create_file", "create_directory") && (parentPath ?: "/") == "/" && args.stringArgument("name")?.trim() in setOf("mnt", "skills")) {
-                    fail("INVALID_PATH", "/mnt 与 /skills 为保留虚拟目录")
+                if (original.id in setOf("create_file", "create_directory") && (parentPath ?: "/") == "/" && args.stringArgument("name")?.trim() in setOf("mnt", "skills", "session")) {
+                    fail("INVALID_PATH", "/mnt、/skills 与 /session 为保留虚拟目录")
                 }
+                if (original.id in setOf("move_file", "delete_file") && sourcePath == "/session") fail("INVALID_PATH", "不能变更会话专用空间根目录")
                 if (original.id in setOf("move_file", "delete_file") && sourceMounted && sourcePath in setOf("/mnt", "/skills")) fail("INVALID_PATH", "不能变更保留虚拟根目录")
                 if (original.id in setOf("move_file", "delete_file") && rooted && sourcePath == "/") fail("INVALID_PATH", "不能移动或删除工作区根目录")
                 if (original.id == "create_file" && parentMounted && parentPath != null) {
@@ -159,7 +166,7 @@ class MountedWorkspaceSkill(
                     if (source != null) {
                         val destination = (destinationParent ?: source.substringBeforeLast('/').ifEmpty { "/" }).trimEnd('/') + "/" +
                             (newName ?: source.substringAfterLast('/'))
-                        if (destination in setOf("/mnt", "/skills")) fail("INVALID_PATH", "不能覆盖保留虚拟根目录")
+                        if (destination in setOf("/mnt", "/skills", "/session")) fail("INVALID_PATH", "不能覆盖保留虚拟根目录")
                         if (sourceMounted || destinationMounted) {
                             if (newName == null && destinationParent == null) fail("INVALID_PATH", "需要指定新名称或目标目录")
                             return@bound finish(move(context, source, destination, routedArgs.stringArgument("expectedHash"), sourceMounted, destinationMounted))
@@ -203,7 +210,7 @@ class MountedWorkspaceSkill(
     private suspend fun move(context: SkillExecutionContext, source: String, destination: String, expected: String?, sourceMounted: Boolean, destinationMounted: Boolean): ToolResult {
         ExternalFolderPaths.normalize(source); ExternalFolderPaths.normalize(destination)
         if (destination != source && destination.startsWith(source.trimEnd('/') + "/")) fail("INVALID_PATH", "不能移动到子目录")
-        val privateBackend = PrivateWorkspaceTransferBackend(workspace, context.workspaceRootUuid, indexEvents)
+        val privateBackend = PrivateWorkspaceTransferBackend(workspace, context.workspaceRootUuid, indexEvents, privateReader)
         val bindings = kotlinx.coroutines.currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
             ?: mounts.namespaceBindings(context.sessionId)
         val rooted = ExternalMountPaths.WORKSPACE_ALIAS in bindings
@@ -211,8 +218,9 @@ class MountedWorkspaceSkill(
             if (ExternalMountPaths.aliasOf(path, rooted) !in bindings) fail("NOT_FOUND", "移动涉及的挂载不可见")
         }
         val externalBackend = mounts.backend(context.sessionId, bindings)
-        val sourceBackend = if (sourceMounted) externalBackend else privateBackend
-        val targetBackend = if (destinationMounted) externalBackend else privateBackend
+        val privateNamespace = SessionPrivateWorkspaceBackend(privateBackend)
+        val sourceBackend = if (sourceMounted) externalBackend else privateNamespace
+        val targetBackend = if (destinationMounted) externalBackend else privateNamespace
         if (expected != null) {
             val bytes = sourceBackend.read(source, ExternalTreeTransfer.MAX_BYTES)
             if (Sha256Utils.hash(bytes) != expected) fail("CONFLICT", "expected_sha256 与来源不一致")
@@ -239,8 +247,7 @@ private fun String.isMounted() = ExternalMountPaths.isMountedPath(this)
 private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
 
 /**
- * 私有工作区仓库加挂载命名空间。[rooted] 时 `/` 属于自选目录工作区，私有工作区的条目一律不可见，
- * 防止旧 uuid 或路径穿透到会话私有目录。
+ * 私有工作区仓库加挂载命名空间。[rooted] 时 `/` 属于自选工作区，私有树需显式 `/session` 或专用 UUID。
  */
 internal class MountedWorkspaceRepository(
     private val base: IWorkspaceRepository,
@@ -248,17 +255,21 @@ internal class MountedWorkspaceRepository(
     private val session: String,
     private val rooted: Boolean = false,
 ) : IWorkspaceRepository by base {
-    private fun String.external() = rooted || isMounted()
+    private val privateNamespace = SessionPrivateWorkspaceRepository(base, session)
+    private fun String.external() = !SessionPrivateWorkspacePaths.contains(this) && (rooted || isMounted())
     override suspend fun getByUuid(workspaceRootUuid: String, uuid: String): FileEntry? =
-        if (uuid.startsWith("external:")) mounts.resolveUuid(session, uuid)?.let {
+        if (SessionPrivateWorkspacePaths.privateUuid(uuid) != null) privateNamespace.getByUuid(workspaceRootUuid, uuid)
+        else if (uuid.startsWith("external:")) mounts.resolveUuid(session, uuid)?.let {
             mounts.entry(session, it)?.takeIf { entry -> entry.uuid == uuid }?.copy(workspaceRootUuid = workspaceRootUuid)
         }
         else if (rooted) null
         else base.getByUuid(workspaceRootUuid, uuid)
     override suspend fun getByMaterializedPath(workspaceRootUuid: String, materializedPath: String): FileEntry? =
-        if (materializedPath.external()) mounts.entry(session, materializedPath)?.copy(workspaceRootUuid = workspaceRootUuid)
+        if (SessionPrivateWorkspacePaths.contains(materializedPath)) privateNamespace.getByMaterializedPath(workspaceRootUuid, materializedPath)
+        else if (materializedPath.external()) mounts.entry(session, materializedPath)?.copy(workspaceRootUuid = workspaceRootUuid)
         else base.getByMaterializedPath(workspaceRootUuid, materializedPath)
     override fun observeChildren(workspaceRootUuid: String, parentUuid: String): Flow<List<FileEntry>> {
+        if (SessionPrivateWorkspacePaths.privateUuid(parentUuid) != null) return privateNamespace.observeChildren(workspaceRootUuid, parentUuid)
         if (parentUuid.startsWith("external:")) return flow {
             val path = mounts.resolveUuid(session, parentUuid) ?: fail("NOT_FOUND", "挂载条目不可见")
             val children = mounts.list(session, path).mapNotNull { mounts.entry(session, it.path)?.copy(workspaceRootUuid = workspaceRootUuid) }
@@ -294,11 +305,21 @@ internal class MountedWorkspaceRepository(
         emit(matches)
     }
     override suspend fun createFileInWorkspace(workspaceRootUuid: String, uuid: String, name: String, content: String, parentUuid: String?, materializedPath: String): FileEntry =
-        if (rooted || (parentUuid?.startsWith("external:") ?: materializedPath.isMounted())) mounts.write(session, materializedPath, content.toByteArray(Charsets.UTF_8), null, true)
+        if (SessionPrivateWorkspacePaths.contains(materializedPath)) privateNamespace.createFileInWorkspace(workspaceRootUuid, uuid, name, content, parentUuid, materializedPath)
+        else if (rooted || (parentUuid?.startsWith("external:") ?: materializedPath.isMounted())) mounts.write(session, materializedPath, content.toByteArray(Charsets.UTF_8), null, true)
         else base.createFileInWorkspace(workspaceRootUuid, uuid, name, content, parentUuid, materializedPath)
     override suspend fun createDirectoryInWorkspace(workspaceRootUuid: String, uuid: String, name: String, parentUuid: String?, materializedPath: String): FileEntry =
-        if (rooted || (parentUuid?.startsWith("external:") ?: materializedPath.isMounted())) mounts.createDirectory(session, materializedPath)
+        if (SessionPrivateWorkspacePaths.contains(materializedPath)) privateNamespace.createDirectoryInWorkspace(workspaceRootUuid, uuid, name, parentUuid, materializedPath)
+        else if (rooted || (parentUuid?.startsWith("external:") ?: materializedPath.isMounted())) mounts.createDirectory(session, materializedPath)
         else base.createDirectoryInWorkspace(workspaceRootUuid, uuid, name, parentUuid, materializedPath)
+    override suspend fun moveToRecycleBin(workspaceRootUuid: String, uuid: String) =
+        if (SessionPrivateWorkspacePaths.privateUuid(uuid) != null) privateNamespace.moveToRecycleBin(workspaceRootUuid, uuid) else base.moveToRecycleBin(workspaceRootUuid, uuid)
+    override suspend fun moveToRecycleBinIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String) =
+        if (SessionPrivateWorkspacePaths.privateUuid(uuid) != null) privateNamespace.moveToRecycleBinIfHash(workspaceRootUuid, uuid, expectedSha256) else base.moveToRecycleBinIfHash(workspaceRootUuid, uuid, expectedSha256)
+    override suspend fun rename(workspaceRootUuid: String, uuid: String, newName: String, expectedName: String?) =
+        if (SessionPrivateWorkspacePaths.privateUuid(uuid) != null) privateNamespace.rename(workspaceRootUuid, uuid, newName, expectedName) else base.rename(workspaceRootUuid, uuid, newName, expectedName)
+    override suspend fun updateParent(workspaceRootUuid: String, uuid: String, newParentUuid: String) =
+        if (SessionPrivateWorkspacePaths.privateUuid(uuid) != null) privateNamespace.updateParent(workspaceRootUuid, uuid, newParentUuid) else base.updateParent(workspaceRootUuid, uuid, newParentUuid)
 }
 
 private class MountedFileOperations(
@@ -306,9 +327,12 @@ private class MountedFileOperations(
     private val mounts: ExternalWorkspaceAccess,
     private val session: String,
     private val rooted: Boolean,
+    private val privateRootUuid: String? = null,
 ) : IFileOperationRepository {
     /** 根工作区时私有工作区的 uuid 不可达。 */
-    private fun isPrivate(uuid: String) = !uuid.startsWith("external:") && (!rooted || fail("NOT_FOUND", "条目不在当前工作区，请用 list_files 获取最新路径"))
+    private fun isPrivate(uuid: String) = !uuid.startsWith("external:") && (!rooted || privateRootUuid != null || fail("NOT_FOUND", "条目不在当前工作区，请用 list_files 获取最新路径"))
+    private fun privateUuid(uuid: String) = SessionPrivateWorkspacePaths.privateUuid(uuid) ?: uuid
+    private fun privateRoot(root: String) = privateRootUuid ?: root
     var completedHash: String? = null
         private set
     private suspend fun path(uuid: String) = mounts.resolveUuid(session, uuid) ?: fail("NOT_FOUND", "挂载条目不可见")
@@ -319,7 +343,7 @@ private class MountedFileOperations(
         return text to bytes
     }
     override suspend fun readFileRange(workspaceRootUuid: String, uuid: String, startLine: Int?, endLine: Int?): ReadResult {
-        if (isPrivate(uuid)) return base.readFileRange(workspaceRootUuid, uuid, startLine, endLine)
+        if (isPrivate(uuid)) return base.readFileRange(privateRoot(workspaceRootUuid), privateUuid(uuid), startLine, endLine).copy(uuid = uuid)
         val (content, bytes) = text(uuid, WorkspaceTextOperation.READ)
         val lines = workspaceTextLines(content)
         val start = (startLine ?: 1).coerceIn(1, lines.size.coerceAtLeast(1))
@@ -329,7 +353,7 @@ private class MountedFileOperations(
         return ReadResult(uuid, path(uuid).substringAfterLast('/'), lines.size, start, end, selected, completedHash!!, mounts.entry(session, path(uuid))!!.updatedAt)
     }
     override suspend fun writeFileAtomic(workspaceRootUuid: String, uuid: String, newContent: String, sessionId: String, expectedHash: String): WriteResult {
-        if (isPrivate(uuid)) return base.writeFileAtomic(workspaceRootUuid, uuid, newContent, sessionId, expectedHash)
+        if (isPrivate(uuid)) return base.writeFileAtomic(privateRoot(workspaceRootUuid), privateUuid(uuid), newContent, sessionId, expectedHash)
         val path = path(uuid)
         val bytes = newContent.toByteArray(Charsets.UTF_8)
         WorkspaceTextContentPolicy().validate(path.substringAfterLast('/'), null, bytes, WorkspaceTextOperation.WRITE)
@@ -337,7 +361,7 @@ private class MountedFileOperations(
         return WriteResult.Success(completedHash!!)
     }
     override suspend fun diffFile(workspaceRootUuid: String, uuid: String, basisHash: String?): DiffResult {
-        if (isPrivate(uuid)) return base.diffFile(workspaceRootUuid, uuid, basisHash)
+        if (isPrivate(uuid)) return base.diffFile(privateRoot(workspaceRootUuid), privateUuid(uuid), basisHash).copy(uuid = uuid)
         val (current, bytes) = text(uuid, WorkspaceTextOperation.DIFF)
         val hash = Sha256Utils.hash(bytes)
         completedHash = hash
@@ -350,7 +374,7 @@ private class MountedFileOperations(
         })
     }
     override suspend fun patchFile(workspaceRootUuid: String, uuid: String, operations: List<PatchOperation>, expectedHash: String): PatchResult {
-        if (isPrivate(uuid)) return base.patchFile(workspaceRootUuid, uuid, operations, expectedHash)
+        if (isPrivate(uuid)) return base.patchFile(privateRoot(workspaceRootUuid), privateUuid(uuid), operations, expectedHash)
         val (content, bytes) = text(uuid, WorkspaceTextOperation.PATCH)
         if (Sha256Utils.hash(bytes) != expectedHash) fail("CONFLICT", "expected_sha256 与当前文件不一致")
         val patched = when (val patch = applyWorkspaceLinePatch(content, operations, uuid)) {
@@ -373,7 +397,12 @@ private class MountedFileOperations(
 }
 
 /** 私有工作区只通过现有仓库创建、回收和确认，读取继续使用安全文件操作与根身份。 */
-internal class PrivateWorkspaceTransferBackend(private val workspace: IWorkspaceRepository, private val rootUuid: String, private val indexEvents: FileIndexEventSink = FileIndexEventSink.None) : ExternalFolderBackend {
+internal class PrivateWorkspaceTransferBackend(
+    private val workspace: IWorkspaceRepository,
+    private val rootUuid: String,
+    private val indexEvents: FileIndexEventSink = FileIndexEventSink.None,
+    private val privateReader: PrivateWorkspaceReader? = null,
+) : ExternalFolderBackend {
     private val created = mutableListOf<String>()
     private suspend fun find(path: String) = workspace.getByMaterializedPath(rootUuid, ExternalFolderPaths.normalize(path))
     override suspend fun stat(path: String) = find(path)?.let { ExternalFolderEntry(path, it.name, it.isDirectory, it.sizeBytes, it.updatedAt, it.hash, identity = it.uuid) }
@@ -382,6 +411,7 @@ internal class PrivateWorkspaceTransferBackend(private val workspace: IWorkspace
     override suspend fun read(path: String, maxBytes: Long): ByteArray {
         val entry = find(path) ?: fail("NOT_FOUND", "文件不存在")
         if (entry.isDirectory) fail("IS_DIRECTORY", "目标为目录")
+        privateReader?.let { return it.read(workspace, rootUuid, path, maxBytes) }
         val root = workspace.getByUuid(rootUuid, rootUuid) ?: fail("NOT_FOUND", "工作区不可用")
         return WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
             SecureWorkspaceFileOps().readLimited(File(root.physicalRootPath).toPath(), ExternalFolderPaths.normalize(path).trim('/').split('/'), maxBytes)

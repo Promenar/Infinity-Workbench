@@ -13,6 +13,7 @@
 
 namespace {
 constexpr const char* kIdentityAttribute = "user.nexara_creation_identity";
+constexpr const char* kRootIdentityAttribute = "user.nexara_root_identity";
 constexpr size_t kTokenBytes = 36;
 
 void fail(JNIEnv* env, const char* action, int error) {
@@ -42,6 +43,45 @@ bool fileName(JNIEnv* env, jbyteArray input, std::string& output) {
     if (env->ExceptionCheck()) return false;
     return output != "." && output != ".." && output.find('/') == std::string::npos &&
         output.find('\\') == std::string::npos && output.find('\0') == std::string::npos;
+}
+
+void createIdentity(JNIEnv* env, jint borrowedFd, jstring token, const char* attribute, bool root, int flags) {
+    OwnedFile file(borrowedFd);
+    if ((root && !file.directory()) || (!root && !file.regular() && !file.directory())) {
+        fail(env, "打开文件或目录身份FD", errno ? errno : EINVAL); return;
+    }
+    if (token == nullptr || env->GetStringUTFLength(token) != kTokenBytes) { fail(env, "校验身份令牌", EINVAL); return; }
+    const char* bytes = env->GetStringUTFChars(token, nullptr);
+    if (bytes == nullptr) return;
+    const int result = fsetxattr(file.get(), attribute, bytes, kTokenBytes, flags);
+    const int error = errno;
+    env->ReleaseStringUTFChars(token, bytes);
+    if (result != 0) { fail(env, "持久化身份属性", error); return; }
+    if (fsync(file.get()) != 0) fail(env, "同步身份属性", errno);
+}
+
+jstring readIdentity(JNIEnv* env, jint borrowedFd, const char* attribute, bool root) {
+    OwnedFile file(borrowedFd);
+    if ((root && !file.directory()) || (!root && !file.regular() && !file.directory())) {
+        fail(env, "打开文件或目录身份FD", errno ? errno : EINVAL); return nullptr;
+    }
+    char bytes[kTokenBytes + 1]{};
+    const ssize_t count = fgetxattr(file.get(), attribute, bytes, kTokenBytes);
+    if (count < 0 && errno == ENODATA) return nullptr;
+    if (count < 0 && (errno == ENOTSUP || errno == EOPNOTSUPP)) {
+        jclass type = env->FindClass("java/lang/UnsupportedOperationException");
+        if (type != nullptr) env->ThrowNew(type, "文件系统不支持目录FD身份属性");
+        return nullptr;
+    }
+    if (count < 0) { fail(env, "读取身份属性", errno); return nullptr; }
+    if (count != kTokenBytes) { fail(env, "校验身份属性长度", EINVAL); return nullptr; }
+    for (size_t index = 0; index < kTokenBytes; ++index) {
+        const char value = bytes[index];
+        if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') || value == '-')) {
+            fail(env, "校验身份属性内容", EINVAL); return nullptr;
+        }
+    }
+    return env->NewStringUTF(bytes);
 }
 }
 
@@ -73,35 +113,29 @@ Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileMoves_nativeMoveNoR
 extern "C" JNIEXPORT void JNICALL
 Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreate(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
-    OwnedFile file(borrowedFd);
-    if (!file.regular()) { fail(env, "打开普通文件身份FD", errno ? errno : EINVAL); return; }
-    if (token == nullptr || env->GetStringUTFLength(token) != kTokenBytes) {
-        fail(env, "校验文件身份令牌", EINVAL); return;
-    }
-    const char* bytes = env->GetStringUTFChars(token, nullptr);
-    if (bytes == nullptr) return;
-    const int result = fsetxattr(file.get(), kIdentityAttribute, bytes, kTokenBytes, XATTR_CREATE);
-    const int error = errno;
-    env->ReleaseStringUTFChars(token, bytes);
-    if (result != 0) { fail(env, "持久化文件身份属性", error); return; }
-    if (fsync(file.get()) != 0) fail(env, "同步文件身份属性", errno);
+    createIdentity(env, borrowedFd, token, kIdentityAttribute, false, XATTR_CREATE);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeRead(
         JNIEnv* env, jobject, jint borrowedFd) {
-    OwnedFile file(borrowedFd);
-    if (!file.regular()) { fail(env, "打开普通文件身份FD", errno ? errno : EINVAL); return nullptr; }
-    char bytes[kTokenBytes + 1]{};
-    const ssize_t count = fgetxattr(file.get(), kIdentityAttribute, bytes, kTokenBytes);
-    if (count < 0 && errno == ENODATA) return nullptr;
-    if (count < 0) { fail(env, "读取文件身份属性", errno); return nullptr; }
-    if (count != kTokenBytes) { fail(env, "校验文件身份属性长度", EINVAL); return nullptr; }
-    for (size_t index = 0; index < kTokenBytes; ++index) {
-        const char value = bytes[index];
-        if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') || value == '-')) {
-            fail(env, "校验文件身份属性内容", EINVAL); return nullptr;
-        }
-    }
-    return env->NewStringUTF(bytes);
+    return readIdentity(env, borrowedFd, kIdentityAttribute, false);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreateRoot(
+        JNIEnv* env, jobject, jint borrowedFd, jstring token) {
+    createIdentity(env, borrowedFd, token, kRootIdentityAttribute, true, XATTR_CREATE);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeReadRoot(
+        JNIEnv* env, jobject, jint borrowedFd) {
+    return readIdentity(env, borrowedFd, kRootIdentityAttribute, true);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeRestoreRoot(
+        JNIEnv* env, jobject, jint borrowedFd, jstring token) {
+    createIdentity(env, borrowedFd, token, kRootIdentityAttribute, true, 0);
 }

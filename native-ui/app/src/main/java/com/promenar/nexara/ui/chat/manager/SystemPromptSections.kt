@@ -74,6 +74,7 @@ object SystemPromptSections {
         mounts: List<com.promenar.nexara.domain.storage.ExternalMount> = emptyList(),
         linuxState: LinuxRuntimeState = LinuxExecRouting.state,
         linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
+        filePathPresenter: com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter = com.promenar.nexara.data.workspace.BuiltinWorkspaceFilePathPresenter,
     ): String = buildString {
         appendLine("## Tool Use")
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
@@ -159,6 +160,22 @@ object SystemPromptSections {
             }
             if ("media_fetch" in toolNames) {
                 appendLine("- Use `media_fetch` to download network media into the workspace.")
+            }
+        }
+        if (workspace !is com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable &&
+            toolNames.any { it.startsWith("canvas_") || it in WORKSPACE_TOOLS || it in WORKSPACE_PROCESS_TOOLS || it in MEDIA_TOOLS }) {
+            val destination = com.promenar.nexara.data.workspace.defaultWorkspaceFileDestination(workspace, mounts)
+            val privatePrimary = workspace == null || workspace == com.promenar.nexara.data.workspace.SessionWorkspace.Private
+            val root = filePathPresenter.present(destination, "/", privatePrimary)
+            val label = if (destination == com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE) "会话专用空间" else "主工作区"
+            appendLine()
+            appendLine("### 默认文件落点")
+            appendLine("- 新画布镜像与未指定路径的媒体默认保存在$label（`$root`）的 canvas/ 与 media/<yyyy-MM-dd>/ 目录；显式目标路径按指定位置执行。技能挂载不影响默认落点。")
+            appendLine("- 已有画布镜像保持首次目标，切换主工作区不会搬动镜像。使用工具返回的 workspace_path 或媒体路径访问文件。")
+            if (!privatePrimary) {
+                val privateRoot = filePathPresenter.present(com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE, "/", false)
+                appendLine("- 文件工具通过 `$privateRoot` 访问会话专用空间。")
+                if (privateRoot == "/session") appendLine("- 主工作区真实的 session 目录可在命令中使用相对路径 ./session 访问。")
             }
         }
     }

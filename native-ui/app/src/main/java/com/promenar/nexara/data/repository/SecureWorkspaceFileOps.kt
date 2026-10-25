@@ -53,10 +53,17 @@ interface WorkspaceFileOps {
     fun replaceFile(root: Path, relative: List<String>, bytes: ByteArray): WorkspaceFileRollback
     fun reconcileFile(root: Path, relative: List<String>, expectedHash: String)
     fun move(root: Path, source: List<String>, target: List<String>): WorkspaceFileRollback
+    fun moveAcrossRoots(sourceRoot: Path, source: List<String>, targetRoot: Path, target: List<String>): WorkspaceFileRollback {
+        if (sourceRoot != targetRoot) throw SecurityException("文件端口不支持安全跨根移动")
+        return move(sourceRoot, source, target)
+    }
     fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback
     fun recoverTombstones(root: Path, restorePath: (deletionToken: String) -> List<String>?): TombstoneRecoveryReport
     fun delete(root: Path, source: List<String>)
     fun cleanupTombstones(root: Path)
+    fun captureRootIdentityRestorer(root: Path): () -> Boolean = { false }
+    fun migrateInternalStorage(root: Path) = Unit
+    fun hasExternalRootIdentity(root: Path): Boolean = false
 }
 
 @kotlinx.serialization.Serializable
@@ -81,6 +88,7 @@ interface WorkspaceFileRollback {
 
 /** 工作区 descriptor-relative 文件操作；文件系统不支持 SecureDirectoryStream 时失败关闭。 */
 class SecureWorkspaceFileOps(
+    private val identityStorage: WorkspaceInternalStorage? = null,
     private val hook: ((WorkspaceFilePhase) -> Unit)? = null,
 ) : WorkspaceFileOps {
     override fun ensureRoot(
@@ -91,7 +99,7 @@ class SecureWorkspaceFileOps(
     ): String {
         if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
             return openSecure(root, requireIdentity = false).use { secure ->
-                ensureRootIdentity(secure, initializeIdentity, expectedIdentity)
+                ensureRootIdentity(root, secure, initializeIdentity, expectedIdentity)
             }
         }
         if (!initializeIdentity) throw SecurityException("已认领工作区根目录不存在")
@@ -102,7 +110,7 @@ class SecureWorkspaceFileOps(
             // 并发创建者获胜后仍必须按 descriptor 身份重新验证。
         }
         return openSecure(root, requireIdentity = false).use { secure ->
-            ensureRootIdentity(secure, initialize = true, expectedIdentity = expectedIdentity)
+            ensureRootIdentity(root, secure, initialize = true, expectedIdentity = expectedIdentity)
         }
     }
 
@@ -183,7 +191,7 @@ class SecureWorkspaceFileOps(
     }
 
     override fun listChildren(root: Path, relative: List<String>): List<String> {
-        requireSafeRelative(relative)
+        if (relative.isNotEmpty()) requireSafeRelative(relative)
         return openSecure(root).use { secure ->
             openDirectory(secure, relative).use { directory -> directory.map { it.fileName.toString() } }
         }
@@ -206,11 +214,7 @@ class SecureWorkspaceFileOps(
         requireCreationToken(token)
         val identity = inspect(root, node)
         if (identity.kind == "directory") {
-            withParent(root, node) { parent, name ->
-                parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { directory ->
-                    writeNew(directory, Paths.get(CREATE_DIRECTORY_MARKER), token.toByteArray(Charsets.UTF_8))
-                }
-            }
+            withCreationDirectory(root, node, identity) { AndroidWorkspaceFileIdentity.create(it.fd, token) }
         } else {
             withCreationFile(root, node, identity) { file ->
                 AndroidWorkspaceFileIdentity.create(file.fd, token)
@@ -225,7 +229,12 @@ class SecureWorkspaceFileOps(
         requireCreationToken(token)
         if (inspect(root, node) != expected) throw SecurityException("创建节点内容或身份发生变化")
         if (expected.kind == "directory") {
-            if (readLimited(root, node + CREATE_DIRECTORY_MARKER, 128).toString(Charsets.UTF_8) != token) {
+            val legacy = if (exists(root, node + CREATE_DIRECTORY_MARKER))
+                readLimited(root, node + CREATE_DIRECTORY_MARKER, 128).toString(Charsets.UTF_8) else null
+            val persistent = readWorkspaceIdentityAttribute(legacy == token,
+                { withCreationDirectory(root, node, expected) { AndroidWorkspaceFileIdentity.read(it.fd) } },
+                { identityStorage?.recordFailure("legacy-directory", "directory-proof-xattr-unsupported", it) })
+            if ((persistent != null && persistent != token) || (persistent == null && legacy != token)) {
                 throw SecurityException("创建目录持久标记不匹配")
             }
         } else {
@@ -234,6 +243,20 @@ class SecureWorkspaceFileOps(
                     throw SecurityException("创建文件持久身份属性不匹配")
                 }
             }
+        }
+    }
+
+    private fun <T> withCreationDirectory(root: Path, node: List<String>, expected: WorkspaceNodeIdentity,
+        action: (android.os.ParcelFileDescriptor) -> T): T = withParent(root, node) { parent, name ->
+        val parentKey = directoryKey(parent)
+        openSecure(root).use { secure ->
+            val rootKey = directoryKey(secure)
+            AndroidWorkspaceCreationProof.withDirectory(root, node, { anchored, source, openedKey ->
+                if (directoryKey(anchored) != rootKey || directoryKey(source) != parentKey ||
+                    openedKey != expected.fileKey || nodeFileKey(parent, name) != openedKey) {
+                    throw SecurityException("创建目录FD与目录绑定不匹配")
+                }
+            }, action)
         }
     }
 
@@ -283,6 +306,10 @@ class SecureWorkspaceFileOps(
                 inspect(root, node) != expected) {
                 throw SecurityException("创建目录删除阶段证明不匹配")
             }
+            val manifestPath = owner + CREATE_MANIFEST
+            if (exists(root, manifestPath) && decodeCreateOwnershipManifest(readLimited(root, manifestPath, 8192))?.proofVersion == 4) {
+                verifyCreationProof(root, node, owner, token, expected)
+            }
             // 此阶段只授权回收 operation 私有隔离槽内的空目录，绝不删除公开路径或目录内容。
             withParent(root, quarantine) { parent, name -> parent.deleteDirectory(name) }
             return
@@ -302,7 +329,7 @@ class SecureWorkspaceFileOps(
                 if (expected.kind == "directory") {
                     parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { directory ->
                         val children = directory.map { it.fileName.toString() }
-                        if (children != listOf(CREATE_DIRECTORY_MARKER)) {
+                        if (children.isNotEmpty() && children != listOf(CREATE_DIRECTORY_MARKER)) {
                             throw SecurityException("创建目录包含额外内容，拒绝回滚删除")
                         }
                         if (exists(root, deletionPhase)) {
@@ -310,7 +337,7 @@ class SecureWorkspaceFileOps(
                                 throw SecurityException("创建目录删除阶段令牌不匹配")
                             }
                         } else writeNew(parent, Paths.get(CREATE_DIRECTORY_DELETE_READY), token.toByteArray(Charsets.UTF_8))
-                        directory.deleteFile(Paths.get(CREATE_DIRECTORY_MARKER))
+                        if (children.isNotEmpty()) directory.deleteFile(Paths.get(CREATE_DIRECTORY_MARKER))
                         markerRemoved = true
                     }
                     hook?.invoke(WorkspaceFilePhase.CREATION_MARKER_REMOVED)
@@ -354,7 +381,8 @@ class SecureWorkspaceFileOps(
     private fun requireOnlyCreationMarker(root: Path, node: List<String>) {
         withParent(root, node) { parent, name ->
             parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { directory ->
-                if (directory.map { it.fileName.toString() } != listOf(CREATE_DIRECTORY_MARKER)) {
+                val names = directory.map { it.fileName.toString() }
+                if (names.isNotEmpty() && names != listOf(CREATE_DIRECTORY_MARKER)) {
                     throw SecurityException("创建目录包含额外内容，拒绝回滚删除")
                 }
             }
@@ -362,16 +390,19 @@ class SecureWorkspaceFileOps(
     }
 
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {
+        val staging = ensureWorkspaceInternalDirectory(this, root)
         withParent(root, relative) { parent, name ->
             val temporary = Paths.get(".create-${UUID.randomUUID()}")
-            try {
-                writeNew(parent, temporary, bytes)
+            openSecure(root).use { secure -> openDirectory(secure, staging).use { staged -> try {
+                writeNew(staged, temporary, bytes)
                 hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
                 verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent))
-                parent.move(temporary, parent, name)
+                verifyDirectoryBinding(root, staging, directoryKey(staged))
+                AndroidWorkspaceCreationProof.moveNoReplace(root, staging + temporary.toString(), relative,
+                    directoryKey(secure).toString(), directoryKey(staged).toString(), directoryKey(parent).toString())
             } finally {
-                runCatching { parent.deleteFile(temporary) }
-            }
+                runCatching { staged.deleteFile(temporary) }
+            } } }
         }
     }
 
@@ -382,10 +413,11 @@ class SecureWorkspaceFileOps(
         writer: (OutputStream) -> Unit,
     ): WorkspaceStreamWriteResult {
         require(maxBytes > 0) { "maxBytes 必须大于 0" }
+        val staging = ensureWorkspaceInternalDirectory(this, root)
         return withParent(root, relative) { parent, name ->
             val temporary = Paths.get(".create-${UUID.randomUUID()}")
-            try {
-                val result = parent.newByteChannel(
+            openSecure(root).use { secure -> openDirectory(secure, staging).use { staged -> try {
+                val result = staged.newByteChannel(
                     temporary,
                     setOf<OpenOption>(
                         StandardOpenOption.CREATE_NEW,
@@ -431,11 +463,13 @@ class SecureWorkspaceFileOps(
                 }
                 hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
                 verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent))
-                parent.move(temporary, parent, name)
+                verifyDirectoryBinding(root, staging, directoryKey(staged))
+                AndroidWorkspaceCreationProof.moveNoReplace(root, staging + temporary.toString(), relative,
+                    directoryKey(secure).toString(), directoryKey(staged).toString(), directoryKey(parent).toString())
                 result
             } finally {
-                runCatching { parent.deleteFile(temporary) }
-            }
+                runCatching { staged.deleteFile(temporary) }
+            } } }
         }
     }
 
@@ -445,31 +479,51 @@ class SecureWorkspaceFileOps(
 
     private fun createDirectoryInternal(root: Path, relative: List<String>, requireIdentity: Boolean) {
         requireSafeRelative(relative)
+        if (!requireIdentity || relative == listOf(".nexara")) {
+            openSecure(root, requireIdentity).use { rootStream ->
+                val rootKey = directoryKey(rootStream)
+                openDirectory(rootStream, relative.dropLast(1)).use { parent ->
+                    hook?.invoke(WorkspaceFilePhase.DESCRIPTOR_OPENED)
+                    verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent), requireIdentity)
+                    try {
+                        com.promenar.nexara.data.local.db.recovery.AndroidSnapshotDirectoryCreator.create(
+                            root, rootKey.toString(), relative.dropLast(1).fold(root) { path, part -> path.resolve(part) },
+                            directoryKey(parent).toString(), relative.last(),
+                        )
+                    } catch (failure: android.system.ErrnoException) {
+                        if (failure.errno == android.system.OsConstants.EEXIST) throw java.nio.file.FileAlreadyExistsException("工作区目录已存在")
+                        throw failure
+                    }
+                }
+            }
+            return
+        }
+        val staging = ensureWorkspaceInternalDirectory(this, root)
         val temporaryName = ".mkdir-${UUID.randomUUID()}"
         openSecure(root, requireIdentity).use { rootStream ->
             val rootKey = directoryKey(rootStream)
             hook?.invoke(WorkspaceFilePhase.DESCRIPTOR_OPENED)
-            try {
+            openDirectory(rootStream, staging).use { stagingStream -> try {
                 com.promenar.nexara.data.local.db.recovery.AndroidSnapshotDirectoryCreator.create(
-                    root, rootKey.toString(), root, rootKey.toString(), temporaryName,
+                    root, rootKey.toString(), root.resolve(".nexara"), directoryKey(stagingStream).toString(), temporaryName,
                 )
                 hook?.invoke(WorkspaceFilePhase.DIRECTORY_TEMP_CREATED)
                 verifyDirectoryBinding(root, emptyList(), rootKey, requireIdentity)
-                rootStream.newDirectoryStream(Paths.get(temporaryName), LinkOption.NOFOLLOW_LINKS).use { }
+                stagingStream.newDirectoryStream(Paths.get(temporaryName), LinkOption.NOFOLLOW_LINKS).use { }
                 openDirectory(rootStream, relative.dropLast(1)).use { parent ->
                     val parentKey = directoryKey(parent)
                     hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
                     verifyDirectoryBinding(root, emptyList(), rootKey, requireIdentity)
                     verifyDirectoryBinding(root, relative.dropLast(1), parentKey, requireIdentity)
-                    AndroidWorkspaceCreationProof.moveNoReplace(root, listOf(temporaryName), relative,
-                        rootKey.toString(), rootKey.toString(), parentKey.toString())
+                    AndroidWorkspaceCreationProof.moveNoReplace(root, staging + temporaryName, relative,
+                        rootKey.toString(), directoryKey(stagingStream).toString(), parentKey.toString())
                     // 发布后根绑定变化时保留现场，不能再按公开目标名字回收未知节点。
                     verifyDirectoryBinding(root, emptyList(), rootKey, requireIdentity)
                 }
             } finally {
                 // 只尝试回收已打开根能力内的空临时目录，不触碰重新解析后的绝对路径。
-                runCatching { rootStream.deleteDirectory(Paths.get(temporaryName)) }
-            }
+                runCatching { stagingStream.deleteDirectory(Paths.get(temporaryName)) }
+            } }
         }
     }
 
@@ -494,71 +548,88 @@ class SecureWorkspaceFileOps(
         root: Path,
         relative: List<String>,
         bytes: ByteArray,
-    ): WorkspaceFileRollback = withParent(root, relative) { parent, name ->
-        val token = stableNameToken(name.toString())
+    ): WorkspaceFileRollback {
+        val staging = ensureWorkspaceInternalDirectory(this, root)
+        return withParent(root, relative) { parent, name ->
+        val token = stableNameToken(relative.joinToString("/"))
         val temporary = Paths.get(".nexara-write-$token")
         val backup = Paths.get(".nexara-previous-$token")
-        writeNew(parent, temporary, bytes)
+        openSecure(root).use { secure -> openDirectory(secure, staging).use { staged ->
+        writeNew(staged, temporary, bytes)
         try {
             hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
             verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent))
-            parent.move(name, parent, backup)
+            verifyDirectoryBinding(root, staging, directoryKey(staged))
+            parent.move(name, staged, backup)
             try {
-                parent.move(temporary, parent, name)
+                staged.move(temporary, parent, name)
             } catch (failure: Throwable) {
-                runCatching { parent.move(backup, parent, name) }.exceptionOrNull()?.let(failure::addSuppressed)
+                runCatching { staged.move(backup, parent, name) }.exceptionOrNull()?.let(failure::addSuppressed)
                 throw failure
             }
             DescriptorRollback(
-                commitAction = { withParent(root, relative) { current, _ -> current.deleteFile(backup) } },
+                commitAction = { withParent(root, staging + backup.toString()) { current, file -> current.deleteFile(file) } },
                 rollbackAction = {
                     withParent(root, relative) { current, currentName ->
+                        openSecure(root).use { currentRoot -> openDirectory(currentRoot, staging).use { currentStaging ->
                         val displaced = Paths.get(".nexara-rollback-$token")
-                        current.move(currentName, current, displaced)
+                        current.move(currentName, currentStaging, displaced)
                         try {
                             hook?.invoke(WorkspaceFilePhase.ROLLBACK_BEFORE_RESTORE)
-                            current.move(backup, current, currentName)
+                            currentStaging.move(backup, current, currentName)
                         } catch (failure: Throwable) {
                             // 恢复旧版失败时先恢复新版，保证规范路径始终存在；backup 保留供同一 rollback 重试。
-                            runCatching { current.move(displaced, current, currentName) }
+                            runCatching { currentStaging.move(displaced, current, currentName) }
                                 .exceptionOrNull()?.let(failure::addSuppressed)
                             throw failure
                         }
-                        runCatching { current.deleteFile(displaced) }
+                        runCatching { currentStaging.deleteFile(displaced) }
+                        } }
                     }
                 },
             )
         } finally {
-            runCatching { parent.deleteFile(temporary) }
+            runCatching { staged.deleteFile(temporary) }
         }
+        } }
+    }
     }
 
     override fun reconcileFile(root: Path, relative: List<String>, expectedHash: String) {
+        if (exists(root, listOf(".nexara"))) {
+            reconcileFileAt(root, relative, expectedHash, listOf(".nexara"), stableNameToken(relative.joinToString("/")))
+        }
+        // 旧安装可能在任意用户子目录留下同目录备份，按旧命名独立收敛。
+        reconcileFileAt(root, relative, expectedHash, relative.dropLast(1), stableNameToken(relative.last()))
+    }
+
+    private fun reconcileFileAt(root: Path, relative: List<String>, expectedHash: String, staging: List<String>, token: String) {
         withParent(root, relative) { parent, name ->
-            val token = stableNameToken(name.toString())
+            openSecure(root).use { secure -> openDirectory(secure, staging).use { staged ->
             val temporary = Paths.get(".nexara-write-$token")
             val backup = Paths.get(".nexara-previous-$token")
             val displaced = Paths.get(".nexara-rollback-$token")
-            if (!nodeExists(parent, temporary) && !nodeExists(parent, backup) && !nodeExists(parent, displaced)) {
+            if (!nodeExists(staged, temporary) && !nodeExists(staged, backup) && !nodeExists(staged, displaced)) {
                 return@withParent
             }
             val targetHash = hashIfPresent(parent, name)
-            val backupHash = hashIfPresent(parent, backup)
+            val backupHash = hashIfPresent(staged, backup)
             when {
                 targetHash == expectedHash -> {
-                    runCatching { parent.deleteFile(backup) }
-                    runCatching { parent.deleteFile(temporary) }
-                    runCatching { parent.deleteFile(displaced) }
+                    runCatching { staged.deleteFile(backup) }
+                    runCatching { staged.deleteFile(temporary) }
+                    runCatching { staged.deleteFile(displaced) }
                 }
                 backupHash == expectedHash -> {
-                    runCatching { parent.deleteFile(displaced) }
-                    if (targetHash != null) parent.move(name, parent, displaced)
-                    parent.move(backup, parent, name)
-                    runCatching { parent.deleteFile(displaced) }
-                    runCatching { parent.deleteFile(temporary) }
+                    runCatching { staged.deleteFile(displaced) }
+                    if (targetHash != null) parent.move(name, staged, displaced)
+                    staged.move(backup, parent, name)
+                    runCatching { staged.deleteFile(displaced) }
+                    runCatching { staged.deleteFile(temporary) }
                 }
                 else -> throw IllegalStateException("工作区文件无法按数据库哈希恢复")
             }
+            } }
         }
     }
 
@@ -576,11 +647,36 @@ class SecureWorkspaceFileOps(
         )
     }
 
+    override fun moveAcrossRoots(sourceRoot: Path, source: List<String>, targetRoot: Path, target: List<String>): WorkspaceFileRollback {
+        requireSafeRelative(source)
+        requireSafeRelative(target)
+        if (sourceRoot == targetRoot) return move(sourceRoot, source, target)
+        fun transfer(fromRoot: Path, from: List<String>, toRoot: Path, to: List<String>) {
+            openSecure(fromRoot).use { fromStream ->
+                openSecure(toRoot).use { toStream ->
+                    openDirectory(fromStream, from.dropLast(1)).use { fromParent ->
+                        openDirectory(toStream, to.dropLast(1)).use { toParent ->
+                            hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
+                            verifyDirectoryBinding(fromRoot, from.dropLast(1), directoryKey(fromParent))
+                            verifyDirectoryBinding(toRoot, to.dropLast(1), directoryKey(toParent))
+                            AndroidWorkspaceCreationProof.moveAcrossRootsNoReplace(fromRoot, from, toRoot, to,
+                                directoryKey(fromStream).toString(), directoryKey(toStream).toString(),
+                                directoryKey(fromParent).toString(), directoryKey(toParent).toString())
+                        }
+                    }
+                }
+            }
+        }
+        transfer(sourceRoot, source, targetRoot, target)
+        return DescriptorRollback({}, { transfer(targetRoot, target, sourceRoot, source) })
+    }
+
     override fun stageDelete(root: Path, source: List<String>, deletionToken: String): WorkspaceFileRollback {
         requireSafeRelative(source)
         require(deletionToken.matches(Regex("[0-9a-f]{24}"))) { "删除令牌无效" }
-        val tombstone = listOf(".nexara_tombstones", deletionToken)
-        ensureSystemDirectory(root, tombstone.first())
+        val internal = ensureWorkspaceInternalDirectory(this, root)
+        val tombstone = internal + listOf("tombstones", deletionToken)
+        ensureDirectory(root, internal + "tombstones")
         descriptorMove(root, source, tombstone)
         return DescriptorRollback(
             commitAction = { deleteNode(root, tombstone) },
@@ -592,18 +688,13 @@ class SecureWorkspaceFileOps(
         root: Path,
         restorePath: (String) -> List<String>?,
     ): TombstoneRecoveryReport {
-        val tokens = openSecure(root).use { secure ->
-            val tombstones = try {
-                secure.newDirectoryStream(Paths.get(".nexara_tombstones"), LinkOption.NOFOLLOW_LINKS)
-            } catch (_: java.nio.file.NoSuchFileException) {
-                return TombstoneRecoveryReport()
-            }
-            tombstones.use { directory -> directory.toList().map { it.fileName.toString() } }
-        }
         val attention = mutableListOf<String>()
-        tokens.forEach { token ->
+        for (directory in listOf(listOf(".nexara", "tombstones"), listOf(".nexara_tombstones"))) {
+        if (!exists(root, directory)) continue
+        listChildren(root, directory).forEach { token ->
             try {
-                val tombstone = listOf(".nexara_tombstones", token)
+                require(token.matches(Regex("[0-9a-f]{24}"))) { "删除令牌无效" }
+                val tombstone = directory + token
                 val source = restorePath(token)
                 if (source == null) deleteNode(root, tombstone)
                 else {
@@ -614,6 +705,8 @@ class SecureWorkspaceFileOps(
                 attention += token
             }
         }
+        if (directory == listOf(".nexara_tombstones") && listChildren(root, directory).isEmpty()) deleteNonRecursive(root, directory)
+        }
         return TombstoneRecoveryReport(attention)
     }
 
@@ -622,13 +715,9 @@ class SecureWorkspaceFileOps(
     }
 
     override fun cleanupTombstones(root: Path) {
-        openSecure(root).use { secure ->
-            val tombstones = try {
-                secure.newDirectoryStream(Paths.get(".nexara_tombstones"), LinkOption.NOFOLLOW_LINKS)
-            } catch (_: java.nio.file.NoSuchFileException) {
-                return
-            }
-            tombstones.use(::deleteChildren)
+        for (directory in listOf(listOf(".nexara", "tombstones"), listOf(".nexara_tombstones"))) {
+            if (!exists(root, directory)) continue
+            openSecure(root).use { secure -> openDirectory(secure, directory).use(::deleteChildren) }
         }
     }
 
@@ -838,18 +927,31 @@ class SecureWorkspaceFileOps(
     }
 
     private fun ensureRootIdentity(
+        path: Path,
         root: SecureDirectoryStream<Path>,
         initialize: Boolean,
         expectedIdentity: String?,
     ): String {
         val key = directoryKey(root).toString()
-        val existing = readIdentity(root)
+        val legacy = readLegacyIdentity(root)
+        val stored = try { identityStorage?.readIdentity(key) } catch (failure: Exception) {
+            identityStorage?.recordFailure("identity-$key", "root-identity-read", failure)
+            null
+        }
+        if (stored != null && legacy != null && stored != legacy) throw SecurityException("私有根身份与旧标记冲突")
+        val persistentNonce = if (identityStorage != null || legacy == null) readRootNonce(path, key, legacy) else null
+        if (persistentNonce != null && legacy != null && legacy != "$persistentNonce\n$key") {
+            throw SecurityException("工作区根目录FD身份与旧标记冲突")
+        }
+        val existing = persistentNonce?.let { "$it\n$key" } ?: legacy
+        if (persistentNonce == null && legacy == null && stored != null) {
+            throw SecurityException("工作区根缺少目录FD身份，拒绝从私有索引重建")
+        }
+        if (stored != null && existing != null && stored != existing) throw SecurityException("工作区根目录FD身份与私有索引冲突")
         val actual = when {
             existing != null -> existing
             !initialize -> throw SecurityException("工作区根缺少持久身份标记")
-            else -> "${UUID.randomUUID()}\n$key".also {
-                writeNew(root, Paths.get(ROOT_IDENTITY_FILE), it.toByteArray(Charsets.UTF_8))
-            }
+            else -> "${UUID.randomUUID()}\n$key"
         }
         if (actual.substringAfter('\n', "") != key) throw SecurityException("工作区根身份标记与目录 fileKey 不一致")
         val nonce = actual.substringBefore('\n')
@@ -857,23 +959,74 @@ class SecureWorkspaceFileOps(
         if (expectedIdentity != null && identity != expectedIdentity) {
             throw SecurityException("工作区根身份与数据库认领不一致")
         }
+        if (identityStorage == null) {
+            if (legacy == null && persistentNonce == null) writeNew(root, Paths.get(ROOT_IDENTITY_FILE), actual.toByteArray(Charsets.UTF_8))
+        } else {
+            var durableNonce = persistentNonce != null
+            try {
+                if (persistentNonce == null) AndroidWorkspaceCreationProof.withRootDirectory(path, key) {
+                    AndroidWorkspaceFileIdentity.createRoot(it.fd, nonce)
+                }
+                durableNonce = true
+                identityStorage.storeIdentity(key, actual)
+                if (legacy != null) root.deleteFile(Paths.get(ROOT_IDENTITY_FILE))
+            } catch (failure: Exception) {
+                identityStorage.recordFailure(identity, "root-identity", failure)
+                // 存量标记仍是有效身份源；迁移失败不使启动恢复失去读取能力。
+                if (legacy == null && !durableNonce) throw failure
+            }
+        }
         return identity
     }
 
     private fun verifyRootIdentity(path: Path, root: SecureDirectoryStream<Path>, fileKey: Any?) {
-        val expected = readIdentity(root) ?: throw SecurityException("工作区根缺少持久身份标记")
-        val trusted = WorkspaceMutationCoordinator.expectedIdentity(path)
+        val actualKey = fileKey?.toString() ?: throw SecurityException("工作区根缺少稳定fileKey")
+        val expected = if (identityStorage != null) {
+            val legacy = readLegacyIdentity(root)
+            val nonce = readRootNonce(path, actualKey, legacy)
+            nonce?.let { "$it\n$actualKey" } ?: legacy
+        } else readLegacyIdentity(root) ?: AndroidWorkspaceCreationProof.withRootDirectory(path, actualKey) {
+            AndroidWorkspaceFileIdentity.readRoot(it.fd)
+        }?.let { "$it\n$actualKey" }
+        if (expected == null) throw SecurityException("工作区根缺少持久身份标记")
+        val trusted = identityStorage?.privateIdentity(path) ?: WorkspaceMutationCoordinator.expectedIdentity(path)
             ?: throw SecurityException("工作区根缺少进程内数据库身份绑定")
-        val actualKey = fileKey?.toString()
-        val actualIdentity = actualKey?.let {
-            "${expected.substringBefore('\n')}|${sha256(it.toByteArray(Charsets.UTF_8))}"
-        }
-        if (actualKey == null || expected.substringAfter('\n', "") != actualKey || actualIdentity != trusted) {
+        val actualIdentity = "${expected.substringBefore('\n')}|${sha256(actualKey.toByteArray(Charsets.UTF_8))}"
+        if (expected.substringAfter('\n', "") != actualKey || actualIdentity != trusted) {
             throw SecurityException("工作区根身份标记与目录 fileKey 不一致")
         }
     }
 
-    private fun readIdentity(root: SecureDirectoryStream<Path>): String? = try {
+    private fun readRootNonce(path: Path, key: String, legacy: String?): String? = readWorkspaceIdentityAttribute(legacy != null,
+        { AndroidWorkspaceCreationProof.withRootDirectory(path, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) } },
+        { identityStorage?.recordFailure("identity-$key", "root-xattr-unsupported", it) })
+
+    override fun captureRootIdentityRestorer(root: Path): () -> Boolean {
+        if (identityStorage == null) return { false }
+        val (key, token) = openSecure(root).use { secure ->
+            val key = directoryKey(secure).toString()
+            key to readRootNonce(root, key, readLegacyIdentity(secure))
+        }
+        if (token == null) return { false }
+        return {
+            AndroidWorkspaceCreationProof.withRootDirectory(root, key) { file ->
+                val current = runCatching { AndroidWorkspaceFileIdentity.readRoot(file.fd) }.getOrNull()
+                if (current == token) false else {
+                    AndroidWorkspaceFileIdentity.restoreRoot(file.fd, token)
+                    true
+                }
+            }
+        }
+    }
+
+    override fun hasExternalRootIdentity(root: Path): Boolean = openSecure(root, requireIdentity = false).use { secure ->
+        val key = directoryKey(secure).toString()
+        val nonce = try { AndroidWorkspaceCreationProof.withRootDirectory(root, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) } }
+            catch (_: UnsupportedOperationException) { null }
+        nonce != null || identityStorage?.readIdentity(key) != null
+    }
+
+    private fun readLegacyIdentity(root: SecureDirectoryStream<Path>): String? = try {
         root.newByteChannel(
             Paths.get(ROOT_IDENTITY_FILE),
             setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),

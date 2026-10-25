@@ -176,6 +176,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
         val rootPath = File(root.physicalRootPath).toPath()
         WorkspaceMutationCoordinator.withBoundRoot(rootPath, identity) {
             fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
+            fileOps.migrateInternalStorage(rootPath)
             val databaseTarget = database.fileEntryDao().getAnyStateByUuidForLifecycle(
                 entity.workspaceRootUuid,
                 targetUuid,
@@ -297,7 +298,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
 
     /**
      * 仅在启动恢复或单工作区删除门禁内调用。此时没有新的文件 mutation 获准进入；成功收敛
-     * journal 后，整个 app-private ownership 根都只可能包含无 journal 的残留。
+     * journal 后，整个工作区 ownership 根都只可能包含无 journal 的残留。
      */
     private suspend fun cleanupOrphanCreateOwnership(roots: List<FileEntry>) {
         try {
@@ -426,12 +427,12 @@ internal data class WorkspaceCreateOwnershipManifest(
     val targetRelativePath: String,
     val identity: WorkspaceNodeIdentity,
     val proofToken: String? = null,
-    val proofVersion: Int = if (proofToken == null) 1 else if (identity.kind == "file") 3 else 2,
+    val proofVersion: Int = if (proofToken == null) 1 else if (identity.kind == "file") 3 else 4,
 )
 
 internal fun requireCurrentCreationProof(manifest: WorkspaceCreateOwnershipManifest) {
-    val requiredVersion = if (manifest.identity.kind == "file") 3 else 2
-    if (manifest.proofToken == null || manifest.proofVersion != requiredVersion) {
+    val validVersions = if (manifest.identity.kind == "file") setOf(3) else setOf(2, 4)
+    if (manifest.proofToken == null || manifest.proofVersion !in validVersions) {
         throw SecurityException("创建归属证明版本不可安全恢复，节点已保留")
     }
     requireCreationToken(manifest.proofToken)
@@ -454,7 +455,7 @@ internal fun decodeCreateOwnershipManifest(bytes: ByteArray): WorkspaceCreateOwn
     val parts = bytes.toString(Charsets.UTF_8).split('\n')
     val token = when {
         parts.size == 6 && parts[0] == "v1" -> null
-        parts.size == 7 && parts[0] in setOf("v2", "v3") -> parts[6].takeIf {
+        parts.size == 7 && parts[0] in setOf("v2", "v3", "v4") -> parts[6].takeIf {
             runCatching { requireCreationToken(it) }.isSuccess
         } ?: return null
         else -> return null

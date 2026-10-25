@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -86,6 +87,5 @@ class FileListSkill(
 
 /** 回收站与系统保留目录不向模型展示。 */
 internal fun FileEntry.isSystemEntry(): Boolean {
-    val first = materializedPath.trimStart('/').substringBefore('/')
-    return first == ".recycle_bin" || first.startsWith(".nexara", ignoreCase = true)
+    return WorkspaceInternalPaths.containsReservedPath(materializedPath)
 }

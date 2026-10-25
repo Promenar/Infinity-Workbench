@@ -40,8 +40,9 @@ internal class DefaultWorkspaceMedia(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val fileSystem: RealPathFileSystem = AndroidRealPathFileSystem,
     private val userSkillsDirectory: File = File(context.filesDir, "agent_skills").canonicalFile,
+    private val pathPresenter: com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter = com.promenar.nexara.data.workspace.BuiltinWorkspaceFilePathPresenter,
 ) : WorkspaceMediaResolver, WorkspaceMediaStore {
-    private val targets = WorkspaceFileTargetResolver(sessions, workspace, mounts, sessionWorkspace, userSkillsDirectory)
+    private val targets = WorkspaceFileTargetResolver(sessions, workspace, mounts, sessionWorkspace, userSkillsDirectory, pathPresenter = pathPresenter)
     private val local = MediaLocalAccess(fileSystem)
     private val metadata = MediaMetadataReader(context)
     // 弱键不延长卡片生命周期；open 必须重新核验会话和挂载身份，不能接受任意本机文件。
@@ -101,9 +102,10 @@ internal class DefaultWorkspaceMedia(
         locks[sessionId.hashCode() and (locks.size - 1)].withLock {
             try {
                 val explicit = targetPath?.takeUnless(String::isEmpty)?.let(::normalize)
-                val initialPath = explicit ?: "/media"
+                val destination = if (explicit == null) targets.defaultDestination(sessionId) else null
+                val initialPath = explicit ?: targets.present(sessionId, requireNotNull(destination), "/media")
                 protect(initialPath)
-                val target = target(sessionId, initialPath, writing = true)
+                val target = targets.resolve(sessionId, initialPath, writing = true, destination)
                 withContext(ExternalMountOperationBindings(target.mountIds)) {
                     if (explicit != null && exists(target, explicit)) fail("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖")
                     val temporary = File.createTempFile("workspace-media-", ".tmp", context.cacheDir.canonicalFile)
@@ -113,7 +115,7 @@ internal class DefaultWorkspaceMedia(
                         val info = metadata.read(type.kind, MediaSource.LocalFile(temporary)) { local.open(temporary.parentFile!!, "/${temporary.name}") }
                         val now = LocalDateTime.now(clock)
                         val extension = MediaTypeSniffer.extension(type.mimeType, suggestedName)
-                        val base = "/media/${now.toLocalDate()}/${origin.prefix}-${now.format(TIME)}-${staged.sha256.take(6)}"
+                        val base = "$initialPath/${now.toLocalDate()}/${origin.prefix}-${now.format(TIME)}-${staged.sha256.take(6)}"
                         var suffix = 1
                         while (true) {
                             currentCoroutineContext().ensureActive()
@@ -167,18 +169,16 @@ internal class DefaultWorkspaceMedia(
         targets.resolve(sessionId, path, writing)
 
     private suspend fun checkCurrent(bound: Target, path: String) {
-        if (target(bound.sessionId, path, writing = false).identity != bound.identity) {
-            fail("WORKSPACE_UNAVAILABLE", "会话工作区或挂载在保存期间发生变化，已停止写入")
-        }
+        targets.checkCurrent(bound, path)
     }
 
     private suspend fun entry(target: Target, path: String): FileEntry? = when {
         path == "/mnt" || target.mount != null -> mounts.entry(target.sessionId, path)
-        else -> workspace.getByMaterializedPath(target.root!!.uuid, path)
+        else -> workspace.getByMaterializedPath(target.root!!.uuid, target.materialized(path))
     }
 
     private suspend fun exists(target: Target, path: String): Boolean = entry(target, path) != null ||
-        target.root != null && Files.exists(local.file(target.directory!!, path).toPath(), NOFOLLOW_LINKS)
+        target.root != null && Files.exists(local.file(target.directory!!, target.relative(path)).toPath(), NOFOLLOW_LINKS)
 
     private suspend fun source(target: Target, path: String): MediaSource = if (target.directory != null) {
         MediaSource.LocalFile(local.file(target.directory, target.relative(path)))
@@ -208,7 +208,7 @@ internal class DefaultWorkspaceMedia(
                 if (target.mount != null) mounts.createDirectory(target.sessionId, parent)
                 else {
                     val parentEntry = entry(target, parent.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不可用")
-                    workspace.createDirectoryInWorkspace(target.root!!.uuid, UUID.randomUUID().toString(), component, parentEntry.uuid, parent)
+                    workspace.createDirectoryInWorkspace(target.root!!.uuid, UUID.randomUUID().toString(), component, parentEntry.uuid, target.materialized(parent))
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -229,7 +229,7 @@ internal class DefaultWorkspaceMedia(
                 val root = target.root ?: fail("INVALID_PATH", "不能向挂载列表目录保存媒体")
                 val parent = entry(target, path.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不存在")
                 val coroutine = currentCoroutineContext()
-                created = workspace.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), path.substringAfterLast('/'), mime, parent.uuid, path, MAX_WORKSPACE_MEDIA_BYTES) { output ->
+                created = workspace.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), path.substringAfterLast('/'), mime, parent.uuid, target.materialized(path), MAX_WORKSPACE_MEDIA_BYTES) { output ->
                     file.inputStream().use { input ->
                         val buffer = ByteArray(BUFFER_SIZE)
                         while (true) {
@@ -310,7 +310,7 @@ internal class DefaultWorkspaceMedia(
     }
 
     private fun protect(path: String) {
-        val relative = (ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
+        val relative = (pathPresenter.privateRelativePath(path) ?: ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
         if (path == "/skills" || path.startsWith("/skills/") || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")) {
             fail("PROTECTED_PATH", "技能目录写入需要逐次审批，媒体存储不能直接写入")
         }

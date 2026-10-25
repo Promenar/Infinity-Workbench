@@ -97,8 +97,9 @@ class DefaultWorkspaceMediaTest {
     }
 
     private fun real(root: File) = RealPathExternalFolderBackend(root, emptySet(), { true }, fs)
-    private fun newService(workspace: IWorkspaceRepository = repo, index: FileIndexEventSink = FileIndexEventSink { events.add(it) }, skillsDirectory: File = skillsRoot) =
-        DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, index, clock, fs, skillsDirectory)
+    private fun newService(workspace: IWorkspaceRepository = repo, index: FileIndexEventSink = FileIndexEventSink { events.add(it) }, skillsDirectory: File = skillsRoot,
+        presenter: WorkspaceFilePathPresenter = BuiltinWorkspaceFilePathPresenter) =
+        DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, index, clock, fs, skillsDirectory, presenter)
 
     @After fun cleanup() {
         db.close()
@@ -260,6 +261,71 @@ class DefaultWorkspaceMediaTest {
         // 图片不在向量化支持范围内，不发布索引事件。
         assertThat(events.filterIsInstance<FileIndexEvent.Changed>().map { it.fileUuid }).doesNotContain(entry.uuid)
         assertThat(File(privateRoot, one.path.trimStart('/')).readBytes()).isEqualTo(png)
+    }
+
+    @Test fun `登记工作区只有技能挂载时默认媒体保存在主工作区`() = runBlocking {
+        val project = bindDirectory()
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED)
+        assertThat(File(project, saved.path.trimStart('/')).readBytes()).isEqualTo(png)
+        assertThat(repo.getByMaterializedPath(root.uuid, saved.path)).isNull()
+    }
+
+    @Test fun `登记工作区有用户挂载时默认媒体进入可重新解析的会话专用空间`() = runBlocking {
+        val project = bindDirectory()
+        addMount("素材", File(directory, "assets").apply { mkdirs() }.path)
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED)
+        assertThat(saved.path).startsWith("/session/media/")
+        assertThat(File(privateRoot, saved.path.removePrefix("/session/")).readBytes()).isEqualTo(png)
+        assertThat(File(project, "media").exists()).isFalse()
+        assertThat(service.open(available(saved.path)).use { it.readBytes() }).isEqualTo(png)
+        val explicit = service.save("session", MediaPayload.Bytes(png), MediaOrigin.DOWNLOAD, targetPath = "/media/explicit.png")
+        assertThat(explicit.path).isEqualTo("/media/explicit.png")
+        assertThat(File(project, "media/explicit.png").readBytes()).isEqualTo(png)
+    }
+
+    @Test fun `运行模式可替换私有目标路径呈现与反向解析`() = runBlocking {
+        val project = bindDirectory()
+        addMount("素材", File(directory, "assets").apply { mkdirs() }.path)
+        service = newService(presenter = object : WorkspaceFilePathPresenter {
+            override fun present(destination: WorkspaceDefaultFileDestination, relativePath: String, privatePrimary: Boolean) =
+                if (destination == WorkspaceDefaultFileDestination.SESSION_PRIVATE) "/home/session/$relativePath".replace("//", "/") else relativePath
+            override fun privateRelativePath(path: String) = when {
+                path == "/home/session" -> "/"
+                path.startsWith("/home/session/") -> path.removePrefix("/home/session")
+                else -> SessionPrivateWorkspacePaths.relative(path)
+            }
+        })
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.MCP)
+        assertThat(saved.path).startsWith("/home/session/media/")
+        assertThat(service.open(available(saved.path)).use { it.readBytes() }).isEqualTo(png)
+        assertThat(File(project, "home").exists()).isFalse()
+    }
+
+    @Test fun `登记主工作区会话首次默认媒体保存按需创建私有根`() = runBlocking {
+        bindDirectory()
+        val targetRoot = File(directory, "new-private")
+        db.sessionDao().insert(SessionEntity(id = "new", agentId = "agent", workspaceId = "project-id", workspacePath = targetRoot.path, createdAt = 1, updatedAt = 1))
+        val assets = File(directory, "assets").apply { mkdirs() }
+        db.externalMountDao().insert(ExternalMountEntity("new-assets", "素材", "real_path", assets.path, "new", false, 1))
+        val saved = service.save("new", MediaPayload.Bytes(png), MediaOrigin.DOWNLOAD)
+        assertThat(saved.path).startsWith("/session/media/")
+        assertThat(db.sessionDao().getById("new")?.workspaceRootUuid).isNotNull()
+        assertThat(File(targetRoot, saved.path.removePrefix("/session/")).readBytes()).isEqualTo(png)
+    }
+
+    @Test fun `默认主根在落点判定与首次解析之间切换时拒绝异根保存`() = runBlocking {
+        val original = bindDirectory()
+        val next = File(directory, "projects/next").apply { mkdirs() }
+        db.workspaceDao().insert(WorkspaceEntity("next-id", WorkspaceEntity.KIND_PROJECT, "新项目", "next", 1))
+        var resolutions = 0
+        service = DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), repo, mounts, { session ->
+            if (++resolutions == 2) db.sessionDao().update(db.sessionDao().getById(session)!!.copy(workspaceId = "next-id"))
+            roots.resolve(session)
+        }, FileIndexEventSink.None, clock, fs, skillsRoot)
+        code("WORKSPACE_UNAVAILABLE") { service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED) }
+        assertThat(File(original, "media").exists()).isFalse()
+        assertThat(File(next, "media").exists()).isFalse()
+        assertThat(File(privateRoot, "media").exists()).isFalse()
     }
 
     @Test fun `显式路径规范化并创建父目录且已有目标不覆盖`() = runBlocking {

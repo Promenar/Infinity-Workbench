@@ -41,7 +41,7 @@ class BackgroundJobCompletion(
                             appendLine("后台任务 ${record.id} 已结束")
                             appendLine("命令：${record.summary}")
                             appendLine("状态：${record.state}；退出码：${record.exitCode ?: "无"}；耗时：${elapsedSeconds(record)} 秒")
-                            appendLine("日志：${record.logWorkspacePath ?: record.termuxDirectory?.let { "$it.log（Termux 私有目录）" } ?: "不可用"}")
+                            appendLine("日志通过 job_status 或 job_wait 读取。")
                             record.guidance?.let { appendLine(it) }
                             appendLine("日志末尾：\n${tail.text.takeLast(2_000)}")
                         }))
@@ -120,7 +120,18 @@ class BackgroundJobManager(
             val cleaned=runner.interruptBackground(File(record.runDirectory,"pgid"))
             val reconcileWarning = try { reconcile(record, false, true) } catch (_: Exception) { "工作区恢复失败；任务副本和日志已保留。" }
             val warning=listOfNotNull(reconcileWarning,if(cleaned)null else "应用重启后无法核验旧进程组身份，未发送信号；请确认旧命令已停止。").joinToString(" ").ifEmpty{null}
-            store.put(record.copy(state="INTERRUPTED",endedAtMillis=now(),guidance=warning))
+            store.put(record.copy(state="INTERRUPTED",endedAtMillis=now(),guidance=warning,logMigrationDeferred=!cleaned))
+        }
+        for (record in store.all()) {
+            try {
+                if (record.logMigrationDeferred) continue
+                if (record.runnerKind != BackgroundJobRunner.TERMUX) BackgroundJobLogs.migrate(record, runRoot)
+                store.put(record.copy(logWorkspacePath = BackgroundJobLogs.reference(record.id)))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                store.put(record.copy(guidance = listOfNotNull(record.guidance,
+                    "日志迁移未完成（${failure::class.java.simpleName}），旧日志已保留。").distinct().joinToString(" ")))
+            }
         }
         publish()
         for(record in store.all().filter { it.running && it.runnerKind == BackgroundJobRunner.TERMUX }) monitorTermux(record)
@@ -140,7 +151,7 @@ class BackgroundJobManager(
         if(running.count{it.sessionId==sessionId} >= 3) throw JobAccessException("JOB_SESSION_LIMIT","本会话已有 3 个运行中任务，请先用 job_wait 等待或用 job_stop 停止。")
         if(running.size >= 6) throw JobAccessException("JOB_GLOBAL_LIMIT","全局已有 6 个运行中任务，请先结束部分后台任务。")
         val id="job-${UUID.randomUUID()}"
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath="jobs/$id.log",runDirectory=File(runRoot,id).path).also {
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path).also {
             store.put(it); active[id]=Active(); publish()
         }
     }
@@ -224,7 +235,7 @@ class BackgroundJobManager(
                     try {
                         val location=prepareWorkspace(record)
                         val shared=location.workspaceDirectory.takeIf{location.termuxShared}
-                        val routed=store.updateIfPresent(record.id) {latest -> if(latest.running) latest.copy(workspaceDirectory=shared?.path,logWorkspacePath=record.logWorkspacePath.takeIf{shared!=null}) else latest}
+                        val routed=store.updateIfPresent(record.id) {latest -> if(latest.running) latest.copy(workspaceDirectory=shared?.path,logWorkspacePath=BackgroundJobLogs.reference(record.id)) else latest}
                         if(routed?.running==true) {
                             // 定位先落盘；启动回包丢失也能按任务号恢复控制。
                             requested=true
@@ -292,7 +303,27 @@ class BackgroundJobManager(
             current=current.copy(termuxDirectory=restored.directory,termuxPid=restored.pid,guidance=null)
             store.put(current)
         }
-        val result=checkNotNull(termux).inspect(termuxHandle(current))
+        val backend = checkNotNull(termux)
+        val result = try { backend.inspect(termuxHandle(current)) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            val recovered = backend.recover(current.id, current.workspaceDirectory?.let(::File)) ?: throw failure
+            current = current.copy(termuxDirectory = recovered.directory, termuxPid = recovered.pid)
+            store.put(current)
+            backend.inspect(recovered)
+        }
+        if (!result.alive) {
+            try {
+                val migrated = backend.migrateCompleted(current.id, current.workspaceDirectory?.let(::File), termuxHandle(current))
+                current = current.copy(termuxDirectory = migrated.directory, termuxPid = migrated.pid,
+                    logWorkspacePath = BackgroundJobLogs.reference(current.id))
+                store.put(current)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                current = current.copy(guidance = "Termux 日志迁移未完成（${failure::class.java.simpleName}），旧任务文件已保留。")
+                store.put(current)
+            }
+        }
         active[record.id]?.let { running ->
             if (result.logTail != running.lastTail) {
                 val text = if (result.logTail.startsWith(running.lastTail)) result.logTail.drop(running.lastTail.length) else result.logTail
@@ -331,11 +362,19 @@ class BackgroundJobManager(
         }
     }
     private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,when(record.runnerKind) { BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON; BackgroundJobRunner.LINUX -> ExecRunKind.LINUX; else -> ExecRunKind.SHELL },record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true)
-    private fun logFile(record:BackgroundJobRecord):File = if(record.isolatedWorkspace) File(record.runDirectory,"output.log") else record.workspaceDirectory?.let { File(it,checkNotNull(record.logWorkspacePath)) } ?: File(record.runDirectory,"output.log")
+    private fun logFile(record:BackgroundJobRecord):File =
+        if (record.logMigrationDeferred) BackgroundJobLogs.legacyFile(record) ?: BackgroundJobLogs.file(record, runRoot)
+        else BackgroundJobLogs.file(record, runRoot)
     private suspend fun owned(sessionId:String,id:String):BackgroundJobRecord {
         initialize()
         return store.all().find{it.id==id && it.sessionId==sessionId && sessionId !in deletedSessions}
             ?: throw JobAccessException("JOB_NOT_FOUND","本会话找不到该任务，请用 job_list 获取当前会话的任务号。")
+    }
+    override suspend fun readLog(sessionId: String, reference: String): com.promenar.nexara.domain.jobs.BackgroundJobLog {
+        val id = BackgroundJobLogs.jobId(reference)
+            ?: throw JobAccessException("JOB_NOT_FOUND", "任务日志引用无效。")
+        val tail = status(sessionId, id).tail
+        return com.promenar.nexara.domain.jobs.BackgroundJobLog(tail.text, tail.truncated)
     }
     suspend fun list(sessionId:String):List<BackgroundJobRecord> { initialize(); return store.all().filter{it.sessionId==sessionId && sessionId !in deletedSessions}.sortedByDescending{it.startedAtMillis} }
     suspend fun status(sessionId:String,id:String):BackgroundJobStatus = withContext(Dispatchers.IO) {
@@ -343,6 +382,8 @@ class BackgroundJobManager(
         var warning: String? = null
         val tail=if(record.runnerKind==BackgroundJobRunner.TERMUX) refreshTermux(record) else {
             warning=reconcile(record,false,false)
+            val migration = if (record.logMigrationDeferred) null else runCatching { BackgroundJobLogs.migrate(record, runRoot) }.exceptionOrNull()
+            if (migration != null) warning = listOfNotNull(warning, "日志迁移未完成（${migration::class.java.simpleName}），旧日志已保留。").joinToString(" ")
             readJobLogTail(logFile(record))
         }
         record=owned(sessionId,id)

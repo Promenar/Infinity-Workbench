@@ -157,6 +157,7 @@ class WorkspaceRepository(
             WorkspaceMutationCoordinator.withBoundRoot(parentPath, parentIdentity, ensurePhysical)
         } else ensurePhysical()
         WorkspaceMutationCoordinator.bindIdentityWhileHeld(physicalRoot.toPath(), rootIdentity)
+        fileOps.migrateInternalStorage(physicalRoot.toPath())
         session.workspacePath?.takeIf { it.isNotBlank() }?.let { declaredPath ->
             if (File(declaredPath.trim()).canonicalFile != physicalRoot) {
                 throw SecurityException("Session workspace path cannot be changed")
@@ -890,7 +891,7 @@ class WorkspaceRepository(
         block: suspend (physicalRoot: File) -> T,
     ): WorkspaceCommandOutcome<T> = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
         val rootPath = File(root.physicalRootPath).toPath()
-        val identity = WorkspaceRootIdentityGuard.capture(rootPath)
+        val identity = WorkspaceRootIdentityGuard.capture(rootPath, fileOps.captureRootIdentityRestorer(rootPath))
         // 标记先于前快照写入，否则对账会把它当作命令改动的保留路径。
         if (!fileOps.exists(rootPath, listOf(COMMAND_PENDING_MARKER))) {
             fileOps.createFile(rootPath, listOf(COMMAND_PENDING_MARKER), byteArrayOf())
@@ -1158,6 +1159,7 @@ class WorkspaceRepository(
             File(initial.physicalRootPath).toPath(), initial.hash,
         ) {
             val currentRoot = requireRoot(workspaceRootUuid)
+            fileOps.migrateInternalStorage(File(currentRoot.physicalRootPath).toPath())
             recoverPendingTombstonesLocked(currentRoot)
             cleanupCompletedOwnersBeforeMutation(currentRoot)
             recoverInterruptedCommandLocked(currentRoot)
@@ -1595,8 +1597,7 @@ class WorkspaceRepository(
         }
         val segments = trimmed.replace('\\', '/').split('/').filter { it.isNotEmpty() }
         if (segments.any { it == "." || it == ".." }) throw SecurityException("工作区路径越界: $path")
-        if (segments.any { it.startsWith(".nexara", ignoreCase = true) } ||
-            segments.firstOrNull() == ".recycle_bin") {
+        if (com.promenar.nexara.domain.workspace.WorkspaceInternalPaths.containsReservedPath(trimmed)) {
             throw SecurityException("工作区路径属于系统保留目录")
         }
         return "/" + segments.joinToString("/")
@@ -1604,7 +1605,7 @@ class WorkspaceRepository(
 
     private fun validateName(name: String) {
         if (name.isBlank() || name == "." || name == ".." || '/' in name || '\\' in name || '\u0000' in name ||
-            name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin") {
+            com.promenar.nexara.domain.workspace.WorkspaceInternalPaths.isReservedName(name)) {
             throw SecurityException("工作区名称无效")
         }
     }

@@ -15,7 +15,7 @@ internal fun backgroundStartJson(record: BackgroundJobRecord): JsonObject = buil
     if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
     put("runner",record.runnerKind.name.lowercase())
     put("job_id",record.id);put("state",record.state.lowercase());put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
-    put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"})
+    put("log_reference",BackgroundJobLogs.reference(record.id))
     val confirmed=record.runnerKind!=BackgroundJobRunner.TERMUX || record.termuxPid!=null
     put("launch_confirmed",confirmed)
     put("guidance",if(confirmed) "后台任务已启动；可以继续其它工作，需要结果时用 job_status 或 job_wait；不要循环轮询。" else record.guidance ?: "启动结果尚未确认；请用 job_status 查询或 job_stop 撤销，避免重复执行。")
@@ -71,7 +71,7 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
     put("runner",record.runnerKind.name.lowercase())
     put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
         put("summary",record.summary);put("elapsed_seconds",BackgroundJobCompletion.elapsedSeconds(record));put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
-        put("log_path",record.logWorkspacePath ?: record.termuxDirectory?.let{"$it.log（Termux 私有目录）"});put("keep_alive",jobs.keepAliveMode)
+        put("log_reference",BackgroundJobLogs.reference(record.id));put("keep_alive",jobs.keepAliveMode)
         record.guidance?.let{put("guidance",it)}
         } + runtime)
     }

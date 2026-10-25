@@ -38,15 +38,25 @@ class BackgroundWorkspaceTest {
     private fun write(path: String, text: String, base: File = root) =
         File(base, path).apply { parentFile!!.mkdirs(); writeText(text) }
 
-    @Test fun `后台运行中的结果不会合入前台且日志快照可见`() {
+    @Test fun `后台命令及日志不在用户根留下内部文件`() {
+        prepare()
+        File(staging.parentFile, "output.log").writeText("private log")
+        synchronize(finished = false)
+        assertThat(File(root, "jobs/job-1.log").exists()).isFalse()
+        assertThat(File(root, ".nexara_command_pending-job-1").exists()).isFalse()
+        assertThat(File(staging.parentFile, "output.log").readText()).isEqualTo("private log")
+    }
+
+    @Test fun `后台运行中的结果不会合入前台且日志留在私有目录`() {
         write("a.txt", "base")
         prepare()
         write("a.txt", "background", staging)
         File(staging.parentFile, "output.log").writeText("running\n")
         synchronize(finished = false)
         assertThat(File(root, "a.txt").readText()).isEqualTo("base")
-        assertThat(File(root, "jobs/job-1.log").readText()).isEqualTo("running\n")
-        assertThat(File(root, ".nexara_command_pending-job-1").exists()).isTrue()
+        assertThat(File(staging.parentFile, "output.log").readText()).isEqualTo("running\n")
+        assertThat(File(root, "jobs").exists()).isFalse()
+        assertThat(File(root, ".nexara_command_pending-job-1").exists()).isFalse()
     }
 
     @Test fun `后台修改合入且与前台不同路径写入共存`() {
@@ -67,7 +77,7 @@ class BackgroundWorkspaceTest {
         write("a.txt", "foreground")
         assertThat(synchronize()).contains("a.txt")
         assertThat(File(root, "a.txt").readText()).isEqualTo("foreground")
-        assertThat(File(root, "jobs/job-1-conflicts/a.txt").readText()).isEqualTo("background")
+        assertThat(File(root, "background-conflicts/job-1/a.txt").readText()).isEqualTo("background")
     }
 
     @Test fun `前台先删除的文件不会被后台重建`() {
@@ -77,7 +87,7 @@ class BackgroundWorkspaceTest {
         File(root, "a.txt").delete()
         assertThat(synchronize()).contains("a.txt")
         assertThat(File(root, "a.txt").exists()).isFalse()
-        assertThat(File(root, "jobs/job-1-conflicts/a.txt").readText()).isEqualTo("background")
+        assertThat(File(root, "background-conflicts/job-1/a.txt").readText()).isEqualTo("background")
     }
 
     @Test fun `后台删除目录时保留前台新增后代`() {
@@ -106,7 +116,7 @@ class BackgroundWorkspaceTest {
         File(root, "folder").deleteRecursively()
         assertThat(synchronize()).contains("folder/new.txt")
         assertThat(File(root, "folder").exists()).isFalse()
-        assertThat(File(root, "jobs/job-1-conflicts/folder/new.txt").readText()).isEqualTo("background")
+        assertThat(File(root, "background-conflicts/job-1/folder/new.txt").readText()).isEqualTo("background")
     }
 
     @Test fun `目录改文件不会删除前台新建后代`() {
@@ -117,7 +127,7 @@ class BackgroundWorkspaceTest {
         write("folder/new.txt", "foreground")
         assertThat(synchronize()).contains("folder")
         assertThat(File(root, "folder/new.txt").readText()).isEqualTo("foreground")
-        assertThat(File(root, "jobs/job-1-conflicts/folder").readText()).isEqualTo("background")
+        assertThat(File(root, "background-conflicts/job-1/folder").readText()).isEqualTo("background")
     }
 
     @Test fun `前后台同时新建同一路径时保留前台版本`() {
@@ -137,14 +147,15 @@ class BackgroundWorkspaceTest {
         assertThat(File(root, "a.txt").readText()).isEqualTo("edit")
     }
 
-    @Test fun `前台改动已发布日志时后续发布不覆盖`() {
+    @Test fun `工作区同名日志是用户文件且不会被后台发布覆盖`() {
         prepare()
         val log = File(staging.parentFile, "output.log").apply { writeText("first") }
         synchronize(finished = false)
         write("jobs/job-1.log", "user edit")
         log.writeText("second")
-        assertThat(synchronize()).contains("job-1.log")
+        assertThat(synchronize()).isNull()
         assertThat(File(root, "jobs/job-1.log").readText()).isEqualTo("user edit")
+        assertThat(log.readText()).isEqualTo("second")
     }
 
     @Test fun `崩溃恢复只发布日志并清理本任务标记`() {
@@ -154,7 +165,7 @@ class BackgroundWorkspaceTest {
         File(staging.parentFile, "output.log").writeText("partial log")
         synchronize(finished = false, interrupted = true)
         assertThat(File(root, "a.txt").readText()).isEqualTo("base")
-        assertThat(File(root, "jobs/job-1.log").readText()).isEqualTo("partial log")
+        assertThat(File(staging.parentFile, "output.log").readText()).isEqualTo("partial log")
         assertThat(File(root, ".nexara_command_pending-job-1").exists()).isFalse()
     }
 
@@ -182,7 +193,7 @@ class BackgroundWorkspaceTest {
         write("a.txt", "background", staging)
         val failing = BackgroundWorkspace(object : WorkspaceFileOps by fileOps {
             override fun move(root: java.nio.file.Path, source: List<String>, target: List<String>): WorkspaceFileRollback {
-                if (source.last().startsWith(".nexara-job-write-")) throw java.io.IOException("发布中断")
+                if (source.last().startsWith("job-write-")) throw java.io.IOException("发布中断")
                 return fileOps.move(root, source, target)
             }
         }, ::openBackgroundTestDirectory)
@@ -199,7 +210,7 @@ class BackgroundWorkspaceTest {
         write("a.txt", "background", staging)
         val failing = BackgroundWorkspace(object : WorkspaceFileOps by fileOps {
             override fun move(root: java.nio.file.Path, source: List<String>, target: List<String>): WorkspaceFileRollback {
-                if (source.last().startsWith(".nexara-job-write-")) throw java.io.IOException("发布中断")
+                if (source.last().startsWith("job-write-")) throw java.io.IOException("发布中断")
                 return fileOps.move(root, source, target)
             }
         }, ::openBackgroundTestDirectory)

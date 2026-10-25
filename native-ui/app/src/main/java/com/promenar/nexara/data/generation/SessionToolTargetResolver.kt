@@ -35,6 +35,10 @@ suspend fun resolveSessionToolTarget(
             val uuid = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
             if (!uuid.isNullOrBlank()) {
                 if (uuid.startsWith("external:")) com.promenar.nexara.data.storage.ExternalMountPaths.uuidPath(uuid, namespaceMounts)?.let { paths[uuid] = it }
+                else if (rootUuid != null && com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths.privateUuid(uuid) != null) {
+                    repository?.getByUuid(rootUuid, requireNotNull(com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths.privateUuid(uuid)))
+                        ?.materializedPath?.let { paths[uuid] = com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths.virtual(it) }
+                }
                 else if (workspaceMount == null && rootUuid != null) repository?.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
             }
         }
@@ -50,26 +54,36 @@ suspend fun resolveSessionToolTarget(
             mapOf(alias to host.executionIdentity())
         } else emptyMap()
         val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities) ?: return null
-        if (mounts == null) return target
+        val defaultMediaPath = tool.function.name == "media_fetch" &&
+            com.promenar.nexara.domain.media.MediaFetchPaths.targetPath((args["path"] as? JsonPrimitive)?.takeIf { it.isString }?.content) == null
+        if (mounts == null && !defaultMediaPath) return target
         val parts = kotlinx.serialization.json.Json.parseToJsonElement(target) as? kotlinx.serialization.json.JsonArray ?: return null
         val metadata = parts.lastOrNull() as? kotlinx.serialization.json.JsonObject
         val tuple = if (metadata != null) parts.dropLast(1) else parts.toList()
         val strings = tuple.map { (it as? JsonPrimitive)?.content ?: return null }
         if (strings.firstOrNull() !in setOf("path", "move")) return target
+        val defaultMedia = defaultMediaPath
+        val defaultDestination = if (defaultMedia) com.promenar.nexara.data.workspace.defaultWorkspaceFileApprovalTarget(
+            workspaceMount?.sourceId ?: session.workspaceId, visibleMounts, namespaceMounts.associate { it.alias to it.id }) else null
         val legacyPaths = paths.filter { (uuid, path) -> !uuid.startsWith("external:") && com.promenar.nexara.data.storage.ExternalMountPaths.isMountedPath(path) }
         val mountIds = strings.drop(1).mapNotNull { path ->
             val parsed = com.promenar.nexara.data.storage.ExternalMountPaths.parse(path)
             if (parsed == null) {
-                workspaceMount?.takeIf { com.promenar.nexara.domain.storage.ExternalFolderPaths.normalize(path) != "/mnt" }?.let { it.alias to it.id }
+                val defaultPrivateMedia = defaultMedia &&
+                    com.promenar.nexara.data.workspace.defaultWorkspaceFileDestination(workspaceMount != null, visibleMounts) ==
+                    com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE
+                workspaceMount?.takeIf { !defaultPrivateMedia && com.promenar.nexara.data.storage.ExternalMountPaths.aliasOf(path, rooted = true) == com.promenar.nexara.data.storage.ExternalMountPaths.WORKSPACE_ALIAS }
+                    ?.let { it.alias to it.id }
             } else parsed.let { (alias, _) ->
                 val mountId = visibleMounts.singleOrNull { it.alias == alias }?.id
                 if (mountId == null && path !in legacyPaths.values) return null
                 mountId?.let { alias to it }
             }
         }.toMap().toSortedMap()
-        if (mountIds.isEmpty() && legacyPaths.isEmpty()) return target
+        if (mountIds.isEmpty() && legacyPaths.isEmpty() && defaultDestination == null) return target
         // 授权绑定挂载身份；移除后复用同名别名也不会继承旧授权。
-        return kotlinx.serialization.json.JsonArray(tuple + kotlinx.serialization.json.JsonObject(metadata.orEmpty() + mapOf(
+        val frozenDefault = defaultDestination?.let { mapOf("defaultFileDestination" to it) }.orEmpty()
+        return kotlinx.serialization.json.JsonArray(tuple + kotlinx.serialization.json.JsonObject(metadata.orEmpty() + frozenDefault + mapOf(
             "mountIds" to kotlinx.serialization.json.JsonObject(mountIds.mapValues { JsonPrimitive(it.value) }),
             "legacyWorkspaceUuids" to kotlinx.serialization.json.JsonArray(legacyPaths.keys.sorted().map(::JsonPrimitive)),
         ))).toString()

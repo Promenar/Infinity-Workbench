@@ -80,6 +80,32 @@ class WorkspaceMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `外置身份模式兼容旧journal已删除marker的空stage且拒绝新身份丢失`() = runTest {
+        val legacy = fixture(WorkspaceMutationStage.DB_COMMITTED, false, parent.resolve("legacy-terminal"), identityIsExternal = true)
+        Files.createDirectories(legacy.target)
+        legacy.coordinator.recoverOrThrow()
+        assertThat(Files.exists(legacy.target)).isFalse()
+        assertThat(legacy.deleted).hasSize(1)
+
+        val modern = fixture(WorkspaceMutationStage.DB_COMMITTED, false, parent.resolve("modern-terminal"),
+            identityIsExternal = true, payloadExternal = true)
+        Files.createDirectories(modern.target)
+        assertConflict(modern)
+        assertThat(Files.isDirectory(modern.target)).isTrue()
+
+        val knownExternal = fixture(WorkspaceMutationStage.DB_COMMITTED, false, parent.resolve("known-external"),
+            identityIsExternal = true, externalEvidence = true)
+        Files.createDirectories(knownExternal.target)
+        assertConflict(knownExternal)
+
+        val nonempty = fixture(WorkspaceMutationStage.DB_COMMITTED, false, parent.resolve("nonempty-terminal"), identityIsExternal = true)
+        Files.createDirectories(nonempty.target)
+        Files.write(nonempty.target.resolve("user-content"), "保留".toByteArray())
+        assertConflict(nonempty)
+        assertThat(nonempty.target.resolve("user-content").toFile().readText()).isEqualTo("保留")
+    }
+
+    @Test
     fun `DB_COMMITTED的both或数据库仍存在必须fail-close`() = runTest {
         val dbExists = fixture(WorkspaceMutationStage.DB_COMMITTED, true, createRoot("db-exists", "identity"))
         assertConflict(dbExists)
@@ -142,12 +168,16 @@ class WorkspaceMutationRecoveryCoordinatorTest {
         sourceRelative: String = source.fileName.toString(),
         operationId: String = "op-${source.fileName}",
         targetRelative: String = ".nexara_session_deletions/$operationId",
+        identityIsExternal: Boolean = false,
+        payloadExternal: Boolean = false,
+        externalEvidence: Boolean = false,
     ): Fixture {
         val payload = WorkspaceMutationPayload(
             sourceRelativePath = sourceRelative,
             targetRelativePath = targetRelative,
             databaseTargetUuid = "session-1",
             expectedSha256 = "identity",
+            rootIdentityExternal = payloadExternal,
         )
         val raw = WorkspaceMutationPayloadCodec.encode(payload)
         val entity = WorkspaceMutationEntity(
@@ -172,6 +202,8 @@ class WorkspaceMutationRecoveryCoordinatorTest {
                 check(Files.readAllBytes(marker).toString(Charsets.UTF_8) == expected)
             },
             identityMarkerName = ".identity",
+            identityIsExternal = identityIsExternal,
+            hasExternalRootIdentity = { externalEvidence },
         )
         return Fixture(coordinator, source, parent.resolve(targetRelative), deleted)
     }

@@ -1,5 +1,6 @@
 package com.promenar.nexara.domain.tool
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import java.net.URI
 import java.util.Locale
@@ -105,7 +106,8 @@ object ToolExecutionTargets {
         tuple.drop(1).any { item ->
             val path = (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@any false
             // 共享存储工作区大小写不敏感，项目技能目录的两段按忽略大小写比较；/skills 是精确匹配的虚拟根。
-            val folded = path.uppercase(Locale.ROOT).lowercase(Locale.ROOT)
+            val scopedPath = com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths.relative(path) ?: path
+            val folded = scopedPath.uppercase(Locale.ROOT).lowercase(Locale.ROOT)
             path == "/skills" || path.startsWith("/skills/") ||
                 folded == "/.agents" || folded == "/.agents/skills" || folded.startsWith("/.agents/skills/")
         }
@@ -199,16 +201,13 @@ object ToolExecutionTargets {
             Regex("^[A-Za-z]:[\\\\/].*").matches(path)
         ) return null
         val segments = path.replace('\\', '/').split('/').filter(String::isNotEmpty)
-        if (segments.any { it == "." || it == ".." || it.startsWith(".nexara", ignoreCase = true) } ||
-            segments.firstOrNull() == ".recycle_bin" ||
-            segments.firstOrNull() == "mnt" && segments.drop(1).any { it == ".recycle_bin" }
-        ) return null
+        if (segments.any { it == "." || it == ".." || WorkspaceInternalPaths.isReservedName(it) }) return null
         return "/" + segments.joinToString("/")
     }
 
     private fun validName(raw: String?): String? = raw?.trim()?.takeIf { name ->
         name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name && '\u0000' !in name &&
-            !name.startsWith(".nexara", ignoreCase = true) && name != ".recycle_bin"
+            !WorkspaceInternalPaths.isReservedName(name)
     }
 
     private fun webHost(args: JsonObject): String? {
