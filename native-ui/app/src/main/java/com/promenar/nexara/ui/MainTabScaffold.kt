@@ -30,6 +30,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,19 +62,62 @@ internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): andro
 
 internal fun bottomNavigationTabWeight(selected: Boolean): Float = if (selected) 1.45f else 1f
 
+/**
+ * 主标签页的状态：当前标签与宽屏设置右列的层级。由导航图持有，窗口变宽时导航图据此把整页设置子页收回右列。
+ */
+@Stable
+class MainTabsState(selectedTab: AppTab, settingsStack: List<String>, settingsLastRoot: String) {
+    var selectedTab by mutableStateOf(selectedTab)
+
+    /** 宽屏设置右列的页面层级（具体路由，首项为根）；单列时为空。 */
+    var settingsStack by mutableStateOf(settingsStack)
+
+    /** 右列上次显示的根页面：重新分两列时停在这里。 */
+    var settingsLastRoot by mutableStateOf(settingsLastRoot)
+
+    companion object {
+        val Saver: Saver<MainTabsState, Any> = listSaver(
+            save = { listOf(it.selectedTab.name, it.settingsLastRoot) + it.settingsStack },
+            restore = { MainTabsState(AppTab.valueOf(it[0]), it.drop(2), it[1]) },
+        )
+    }
+}
+
+@Composable
+fun rememberMainTabsState(): MainTabsState = rememberSaveable(saver = MainTabsState.Saver) {
+    MainTabsState(AppTab.CHAT, emptyList(), com.promenar.nexara.navigation.NavDestinations.THEME_CONFIG)
+}
+
 @Composable
 fun MainTabScaffold(
     onNavigateToSecondary: (String) -> Unit,
     onNavigateToAgentEdit: (String) -> Unit,
-    onNavigateToChat: (String) -> Unit
+    onNavigateToChat: (String) -> Unit,
+    state: MainTabsState = rememberMainTabsState(),
+    /** 设置子页的注册；给出且窗口足够宽时设置页分两列。 */
+    settingsPaneGraph: (androidx.navigation.NavGraphBuilder.(com.promenar.nexara.navigation.SettingsNavigator) -> Unit)? = null,
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(AppTab.CHAT) }
+    val selectedTab = state.selectedTab
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val settingsTwoPane = settingsPaneGraph != null &&
+        com.promenar.nexara.ui.settings.settingsTwoPaneAvailable(configuration.screenWidthDp, configuration.screenHeightDp)
+    // 窗口由宽变窄：右列层级改为主导航上的整页，返回仍逐层回到设置目录；单列显示目录时清空右列层级。
+    // 开合屏会重建 Activity，上一刻是否双列须跨重建保存，否则重建后看不出是从双列变来的。
+    var wasTwoPane by rememberSaveable { mutableStateOf(settingsTwoPane) }
+    LaunchedEffect(settingsTwoPane, selectedTab) {
+        if (!settingsTwoPane && selectedTab == AppTab.SETTINGS && state.settingsStack.isNotEmpty()) {
+            val pages = state.settingsStack
+            state.settingsStack = emptyList()
+            if (wasTwoPane) pages.forEach(onNavigateToSecondary)
+        }
+        wasTwoPane = settingsTwoPane
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         AdaptiveNavigationSurface(
             expanded = shouldUseNavigationRail(maxWidth),
             selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
+            onTabSelected = { state.selectedTab = it },
         ) {
             AnimatedContent(
                 targetState = selectedTab,
@@ -97,7 +142,15 @@ fun MainTabScaffold(
                         onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.docEditor(rootUuid, docId))
                     }
                 )
-                AppTab.SETTINGS -> com.promenar.nexara.ui.hub.UserSettingsHomeScreen(onNavigateToSecondary = onNavigateToSecondary)
+                AppTab.SETTINGS -> if (settingsTwoPane) {
+                    com.promenar.nexara.ui.settings.SettingsTwoPane(
+                        state = state,
+                        onNavigateToSecondary = onNavigateToSecondary,
+                        paneGraph = settingsPaneGraph,
+                    )
+                } else {
+                    com.promenar.nexara.ui.hub.UserSettingsHomeScreen(onNavigateToSecondary = onNavigateToSecondary)
+                }
             } }
         }
     }

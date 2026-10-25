@@ -17,10 +17,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.promenar.nexara.ui.theme.NexaraSpacing
+
+/** 宽屏设置右列的根层页面为 true：页面仍有标题，但不画返回按钮，离开它靠左列或主导航。 */
+val LocalNexaraSettingsPaneRoot = compositionLocalOf { false }
 
 /**
  * 设置层级页共用骨架。
@@ -56,7 +60,7 @@ fun NexaraSettingsPageLayout(
                     )
                 },
                 navigationIcon = {
-                    if (onBack != null) {
+                    if (onBack != null && !LocalNexaraSettingsPaneRoot.current) {
                         NexaraBackButton(onClick = onBack)
                     }
                 },

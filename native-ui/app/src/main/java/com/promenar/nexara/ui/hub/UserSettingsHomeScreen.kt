@@ -86,7 +86,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserSettingsHomeScreen(
-    onNavigateToSecondary: (String) -> Unit
+    onNavigateToSecondary: (String) -> Unit,
+    selectedRoute: String? = null,
 ) {
     val context = LocalContext.current
     val viewModel = viewModel<SettingsViewModel>(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -105,9 +106,10 @@ fun UserSettingsHomeScreen(
         onFailure = viewModel::reportAvatarImportFailure,
     )
 
-    val state = remember(userName, userAvatar, settingsError) {
+    val state = remember(userName, userAvatar, settingsError, selectedRoute) {
         UserSettingsHomeScreenState(
             userName = userName,
+            selectedRoute = selectedRoute,
             userAvatar = userAvatar,
             error = settingsError,
             localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
@@ -187,6 +189,8 @@ fun UserSettingsHomeScreen(
 
 internal data class UserSettingsHomeScreenState(
     val userName: String = "",
+    /** 宽屏双列时右列正在显示的根页面，对应条目高亮；单列为 null。 */
+    val selectedRoute: String? = null,
     val userAvatar: String? = null,
     val localInferenceAvailable: Boolean = false,
     val error: SettingsAsyncErrorCode? = null,
@@ -272,7 +276,8 @@ internal fun UserSettingsHomeScreenContent(
                         icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.settings_appearance),
                         subtitle = stringResource(R.string.settings_appearance_desc),
-                        onClick = { actions.onNavigateToSecondary(NavDestinations.THEME_CONFIG) }
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.THEME_CONFIG) },
+                        selected = state.selectedRoute == NavDestinations.THEME_CONFIG,
                     )
                 }
             }
@@ -286,12 +291,14 @@ internal fun UserSettingsHomeScreenContent(
                         icon = Icons.Rounded.Storage,
                         title = stringResource(R.string.settings_provider_management),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.PROVIDER_LIST) },
+                        selected = state.selectedRoute == NavDestinations.PROVIDER_LIST,
                         modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_ENTRY),
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.settings_default_models),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
+                        selected = state.selectedRoute == NavDestinations.DEFAULT_MODELS,
                         modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
                     )
                     if (state.localInferenceAvailable) {
@@ -300,7 +307,8 @@ internal fun UserSettingsHomeScreenContent(
                                 icon = Icons.Rounded.Memory,
                                 title = stringResource(R.string.settings_local_models),
                                 subtitle = stringResource(R.string.settings_local_models_desc),
-                                onClick = { actions.onNavigateToSecondary("local_models") }
+                                onClick = { actions.onNavigateToSecondary("local_models") },
+                                selected = state.selectedRoute == "local_models",
                             )
                         }
                     }
@@ -317,12 +325,14 @@ internal fun UserSettingsHomeScreenContent(
                         title = stringResource(R.string.settings_rag_config),
                         subtitle = stringResource(R.string.settings_batch1_home_rag_summary),
                         onClick = { actions.onNavigateToSecondary("rag_global_config") },
+                        selected = state.selectedRoute == "rag_global_config",
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Search,
                         title = stringResource(R.string.settings_advanced_retrieval),
                         subtitle = stringResource(R.string.settings_batch1_home_retrieval_summary),
                         onClick = { actions.onNavigateToSecondary("rag_advanced") },
+                        selected = state.selectedRoute == "rag_advanced",
                     )
                 }
             }
@@ -337,18 +347,21 @@ internal fun UserSettingsHomeScreenContent(
                         title = stringResource(R.string.settings_skills),
                         subtitle = stringResource(R.string.settings_batch1_home_skills_summary),
                         onClick = { actions.onNavigateToSecondary("skills_config") },
+                        selected = state.selectedRoute == "skills_config",
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Toll,
                         title = stringResource(R.string.settings_token_usage),
                         subtitle = stringResource(R.string.settings_batch1_home_token_summary),
                         onClick = { actions.onNavigateToSecondary("token_usage") },
+                        selected = state.selectedRoute == "token_usage",
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Backup,
                         title = stringResource(R.string.settings_backup),
                         subtitle = stringResource(R.string.settings_backup_desc),
                         onClick = { actions.onNavigateToSecondary("backup_settings") },
+                        selected = state.selectedRoute == "backup_settings",
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.BugReport,
@@ -387,14 +400,16 @@ private fun UserSettingsNavigationItem(
     subtitle: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
 ) {
     NexaraSettingsItem(
         icon = icon,
         title = title,
         subtitle = subtitle,
         onClick = onClick,
-        modifier = modifier,
+        modifier = if (selected) modifier.background(MaterialTheme.colorScheme.secondaryContainer) else modifier,
         showChevron = true,
+        selected = selected.takeIf { it },
     )
 }
 

@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -192,6 +193,35 @@ fun NexaraNavGraph(
         onOpenGenerationConsumed(request.requestId)
     }
 
+    val mainTabs = com.promenar.nexara.ui.rememberMainTabsState()
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val settingsTwoPane = com.promenar.nexara.ui.settings.settingsTwoPaneAvailable(configuration.screenWidthDp, configuration.screenHeightDp)
+    // 窗口变宽：设置标签打开的整页设置子页收回到设置右列，主导航回到主标签页。
+    LaunchedEffect(settingsTwoPane) {
+        if (!settingsTwoPane || mainTabs.selectedTab != com.promenar.nexara.ui.AppTab.SETTINGS) return@LaunchedEffect
+        val pages = NavControllerSettingsBackStack(navController).takeSettingsPagesAboveMainTabs() ?: return@LaunchedEffect
+        mainTabs.settingsStack = pages
+        mainTabs.settingsLastRoot = pages.first()
+    }
+
+    val providerFormHooks = ProviderFormHooks(
+        onboardingMode = {
+            onboardingState.step == OnboardingStep.PROVIDER ||
+                onboardingState.step == OnboardingStep.CONNECTION
+        },
+        forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
+        onSaved = { savedProviderId ->
+            if (onboardingState.step == OnboardingStep.PROVIDER) {
+                onboardingStore.recordProviderSaved(savedProviderId)
+            }
+        },
+        onConnectionVerified = { verifiedProviderId ->
+            if (onboardingState.step == OnboardingStep.CONNECTION) {
+                onboardingStore.recordConnectionResult(verifiedProviderId, succeeded = true)
+            }
+        },
+    )
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -312,7 +342,9 @@ fun NexaraNavGraph(
                 },
                 onNavigateToChat = { sessionId ->
                     navController.navigate(NavDestinations.chatHero(sessionId))
-                }
+                },
+                state = mainTabs,
+                settingsPaneGraph = { navigator -> settingsDestinations(navigator, providerFormHooks) },
             )
         }
 
@@ -435,6 +467,8 @@ fun NexaraNavGraph(
             )
         }
 
+        settingsDestinations(SettingsNavigator(navController), providerFormHooks)
+
         composable(
             route = NavDestinations.KNOWLEDGE_GRAPH_ROUTE,
             arguments = listOf(navArgument("query") { type = NavType.StringType; nullable = true; defaultValue = null }),
@@ -442,27 +476,6 @@ fun NexaraNavGraph(
             KnowledgeGraphScreen(
                 initialQuery = backStackEntry.arguments?.getString("query"),
                 onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(NavDestinations.RAG_ADVANCED) {
-            AdvancedRetrievalScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(NavDestinations.RAG_ADVANCED_KG) {
-            RagAdvancedScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToGraph = { navController.navigate(NavDestinations.KNOWLEDGE_GRAPH) }
-            )
-        }
-
-        composable(NavDestinations.RAG_GLOBAL_CONFIG) {
-            GlobalRagConfigScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToAdvanced = { navController.navigate(NavDestinations.RAG_ADVANCED_KG) },
-                onNavigateToDebug = { navController.navigate(NavDestinations.RAG_DEBUG) }
             )
         }
 
@@ -482,54 +495,154 @@ fun NexaraNavGraph(
             )
         }
 
-        composable(NavDestinations.RAG_DEBUG) {
-            RagDebugScreen(
-                onNavigateBack = { navController.popBackStack() }
+        composable(
+            NavDestinations.LINUX_TERMINAL,
+            arguments = listOf("session", "dir", "cmd").map { name ->
+                navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
+            },
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            val command = args?.getString("cmd")
+            val request = args?.getString("session")?.let {
+                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.SessionWorkspace(it), command)
+            } ?: args?.getString("dir")?.let {
+                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.Directory(it), command)
+            }
+            com.promenar.nexara.ui.linux.terminal.LinuxTerminalScreen(
+                request = request,
+                onBack = { navController.popBackStack() },
+                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
+            )
+        }
+        composable(
+            NavDestinations.LINUX_FILES,
+            arguments = listOf(navArgument("path") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { backStackEntry ->
+            com.promenar.nexara.ui.linux.files.LinuxFilesScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
+                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
+                initialPath = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
+                onOpenFile = { navController.navigate(NavDestinations.linuxFile(it)) },
+            )
+        }
+        composable(
+            NavDestinations.LINUX_FILE,
+            arguments = listOf(navArgument("path") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            com.promenar.nexara.ui.linux.files.LinuxFileScreen(
+                path = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
+            )
+        }
+        composable(
+            NavDestinations.COMMAND_OUTPUT,
+            arguments = listOf("sessionId", "messageId", "toolCallId").map { navArgument(it) { type = NavType.StringType } },
+        ) { backStackEntry ->
+            val args = requireNotNull(backStackEntry.arguments)
+            com.promenar.nexara.ui.linux.output.CommandOutputScreen(
+                source = com.promenar.nexara.ui.linux.output.CommandOutputSource(
+                    sessionId = requireNotNull(args.getString("sessionId")),
+                    messageId = requireNotNull(args.getString("messageId")),
+                    toolCallId = requireNotNull(args.getString("toolCallId")),
+                ),
+                onBack = { navController.popBackStack() },
+                onRerunInTerminal = { command, sessionId -> navController.navigate(NavDestinations.linuxTerminal(sessionId = sessionId, command = command)) },
             )
         }
 
-        composable(
-            route = NavDestinations.PROVIDER_FORM,
-            arguments = listOf(
-                navArgument("providerId") {
-                    type = NavType.StringType
-                    nullable = true
-                }
+        composable(NavDestinations.SSH_TERMINAL) { entry ->
+            val alias = entry.arguments?.getString("alias").orEmpty()
+            com.promenar.nexara.ui.ssh.SshTerminalScreen(alias, onBack = { navController.popBackStack() })
+        }
+    }
+}
+
+
+/** 提供商表单在引导流程中的回调；设置右列中引导已结束，沿用同一份。 */
+internal class ProviderFormHooks(
+    val onboardingMode: () -> Boolean,
+    val forceLocalProbeFailureForTesting: Boolean,
+    val onSaved: (String) -> Unit,
+    val onConnectionVerified: (String) -> Unit,
+)
+
+/**
+ * 设置子页的注册：主导航（整页）与宽屏设置右列（[SettingsNavigator] 带 outside）共用。
+ * 页面间跳转经 [navigator]，右列中打开终端、文件、知识图谱与会话等整页内容时交给主导航。
+ */
+internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator, providerForm: ProviderFormHooks) {
+    composable(NavDestinations.RAG_ADVANCED) { entry ->
+        navigator.Page(entry) {
+            AdvancedRetrievalScreen(
+                onNavigateBack = { navigator.back() }
             )
-        ) { backStackEntry ->
+        }
+    }
+
+    composable(NavDestinations.RAG_ADVANCED_KG) { entry ->
+        navigator.Page(entry) {
+            RagAdvancedScreen(
+                onNavigateBack = { navigator.back() },
+                onNavigateToGraph = { navigator.open(NavDestinations.KNOWLEDGE_GRAPH) }
+            )
+        }
+    }
+
+    composable(NavDestinations.RAG_GLOBAL_CONFIG) { entry ->
+        navigator.Page(entry) {
+            GlobalRagConfigScreen(
+                onNavigateBack = { navigator.back() },
+                onNavigateToAdvanced = { navigator.open(NavDestinations.RAG_ADVANCED_KG) },
+                onNavigateToDebug = { navigator.open(NavDestinations.RAG_DEBUG) }
+            )
+        }
+    }
+
+    composable(NavDestinations.RAG_DEBUG) { entry ->
+        navigator.Page(entry) {
+            RagDebugScreen(
+                onNavigateBack = { navigator.back() }
+            )
+        }
+    }
+
+    composable(
+        route = NavDestinations.PROVIDER_FORM,
+        arguments = listOf(
+            navArgument("providerId") {
+                type = NavType.StringType
+                nullable = true
+            }
+        )
+    ) { backStackEntry ->
+        navigator.Page(backStackEntry) {
+            val app = LocalContext.current.applicationContext as NexaraApplication
             val providerId = backStackEntry.arguments?.getString("providerId")
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
-            val onboardingMode = onboardingState.step == OnboardingStep.PROVIDER ||
-                onboardingState.step == OnboardingStep.CONNECTION
+            val onboardingMode = providerForm.onboardingMode()
             ProviderFormScreen(
                 providerId = providerId,
-                forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
-                onNavigateBack = { navController.popBackStack() },
-                onOpenTailscaleSettings = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
+                forceLocalProbeFailureForTesting = providerForm.forceLocalProbeFailureForTesting,
+                onNavigateBack = { navigator.back() },
+                onOpenTailscaleSettings = { navigator.open(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
                 onNavigateToModels = {
                     val pid = providerId ?: ""
-                    navController.navigate(NavDestinations.providerModels(pid)) {
+                    navigator.open(NavDestinations.providerModels(pid)) {
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
                     }
                 },
                 onNavigateToLocalModels = {
                     if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
-                        navController.navigate(NavDestinations.LOCAL_MODELS) {
+                        navigator.open(NavDestinations.LOCAL_MODELS) {
                             popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
                         }
                     }
                 },
                 onboardingMode = onboardingMode,
-                onSaved = { savedProviderId ->
-                    if (onboardingState.step == OnboardingStep.PROVIDER) {
-                        onboardingStore.recordProviderSaved(savedProviderId)
-                    }
-                },
-                onConnectionVerified = { verifiedProviderId ->
-                    if (onboardingState.step == OnboardingStep.CONNECTION) {
-                        onboardingStore.recordConnectionResult(verifiedProviderId, succeeded = true)
-                    }
-                },
+                onSaved = providerForm.onSaved,
+                onConnectionVerified = providerForm.onConnectionVerified,
                 onSave = { protocolType, baseUrl, credential, model, name ->
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                       val providerManager = com.promenar.nexara.data.manager.ProviderManager.getInstance()
@@ -596,188 +709,164 @@ fun NexaraNavGraph(
                 }
             )
         }
+    }
 
-        composable(
-            route = NavDestinations.PROVIDER_MODELS,
-            arguments = listOf(navArgument("providerId") { type = NavType.StringType })
-        ) { backStackEntry ->
+    composable(
+        route = NavDestinations.PROVIDER_MODELS,
+        arguments = listOf(navArgument("providerId") { type = NavType.StringType })
+    ) { backStackEntry ->
+        navigator.Page(backStackEntry) {
             val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
             val context = LocalContext.current
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
 
             ProviderModelsScreen(
                 providerId = providerId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        composable(NavDestinations.TOKEN_USAGE) {
+    composable(NavDestinations.TOKEN_USAGE) { entry ->
+        navigator.Page(entry) {
             TokenUsageScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        composable(NavDestinations.SKILLS_CONFIG) {
+    composable(NavDestinations.SKILLS_CONFIG) { entry ->
+        navigator.Page(entry) {
             SkillsScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
-                onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
-                onOpenGitCredentials = { navController.navigate(NavDestinations.GIT_CREDENTIALS) },
-                onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
-                onOpenBackground = { navController.navigate(NavDestinations.BACKGROUND_ACTIVITY) },
-                onOpenNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) },
-                onOpenLinux = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
+                onNavigateBack = { navigator.back() },
+                onOpenSsh = { navigator.open(NavDestinations.SSH_CONFIG) },
+                onOpenTermux = { navigator.open(NavDestinations.TERMUX_CONFIG) },
+                onOpenGitCredentials = { navigator.open(NavDestinations.GIT_CREDENTIALS) },
+                onOpenTailscale = { navigator.open(NavDestinations.TAILSCALE_CONFIG) },
+                onOpenBackground = { navigator.open(NavDestinations.BACKGROUND_ACTIVITY) },
+                onOpenNetworkAccess = { navigator.open(NavDestinations.NETWORK_ACCESS) },
+                onOpenLinux = { navigator.open(NavDestinations.LINUX_ENVIRONMENT) },
             )
         }
+    }
 
-        composable(NavDestinations.LINUX_ENVIRONMENT) {
+    composable(NavDestinations.LINUX_ENVIRONMENT) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.linux.settings.LinuxEnvironmentScreen(
-                onBack = { navController.popBackStack() },
-                onOpenTerminal = { navController.navigate(NavDestinations.linuxTerminal()) },
-                onOpenFiles = { navController.navigate(NavDestinations.linuxFiles()) },
-                onOpenPackages = { navController.navigate(NavDestinations.LINUX_PACKAGES) },
-                onOpenMirrors = { navController.navigate(NavDestinations.LINUX_MIRRORS) },
-                onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
-                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+                onBack = { navigator.back() },
+                onOpenTerminal = { navigator.open(NavDestinations.linuxTerminal()) },
+                onOpenFiles = { navigator.open(NavDestinations.linuxFiles()) },
+                onOpenPackages = { navigator.open(NavDestinations.LINUX_PACKAGES) },
+                onOpenMirrors = { navigator.open(NavDestinations.LINUX_MIRRORS) },
+                onOpenTermux = { navigator.open(NavDestinations.TERMUX_CONFIG) },
+                onOpenSsh = { navigator.open(NavDestinations.SSH_CONFIG) },
             )
         }
-        composable(NavDestinations.LINUX_PACKAGES) {
-            com.promenar.nexara.ui.linux.settings.LinuxPackagesScreen(onBack = { navController.popBackStack() })
-        }
-        composable(NavDestinations.LINUX_MIRRORS) {
-            com.promenar.nexara.ui.linux.settings.LinuxMirrorsScreen(onBack = { navController.popBackStack() })
-        }
-        composable(
-            NavDestinations.LINUX_TERMINAL,
-            arguments = listOf("session", "dir", "cmd").map { name ->
-                navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
-            },
-        ) { backStackEntry ->
-            val args = backStackEntry.arguments
-            val command = args?.getString("cmd")
-            val request = args?.getString("session")?.let {
-                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.SessionWorkspace(it), command)
-            } ?: args?.getString("dir")?.let {
-                com.promenar.nexara.ui.linux.terminal.LinuxTerminalRequest(com.promenar.nexara.domain.linux.LinuxTerminalLocation.Directory(it), command)
-            }
-            com.promenar.nexara.ui.linux.terminal.LinuxTerminalScreen(
-                request = request,
-                onBack = { navController.popBackStack() },
-                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
-            )
-        }
-        composable(
-            NavDestinations.LINUX_FILES,
-            arguments = listOf(navArgument("path") { type = NavType.StringType; nullable = true; defaultValue = null }),
-        ) { backStackEntry ->
-            com.promenar.nexara.ui.linux.files.LinuxFilesScreen(
-                onBack = { navController.popBackStack() },
-                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
-                onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
-                initialPath = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
-                onOpenFile = { navController.navigate(NavDestinations.linuxFile(it)) },
-            )
-        }
-        composable(
-            NavDestinations.LINUX_FILE,
-            arguments = listOf(navArgument("path") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            com.promenar.nexara.ui.linux.files.LinuxFileScreen(
-                path = backStackEntry.arguments?.getString("path") ?: com.promenar.nexara.ui.linux.files.LINUX_HOME_PATH,
-                onBack = { navController.popBackStack() },
-                onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
-            )
-        }
-        composable(
-            NavDestinations.COMMAND_OUTPUT,
-            arguments = listOf("sessionId", "messageId", "toolCallId").map { navArgument(it) { type = NavType.StringType } },
-        ) { backStackEntry ->
-            val args = requireNotNull(backStackEntry.arguments)
-            com.promenar.nexara.ui.linux.output.CommandOutputScreen(
-                source = com.promenar.nexara.ui.linux.output.CommandOutputSource(
-                    sessionId = requireNotNull(args.getString("sessionId")),
-                    messageId = requireNotNull(args.getString("messageId")),
-                    toolCallId = requireNotNull(args.getString("toolCallId")),
-                ),
-                onBack = { navController.popBackStack() },
-                onRerunInTerminal = { command, sessionId -> navController.navigate(NavDestinations.linuxTerminal(sessionId = sessionId, command = command)) },
-            )
-        }
+    }
 
-        composable(NavDestinations.NETWORK_ACCESS) {
+    composable(NavDestinations.LINUX_PACKAGES) { entry ->
+        navigator.Page(entry) {
+            com.promenar.nexara.ui.linux.settings.LinuxPackagesScreen(onBack = { navigator.back() })
+        }
+    }
+
+    composable(NavDestinations.LINUX_MIRRORS) { entry ->
+        navigator.Page(entry) {
+            com.promenar.nexara.ui.linux.settings.LinuxMirrorsScreen(onBack = { navigator.back() })
+        }
+    }
+
+    composable(NavDestinations.NETWORK_ACCESS) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.settings.NetworkAccessSettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenTailscale = { navController.navigate(NavDestinations.TAILSCALE_CONFIG) },
+                onBack = { navigator.back() },
+                onOpenTailscale = { navigator.open(NavDestinations.TAILSCALE_CONFIG) },
             )
         }
+    }
 
-        composable(NavDestinations.BACKGROUND_ACTIVITY) {
+    composable(NavDestinations.BACKGROUND_ACTIVITY) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.settings.BackgroundActivitySettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSession = { sessionId -> navController.navigate(NavDestinations.chatHero(sessionId)) },
+                onBack = { navigator.back() },
+                onOpenSession = { sessionId -> navigator.open(NavDestinations.chatHero(sessionId)) },
             )
         }
+    }
 
-        composable(NavDestinations.TAILSCALE_CONFIG) {
-            com.promenar.nexara.ui.settings.TailscaleSettingsScreen(onBack = { navController.popBackStack() })
+    composable(NavDestinations.TAILSCALE_CONFIG) { entry ->
+        navigator.Page(entry) {
+            com.promenar.nexara.ui.settings.TailscaleSettingsScreen(onBack = { navigator.back() })
         }
+    }
 
-        composable(NavDestinations.TERMUX_CONFIG) {
+    composable(NavDestinations.TERMUX_CONFIG) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.settings.TermuxSettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+                onBack = { navigator.back() },
+                onOpenSsh = { navigator.open(NavDestinations.SSH_CONFIG) },
             )
         }
+    }
 
-        composable(NavDestinations.SSH_CONFIG) {
+    composable(NavDestinations.SSH_CONFIG) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.settings.SshSettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenTerminal = { alias -> navController.navigate("ssh_terminal/${android.net.Uri.encode(alias)}") },
+                onBack = { navigator.back() },
+                onOpenTerminal = { alias -> navigator.open("ssh_terminal/${android.net.Uri.encode(alias)}") },
             )
         }
-        composable(NavDestinations.SSH_TERMINAL) { entry ->
-            val alias = entry.arguments?.getString("alias").orEmpty()
-            com.promenar.nexara.ui.ssh.SshTerminalScreen(alias, onBack = { navController.popBackStack() })
-        }
-        composable(NavDestinations.GIT_CREDENTIALS) {
+    }
+
+    composable(NavDestinations.GIT_CREDENTIALS) { entry ->
+        navigator.Page(entry) {
             com.promenar.nexara.ui.settings.GitCredentialSettingsScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+                onBack = { navigator.back() },
+                onOpenSsh = { navigator.open(NavDestinations.SSH_CONFIG) },
             )
         }
+    }
 
-        composable(NavDestinations.THEME_CONFIG) {
+    composable(NavDestinations.THEME_CONFIG) { entry ->
+        navigator.Page(entry) {
             ThemeScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        composable(NavDestinations.PROVIDER_LIST) {
+    composable(NavDestinations.PROVIDER_LIST) { entry ->
+        navigator.Page(entry) {
             ProviderListScreen(
-                onNavigateToSecondary = { route -> navController.navigate(route) },
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateToSecondary = { route -> navigator.open(route) },
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        composable(NavDestinations.DEFAULT_MODELS) {
+    composable(NavDestinations.DEFAULT_MODELS) { entry ->
+        navigator.Page(entry) {
             DefaultModelsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        composable(NavDestinations.BACKUP_SETTINGS) {
+    composable(NavDestinations.BACKUP_SETTINGS) { entry ->
+        navigator.Page(entry) {
             BackupSettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navigator.back() }
             )
         }
+    }
 
-        if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
-            composable(NavDestinations.LOCAL_MODELS) {
+    if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
+        composable(NavDestinations.LOCAL_MODELS) { entry ->
+            navigator.Page(entry) {
                 LocalModelsScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navigator.back() }
                 )
             }
         }
-
     }
 }
