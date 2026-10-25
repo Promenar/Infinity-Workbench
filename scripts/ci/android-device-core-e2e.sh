@@ -99,7 +99,11 @@ restore_setting() {
     local namespace="$1"
     local key="$2"
     local value="$3"
-    if [[ -z "${value}" || "${value}" == "null" ]]; then
+    # 读取失败（空值）时不改动；删除会让 ColorOS 等系统回到默认值，例如重新打开自动旋转。
+    if [[ -z "${value}" ]]; then
+        return 0
+    fi
+    if [[ "${value}" == "null" ]]; then
         adb shell settings delete "${namespace}" "${key}" >/dev/null 2>&1 || true
     else
         adb shell settings put "${namespace}" "${key}" "${value}" >/dev/null 2>&1 || true
@@ -127,6 +131,22 @@ restore_device_display_state() {
     DISPLAY_STATE_CAPTURED=false
 }
 
+# instrumentation 结束时 UiAutomation 可能解冻屏幕旋转；整轮开始时记录、退出时恢复用户的旋转设置。
+ROTATION_STATE_CAPTURED=false
+capture_rotation_state() {
+    SESSION_ACCELEROMETER_ROTATION="$(adb shell settings get system accelerometer_rotation 2>/dev/null | tr -d '\r')"
+    SESSION_USER_ROTATION="$(adb shell settings get system user_rotation 2>/dev/null | tr -d '\r')"
+    ROTATION_STATE_CAPTURED=true
+}
+
+restore_rotation_state() {
+    if [[ "${ROTATION_STATE_CAPTURED}" != "true" ]]; then
+        return 0
+    fi
+    restore_setting system accelerometer_rotation "${SESSION_ACCELEROMETER_ROTATION}"
+    restore_setting system user_rotation "${SESSION_USER_ROTATION}"
+}
+
 finish_run() {
     local exit_code="$1"
     if [[ "${SSH_REVERSE_ACTIVE}" == "true" ]]; then
@@ -140,6 +160,7 @@ finish_run() {
     fi
     capture_artifacts "${exit_code}"
     restore_device_display_state
+    restore_rotation_state
 }
 
 trap 'finish_run "$?"' EXIT
@@ -411,6 +432,7 @@ require_file "${APP_TEST_APK}"
 require_file "${MAIN_ACTIVITY_TEST_APK}"
 
 adb wait-for-device
+capture_rotation_state
 adb shell pm uninstall "${TARGET_PACKAGE}" >/dev/null 2>&1 || true
 adb install --no-streaming "${APP_APK}"
 adb install -r --no-streaming "${APP_TEST_APK}"

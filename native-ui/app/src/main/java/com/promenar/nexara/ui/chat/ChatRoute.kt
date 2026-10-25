@@ -622,6 +622,7 @@ fun ChatRoute(
             workspaceLocatePath = path
             requestOverlay(ChatOverlay.Workspace)
         },
+        primaryWorkspaceId = uiState.session?.workspaceId,
     ) {
     // 从系统授权页返回时重新读取精确闹钟权限，授权入口随之消失。
     var exactAlarmGranted by remember { mutableStateOf(com.promenar.nexara.background.schedule.canScheduleExact(context)) }
@@ -929,6 +930,7 @@ fun ChatRoute(
             onOpenSession = onNavigateToSession,
         )
     }
+    val runModeSwitchFailed = stringResource(R.string.run_mode_switch_failed)
     com.promenar.nexara.ui.chat.runmode.RunModePickerSheet(
         show = showRunModePicker,
         selected = runModeStatus?.mode,
@@ -941,7 +943,7 @@ fun ChatRoute(
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    android.widget.Toast.makeText(context, context.getString(R.string.run_mode_switch_failed), android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, runModeSwitchFailed, android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         },

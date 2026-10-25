@@ -14,7 +14,7 @@
     <string name="startup_issues_abandon">Discard this operation</string>
     <string name="startup_issues_abandon_note">Discarding keeps your files as they are and only closes out the unfinished record.</string>
     <string name="startup_issues_abandon_title">Discard the unfinished operation?</string>
-    <string name="startup_issues_abandon_message">Your files stay exactly as they are now. Nexara only closes out the record, then checks the workspace again. If it still isn\'t consistent, it stays paused.</string>
+    <string name="startup_issues_abandon_message">Your files stay exactly as they are now. The app only closes out the record, then checks the workspace again. If it still isn\'t consistent, it stays paused.</string>
     <string name="startup_issues_diagnose">Let an agent diagnose</string>
     <string name="startup_issues_diagnose_unavailable">Create an assistant first to diagnose with an agent.</string>
     <string name="startup_issues_records">Diagnostic records</string>

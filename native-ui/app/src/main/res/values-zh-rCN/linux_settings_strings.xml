@@ -93,7 +93,7 @@
     <string name="linux_action_files">文件</string>
     <string name="linux_action_packages">软件包</string>
     <string name="linux_paths_title">路径映射</string>
-    <string name="linux_paths_subtitle">工作区 → /workspace · 挂载 → /mnt/&lt;别名&gt;</string>
+    <string name="linux_paths_subtitle">工作区 → /workspace · 会话目录 → /home/session · 挂载 → /mnt/&lt;别名&gt;</string>
     <string name="linux_section_storage">存储 · 共 %1$s</string>
     <string name="linux_section_storage_loading">存储</string>
     <string name="linux_storage_base">基础系统 %1$s</string>

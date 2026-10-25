@@ -38,6 +38,8 @@ class SessionListViewModelTest {
         Dispatchers.setMain(testDispatcher)
         store = ChatStore()
         sessionRepo = mockk(relaxed = true)
+        // 创建后回读持久化会话；未持久化时使用创建时的会话。
+        coEvery { sessionRepo.getById(any()) } returns null
         agentRepo = mockk(relaxed = true)
     }
 

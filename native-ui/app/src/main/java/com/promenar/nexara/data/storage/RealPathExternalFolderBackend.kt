@@ -726,6 +726,9 @@ class RealPathExternalFolderBackend internal constructor(
                 throw ExternalFolderException(code, "存储操作失败，请检查目录与授权").apply { initCause(exception) }
             } catch (exception: SecurityException) {
                 throw ExternalFolderException("UNAVAILABLE", "存储授权不可用").apply { initCause(exception) }
+            } catch (exception: FileAlreadyExistsException) {
+                // 不覆盖发布时目标名已被并发创建者占用，与 EEXIST 一致按冲突处理，双方内容均保留。
+                throw ExternalFolderException("CONFLICT", "目标名称在写入期间被占用，请重新读取").apply { initCause(exception) }
             } catch (exception: IOException) {
                 throw ExternalFolderException("UNAVAILABLE", "存储操作失败，请检查目录与授权").apply { initCause(exception) }
             }

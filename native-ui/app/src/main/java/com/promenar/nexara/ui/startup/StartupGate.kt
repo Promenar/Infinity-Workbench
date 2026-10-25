@@ -83,7 +83,7 @@ fun StartupGate(
                     blockedDetail?.takeIf(String::isNotBlank)?.let { detail ->
                         Text(
                             text = stringResource(R.string.startup_blocked_detail_label) + ": " + detail,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = com.promenar.nexara.ui.theme.NexaraMonospace),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))

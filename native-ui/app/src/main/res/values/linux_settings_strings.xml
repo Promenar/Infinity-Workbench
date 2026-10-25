@@ -93,7 +93,7 @@
     <string name="linux_action_files">Files</string>
     <string name="linux_action_packages">Packages</string>
     <string name="linux_paths_title">Path mapping</string>
-    <string name="linux_paths_subtitle">Workspace → /workspace · Mounts → /mnt/&lt;alias&gt;</string>
+    <string name="linux_paths_subtitle">Workspace → /workspace · Session folder → /home/session · Mounts → /mnt/&lt;alias&gt;</string>
     <string name="linux_section_storage">Storage · %1$s total</string>
     <string name="linux_section_storage_loading">Storage</string>
     <string name="linux_storage_base">Base system %1$s</string>

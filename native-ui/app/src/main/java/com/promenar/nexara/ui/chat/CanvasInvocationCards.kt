@@ -87,10 +87,14 @@ private fun CanvasReferenceCard(access: CanvasSessionAccess, reference: CanvasIn
     val metadata = access.canvases.find { it.id == reference.id }
     var html by remember(access.sessionId, reference.id, metadata?.currentVersion) { mutableStateOf<String?>(null) }
     var failed by remember(access.sessionId, reference.id, metadata?.currentVersion) { mutableStateOf(false) }
+    // 持久元数据保存逻辑路径；卡片显示按会话运行模式呈现的路径（Linux 会话为 /home/session 或 /workspace）。
+    var presentedPath by remember(access.sessionId, reference.id, metadata?.currentVersion) { mutableStateOf<String?>(null) }
     LaunchedEffect(access.sessionId, reference.id, metadata?.currentVersion, access.loaded) {
         if (!access.loaded) return@LaunchedEffect
         try {
-            html = access.store.read(access.sessionId, reference.id)?.html
+            val document = access.store.read(access.sessionId, reference.id)
+            html = document?.html
+            presentedPath = document?.metadata?.workspacePath
             failed = html == null
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failed = true }
@@ -112,12 +116,12 @@ private fun CanvasReferenceCard(access: CanvasSessionAccess, reference: CanvasIn
         html = html,
         onOpen = { access.openVersion(reference.id, reference.version) },
         previewFailed = failed,
-        workspacePath = metadata?.workspacePath,
+        workspacePath = metadata?.workspacePath?.let { presentedPath ?: it },
         workspaceWarning = metadata?.workspaceSync == CanvasWorkspaceSync.FAILED,
         onOpenLatest = { access.open(reference.id) },
         onCopySource = { access.copySource(reference.id, reference.version) },
-        onRevealInWorkspace = metadata?.workspacePath
-            ?.takeIf { metadata.workspaceSync != CanvasWorkspaceSync.MISSING }
+        onRevealInWorkspace = metadata
+            ?.let { com.promenar.nexara.ui.canvas.canvasRevealPath(it, access.primaryWorkspaceId) }
             ?.let { path -> { access.revealInWorkspace(path) } },
     )
 }

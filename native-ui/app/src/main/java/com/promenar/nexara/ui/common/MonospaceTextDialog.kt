@@ -13,10 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -35,7 +35,7 @@ fun MonospaceTextDialog(title: String, message: String, text: String, onDismiss:
             SelectionContainer {
                 Text(
                     text,
-                    style = NexaraTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    style = NexaraTypography.labelSmall.copy(fontFamily = NexaraMonospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()

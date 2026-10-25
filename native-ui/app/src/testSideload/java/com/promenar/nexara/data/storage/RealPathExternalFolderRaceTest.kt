@@ -110,17 +110,14 @@ class RealPathExternalFolderRaceTest {
     fun occupiedNameDuringPublishRetainsBothVersionsAndReportsQuarantine() = runBlocking {
         val fixture = fixture()
         val file = File(fixture.original, "file.txt")
-        fixture.fileSystem.beforeOperation = { operation, path ->
-            if (operation == "create" && path == file.toPath()) {
-                fixture.fileSystem.beforeOperation = null
-                file.writeText("concurrent")
-            }
-        }
+        fixture.publishingTo(file) { file.writeText("concurrent") }
         val failure = try { fixture.fileSystem.backend(fixture.root).write("/notes/file.txt", "tool-version".toByteArray()); null }
         catch (exception: ExternalFolderException) { exception }
         assertEquals("RECOVERY_REQUIRED", failure?.code)
         assertEquals("concurrent", file.readText())
-        val retained = fixture.original.listFiles()!!.single { it.name.startsWith(".nexara-replace-") }
+        // 原文隔离副本留在根下内部目录，不散落到用户目录。
+        assertFalse(fixture.original.listFiles()!!.any { it.name.startsWith(".nexara") })
+        val retained = File(fixture.root, ".nexara").listFiles()!!.single { it.name.startsWith(".nexara-replace-") }
         assertEquals("inside", retained.readText())
         assertTrue(failure!!.message.contains(retained.name))
     }
@@ -145,12 +142,7 @@ class RealPathExternalFolderRaceTest {
     fun newFileDoesNotOverwriteConcurrentCreator() = runBlocking {
         val fixture = fixture()
         val file = File(fixture.original, "new.txt")
-        fixture.fileSystem.beforeOperation = { operation, path ->
-            if (operation == "create" && path == file.toPath()) {
-                fixture.fileSystem.beforeOperation = null
-                file.writeText("concurrent")
-            }
-        }
+        fixture.publishingTo(file) { file.writeText("concurrent") }
         val failure = try { fixture.fileSystem.backend(fixture.root).write("/notes/new.txt", "tool-version".toByteArray(), createOnly = true); null }
         catch (exception: ExternalFolderException) { exception }
         assertEquals("CONFLICT", failure?.code)
@@ -167,6 +159,17 @@ class RealPathExternalFolderRaceTest {
     }
 
     private data class Fixture(val root: File, val original: File, val moved: File, val outside: File, val fileSystem: JvmBoundRealPathFileSystem) {
+        /** 新内容在根下 `.nexara/` 暂存，发布到 [target] 前一刻触发 [concurrent]。 */
+        fun publishingTo(target: File, concurrent: () -> Unit) {
+            val internal = File(root, ".nexara").toPath()
+            fileSystem.beforeOperation = { operation, path ->
+                if (operation == "move" && path.parent == internal && path.fileName.toString().startsWith(".nexara-write-") && target.parentFile.exists()) {
+                    fileSystem.beforeOperation = null
+                    concurrent()
+                }
+            }
+        }
+
         fun swapOn(operation: String) {
             fileSystem.beforeOperation = { current, path ->
                 if (current == operation && path.startsWith(original.toPath())) {

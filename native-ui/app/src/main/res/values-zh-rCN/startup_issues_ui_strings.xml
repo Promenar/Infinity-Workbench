@@ -13,7 +13,7 @@
     <string name="startup_issues_abandon">放弃这次操作</string>
     <string name="startup_issues_abandon_note">放弃：保留文件现状，只收尾这条未完成的记录。</string>
     <string name="startup_issues_abandon_title">放弃未完成的操作？</string>
-    <string name="startup_issues_abandon_message">文件保持现在的样子，Nexara 只收尾这条记录，然后重新检查工作区；仍不一致时继续暂停写入。</string>
+    <string name="startup_issues_abandon_message">文件保持现在的样子，应用只收尾这条记录，然后重新检查工作区；仍不一致时继续暂停写入。</string>
     <string name="startup_issues_diagnose">让 Agent 诊断</string>
     <string name="startup_issues_diagnose_unavailable">先创建一个助手，才能让 Agent 诊断。</string>
     <string name="startup_issues_records">诊断记录</string>

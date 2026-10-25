@@ -20,7 +20,8 @@ class PdfBoxStartupWiringTest {
             "PDFBoxResourceLoader.init(applicationContext)",
             startIndex = relayExit,
         )
-        val recovery = onCreate.indexOf("startBackupRecovery()")
+        // 启动问题解决回调也会调用恢复，但只是注册；这里核对 relay 退出之后的同步启动点。
+        val recovery = onCreate.indexOf("startBackupRecovery()", startIndex = relayExit)
 
         assertThat(relayGuard).isAtLeast(0)
         assertThat(relayExit).isGreaterThan(relayGuard)

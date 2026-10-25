@@ -22,6 +22,8 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.canvas.CanvasDocument
 import com.promenar.nexara.data.canvas.CanvasMetadata
 import com.promenar.nexara.data.canvas.CanvasStore
+import com.promenar.nexara.data.canvas.CanvasWorkspaceSync
+import com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import kotlinx.coroutines.CancellationException
@@ -39,7 +41,26 @@ internal data class CanvasSessionAccess(
     val openVersion: (String, Int) -> Unit = { id, _ -> open(id) },
     val copySource: (String, Int) -> Unit = { _, _ -> },
     val revealInWorkspace: (String) -> Unit = {},
+    /** 当前主工作区登记 ID；为空表示主工作区就是会话私有空间。 */
+    val primaryWorkspaceId: String? = null,
 )
+
+/**
+ * 资源管理器只浏览当前主工作区：画布镜像的绑定与当前主工作区一致时才返回可定位路径。
+ * 无绑定的旧画布按主工作区处理；落在会话私有空间而主工作区是登记项目时不提供定位。
+ */
+internal fun canvasRevealPath(metadata: CanvasMetadata, primaryWorkspaceId: String?): String? {
+    if (metadata.workspaceSync == CanvasWorkspaceSync.MISSING) return null
+    val path = metadata.workspacePath ?: return null
+    val relative = listOf("/home/session/", "/workspace/", "/session/", "/").firstOrNull(path::startsWith)
+        ?.let(path::removePrefix) ?: path
+    val binding = metadata.workspaceDestination ?: return "/$relative"
+    val inPrimary = when (binding.destination) {
+        WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE -> primaryWorkspaceId != null && binding.workspaceId == primaryWorkspaceId
+        WorkspaceDefaultFileDestination.SESSION_PRIVATE -> primaryWorkspaceId == null
+    }
+    return "/$relative".takeIf { inPrimary }
+}
 
 internal val LocalCanvasSession = staticCompositionLocalOf<CanvasSessionAccess?> { null }
 
@@ -50,6 +71,7 @@ fun CanvasSessionHost(
     store: CanvasStore,
     onInsertText: (String) -> Unit,
     onRevealInWorkspace: (String) -> Unit = {},
+    primaryWorkspaceId: String? = null,
     content: @Composable () -> Unit,
 ) = key(sessionId, store) {
     var canvases by remember { mutableStateOf<List<CanvasMetadata>>(emptyList()) }
@@ -89,6 +111,7 @@ fun CanvasSessionHost(
             }
         },
         revealInWorkspace = { path -> currentReveal(path) },
+        primaryWorkspaceId = primaryWorkspaceId,
     )
     CompositionLocalProvider(LocalCanvasSession provides access) { content() }
     NexaraBottomSheet(show = showList, onDismiss = { showList = false }, title = null, height = NexaraSheetHeight.Full, dragGesturesEnabled = false) {
