@@ -234,7 +234,7 @@ private fun PanelStates() {
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         states.forEach { state ->
-            GitChangesPanel(state = state, actions = GitPanelActions(), modifier = Modifier.fillMaxWidth().height(280.dp))
+            GitChangesPanel(state = state, actions = GitPanelActions(), modifier = Modifier.fillMaxWidth().height(280.dp), nowMillis = PreviewNow)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }

@@ -101,6 +101,35 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `source与target同一路径的move journal按空操作收尾`() = runTest {
+        // 移入原所在目录会写下 source == target 的 journal；该路径既是 source 也是 target，两者必然同时存在。
+        database.fileEntryDao().insertAbort(entry("file", "/same.txt", "same.txt", "root"))
+        fileOps.createFile(root, listOf("same.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "same.txt", "same.txt")
+
+        coordinator().recoverOrThrow()
+
+        assertThat(Files.readAllBytes(root.resolve("same.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
+    fun `同一路径move journal之后节点已改名时只收尾journal不动文件和数据库`() = runTest {
+        // 失败的同路径移动之后，同一节点又被改名到别处；journal 本身从未改变任何东西。
+        database.fileEntryDao().insertAbort(entry("file", "/renamed.txt", "renamed.txt", "root"))
+        fileOps.createFile(root, listOf("renamed.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "same.txt", "same.txt")
+
+        coordinator().recoverOrThrow()
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+        assertThat(Files.readAllBytes(root.resolve("renamed.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(Files.exists(root.resolve("same.txt"))).isFalse()
+        assertThat(database.fileEntryDao().getAnyStateByUuidForLifecycle("root", "file")?.materializedPath)
+            .isEqualTo("/renamed.txt")
+    }
+
+    @Test
     fun `move恢复拒绝符号链接target且不改DB和文件`() = runTest {
         database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root"))
         fileOps.createFile(root, listOf("source.txt"), "source".toByteArray())

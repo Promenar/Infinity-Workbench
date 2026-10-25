@@ -333,6 +333,12 @@ class WorkspaceFileMutationRecoveryCoordinator(
         source: List<String>,
         target: List<String>,
     ) {
+        // source 与 target 同一路径（移入原所在目录）的 journal 既不移动文件也不改数据库，只需收尾；
+        // 此后同一节点可能已被其它操作改名或删除，数据库路径不再作为判断依据。
+        if (normalize(sourceRaw) == normalize(targetRaw)) {
+            deleteForState(entity)
+            return
+        }
         val sourceExists = fileOps.exists(root, source)
         val targetExists = fileOps.exists(root, target)
         if (sourceExists == targetExists) conflict("移动类 journal 文件布局冲突")

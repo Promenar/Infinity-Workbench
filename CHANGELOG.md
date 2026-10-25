@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Git 面板中增删都为 0 的变更（如空文件）不再显示绿色“+0”，改为进入详情的箭头。
 - 暗色主题下画布页面若没有自带暗色适配（未声明含 dark 的 color-scheme 或 prefers-color-scheme 暗色规则），改按浅色页面排版并由系统 WebView 自动变暗（Android 13 起；Android 12 保持浅色页面），不再强加浅色文字，修复页面自设浅色背景（如表头）上浅字浅底看不清；画布 WebView 的 prefers-color-scheme 随应用浅色/暗色主题；画布工具说明提示模型声明暗色适配并成对设置背景与文字颜色。
 - 宽屏运行侧栏的宽度门槛从 840dp 降为 681dp（侧栏 320dp 加至少 360dp 会话列），折叠屏内屏（如 OPPO Find N5 约 690–810dp）展开后也显示侧栏。
+- 启动恢复遇到源与目标为同一路径的移动 journal（旧版本中把文件移入它原本所在的目录会留下这种记录）时直接收尾，不再判定为文件布局冲突并锁定在“安全恢复需要处理”。
 
 ### 会话界面：宽屏运行侧栏
 
