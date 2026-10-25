@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.TimeZone
 
 class LinuxLaunchTest {
     @TempDir lateinit var temporary: Path
@@ -47,7 +48,7 @@ class LinuxLaunchTest {
         assertEquals("custom", launch.environment["HTTPS_PROXY"])
         assertEquals("1", launch.environment["PIP_BREAK_SYSTEM_PACKAGES"])
         assertEquals("C.UTF-8", launch.environment["LANG"])
-        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "HOME", "PATH", "LANG", "TERM", "PIP_BREAK_SYSTEM_PACKAGES", "SHELL", "HTTPS_PROXY"), launch.environment.keys)
+        assertEquals(setOf("PROOT_LOADER", "PROOT_TMP_DIR", "HOME", "PATH", "LANG", "TERM", "TZ", "PIP_BREAK_SYSTEM_PACKAGES", "SHELL", "HTTPS_PROXY"), launch.environment.keys)
         assertFalse(launch.environment.containsKey("NEXARA_WORKSPACE"))
         assertEquals(listOf("-w", "/root", "/bin/sh", "-l"), launch.arguments.takeLast(4))
         assertEquals("/bin/sh", launch.environment["SHELL"])
@@ -62,6 +63,33 @@ class LinuxLaunchTest {
         File(root, "bin/bash").delete()
         Files.createSymbolicLink(File(root, "bin/bash").toPath(), temporary.resolve("outside"))
         assertEquals(listOf("/bin/sh", "-l"), builder().build(LinuxLaunchSpec(emptyList())).arguments.takeLast(2))
+    }
+
+    @Test fun `每次启动读取设备时区且显式TZ优先`() {
+        val original = TimeZone.getDefault()
+        try {
+            val launcher = builder()
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
+            assertEquals("<+08>-8", launcher.build(LinuxLaunchSpec(emptyList())).environment["TZ"])
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Phoenix"))
+            assertEquals("<-07>7", launcher.build(LinuxLaunchSpec(emptyList())).environment["TZ"])
+            assertEquals("UTC0", launcher.build(LinuxLaunchSpec(emptyList(), environment = mapOf("TZ" to "UTC0"))).environment["TZ"])
+        } finally { TimeZone.setDefault(original) }
+    }
+
+    @Test fun `启动前创建全局忽略块并保留用户内容且不重复写入`() {
+        val ignore = File(root, "root/.config/git/ignore")
+        ignore.parentFile!!.mkdirs()
+        ignore.writeText("*.local\n# 用户规则")
+        builder().build(LinuxLaunchSpec(emptyList()))
+        val expected = ignore.readText()
+        assertTrue(expected.startsWith("*.local\n# 用户规则\n"))
+        assertTrue(expected.contains("/.nexara*"))
+        assertTrue(expected.contains("/.recycle_bin/"))
+        val modified = ignore.lastModified()
+        builder().build(LinuxLaunchSpec(emptyList()))
+        assertEquals(expected, ignore.readText())
+        assertEquals(modified, ignore.lastModified())
     }
 
     @Test fun `打包proot必须两个文件均可执行`() {

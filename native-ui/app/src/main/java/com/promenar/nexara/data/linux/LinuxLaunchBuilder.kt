@@ -11,6 +11,8 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.time.Instant
+import java.time.ZoneId
 
 /** 调用方在 IO 线程准备目录；参数逐项传递，不经过宿主 shell 拼接。 */
 class LinuxLaunchBuilder(
@@ -51,12 +53,15 @@ class LinuxLaunchBuilder(
             "PROOT_LOADER" to proot.loader.path, "PROOT_TMP_DIR" to tmp.path,
             "HOME" to "/root", "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "LANG" to "C.UTF-8", "TERM" to "xterm-256color", "PIP_BREAK_SYSTEM_PACKAGES" to "1",
+            "TZ" to LinuxLaunchTimezone.posix(ZoneId.systemDefault().rules, Instant.now()),
             // 与默认登录 shell 一致；脚本和编辑器据此启动子 shell。
             "SHELL" to shell,
         )
         if (spec.workspace != null) environment["NEXARA_WORKSPACE"] = "/workspace"
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
         environment.putAll(spec.environment)
+        // 忽略文件只是保护措施，写入失败（空间不足、权限）不阻止命令启动。
+        runCatching { LinuxLaunchGitIgnore.ensure(rootfs, cacheDirectory, environment) }
         return LinuxProcessLaunch(proot.executable.path, arguments, environment, spec.workspace ?: rootfs)
     }
 

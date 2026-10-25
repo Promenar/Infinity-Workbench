@@ -547,7 +547,8 @@ class InspectTest(unittest.TestCase):
         porcelain.remove(str(self.work), paths=[str(self.work / name) for name in names], cached=True)
 
     # —— 调用检查入口 ——
-    def inspect(self, operation: str, *args: str, kind: str = "project", repo: Path | None = None) -> dict:
+    def inspect(self, operation: str, *args: str, kind: str = "project", repo: Path | None = None,
+                workspace: Path | None = None) -> dict:
         import json
 
         self.outputs += 1
@@ -560,6 +561,8 @@ class InspectTest(unittest.TestCase):
             "GIT_CONFIG_NOSYSTEM": "1",
             "NEXARA_WORKSPACE_KIND": kind,
         }
+        if workspace is not None:
+            env["NEXARA_WORKSPACE"] = str(workspace)
         result = subprocess.run(
             [sys.executable, "-m", "nexara_git", "--nexara-inspect", operation, "--output", str(output), *args],
             cwd=str(repo or self.work), env=env, capture_output=True, text=True, timeout=120,
@@ -612,6 +615,96 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(self.inspect("log"), {"version": 1, "repository": True, "commits": [], "truncated": False})
         self.assertFalse(self.blob("HEAD", "a.txt")["exists"])
         self.assertFalse(self.blob("INDEX", "a.txt")["exists"])
+
+    def test_internal_files_filtered_before_limits_and_without_repository_writes(self) -> None:
+        self.init()
+        internal = [".recycle_bin/old.txt", ".NEXARA_command_pending", ".nexara_command_pending-job"]
+        for path in internal:
+            self.write(path, "internal\n")
+        self.write("visible.txt", "visible\n")
+        before = (self.work / ".git/config").read_bytes()
+        exclude = (self.work / ".git/info/exclude").read_bytes()
+        status = self.inspect("status", "--limit", "1", workspace=self.work)
+        self.assertEqual(self.paths(status, "untracked"), {"visible.txt": "added"})
+        self.assertFalse(status["untracked_truncated"])
+        self.assertEqual((status["untracked"][0]["added_lines"], status["untracked"][0]["removed_lines"]), (1, 0))
+        self.assertEqual((self.work / ".git/config").read_bytes(), before)
+        self.assertFalse((self.work / ".gitignore").exists())
+        self.assertEqual((self.work / ".git/info/exclude").read_bytes(), exclude)
+
+    def test_tracked_internal_modifications_and_deletions_are_hidden(self) -> None:
+        self.init()
+        for path in (".nexara_modified", ".nexara_deleted", ".recycle_bin/old", "visible"):
+            self.write(path, "before\n")
+            self.add(path)
+        self.commit("init")
+        self.write(".nexara_modified", "after\n")
+        (self.work / ".nexara_deleted").unlink()
+        (self.work / ".recycle_bin/old").unlink()
+        self.add(".recycle_bin/old")
+        self.write("visible", "before\nafter\n")
+        for kind in ("project", "shared"):
+            status = self.inspect("status", kind=kind, workspace=self.work)
+            self.assertEqual(status["staged"], [])
+            self.assertEqual(self.paths(status, "unstaged"), {"visible": "modified"})
+            self.assertEqual(status["untracked"], [])
+
+    def test_workspace_relative_paths_with_parent_child_and_unrelated_repositories(self) -> None:
+        self.init()
+        for path in (".nexara_root", "sub/.nexara_marker", "sub/.RECYCLE_BIN/deleted", "sub/src/.nexara_user", "visible"):
+            self.write(path, "data\n")
+        status = self.inspect("status", workspace=self.work / "sub")
+        self.assertEqual(set(self.paths(status, "untracked")), {".nexara_root", "sub/src/.nexara_user", "visible"})
+        # 仓库在工作区普通子目录内时，仓库根的同名用户文件不是工作区内部文件。
+        status = self.inspect("status", workspace=self.root)
+        self.assertIn(".nexara_root", self.paths(status, "untracked"))
+        for workspace in (None, self.root / "elsewhere", Path("relative")):
+            self.assertIn(".nexara_root", self.paths(self.inspect("status", workspace=workspace), "untracked"))
+
+    def test_repository_inside_internal_directory_and_workspace_root_symlink(self) -> None:
+        self.init()
+        self.write(".nexara_marker", "data\n")
+        alias = self.root / "alias"
+        alias.symlink_to(self.work, target_is_directory=True)
+        self.assertEqual(self.inspect("status", workspace=alias)["untracked"], [])
+        internal = self.root / ".NEXARA_nested"
+        self.work.rename(internal)
+        self.work = internal
+        self.assertEqual(self.inspect("status", workspace=self.root)["untracked"], [])
+
+    def test_internal_prefix_only_matches_first_workspace_path_segment(self) -> None:
+        self.init()
+        visible = [".recycle_binary", "src/.nexara_user", "src/.recycle_bin/user"]
+        for path in visible + [".NeXaRa_directory/internal", ".ReCyClE_BiN/internal"]:
+            self.write(path, "data\n")
+        status = self.inspect("status", workspace=self.work)
+        self.assertEqual(set(self.paths(status, "untracked")), set(visible))
+
+    def test_commit_rename_across_internal_boundary_keeps_visible_side(self) -> None:
+        self.init()
+        self.write("visible", "unique rename content\n")
+        self.add("visible")
+        self.commit("init")
+        (self.work / "visible").rename(self.work / ".nexara_marker")
+        self.add("visible", ".nexara_marker")
+        sha = self.commit("move in")
+        detail = self.inspect("commit", "--commit", sha, workspace=self.work)
+        self.assertEqual(detail["files"], [{"path": "visible", "change": "deleted"}])
+        (self.work / ".nexara_marker").rename(self.work / "visible")
+        self.add("visible", ".nexara_marker")
+        sha = self.commit("move out")
+        detail = self.inspect("commit", "--commit", sha, workspace=self.work)
+        self.assertEqual(detail["files"], [{"path": "visible", "change": "added"}])
+
+    def test_commit_file_list_filters_internal_changes_before_truncation(self) -> None:
+        self.init()
+        for path in (".nexara_marker", ".recycle_bin/old", "visible"):
+            self.write(path, "data\n")
+            self.add(path)
+        sha = self.commit("init")
+        detail = self.inspect("commit", "--commit", sha, "--limit", "1", workspace=self.work)
+        self.assertEqual([item["path"] for item in detail["files"]], ["visible"])
+        self.assertFalse(detail["files_truncated"])
 
     def test_empty_repository_with_staged_and_untracked_files(self) -> None:
         self.init()

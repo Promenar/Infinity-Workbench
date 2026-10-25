@@ -1493,6 +1493,32 @@ class _LineStats:
             item["lines_skipped"] = "read_error"
 
 
+def _internal_workspace_filter(repo):
+    """只隐藏工作区首段的内部路径；缺少绝对工作区根或路径关系未知时保留。"""
+    workspace = os.environ.get("NEXARA_WORKSPACE", "")
+    if not workspace or not os.path.isabs(workspace):
+        return lambda path: False
+    try:
+        root = os.path.realpath(workspace)
+        repository = os.path.realpath(repo.path)
+    except (OSError, ValueError):
+        return lambda path: False
+
+    def internal(path):
+        # 只解析根目录的链接，不解析文件链接：已删除、已暂存的路径也必须能过滤。
+        try:
+            absolute = os.path.normpath(os.path.join(repository, path))
+            if os.path.commonpath((root, absolute)) != root:
+                return False
+            relative = os.path.relpath(absolute, root)
+        except (OSError, ValueError):
+            return False
+        first = relative.split(os.sep, 1)[0].lower()
+        return first == ".recycle_bin" or first.startswith(".nexara")
+
+    return internal
+
+
 def _inspect_status(repo, limit):
     from dulwich.index import ConflictedIndexEntry, get_unstaged_changes
     from dulwich.porcelain import get_untracked_paths
@@ -1545,8 +1571,10 @@ def _inspect_status(repo, limit):
             yield {"path": path.replace(os.sep, "/"), "change": "added"}
 
     stats = _LineStats(repo, index, head)
+    internal = _internal_workspace_filter(repo)
     for name, entries in (("staged", staged()), ("unstaged", unstaged()), ("untracked", untracked())):
-        items, truncated = _limited(entries, limit)
+        visible = (item for item in entries if not internal(item["path"]))
+        items, truncated = _limited(visible, limit)
         result[name] = sorted(items, key=lambda item: item["path"])
         result[name + "_truncated"] = truncated
         for item in result[name]:
@@ -1666,12 +1694,24 @@ def _inspect_commit(repo, sha, limit):
     parent_tree = _peel_commit(repo, commit.parents[0]).tree if commit.parents else None
     store = repo.object_store
     names = {CHANGE_ADD: "added", CHANGE_DELETE: "deleted", CHANGE_RENAME: "renamed", CHANGE_COPY: "added"}
+    internal = _internal_workspace_filter(repo)
 
     def files():
         for change in tree_changes(store, parent_tree, commit.tree, rename_detector=RenameDetector(store)):
             kind = names.get(change.type, "modified")
             new_path = change.new.path if change.new is not None and change.new.path is not None else None
             old_path = change.old.path if change.old is not None and change.old.path is not None else None
+            new_internal = new_path is not None and internal(_text(new_path))
+            old_internal = old_path is not None and internal(_text(old_path))
+            if new_internal:
+                if old_path is None or old_internal or kind != "renamed":
+                    continue
+                # 用户文件移入内部目录，仍展示用户文件的删除。
+                new_path, kind = None, "deleted"
+            elif old_internal:
+                if new_path is None:
+                    continue
+                kind = "added"
             item = {"path": _text(new_path if new_path is not None else old_path), "change": kind}
             if kind == "renamed":
                 item["old_path"] = _text(old_path)
