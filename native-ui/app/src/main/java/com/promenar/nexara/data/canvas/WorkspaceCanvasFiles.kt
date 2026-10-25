@@ -58,7 +58,8 @@ internal class WorkspaceCanvasFiles(
         return matches.singleOrNull() ?: throw ExternalFolderException("UNAVAILABLE", "既有画布镜像的原工作区无法唯一核验，源码已保留")
     }
     override suspend fun defaultPath(sessionId: String, path: String, destination: WorkspaceFileDestinationBinding?): String {
-        val presented = targets.present(sessionId, destination ?: targets.defaultDestination(sessionId), path)
+        val relative = com.promenar.nexara.data.workspace.workspaceFileRelativePath(path)
+        val presented = targets.present(sessionId, destination ?: targets.defaultDestination(sessionId), relative)
         return if (presented == ExternalFolderPaths.normalize(path)) path else presented
     }
     override suspend fun exists(sessionId: String, path: String) = exists(sessionId, path, null)
@@ -134,7 +135,7 @@ internal class WorkspaceCanvasFiles(
     }
 
     private suspend fun ensureParents(target: WorkspaceFileTarget, path: String) {
-        var parent = target.virtualRoot
+        var parent = if (target.privatePathPrefix != null) "/" else target.virtualRoot
         for (component in target.relative(path).trim('/').split('/').dropLast(1)) {
             val previous = parent
             parent = if (parent == "/") "/$component" else "$parent/$component"
@@ -165,7 +166,7 @@ internal class WorkspaceCanvasFiles(
         // 健康会话保留原有的按需建根；隔离范围读取只能使用已存在的根。
         val initializeRoot = !com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(sessionId = sessionId)
         val target = targets.resolve(sessionId, normalized, writing = writing, destination, initializeMissingPrivateRoot = initializeRoot)
-        val materialized = target.materialized(normalized)
+        val materialized = if (destination != null) com.promenar.nexara.data.workspace.workspaceFileRelativePath(normalized) else target.materialized(normalized)
         if (!CANVAS_PATH.matches(materialized.trimStart('/'))) throw ExternalFolderException("INVALID_PATH", "画布工作区路径无效")
         withContext(ExternalMountOperationBindings(target.mountIds)) {
             targets.checkCurrent(target, normalized)
@@ -177,3 +178,10 @@ internal class WorkspaceCanvasFiles(
 internal val CANVAS_PATH = Regex("canvas/[\\p{IsHan}\\p{L}\\p{N}-]+\\.html")
 internal fun canvasSha256(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
     .digest(bytes).joinToString("") { "%02x".format(it) }
+
+/** 持久镜像只允许固定画布目录，以及已知运行模式的根前缀。 */
+internal fun validCanvasWorkspacePath(path: String): Boolean {
+    val relative = listOf("/home/session/", "/workspace/", "/session/", "/").firstOrNull(path::startsWith)
+        ?.let(path::removePrefix) ?: path
+    return CANVAS_PATH.matches(relative)
+}

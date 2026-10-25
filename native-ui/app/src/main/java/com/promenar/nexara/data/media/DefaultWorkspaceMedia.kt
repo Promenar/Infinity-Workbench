@@ -41,8 +41,11 @@ internal class DefaultWorkspaceMedia(
     private val fileSystem: RealPathFileSystem = AndroidRealPathFileSystem,
     private val userSkillsDirectory: File = File(context.filesDir, "agent_skills").canonicalFile,
     private val pathPresenter: com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter = com.promenar.nexara.data.workspace.BuiltinWorkspaceFilePathPresenter,
+    private val modeFor: (suspend (String) -> com.promenar.nexara.domain.model.SessionRunMode?)? = null,
+    private val linuxFiles: com.promenar.nexara.domain.linux.LinuxFileSystem? = null,
+    directoryBackend: ((SessionWorkspace.Directory) -> ExternalFolderBackend)? = null,
 ) : WorkspaceMediaResolver, WorkspaceMediaStore {
-    private val targets = WorkspaceFileTargetResolver(sessions, workspace, mounts, sessionWorkspace, userSkillsDirectory, pathPresenter = pathPresenter)
+    private val targets = WorkspaceFileTargetResolver(sessions, workspace, mounts, sessionWorkspace, userSkillsDirectory, linuxDirectoryBackend = directoryBackend, pathPresenter = pathPresenter, modeFor = modeFor, linuxFiles = linuxFiles)
     private val local = MediaLocalAccess(fileSystem)
     private val metadata = MediaMetadataReader(context)
     // 弱键不延长卡片生命周期；open 必须重新核验会话和挂载身份，不能接受任意本机文件。
@@ -52,7 +55,7 @@ internal class DefaultWorkspaceMedia(
     override suspend fun resolve(sessionId: String, path: String): MediaResolution = withContext(Dispatchers.IO) {
         var normalized = path
         try {
-            normalized = normalize(path)
+            normalized = normalize(sessionId, path)
             val target = target(sessionId, normalized, writing = false)
             withContext(ExternalMountOperationBindings(target.mountIds)) {
                 val entry = entry(target, normalized) ?: return@withContext MediaResolution.Unavailable(normalized, MediaUnavailableReason.NOT_FOUND)
@@ -101,10 +104,10 @@ internal class DefaultWorkspaceMedia(
     ): MediaRef = withContext(Dispatchers.IO) {
         locks[sessionId.hashCode() and (locks.size - 1)].withLock {
             try {
-                val explicit = targetPath?.takeUnless(String::isEmpty)?.let(::normalize)
+                val explicit = targetPath?.takeUnless(String::isEmpty)?.let { normalize(sessionId, it) }
                 val destination = if (explicit == null) targets.defaultDestination(sessionId) else null
                 val initialPath = explicit ?: targets.present(sessionId, requireNotNull(destination), "/media")
-                protect(initialPath)
+                protect(sessionId, initialPath)
                 val target = targets.resolve(sessionId, initialPath, writing = true, destination)
                 withContext(ExternalMountOperationBindings(target.mountIds)) {
                     if (explicit != null && exists(target, explicit)) fail("EXISTS", "目标文件或目录已存在，媒体保存不会覆盖")
@@ -173,7 +176,11 @@ internal class DefaultWorkspaceMedia(
     }
 
     private suspend fun entry(target: Target, path: String): FileEntry? = when {
-        path == "/mnt" || target.mount != null -> mounts.entry(target.sessionId, path)
+        target.directoryBackend != null -> target.directoryBackend.stat(target.relative(path))?.let {
+            FileEntry(it.identity ?: it.path, "", null, it.name, it.sha256.orEmpty(), sizeBytes = it.size, isDirectory = it.isDirectory,
+                physicalRootPath = "", materializedPath = path, createdAt = it.lastModified, updatedAt = it.lastModified)
+        }
+        path == "/mnt" || target.mount != null -> mounts.entry(target.sessionId, target.accessPath(path))
         else -> workspace.getByMaterializedPath(target.root!!.uuid, target.materialized(path))
     }
 
@@ -205,7 +212,8 @@ internal class DefaultWorkspaceMedia(
                 continue
             }
             try {
-                if (target.mount != null) mounts.createDirectory(target.sessionId, parent)
+                if (target.directoryBackend != null) target.directoryBackend.createDirectory(target.relative(parent))
+                else if (target.mount != null) mounts.createDirectory(target.sessionId, target.accessPath(parent))
                 else {
                     val parentEntry = entry(target, parent.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不可用")
                     workspace.createDirectoryInWorkspace(target.root!!.uuid, UUID.randomUUID().toString(), component, parentEntry.uuid, target.materialized(parent))
@@ -222,9 +230,11 @@ internal class DefaultWorkspaceMedia(
         var created: FileEntry? = null
         try {
             checkCurrent(target, path)
-            if (target.mount != null) {
+            if (target.directoryBackend != null) {
+                target.directoryBackend.write(target.relative(path), file.readBytes(), expectedSha256 = null, createOnly = true)
+            } else if (target.mount != null) {
                 // 外部后端只接受整块字节；暂存阶段已用统一上限约束大小。
-                mounts.write(target.sessionId, path, file.readBytes(), expectedSha256 = null, createOnly = true)
+                mounts.write(target.sessionId, target.accessPath(path), file.readBytes(), expectedSha256 = null, createOnly = true)
             } else {
                 val root = target.root ?: fail("INVALID_PATH", "不能向挂载列表目录保存媒体")
                 val parent = entry(target, path.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("IO", "媒体父目录不存在")
@@ -304,14 +314,16 @@ internal class DefaultWorkspaceMedia(
         return bytes.copyOf(count)
     }
 
-    private fun normalize(path: String): String {
+    private suspend fun normalize(sessionId: String, path: String): String {
         if (SCHEME.containsMatchIn(path.trimStart())) fail("INVALID_PATH", "媒体只接受工作区虚拟路径，不接受 URI")
-        return ExternalFolderPaths.normalize(path).also { ExternalMountPaths.parse(it) }
+        return if (targets.presenter(sessionId) == com.promenar.nexara.data.workspace.LinuxWorkspaceFilePathPresenter) {
+            com.promenar.nexara.data.workspace.LinuxSessionPaths.normalize(path)
+        } else ExternalFolderPaths.normalize(path).also { ExternalMountPaths.parse(it) }
     }
 
-    private fun protect(path: String) {
-        val relative = (pathPresenter.privateRelativePath(path) ?: ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
-        if (path == "/skills" || path.startsWith("/skills/") || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")) {
+    private suspend fun protect(sessionId: String, path: String) {
+        val relative = (targets.presenter(sessionId).privateRelativePath(path) ?: if (path == "/mnt/skills" || path.startsWith("/mnt/skills/")) "/skills" else ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
+        if (path == "/mnt/skills" || path.startsWith("/mnt/skills/") || path == "/skills" || path.startsWith("/skills/") || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")) {
             fail("PROTECTED_PATH", "技能目录写入需要逐次审批，媒体存储不能直接写入")
         }
     }

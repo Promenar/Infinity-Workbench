@@ -37,7 +37,23 @@ class WorkspaceRelocateTest {
         directory = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".nexara-workspace-relocate").toFile()
     }
 
-    @After fun cleanup() { db.close(); directory.deleteRecursively() }
+    @After fun cleanup() { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting(); db.close(); directory.deleteRecursively() }
+
+
+    @Test fun `relocate在隔离根下拒绝且文件仍可读取`() = runBlocking {
+        val root = root()
+        val source = file(root, "source", "a.txt", "source")
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.bindRoot(root.uuid, directory.canonicalPath, "s")
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, root.uuid, "工作区")) { error("冲突") }
+        assertThat(runCatching { repo.relocate(root.uuid, source.uuid, root.uuid, "b.txt", source.name) }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(repo.getByUuid(root.uuid, source.uuid)).isEqualTo(source)
+        assertThat(File(directory, "a.txt").readText()).isEqualTo("source")
+        assertThat(File(directory, "b.txt").exists()).isFalse()
+    }
 
     @Test fun `最终数据库目标已存在时源UUID路径与持久历史均未改变`() = runBlocking<Unit> {
         val root = root()

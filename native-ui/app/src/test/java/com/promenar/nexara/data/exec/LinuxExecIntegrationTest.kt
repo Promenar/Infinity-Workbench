@@ -51,6 +51,7 @@ class LinuxExecIntegrationTest {
     }
 
     @After fun tearDown() = runBlocking {
+        com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting()
         scopes.forEach { it.coroutineContext[Job]?.cancelAndJoin() }
         root.deleteRecursively()
         Unit
@@ -79,6 +80,23 @@ class LinuxExecIntegrationTest {
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
         service.runShell("root", "s", command, null, timeout, live)
+
+
+    @Test fun `隔离工作目录的前后台Linux命令均在生成启动规格前拒绝`() = runBlocking {
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.bindRoot("root", workspace.canonicalPath, "s")
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root", "工作区")) { error("冲突") }
+        val service = service()
+        assertThat(runCatching { shell(service, "touch blocked") }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(runCatching { service.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "touch blocked", null,
+            BackgroundJobLocation(workspace, workspace, false, false), 1, "s") }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(runtime.specs).isEmpty()
+        assertThat(File(workspace, "blocked").exists()).isFalse()
+    }
 
     @Test fun `宿主身份包装在 guest PATH 下仍可落盘并保持 guest 环境`() {
         val stat = File(root, "stat").apply { writeText("1 (shell) " + (listOf("S") + List(18) { "0" } + "123").joinToString(" ")) }

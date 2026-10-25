@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.linux
 
+import com.google.common.truth.Truth.assertThat
+
 import com.promenar.nexara.domain.linux.*
 import java.io.File
 import java.io.InputStream
@@ -24,6 +26,27 @@ class LinuxRunModeRecoveryTest {
         File(paths.home, ".nexara-linux-workspace-id").apply { parentFile!!.mkdirs(); writeText(token) }
         File(paths.home, "good.txt").writeText("keep")
         File(paths.rootfs, "home/user/data").apply { parentFile!!.mkdirs(); writeText("other") }
+    }
+
+
+    @org.junit.After fun resetBarrier() { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting() }
+
+    @Test fun `导出目标逐次核验隔离根且拒绝创建和写入`() = kotlinx.coroutines.runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("linux-export-isolation").toFile().canonicalFile
+        try {
+            val manager = com.promenar.nexara.startup.StartupIssueManager()
+            com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+            manager.bindRoot("root", directory.path, "s")
+            val target = LinuxRunModeDirectoryExportTarget(directory, "export", {}, LinuxFileIo(), "s", "root")
+            target.createDirectory("")
+            manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+                com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root", "工作区")) { error("冲突") }
+            assertThat(runCatching { target.createDirectory("child") }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+            assertThat(runCatching { target.writeFile("a.txt", "data".byteInputStream()) }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+            assertThat(java.io.File(directory, "export").list()).isEmpty()
+        } finally { directory.deleteRecursively() }
     }
 
     @Test fun `Broken仍可导出可读文件且链接和单项失败完整披露`() = runTest {

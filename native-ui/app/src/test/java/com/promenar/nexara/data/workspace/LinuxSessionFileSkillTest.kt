@@ -80,7 +80,7 @@ class LinuxSessionFileSkillTest {
         File(rootfsDirectory, "etc/config").apply { parentFile!!.mkdirs(); writeText("rootfs-data") }
     }
 
-    @After fun cleanup() { unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
+    @After fun cleanup() { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting(); unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
 
     @Test fun `所有Linux路径读取返回Linux路径且保持私有会话隔离`() = runBlocking {
         val read = skill(FileReadSkill(files, workspace))
@@ -292,6 +292,59 @@ class LinuxSessionFileSkillTest {
         val created = entries.values.single { it.materializedPath == "/profile" }
         assertThat(created.mimeType).isEqualTo("text/plain")
         assertThat(created.hash).isEqualTo(Sha256Utils.hash("export A=1"))
+    }
+
+
+    @Test fun `启动隔离阻断Linux各命名空间变更但读取仍然可用`() = runBlocking {
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.bindRoot("root-one", roots.getValue("one").physicalRootPath, "one")
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root-one", "工作区")) { error("冲突") }
+        for (path in listOf("/home/session/same.txt", "/workspace/same.txt", "/mnt/docs/a.txt", "/etc/config")) {
+            assertThat(access.read("one", path)).isNotEmpty()
+            val actions: List<suspend () -> Unit> = listOf(
+                { access.write("one", path, "new".toByteArray(), null, false); Unit },
+                { access.createDirectory("one", path + "-dir"); Unit },
+                { access.delete("one", path, null, false) },
+                { access.backupBeforeMove("one", path); Unit },
+            )
+            for (action in actions) assertWithMessage("隔离路径=%s", path).that(runCatching { action() }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        }
+        assertThat(runCatching { access.movePrivate("one", "/workspace/same.txt", "/home/session/new.txt", null) }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(File(rootfsDirectory, "etc/config").readText()).isEqualTo("rootfs-data")
+    }
+
+
+    @Test fun `隔离读使用既有Room根而不调用建根写入入口`() = runBlocking {
+        val sessions = mockk<com.promenar.nexara.data.repository.ISessionRepository> {
+            coEvery { getById("one") } returns Session(id = "one", agentId = "agent", workspaceRootUuid = "root-one")
+        }
+        coEvery { workspace.ensureSessionRoot(any()) } throws AssertionError("读取不能调用建根")
+        val fresh = LinuxSessionExternalWorkspaceAccess(mounts, workspace, files, { selected }, LinuxSessionRootfsBackend(fs), sessions = sessions)
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "root-one", "工作区")) { error("冲突") }
+        assertThat(fresh.read("one", "/home/session/same.txt").toString(Charsets.UTF_8)).isEqualTo("one-private")
+        assertThat(runCatching { fresh.write("one", "/etc/config", "new".toByteArray(), null, false) }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        coVerify(exactly = 0) { workspace.ensureSessionRoot(any()) }
+    }
+
+    @Test fun `其它会话的隔离物理根不能通过Linux真实挂载或rootfs写入`() = runBlocking {
+        for ((root, path) in listOf(externalDirectory to "/mnt/docs/a.txt", File(rootfsDirectory, "etc") to "/etc/config")) {
+            val manager = com.promenar.nexara.startup.StartupIssueManager()
+            com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+            manager.bindRoot("other-root", root.canonicalPath, "two")
+            manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+                com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT, "other-root", "工作区")) { error("冲突") }
+            assertThat(access.read("one", path)).isNotEmpty()
+            assertThat(runCatching { access.write("one", path, "new".toByteArray(), null, false) }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        }
     }
 
     private fun skill(original: SkillDefinition) = LinuxSessionFileSkill(original, { mode }, access, workspace, files, FileIndexEventSink.None, captureFileChanges = false)

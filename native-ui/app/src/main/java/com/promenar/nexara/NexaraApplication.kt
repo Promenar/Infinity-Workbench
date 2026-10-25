@@ -706,6 +706,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     sessionRepository, workspaceRepository, externalFolderManager,
                     sessionWorkspaceResolver::resolve, skillCatalog.userRoot,
                     sessionWorkspaceResolver::resolveWorkspace, sessionWorkspaceResolver::backend,
+                    modeFor = sessionRunModes::modeFor,
                 ),
                 workspaceRepository, fileOperationRepository, externalFolderManager, pendingDocumentIndexCoordinator,
             ),
@@ -1374,7 +1375,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val linuxSessionFiles by lazy {
         com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess(
             externalFolderManager, workspaceRepository, fileOperationRepository, sessionWorkspaceResolver::resolve,
-            com.promenar.nexara.data.workspace.LinuxSessionRootfsBackend(linux.files), pendingDocumentIndexCoordinator,
+            com.promenar.nexara.data.workspace.LinuxSessionRootfsBackend(linux.files), pendingDocumentIndexCoordinator, sessions = sessionRepository,
         )
     }
 
@@ -1388,11 +1389,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     fun exportLinuxSessionHome(sessionId: String, treeUri: android.net.Uri? = null): kotlinx.coroutines.flow.Flow<com.promenar.nexara.data.linux.LinuxRecoveryEvent> =
         kotlinx.coroutines.flow.flow {
             val target = withContext(Dispatchers.IO) {
+                com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
                 if (treeUri != null) com.promenar.nexara.data.linux.LinuxRunModeSafExportTarget(contentResolver, treeUri)
                 else {
                     val root = workspaceRepository.ensureSessionRoot(sessionId)
                     com.promenar.nexara.data.linux.LinuxRunModeDirectoryExportTarget(File(root.physicalRootPath),
-                        reconcile = { reconcileSessionHome(sessionId) })
+                        reconcile = { reconcileSessionHome(sessionId) }, sessionId = sessionId, rootId = root.uuid)
                 }
             }
             linuxRunModeRecovery.export(sessionId, target).collect { emit(it) }
@@ -2602,6 +2604,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             this, sessionRepository, workspaceRepository, externalFolderManager,
             sessionWorkspaceResolver::resolve, pendingDocumentIndexCoordinator,
             userSkillsDirectory = skillCatalog.userRoot,
+            modeFor = sessionRunModes::modeFor,
+            linuxFiles = linux.files,
+            directoryBackend = sessionWorkspaceResolver::backend,
         )
     }
 

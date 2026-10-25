@@ -85,7 +85,7 @@ internal class LinuxTerminalSessionsImpl(
         val launch = withContext(ioDispatcher) {
             val spec = when (location) {
                 is LinuxTerminalLocation.SessionWorkspace -> {
-                    reconcileSession(location.sessionId)
+                    com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = location.sessionId)
                     val home = sessionHome(location.sessionId)
                         ?: error("Session home is unavailable for session ${location.sessionId}")
                     val workspace = try {
@@ -95,10 +95,15 @@ internal class LinuxTerminalSessionsImpl(
                     } catch (error: Exception) {
                         throw IllegalStateException("Cannot resolve workspace for session ${location.sessionId}", error)
                     } ?: error("Workspace is unavailable for session ${location.sessionId}")
+                    com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = location.sessionId, path = workspace.canonicalPath)
+                    com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = location.sessionId, path = home.canonicalPath)
+                    reconcileSession(location.sessionId)
                     LinuxLaunchSpec(emptyList(), workspace, workingDirectory = "/workspace", sessionHome = home)
                 }
                 is LinuxTerminalLocation.Directory -> {
                     require(location.path.startsWith('/') && '\u0000' !in location.path) { "Terminal directory must be absolute" }
+                    val directory = LinuxFilePaths(runtime.paths.rootfs).resolve(location.path)
+                    com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(path = directory.toString())
                     LinuxLaunchSpec(emptyList(), workingDirectory = location.path)
                 }
             }
