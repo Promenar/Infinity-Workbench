@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.SyncProblem
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.testTag
@@ -70,11 +69,12 @@ import com.promenar.nexara.data.canvas.CanvasMetadata
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 /**
- * 消息中的画布附件卡：缩略图铺满卡片、底部渐隐，标题与版本叠在渐隐层上。轻点整卡打开该消息对应的版本，
- * 长按展开更多操作；预览始终显示最新内容，旧消息用右上角标签提示已有新版本。
+ * 本轮产物区的画布卡：上方灰底预览区里放一张按手机宽度排版后缩小的缩略图，下方一行标题与版本路径。
+ * 轻点整卡打开该消息对应的版本，长按展开更多操作；预览始终显示最新内容，旧消息用标签提示已有新版本。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -85,6 +85,7 @@ fun CanvasCard(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     previewContent: (@Composable () -> Unit)? = null,
+    previewFailed: Boolean = false,
     workspacePath: String? = null,
     workspaceWarning: Boolean = false,
     onOpenLatest: (() -> Unit)? = null,
@@ -94,13 +95,12 @@ fun CanvasCard(
     var menuExpanded by remember { mutableStateOf(false) }
     val hasMenu = onOpenLatest != null || onCopySource != null || onRevealInWorkspace != null
     val shape = RoundedCornerShape(16.dp)
-    val container = MaterialTheme.colorScheme.surfaceContainerLow
     val newer = metadata.currentVersion > version
-    Box(modifier = modifier.widthIn(max = 360.dp).fillMaxWidth()) {
+    Box(modifier = modifier.widthIn(max = 420.dp).fillMaxWidth()) {
         Surface(
             shape = shape,
-            color = container,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(shape)
@@ -112,41 +112,32 @@ fun CanvasCard(
                 )
                 .testTag(UiTags.CANVAS_CARD),
         ) {
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
+            Column {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface)
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
                         // 预览内容不进入无障碍树；标签必须在清除语义的同一节点上设置。
                         .clearAndSetSemantics { testTag = UiTags.CANVAS_PREVIEW },
-                    contentAlignment = Alignment.TopCenter,
+                    contentAlignment = Alignment.Center,
                 ) {
-                    when {
-                        previewContent != null -> previewContent()
-                        LocalInspectionMode.current -> CanvasPreviewPlaceholder()
-                        html == null -> CanvasLoading()
-                        else -> CanvasWebView(
-                            html = html,
-                            modifier = Modifier.fillMaxSize(),
-                            interactive = false,
-                            readOnly = true,
-                        )
-                    }
+                    CanvasThumbnailFrame(
+                        html = html,
+                        previewContent = previewContent,
+                        previewFailed = previewFailed,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(88.dp)
-                        .background(Brush.verticalGradient(listOf(container.copy(alpha = 0f), container.copy(alpha = 0.92f), container))),
-                )
-                // 文字全部叠在底部渐隐层上，缩略图上方不放任何遮挡，保持画布内容本身干净。
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Row(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Small, bottom = NexaraSpacing.Small),
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                        .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Small, top = 10.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -178,7 +169,7 @@ fun CanvasCard(
                                     workspacePath != null -> stringResource(R.string.canvas_card_version_path, version, workspacePath)
                                     else -> stringResource(R.string.canvas_version, version)
                                 },
-                                style = NexaraTypography.labelSmall,
+                                style = NexaraTypography.labelSmall.copy(fontFamily = if (workspacePath != null && !workspaceWarning) NexaraMonospace else null),
                                 color = if (workspaceWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 // 路径两端都有信息（目录与扩展名），从中间省略；警告文字从末尾省略。
@@ -186,20 +177,7 @@ fun CanvasCard(
                             )
                         }
                     }
-                    if (newer) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.canvas_card_newer, metadata.currentVersion),
-                                style = NexaraTypography.labelSmall,
-                                maxLines = 1,
-                                modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 3.dp),
-                            )
-                        }
-                    }
+                    if (newer) CanvasNewerTag(metadata.currentVersion)
                 }
             }
         }
@@ -214,6 +192,130 @@ fun CanvasCard(
                 CanvasCardMenuItem(R.string.canvas_card_reveal, Icons.Rounded.FolderOpen) { menuExpanded = false; reveal() }
             }
         }
+    }
+}
+
+/**
+ * 生成中锚定在创建或更新步骤下方的紧凑画布卡：左侧小缩略图，右侧标题与“画布 · v1”。
+ * 轻点打开该步骤产生的版本；新版本提示与更多操作留给回合结束后的本轮产物卡，窄屏把宽度让给标题。
+ */
+@Composable
+fun CanvasInlineCard(
+    metadata: CanvasMetadata,
+    version: Int,
+    html: String?,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+    previewContent: (@Composable () -> Unit)? = null,
+    previewFailed: Boolean = false,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        modifier = modifier
+            .widthIn(max = 420.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(onClickLabel = stringResource(R.string.canvas_open), onClick = onOpen)
+            .testTag(UiTags.CANVAS_CARD_INLINE),
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CanvasThumbnailFrame(
+                html = html,
+                previewContent = previewContent,
+                previewFailed = previewFailed,
+                shape = RoundedCornerShape(8.dp),
+                compact = true,
+                modifier = Modifier
+                    .size(width = 76.dp, height = 52.dp)
+                    .clearAndSetSemantics { testTag = UiTags.CANVAS_PREVIEW },
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = metadata.title,
+                    style = NexaraTypography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.canvas_card_inline_version, version),
+                    style = NexaraTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** 缩略图外框：有内容时按虚拟宽度缩放绘制，加载中、失败与预览环境的占位按原尺寸居中显示。 */
+@Composable
+private fun CanvasThumbnailFrame(
+    html: String?,
+    previewContent: (@Composable () -> Unit)?,
+    previewFailed: Boolean,
+    shape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = if (compact) 0.dp else 2.dp,
+        modifier = modifier,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            when {
+                previewContent != null -> ScaledCanvasThumbnail(Modifier.fillMaxSize()) { previewContent() }
+                previewFailed -> if (compact) CanvasThumbnailIcon() else Text(
+                    text = stringResource(R.string.canvas_load_error),
+                    style = NexaraTypography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(NexaraSpacing.Medium),
+                )
+                LocalInspectionMode.current -> if (compact) CanvasThumbnailIcon() else CanvasPreviewPlaceholder()
+                html == null -> if (compact) CanvasThumbnailIcon() else CanvasLoading()
+                else -> ScaledCanvasThumbnail(Modifier.fillMaxSize()) {
+                    CanvasWebView(html = html, modifier = Modifier.fillMaxSize(), interactive = false, readOnly = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CanvasThumbnailIcon() {
+    Icon(
+        imageVector = Icons.Rounded.Dashboard,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(20.dp),
+    )
+}
+
+@Composable
+private fun CanvasNewerTag(currentVersion: Int) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Text(
+            text = stringResource(R.string.canvas_card_newer, currentVersion),
+            style = NexaraTypography.labelSmall,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 3.dp),
+        )
     }
 }
 

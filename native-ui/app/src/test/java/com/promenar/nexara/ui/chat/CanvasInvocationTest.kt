@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ExecutionStep
+import java.nio.file.Files
+import java.nio.file.Path
 import org.junit.Test
 
 class CanvasInvocationTest {
@@ -25,6 +27,19 @@ class CanvasInvocationTest {
         for (bad in listOf("broken", "{}", "{\"canvasId\":\"\",\"version\":3}", "{\"canvasId\":\"a\",\"version\":0}", "{\"canvasId\":\"a\",\"version\":\"3\"}")) {
             assertThat(canvasInvocation(invocation("canvas_create", bad))).isNull()
         }
+    }
+
+    @Test fun `生成中画布卡锚定在产生它的步骤下方，结束后汇总为本轮产物`() {
+        val ui = Path.of("app/src/main/java/com/promenar/nexara/ui")
+        fun source(path: String) = Files.readAllBytes(ui.resolve(path)).toString(Charsets.UTF_8)
+        val bubble = source("chat/PipelineBubble.kt")
+        assertThat(bubble).contains("if (isGenerating) CanvasInvocationCards(step.steps, inline = true)")
+        assertThat(bubble).contains("if (!isGenerating) CanvasInvocationCards(allSteps")
+        // 缩略图按固定手机宽度排版再整体缩小，卡片宽度不影响网页布局。
+        assertThat(source("canvas/CanvasThumbnail.kt")).contains("internal val CanvasThumbnailVirtualWidth = 400.dp")
+        val card = source("canvas/CanvasComponents.kt")
+        assertThat(card).contains("ScaledCanvasThumbnail(Modifier.fillMaxSize()) {\n                    CanvasWebView(")
+        assertThat(source("chat/CanvasInvocationCards.kt")).contains("R.string.canvas_turn_artifacts")
     }
 
     private fun invocation(name: String, content: String, failed: Boolean = false) = ToolInvocationPresentation(listOf(

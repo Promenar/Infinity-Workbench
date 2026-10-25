@@ -279,10 +279,14 @@ fun PipelineBubble(
                         isGenerating = isGenerating && isLastInGroup && streamingContent.isEmpty(),
                         fontSize = fontSize,
                     )
-                    is PipelineStep.ToolExec -> InlineToolRow(
-                        steps = step.steps, isExecuting = step.isExecuting, fontSize = fontSize,
-                        commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
-                    )
+                    is PipelineStep.ToolExec -> Column {
+                        InlineToolRow(
+                            steps = step.steps, isExecuting = step.isExecuting, fontSize = fontSize,
+                            commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
+                        )
+                        // 生成中画布卡紧跟创建它的步骤；结束后改由正文下方的本轮产物区展示。
+                        if (isGenerating) CanvasInvocationCards(step.steps, inline = true)
+                    }
                     is PipelineStep.Content -> {
                         val displayContent = if (isLastInGroup && isGenerating) {
                             streamingContent.ifEmpty { step.content }
@@ -302,7 +306,7 @@ fun PipelineBubble(
             }
         }
         if (renderPlan.showStandaloneCursor) GenerationIndicator()
-        CanvasInvocationCards(allSteps.filterIsInstance<PipelineStep.ToolExec>().flatMap { it.steps })
+        if (!isGenerating) CanvasInvocationCards(allSteps.filterIsInstance<PipelineStep.ToolExec>().flatMap { it.steps })
         if (footerContent != null) {
             pipelineContentOwner(group.messages, footerContent)?.let { lastMsg ->
                 val context = LocalContext.current

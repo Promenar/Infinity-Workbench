@@ -406,6 +406,8 @@ object UiTags {
     const val CANVAS_VERSION_SELECTOR = "canvas_version_selector"
     const val CANVAS_ENTRY = "canvas_entry"
     const val CANVAS_CARD_MENU = "canvas_card_menu"
+    const val CANVAS_CARD_INLINE = "canvas_card_inline"
+    const val CANVAS_TURN_ARTIFACTS = "canvas_turn_artifacts"
 
     // 系统触发轮次、后台任务与定时任务
     const val SYSTEM_TRIGGER_ROW = "system_trigger_row"

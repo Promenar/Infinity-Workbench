@@ -102,6 +102,41 @@ fun canvasCardLightEnglishLargeFontPreview() = CanvasPreviewFrame(dark = false) 
 }
 
 @PreviewTest
+@Preview(name = "画布紧凑卡 浅中390", widthDp = 390, heightDp = 260, locale = "zh-rCN")
+@Composable
+fun canvasInlineCardLightChinesePreview() = CanvasPreviewFrame(dark = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
+        CanvasInlineCard(
+            metadata = previewMetadata("Nexara 能力探测矩阵").copy(currentVersion = 1, versions = listOf(1)),
+            version = 1,
+            html = null,
+            onOpen = {},
+            previewContent = { StaticChartPreview(english = false) },
+        )
+        CanvasInlineCard(
+            metadata = previewMetadata("季度经营看板"),
+            version = 1,
+            html = null,
+            onOpen = {},
+            previewFailed = true,
+        )
+    }
+}
+
+@PreviewTest
+@Preview(name = "画布紧凑卡 深英360 大字体", widthDp = 360, heightDp = 200, locale = "en", fontScale = 1.3f)
+@Composable
+fun canvasInlineCardDarkEnglishLargeFontPreview() = CanvasPreviewFrame(dark = true) {
+    CanvasInlineCard(
+        metadata = previewMetadata("Quarterly business dashboard with a long title"),
+        version = 2,
+        html = null,
+        onOpen = {},
+        previewContent = { StaticChartPreview(english = true) },
+    )
+}
+
+@PreviewTest
 @Preview(name = "画布列表 浅中360", widthDp = 360, heightDp = 600, locale = "zh-rCN")
 @Composable
 fun canvasListLightChinesePreview() = CanvasPreviewFrame(dark = false) {

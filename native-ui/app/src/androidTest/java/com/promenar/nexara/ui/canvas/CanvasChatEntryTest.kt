@@ -66,6 +66,7 @@ class CanvasChatEntryTest {
                 }
             }
         }
+        rule.onNodeWithTag(UiTags.CANVAS_TURN_ARTIFACTS).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CANVAS_CARD).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CANVAS_CARD).performClick()
         rule.onNodeWithTag(UiTags.CANVAS_FULLSCREEN).assertIsDisplayed()
@@ -76,6 +77,27 @@ class CanvasChatEntryTest {
         }
         rule.onNodeWithTag(UiTags.CANVAS_CLOSE).performClick()
         rule.onNodeWithTag(UiTags.CANVAS_CARD).assertIsDisplayed()
+    }
+
+    @Test fun inlineCard_anchorsUnderStepAndOpensItsVersion() {
+        val canvas = runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
+        val steps = listOf(
+            ExecutionStep(id = "call", type = "tool_call", toolName = "canvas_create", toolCallId = "call"),
+            ExecutionStep(id = "result", type = "tool_result", toolCallId = "call", content = """{"canvasId":"${canvas.metadata.id}","title":"图表","version":1}"""),
+        )
+        rule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                NexaraTheme {
+                    CanvasSessionHost("session", store, onInsertText = {}) {
+                        Box(Modifier.fillMaxSize()) { CanvasInvocationCards(steps, inline = true) }
+                    }
+                }
+            }
+        }
+        // 生成中只显示紧凑卡，不出现本轮产物区。
+        rule.onNodeWithTag(UiTags.CANVAS_TURN_ARTIFACTS).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CANVAS_CARD_INLINE).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.CANVAS_FULLSCREEN).assertIsDisplayed()
     }
 
     @Test fun selectedHistory_remainsReadableAfterItsStoredVersionIsPruned() {

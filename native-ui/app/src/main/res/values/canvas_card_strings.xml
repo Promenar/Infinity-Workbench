@@ -6,4 +6,6 @@
     <string name="canvas_card_open_latest">Open latest version</string>
     <string name="canvas_card_reveal">Show in workspace</string>
     <string name="canvas_card_not_synced_version">v%1$d · not in workspace</string>
+    <string name="canvas_card_inline_version">Canvas · v%1$d</string>
+    <string name="canvas_turn_artifacts">From this turn</string>
 </resources>
