@@ -8,6 +8,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import com.promenar.nexara.ui.theme.NexaraAnsiDark
+import com.promenar.nexara.ui.theme.NexaraAnsiLight
 
 /** ANSI 16 色在 Nexara 深浅色下的取值；扩展色按 xterm 规则计算。 */
 @Immutable
@@ -36,25 +38,11 @@ class AnsiPalette(private val base: List<Color>) {
     }
 
     companion object {
-        /** 与原型一致：红 #FFB4AB、绿 #7DD3A0、黄 #F2C14E、蓝 #C0C1FF；黑色提亮以便在深色底上可读。 */
-        val Dark = AnsiPalette(
-            listOf(
-                Color(0xFF6E6C75), Color(0xFFFFB4AB), Color(0xFF7DD3A0), Color(0xFFF2C14E),
-                Color(0xFFC0C1FF), Color(0xFFE8B4F8), Color(0xFF8FD6E8), Color(0xFFE5E1E4),
-                Color(0xFF8B8A99), Color(0xFFFFDAD6), Color(0xFFA8E8C0), Color(0xFFFFDF8E),
-                Color(0xFFE1E0FF), Color(0xFFF6D9FF), Color(0xFFC0F0FF), Color(0xFFFFFFFF),
-            ),
-        )
+        /** 深色底：对齐应用强调色，黑色提亮以便可读。取值在主题 token 文件中声明。 */
+        val Dark = AnsiPalette(NexaraAnsiDark)
 
-        /** 浅色底上加深各色以保持对比度；白色映射为深灰。 */
-        val Light = AnsiPalette(
-            listOf(
-                Color(0xFF1C1B1F), Color(0xFFBA1A1A), Color(0xFF1E7A4C), Color(0xFF7A5900),
-                Color(0xFF4A4BC8), Color(0xFF8E3FA8), Color(0xFF00687A), Color(0xFF5F5E66),
-                Color(0xFF47464F), Color(0xFF93000A), Color(0xFF00522F), Color(0xFF5B4300),
-                Color(0xFF2F2FA8), Color(0xFF6C2085), Color(0xFF004E5C), Color(0xFF1C1B1F),
-            ),
-        )
+        /** 浅色底：各色加深以保持对比度，白色映射为深灰。 */
+        val Light = AnsiPalette(NexaraAnsiLight)
     }
 }
 
@@ -110,7 +98,8 @@ internal fun AnsiStyle.toSpanStyle(palette: AnsiPalette, defaultForeground: Colo
     var background = background?.let(palette::color)
     if (inverse) {
         val swapped = foreground ?: defaultForeground
-        foreground = background ?: Color.Black
+        // 反显且未指定背景时，以调色板黑色作前景，深浅色主题各自可读。
+        foreground = background ?: palette.color(AnsiColor.Indexed(0))
         background = swapped
     }
     if (dim) foreground = (foreground ?: defaultForeground).copy(alpha = 0.6f)

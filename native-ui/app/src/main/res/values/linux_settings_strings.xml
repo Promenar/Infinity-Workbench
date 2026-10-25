@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [
+    <!ENTITY brand "Nexara">
+]>
 <resources>
     <!-- 工具页入口 -->
     <string name="linux_entry_title">Linux environment</string>
@@ -36,7 +39,7 @@
 
     <!-- 安装引导 -->
     <string name="linux_install_hero_title">A complete Linux for your agent</string>
-    <string name="linux_install_hero_body">Runs Alpine Linux inside Nexara. Once installed, agent commands run in it, apk can install Python, Node, git, build tools and more, and you can use it directly in a terminal. No Termux and no root needed.</string>
+    <string name="linux_install_hero_body">Runs Alpine Linux inside &brand;. Once installed, agent commands run in it, apk can install Python, Node, git, build tools and more, and you can use it directly in a terminal. No Termux and no root needed.</string>
     <string name="linux_install_contents">What gets installed</string>
     <string name="linux_install_base_title">Alpine Linux %1$s</string>
     <string name="linux_install_base_subtitle">Built into the app, about 10 MB unpacked, installs offline</string>
@@ -45,7 +48,7 @@
     <string name="linux_install_space_title">Free space</string>
     <string name="linux_install_space_ok">%1$s free on this device, enough</string>
     <string name="linux_install_space_low">Only %1$s free; at least %2$s is needed</string>
-    <string name="linux_install_warning">Linux commands run as Nexara and can access app data and the network. In the Workspace mode, every command needs your approval.</string>
+    <string name="linux_install_warning">Linux commands run as &brand; and can access app data and the network. In the Workspace mode, every command needs your approval.</string>
     <string name="linux_install_action">Install</string>
     <string name="linux_install_alternatives">You can also keep using Termux or SSH hosts</string>
 
@@ -79,12 +82,12 @@
 
     <!-- 失败原因 -->
     <string name="linux_failure_storage">Not enough free space.</string>
-    <string name="linux_failure_asset">The built-in system image is damaged. Reinstall Nexara.</string>
+    <string name="linux_failure_asset">The built-in system image is damaged. Reinstall &brand;.</string>
     <string name="linux_failure_extract">Could not unpack the system.</string>
     <string name="linux_failure_network">Network error. Check your connection or try another mirror.</string>
     <string name="linux_failure_packages">Installing packages failed.</string>
     <string name="linux_failure_diagnostics">Diagnostics failed.</string>
-    <string name="linux_failure_proot">The Linux runtime library is missing. Reinstall Nexara.</string>
+    <string name="linux_failure_proot">The Linux runtime library is missing. Reinstall &brand;.</string>
     <string name="linux_failure_rootfs">The Linux system files are damaged.</string>
     <string name="linux_failure_io">A file operation failed.</string>
     <string name="linux_failure_details">Details</string>

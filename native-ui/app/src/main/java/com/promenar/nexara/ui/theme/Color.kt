@@ -195,3 +195,19 @@ internal val NexaraLightColorScheme = lightColorScheme(
     inverseSurface = Color(0xFF303033),
     inverseOnSurface = Color(0xFFF3F0F3),
 )
+
+/** 终端与命令输出的 ANSI 16 色（深色底）：红、绿、黄、蓝对齐应用错误、成功、警示与主色，黑色提亮以便可读。 */
+val NexaraAnsiDark = listOf(
+    Color(0xFF6E6C75), Color(0xFFFFB4AB), Color(0xFF7DD3A0), Color(0xFFF2C14E),
+    Color(0xFFC0C1FF), Color(0xFFE8B4F8), Color(0xFF8FD6E8), Color(0xFFE5E1E4),
+    Color(0xFF8B8A99), Color(0xFFFFDAD6), Color(0xFFA8E8C0), Color(0xFFFFDF8E),
+    Color(0xFFE1E0FF), Color(0xFFF6D9FF), Color(0xFFC0F0FF), Color(0xFFFFFFFF),
+)
+
+/** 终端与命令输出的 ANSI 16 色（浅色底）：各色加深以保持对比度，白色映射为深灰。 */
+val NexaraAnsiLight = listOf(
+    Color(0xFF1C1B1F), Color(0xFFBA1A1A), Color(0xFF1E7A4C), Color(0xFF7A5900),
+    Color(0xFF4A4BC8), Color(0xFF8E3FA8), Color(0xFF00687A), Color(0xFF5F5E66),
+    Color(0xFF47464F), Color(0xFF93000A), Color(0xFF00522F), Color(0xFF5B4300),
+    Color(0xFF2F2FA8), Color(0xFF6C2085), Color(0xFF004E5C), Color(0xFF1C1B1F),
+)
