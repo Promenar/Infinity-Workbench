@@ -86,19 +86,19 @@ class CreateFileSkill(
         }
         // 初始内容走 write_file 同一事务写入路径，以获得版本记录与索引事件。
         val write = try {
-            fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, Sha256Utils.hash(""))
+            fileOpRepo.writeFileAtomic(context.workspaceRootUuid, created!!.uuid, content, context.sessionId, Sha256Utils.hash(""))
         } catch (failure: WorkspaceTextPolicyException) {
-            return workspaceToolError(id, "文件已创建为空文件 $path [uuid=$uuid]，但内容未写入：${failure.safeMessage}")
+            return workspaceToolError(id, "文件已创建为空文件 $path [uuid=${created!!.uuid}]，但内容未写入：${failure.safeMessage}")
         }
         return when (write) {
             is WriteResult.Success -> ToolResult(
                 "create_file_${System.currentTimeMillis()}",
-                "已创建 $path [uuid=$uuid] [hash=${write.newHash}]" +
+                "已创建 $path [uuid=${created!!.uuid}] [hash=${write.newHash}]" +
                     if (write.indexQueued) "" else "（索引尚未入队，可稍后对该文件 write_file 原样写回补偿）",
             )
             is WriteResult.Conflict, WriteResult.NotFound -> workspaceToolError(
                 id,
-                "文件已创建为空文件 $path [uuid=$uuid]，但内容写入未完成，请用 write_file 重试。",
+                "文件已创建为空文件 $path [uuid=${created!!.uuid}]，但内容写入未完成，请用 write_file 重试。",
             )
         }
     }

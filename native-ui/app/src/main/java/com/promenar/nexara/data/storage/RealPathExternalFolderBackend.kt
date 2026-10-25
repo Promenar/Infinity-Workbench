@@ -10,6 +10,7 @@ import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalFolderPaths
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -99,44 +100,50 @@ class RealPathExternalFolderBackend internal constructor(
                 val original = snapshot(parent, name, normalized, hash = true)
                 checkVersion(original, expectedSha256, createOnly)
                 val originalState = original?.let { stateFor(parent, name, it) }
-                val temporary = ".nexara-write-${UUID.randomUUID()}"
-                var temporaryId: String? = null
-                var isolated: String? = null
-                try {
-                    parent.createFile(temporary).use { destination ->
-                        temporaryId = destination.state().objectId
-                        copyBounded(content.inputStream(), destination.output, content.size.toLong())
-                        destination.sync()
+                withInternalDirectory(root) { internal ->
+                    val temporary = ".nexara-write-${UUID.randomUUID()}"
+                    var temporaryId: String? = null
+                    var isolated: String? = null
+                    try {
+                        internal.createFile(temporary).use { destination ->
+                            temporaryId = destination.state().objectId
+                            copyBounded(content.inputStream(), destination.output, content.size.toLong())
+                            destination.sync()
+                        }
+                        currentCoroutineContext().ensureActive()
+                        val current = snapshot(parent, name, normalized, hash = true)
+                        checkVersion(current, expectedSha256, createOnly)
+                        if (current?.identity != original?.identity || current?.sha256 != original?.sha256) {
+                            fail("CONFLICT", "文件在写入期间发生变化，请重新读取")
+                        }
+                        if (original != null) {
+                            val quarantine = ".nexara-replace-${UUID.randomUUID()}"
+                            try { parent.moveNew(name, internal, quarantine) }
+                            catch (failure: Throwable) {
+                                if (internal.stat(quarantine) != null) recoverOrThrow(internal, quarantine, parent, name, normalized, failure)
+                                throw moveFailure(failure)
+                            }
+                            isolated = quarantine
+                            verifyIsolated(internal, quarantine, normalized, original, originalState!!)
+                        }
+                        val publishedId = publishNew(internal, temporary, parent, name)
+                        // 只清理本次创建且身份仍匹配的临时副本。
+                        cleanupOwnedFile(internal, temporary, temporaryId)
+                        temporaryId = null
+                        val published = snapshot(parent, name, normalized, hash = true) ?: fail("UNAVAILABLE", "写入后的文档不可用")
+                        if (parent.stat(name)?.objectId != publishedId || published.sha256 != sha256(content)) fail("CONFLICT", "发布文档在校验期间发生变化")
+                        isolated?.let { quarantine ->
+                            verifyIsolated(internal, quarantine, normalized, original!!, originalState!!)
+                            internal.deleteFile(quarantine)
+                            isolated = null
+                        }
+                        published
+                    } catch (exception: Throwable) {
+                        isolated?.let { recoverOrThrow(internal, it, parent, name, normalized, exception) }
+                        throw exception
+                    } finally {
+                        cleanupOwnedFile(internal, temporary, temporaryId)
                     }
-                    currentCoroutineContext().ensureActive()
-                    val current = snapshot(parent, name, normalized, hash = true)
-                    checkVersion(current, expectedSha256, createOnly)
-                    if (current?.identity != original?.identity || current?.sha256 != original?.sha256) {
-                        fail("CONFLICT", "文件在写入期间发生变化，请重新读取")
-                    }
-                    if (original != null) {
-                        val quarantine = ".nexara-replace-${UUID.randomUUID()}"
-                        parent.atomicReplace(name, quarantine)
-                        isolated = quarantine
-                        verifyIsolated(parent, quarantine, normalized, original, originalState!!)
-                    }
-                    val publishedId = publishNew(parent, temporary, name)
-                    // 硬链接发布后，清理临时链接会更新同一 inode 的 ctime，回执必须在清理后生成。
-                    cleanupOwnedFile(parent, temporary, temporaryId)
-                    temporaryId = null
-                    val published = snapshot(parent, name, normalized, hash = true) ?: fail("UNAVAILABLE", "写入后的文档不可用")
-                    if (parent.stat(name)?.objectId != publishedId || published.sha256 != sha256(content)) fail("CONFLICT", "发布文档在校验期间发生变化")
-                    isolated?.let { quarantine ->
-                        verifyIsolated(parent, quarantine, normalized, original!!, originalState!!)
-                        parent.deleteFile(quarantine)
-                        isolated = null
-                    }
-                    published
-                } catch (exception: Throwable) {
-                    isolated?.let { recoverOrThrow(parent, it, name, normalized, exception) }
-                    throw exception
-                } finally {
-                    cleanupOwnedFile(parent, temporary, temporaryId)
                 }
             }
         }
@@ -164,7 +171,7 @@ class RealPathExternalFolderBackend internal constructor(
                 preflightDelete(parent, name, normalized)
                 val current = snapshot(parent, name, normalized, hash = true)
                 if (current?.identity != original.identity || current?.sha256 != original.sha256) fail("CONFLICT", "文件在删除期间发生变化")
-                deleteBound(parent, name, normalized, original, originalState)
+                withInternalDirectory(root) { internal -> deleteBound(parent, name, normalized, internal, original, originalState) }
             }
         }
     }
@@ -226,26 +233,31 @@ class RealPathExternalFolderBackend internal constructor(
                 preflightDelete(sourceParent, sourceName, source)
                 withParent(root, target, original.takeIf { it.isDirectory }?.objectId) { targetParent, targetName ->
                     if (targetParent.stat(targetName) != null) fail("NAME_EXISTS", "同名文件或目录已经存在")
-                    val created = CopiedNode(".nexara-copy-${UUID.randomUUID()}")
-                    try {
-                        copyNode(sourceParent, sourceName, source, targetParent, created)
-                        currentCoroutineContext().ensureActive()
-                        try { targetParent.moveNew(created.name, targetParent, targetName) }
-                        catch (failure: Throwable) {
-                            if (targetParent.stat(created.name) == null && targetParent.stat(targetName)?.objectId == created.state?.objectId) {
-                                created.name = targetName
+                    withInternalDirectory(root) { internal ->
+                        val created = CopiedNode(".nexara-copy-${UUID.randomUUID()}")
+                        var createdParent = internal
+                        try {
+                            copyNode(sourceParent, sourceName, source, internal, created)
+                            currentCoroutineContext().ensureActive()
+                            try { internal.moveNew(created.name, targetParent, targetName) }
+                            catch (failure: Throwable) {
+                                if (internal.stat(created.name) == null && targetParent.stat(targetName)?.objectId == created.state?.objectId) {
+                                    created.name = targetName
+                                    createdParent = targetParent
+                                }
+                                throw moveFailure(failure)
                             }
-                            throw moveFailure(failure)
+                            created.name = targetName
+                            createdParent = targetParent
+                            val published = targetParent.stat(targetName) ?: fail("CONFLICT", "复制目标在发布后消失")
+                            if (!sameMovedObject(published, checkNotNull(created.state))) fail("CONFLICT", "复制目标在发布期间被替换或修改")
+                        } catch (failure: Throwable) {
+                            withContext(NonCancellable) {
+                                try { rollbackCopy(createdParent, created, internal) }
+                                catch (cleanup: Throwable) { failure.addSuppressed(cleanup); recoveryRequired(failure) }
+                            }
+                            throw failure
                         }
-                        created.name = targetName
-                        val published = targetParent.stat(targetName) ?: fail("CONFLICT", "复制目标在发布后消失")
-                        if (!sameMovedObject(published, checkNotNull(created.state))) fail("CONFLICT", "复制目标在发布期间被替换或修改")
-                    } catch (failure: Throwable) {
-                        withContext(NonCancellable) {
-                            try { rollbackCopy(targetParent, created) }
-                            catch (cleanup: Throwable) { failure.addSuppressed(cleanup); recoveryRequired(failure) }
-                        }
-                        throw failure
                     }
                 }
             }
@@ -308,7 +320,7 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    private fun rollbackCopy(parent: BoundRealPathDirectory, created: CopiedNode) {
+    private fun rollbackCopy(parent: BoundRealPathDirectory, created: CopiedNode, internal: BoundRealPathDirectory) {
         val expected = created.state ?: return
         val current = parent.stat(created.name) ?: return
         if (current.objectId != expected.objectId || current.isSymbolicLink || current.isDirectory != expected.isDirectory) {
@@ -316,28 +328,28 @@ class RealPathExternalFolderBackend internal constructor(
         }
         val quarantine = ".nexara-copy-cleanup-${UUID.randomUUID()}"
         try {
-            parent.moveNew(created.name, parent, quarantine)
-            val isolated = parent.stat(quarantine) ?: fail("RECOVERY_REQUIRED", "复制清理目标消失")
+            parent.moveNew(created.name, internal, quarantine)
+            val isolated = internal.stat(quarantine) ?: fail("RECOVERY_REQUIRED", "复制清理目标消失")
             if (!sameMovedObject(isolated, expected)) fail("RECOVERY_REQUIRED", "复制清理目标被替换或修改")
             if (isolated.isDirectory) {
-                parent.openDirectory(quarantine).use { directory ->
+                internal.openDirectory(quarantine).use { directory ->
                     if (directory.state().objectId != expected.objectId) fail("RECOVERY_REQUIRED", "复制目标目录被替换")
                     var failure: Throwable? = null
                     for (child in created.children.asReversed()) {
-                        try { rollbackCopy(directory, child) }
+                        try { rollbackCopy(directory, child, internal) }
                         catch (cleanup: Throwable) { if (failure == null) failure = cleanup else failure.addSuppressed(cleanup) }
                     }
                     failure?.let { throw it }
-                    if (directory.names().isNotEmpty() || parent.stat(quarantine)?.objectId != expected.objectId) {
+                    if (directory.names().isNotEmpty() || internal.stat(quarantine)?.objectId != expected.objectId) {
                         fail("RECOVERY_REQUIRED", "复制目标目录发生变化，已保留供人工核查")
                     }
-                    parent.deleteDirectory(quarantine)
+                    internal.deleteDirectory(quarantine)
                 }
             } else {
-                parent.deleteFile(quarantine)
+                internal.deleteFile(quarantine)
             }
         } catch (failure: Throwable) {
-            parent.stat(quarantine)?.let { isolated -> restoreMoved(parent, quarantine, parent, created.name, isolated, failure) }
+            internal.stat(quarantine)?.let { isolated -> restoreMoved(internal, quarantine, parent, created.name, isolated, failure) }
             throw failure
         }
     }
@@ -381,15 +393,35 @@ class RealPathExternalFolderBackend internal constructor(
         else -> failure
     }
 
-    private suspend fun publishNew(parent: BoundRealPathDirectory, temporary: String, name: String): String {
-        val sourceId = parent.stat(temporary)?.objectId ?: fail("NOT_FOUND", "发布源文档不存在")
-        if (parent.linkNew(temporary, name)) return sourceId
+    private suspend fun publishNew(sourceParent: BoundRealPathDirectory, temporary: String, parent: BoundRealPathDirectory, name: String,
+        restoringOriginal: Boolean = false): String {
+        val captured = snapshot(sourceParent, temporary, name, hash = true) ?: fail("NOT_FOUND", "发布源文档不存在")
+        val original = stateFor(sourceParent, temporary, captured)
+        try {
+            sourceParent.moveNew(temporary, parent, name)
+            return original.objectId
+        } catch (failure: Throwable) {
+            val remaining = sourceParent.stat(temporary)
+            if (remaining == null) {
+                val current = parent.stat(name)
+                if (current != null && sameMovedObject(current, original) &&
+                    snapshot(parent, name, name, hash = true)?.sha256 == captured.sha256) {
+                    // 原文补偿已提交时保留唯一原文；新内容发布失败才清理本次发布物。
+                    if (restoringOriginal) return original.objectId
+                    cleanupOwnedFile(parent, name, original.objectId)
+                }
+                throw failure
+            }
+            val unsupported = failure is ExternalFolderException && failure.code == "UNSUPPORTED" ||
+                failure is ErrnoException && failure.errno in setOf(OsConstants.EXDEV, OsConstants.ENOSYS, OsConstants.EOPNOTSUPP)
+            if (!unsupported || !sameMovedObject(remaining, original)) throw failure
+        }
         var createdId: String? = null
         try {
-            // 不支持硬链接的共享卷使用独占新建，不覆盖并发新增的目录项。
+            // 无跨目录移动原语的卷使用独占新建，不覆盖并发新增的目录项。
             parent.createFile(name).use { destination ->
                 createdId = destination.state().objectId
-                parent.openRead(temporary).use { source -> copyBounded(source.input, destination.output, Long.MAX_VALUE) }
+                sourceParent.openRead(temporary).use { source -> copyBounded(source.input, destination.output, Long.MAX_VALUE) }
                 destination.sync()
             }
             return createdId!!
@@ -413,7 +445,7 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    private suspend fun deleteBound(parent: BoundRealPathDirectory, name: String, path: String,
+    private suspend fun deleteBound(parent: BoundRealPathDirectory, name: String, path: String, internal: BoundRealPathDirectory,
         expected: ExternalFolderEntry? = null, expectedState: RealPathFileState? = null) {
         currentCoroutineContext().ensureActive()
         ensureAllowed(path)
@@ -422,25 +454,29 @@ class RealPathExternalFolderBackend internal constructor(
         val quarantine = ".nexara-delete-${UUID.randomUUID()}"
         var isolated = false
         try {
-            parent.atomicReplace(name, quarantine)
+            try { parent.moveNew(name, internal, quarantine) }
+            catch (failure: Throwable) {
+                if (internal.stat(quarantine) != null) recoverOrThrow(internal, quarantine, parent, name, path, failure)
+                throw moveFailure(failure)
+            }
             isolated = true
-            verifyIsolated(parent, quarantine, path, original, state)
+            verifyIsolated(internal, quarantine, path, original, state)
             if (state.isDirectory) {
-                parent.openDirectory(quarantine).use { directory ->
+                internal.openDirectory(quarantine).use { directory ->
                     for (child in directory.names()) {
                         if (!visibleName(child)) fail("INVALID_PATH", "删除范围包含内部恢复文件或保留目录")
-                        deleteBound(directory, child, join(path, child))
+                        deleteBound(directory, child, join(path, child), internal)
                     }
-                    if (parent.stat(quarantine)?.objectId != state.objectId) fail("CONFLICT", "隔离目录在删除期间被替换")
-                    parent.deleteDirectory(quarantine)
+                    if (internal.stat(quarantine)?.objectId != state.objectId) fail("CONFLICT", "隔离目录在删除期间被替换")
+                    internal.deleteDirectory(quarantine)
                 }
             } else {
-                verifyIsolated(parent, quarantine, path, original, state)
-                parent.deleteFile(quarantine)
+                verifyIsolated(internal, quarantine, path, original, state)
+                internal.deleteFile(quarantine)
             }
             isolated = false
         } catch (exception: Throwable) {
-            if (isolated) recoverOrThrow(parent, quarantine, name, path, exception)
+            if (isolated) recoverOrThrow(internal, quarantine, parent, name, path, exception)
             throw exception
         }
     }
@@ -463,33 +499,33 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    private suspend fun recoverOrThrow(parent: BoundRealPathDirectory, quarantine: String, originalName: String, path: String, failure: Throwable) {
+    private suspend fun recoverOrThrow(internal: BoundRealPathDirectory, quarantine: String, parent: BoundRealPathDirectory, originalName: String, path: String, failure: Throwable) {
         var restored = false
         withContext(NonCancellable) {
-            try { restored = restoreNoReplace(parent, quarantine, originalName, path) }
+            try { restored = restoreNoReplace(internal, quarantine, parent, originalName, path) }
             catch (recoveryFailure: Throwable) { failure.addSuppressed(recoveryFailure) }
         }
         if (restored) return
-        val location = join(path.substringBeforeLast('/').ifEmpty { "/" }, quarantine)
+        val location = "/${WorkspaceInternalPaths.DIRECTORY}/$quarantine"
         val recovery = ExternalFolderException("RECOVERY_REQUIRED", "未能安全恢复原目标；请核查隔离副本 $location 与 $path")
         if (failure is CancellationException) { failure.addSuppressed(recovery); throw failure }
         recovery.addSuppressed(failure)
         throw recovery
     }
 
-    private suspend fun restoreNoReplace(parent: BoundRealPathDirectory, quarantine: String, name: String, path: String): Boolean {
+    private suspend fun restoreNoReplace(internal: BoundRealPathDirectory, quarantine: String, parent: BoundRealPathDirectory, name: String, path: String): Boolean {
         if (parent.stat(name) != null) return false
-        val isolated = parent.stat(quarantine) ?: return false
-        // 目录没有可用的硬链接/独占重命名恢复原语，保留整个隔离目录供人工恢复。
+        val isolated = internal.stat(quarantine) ?: return false
+        // 递归删除失败时保留隔离目录，避免把不完整目录当作已恢复目标。
         if (isolated.isDirectory || isolated.isSymbolicLink || !isolated.isRegularFile) return false
-        val captured = snapshot(parent, quarantine, path, hash = true) ?: return false
-        val restoredId = publishNew(parent, quarantine, name)
+        val captured = snapshot(internal, quarantine, path, hash = true) ?: return false
+        val restoredId = publishNew(internal, quarantine, parent, name, restoringOriginal = true)
         val restored = snapshot(parent, name, path, hash = true) ?: return false
         if (parent.stat(name)?.objectId != restoredId || restored.sha256 != captured.sha256) return false
-        val current = parent.stat(quarantine) ?: return false
+        val current = internal.stat(quarantine) ?: return restoredId == isolated.objectId
         if (current.objectId != isolated.objectId || current.contentVersion != isolated.contentVersion ||
-            snapshot(parent, quarantine, path, hash = true)?.sha256 != captured.sha256) return false
-        parent.deleteFile(quarantine)
+            snapshot(internal, quarantine, path, hash = true)?.sha256 != captured.sha256) return false
+        internal.deleteFile(quarantine)
         return true
     }
 
@@ -538,6 +574,23 @@ class RealPathExternalFolderBackend internal constructor(
         } catch (_: IOException) { Unit } catch (_: ErrnoException) { Unit } catch (_: ExternalFolderException) { Unit }
     }
 
+    private suspend fun <T> withInternalDirectory(root: BoundRealPathDirectory, action: suspend (BoundRealPathDirectory) -> T): T {
+        val name = WorkspaceInternalPaths.DIRECTORY
+        ensureAllowed("/$name")
+        val existing = root.stat(name)
+        if (existing != null) requireSupported(existing) else root.createDirectory(name)
+        root.openDirectory(name).use { directory ->
+            if (root.stat(name)?.objectId != directory.state().objectId) fail("CONFLICT", "内部暂存目录在打开期间被替换")
+            if (existing == null) {
+                directory.createFile(".gitignore").use { ignore ->
+                    ignore.output.write("*\n".toByteArray())
+                    ignore.sync()
+                }
+            }
+            return action(directory)
+        }
+    }
+
     private suspend fun <T> withRoot(action: suspend (BoundRealPathDirectory) -> T): T {
         val opened = mutableListOf<BoundRealPathDirectory>()
         var rootResolved = false
@@ -548,6 +601,7 @@ class RealPathExternalFolderBackend internal constructor(
                 directory = directory.openDirectory(component.toString()).also { opened.add(it) }
             }
             rootResolved = true
+            migrateLegacyTemporaries(directory, directory, "/")
             return action(directory)
         } catch (exception: ExternalFolderException) {
             if (!rootResolved && exception.code in setOf("NOT_FOUND", "NOT_DIRECTORY")) {
@@ -578,6 +632,52 @@ class RealPathExternalFolderBackend internal constructor(
                 if (!state.isDirectory) fail("NOT_DIRECTORY", "目标不是目录")
                 directory = directory.openDirectory(name).also { opened.add(it) }
                 checkTarget()
+            }
+            if (path != "/") migrateLegacyTemporaries(root, directory, path)
+            return action(directory)
+        } finally { opened.asReversed().forEach { it.close() } }
+    }
+
+    private suspend fun migrateLegacyTemporaries(root: BoundRealPathDirectory, parent: BoundRealPathDirectory, parentPath: String) {
+        val names = try { parent.names().filter(ExternalFolderLegacyTemporaries::matches) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { ExternalFolderLegacyTemporaries.failed("real_path", failure); return }
+        for (name in names) {
+            currentCoroutineContext().ensureActive()
+            try {
+                val original = parent.stat(name) ?: continue
+                requireSupported(original)
+                withInternalDirectory(root) { internal ->
+                    withLegacyDirectory(internal, parentPath) { target ->
+                        if (target.stat(name) != null) fail("CONFLICT", "旧暂存迁移目标已经存在，已保留原副本")
+                        parent.moveNew(name, target, name)
+                        val moved = target.stat(name) ?: fail("CONFLICT", "旧暂存迁移后消失")
+                        if (!sameMovedObject(moved, original)) {
+                            val failure = ExternalFolderException("CONFLICT", "旧暂存在迁移期间发生变化")
+                            restoreMoved(target, name, parent, name, moved, failure)
+                            throw failure
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { ExternalFolderLegacyTemporaries.failed("real_path", failure) }
+        }
+    }
+
+    private fun <T> withLegacyDirectory(internal: BoundRealPathDirectory, parentPath: String, action: (BoundRealPathDirectory) -> T): T {
+        val opened = mutableListOf<BoundRealPathDirectory>()
+        try {
+            var directory = internal
+            for (name in listOf("legacy") + parentPath.split('/').filter { it.isNotEmpty() }) {
+                val existing = directory.stat(name)
+                if (existing == null) directory.createDirectory(name) else requireSupported(existing)
+                val child = directory.openDirectory(name)
+                if (directory.stat(name)?.objectId != child.state().objectId) {
+                    child.close()
+                    fail("CONFLICT", "旧暂存目标目录在打开期间被替换")
+                }
+                opened += child
+                directory = child
             }
             return action(directory)
         } finally { opened.asReversed().forEach { it.close() } }
@@ -635,6 +735,19 @@ class RealPathExternalFolderBackend internal constructor(
         private const val STAT_HASH_LIMIT = 1024L * 1024
         private val locks = ConcurrentHashMap<String, Mutex>()
         private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
+    }
+}
+
+/** 只接管已发布版本使用的完整暂存名称，未知内部名称保持原位。 */
+internal object ExternalFolderLegacyTemporaries {
+    private val pattern = Regex("\\.nexara-(?:write|replace|delete|copy|copy-cleanup|backup)-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    fun matches(name: String): Boolean = pattern.matches(name)
+    fun failed(backend: String, failure: Exception) {
+        com.promenar.nexara.utils.NexaraLogger.diagnostic("workspace.external_legacy_migration_failed", mapOf(
+            "backend" to backend,
+            "exception" to failure.javaClass.simpleName,
+            "code" to (failure as? ExternalFolderException)?.code,
+        ))
     }
 }
 

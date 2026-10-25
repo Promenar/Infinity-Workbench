@@ -52,6 +52,100 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
 
     override fun createBackend(): ExternalFolderBackend = SafExternalFolderBackend(application.contentResolver, treeUri)
 
+    @Test fun `临时文档与备份仅位于根隐藏目录且忽略规则不复写`() = runBlocking {
+        val backend = createBackend()
+        backend.createDirectory("/notes")
+        var stagedInsideRoot = false
+        provider.onTemporaryWrite = {
+            val staged = provider.root.walkTopDown().filter { it.name.startsWith(".nexara-write-") }.toList()
+            stagedInsideRoot = staged.isNotEmpty() && staged.all { it.toPath().startsWith(File(provider.root, ".nexara").toPath()) }
+        }
+        val original = backend.write("/notes/file.txt", "original".toByteArray())
+        assertTrue(stagedInsideRoot)
+        val ignore = File(provider.root, ".nexara/.gitignore")
+        assertEquals("*\n", ignore.readText())
+        ignore.writeText("*.tmp\n")
+        backend.write("/notes/file.txt", "new".toByteArray(), original.sha256)
+        assertEquals("*.tmp\n", ignore.readText())
+        ignore.delete()
+        createBackend().write("/next", "next".toByteArray())
+        assertFalse(ignore.exists())
+        assertEquals(listOf("file.txt"), File(provider.root, "notes").list()!!.toList())
+        assertTrue(File(provider.root, ".nexara").list()!!.isEmpty())
+    }
+
+    @Test fun `提供商缺少跨目录移动能力时拒绝替换并保留原内容`() = runBlocking {
+        val backend = createBackend()
+        val original = backend.write("/file.txt", "original".toByteArray())
+        provider.moveSupported = false
+        expectCode("UNSUPPORTED") { backend.write("/file.txt", "new".toByteArray(), original.sha256) }
+        assertArrayEquals("original".toByteArray(), backend.read("/file.txt"))
+    }
+
+    @Test fun `旧文档隔离已提交但回执丢失时仍能恢复原文档`() = runBlocking {
+        for (stableIds in listOf(false, true)) {
+            provider.stableDocumentIds = stableIds
+            val backend = createBackend()
+            val name = if (stableIds) "stable.txt" else "path.txt"
+            val original = backend.write("/$name", "original".toByteArray())
+            provider.failNextMoveAfterCommit = true
+            expectCode("UNAVAILABLE") { backend.write("/$name", "new".toByteArray(), original.sha256) }
+            assertArrayEquals("original".toByteArray(), backend.read("/$name"))
+            assertEquals(listOf(".gitignore"), File(provider.root, ".nexara").list()!!.toList())
+        }
+    }
+
+    @Test fun `备份重命名已提交但回执或查询失败时按真实名称恢复原文档`() = runBlocking {
+        for (stableIds in listOf(false, true)) {
+            for (queryFailure in listOf(false, true)) {
+                provider.stableDocumentIds = stableIds
+                val backend = createBackend()
+                val name = "original-$stableIds-$queryFailure.txt"
+                val original = backend.write("/$name", "original".toByteArray())
+                provider.failBackupRenameAfterCommit = !queryFailure
+                provider.failBackupRenameQueryAfterCommit = queryFailure
+                expectCode("UNAVAILABLE") { backend.write("/$name", "new".toByteArray(), original.sha256) }
+                assertArrayEquals("original".toByteArray(), backend.read("/$name"))
+                assertFalse(provider.root.list()!!.any { it.startsWith(".nexara-") })
+                assertEquals(listOf(".gitignore"), File(provider.root, ".nexara").list()!!.toList())
+            }
+        }
+    }
+
+    @Test fun `首次访问保留旧暂存的根与嵌套路径且不收养未知内部名称`() = runBlocking {
+        val name = ".nexara-backup-11111111-2222-4333-8444-555555555555"
+        File(provider.root, name).writeText("root-recovery")
+        File(provider.root, "notes/$name").apply { parentFile!!.mkdirs(); writeText("nested-recovery") }
+        File(provider.root, ".nexara-unknown-11111111-2222-4333-8444-555555555555").writeText("user")
+        val backend = createBackend()
+        backend.list("/")
+        backend.list("/notes")
+        assertEquals("root-recovery", File(provider.root, ".nexara/legacy/$name").readText())
+        assertEquals("nested-recovery", File(provider.root, ".nexara/legacy/notes/$name").readText())
+        assertFalse(File(provider.root, name).exists())
+        assertFalse(File(provider.root, "notes/$name").exists())
+        assertEquals("user", File(provider.root, ".nexara-unknown-11111111-2222-4333-8444-555555555555").readText())
+        createBackend().list("/notes")
+        assertEquals("nested-recovery", File(provider.root, ".nexara/legacy/notes/$name").readText())
+    }
+
+    @Test fun `旧暂存缺少移动能力或目标冲突时保留两份且不阻断访问`() = runBlocking {
+        val name = ".nexara-write-11111111-2222-4333-8444-555555555555"
+        val source = File(provider.root, "notes/$name").apply { parentFile!!.mkdirs(); writeText("source") }
+        provider.moveSupported = false
+        createBackend().list("/notes")
+        assertEquals("source", source.readText())
+        val target = File(provider.root, ".nexara/legacy/notes/$name").apply { parentFile!!.mkdirs(); writeText("preserved") }
+        provider.moveSupported = true
+        createBackend().list("/notes")
+        assertEquals("source", source.readText())
+        assertEquals("preserved", target.readText())
+        target.delete()
+        createBackend().list("/notes")
+        assertFalse(source.exists())
+        assertEquals("source", target.readText())
+    }
+
     @Test
     fun largeFileStatDoesNotOpenDocumentBody() = runBlocking {
         val backend = createBackend()
@@ -112,7 +206,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         assertArrayEquals("original".toByteArray(), backend.read("/file.txt"))
         backend.write("/file.txt", "new".toByteArray(), original.sha256)
         assertArrayEquals("new".toByteArray(), backend.read("/file.txt"))
-        assertEquals(listOf("file.txt"), provider.root.list()!!.toList())
+        assertEquals(setOf(".nexara", "file.txt"), provider.root.list()!!.toSet())
     }
 
     @Test
@@ -121,7 +215,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         val backend = createBackend()
         backend.write("/new.txt", "new".toByteArray(), createOnly = true)
         assertArrayEquals("new".toByteArray(), backend.read("/new.txt"))
-        assertEquals(listOf("new.txt"), provider.root.list()!!.toList())
+        assertEquals(setOf(".nexara", "new.txt"), provider.root.list()!!.toSet())
     }
 
     @Test
@@ -138,7 +232,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         }
         assertCancellation(cancellation, caught)
         assertArrayEquals("original".toByteArray(), backend.read("/file.txt"))
-        assertEquals(listOf("file.txt"), provider.root.list()!!.toList())
+        assertEquals(setOf(".nexara", "file.txt"), provider.root.list()!!.toSet())
     }
 
     @Test
@@ -176,7 +270,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         provider.renameSupported = false
         expectCode("UNSUPPORTED") { backend.write("/file.txt", "new".toByteArray(), original.sha256) }
         assertArrayEquals("original".toByteArray(), backend.read("/file.txt"))
-        assertEquals(listOf("file.txt"), provider.root.list()!!.toList())
+        assertEquals(setOf(".nexara", "file.txt"), provider.root.list()!!.toSet())
     }
 
     @Test
@@ -186,7 +280,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         provider.onTemporaryWrite = { File(provider.root, "file.txt").writeText("concurrent") }
         expectCode("CONFLICT") { backend.write("/file.txt", "new".toByteArray(), original.sha256) }
         assertArrayEquals("concurrent".toByteArray(), backend.read("/file.txt"))
-        assertEquals(listOf("file.txt"), provider.root.list()!!.toList())
+        assertEquals(setOf(".nexara", "file.txt"), provider.root.list()!!.toSet())
     }
 
     @Test
@@ -197,7 +291,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         expectCode("UNAVAILABLE") { backend.write("/file.txt", "new".toByteArray(), original.sha256) }
         assertArrayEquals("original".toByteArray(), backend.read("/file.txt"))
         assertEquals(listOf("file.txt"), backend.list("/").map { it.name })
-        assertFalse(provider.root.list()!!.any { it.startsWith(".nexara") })
+        assertEquals(listOf(".gitignore"), File(provider.root, ".nexara").list()!!.toList())
     }
 
     @Test

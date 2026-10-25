@@ -6,16 +6,179 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     override fun createBackend(): ExternalFolderBackend = JvmBoundRealPathFileSystem().backend(temporaryFolder.newFolder().canonicalFile)
+
+    @Test fun `写入删除复制的暂存与隔离仅位于根隐藏目录`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "notes").mkdir()
+        val fs = JvmBoundRealPathFileSystem()
+        val internalOperations = mutableListOf<java.nio.file.Path>()
+        fs.beforeOperation = { _, path ->
+            if (path.fileName.toString().startsWith(".nexara-")) internalOperations.add(path)
+        }
+        val backend = fs.backend(root)
+        val first = backend.write("/notes/file.txt", "original".toByteArray())
+        backend.write("/notes/file.txt", "changed".toByteArray(), first.sha256)
+        backend.copy("/notes/file.txt", "/notes/copied.txt")
+        backend.delete("/notes/file.txt")
+        assertTrue(internalOperations.isNotEmpty())
+        assertTrue(internalOperations.all { it.startsWith(File(root, ".nexara").toPath()) })
+        assertEquals("*\n", File(root, ".nexara/.gitignore").readText())
+        assertEquals(listOf("copied.txt"), File(root, "notes").list()!!.toList())
+        assertEquals(listOf(".gitignore"), File(root, ".nexara").list()!!.toList())
+    }
+
+    @Test fun `根隐藏目录的忽略规则仅在创建时写入`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        backend.write("/a", "a".toByteArray())
+        val ignore = File(root, ".nexara/.gitignore")
+        assertEquals("*\n", ignore.readText())
+        ignore.writeText("*.tmp\n")
+        backend.write("/b", "b".toByteArray())
+        assertEquals("*.tmp\n", ignore.readText())
+        ignore.delete()
+        JvmBoundRealPathFileSystem().backend(root).write("/c", "c".toByteArray())
+        assertTrue(!ignore.exists())
+    }
+
+    @Test fun `拒绝将根隐藏目录链接至挂载外部`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val outside = temporaryFolder.newFolder().canonicalFile
+        Files.createSymbolicLink(File(root, ".nexara").toPath(), outside.toPath())
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        expectCode("INVALID_PATH") { backend.write("/new", "a".toByteArray()) }
+        assertTrue(outside.list()!!.isEmpty())
+        assertTrue(!File(root, "new").exists())
+    }
+
+    @Test fun `同卷发布先原子移动且不在用户目标创建半成品`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        fs.beforeOperation = { operation, path ->
+            if (operation == "create" && path == File(root, "file").toPath()) throw IOException("用户目标不得先创建半成品")
+        }
+        fs.backend(root).write("/file", "complete".toByteArray())
+        assertEquals("complete", File(root, "file").readText())
+    }
+
+    @Test fun `首次访问将已知旧暂存节点保留至根隐藏目录并保持原相对位置`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val name = ".nexara-write-11111111-2222-4333-8444-555555555555"
+        val nested = ".nexara-copy-cleanup-66666666-7777-4888-8999-aaaaaaaaaaaa"
+        File(root, name).writeText("root-recovery")
+        File(root, "notes/$nested").mkdirs()
+        File(root, "notes/$nested/data").writeText("nested-recovery")
+        File(root, ".nexara-unknown-11111111-2222-4333-8444-555555555555").writeText("user")
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        backend.list("/")
+        backend.list("/notes")
+        assertEquals("root-recovery", File(root, ".nexara/legacy/$name").readText())
+        assertEquals("nested-recovery", File(root, ".nexara/legacy/notes/$nested/data").readText())
+        assertTrue(!File(root, name).exists())
+        assertTrue(!File(root, "notes/$nested").exists())
+        assertEquals("user", File(root, ".nexara-unknown-11111111-2222-4333-8444-555555555555").readText())
+        JvmBoundRealPathFileSystem().backend(root).list("/notes")
+        assertEquals("nested-recovery", File(root, ".nexara/legacy/notes/$nested/data").readText())
+    }
+
+    @Test fun `旧暂存迁移冲突或失败不覆盖不删除且可重试`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val name = ".nexara-replace-11111111-2222-4333-8444-555555555555"
+        val source = File(root, "notes/$name").apply { parentFile!!.mkdirs(); writeText("source") }
+        val target = File(root, ".nexara/legacy/notes/$name").apply { parentFile!!.mkdirs(); writeText("preserved") }
+        val fs = JvmBoundRealPathFileSystem()
+        fs.backend(root).list("/notes")
+        assertEquals("source", source.readText())
+        assertEquals("preserved", target.readText())
+        target.delete()
+        var migrationRejected = false
+        fs.beforeOperation = { operation, path ->
+            if (operation == "replace" && path == source.toPath()) {
+                migrationRejected = true
+                throw IOException("迁移暂不可用")
+            }
+        }
+        fs.backend(root).list("/notes")
+        assertTrue(migrationRejected)
+        assertEquals("source", source.readText())
+        fs.beforeOperation = null
+        fs.backend(root).list("/notes")
+        assertTrue(!source.exists())
+        assertEquals("source", target.readText())
+    }
+
+    @Test fun `发布已移动后报错只清理未修改的本次目标且保留并发替换`() = runBlocking {
+        for (replace in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            var fail = true
+            val base = JvmBoundRealPathFileSystem()
+            fun unwrap(directory: BoundRealPathDirectory) = (directory as? PublishDirectory)?.delegate ?: directory
+            fun wrap(directory: BoundRealPathDirectory): BoundRealPathDirectory = PublishDirectory(directory, ::wrap) { source, target, name ->
+                directory.moveNew(source, unwrap(target), name)
+                if (source.startsWith(".nexara-write-") && fail) {
+                    fail = false
+                    if (replace) {
+                        Files.move(File(root, name).toPath(), File(root, "saved").toPath())
+                        File(root, name).writeText("concurrent")
+                    }
+                    throw IOException("发布后同步失败")
+                }
+            }
+            val fs = object : RealPathFileSystem { override fun openFileSystemRoot() = wrap(base.openFileSystemRoot()) }
+            expectCode("UNAVAILABLE") { RealPathExternalFolderBackend(root, emptySet(), { true }, fs).write("/file", "complete".toByteArray()) }
+            if (replace) assertEquals("concurrent", File(root, "file").readText())
+            else assertTrue(!File(root, "file").exists())
+        }
+    }
+
+    @Test fun `发布失败后补偿移动已提交但同步报错仍保留唯一原文`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "file").writeText("original")
+        var publishFailed = false
+        var recoveryCommitted = false
+        val base = JvmBoundRealPathFileSystem()
+        fun unwrap(directory: BoundRealPathDirectory) = (directory as? PublishDirectory)?.delegate ?: directory
+        fun wrap(directory: BoundRealPathDirectory): BoundRealPathDirectory = PublishDirectory(directory, ::wrap) { source, target, name ->
+            if (source.startsWith(".nexara-write-") && !publishFailed) {
+                publishFailed = true
+                throw IOException("发布前失败")
+            }
+            directory.moveNew(source, unwrap(target), name)
+            if (source.startsWith(".nexara-replace-")) {
+                recoveryCommitted = true
+                throw IOException("补偿移动已提交但同步失败")
+            }
+        }
+        val fs = object : RealPathFileSystem { override fun openFileSystemRoot() = wrap(base.openFileSystemRoot()) }
+        val backend = RealPathExternalFolderBackend(root, emptySet(), { true }, fs)
+        val original = backend.stat("/file")!!
+        expectCode("UNAVAILABLE") { backend.write("/file", "changed".toByteArray(), original.sha256) }
+        assertTrue(publishFailed)
+        assertTrue(recoveryCommitted)
+        assertEquals("original", File(root, "file").readText())
+        assertEquals(listOf(".gitignore"), File(root, ".nexara").list()!!.toList())
+    }
+
+    private class PublishDirectory(
+        val delegate: BoundRealPathDirectory,
+        private val wrap: (BoundRealPathDirectory) -> BoundRealPathDirectory,
+        private val move: (String, BoundRealPathDirectory, String) -> Unit,
+    ) : BoundRealPathDirectory by delegate {
+        override fun openDirectory(name: String) = wrap(delegate.openDirectory(name))
+        override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) = move(source, targetDirectory, target)
+    }
 
     @Test fun `目标祖先目录实际绑定到来源子目录时拒绝复制与移动`() = runBlocking {
         val root = temporaryFolder.newFolder().canonicalFile

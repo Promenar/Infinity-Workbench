@@ -31,6 +31,8 @@ class RoomSessionWorkspaceMutationJournal(
         Unit
     },
     private val afterIdentityMarkerDeleted: () -> Unit = {},
+    private val afterRootDeleted: (String) -> Unit = {},
+    private val identityIsExternal: Boolean = false,
 ) : SessionWorkspaceMutationJournal {
     override suspend fun stage(target: SessionDeletionTarget): StagedSessionWorkspaceMutation =
         withContext(Dispatchers.IO) {
@@ -44,6 +46,7 @@ class RoomSessionWorkspaceMutationJournal(
                 targetRelativePath = targetRelative,
                 databaseTargetUuid = target.sessionId,
                 expectedSha256 = target.rootIdentity,
+                rootIdentityExternal = identityIsExternal,
             )
             val raw = WorkspaceMutationPayloadCodec.encode(payload)
             val now = clock()
@@ -94,6 +97,7 @@ class RoomSessionWorkspaceMutationJournal(
         check(!exists(source) && exists(target)) { "DB_COMMITTED 删除文件布局冲突" }
         verifyIdentity(target, staged.target.rootIdentity)
         deleteTreeKeepingIdentityUntilLast(target)
+        afterRootDeleted(staged.target.rootIdentity)
         check(database.workspaceMutationDao().deleteCommitted(staged.operationId) == 1) {
             "DB_COMMITTED 删除 journal 无法清理"
         }
@@ -125,6 +129,7 @@ class RoomSessionWorkspaceMutationJournal(
         }
         check(payload.databaseTargetUuid == staged.target.sessionId) { "删除 journal 会话身份不匹配" }
         check(payload.expectedSha256 == staged.target.rootIdentity) { "删除 journal 根身份不匹配" }
+        check(payload.rootIdentityExternal == identityIsExternal) { "删除 journal 根身份布局不匹配" }
     }
 
     private fun validateTarget(target: SessionDeletionTarget): Path {

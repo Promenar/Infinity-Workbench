@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -108,7 +109,7 @@ internal fun workspaceToolError(operation: String, message: String): ToolResult 
 /** 文件与目录名的模型侧预检；最终约束仍以仓库层为准。 */
 internal fun invalidWorkspaceName(name: String): Boolean =
     name.isBlank() || name == "." || name == ".." || '/' in name || '\\' in name || '\u0000' in name ||
-        name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin"
+        WorkspaceInternalPaths.isReservedName(name)
 
 internal fun FileEntry.describeForTool(): String = buildString {
     append(if (isDirectory) "[DIR] " else "[FILE] ")

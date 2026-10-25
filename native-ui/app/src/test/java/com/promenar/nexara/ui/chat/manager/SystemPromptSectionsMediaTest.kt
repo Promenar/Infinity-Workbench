@@ -33,4 +33,22 @@ class SystemPromptSectionsMediaTest {
         val expected = javaClass.getResource("/media-d-tool-guidance-before.txt")!!.readText()
         assertThat(actual.substringBefore("\n### Media").trimEnd()).isEqualTo(expected.trimEnd())
     }
+
+    @Test fun `默认落点提示区分技能挂载与用户挂载且支持运行模式呈现`() {
+        val workspace = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
+            com.promenar.nexara.data.local.db.entity.WorkspaceEntity("ws", "project", "项目", "project", 1), java.io.File("project"))
+        val skills = com.promenar.nexara.domain.storage.ExternalMount("builtin:skills", "skills", "builtin_skills", "agent_skills", "s", 0)
+        val assets = com.promenar.nexara.domain.storage.ExternalMount("assets", "素材", "real_path", "/assets", "s", 0)
+        val main = SystemPromptSections.toolGuidance(setOf("canvas_create", "media_fetch"), false, workspace, mounts = listOf(skills))
+        assertThat(main).contains("默认保存在主工作区（`/`）")
+        val privatePrompt = SystemPromptSections.toolGuidance(setOf("canvas_create", "media_fetch"), false, workspace, mounts = listOf(skills, assets))
+        assertThat(privatePrompt).contains("默认保存在会话专用空间（`/session`）")
+        assertThat(privatePrompt).contains("切换主工作区不会搬动镜像")
+        val linux = SystemPromptSections.toolGuidance(setOf("canvas_create"), false, workspace, mounts = listOf(assets),
+            filePathPresenter = com.promenar.nexara.data.workspace.WorkspaceFilePathPresenter { target, path, _ ->
+                if (target == com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE) "/home/session" + path.trimEnd('/') else path
+            })
+        assertThat(linux).contains("默认保存在会话专用空间（`/home/session`）")
+        assertThat(linux).doesNotContain("通过 `/session`")
+    }
 }

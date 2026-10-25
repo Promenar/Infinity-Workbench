@@ -24,7 +24,8 @@ NEXARA_WORKSPACE_KIND=shared 时，仓库配置未设置的 core.symlinks、core
 只在内存中按共享存储取值（false、false、true），不写回配置。
 
 操作与输出（除 repository 外均带 "version": 1、"repository": true）：
-  status [--limit N]：{"branch": 分支名或 null, "detached": 游离 HEAD, "head": 提交 sha 或 null, "unborn": 尚无提交,
+  status [--limit N]：{"repository_name": 脱敏的 owner/repo 或仓库根目录名,
+      "branch": 分支名或 null, "detached": 游离 HEAD, "head": 提交 sha 或 null, "unborn": 尚无提交,
       "staged" | "unstaged" | "untracked": [{"path", "change"}], "<组>_truncated": 布尔}
       change 取 added、modified、deleted；已暂存为 HEAD 对索引，未暂存为索引对工作区，未跟踪逐个列出文件（不含忽略项）。
       每组最多 N 条（默认 2000，上限 10000），超出时截断标志为 true。
@@ -1493,30 +1494,37 @@ class _LineStats:
             item["lines_skipped"] = "read_error"
 
 
-def _internal_workspace_filter(repo):
-    """只隐藏工作区首段的内部路径；缺少绝对工作区根或路径关系未知时保留。"""
-    workspace = os.environ.get("NEXARA_WORKSPACE", "")
-    if not workspace or not os.path.isabs(workspace):
-        return lambda path: False
+def _repository_name(repo):
+    """只返回远端路径末两段；凭据、主机、查询参数与完整 URL 均不进入结果。"""
+    from urllib.parse import urlsplit
+
+    fallback = os.path.basename(os.path.abspath(repo.path))
+    config = repo.get_config()
+    remotes = [section[1] for section in config.sections() if len(section) == 2 and section[0] == b"remote"]
+    remote = b"origin" if b"origin" in remotes else remotes[0] if len(remotes) == 1 else None
+    if remote is None:
+        return fallback
     try:
-        root = os.path.realpath(workspace)
-        repository = os.path.realpath(repo.path)
-    except (OSError, ValueError):
-        return lambda path: False
-
-    def internal(path):
-        # 只解析根目录的链接，不解析文件链接：已删除、已暂存的路径也必须能过滤。
-        try:
-            absolute = os.path.normpath(os.path.join(repository, path))
-            if os.path.commonpath((root, absolute)) != root:
-                return False
-            relative = os.path.relpath(absolute, root)
-        except (OSError, ValueError):
-            return False
-        first = relative.split(os.sep, 1)[0].lower()
-        return first == ".recycle_bin" or first.startswith(".nexara")
-
-    return internal
+        url = _text(config.get((b"remote", remote), b"url"))
+        if "://" in url:
+            parsed = urlsplit(url)
+            if not parsed.hostname:
+                return fallback
+            path = parsed.path
+        elif re.match(r"^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9.-]+:", url):
+            path = url.split(":", 1)[1]
+        else:
+            return fallback
+    except (KeyError, ValueError):
+        return fallback
+    parts = path.strip("/").split("/")
+    if len(parts) < 2:
+        return fallback
+    owner, name = parts[-2:]
+    name = name.removesuffix(".git")
+    if any(part in ("", ".", "..") or not re.fullmatch(r"[\w.-]+", part) for part in (owner, name)):
+        return fallback
+    return owner + "/" + name
 
 
 def _inspect_status(repo, limit):
@@ -1527,6 +1535,7 @@ def _inspect_status(repo, limit):
     index = repo.open_index(config=config)
     head = _head_commit(repo)
     result = _head_state(repo)
+    result["repository_name"] = _repository_name(repo)
     result.update(_TrackingGraph(repo).tracking(
         result["branch"].encode("utf-8") if result["branch"] is not None else None,
         head.id if head is not None else None,
@@ -1571,10 +1580,8 @@ def _inspect_status(repo, limit):
             yield {"path": path.replace(os.sep, "/"), "change": "added"}
 
     stats = _LineStats(repo, index, head)
-    internal = _internal_workspace_filter(repo)
     for name, entries in (("staged", staged()), ("unstaged", unstaged()), ("untracked", untracked())):
-        visible = (item for item in entries if not internal(item["path"]))
-        items, truncated = _limited(visible, limit)
+        items, truncated = _limited(entries, limit)
         result[name] = sorted(items, key=lambda item: item["path"])
         result[name + "_truncated"] = truncated
         for item in result[name]:
@@ -1694,24 +1701,12 @@ def _inspect_commit(repo, sha, limit):
     parent_tree = _peel_commit(repo, commit.parents[0]).tree if commit.parents else None
     store = repo.object_store
     names = {CHANGE_ADD: "added", CHANGE_DELETE: "deleted", CHANGE_RENAME: "renamed", CHANGE_COPY: "added"}
-    internal = _internal_workspace_filter(repo)
 
     def files():
         for change in tree_changes(store, parent_tree, commit.tree, rename_detector=RenameDetector(store)):
             kind = names.get(change.type, "modified")
             new_path = change.new.path if change.new is not None and change.new.path is not None else None
             old_path = change.old.path if change.old is not None and change.old.path is not None else None
-            new_internal = new_path is not None and internal(_text(new_path))
-            old_internal = old_path is not None and internal(_text(old_path))
-            if new_internal:
-                if old_path is None or old_internal or kind != "renamed":
-                    continue
-                # 用户文件移入内部目录，仍展示用户文件的删除。
-                new_path, kind = None, "deleted"
-            elif old_internal:
-                if new_path is None:
-                    continue
-                kind = "added"
             item = {"path": _text(new_path if new_path is not None else old_path), "change": kind}
             if kind == "renamed":
                 item["old_path"] = _text(old_path)

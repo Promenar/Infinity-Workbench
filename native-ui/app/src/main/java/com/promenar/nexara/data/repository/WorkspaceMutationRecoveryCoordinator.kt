@@ -33,6 +33,9 @@ class WorkspaceMutationRecoveryCoordinator(
      * 未提供该事务端口时拒绝放弃，不能退回按 operationId 盲删。
      */
     private val abandonUnchanged: suspend (WorkspaceMutationEntity, Boolean, () -> Unit) -> Boolean = { _, _, _ -> false },
+    private val identityIsExternal: Boolean = false,
+    private val afterRootDeleted: (String) -> Unit = {},
+    private val hasExternalRootIdentity: (Path) -> Boolean = { false },
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
         val entities = loadUnfinished()
@@ -145,12 +148,15 @@ class WorkspaceMutationRecoveryCoordinator(
         val sourceExists = existsNoFollow(source)
         val targetExists = existsNoFollow(target)
         val dbExists = sessionExists(sessionId)
+        var legacyTerminalStage = false
         if (sourceExists) verifyDirectory(source, expectedIdentity)
         if (targetExists) {
             verifyOrdinaryDirectory(target)
-            val durableCommittedStage = entity.state == WorkspaceMutationStage.DB_COMMITTED &&
-                !dbExists && !existsNoFollow(target.resolve(identityMarkerName))
-            if (!durableCommittedStage) verifyIdentity(target, expectedIdentity)
+            legacyTerminalStage = !payload.rootIdentityExternal && entity.state == WorkspaceMutationStage.DB_COMMITTED &&
+                !dbExists && !existsNoFollow(target.resolve(identityMarkerName)) &&
+                Files.newDirectoryStream(target).use { !it.iterator().hasNext() } &&
+                (!identityIsExternal || !hasExternalRootIdentity(target))
+            if (!legacyTerminalStage) verifyIdentity(target, expectedIdentity)
         }
 
         when (entity.state) {
@@ -167,14 +173,20 @@ class WorkspaceMutationRecoveryCoordinator(
                 dbExists -> conflict("DB_COMMITTED journal 的会话仍存在")
                 sourceExists && targetExists -> conflict("DB_COMMITTED journal 同时存在 source 与 target")
                 targetExists -> {
-                    deleteTreeKeepingIdentityUntilLast(target)
+                    // 旧终态只授予空目录rmdir，检查后出现新内容时保留现场，不进入递归删除。
+                    if (legacyTerminalStage) Files.delete(target) else deleteTreeKeepingIdentityUntilLast(target)
+                    afterRootDeleted(expectedIdentity)
                     deleteCommitted(entity.operationId)
                 }
-                !sourceExists -> deleteCommitted(entity.operationId)
+                !sourceExists -> {
+                    afterRootDeleted(expectedIdentity)
+                    deleteCommitted(entity.operationId)
+                }
                 else -> {
                     Files.createDirectories(target.parent)
                     Files.move(source, target)
                     deleteTreeKeepingIdentityUntilLast(target)
+                    afterRootDeleted(expectedIdentity)
                     deleteCommitted(entity.operationId)
                 }
             }

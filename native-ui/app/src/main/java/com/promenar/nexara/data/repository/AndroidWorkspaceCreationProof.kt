@@ -10,6 +10,51 @@ import java.nio.file.SecureDirectoryStream
 
 /** 公开 Android FD API 的有界桥接；所有后续段均经 O_NOFOLLOW 打开并固定到存活目录 FD。 */
 internal object AndroidWorkspaceCreationProof {
+    fun <T> withRootDirectory(root: Path, expectedKey: String, action: (ParcelFileDescriptor) -> T): T =
+        openDirectory(root.toString()).use { rootFd ->
+            requireDirectoryKey(rootFd, expectedKey)
+            action(rootFd).also { requireDirectoryKey(rootFd, expectedKey) }
+        }
+
+    fun <T> withDirectory(
+        root: Path, node: List<String>,
+        validate: (SecureDirectoryStream<Path>, SecureDirectoryStream<Path>, String) -> Unit,
+        action: (ParcelFileDescriptor) -> T,
+    ): T = openDirectory(root.toString()).use { rootFd ->
+        walk(rootFd, node.dropLast(1)).use { parentFd ->
+            walk(parentFd, listOf(node.last())).use { directoryFd ->
+                secure(rootFd).use { rootStream -> secure(parentFd).use { parentStream ->
+                    val key = secure(directoryFd).use { stream ->
+                        stream.getFileAttributeView(Paths.get("."), java.nio.file.attribute.BasicFileAttributeView::class.java,
+                            java.nio.file.LinkOption.NOFOLLOW_LINKS).readAttributes().fileKey()?.toString()
+                            ?: throw SecurityException("创建目录FD缺少稳定身份")
+                    }
+                    validate(rootStream, parentStream, key)
+                    action(directoryFd).also { validate(rootStream, parentStream, key) }
+                } }
+            }
+        }
+    }
+
+    fun moveAcrossRootsNoReplace(
+        sourceRoot: Path, source: List<String>, targetRoot: Path, target: List<String>,
+        sourceRootKey: String, targetRootKey: String, sourceParentKey: String, targetParentKey: String,
+    ) {
+        openDirectory(sourceRoot.toString()).use { sourceAnchor ->
+            openDirectory(targetRoot.toString()).use { targetAnchor ->
+                requireDirectoryKey(sourceAnchor, sourceRootKey)
+                requireDirectoryKey(targetAnchor, targetRootKey)
+                walk(sourceAnchor, source.dropLast(1)).use { sourceFd ->
+                    walk(targetAnchor, target.dropLast(1)).use { targetFd ->
+                        requireDirectoryKey(sourceFd, sourceParentKey)
+                        requireDirectoryKey(targetFd, targetParentKey)
+                        AndroidWorkspaceFileMoves.moveNoReplace(sourceFd.fd, source.last(), targetFd.fd, target.last())
+                    }
+                }
+            }
+        }
+    }
+
     fun moveNoReplace(
         root: Path, source: List<String>, target: List<String>,
         rootKey: String, sourceParentKey: String, targetParentKey: String,

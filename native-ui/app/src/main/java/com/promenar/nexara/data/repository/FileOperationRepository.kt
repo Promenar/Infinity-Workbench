@@ -347,12 +347,6 @@ class FileOperationRepository(
             throw SecurityException("文件版本快照路径无效")
         }
         val relative = rootPath.relativize(rawSnapshotPath).map { it.toString() }
-        if (rawSnapshotPath.toFile().length() > WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes) {
-            throw WorkspaceTextPolicyException(
-                WorkspaceTextErrorCode.INPUT_TOO_LARGE,
-                "历史版本超过差异操作上限，请缩小文件后重试。",
-            )
-        }
         val bytes = try {
             fileOps.readLimited(
                 rootPath,

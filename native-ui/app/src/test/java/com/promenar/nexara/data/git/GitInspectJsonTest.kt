@@ -42,6 +42,14 @@ class GitInspectJsonTest {
         assertThat(detached.staged).isEqualTo(GitChangeList.Empty)
     }
 
+    @Test fun `状态保留已脱敏仓库名且兼容未提供名称的检查端`() {
+        for (name in listOf("owner/repo", "team/ssh-repo", "owner/private-repo", "local-project")) {
+            val text = """{"version":1,"repository":true,"repository_name":"$name"}"""
+            assertThat(success(GitInspectJson.parseStatus(text)).repositoryName).isEqualTo(name)
+        }
+        assertThat(success(GitInspectJson.parseStatus("""{"version":1,"repository":true}""")).repositoryName).isNull()
+    }
+
     @Test fun `不是仓库、子命令错误、版本不符与无效 JSON 分别归类`() {
         assertThat(failure(GitInspectJson.parseStatus("""{"version":1,"repository":false}"""))).isEqualTo(GitInspectError.NotRepository)
         assertThat(failure(GitInspectJson.parseLog("""{"version":1,"repository":true,"error":{"code":"NOT_FOUND","message":"提交不存在"}}""")))

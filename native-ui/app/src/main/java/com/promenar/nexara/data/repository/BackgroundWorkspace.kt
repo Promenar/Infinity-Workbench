@@ -58,7 +58,6 @@ internal class BackgroundWorkspace(
         save(staging, State(rootUuid, sessionId, jobId, directoryKey(staging.toPath()), baseline))
         val rawLog = File(staging.parentFile, "output.log").toPath()
         if (!Files.exists(rawLog, LinkOption.NOFOLLOW_LINKS)) Files.createFile(rawLog)
-        fileOps.createFile(root.toPath(), listOf(marker(jobId)), byteArrayOf())
     }
 
     fun synchronize(
@@ -127,24 +126,8 @@ internal class BackgroundWorkspace(
                 }
             }
         }
-        val published = state.publishedLogs.toMutableMap()
-        for ((rawName, visibleName) in listOf("output.log.1" to "$jobId.log.1", "output.log" to "$jobId.log")) {
-            val raw = File(staging.parentFile, rawName)
-            if (!Files.exists(raw.toPath(), LinkOption.NOFOLLOW_LINKS)) continue
-            val path = "jobs/$visibleName"
-            val now = if (fileOps.exists(rootPath, parts(path))) node(fileOps.inspect(rootPath, parts(path))) else null
-            if (now != published[path]) {
-                warnings += "日志发布冲突：/$path（前台版本已保留）"
-                if (finished || interrupted) {
-                    val conflict = conflictPath(rootPath, jobId, "$visibleName.background")
-                    state = publishFile(rootPath, staging, state, raw, conflict)
-                }
-                continue
-            }
-            state = publishFile(rootPath, staging, state, raw, path)
-            published[path] = node(fileOps.inspect(rootPath, parts(path)))
-        }
-        state = state.copy(publishedLogs = published, warnings = warnings.distinct(), completed = finished || interrupted)
+        // 原始日志与基线均由应用任务目录持久化，不发布到用户文件树。
+        state = state.copy(warnings = warnings.distinct(), completed = finished || interrupted)
         save(staging, state)
         return state.warnings.takeIf { it.isNotEmpty() }?.joinToString("\n")
     }
@@ -177,7 +160,7 @@ internal class BackgroundWorkspace(
     }
 
     private fun conflictPath(root: Path, jobId: String, path: String): String {
-        val requested = "jobs/$jobId-conflicts/$path"
+        val requested = "background-conflicts/$jobId/$path"
         return if (!fileOps.exists(root, parts(requested))) requested else "$requested.${UUID.randomUUID()}"
     }
 
@@ -187,8 +170,9 @@ internal class BackgroundWorkspace(
         ensureDirectories(root, parts(target).dropLast(1))
         val relative = parts(target)
         val nonce = UUID.randomUUID().toString()
-        val temporary = relative.dropLast(1) + ".nexara-job-write-$nonce"
-        val backup = relative.dropLast(1) + ".nexara-job-previous-$nonce"
+        val internal = ensureWorkspaceInternalDirectory(fileOps, root)
+        val temporary = internal + "job-write-$nonce"
+        val backup = internal + "job-previous-$nonce"
         Files.newByteChannel(source.toPath(), setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)).use { input ->
             val limit = input.size()
             fileOps.createFileStreaming(root, temporary, limit.coerceAtLeast(1)) { output ->

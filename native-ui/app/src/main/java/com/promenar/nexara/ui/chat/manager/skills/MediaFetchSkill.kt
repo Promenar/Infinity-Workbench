@@ -46,7 +46,9 @@ class MediaFetchSkill(
             val ref = withContext(Dispatchers.IO) {
                 val workspace = sessionWorkspace?.invoke(context.sessionId)
                 if (workspace is SessionWorkspace.Unavailable) throw WorkspaceMediaException("WORKSPACE_UNAVAILABLE", "当前会话工作区不可用，请检查目录与授权")
-                val bindings = mounts?.namespaceBindings(context.sessionId).orEmpty()
+                val visibleMounts = mounts?.visible(context.sessionId).orEmpty()
+                val primaryMount = mounts?.workspaceMount(context.sessionId)
+                val bindings = (visibleMounts + listOfNotNull(primaryMount)).associate { it.alias to it.id }
                 val currentTarget = ToolExecutionTargets.extract(toProtocolTool(), args.toString())
                     ?: throw WorkspaceMediaException("INVALID_PATH", "无法确定媒体保存路径")
                 val approved = context.approvedExecutionTarget?.let { Json.parseToJsonElement(it).jsonArray }
@@ -55,7 +57,16 @@ class MediaFetchSkill(
                 if (context.isApprovalBoundExecution || approved != null) {
                     val tuple = approved?.let { if (metadata != null) it.dropLast(1) else it.toList() }
                     val expected = Json.parseToJsonElement(currentTarget).jsonArray.take(2)
-                    val alias = ExternalMountPaths.aliasOf(path ?: "/media", workspace is SessionWorkspace.Directory)
+                    val defaultPrivate = com.promenar.nexara.data.workspace.defaultWorkspaceFileDestination(workspace,
+                        visibleMounts) == com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE
+                    if (path == null) {
+                        val frozen = com.promenar.nexara.data.workspace.defaultWorkspaceFileApprovalTarget(
+                            (workspace as? SessionWorkspace.Directory)?.workspace?.id ?: primaryMount?.sourceId, visibleMounts, bindings)
+                        if (metadata?.get("defaultFileDestination") != frozen) {
+                            throw WorkspaceMediaException("APPROVAL_CHANGED", "批准的默认媒体落点或挂载集合已变化，请重新审批")
+                        }
+                    }
+                    val alias = ExternalMountPaths.aliasOf(path ?: if (defaultPrivate) "/session/media" else "/media", workspace is SessionWorkspace.Directory)
                     if (tuple != expected || approvedIds.any { (alias, id) -> bindings[alias] != id } ||
                         alias != null && (alias !in approvedIds || approvedIds[alias] != bindings[alias])) {
                         throw WorkspaceMediaException("APPROVAL_CHANGED", "批准的媒体路径、挂载或工作区身份已失效，请重新审批")
@@ -65,7 +76,7 @@ class MediaFetchSkill(
                     override suspend fun save(sessionId: String, payload: MediaPayload, origin: MediaOrigin, mimeTypeHint: String?, suggestedName: String?, targetPath: String?): MediaRef {
                         val currentBindings = mounts?.namespaceBindings(sessionId).orEmpty()
                         if (sessionWorkspace?.invoke(sessionId) != workspace ||
-                            bindings.any { (alias, id) -> currentBindings[alias] != id }) {
+                            bindings != currentBindings) {
                             throw WorkspaceMediaException("WORKSPACE_CHANGED", "媒体下载期间工作区或挂载发生变化，请重新审批")
                         }
                         return store.save(sessionId, payload, origin, mimeTypeHint, suggestedName, targetPath)

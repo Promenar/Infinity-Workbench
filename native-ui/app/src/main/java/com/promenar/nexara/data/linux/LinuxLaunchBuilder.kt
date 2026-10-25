@@ -65,8 +65,8 @@ class LinuxLaunchBuilder(
         if (spec.workspace != null) environment["NEXARA_WORKSPACE"] = "/workspace"
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
         environment.putAll(spec.environment)
-        // 忽略文件只是保护措施，写入失败（空间不足、权限）不阻止命令启动。
-        if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.ensure(rootfs, cacheDirectory, environment) }
+        // 旧受管忽略区块清理失败不阻止命令启动；修复启动不改 rootfs 配置。
+        if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.cleanupOnce(rootfs, environment) }
         return LinuxProcessLaunch(proot.executable.path, arguments, environment, spec.workspace ?: rootfs)
     }
 

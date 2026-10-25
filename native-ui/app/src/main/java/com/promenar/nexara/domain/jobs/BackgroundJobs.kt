@@ -45,16 +45,22 @@ data class BackgroundJob(
     val endedAtMillis: Long?,
     val maxRuntimeMinutes: Int,
     val onExit: BackgroundJobExitAction,
-    /** 相对会话工作区的日志路径；日志在 Termux 私有目录时为 null。 */
+    /** 任务日志引用，由 BackgroundJobController.readLog 读取，不是工作区路径。 */
     val logWorkspacePath: String?,
     /** 实时输出在 `ToolLiveOutputStore` 中的键，供界面复用实时输出面板。 */
     val liveOutputKey: String,
 )
 
+data class BackgroundJobLog(val text: String, val truncated: Boolean)
+
 /** 界面使用的后台任务入口。 */
 interface BackgroundJobController {
     /** [sessionId] 为 null 时返回全部会话的任务，按启动时间倒序。 */
     fun observe(sessionId: String?): Flow<List<BackgroundJob>>
+
+    /** 会话归属校验后读取应用私有日志，兼容实时任务的日志末尾。 */
+    suspend fun readLog(sessionId: String, reference: String): BackgroundJobLog =
+        throw UnsupportedOperationException("任务日志读取不可用")
 
     /** 返回 false 表示任务不存在或已经结束。 */
     suspend fun stop(jobId: String): Boolean

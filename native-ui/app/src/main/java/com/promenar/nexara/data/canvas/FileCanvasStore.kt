@@ -162,6 +162,7 @@ class FileCanvasStore(
                     // 分支可能与源会话共用自选工作区，路径在首次写出时重新分配，避免两份画布指向同一文件。
                     workspacePath = null,
                     workspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
+                    workspaceDestination = null,
                 )
                 publish(child(staging, metadata.id), remapped, html, workspaceHash = null)
                 copied += remapped
@@ -174,15 +175,28 @@ class FileCanvasStore(
     }
 
     private suspend fun syncLocked(sessionId: String, id: String): CanvasDocument? {
-        val current = load(sessionId).value.find { it.id == id } ?: return null
+        var current = load(sessionId).value.find { it.id == id } ?: return null
         val dir = canvasDirectory(sessionId, id)
-        val document = CanvasDocument(current, readSource(dir, current.currentVersion), current.currentVersion)
+        var document = CanvasDocument(current, readSource(dir, current.currentVersion), current.currentVersion)
         val files = workspaceFiles ?: return document
         val hash = workspaceHash(dir)
+        if (current.workspaceDestination == null) {
+            try {
+                val destination = if (current.workspacePath != null && hash != null) files.legacyDestination(sessionId, current.workspacePath!!, hash)
+                    else files.defaultDestination(sessionId)
+                destination?.let {
+                    current = current.copy(workspaceDestination = it)
+                    document = setSync(sessionId, document.copy(metadata = current), current.workspaceSync, hash)
+                }
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                return setSync(sessionId, document, CanvasWorkspaceSync.FAILED, hash)
+            }
+        }
         if (current.workspacePath == null) return writeToWorkspace(sessionId, document)
         if (hash == null) return writeToWorkspace(sessionId, document)
         try {
-            val bytes = files.read(sessionId, current.workspacePath, maxSourceBytes)
+            val bytes = files.read(sessionId, current.workspacePath!!, maxSourceBytes, current.workspaceDestination)
                 ?: return setSync(sessionId, document, CanvasWorkspaceSync.MISSING, hash)
             val actualHash = canvasSha256(bytes)
             if (actualHash == canvasSha256(document.html.toByteArray(Charsets.UTF_8))) {
@@ -220,6 +234,14 @@ class FileCanvasStore(
         val dir = canvasDirectory(sessionId, document.metadata.id)
         val previousHash = workspaceHash(dir)
         try {
+            if (current.metadata.workspaceDestination == null) {
+                val destination = if (current.metadata.workspacePath != null && previousHash != null) files.legacyDestination(sessionId, current.metadata.workspacePath!!, previousHash)
+                    else files.defaultDestination(sessionId)
+                destination?.let {
+                    current = current.copy(metadata = current.metadata.copy(workspaceDestination = it))
+                    current = setSync(sessionId, current, current.metadata.workspaceSync, previousHash)
+                }
+            }
             if (current.metadata.workspacePath == null) {
                 val base = current.metadata.title.replace(Regex("[^\\p{IsHan}\\p{L}\\p{N}-]+"), "-")
                     .trim('-').codePoints().limit(48).toArray().let { String(it, 0, it.size) }.trimEnd('-').ifEmpty { "canvas" }
@@ -227,21 +249,21 @@ class FileCanvasStore(
                 var suffix = 1
                 var path: String
                 do {
-                    path = "canvas/$base${if (suffix == 1) "" else "-$suffix"}.html"
+                    path = files.defaultPath(sessionId, "canvas/$base${if (suffix == 1) "" else "-$suffix"}.html", current.metadata.workspaceDestination)
                     suffix++
-                } while (path in occupied || files.exists(sessionId, path))
+                } while (path in occupied || files.exists(sessionId, path, current.metadata.workspaceDestination))
                 current = current.copy(metadata = current.metadata.copy(workspacePath = path))
                 current = setSync(sessionId, current, CanvasWorkspaceSync.NOT_WRITTEN, previousHash)
             }
             val path = current.metadata.workspacePath!!
             // 仅覆盖最后一次已同步的内容；文件工具的并发修改交给下一次同步导入。
-            val bytes = files.read(sessionId, path, maxSourceBytes)
+            val bytes = files.read(sessionId, path, maxSourceBytes, current.metadata.workspaceDestination)
             val expectedHash = bytes?.let(::canvasSha256)
             val sourceHash = canvasSha256(current.html.toByteArray(Charsets.UTF_8))
             // 允许恢复文件已落盘、私有哈希尚未确认的中断窗口，避免导入自身写出的内容。
             if (expectedHash == sourceHash) return setSync(sessionId, current, CanvasWorkspaceSync.SYNCED, sourceHash)
             if (expectedHash != null && expectedHash != previousHash) throw CanvasException("WORKSPACE_CONFLICT", "画布工作区文件已变化。")
-            files.write(sessionId, path, current.html, expectedHash)
+            files.write(sessionId, path, current.html, expectedHash, current.metadata.workspaceDestination)
             return setSync(sessionId, current, CanvasWorkspaceSync.SYNCED, canvasSha256(current.html.toByteArray(Charsets.UTF_8)))
         } catch (failure: Exception) {
             if (failure is kotlinx.coroutines.CancellationException) throw failure

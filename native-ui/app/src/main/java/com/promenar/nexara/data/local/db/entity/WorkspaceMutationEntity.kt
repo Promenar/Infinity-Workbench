@@ -79,6 +79,7 @@ data class WorkspaceMutationPayload(
     val targetRelativePath: String? = null,
     val databaseTargetUuid: String? = null,
     val expectedSha256: String? = null,
+    val rootIdentityExternal: Boolean = false,
 )
 
 enum class WorkspaceMutationPayloadErrorCode {

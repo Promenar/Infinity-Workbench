@@ -57,7 +57,7 @@ class TermuxBackgroundJobsTest {
             workdir.path, input, 120, workspace,
         ).also(handles::add)
         assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(1_800)
-        assertThat(jobs.logPath(handle)).isEqualTo(File(workspace, "jobs/quoted.log").canonicalPath)
+        assertThat(jobs.logPath(handle)).isEqualTo(File(home, ".nexara/jobs/quoted.log").canonicalPath)
         assertThat(jobs.inspect(handle).alive).isTrue()
         val result = awaitFinished(handle)
         assertThat(result.exitCode).isEqualTo(7)
@@ -77,6 +77,39 @@ class TermuxBackgroundJobsTest {
         assertThat(restored.exitCode).isEqualTo(0)
         assertThat(restored.logTail).isEqualTo("result")
         assertThat(restored.alive).isFalse()
+    }
+
+    @Test fun `旧共享目录任务退出后安全迁移且重复运行保持日志`() = runBlocking {
+        val workspace = File(root, "legacy-shared").apply { mkdirs() }
+        val handle = jobs.start("legacy", "printf original-log", null, null, 120, workspace)
+        awaitFinished(handle)
+        val original = File(handle.directory)
+        val legacy = File(workspace, "jobs/legacy").apply { parentFile!!.mkdirs() }
+        Files.move(original.toPath(), legacy.toPath())
+        listOf(".log", ".exit").forEach { suffix -> Files.move(File(handle.directory + suffix).toPath(), File(legacy.path + suffix).toPath()) }
+        val old = jobs.recover("legacy", workspace)!!
+        assertThat(old.directory).isEqualTo(legacy.canonicalPath)
+        val migrated = jobs.migrateCompleted("legacy", workspace, old).also(handles::add)
+        assertThat(migrated.directory).isEqualTo(handle.directory)
+        assertThat(jobs.inspect(migrated).logTail).isEqualTo("original-log")
+        assertThat(File(legacy.path + ".log").exists()).isFalse()
+        assertThat(jobs.migrateCompleted("legacy", workspace, migrated)).isEqualTo(migrated)
+    }
+
+    @Test fun `旧任务进程已消失且缺退出文件时仍迁移日志`() = runBlocking {
+        val workspace = File(root, "legacy-failed").apply { mkdirs() }
+        val handle = jobs.start("failed-old", "printf interrupted-log", null, null, 120, workspace)
+        awaitFinished(handle)
+        val legacy = File(workspace, "jobs/failed-old").apply { parentFile!!.mkdirs() }
+        Files.move(File(handle.directory).toPath(), legacy.toPath())
+        Files.move(File(handle.directory + ".log").toPath(), File(legacy.path + ".log").toPath())
+        File(handle.directory + ".exit").delete()
+        val old = jobs.recover("failed-old", workspace)!!
+        assertThat(jobs.inspect(old).alive).isFalse()
+        val migrated = jobs.migrateCompleted("failed-old", workspace, old).also(handles::add)
+        assertThat(migrated.directory).isEqualTo(handle.directory)
+        assertThat(jobs.inspect(migrated).logTail).isEqualTo("interrupted-log")
+        assertThat(legacy.exists()).isFalse()
     }
 
     @Test fun `日志只返回末尾八千字符并标记截断`() = runBlocking {
@@ -194,8 +227,8 @@ class TermuxBackgroundJobsTest {
                 jobs.start("late", "printf should-not-run", null, null, 120, workspace)
             }
         }
-        assertThat(File(workspace, "jobs/late.cancelled").exists()).isTrue()
-        assertThat(File(workspace, "jobs/late.log").exists()).isFalse()
+        assertThat(File(home, ".nexara/jobs/late.cancelled").exists()).isTrue()
+        assertThat(File(home, ".nexara/jobs/late.log").exists()).isFalse()
     }
 
     @Test fun `未确认停止也能找回已有任务并停止整个进程组`() = runBlocking {

@@ -1,5 +1,6 @@
 package com.promenar.nexara.domain.storage
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import java.util.Locale
 
 data class ExternalFolderEntry(
@@ -53,9 +54,8 @@ object ExternalFolderPaths {
     }
 
     fun validateName(name: String): String {
-        val folded = name.lowercase(Locale.ROOT)
         if (name.isBlank() || name == "." || name == ".." || '/' in name || '\\' in name || '\u0000' in name ||
-            folded.startsWith(".nexara") || folded == ".recycle_bin"
+            WorkspaceInternalPaths.isReservedName(name)
         ) invalid()
         return name
     }

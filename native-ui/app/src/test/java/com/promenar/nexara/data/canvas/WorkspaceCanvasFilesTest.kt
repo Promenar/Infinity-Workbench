@@ -9,6 +9,7 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.local.db.entity.ExternalMountEntity
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.repository.FileOperationRepository
@@ -49,6 +50,7 @@ class WorkspaceCanvasFilesTest {
     private lateinit var roots: SessionWorkspaceResolver
     private lateinit var mounts: ExternalFolderManager
     private lateinit var store: FileCanvasStore
+    private lateinit var canvasFiles: WorkspaceCanvasFiles
     private val events = mutableListOf<FileIndexEvent>()
     private val index = FileIndexEventSink { events.add(it) }
     private val fs = JvmBoundRealPathFileSystem()
@@ -74,10 +76,12 @@ class WorkspaceCanvasFilesTest {
                 else -> null
             }
         }
-        store = FileCanvasStore(File(directory, "history"), workspaceFiles = WorkspaceCanvasFiles(
-            WorkspaceFileTargetResolver(SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, skills),
+        canvasFiles = WorkspaceCanvasFiles(
+            WorkspaceFileTargetResolver(SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve, skills,
+                roots::resolveWorkspace, roots::backend),
             workspace, operations, mounts, index, fs,
-        ))
+        )
+        store = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
     }
 
     private fun real(root: File) = RealPathExternalFolderBackend(root, emptySet(), { true }, fs)
@@ -87,6 +91,13 @@ class WorkspaceCanvasFilesTest {
         db.workspaceDao().insert(WorkspaceEntity("project-id", WorkspaceEntity.KIND_PROJECT, "项目", "project", 1))
         db.sessionDao().update(db.sessionDao().getById("s")!!.copy(workspaceId = "project-id"))
         return root
+    }
+
+    private fun removeDestinationBinding(id: String) {
+        val file = File(directory, "history").walkTopDown().single { it.name == "metadata.json" && it.parentFile.name == id }
+        val metadata = kotlinx.serialization.json.Json.parseToJsonElement(file.readText()) as kotlinx.serialization.json.JsonObject
+        file.writeText(kotlinx.serialization.json.JsonObject(metadata - "workspaceDestination").toString())
+        store = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
     }
 
     @After fun cleanup() {
@@ -239,6 +250,135 @@ class WorkspaceCanvasFilesTest {
         val synced = store.syncFromWorkspace("s", first.metadata.id)!!
         assertThat(synced.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.SYNCED)
         assertThat(File(root, synced.metadata.workspacePath!!).readText()).isEqualTo("完整私有源码")
+    }
+
+    @Test fun `登记工作区有用户挂载时画布默认写入会话专用空间`() = runBlocking {
+        val project = directoryRoot()
+        val assets = File(directory, "assets").apply { mkdirs() }
+        db.externalMountDao().insert(ExternalMountEntity("assets", "素材", "real_path", assets.path, "s", false, 1))
+        val created = store.create("s", "图表", "源码", "m")
+        assertThat(created.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.SYNCED)
+        assertThat(created.metadata.workspacePath).isEqualTo("/session/canvas/图表.html")
+        assertThat(File(privateRoot, "canvas/图表.html").readText()).isEqualTo("源码")
+        assertThat(File(project, "canvas").exists()).isFalse()
+    }
+
+    @Test fun `登记工作区中通用文件工具可按session路径创建读取修改列出删除私有文件`() = runBlocking {
+        val project = directoryRoot()
+        val context = object : com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext {
+            override val sessionId = "s"
+            override val agentId = "a"
+            override val workspaceRootUuid = "unused-private-root"
+            override val workspacePath: String? = null
+        }
+        suspend fun invoke(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition, args: String) =
+            com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, mounts, workspace, operations, index,
+                privateReader = com.promenar.nexara.ui.chat.diff.PrivateWorkspaceReader { repository, rootUuid, path, maxBytes ->
+                    val root = repository.getByUuid(rootUuid, rootUuid)!!
+                    real(File(root.physicalRootPath)).read(path, maxBytes)
+                })
+                .execute(kotlinx.serialization.json.Json.parseToJsonElement(args).let { it as kotlinx.serialization.json.JsonObject }, context)
+        val created = invoke(com.promenar.nexara.ui.chat.manager.skills.CreateFileSkill(workspace, operations),
+            """{"parentPath":"/session","name":"note.txt","content":"私有内容"}""")
+        assertThat(created.status).isEqualTo("success")
+        assertThat(File(privateRoot, "note.txt").readText()).isEqualTo("私有内容")
+        assertThat(File(project, "session").exists()).isFalse()
+        val read = invoke(com.promenar.nexara.ui.chat.manager.skills.FileReadSkill(operations, workspace), """{"path":"/session/note.txt"}""")
+        assertThat(read.status).isEqualTo("success")
+        assertThat(read.content).contains("私有内容")
+        assertThat(read.content).contains("uuid=session:")
+        val root = workspace.ensureSessionRoot("s")
+        val hash = workspace.getByMaterializedPath(root.uuid, "/note.txt")!!.hash
+        val updated = invoke(com.promenar.nexara.ui.chat.manager.skills.FileWriteSkill(operations, workspace),
+            """{"path":"/session/note.txt","content":"修改","expectedHash":"$hash"}""")
+        assertThat(updated.status).isEqualTo("success")
+        assertThat(updated.fileChanges).isNotEmpty()
+        assertThat(File(privateRoot, "note.txt").readText()).isEqualTo("修改")
+        val listing = invoke(com.promenar.nexara.ui.chat.manager.skills.FileListSkill(workspace), """{"path":"/session"}""")
+        assertThat(listing.content).contains("/session/note.txt")
+        val move = com.promenar.nexara.ui.chat.manager.skills.MoveFileSkill(workspace, index)
+        assertThat(invoke(move, """{"path":"/session/note.txt","newName":"renamed.txt"}""").status).isEqualTo("success")
+        assertThat(File(privateRoot, "renamed.txt").readText()).isEqualTo("修改")
+        val promoted = invoke(move, """{"path":"/session/renamed.txt","newParentPath":"/","newName":"promoted.txt"}""")
+        com.google.common.truth.Truth.assertWithMessage(promoted.content).that(promoted.status).isEqualTo("success")
+        assertThat(File(project, "promoted.txt").readText()).isEqualTo("修改")
+        val movedBack = invoke(move, """{"path":"/promoted.txt","newParentPath":"/session","newName":"note.txt"}""")
+        com.google.common.truth.Truth.assertWithMessage(movedBack.content).that(movedBack.status).isEqualTo("success")
+        assertThat(invoke(com.promenar.nexara.ui.chat.manager.skills.DeleteFileSkill(workspace), """{"path":"/session/note.txt"}""").status).isEqualTo("success")
+        assertThat(File(privateRoot, "note.txt").exists()).isFalse()
+    }
+
+    @Test fun `宿主缺少安全目录能力时默认传输读取明确失败关闭`() = runBlocking {
+        val supportsSecureDirectory = Files.newDirectoryStream(directory.toPath()).use { it is java.nio.file.SecureDirectoryStream<*> }
+        org.junit.Assume.assumeFalse("具备安全目录能力的宿主无需该环境探针", supportsSecureDirectory)
+        val root = workspace.ensureSessionRoot("s")
+        workspace.createFileInWorkspace(root.uuid, "probe", "probe.txt", "探针", root.uuid, "/probe.txt")
+        val failure = runCatching {
+            com.promenar.nexara.ui.chat.manager.skills.PrivateWorkspaceTransferBackend(workspace, root.uuid).read("/probe.txt", 1024)
+        }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(failure?.message).contains("不支持 SecureDirectoryStream")
+    }
+
+    @Test fun `切换主工作区后已有画布镜像保留原目标且重建Store后仍可更新`() = runBlocking {
+        val firstRoot = directoryRoot()
+        val first = store.create("s", "图表", "初始", "m")
+        val nextRoot = File(directory, "projects/next").apply { mkdirs() }
+        db.workspaceDao().insert(WorkspaceEntity("next-id", WorkspaceEntity.KIND_PROJECT, "新项目", "next", 1))
+        db.sessionDao().update(db.sessionDao().getById("s")!!.copy(workspaceId = "next-id"))
+        store = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
+        val updated = store.update("s", first.metadata.id, html = "修改")
+        assertThat(updated.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.SYNCED)
+        assertThat(File(firstRoot, "canvas/图表.html").readText()).isEqualTo("修改")
+        assertThat(File(nextRoot, "canvas").exists()).isFalse()
+    }
+
+    @Test fun `私有画布切换到登记工作区后仍更新私有原镜像`() = runBlocking {
+        val first = store.create("s", "私有图表", "初始", "m")
+        val project = directoryRoot()
+        store = FileCanvasStore(File(directory, "history"), workspaceFiles = canvasFiles)
+        val updated = store.update("s", first.metadata.id, html = "私有修改")
+        assertThat(updated.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.SYNCED)
+        assertThat(File(privateRoot, "canvas/私有图表.html").readText()).isEqualTo("私有修改")
+        assertThat(File(project, "canvas").exists()).isFalse()
+    }
+
+    @Test fun `旧画布唯一匹配私有镜像时恢复绑定不搬到当前主根`() = runBlocking {
+        val first = store.create("s", "旧画布", "初始", "m")
+        val project = directoryRoot()
+        removeDestinationBinding(first.metadata.id)
+        val updated = store.update("s", first.metadata.id, html = "修改")
+        assertThat(updated.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.SYNCED)
+        assertThat(File(privateRoot, "canvas/旧画布.html").readText()).isEqualTo("修改")
+        assertThat(File(project, "canvas").exists()).isFalse()
+    }
+
+    @Test fun `旧画布无匹配原根时保留权威源码与原镜像且不创建新镜像`() = runBlocking {
+        val original = directoryRoot()
+        val first = store.create("s", "旧画布", "原镜像", "m")
+        val next = File(directory, "projects/next").apply { mkdirs() }
+        db.workspaceDao().insert(WorkspaceEntity("next-id", WorkspaceEntity.KIND_PROJECT, "新项目", "next", 1))
+        db.sessionDao().update(db.sessionDao().getById("s")!!.copy(workspaceId = "next-id"))
+        removeDestinationBinding(first.metadata.id)
+        val updated = store.update("s", first.metadata.id, html = "权威源码")
+        assertThat(updated.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.FAILED)
+        assertThat(store.read("s", first.metadata.id)?.html).isEqualTo("权威源码")
+        assertThat(File(original, "canvas/旧画布.html").readText()).isEqualTo("原镜像")
+        assertThat(File(next, "canvas").exists()).isFalse()
+        assertThat(File(privateRoot, "canvas").exists()).isFalse()
+    }
+
+    @Test fun `旧画布多个根内容匹配时拒绝猜测且不改任何镜像`() = runBlocking {
+        val first = store.create("s", "旧画布", "相同镜像", "m")
+        val project = directoryRoot()
+        File(project, "canvas").mkdirs()
+        File(project, "canvas/旧画布.html").writeText("相同镜像")
+        removeDestinationBinding(first.metadata.id)
+        val updated = store.update("s", first.metadata.id, html = "权威源码")
+        assertThat(updated.metadata.workspaceSync).isEqualTo(CanvasWorkspaceSync.FAILED)
+        assertThat(store.read("s", first.metadata.id)?.html).isEqualTo("权威源码")
+        assertThat(File(project, "canvas/旧画布.html").readText()).isEqualTo("相同镜像")
+        assertThat(File(privateRoot, "canvas/旧画布.html").readText()).isEqualTo("相同镜像")
     }
 
     @Test fun `目录根分支保留工作区绑定且画布写到新路径不覆盖源文件`() = runBlocking {

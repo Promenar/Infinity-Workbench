@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.diff
 
 import com.promenar.nexara.data.repository.WorkspaceFileTooLargeException
 import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalWorkspaceAccess
@@ -51,7 +52,11 @@ class WorkspaceSnapshotReader(
                 ?: return@withContext CapturedSnapshot(FileSnapshot.Missing)
             if (entry.isDirectory) return@withContext CapturedSnapshot(FileSnapshot.Directory)
             if (entry.sizeBytes > maxBytes) return@withContext CapturedSnapshot(FileSnapshot.TooLarge)
-            val bytes = if (external(path)) {
+            val privateRelative = SessionPrivateWorkspacePaths.relative(path)
+            val bytes = if (privateRelative != null) {
+                val root = privateWorkspace.ensureSessionRoot(sessionId)
+                privateReader.read(privateWorkspace, root.uuid, privateRelative, maxBytes)
+            } else if (external(path)) {
                 (mounts ?: return@withContext CapturedSnapshot(FileSnapshot.Unavailable)).read(sessionId, path, maxBytes)
             } else {
                 privateReader.read(privateWorkspace, workspaceRootUuid, path, maxBytes)

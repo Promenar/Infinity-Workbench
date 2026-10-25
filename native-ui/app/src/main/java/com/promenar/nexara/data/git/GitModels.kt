@@ -56,6 +56,8 @@ data class GitStatus(
     val tracking: GitTracking = GitTracking(),
     /** FETCH_HEAD 修改时间，Unix 秒；没有抓取记录时为空。 */
     val lastFetchSeconds: Long? = null,
+    /** 脱敏的 owner/repo，或仓库根目录名；兼容未提供名称的检查端。 */
+    val repositoryName: String? = null,
 ) {
     /** 三组条目数之和；同一文件同时出现在已暂存与未暂存时计两次。 */
     val changeCount: Int get() = staged.size + unstaged.size + untracked.size

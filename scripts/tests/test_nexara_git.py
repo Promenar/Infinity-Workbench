@@ -616,11 +616,10 @@ class InspectTest(unittest.TestCase):
         self.assertFalse(self.blob("HEAD", "a.txt")["exists"])
         self.assertFalse(self.blob("INDEX", "a.txt")["exists"])
 
-    def test_internal_files_filtered_before_limits_and_without_repository_writes(self) -> None:
+    def test_local_internal_gitignore_hides_untracked_files_without_repository_writes(self) -> None:
         self.init()
-        internal = [".recycle_bin/old.txt", ".NEXARA_command_pending", ".nexara_command_pending-job"]
-        for path in internal:
-            self.write(path, "internal\n")
+        self.write(".nexara/.gitignore", "*\n")
+        self.write(".nexara/internal", "internal\n")
         self.write("visible.txt", "visible\n")
         before = (self.work / ".git/config").read_bytes()
         exclude = (self.work / ".git/info/exclude").read_bytes()
@@ -632,55 +631,54 @@ class InspectTest(unittest.TestCase):
         self.assertFalse((self.work / ".gitignore").exists())
         self.assertEqual((self.work / ".git/info/exclude").read_bytes(), exclude)
 
-    def test_tracked_internal_modifications_and_deletions_are_hidden(self) -> None:
+    def test_forced_tracking_of_ignored_internal_files_is_visible(self) -> None:
+        from dulwich.repo import Repo
+
         self.init()
-        for path in (".nexara_modified", ".nexara_deleted", ".recycle_bin/old", "visible"):
+        self.write(".nexara/.gitignore", "*\n")
+        for path in (".nexara/modified", ".nexara/deleted", ".nexara/staged"):
             self.write(path, "before\n")
-            self.add(path)
+            # 绕过忽略规则直接暂存，与用户执行 git add -f 得到相同的索引状态。
+            with Repo(str(self.work)) as repo:
+                repo.get_worktree().stage([path])
+        self.assertEqual(set(self.paths(self.inspect("status", workspace=self.work), "staged")),
+                         {".nexara/modified", ".nexara/deleted", ".nexara/staged"})
         self.commit("init")
-        self.write(".nexara_modified", "after\n")
-        (self.work / ".nexara_deleted").unlink()
-        (self.work / ".recycle_bin/old").unlink()
-        self.add(".recycle_bin/old")
-        self.write("visible", "before\nafter\n")
+        self.write(".nexara/modified", "after\n")
+        (self.work / ".nexara/deleted").unlink()
+        (self.work / ".nexara/staged").unlink()
+        self.rm(".nexara/staged")
         for kind in ("project", "shared"):
             status = self.inspect("status", kind=kind, workspace=self.work)
-            self.assertEqual(status["staged"], [])
-            self.assertEqual(self.paths(status, "unstaged"), {"visible": "modified"})
+            self.assertEqual(self.paths(status, "staged"), {".nexara/staged": "deleted"})
+            self.assertEqual(self.paths(status, "unstaged"),
+                             {".nexara/modified": "modified", ".nexara/deleted": "deleted"})
             self.assertEqual(status["untracked"], [])
 
-    def test_workspace_relative_paths_with_parent_child_and_unrelated_repositories(self) -> None:
+    def test_user_can_remove_or_edit_internal_gitignore(self) -> None:
         self.init()
-        for path in (".nexara_root", "sub/.nexara_marker", "sub/.RECYCLE_BIN/deleted", "sub/src/.nexara_user", "visible"):
-            self.write(path, "data\n")
-        status = self.inspect("status", workspace=self.work / "sub")
-        self.assertEqual(set(self.paths(status, "untracked")), {".nexara_root", "sub/src/.nexara_user", "visible"})
-        # 仓库在工作区普通子目录内时，仓库根的同名用户文件不是工作区内部文件。
-        status = self.inspect("status", workspace=self.root)
-        self.assertIn(".nexara_root", self.paths(status, "untracked"))
-        for workspace in (None, self.root / "elsewhere", Path("relative")):
-            self.assertIn(".nexara_root", self.paths(self.inspect("status", workspace=workspace), "untracked"))
+        ignore = self.write(".nexara/.gitignore", "*\n")
+        self.write(".nexara/user", "user\n")
+        self.assertEqual(self.inspect("status", workspace=self.work)["untracked"], [])
+        ignore.write_text("*.tmp\n")
+        self.assertEqual(set(self.paths(self.inspect("status", workspace=self.work), "untracked")),
+                         {".nexara/.gitignore", ".nexara/user"})
+        self.assertEqual(ignore.read_text(), "*.tmp\n")
+        ignore.unlink()
+        self.assertEqual(set(self.paths(self.inspect("status", workspace=self.work), "untracked")), {".nexara/user"})
+        self.assertFalse(ignore.exists())
 
-    def test_repository_inside_internal_directory_and_workspace_root_symlink(self) -> None:
+    def test_internal_looking_names_follow_normal_git_rules_in_any_workspace(self) -> None:
         self.init()
-        self.write(".nexara_marker", "data\n")
+        names = {".nexara_marker", ".recycle_bin/old", "sub/.nexara_user"}
+        for name in names:
+            self.write(name, "data\n")
         alias = self.root / "alias"
         alias.symlink_to(self.work, target_is_directory=True)
-        self.assertEqual(self.inspect("status", workspace=alias)["untracked"], [])
-        internal = self.root / ".NEXARA_nested"
-        self.work.rename(internal)
-        self.work = internal
-        self.assertEqual(self.inspect("status", workspace=self.root)["untracked"], [])
+        for workspace in (self.work, alias, self.root, self.work / "sub", None):
+            self.assertEqual(set(self.paths(self.inspect("status", workspace=workspace), "untracked")), names)
 
-    def test_internal_prefix_only_matches_first_workspace_path_segment(self) -> None:
-        self.init()
-        visible = [".recycle_binary", "src/.nexara_user", "src/.recycle_bin/user"]
-        for path in visible + [".NeXaRa_directory/internal", ".ReCyClE_BiN/internal"]:
-            self.write(path, "data\n")
-        status = self.inspect("status", workspace=self.work)
-        self.assertEqual(set(self.paths(status, "untracked")), set(visible))
-
-    def test_commit_rename_across_internal_boundary_keeps_visible_side(self) -> None:
+    def test_commit_rename_into_internal_looking_path_is_visible(self) -> None:
         self.init()
         self.write("visible", "unique rename content\n")
         self.add("visible")
@@ -689,22 +687,57 @@ class InspectTest(unittest.TestCase):
         self.add("visible", ".nexara_marker")
         sha = self.commit("move in")
         detail = self.inspect("commit", "--commit", sha, workspace=self.work)
-        self.assertEqual(detail["files"], [{"path": "visible", "change": "deleted"}])
+        self.assertEqual(detail["files"], [{"path": ".nexara_marker", "change": "renamed", "old_path": "visible"}])
         (self.work / ".nexara_marker").rename(self.work / "visible")
         self.add("visible", ".nexara_marker")
         sha = self.commit("move out")
         detail = self.inspect("commit", "--commit", sha, workspace=self.work)
-        self.assertEqual(detail["files"], [{"path": "visible", "change": "added"}])
+        self.assertEqual(detail["files"], [{"path": "visible", "change": "renamed", "old_path": ".nexara_marker"}])
 
-    def test_commit_file_list_filters_internal_changes_before_truncation(self) -> None:
+    def test_commit_file_list_includes_internal_looking_names_and_applies_limit(self) -> None:
         self.init()
         for path in (".nexara_marker", ".recycle_bin/old", "visible"):
             self.write(path, "data\n")
             self.add(path)
         sha = self.commit("init")
-        detail = self.inspect("commit", "--commit", sha, "--limit", "1", workspace=self.work)
-        self.assertEqual([item["path"] for item in detail["files"]], ["visible"])
-        self.assertFalse(detail["files_truncated"])
+        detail = self.inspect("commit", "--commit", sha, workspace=self.work)
+        self.assertEqual({item["path"] for item in detail["files"]}, {".nexara_marker", ".recycle_bin/old", "visible"})
+        limited = self.inspect("commit", "--commit", sha, "--limit", "1", workspace=self.work)
+        self.assertEqual(len(limited["files"]), 1)
+        self.assertTrue(limited["files_truncated"])
+
+    def test_repository_name_uses_origin_or_only_remote_and_never_returns_url(self) -> None:
+        from dulwich.repo import Repo
+
+        self.init()
+        cases = (
+            ({"origin": "https://example.test/owner/repo.git"}, "owner/repo"),
+            ({"origin": "git@example.test:team/project.git"}, "team/project"),
+            ({"origin": "example.test:team/project.git"}, "team/project"),
+            ({"origin": "ssh://git@example.test:2222/team/project.git"}, "team/project"),
+            ({"origin": "git+ssh://synthetic-user:synthetic-token@example.test/team/project.git"}, "team/project"),
+            ({"origin": "https://synthetic-user:synthetic-token@example.test/owner/repo.git?key=synthetic-query"}, "owner/repo"),
+            ({"upstream": "https://example.test/team/unique.git"}, "team/unique"),
+            ({"other": "https://example.test/other/ignored.git", "origin": "https://example.test/main/selected.git"}, "main/selected"),
+            ({"one": "https://example.test/a/one.git", "two": "https://example.test/b/two.git"}, "work"),
+            ({"origin": "https://synthetic-user:synthetic-token@example.test"}, "work"),
+            ({"origin": "https://synthetic-user:synthetic-token@[invalid/owner/repo.git"}, "work"),
+            ({}, "work"),
+        )
+        for remotes, expected in cases:
+            with self.subTest(remotes=tuple(remotes)):
+                with Repo(str(self.work)) as repo:
+                    config = repo.get_config()
+                    for section in list(config.sections()):
+                        if section[0] == b"remote":
+                            del config[section]
+                    for name, url in remotes.items():
+                        config.set((b"remote", name.encode()), b"url", url.encode())
+                    config.write_to_path()
+                result = self.inspect("status")
+                self.assertEqual(result.get("repository_name"), expected)
+                self.assertNotIn("synthetic-token", str(result))
+                self.assertNotIn("synthetic-query", str(result))
 
     def test_empty_repository_with_staged_and_untracked_files(self) -> None:
         self.init()

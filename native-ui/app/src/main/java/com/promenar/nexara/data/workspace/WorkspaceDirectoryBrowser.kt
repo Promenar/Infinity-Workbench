@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.workspace
 
+import com.promenar.nexara.domain.workspace.WorkspaceInternalPaths
 import com.promenar.nexara.data.local.db.dao.WorkspaceDao
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.domain.storage.ExternalFolderException
@@ -183,7 +184,7 @@ class WorkspaceDirectoryBrowser(
         fun validateProjectName(name: String): FolderNameError? = when {
             name.isEmpty() -> FolderNameError.EMPTY
             !WorkspaceEntity.isValidLocation(WorkspaceEntity.KIND_PROJECT, name) -> FolderNameError.INVALID
-            name.lowercase(Locale.ROOT).startsWith(".nexara") -> FolderNameError.RESERVED
+            WorkspaceInternalPaths.isReservedName(name) -> FolderNameError.RESERVED
             else -> null
         }
 

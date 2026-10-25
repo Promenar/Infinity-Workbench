@@ -15,6 +15,10 @@ class ExternalFolderTestDocumentsProvider : DocumentsProvider() {
     lateinit var root: File
         private set
     var renameSupported = true
+    var moveSupported = true
+    var failNextMoveAfterCommit = false
+    var failBackupRenameAfterCommit = false
+    var failBackupRenameQueryAfterCommit = false
     var revoked = false
     var reportedSize: Long? = null
     var omitReportedSize = false
@@ -26,6 +30,7 @@ class ExternalFolderTestDocumentsProvider : DocumentsProvider() {
     var bumpDirectoryRevisions = false
     val openedDocuments = mutableListOf<String>()
     private val stableFiles = mutableMapOf<String, File>()
+    private var failNextDocumentQuery = false
 
     override fun onCreate(): Boolean {
         root = File(context!!.cacheDir, "external-folder-fixture-${System.nanoTime()}").canonicalFile.apply { check(mkdirs()) }
@@ -39,6 +44,10 @@ class ExternalFolderTestDocumentsProvider : DocumentsProvider() {
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
         checkAvailable()
+        if (failNextDocumentQuery) {
+            failNextDocumentQuery = false
+            throw FileNotFoundException("测试备份重命名已提交但查询回执丢失")
+        }
         lastProjection = projection
         return MatrixCursor(projection ?: DOCUMENT_COLUMNS).apply { addFile(this, resolve(documentId)) }
     }
@@ -80,16 +89,44 @@ class ExternalFolderTestDocumentsProvider : DocumentsProvider() {
         }
         val target = File(file.parentFile, displayName)
         check(!target.exists() && file.renameTo(target))
-        if (documentId.startsWith("stable:")) {
+        val result = if (documentId.startsWith("stable:")) {
             stableFiles[documentId] = target
-            return documentId
+            documentId
+        } else id(target)
+        if (displayName.startsWith(".nexara-backup-")) {
+            if (failBackupRenameAfterCommit) {
+                failBackupRenameAfterCommit = false
+                throw FileNotFoundException("测试备份重命名已提交但回执丢失")
+            }
+            if (failBackupRenameQueryAfterCommit) {
+                failBackupRenameQueryAfterCommit = false
+                failNextDocumentQuery = true
+            }
         }
-        return id(target)
+        return result
     }
 
     override fun deleteDocument(documentId: String) {
         checkAvailable()
         check(resolve(documentId).deleteRecursively())
+    }
+
+    override fun moveDocument(sourceDocumentId: String, sourceParentDocumentId: String, targetParentDocumentId: String): String {
+        checkAvailable()
+        if (!moveSupported) throw UnsupportedOperationException("测试提供商不支持移动")
+        val file = resolve(sourceDocumentId)
+        check(file.parentFile == resolve(sourceParentDocumentId))
+        val target = File(resolve(targetParentDocumentId), file.name)
+        check(!target.exists() && file.renameTo(target))
+        val result = if (sourceDocumentId.startsWith("stable:")) {
+            stableFiles[sourceDocumentId] = target
+            sourceDocumentId
+        } else id(target)
+        if (failNextMoveAfterCommit) {
+            failNextMoveAfterCommit = false
+            throw FileNotFoundException("测试移动已提交但回执丢失")
+        }
+        return result
     }
 
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
@@ -119,7 +156,8 @@ class ExternalFolderTestDocumentsProvider : DocumentsProvider() {
 
     private fun addFile(cursor: MatrixCursor, file: File) {
         val flags = (if (file.isDirectory) Document.FLAG_DIR_SUPPORTS_CREATE else Document.FLAG_SUPPORTS_WRITE) or
-            Document.FLAG_SUPPORTS_DELETE or (if (renameSupported) Document.FLAG_SUPPORTS_RENAME else 0)
+            Document.FLAG_SUPPORTS_DELETE or (if (renameSupported) Document.FLAG_SUPPORTS_RENAME else 0) or
+            (if (moveSupported) Document.FLAG_SUPPORTS_MOVE else 0)
         val values = mapOf<String, Any?>(Document.COLUMN_DOCUMENT_ID to id(file), Document.COLUMN_DISPLAY_NAME to file.name,
             Document.COLUMN_MIME_TYPE to if (file.isDirectory) Document.MIME_TYPE_DIR else "application/octet-stream",
             Document.COLUMN_SIZE to if (omitReportedSize) null else (reportedSize ?: file.length()), Document.COLUMN_LAST_MODIFIED to file.lastModified(), Document.COLUMN_FLAGS to flags)

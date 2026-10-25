@@ -43,7 +43,7 @@ fun interface WorkspaceTreeScanner {
 }
 
 internal fun isReservedWorkspaceName(name: String): Boolean =
-    name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin"
+    com.promenar.nexara.domain.workspace.WorkspaceInternalPaths.isReservedName(name)
 
 /**
  * `.git` 目录之下的路径（不含 `.git` 目录本身）：照常入索引以保持与磁盘一致，
@@ -287,27 +287,29 @@ data class WorkspaceCommandOutcome<T>(
 )
 
 /**
- * 根身份标记被命令删除或改写会让后续全部工作区操作失败；命令前读取原始字节，结束后按需写回。
- * 根目录本身在持锁期间已核验，写回只作用于根下这一个名称且不跟随符号链接。
+ * 命令前保留根身份快照；结束后在同一目录身份上恢复FD属性或兼容旧身份标记。
+ * 根目录被替换时拒绝恢复，旧标记写回不跟随符号链接。
  */
 internal class WorkspaceRootIdentityGuard private constructor(
     private val root: Path,
     private val rootKey: Any?,
     private val original: ByteArray?,
+    private val restorePrivateIdentity: () -> Boolean,
 ) {
     /** @return 是否写回了标记。 */
     fun restoreIfChanged(): Boolean {
-        val bytes = original ?: return false
         val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         if (attributes.isSymbolicLink || !attributes.isDirectory || attributes.fileKey() != rootKey) {
             throw SecurityException("工作区根目录在命令运行期间被替换")
         }
+        val privateRestored = restorePrivateIdentity()
+        val bytes = original ?: return privateRestored
         val marker = root.resolve(WORKSPACE_ROOT_IDENTITY_MARKER)
         val current = runCatching {
             Files.readAttributes(marker, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         }.getOrNull()
         if (current != null && current.isRegularFile && runCatching { Files.readAllBytes(marker) }.getOrNull()?.contentEquals(bytes) == true) {
-            return false
+            return privateRestored
         }
         if (current != null) {
             if (current.isDirectory) throw SecurityException("工作区根身份标记被替换为目录，无法自动恢复")
@@ -318,14 +320,14 @@ internal class WorkspaceRootIdentityGuard private constructor(
     }
 
     companion object {
-        fun capture(root: Path): WorkspaceRootIdentityGuard {
+        fun capture(root: Path, restorePrivateIdentity: () -> Boolean = { false }): WorkspaceRootIdentityGuard {
             val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             val marker = root.resolve(WORKSPACE_ROOT_IDENTITY_MARKER)
             val original = runCatching {
                 val markerAttributes = Files.readAttributes(marker, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
                 if (markerAttributes.isRegularFile) Files.readAllBytes(marker) else null
             }.getOrNull()
-            return WorkspaceRootIdentityGuard(root, attributes.fileKey(), original)
+            return WorkspaceRootIdentityGuard(root, attributes.fileKey(), original, restorePrivateIdentity)
         }
     }
 }

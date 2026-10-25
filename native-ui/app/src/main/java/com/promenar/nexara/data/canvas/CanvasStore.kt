@@ -15,6 +15,7 @@ data class CanvasMetadata(
     val workspacePath: String? = null,
     val workspaceSync: CanvasWorkspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
     val versionSources: Map<Int, CanvasVersionSource> = emptyMap(),
+    val workspaceDestination: com.promenar.nexara.data.workspace.WorkspaceFileDestinationBinding? = null,
 )
 
 @Serializable

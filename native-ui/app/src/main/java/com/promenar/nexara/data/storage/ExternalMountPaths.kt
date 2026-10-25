@@ -58,6 +58,7 @@ object ExternalMountPaths {
     /** `/skills` 与 `/mnt/<别名>` 优先归属挂载；[rooted] 时其余路径（`/mnt` 除外）属于工作区。 */
     fun aliasOf(path: String, rooted: Boolean): String? {
         parse(path)?.let { return it.first }
+        if (com.promenar.nexara.data.workspace.SessionPrivateWorkspacePaths.contains(path)) return null
         return if (rooted && ExternalFolderPaths.normalize(path) != "/mnt") WORKSPACE_ALIAS else null
     }
     fun conflicts(first: ExternalMount, second: ExternalMount): Boolean =

@@ -137,7 +137,8 @@ class DirectoryWorkspaceFilesTest {
         RandomAccessFile(File(source, "data.bin"), "rw").use { it.setLength(33L * 1024 * 1024) }
         File(root, "small").writeText("小文件")
         assertEquals(listOf("/large", "/small"), files.delete("s", listOf("/large", "/small"), permanent = true).succeeded)
-        assertTrue(root.list()!!.isEmpty())
+        assertEquals(listOf(".nexara"), root.list()!!.toList())
+        assertEquals(listOf(".gitignore"), File(root, ".nexara").list()!!.toList())
         assertTrue(mounts.recycleItems("s").isEmpty())
     }
 
@@ -290,7 +291,8 @@ class DirectoryWorkspaceFilesTest {
         val files = DefaultDirectoryWorkspaceFiles(mounts, SessionExecutionGate()) { false }
         assertEquals(DirectoryFileOpCode.IO, files.copy("s", listOf("/source"), "/").failed["/source"])
         assertTrue(failed)
-        assertEquals(listOf("source"), root.list()!!.toList())
+        assertEquals(setOf("source", ".nexara"), root.list()!!.toSet())
+        assertEquals(listOf(".gitignore"), File(root, ".nexara").list()!!.toList())
         assertEquals("来源", File(root, "source/a").readText())
     }
 
@@ -397,7 +399,8 @@ class DirectoryWorkspaceFilesTest {
         else assertEquals(setOf("/source"), files.copy("s", listOf("/source"), "/").failed.keys)
         assertTrue(interrupted)
         assertFalse(File(root, "source (3)").exists())
-        assertEquals(setOf("source", "source (2)"), root.list()!!.toSet())
+        assertEquals(setOf("source", "source (2)", ".nexara"), root.list()!!.toSet())
+        assertEquals(listOf(".gitignore"), File(root, ".nexara").list()!!.toList())
         assertEquals("已有内容", File(root, "source (2)/existing").readText())
         assertEquals("第一份内容", File(source, "a").readText())
         assertEquals(before, digest(File(source, "b")))
