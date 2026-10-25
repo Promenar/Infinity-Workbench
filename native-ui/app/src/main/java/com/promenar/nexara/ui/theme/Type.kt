@@ -1,16 +1,33 @@
 package com.promenar.nexara.ui.theme
 
+import android.content.Context
+import android.graphics.Typeface
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
+import com.promenar.nexara.R
 
 val NexaraSans = FontFamily.SansSerif
-val NexaraMonospace = FontFamily.Monospace
+
+/**
+ * 终端、命令输出、代码块与标识符统一使用打包的 JetBrains Mono NL（无连字，SIL OFL 1.1）。
+ * 厂商字体主题会替换系统 monospace，导致列宽不齐；CJK 等缺失字形仍回落系统字体。
+ */
+val NexaraMonospace = FontFamily(
+    Font(R.font.jetbrains_mono_nl_regular, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_nl_bold, FontWeight.Bold),
+)
+
+/** View 与 Paint 绘制（终端渲染器、文字墨迹测量）使用的同一字体；粗体由渲染器合成。 */
+fun nexaraMonospaceTypeface(context: Context): Typeface =
+    ResourcesCompat.getFont(context, R.font.jetbrains_mono_nl_regular) ?: Typeface.MONOSPACE
 
 val Manrope = NexaraSans
 val Inter = NexaraSans

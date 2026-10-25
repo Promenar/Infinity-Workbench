@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.ssh
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.promenar.nexara.ui.common.SecretKeyboardOptions
 import com.promenar.nexara.ui.common.SecretTextInput
@@ -107,12 +107,12 @@ internal fun SshHostKeyPromptDialog(prompt: SshUserPrompt.HostKey) {
                 prompt.previous?.let { previous ->
                     Text(stringResource(R.string.ssh_previous_fingerprint), style = MaterialTheme.typography.labelLarge)
                     SelectionContainer {
-                        Text("${previous.type}\n${previous.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
+                        Text("${previous.type}\n${previous.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                     }
                 }
                 Text(stringResource(R.string.ssh_presented_fingerprint), style = MaterialTheme.typography.labelLarge)
                 SelectionContainer {
-                    Text("${prompt.presented.type}\n${prompt.presented.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
+                    Text("${prompt.presented.type}\n${prompt.presented.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                 }
             }
         },

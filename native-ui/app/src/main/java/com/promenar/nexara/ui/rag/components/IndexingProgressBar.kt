@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag.components
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +20,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -105,7 +105,7 @@ fun IndexingProgressBar(
                         text = "${(accessibility.progress * 100).toInt()}%",
                         modifier = Modifier.clearAndSetSemantics { },
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = NexaraMonospace,
                             fontWeight = FontWeight.Bold,
                         ),
                         color = accentColor,

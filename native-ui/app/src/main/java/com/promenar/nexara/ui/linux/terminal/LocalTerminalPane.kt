@@ -24,6 +24,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.linux.LinuxTerminalSessions
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.nexaraMonospaceTypeface
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
@@ -209,6 +210,8 @@ fun LocalTerminalPane(
                 contentDescription = context.getString(R.string.linux_terminal_accessibility)
                 setTerminalViewClient(bridge)
                 setTextSize(textSizePx)
+                // setTypeface 复用已有渲染器的字号，必须在 setTextSize 之后；之后改字号会沿用此字体。
+                setTypeface(nexaraMonospaceTypeface(context))
                 tag = textSizePx
                 val listener = ViewTreeObserver.OnDrawListener { bridge.refreshScrollState() }
                 viewTreeObserver.addOnDrawListener(listener)

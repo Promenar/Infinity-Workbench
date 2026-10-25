@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.rounded.TextFields
 import com.promenar.nexara.ui.common.NexaraBottomSheet
@@ -47,7 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
@@ -1113,7 +1113,7 @@ internal fun InlineToolRow(
                                 invocation.name?.let { name ->
                                     Text(
                                         name,
-                                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                                        style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = NexaraMonospace),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
@@ -1213,7 +1213,7 @@ internal fun RuntimeChangesNotice(changes: List<String>, modifier: Modifier = Mo
             shown.forEach { change ->
                 Text(
                     change,
-                    style = NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    style = NexaraTypography.bodySmall.copy(fontFamily = NexaraMonospace, fontSize = 12.sp),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -1251,7 +1251,7 @@ internal fun ExpandableToolText(
     ) {
         Text(
             text = text,
-            style = if (arguments) NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp)
+            style = if (arguments) NexaraTypography.bodySmall.copy(fontFamily = NexaraMonospace, fontSize = 12.sp, lineHeight = 18.sp)
                 else NexaraTypography.bodySmall.forReading(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,

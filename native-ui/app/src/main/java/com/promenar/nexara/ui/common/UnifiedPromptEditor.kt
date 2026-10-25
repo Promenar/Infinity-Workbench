@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.common
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
 import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.annotation.StringRes
@@ -57,7 +58,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
@@ -357,7 +357,7 @@ fun UnifiedPromptEditor(
                             text = lineStr,
                             style = NexaraTypography.bodySmall.copy(
                                 fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = NexaraMonospace,
                                 color = lineNumberColor
                             )
                         )
@@ -383,7 +383,7 @@ fun UnifiedPromptEditor(
                             text = lineStr,
                             style = NexaraTypography.bodySmall.copy(
                                 fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = NexaraMonospace,
                                 color = lineNumberColor
                             )
                         )
@@ -420,7 +420,7 @@ fun UnifiedPromptEditor(
                     textStyle = NexaraTypography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = NexaraMonospace,
                         lineHeight = 20.sp
                     ).forInput(),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -429,7 +429,7 @@ fun UnifiedPromptEditor(
                             Text(
                                 text = resolvedPlaceholder,
                                 style = NexaraTypography.bodyMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = NexaraMonospace,
                                     fontSize = 14.sp
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)

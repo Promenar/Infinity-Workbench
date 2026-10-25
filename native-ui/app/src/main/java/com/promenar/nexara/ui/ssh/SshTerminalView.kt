@@ -2,7 +2,6 @@ package com.promenar.nexara.ui.ssh
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
 import android.view.GestureDetector
@@ -15,6 +14,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.theme.nexaraMonospaceTypeface
 import com.termux.terminal.TextStyle as TerminalTextStyle
 import com.termux.view.TerminalRenderer
 import kotlin.math.max
@@ -30,7 +30,7 @@ internal class SshTerminalView(context: Context) : View(context) {
     private var scrollRemainder = 0f
     private val renderer = TerminalRenderer(
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, resources.displayMetrics).toInt(),
-        Typeface.MONOSPACE,
+        nexaraMonospaceTypeface(context),
     )
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(event: MotionEvent): Boolean = true

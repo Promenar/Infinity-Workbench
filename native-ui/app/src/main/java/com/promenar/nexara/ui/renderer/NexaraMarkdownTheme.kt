@@ -1,12 +1,12 @@
 package com.promenar.nexara.ui.renderer
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
@@ -57,7 +57,7 @@ internal fun nexaraMarkdownHeadingStyle(level: Int, baseFontSize: Int, fontStyle
 internal fun nexaraMarkdownCodeStyle(fontStyle: FontStyle? = null): TextStyle =
     NexaraTypography.bodySmall.copy(
         fontSize = 13.sp,
-        fontFamily = FontFamily.Monospace,
+        fontFamily = NexaraMonospace,
         lineHeight = 20.sp,
         fontStyle = fontStyle,
         lineBreak = NexaraInputLineBreak,
@@ -80,7 +80,7 @@ fun nexaraMarkdownTypography(
         h6 = nexaraMarkdownHeadingStyle(6, baseFontSize, fontStyle),
         text = body,
         code = nexaraMarkdownCodeStyle(fontStyle),
-        inlineCode = body.copy(fontFamily = FontFamily.Monospace),
+        inlineCode = body.copy(fontFamily = NexaraMonospace),
         paragraph = body,
         ordered = body,
         bullet = body,

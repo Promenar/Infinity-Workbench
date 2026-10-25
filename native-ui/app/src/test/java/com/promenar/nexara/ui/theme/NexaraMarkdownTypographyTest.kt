@@ -1,6 +1,5 @@
 package com.promenar.nexara.ui.theme
 
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import com.promenar.nexara.ui.renderer.nexaraMarkdownBodyStyle
@@ -33,7 +32,7 @@ class NexaraMarkdownTypographyTest {
     @Test
     fun `代码始终使用等宽十三号与二十号行高`() {
         val style = nexaraMarkdownCodeStyle()
-        assertEquals(FontFamily.Monospace, style.fontFamily)
+        assertEquals(NexaraMonospace, style.fontFamily)
         assertEquals(13f, style.fontSize.value, 0.001f)
         assertEquals(20f, style.lineHeight.value, 0.001f)
         assertEquals(NexaraInputLineBreak, style.lineBreak)

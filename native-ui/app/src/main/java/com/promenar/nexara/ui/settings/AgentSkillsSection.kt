@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
@@ -33,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
@@ -133,7 +133,7 @@ fun AgentSkillEditorSheet(
                 value = body,
                 onValueChange = { body = it },
                 label = { Text(stringResource(R.string.agent_skills_body_hint)) },
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace).forInput(),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace).forInput(),
                 modifier = Modifier.fillMaxWidth().height(240.dp),
             )
             if (allowedTools.isNotEmpty()) {

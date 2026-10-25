@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,7 +33,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
@@ -173,7 +173,7 @@ private fun PathRow(path: String, meaning: String, tag: String) {
     NexaraSettingsRowLayout(
         title = path,
         subtitle = meaning,
-        titleTextStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+        titleTextStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = NexaraMonospace),
         subtitleMaxLines = 2,
         modifier = Modifier.testTag(tag),
     )

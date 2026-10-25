@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.layout.widthIn
 import com.promenar.nexara.domain.tool.CommandToolClassification
 import com.promenar.nexara.domain.tool.ToolRisk
@@ -59,7 +60,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -483,7 +483,7 @@ private fun SubagentToolStep(step: SubagentTimelineItem.Tool, running: Boolean) 
             step.call.subject?.takeIf { it.fitsInline() }?.let { subject ->
                 Text(
                     subject,
-                    style = NexaraTypography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                    style = NexaraTypography.labelMedium.copy(fontFamily = NexaraMonospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,

@@ -78,7 +78,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.LastBaseline
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,7 +141,9 @@ import com.promenar.nexara.ui.renderer.TableMeasurer
 import com.promenar.nexara.ui.renderer.parseMarkdownTable
 import com.promenar.nexara.ui.renderer.rememberTableMeasurer
 import com.promenar.nexara.ui.renderer.parseGfmAlert
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.nexaraMonospaceTypeface
 import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.ui.testing.UiTags
 import org.intellij.markdown.IElementType
@@ -639,9 +640,10 @@ private data class ReadingTextEdges(val modifier: Modifier, val onTextLayout: (T
 @Composable
 private fun rememberReadingTextEdges(style: TextStyle): ReadingTextEdges {
     val density = LocalDensity.current
+    val context = LocalContext.current
     val insets = remember(style, density.density, density.fontScale) { mutableStateOf(ReadingInkInsets(0, 0)) }
     val paint = remember(style, density.density, density.fontScale) {
-        val family = if (style.fontFamily == FontFamily.Monospace) Typeface.MONOSPACE else Typeface.SANS_SERIF
+        val family = if (style.fontFamily == NexaraMonospace) nexaraMonospaceTypeface(context) else Typeface.SANS_SERIF
         Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             textSize = with(density) { style.fontSize.toPx() }
             typeface = if (Build.VERSION.SDK_INT >= 28) {
@@ -1338,7 +1340,7 @@ private fun MarkdownSafe(
                                 } else {
                                     val codeStyle = LocalMarkdownTypography.current.inlineCode.copy(
                                         color = textColor,
-                                        fontFamily = FontFamily.Monospace,
+                                        fontFamily = NexaraMonospace,
                                     )
                                     WideContentHost(
                                         text = standaloneCode,

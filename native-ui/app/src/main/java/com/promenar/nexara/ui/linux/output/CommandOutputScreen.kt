@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.linux.output
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -53,7 +54,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -188,7 +188,7 @@ fun CommandOutputContent(
             Text(
                 text = output.commandLine ?: stringResource(R.string.linux_output_command_unknown),
                 style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = NexaraMonospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -294,7 +294,7 @@ private fun OutputTag(text: String, container: Color, content: Color) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = NexaraMonospace,
             modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 3.dp),
         )
     }
@@ -315,7 +315,7 @@ private fun SearchRow(search: OutputSearch, onQueryChange: (String) -> Unit, onP
             Text(
                 text = stringResource(R.string.linux_output_search_count, if (search.current >= 0) search.current + 1 else 0, search.matches.size),
                 style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = NexaraMonospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = NexaraSpacing.Small).testTag(UiTags.LINUX_OUTPUT_SEARCH_COUNT),
             )
@@ -396,7 +396,7 @@ private fun OutputText(state: CommandOutputUiState, modifier: Modifier) {
             }
             return@Surface
         }
-        val style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, color = scheme.onSurface)
+        val style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace, color = scheme.onSurface)
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(NexaraSpacing.Medium),

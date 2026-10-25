@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -54,7 +55,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -317,7 +317,7 @@ private fun TailnetStepRow(label: String, state: StepState, monospaceTail: Strin
             text = label,
             style = MaterialTheme.typography.bodyMedium.let {
                 when {
-                    monospaceTail != null -> it.copy(fontFamily = FontFamily.Monospace)
+                    monospaceTail != null -> it.copy(fontFamily = NexaraMonospace)
                     state == StepState.ACTIVE -> it.copy(fontWeight = FontWeight.Medium)
                     else -> it
                 }

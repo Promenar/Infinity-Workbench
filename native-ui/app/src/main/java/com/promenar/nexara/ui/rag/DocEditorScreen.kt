@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExitTransition
@@ -104,7 +105,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -1016,7 +1016,7 @@ private fun EditorPane(
         value = content,
         onValueChange = onContentChange,
         textStyle = MaterialTheme.typography.bodyMedium.copy(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = NexaraMonospace,
             color = MaterialTheme.colorScheme.onSurface,
         ).forInput(),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -1033,7 +1033,7 @@ private fun EditorPane(
                     Text(
                         text = stringResource(R.string.doc_editor_typing_placeholder),
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = NexaraMonospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                     )

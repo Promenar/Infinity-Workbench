@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.linux.terminal
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -449,11 +449,12 @@ private fun ExtraKeys(
                 KeyButton("Ctrl", "ctrl", enabled, selected = modifiers.ctrl, onClick = onToggleCtrl)
                 KeyButton("Alt", "alt", enabled, selected = modifiers.alt, onClick = onToggleAlt)
             }
+            // 方向键是按钮符号而非输入字符；JetBrains Mono 的箭头只占一格宽度，在按键上显得过小。
             val arrowKeys: @Composable RowScope.() -> Unit = {
-                KeyButton("←", TerminalExtraKey.LEFT.id, enabled, description = stringResource(R.string.linux_terminal_key_left)) { onKey(TerminalExtraKey.LEFT) }
-                KeyButton("↓", TerminalExtraKey.DOWN.id, enabled, description = stringResource(R.string.linux_terminal_key_down)) { onKey(TerminalExtraKey.DOWN) }
-                KeyButton("↑", TerminalExtraKey.UP.id, enabled, description = stringResource(R.string.linux_terminal_key_up)) { onKey(TerminalExtraKey.UP) }
-                KeyButton("→", TerminalExtraKey.RIGHT.id, enabled, description = stringResource(R.string.linux_terminal_key_right)) { onKey(TerminalExtraKey.RIGHT) }
+                KeyButton("←", TerminalExtraKey.LEFT.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_left)) { onKey(TerminalExtraKey.LEFT) }
+                KeyButton("↓", TerminalExtraKey.DOWN.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_down)) { onKey(TerminalExtraKey.DOWN) }
+                KeyButton("↑", TerminalExtraKey.UP.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_up)) { onKey(TerminalExtraKey.UP) }
+                KeyButton("→", TerminalExtraKey.RIGHT.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_right)) { onKey(TerminalExtraKey.RIGHT) }
             }
             if (wide) {
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) { modifierKeys(); arrowKeys() }
@@ -511,7 +512,7 @@ private fun RowScope.KeyButton(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
-                fontFamily = if (monospace) FontFamily.Monospace else null,
+                fontFamily = if (monospace) NexaraMonospace else null,
                 maxLines = 1,
                 color = if (enabled) androidx.compose.ui.graphics.Color.Unspecified else colors.onSurface.copy(alpha = 0.38f),
             )
@@ -596,7 +597,7 @@ fun JobOutputPane(
         } else {
             Text(
                 text = annotated,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, color = scheme.onSurface),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace, color = scheme.onSurface),
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)

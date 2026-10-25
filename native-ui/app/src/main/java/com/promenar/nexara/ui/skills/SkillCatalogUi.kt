@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.skills
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -32,7 +33,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
@@ -270,7 +270,7 @@ private fun SkillDetailSheet(
                     else -> SelectionContainer {
                         Text(
                             document.orEmpty(),
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -305,7 +305,7 @@ private fun SkillDetailLine(label: String, value: String, monospace: Boolean = f
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             value,
-            style = if (monospace) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+            style = if (monospace) MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace)
             else MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )

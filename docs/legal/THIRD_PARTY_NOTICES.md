@@ -102,6 +102,10 @@ Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以�
 
 SSH 与终端依赖保持版本固定；终端原生进程桥接库只用于侧载渠道的内置 Linux 终端，不属于远端 PTY 的执行路径。许可原文按上游保留，中文说明不替代许可条款。
 
+## 等宽字体
+
+- [JetBrains Mono 2.304](https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304)：取官方发行包 `JetBrainsMono-2.304.zip`（SHA-256 `6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`）中的无连字版 `JetBrainsMonoNL-Regular.ttf` 与 `JetBrainsMonoNL-Bold.ttf`，原样打包为 `res/font/jetbrains_mono_nl_regular.ttf`（SHA-256 `fb3b2575d7b0657359707993288f12a7360344d39387bb26050e276d61f6bd2a`）与 `jetbrains_mono_nl_bold.ttf`（SHA-256 `0198e841824025f8876e5c297f0b9b497ee8d6eb9969710a3328e1303f996ec3`），两个渠道均包含，用于终端、命令输出、代码块与标识符。SIL Open Font License 1.1，Copyright 2020 The JetBrains Mono Project Authors，无保留字体名；字体文件的 name 表保留版权与许可信息，许可原文见 [fonts/JetBrainsMono-OFL.txt](fonts/JetBrainsMono-OFL.txt)。OFL 允许字体随软件捆绑分发，字体本身仍按 OFL 授权，不并入 GPL；未做子集化或其它修改。
+
 ## 内置 Linux 环境（仅侧载渠道）
 
 以下组件只随侧载 APK 分发，版本与摘要固定在 `native-ui/app/linux/linux-runtime.properties`，构建时从上游下载并校验 SHA-256：

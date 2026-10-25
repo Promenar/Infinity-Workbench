@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.command
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -159,7 +159,7 @@ private fun SlashCommandRow(command: SlashCommand, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                 Text(
                     text = "/${command.name}",
-                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = NexaraMonospace),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

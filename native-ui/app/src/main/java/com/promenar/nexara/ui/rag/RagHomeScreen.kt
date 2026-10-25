@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.animateContentSize
 
 import com.promenar.nexara.ui.theme.hierarchicalTransition
@@ -138,7 +139,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -978,7 +978,7 @@ internal fun RagHomeScreenContent(
                                                     memory.sessionId?.let {
                                                         Text(
                                                             "${stringResource(R.string.sessions_tag_session)}: ${it.take(8)}…",
-                                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                                                             color = MaterialTheme.colorScheme.primary,
                                                         )
                                                     }

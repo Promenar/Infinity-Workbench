@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -72,7 +73,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -605,7 +605,7 @@ private fun TermuxOutputText(output: String) {
         SelectionContainer {
             Text(
                 output,
-                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
                 softWrap = false,
                 modifier = Modifier.horizontalScroll(rememberScrollState()).padding(NexaraSpacing.Large),
             )

@@ -35,7 +35,8 @@ class NexaraThemeTokenTest {
     @Test
     fun `真实字体与兼容别名符合批准契约`() {
         assertThat(NexaraSans).isEqualTo(FontFamily.SansSerif)
-        assertThat(NexaraMonospace).isEqualTo(FontFamily.Monospace)
+        // 等宽字体打包在应用内，不跟随会被厂商字体主题替换的系统 monospace。
+        assertThat(NexaraMonospace).isNotEqualTo(FontFamily.Monospace)
         assertThat(Manrope).isEqualTo(NexaraSans)
         assertThat(Inter).isEqualTo(NexaraSans)
         assertThat(SpaceGrotesk).isEqualTo(NexaraMonospace)

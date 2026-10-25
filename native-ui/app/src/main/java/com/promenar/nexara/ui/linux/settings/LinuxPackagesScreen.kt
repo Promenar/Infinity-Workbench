@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.linux.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +37,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -217,10 +217,10 @@ private fun LinuxPackageRow(
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(pkg.name, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(pkg.name, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = NexaraMonospace), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 pkg.availableVersion?.let { "${pkg.version} → $it" } ?: pkg.version,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

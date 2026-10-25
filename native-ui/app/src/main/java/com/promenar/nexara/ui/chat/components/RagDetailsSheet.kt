@@ -1,6 +1,7 @@
 // UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 纯布局、UI 交互展现与跳转逻辑，不包含任何数据转换、判定、图算法或状态流转核心业务逻辑，故依全局开发规范 §4.2 予以单元测试豁免。
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.foundation.clickable
@@ -63,7 +64,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -583,7 +583,7 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
                 )
                 Text(
                     text = citation.url,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

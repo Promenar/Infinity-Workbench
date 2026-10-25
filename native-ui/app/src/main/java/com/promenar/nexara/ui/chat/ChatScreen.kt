@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
@@ -1496,7 +1497,7 @@ private fun TokenDetailRow(label: String, value: Int) {
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         Text(label, modifier = Modifier.weight(1f), style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
+        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = NexaraMonospace), color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

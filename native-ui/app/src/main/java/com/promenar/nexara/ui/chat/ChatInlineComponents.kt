@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.*
@@ -59,7 +60,6 @@ import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.domain.tool.CommandToolBackend
 import com.promenar.nexara.domain.tool.CommandToolClassification
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.chat.components.ragScopeSegment
@@ -200,7 +200,7 @@ fun RagOmniIndicator(
                     ) {
                         Text(
                             text = progress?.stage ?: stringResource(R.string.chat_rag_scanning),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = NexaraMonospace),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
@@ -500,7 +500,7 @@ private fun TimelineStep(
                     Text(
                         text = step.toolArgs,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = NexaraTypography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp),
+                        style = NexaraTypography.labelSmall.copy(fontFamily = NexaraMonospace, fontSize = 11.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -923,7 +923,7 @@ internal fun ApprovalCallHeader(
                 SelectionContainer {
                     Text(
                         text = name,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = NexaraMonospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1140,7 +1140,7 @@ internal fun ApprovalTextBlock(text: String, initiallyExpanded: Boolean = false,
     val collapsedText = remember(text) { ApprovalTextBlockLayout.collapsedText(text) }
     var hasOverflow by remember(text) { mutableStateOf(explicitLineOverflow) }
     val textStyle = MaterialTheme.typography.bodySmall.copy(
-        fontFamily = FontFamily.Monospace,
+        fontFamily = NexaraMonospace,
         fontSize = 12.sp,
         lineHeight = 18.sp,
     )

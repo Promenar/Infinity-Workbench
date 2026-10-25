@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +32,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
@@ -214,7 +214,7 @@ private fun McpServerRow(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(Icons.Rounded.Code, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                            Text(tool, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
+                            Text(tool, style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace), color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }

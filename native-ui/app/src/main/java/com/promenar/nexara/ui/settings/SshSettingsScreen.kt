@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -77,7 +78,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.promenar.nexara.ui.common.SecretKeyboardOptions
@@ -296,12 +296,12 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                     prompt.host.trustedFingerprint?.let { previous ->
                         Text(stringResource(R.string.ssh_previous_fingerprint), style = MaterialTheme.typography.labelLarge)
                         SelectionContainer {
-                            Text("${prompt.host.trustedKeyType.orEmpty()}\n$previous", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
+                            Text("${prompt.host.trustedKeyType.orEmpty()}\n$previous", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                         }
                     }
                     Text(stringResource(R.string.ssh_presented_fingerprint), style = MaterialTheme.typography.labelLarge)
                     SelectionContainer {
-                        Text("${prompt.key.type}\n${prompt.key.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
+                        Text("${prompt.key.type}\n${prompt.key.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                     }
                     status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 }

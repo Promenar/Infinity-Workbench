@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
@@ -85,7 +86,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -483,7 +483,7 @@ fun SkillsScreen(
                     value = skillCode,
                     onValueChange = { skillCode = it },
                     label = { Text(stringResource(R.string.skills_code_example)) },
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp).forInput(),
+                    textStyle = TextStyle(fontFamily = NexaraMonospace, fontSize = 13.sp).forInput(),
                     modifier = Modifier.fillMaxWidth().height(200.dp)
                 )
 
@@ -763,7 +763,7 @@ internal fun SearchConfigContent(
                     value = searchState.searXngUrl,
                     onValueChange = { onSearXngUrlChange(it) },
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace).forInput()
+                    textStyle = TextStyle(fontFamily = NexaraMonospace).forInput()
                 )
             }
         }

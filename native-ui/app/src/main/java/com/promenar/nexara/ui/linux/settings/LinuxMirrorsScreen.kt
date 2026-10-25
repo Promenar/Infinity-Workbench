@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.linux.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -201,7 +201,7 @@ internal fun LinuxMirrorsContent(
                             isError = invalid,
                             supportingText = if (invalid) ({ Text(stringResource(R.string.linux_mirror_custom_invalid)) }) else null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
                             modifier = Modifier.fillMaxWidth().testTag(UiTags.LINUX_MIRROR_CUSTOM_FIELD),
                         )
                         TextButton(
@@ -240,7 +240,7 @@ private fun LinuxMirrorLatency(state: LinuxMirrorsUiState, id: LinuxMirrorId) {
                 val latency = state.latencies[id]
                 Text(
                     latency?.let { linuxDuration(it) } ?: stringResource(R.string.linux_mirror_latency_failed),
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                     color = if (latency == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

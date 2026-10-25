@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,7 +52,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -188,7 +188,7 @@ private fun BuiltInTailscaleRow(
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall.let { style ->
-                        if (status == BuiltInTailscaleStatus.CONNECTED) style.copy(fontFamily = FontFamily.Monospace) else style
+                        if (status == BuiltInTailscaleStatus.CONNECTED) style.copy(fontFamily = NexaraMonospace) else style
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = if (status == BuiltInTailscaleStatus.CONNECTED) 1 else 3,

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.common
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.launch
@@ -82,7 +82,7 @@ fun NexaraCommandBlock(
                 SelectionContainer {
                     Text(
                         command,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
                         softWrap = false,
                         modifier = Modifier
                             .fillMaxWidth()

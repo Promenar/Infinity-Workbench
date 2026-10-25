@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.renderer
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.webkit.WebView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -42,7 +43,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -209,7 +209,7 @@ fun CodeBlockWithHeader(
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .heightIn(min = 100.dp),
                 textStyle = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = NexaraMonospace,
                     fontSize = fontSize.sp
                 ).forInput(),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -234,7 +234,7 @@ fun CodeBlockWithHeader(
                         Text(
                             text = "${index + 1}",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = NexaraMonospace,
                                 fontSize = codeFontSize,
                                 lineHeight = codeLineHeight,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),

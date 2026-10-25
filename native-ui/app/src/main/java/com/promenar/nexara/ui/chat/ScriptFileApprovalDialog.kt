@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -47,7 +48,7 @@ fun ScriptFileApprovalDialog(broker: ScriptFileApprovalBroker, sessionTitle: (St
                         SelectionContainer {
                             Text(
                                 request.preview,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
                                 softWrap = false,
                                 modifier = Modifier.horizontalScroll(rememberScrollState()).padding(NexaraSpacing.Medium),
                             )

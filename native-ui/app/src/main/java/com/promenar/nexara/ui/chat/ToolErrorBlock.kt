@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,7 +64,7 @@ internal fun ToolErrorBlock(content: String) {
             error.tags.forEach { tag ->
                 Text(
                     tag,
-                    style = NexaraTypography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                    style = NexaraTypography.labelSmall.copy(fontFamily = NexaraMonospace, fontSize = 11.sp),
                     color = colors.error,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -87,7 +87,7 @@ internal fun ToolErrorBlock(content: String) {
         error.details?.let { details ->
             Text(
                 details,
-                style = NexaraTypography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp),
+                style = NexaraTypography.bodySmall.copy(fontFamily = NexaraMonospace, fontSize = 12.sp, lineHeight = 18.sp),
                 color = colors.onSurfaceVariant,
                 maxLines = if (expanded) Int.MAX_VALUE else DETAILS_COLLAPSED_LINES,
                 overflow = TextOverflow.Ellipsis,

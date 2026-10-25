@@ -22,7 +22,12 @@ All notable changes to this project will be documented in this file.
 - 新增本地终端（多页签、修饰键与额外按键行、只读查看后台任务输出）、Linux 文件浏览（排序、多选复制移动压缩删除、修改权限、文本编辑与冲突处理、十六进制预览），以及命令“完整输出”查看器（ANSI 着色、分段、搜索、截断说明、保存与在终端重跑）。系统“文件”应用中出现“Linux 主目录”，工作区选择器可选 `/root` 作为会话工作区。
 - 会话页：Linux 命令的审批卡显示“Linux 命令”类别与作用范围；工具详情标出 Linux 运行环境并提供“完整输出”入口；Agent 可达范围面板的 Linux 行可点按进入环境页。
 - 真机验收（OPPO PKH110，ColorOS 16.1）修正：“在终端重跑”不再显示握手命令的回显；终端设置 `SHELL`（装有 bash 时为 `/bin/bash`，否则 `/bin/sh`）；生成的 `/etc/resolv.conf` 权限为 0644；系统“文件”中的“Linux 主目录”显示应用图标；存储占用统计跳过统计期间消失或不可读的文件，不再整次失败而留空，读取失败写入调试日志；Linux 接管 `shell_exec` 时，可达范围面板的路径说明改为 Alpine 视角，内置命令行改名为“内置 Python python_exec”。
-- 已知限制：Alpine 中原生 git 尚不能使用 Nexara 保存的 HTTPS 凭据与 SSH 桥；本地终端依赖的 `libtermux.so` 为 4 KB 页对齐；ColorOS 在应用退到后台后会冻结整个应用进程组（含 proot），前台服务也不能阻止，后台任务回到前台后继续运行，需要用户在系统设置中允许应用后台运行；ColorOS 字体主题会替换等宽字体，终端与命令输出不再等宽。
+- 已知限制：Alpine 中原生 git 尚不能使用 Nexara 保存的 HTTPS 凭据与 SSH 桥；本地终端依赖的 `libtermux.so` 为 4 KB 页对齐；ColorOS 在应用退到后台后会冻结整个应用进程组（含 proot），前台服务也不能阻止，后台任务回到前台后继续运行，需要用户在系统设置中允许应用后台运行。
+
+### 打包等宽字体
+
+- 两个渠道打包 JetBrains Mono NL 2.304（Regular、Bold，SIL OFL 1.1，无连字），APK 增加约 200 KB。终端（内置 Linux 与 SSH）、命令完整输出、聊天代码块与行内代码，以及路径、模型 ID 等原先使用系统 monospace 的文本统一改用该字体，不再受厂商字体主题替换影响（ColorOS 会把系统 monospace 换成非等宽字体）；中文等缺失字形仍回落系统字体并按两格宽度对齐。终端方向键按钮保留系统字体显示。
+- 新增源码契约测试：除主题入口外不得直接使用 `FontFamily.Monospace` 或 `Typeface.MONOSPACE`；并校验打包字体 ASCII、制表符与常用符号同宽、粗细两档列宽一致。
 
 ### 移动工作流能力测试清单
 
