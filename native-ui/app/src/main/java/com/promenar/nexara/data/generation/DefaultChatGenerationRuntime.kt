@@ -823,6 +823,13 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
         ensureAutomaticConsent(request, session.executionMode.ifEmpty { "workspace" })
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
+        if (com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
+            toolRounds++
+            try {
+                toolExecutor.executeTools(request.sessionId, assistantMessageId(request), calls, preparedTools = preparedTools)
+            } finally { recordSubagentUsage(request) }
+            return GenerationToolDecision.CONTINUE
+        }
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()

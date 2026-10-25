@@ -109,6 +109,7 @@ class WorkspaceRepository(
         val physicalRoot = declaredRootPath.toFile().canonicalFile
         val before = dao.getSessionForRoot(sessionId)
             ?: throw NoSuchElementException("Session not found: $sessionId")
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = before.workspaceRootUuid, path = physicalRoot.path)
         val beforeRoot = before.workspaceRootUuid?.let { rootUuid ->
             val claimed = dao.getActiveByUuid(rootUuid, rootUuid)
                 ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
@@ -1139,6 +1140,7 @@ class WorkspaceRepository(
         workspaceRootUuid: String,
         block: suspend (FileEntry) -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid)
         val gate = executionGate
         return if (gate == null) {
             withAdmittedRootMutation(workspaceRootUuid, block)

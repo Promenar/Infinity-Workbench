@@ -90,8 +90,49 @@ class WorkspaceCanvasFilesTest {
     }
 
     @After fun cleanup() {
+        com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting()
         db.close()
         directory.deleteRecursively()
+    }
+
+    @Test fun `隔离根画布可读取但更新在发布内部版本前被拒绝`() = runBlocking {
+        val first = store.create("s", "图表", "原文", "m")
+        val root = workspace.ensureSessionRoot("s")
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        manager.bindRoot(root.uuid, privateRoot.canonicalPath, "s")
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT,
+                root.uuid, "工作区")) { error("冲突") }
+        val files = WorkspaceCanvasFiles(
+            WorkspaceFileTargetResolver(SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve,
+                File(directory, "skills")), workspace, operations, mounts, index, fs,
+        )
+
+        assertThat(files.read("s", first.metadata.workspacePath!!, 1024)?.toString(Charsets.UTF_8)).isEqualTo("原文")
+        assertThat(runCatching { store.update("s", first.metadata.id, html = "新内容") }.exceptionOrNull())
+            .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+        assertThat(store.read("s", first.metadata.id)?.version).isEqualTo(1)
+        assertThat(File(privateRoot, first.metadata.workspacePath!!).readText()).isEqualTo("原文")
+    }
+
+    @Test fun `健康会话选中隔离物理目录时画布读取不申请写权限`() = runBlocking {
+        val root = directoryRoot()
+        val first = store.create("s", "图表", "原文", "m")
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        manager.bindRoot("isolated-other-root", root.canonicalPath)
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        manager.recover(com.promenar.nexara.startup.StartupStep.WORKSPACE_JOURNAL,
+            com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.WORKSPACE_ROOT,
+                "isolated-other-root", "工作区")) { error("冲突") }
+        val files = WorkspaceCanvasFiles(
+            WorkspaceFileTargetResolver(SessionRepository(db.sessionDao(), db.messageDao()), workspace, mounts, roots::resolve,
+                File(directory, "skills")), workspace, operations, mounts, index, fs,
+        )
+
+        assertThat(manager.isSessionIsolated("s")).isFalse()
+        assertThat(files.exists("s", first.metadata.workspacePath!!)).isTrue()
+        assertThat(files.read("s", first.metadata.workspacePath!!, 1024)?.toString(Charsets.UTF_8)).isEqualTo("原文")
     }
 
     @Test fun `私有根按需建立文件树更新索引并保持BOM及CRLF字节`() = runBlocking {

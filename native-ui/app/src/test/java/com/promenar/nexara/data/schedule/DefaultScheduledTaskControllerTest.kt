@@ -48,6 +48,21 @@ class DefaultScheduledTaskControllerTest {
     private suspend fun create(trigger: ScheduleTrigger = ScheduleTrigger.Interval(15), exact: Boolean = false, max: Int? = null, expiry: Long? = null): ScheduledTask =
         controller.create("s", ScheduleCreateArgs("检查", "检查状态", trigger, exact, max, expiry)).task
 
+    @Test fun `隔离会话无法经设置入口恢复排期且数据库保持暂停`() = runBlocking {
+        val task = create()
+        controller.pause(task.id)
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        try {
+            manager.recover(com.promenar.nexara.startup.StartupStep.SESSION_JOURNAL,
+                com.promenar.nexara.startup.StartupIssueScope(com.promenar.nexara.startup.StartupScopeKind.SESSION, "s", "会话")) { error("冲突") }
+            assertThat(runCatching { controller.resume(task.id) }.exceptionOrNull())
+                .isInstanceOf(com.promenar.nexara.startup.StartupIsolationException::class.java)
+            assertThat(controller.find(task.id)!!.enabled).isFalse()
+            assertThat(requests).isEmpty()
+        } finally { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting() }
+    }
+
     @Test fun `同一到期回调重复到达只执行一次并持久记录结果`() = runBlocking {
         val task = create()
         now = task.nextFireAtMillis!!

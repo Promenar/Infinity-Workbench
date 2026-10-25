@@ -11,7 +11,7 @@ class ReleaseLoggingSourceContractTest {
 
     @Test
     fun `release 可达源码只允许统一日志器直接访问平台日志`() {
-        // 唯一白名单是平台日志适配边界；其公开输出入口由下一项测试锁定 DEBUG 门禁。
+        // 唯一白名单是平台日志适配边界；平台输出由下一项测试锁定 DEBUG 门禁。
         val violations = sourceRoot.walkTopDown()
             .filter {
                 it.isFile &&
@@ -34,11 +34,11 @@ class ReleaseLoggingSourceContractTest {
     }
 
     @Test
-    fun `统一日志器全部输出入口均由 DEBUG 编译期门禁保护`() {
+    fun `普通日志输出由DEBUG保护且错误先记录私有诊断`() {
         val logger = File(sourceRoot, "utils/NexaraLogger.kt").readText()
 
         assertThat(logger).contains("fun log(message: String) {\n        if (!com.promenar.nexara.BuildConfig.DEBUG) return")
-        assertThat(logger).contains("fun logError(tag: String, throwable: Throwable) {\n        if (!com.promenar.nexara.BuildConfig.DEBUG) return")
+        assertThat(logger).contains("fun logError(tag: String, throwable: Throwable) {\n        AppDiagnostics.recordError(tag, throwable)\n        if (!com.promenar.nexara.BuildConfig.DEBUG) return")
         assertThat(logger).contains("fun metro(event: String, payload: String) {\n        if (!com.promenar.nexara.BuildConfig.DEBUG) return")
     }
 
@@ -47,7 +47,9 @@ class ReleaseLoggingSourceContractTest {
         val rules = File(projectRoot, "app/proguard-rules.pro").readText()
 
         assertThat(rules).contains("public void log(java.lang.String);")
-        assertThat(rules).contains("public void logError(java.lang.String, java.lang.Throwable);")
+        assertThat(rules).doesNotContain("public void logError(java.lang.String, java.lang.Throwable);")
+        assertThat(rules).contains("-keeppackagenames com.promenar.nexara,com.promenar.nexara.**")
+        assertThat(rules).contains("-keepnames class com.promenar.nexara.** extends java.lang.Throwable")
         assertThat(rules).contains("public void metro(java.lang.String, java.lang.String);")
         assertThat(rules).doesNotContain("public static void log(java.lang.String);")
         assertThat(rules).contains("public static int d(java.lang.String, java.lang.String);")

@@ -2,6 +2,7 @@ package com.promenar.nexara.utils
 
 import android.content.Context
 import android.util.Log
+import com.promenar.nexara.startup.diagnostics.AppDiagnostics
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -23,6 +24,7 @@ object NexaraLogger {
 
     fun init(context: Context) {
         if (!isAndroid) return
+        AppDiagnostics.initialize(context.filesDir)
         try {
             diagnosticExecutor.execute {
                 runCatching { getDiagnosticFile(context).let { if (!it.exists()) it.createNewFile() } }
@@ -133,6 +135,7 @@ object NexaraLogger {
     }
 
     fun logError(tag: String, throwable: Throwable) {
+        AppDiagnostics.recordError(tag, throwable)
         if (!com.promenar.nexara.BuildConfig.DEBUG) return
         val safeTag = SensitiveDataRedactor.redactMessage(tag).take(80)
         val safeError = SensitiveDataRedactor.safeThrowable(

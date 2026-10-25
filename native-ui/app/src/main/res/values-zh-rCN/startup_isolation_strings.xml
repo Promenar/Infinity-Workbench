@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_isolation_workspace_write_blocked">该工作区因启动恢复失败已隔离，可以读取文件；请先处理启动问题再写入。</string>
+    <string name="startup_isolation_session_write_blocked">该会话因启动恢复失败已隔离，可以查看内容；请先处理启动问题再删除会话或执行写入类工具。</string>
+    <string name="startup_isolation_subsystem_disabled">该功能因启动恢复失败已停用，请先处理启动问题。</string>
+    <string name="startup_diagnostic_session_title">启动诊断：%1$s</string>
+    <string name="startup_diagnostic_session_draft">请帮我诊断以下应用启动问题：\n%1$s\n\n请使用 app_diagnostics 读取当前问题和脱敏诊断记录，再说明发现与可用的处理方案。resolve_startup_issue(issueId, action) 可以重试恢复，或放弃受支持的未完成操作并保留用户文件。每次执行处置都需要我批准。</string>
+    <string name="startup_diagnostic_no_issues">当前没有仍未解决的所选启动问题。</string>
+    <string name="startup_isolation_scope_workspace">工作区</string>
+    <string name="startup_isolation_scope_session">会话</string>
+    <string name="startup_isolation_scope_subsystem">功能</string>
+    <string name="startup_isolation_scope_global">应用</string>
+    <string name="startup_isolation_tool_ledger_diagnostics_only">工具台账恢复失败。可以读取诊断；请先在启动问题面板重试工具台账恢复，再运行其它工具。</string>
+    <string name="startup_subsystem_workspaces">工作区恢复</string>
+    <string name="startup_subsystem_tools">工具</string>
+    <string name="startup_subsystem_vectors">记忆与索引</string>
+    <string name="startup_subsystem_background">后台任务</string>
+    <string name="startup_subsystem_confirmations">后台确认</string>
+    <string name="startup_subsystem_schedules">定时任务</string>
+    <string name="startup_subsystem_catalog">模型目录</string>
+    <string name="startup_subsystem_memory">记忆清理</string>
+</resources>

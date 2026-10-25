@@ -55,7 +55,8 @@ internal class WorkspaceCanvasFiles(
         }
     }
 
-    override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) = access(sessionId, path) { target, normalized ->
+    override suspend fun write(sessionId: String, path: String, html: String, expectedHash: String?) = access(sessionId, path, writing = true) { target, normalized ->
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = target.root?.uuid, path = target.directory?.canonicalPath)
         ensureParents(target, normalized)
         targets.checkCurrent(target, normalized)
         val bytes = html.toByteArray(Charsets.UTF_8)
@@ -123,11 +124,13 @@ internal class WorkspaceCanvasFiles(
         }
     }
 
-    private suspend fun <T> access(sessionId: String, path: String, block: suspend (WorkspaceFileTarget, String) -> T): T = withContext(Dispatchers.IO) {
+    private suspend fun <T> access(sessionId: String, path: String, writing: Boolean = false, block: suspend (WorkspaceFileTarget, String) -> T): T = withContext(Dispatchers.IO) {
         // 元数据中的画布只能落到自身固定目录，不接受 URI、挂载别名或路径穿越。
         if (!CANVAS_PATH.matches(path)) throw ExternalFolderException("INVALID_PATH", "画布工作区路径无效")
         val normalized = ExternalFolderPaths.normalize(path)
-        val target = targets.resolve(sessionId, normalized, writing = true)
+        // 健康会话保留原有的按需建根；隔离范围读取只能使用已存在的根。
+        val initializeRoot = !com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(sessionId = sessionId)
+        val target = targets.resolve(sessionId, normalized, writing = writing, initializeMissingPrivateRoot = initializeRoot)
         withContext(ExternalMountOperationBindings(target.mountIds)) {
             targets.checkCurrent(target, normalized)
             block(target, normalized)

@@ -59,6 +59,7 @@ class ToolExecutor internal constructor(
     private val grantVerifier: (suspend (Session, SkillDefinition, JsonObject, String) -> Boolean)? = null,
     /** 运行中命令的实时输出，按工具调用步骤 id 登记。 */
     private val liveOutput: com.promenar.nexara.data.exec.ToolLiveOutputStore? = null,
+    private val unavailableLedgerMessage: () -> String = { "TOOL_LEDGER_UNAVAILABLE" },
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -89,6 +90,13 @@ class ToolExecutor internal constructor(
         toolCalls: List<ToolCall>,
         reason: String,
     ) {
+        if (com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
+            for (call in toolCalls.distinctBy { it.id }) messageManager.addMessage(sessionId, Message(
+                id = "diagnostic_rejected_${java.util.UUID.randomUUID()}", role = MessageRole.TOOL, toolCallId = call.id,
+                parentMessageId = assistantMessageId, name = call.name, content = reason, createdAt = System.currentTimeMillis(),
+            ))
+            return
+        }
         val activeLedger = ledger ?: return
         val targetMsg = store.getSession(sessionId)?.messages?.find { it.id == assistantMessageId } ?: return
         for (tc in toolCalls.distinctBy { it.id }) {
@@ -142,6 +150,10 @@ class ToolExecutor internal constructor(
             return
         }
 
+        if (com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
+            executeDiagnosticsWithoutLedger(session, targetMsg, toolCalls, preparedTools)
+            return
+        }
         val activeLedger = ledger ?: return
 
         for (tc in toolCalls.distinctBy { it.id }) {
@@ -200,6 +212,33 @@ class ToolExecutor internal constructor(
                 )
                 throw cancelled
             }
+        }
+    }
+
+    /** 台账不可用时仅执行已广告且定义一致的只读诊断，不触碰损坏台账或批准任何处置。 */
+    private suspend fun executeDiagnosticsWithoutLedger(
+        session: Session,
+        targetMessage: Message,
+        calls: List<ToolCall>,
+        preparedTools: List<ProtocolTool>?,
+    ) {
+        val available = toolResolver.resolveForExecution(session)
+        for (call in calls.distinctBy { it.id }) {
+            val preflight = preflight(call, null, preparedTools, requiresApproval = false)
+            val valid = preflight as? ToolPreflight.Valid
+            val skill = valid?.identity?.runtimeToolId?.let { skillRegistry?.getSkillByRuntimeToolId(it) }
+            val tool = available.singleOrNull { it.function.name == call.name && it.runtimeToolId == valid?.identity?.runtimeToolId }
+            val exact = tool?.let(ToolInvocationIdentityFactory::definitionDigest) as? ToolDefinitionDigestResolution.Valid
+            val result = if (skill?.name == "app_diagnostics" && skill.runtimeToolId == "app_diagnostics" &&
+                skill.sourceId == "builtin" && skill.risk == com.promenar.nexara.domain.tool.ToolRisk.SAFE_READ &&
+                valid != null && exact?.digest == valid.identity.definitionDigest) {
+                executeSkill(skill, valid.arguments, call, session, null, false, "diagnostic_${call.id}", targetMessage.id)
+            } else ToolResult(call.id, unavailableLedgerMessage(), "error")
+            messageManager.addMessage(session.id, Message(
+                id = "diagnostic_${java.util.UUID.randomUUID()}", role = MessageRole.TOOL, toolCallId = call.id,
+                parentMessageId = targetMessage.id, name = call.name, content = result.content,
+                thoughtSignature = targetMessage.thoughtSignature, createdAt = System.currentTimeMillis(),
+            ))
         }
     }
 

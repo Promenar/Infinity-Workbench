@@ -60,6 +60,7 @@ class FileCanvasStore(
         ensureActive(sessionId)
         validateTitle(title)
         invalidIf(createdByMessageId.isBlank(), "创建画布需要有效的消息 ID。")
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
         validateSource(html)
         val state = load(sessionId)
         val now = System.currentTimeMillis()
@@ -83,6 +84,7 @@ class FileCanvasStore(
         expectedVersion: Int?,
     ): CanvasDocument = locked {
         ensureActive(sessionId)
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
         validateId(id)
         invalidIf((html == null) == (patches == null), "html 与 patches 必须且只能提供其中一种。")
         invalidIf(expectedVersion != null && expectedVersion < 1, "expected_version 必须是正整数。")

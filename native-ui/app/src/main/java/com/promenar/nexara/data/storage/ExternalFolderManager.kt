@@ -377,7 +377,7 @@ class ExternalFolderManager(
             if (previous != null && previous != mount.id) fail("CONFLICT", "操作期间挂载身份发生变化，已取消后续访问")
         }
         try {
-            val result = block(mount, sourceBackend(mount), relative)
+            val result = block(mount, sourceBackend(mount, sessionId), relative)
             if (mount.unavailableReason != null && !mount.isWorkspaceRoot && !mount.isUserSkills) dao.update(mount.copy(unavailableReason = null).entity())
             return result
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -395,21 +395,23 @@ class ExternalFolderManager(
             throw failure
         }
     }
-    private suspend fun sourceBackend(mount: ExternalMount): ExternalFolderBackend {
+    private suspend fun sourceBackend(mount: ExternalMount, sessionId: String? = null): ExternalFolderBackend {
+        fun guarded(backend: ExternalFolderBackend, physicalRoot: File? = null): ExternalFolderBackend =
+            if (sessionId == null) backend else com.promenar.nexara.startup.StartupGuardedExternalFolderBackend(backend, sessionId) { physicalRoot }
         if (mount.sourceType == ExternalMountPaths.WORKSPACE_SOURCE) {
             val resolver = workspaces ?: fail("UNAVAILABLE", "工作区不可用")
             return when (val current = resolver.resolveWorkspace(mount.sourceId)) {
-                is SessionWorkspace.Directory -> backendOverride?.invoke(mount) ?: resolver.backend(current)
+                is SessionWorkspace.Directory -> guarded(backendOverride?.invoke(mount) ?: resolver.backend(current), current.root)
                 is SessionWorkspace.Unavailable -> fail("UNAVAILABLE", current.reason)
                 SessionWorkspace.Private -> fail("UNAVAILABLE", "工作区不可用")
             }
         }
-        backendOverride?.invoke(mount)?.let { return it }
+        backendOverride?.invoke(mount)?.let { return guarded(it, File(mount.sourceId).takeIf { mount.sourceType == "real_path" }) }
         if (mount.isUserSkills) {
             if (!skillsDirectory.isDirectory && !skillsDirectory.mkdirs()) fail("UNAVAILABLE", "无法创建用户级技能目录")
-            return RealPathExternalFolderBackend(skillsDirectory)
+            return guarded(RealPathExternalFolderBackend(skillsDirectory))
         }
-        return when (mount.sourceType) {
+        val backend = when (mount.sourceType) {
             "saf_tree" -> {
                 val uri = Uri.parse(mount.sourceId)
                 val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == uri }
@@ -419,6 +421,7 @@ class ExternalFolderManager(
             "real_path" -> RealPathMountSupport.createBackend(context, mount.sourceId)
             else -> fail("UNSUPPORTED", "不支持的挂载来源")
         }
+        return guarded(backend, File(mount.sourceId).takeIf { mount.sourceType == "real_path" })
     }
     private fun takeGrant(uri: Uri, flags: Int) {
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION

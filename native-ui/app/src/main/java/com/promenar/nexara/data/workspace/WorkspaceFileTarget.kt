@@ -36,7 +36,8 @@ internal class WorkspaceFileTargetResolver(
     private val sessionWorkspace: suspend (String) -> SessionWorkspace,
     private val userSkillsDirectory: File,
 ) {
-    suspend fun resolve(sessionId: String, path: String, writing: Boolean): WorkspaceFileTarget {
+    suspend fun resolve(sessionId: String, path: String, writing: Boolean, initializeMissingPrivateRoot: Boolean = false): WorkspaceFileTarget {
+        if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
         val current = sessionWorkspace(sessionId)
         if (current is SessionWorkspace.Unavailable) unavailable("当前会话工作区不可用，请检查目录与授权")
         val workspaceMount = mounts.workspaceMount(sessionId)
@@ -55,12 +56,15 @@ internal class WorkspaceFileTargetResolver(
                 mount.sourceType == "saf_tree" -> null
                 else -> unavailable("不支持该挂载来源")
             }
+            if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = directory?.canonicalPath)
             return WorkspaceFileTarget(sessionId, null, directory, mount, workspaceMount)
         }
         if (path == "/mnt") return WorkspaceFileTarget(sessionId, null, null, null, workspaceMount)
         val session = sessions.getById(sessionId) ?: unavailable("会话不存在，无法访问工作区")
+        val mayInitialize = writing || initializeMissingPrivateRoot && current is SessionWorkspace.Private && session.workspaceRootUuid == null
         val root = session.workspaceRootUuid?.let { workspace.getByUuid(it, it) }
-            ?: if (writing) workspace.ensureSessionRoot(sessionId) else unavailable("会话私有工作区尚不可用")
+            ?: if (mayInitialize) workspace.ensureSessionRoot(sessionId) else unavailable("会话私有工作区尚不可用")
+        if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root.uuid, path = root.physicalRootPath)
         return WorkspaceFileTarget(sessionId, root, File(root.physicalRootPath), null)
     }
 

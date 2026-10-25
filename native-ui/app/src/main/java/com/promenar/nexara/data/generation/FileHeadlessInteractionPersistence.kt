@@ -14,6 +14,7 @@ class FileHeadlessInteractionPersistence(file: File) : HeadlessInteractionPersis
         else file.openRead().bufferedReader().use { Json.decodeFromString<GenerationInteraction>(it.readText()) }
     }
     override suspend fun write(interaction: GenerationInteraction?) = withContext(Dispatchers.IO) {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(subsystem = com.promenar.nexara.startup.StartupSubsystem.HEADLESS_INTERACTIONS)
         if (interaction == null) file.delete()
         else {
             file.baseFile.parentFile?.mkdirs()

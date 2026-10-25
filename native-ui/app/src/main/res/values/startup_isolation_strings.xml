@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_isolation_workspace_write_blocked">This workspace is isolated after a startup recovery failure. You can read files; resolve the startup issue before writing.</string>
+    <string name="startup_isolation_session_write_blocked">This session is isolated after a startup recovery failure. You can view it; resolve the startup issue before deleting it or running tools that make changes.</string>
+    <string name="startup_isolation_subsystem_disabled">This feature is disabled after a startup recovery failure. Resolve the startup issue to use it.</string>
+    <string name="startup_diagnostic_session_title">Startup diagnostics: %1$s</string>
+    <string name="startup_diagnostic_session_draft">Help me diagnose these application startup issues:\n%1$s\n\nUse app_diagnostics to read current issues and redacted diagnostic records, then explain the findings and available actions. resolve_startup_issue(issueId, action) can retry recovery or abandon a supported incomplete operation while preserving user files. Every resolution call requires my approval.</string>
+    <string name="startup_diagnostic_no_issues">No selected startup issues are currently active.</string>
+    <string name="startup_isolation_scope_workspace">Workspace</string>
+    <string name="startup_isolation_scope_session">Session</string>
+    <string name="startup_isolation_scope_subsystem">Feature</string>
+    <string name="startup_isolation_scope_global">Application</string>
+    <string name="startup_isolation_tool_ledger_diagnostics_only">Tool recovery is unavailable. You can read diagnostics; retry tool recovery in the startup issues panel before running other tools.</string>
+    <string name="startup_subsystem_workspaces">Workspace recovery</string>
+    <string name="startup_subsystem_tools">Tools</string>
+    <string name="startup_subsystem_vectors">Memory and indexing</string>
+    <string name="startup_subsystem_background">Background tasks</string>
+    <string name="startup_subsystem_confirmations">Background confirmations</string>
+    <string name="startup_subsystem_schedules">Scheduled tasks</string>
+    <string name="startup_subsystem_catalog">Model catalog</string>
+    <string name="startup_subsystem_memory">Memory cleanup</string>
+</resources>

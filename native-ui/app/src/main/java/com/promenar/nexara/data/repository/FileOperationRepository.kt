@@ -215,6 +215,7 @@ class FileOperationRepository(
         workspaceRootUuid: String,
         block: suspend () -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid)
         val gate = executionGate
         return if (gate == null) block()
         else gate.withSessionWorkspaceAdmission(sessionId, workspaceRootUuid, block)
@@ -224,6 +225,7 @@ class FileOperationRepository(
         workspaceRootUuid: String,
         block: suspend () -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid)
         val gate = executionGate
         return if (gate == null) block() else gate.withWorkspaceAdmission(workspaceRootUuid, block)
     }
@@ -405,7 +407,10 @@ class FileOperationRepository(
         }
         val root = File(entry.physicalRootPath).toPath()
         val relative = relative(entry.materializedPath)
-        fileOps.reconcileFile(root, relative, entry.hash)
+        // 隔离读取只观察当前节点，不能顺带恢复临时文件、覆盖目标或清理备份。
+        if (!com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(rootId = entry.workspaceRootUuid, path = entry.physicalRootPath)) {
+            fileOps.reconcileFile(root, relative, entry.hash)
+        }
         val bytes = try {
             fileOps.readLimited(root, relative, budget.maxInputBytes)
         } catch (_: WorkspaceFileTooLargeException) {

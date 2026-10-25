@@ -351,11 +351,13 @@ class VectorizationQueue(
         workspaceRootUuid: String,
         block: suspend () -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid, subsystem = com.promenar.nexara.startup.StartupSubsystem.VECTOR_QUEUE)
         val gate = executionGate
         return if (gate == null) block() else gate.withWorkspaceAdmission(workspaceRootUuid, block)
     }
 
     private suspend fun <T> withSessionAdmission(sessionId: String, block: suspend () -> T): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, subsystem = com.promenar.nexara.startup.StartupSubsystem.VECTOR_QUEUE)
         val gate = executionGate
         return if (gate == null) block() else gate.withSessionAdmission(sessionId, block)
     }
@@ -1010,7 +1012,9 @@ class VectorizationQueue(
                 vectorizationTaskDao.getRecoverableTasks(),
             )
 
-            val tasks = interruptedTasks.map { it.toTask() }
+            val tasks = interruptedTasks.map { it.toTask() }.filterNot {
+                com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(rootId = it.workspaceRootUuid, sessionId = it.sessionId)
+            }
             val attention = normalizeAttentionTasks(
                 vectorizationTaskDao.getAttentionTasks(),
             ).map { it.toTask() }
@@ -1045,6 +1049,7 @@ class VectorizationQueue(
         val dao = fileEntryDao ?: return
         dao.getUnvectorizedSupportedFiles(DocumentReferenceExtractor.SUPPORTED_MIME_TYPES.toList())
             .forEach { entry ->
+                if (com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(rootId = entry.workspaceRootUuid)) return@forEach
                 if (synchronized(queueLock) {
                         WorkspaceDocKey(entry.workspaceRootUuid, entry.uuid) in fencedTargets
                     }

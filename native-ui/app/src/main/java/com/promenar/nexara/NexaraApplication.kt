@@ -1,5 +1,7 @@
 package com.promenar.nexara
 
+import androidx.room.withTransaction
+import com.promenar.nexara.startup.*
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
@@ -215,6 +217,29 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private var acceptedDualDatabaseOfferToken: String? = null
     var restoreRelayEarlyExit: Boolean = false
         private set
+    val startupIssueManager = StartupIssueManager()
+    val startupIssues: StateFlow<List<StartupIssue>> = startupIssueManager.issues
+    private val _startupBlockedSummary = MutableStateFlow<String?>(null)
+    val startupBlockedSummary: StateFlow<String?> = _startupBlockedSummary.asStateFlow()
+
+    suspend fun resolveStartupIssue(issueId: String, action: StartupIssueAction, confirmed: Boolean = false): StartupIssueResolution =
+        startupIssueManager.resolve(issueId, action, confirmed)
+
+    suspend fun exportStartupDiagnostics(output: java.io.OutputStream) =
+        com.promenar.nexara.startup.diagnostics.AppDiagnostics.export(output, startupIssueManager.formatIssues())
+
+    suspend fun createDiagnosticSession(issueIds: List<String>, agentId: String, modelId: String? = null): com.promenar.nexara.data.model.Session =
+        withContext(Dispatchers.IO) {
+            StartupDiagnosticSessionFactory(
+                startupIssueManager, sessionRepository, workspaceRepository,
+                StartupDiagnosticSessionStrings(
+                    title = { getString(com.promenar.nexara.R.string.startup_diagnostic_session_title, it) },
+                    draft = { getString(com.promenar.nexara.R.string.startup_diagnostic_session_draft, it) },
+                    noIssues = getString(com.promenar.nexara.R.string.startup_diagnostic_no_issues),
+                ),
+            ).createDiagnosticSession(issueIds, agentId, modelId).also(chatStore::upsertSession)
+        }
+
     private val _startupState = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val startupState: StateFlow<BackupStartupState> = _startupState.asStateFlow()
 
@@ -296,7 +321,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val toolExecutionLedger by lazy {
-        ToolExecutionLedgerRepository(database)
+        StartupGuardedToolLedger(ToolExecutionLedgerRepository(database))
     }
 
     val localInferenceRuntimeGate: LocalInferenceRuntimeGate by lazy {
@@ -451,6 +476,36 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             deleteCommitted = { operationId ->
                 check(database.workspaceMutationDao().deleteCommitted(operationId) == 1) {
                     "DB_COMMITTED journal 恢复清理失败"
+                }
+            },
+            abandonUnchanged = { snapshot, expectedSessionExists, verifyDisk ->
+                database.withTransaction {
+                    val current = database.workspaceMutationDao().get(snapshot.operationId)
+                    val payload = (com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadCodec.decode(snapshot.payloadVersion, snapshot.payload)
+                        as? com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadResult.Valid)?.payload
+                    val sessionId = payload?.databaseTargetUuid
+                    val session = sessionId?.let { database.sessionDao().getById(it) }
+                    if (current != snapshot || (session != null) != expectedSessionExists) false
+                    else {
+                        if (session != null) {
+                            check(session.workspaceRootUuid == snapshot.workspaceRootUuid) { "会话工作区绑定已变化" }
+                            val root = checkNotNull(database.fileEntryDao().getAnyStateByUuidForLifecycle(snapshot.workspaceRootUuid, snapshot.workspaceRootUuid))
+                            check(root.hash == payload?.expectedSha256 &&
+                                File(root.physicalRootPath).canonicalFile.toPath() == sessionWorkspaceParent.toFile().canonicalFile.toPath().resolve(payload!!.sourceRelativePath)) {
+                                "会话根身份或路径不一致"
+                            }
+                            check(session.workspacePath == null || File(session.workspacePath).canonicalFile == File(root.physicalRootPath).canonicalFile) { "会话根路径不一致" }
+                            com.promenar.nexara.data.repository.StartupJournalConsistency.rootSnapshot(
+                                root, database.fileEntryDao().getAllStatesByWorkspaceRootForCleanup(root.uuid),
+                                com.promenar.nexara.data.repository.SecureWorkspaceFileOps(),
+                            )
+                        }
+                        verifyDisk()
+                        when (snapshot.state) {
+                            com.promenar.nexara.data.local.db.entity.WorkspaceMutationStage.PREPARED -> database.workspaceMutationDao().deletePrepared(snapshot.operationId) == 1
+                            com.promenar.nexara.data.local.db.entity.WorkspaceMutationStage.DB_COMMITTED -> database.workspaceMutationDao().deleteCommitted(snapshot.operationId) == 1
+                        }
+                    }
                 }
             },
             verifyRootIdentity = { path, identity ->
@@ -866,6 +921,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionExecutionGate,
             grantVerifier = this::verifyTargetGrant,
             liveOutput = toolLiveOutputStore,
+            unavailableLedgerMessage = { getString(com.promenar.nexara.R.string.startup_isolation_tool_ledger_diagnostics_only) },
         )
     }
     private val generationPostProcessor by lazy {
@@ -1251,6 +1307,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         DefaultSkillRegistry().apply {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
+            startupDiagnosticTools(startupIssueManager).forEach(::register)
             register(CalculatorSkill())
             register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
@@ -1342,7 +1399,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     /** 会话工具表绑定自己的工作区，后台生成不依赖界面当前选中的会话。 */
     private fun createSkillRegistry(sessionId: String? = null): SkillRegistry =
-        ModularSkillRegistry(
+        StartupGuardedSkillRegistry(ModularSkillRegistry(
             listOf(
                 presetSkillRegistry,
                 com.promenar.nexara.ui.chat.manager.skills.scheduleSkillRegistry(scheduledTaskController),
@@ -1350,7 +1407,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 userSkillRegistry,
                 mcpSkillRegistry,
             )
-        )
+        ))
 
     val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver by lazy {
         object : com.promenar.nexara.data.generation.SessionToolResolver {
@@ -1455,7 +1512,50 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         super.onCreate()
         if (android.os.Process.isIsolated()) return
         instance = this
+        com.promenar.nexara.startup.diagnostics.AppDiagnostics.initialize(filesDir)
         com.promenar.nexara.utils.NexaraLogger.init(this)
+        StartupWriteBarrier.install(startupIssueManager)
+        startupIssueManager.scopeDisplayName = { scope ->
+            when (scope.kind) {
+                StartupScopeKind.GLOBAL -> getString(R.string.startup_isolation_scope_global)
+                StartupScopeKind.WORKSPACE_ROOT -> scope.displayName.takeUnless { it == "工作区" } ?: getString(R.string.startup_isolation_scope_workspace)
+                StartupScopeKind.SESSION -> scope.displayName.takeUnless { it == "会话" } ?: getString(R.string.startup_isolation_scope_session)
+                StartupScopeKind.SUBSYSTEM -> getString(when (scope.id) {
+                    StartupSubsystem.WORKSPACE_RECOVERY.name -> R.string.startup_subsystem_workspaces
+                    StartupSubsystem.TOOL_LEDGER.name -> R.string.startup_subsystem_tools
+                    StartupSubsystem.VECTOR_QUEUE.name -> R.string.startup_subsystem_vectors
+                    StartupSubsystem.BACKGROUND_JOBS.name -> R.string.startup_subsystem_background
+                    StartupSubsystem.HEADLESS_INTERACTIONS.name -> R.string.startup_subsystem_confirmations
+                    StartupSubsystem.SCHEDULED_TASKS.name -> R.string.startup_subsystem_schedules
+                    StartupSubsystem.MODEL_CATALOG.name -> R.string.startup_subsystem_catalog
+                    else -> R.string.startup_subsystem_memory
+                })
+            }
+        }
+        startupIssueManager.writeBlockedMessage = { issue ->
+            getString(when (issue.scope.kind) {
+                StartupScopeKind.WORKSPACE_ROOT -> com.promenar.nexara.R.string.startup_isolation_workspace_write_blocked
+                StartupScopeKind.SESSION -> com.promenar.nexara.R.string.startup_isolation_session_write_blocked
+                else -> com.promenar.nexara.R.string.startup_isolation_subsystem_disabled
+            })
+        }
+        startupIssueManager.onResolved = { issue ->
+            if (issue.severity == StartupSeverity.BLOCKING) {
+                startBackupRecovery()
+                startupRecoveryJob?.join()
+            } else if (_startupState.value == BackupStartupState.Ready && (issue.scope.kind in setOf(StartupScopeKind.SESSION, StartupScopeKind.WORKSPACE_ROOT) ||
+                    issue.scope.kind == StartupScopeKind.SUBSYSTEM && issue.scope.id == StartupSubsystem.WORKSPACE_RECOVERY.name)) {
+                // 范围恢复成功后补回该范围被跳过的索引和排期，其它子系统失败单独记录。
+                if (!startupIssueManager.isSubsystemIsolated(StartupSubsystem.VECTOR_QUEUE)) {
+                    startupIssueManager.recover(StartupStep.VECTOR_QUEUE, StartupIssueScope.subsystem(StartupSubsystem.VECTOR_QUEUE)) {
+                        withContext(Dispatchers.IO) { vectorizationQueue.resumeInterruptedTasks().getOrThrow() }
+                    }
+                }
+                if (!startupIssueManager.isSubsystemIsolated(StartupSubsystem.SCHEDULED_TASKS)) {
+                    startupIssueManager.recover(StartupStep.SCHEDULED_TASKS, StartupIssueScope.subsystem(StartupSubsystem.SCHEDULED_TASKS)) { scheduledTaskController.reconcile() }
+                }
+            }
+        }
 
         // 独立 relay 进程不得打开 Room、pending payload 或注册任何业务 writer。
         if (currentProcessName().endsWith(RestoreRelayActivity.PROCESS_SUFFIX)) {
@@ -1501,109 +1601,124 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private fun startBackupRecovery() {
         if (startupRecoveryJob?.isActive == true || _startupState.value == BackupStartupState.Ready) return
         _startupState.value = BackupStartupState.Recovering
+        _startupBlockedSummary.value = null
         startupRecoveryJob = startupScope.launch {
             try {
-                val dualResult = withContext(Dispatchers.IO) {
-                    acceptedDualDatabaseOfferToken?.let { token ->
-                        acceptedDualDatabaseOfferToken = null
-                        dualDatabaseRecoveryBootstrap.recover(token)
-                    } ?: dualDatabaseRecoveryBootstrap.inspectOrResume()
+                var dualResult: DualDatabaseBootstrapResult? = null
+                startupIssueManager.recover(StartupStep.DUAL_DATABASE, StartupIssueScope.Global) {
+                    dualResult = withContext(Dispatchers.IO) {
+                        acceptedDualDatabaseOfferToken?.let { token ->
+                            acceptedDualDatabaseOfferToken = null
+                            dualDatabaseRecoveryBootstrap.recover(token)
+                        } ?: dualDatabaseRecoveryBootstrap.inspectOrResume()
+                    }
+                    (dualResult as? DualDatabaseBootstrapResult.Blocked)?.let { throw IllegalStateException(it.detail) }
                 }
-                when (dualResult) {
-                    DualDatabaseBootstrapResult.Normal,
-                    is DualDatabaseBootstrapResult.Completed -> Unit
+                when (val result = checkNotNull(dualResult)) {
+                    DualDatabaseBootstrapResult.Normal, is DualDatabaseBootstrapResult.Completed -> Unit
                     is DualDatabaseBootstrapResult.RecoveryRequired -> {
                         _startupState.value = BackupStartupState.DualDatabaseRecoveryRequired(
-                            dualResult.offer.summary,
-                            dualResult.offer.offerToken,
+                            result.offer.summary, result.offer.offerToken,
                         )
                         return@launch
                     }
-                    is DualDatabaseBootstrapResult.Blocked -> {
-                        _startupState.value = BackupStartupState.DualDatabaseRecoveryBlocked(dualResult.detail)
-                        return@launch
+                    is DualDatabaseBootstrapResult.Blocked -> error("双数据库恢复失败")
+                }
+                startupIssueManager.recover(StartupStep.BACKUP_RESTORE, StartupIssueScope.Global) {
+                    withContext(Dispatchers.IO) {
+                        if (!::backupRuntime.isInitialized) backupRuntime = createBackupRuntime()
+                        check(backupRuntime.recoverBeforeWriters() == BackupStartupState.Ready) {
+                            backupRuntime.failureSummary.value ?: "备份恢复失败"
+                        }
                     }
                 }
-                val runtime = withContext(Dispatchers.IO) {
-                    if (!::backupRuntime.isInitialized) backupRuntime = createBackupRuntime()
-                    backupRuntime
-                }
-                if (runtime.recoverBeforeWriters() == BackupStartupState.Ready) {
-                    com.promenar.nexara.startup.PostBackupStartupRecoverySequence(
-                        recoverWorkspaceJournal = {
+                val runtime = backupRuntime
+                PostBackupStartupRecoverySequence(
+                    recoverWorkspaceJournal = { recoverStartupWorkspaces() },
+                    recoverToolLedger = {
+                        startupIssueManager.recover(StartupStep.TOOL_LEDGER, StartupIssueScope.subsystem(StartupSubsystem.TOOL_LEDGER)) {
                             withContext(Dispatchers.IO) {
-                                java.nio.file.Files.createDirectories(sessionWorkspaceParent)
-                                LegacyWorkspaceRootAdoptionCoordinator(
-                                    filesDir = filesDir,
-                                    defaultWorkspaceParent = File(filesDir, "session_workspaces"),
-                                    sessionDao = database.sessionDao(),
-                                    fileEntryDao = database.fileEntryDao(),
-                                    workspaceRepository = workspaceRepository,
-                                ).adoptAll()
-                                workspaceFileMutationRecoveryCoordinator.recoverOrThrow()
-                                workspaceMutationRecoveryCoordinator.recoverOrThrow()
-                            }
-                        },
-                        recoverToolLedger = {
-                            withContext(Dispatchers.IO) {
-                                // 外部副作用是否已发生不可判定，禁止自动重放 RUNNING 调用。
-                                toolExecutionLedger.recoverInterruptedRunning(
-                                    "进程在工具执行期间中断，请确认结果后重新发起",
-                                )
+                                // 未知外部副作用不能重放，原有台账恢复语义保留。
+                                toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
                                 toolExecutionLedger.recoverApprovalState()
                             }
-                        },
-                        recoverWriterTombstones = {
-                            withContext(Dispatchers.IO) {
-                                val attention = com.promenar.nexara.data.worker.RecycleBinCleanupWorker
-                                    .recoverPendingDeletions(database)
-                                check(attention.failedRoots.isEmpty() && attention.failedTombstones.isEmpty()) {
-                                    "工作区 tombstone 恢复存在冲突，拒绝进入可写态"
+                        }
+                    },
+                    // 每个根的 tombstone 与该根 journal 已在同一可重试范围内完成。
+                    recoverWriterTombstones = {},
+                    initializeWriters = {
+                        startupIssueManager.recover(StartupStep.WRITER_INITIALIZATION, StartupIssueScope.Global) { initializeAfterRecoveryOnce() }
+                    },
+                    resumeVectorQueue = {
+                        startupIssueManager.recover(StartupStep.VECTOR_QUEUE, StartupIssueScope.subsystem(StartupSubsystem.VECTOR_QUEUE)) {
+                            withContext(Dispatchers.IO) { vectorizationQueue.resumeInterruptedTasks().getOrThrow() }
+                        }
+                    },
+                    onIsolatedFailure = { step, failure ->
+                        val subsystem = when (step) {
+                            StartupStep.TOOL_LEDGER -> StartupSubsystem.TOOL_LEDGER
+                            StartupStep.VECTOR_QUEUE -> StartupSubsystem.VECTOR_QUEUE
+                            else -> StartupSubsystem.WORKSPACE_RECOVERY
+                        }
+                        startupIssueManager.recover(step, StartupIssueScope.subsystem(subsystem)) {
+                            when (subsystem) {
+                                StartupSubsystem.WORKSPACE_RECOVERY -> recoverStartupWorkspaces()
+                                StartupSubsystem.TOOL_LEDGER -> withContext(Dispatchers.IO) {
+                                    toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
+                                    toolExecutionLedger.recoverApprovalState()
                                 }
+                                StartupSubsystem.VECTOR_QUEUE -> withContext(Dispatchers.IO) { vectorizationQueue.resumeInterruptedTasks().getOrThrow() }
+                                else -> throw failure
                             }
-                        },
-                        initializeWriters = { initializeAfterRecoveryOnce() },
-                        resumeVectorQueue = {
-                            withContext(Dispatchers.IO) {
-                                vectorizationQueue.resumeInterruptedTasks().getOrThrow()
-                            }
-                        },
-                    ).runOrThrow()
-                    runtime.restoreResult.value?.skills
-                        ?.takeIf { it.skippedGitRepositories.isNotEmpty() || it.skippedSymbolicLinks > 0 }
-                        ?.let { _skillRestoreNotice.value = it }
-                    if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
-                    backgroundJobs.initialize()
+                        }
+                    },
+                ).runOrThrow()
+                runtime.restoreResult.value?.skills
+                    ?.takeIf { it.skippedGitRepositories.isNotEmpty() || it.skippedSymbolicLinks > 0 }
+                    ?.let { _skillRestoreNotice.value = it }
+                if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
+                startupIssueManager.recover(StartupStep.BACKGROUND_JOBS, StartupIssueScope.subsystem(StartupSubsystem.BACKGROUND_JOBS)) { backgroundJobs.initialize() }
+                startupIssueManager.recover(StartupStep.HEADLESS_INTERACTIONS, StartupIssueScope.subsystem(StartupSubsystem.HEADLESS_INTERACTIONS)) {
                     generationInteractions.restoreHeadless()
                     generationInteractions.pending.value?.let { pending ->
-                        if (withContext(Dispatchers.IO) { database.sessionDao().getById(pending.sessionId) } == null) {
-                            generationInteractions.clearHeadless(pending.sessionId)
-                        }
+                        if (withContext(Dispatchers.IO) { database.sessionDao().getById(pending.sessionId) } == null) generationInteractions.clearHeadless(pending.sessionId)
                     }
-                    scheduledTaskController.initialize()
-                    _startupState.value = BackupStartupState.Ready
-                    startForegroundScheduleTicker()
-                    startModelCatalogUpdates()
-                    generationScope.launch(Dispatchers.IO) {
-                        try {
-                            conversationMemoryLifecycle.purgeExpired()
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            NexaraLogger.logError("[ConversationMemory] 孤儿记忆清理失败", error)
-                        }
-                    }
-                } else {
-                    _startupState.value = BackupStartupState.Blocked
                 }
+                startupIssueManager.recover(StartupStep.SCHEDULED_TASKS, StartupIssueScope.subsystem(StartupSubsystem.SCHEDULED_TASKS)) {
+                    scheduledTaskController.initialize()
+                    startForegroundScheduleTicker()
+                }
+                startupIssueManager.recover(StartupStep.MODEL_CATALOG, StartupIssueScope.subsystem(StartupSubsystem.MODEL_CATALOG)) { startModelCatalogUpdates() }
+                _startupState.value = BackupStartupState.Ready
+                generationScope.launch(Dispatchers.IO) {
+                    startupIssueManager.recover(StartupStep.MEMORY_CLEANUP, StartupIssueScope.subsystem(StartupSubsystem.MEMORY_CLEANUP)) {
+                        conversationMemoryLifecycle.purgeExpired()
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
                 NexaraLogger.logError("BackupStartupRecovery", error)
+                _startupBlockedSummary.value = startupIssues.value.firstOrNull { it.severity == StartupSeverity.BLOCKING }?.summary
+                    ?: com.promenar.nexara.startup.diagnostics.DiagnosticRedactor.summary(error)
                 _startupState.value = BackupStartupState.Blocked
             } catch (error: Error) {
+                _startupBlockedSummary.value = com.promenar.nexara.startup.diagnostics.DiagnosticRedactor.summary(error)
                 _startupState.value = BackupStartupState.Blocked
                 throw error
             }
         }
+    }
+
+    private suspend fun recoverStartupWorkspaces() = withContext(Dispatchers.IO) {
+        java.nio.file.Files.createDirectories(sessionWorkspaceParent)
+        StartupWorkspaceRecovery(
+            database, startupIssueManager, workspaceFileMutationRecoveryCoordinator, workspaceMutationRecoveryCoordinator,
+            LegacyWorkspaceRootAdoptionCoordinator(filesDir, File(filesDir, "session_workspaces"),
+                database.sessionDao(), database.fileEntryDao(), workspaceRepository),
+            WorkspaceRepository(database.fileEntryDao(), database.workspaceSeqDao(),
+                deleteCommitter = com.promenar.nexara.data.repository.WorkspaceDeletionTransaction(database)::delete),
+        ).recover()
     }
 
     private fun initializeAfterRecoveryOnce() {
@@ -1651,13 +1766,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         }
 
         // 依赖 ProviderManager 的对象只能在 migration 完成后构造。
-        val preparedVectorizationQueue = vectorizationQueue
         return PreparedStartupWriters(
             providerManager = providerManager,
             settingsPrefs = settingsPrefs,
             hapticEnabled = nextHapticEnabled,
             inferenceEngine = inferenceEngine,
-            vectorizationQueue = preparedVectorizationQueue,
             lastModelToLoad = lastModelToLoad,
             processObserver = processObserver,
         )
@@ -1767,7 +1880,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         val settingsPrefs: SharedPreferences,
         val hapticEnabled: Boolean,
         val inferenceEngine: LocalInferenceEngine?,
-        val vectorizationQueue: VectorizationQueue,
         val lastModelToLoad: String?,
         val processObserver: DefaultLifecycleObserver?,
         val jobs: MutableList<Job> = mutableListOf(),

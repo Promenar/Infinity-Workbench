@@ -1925,6 +1925,31 @@ class ToolExecutorTest {
         assertThat(message.content).isEqualTo("I'll use a tool")
     }
 
+    @Test
+    fun `台账隔离时只读诊断通过且写工具与处置均不触碰台账`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val manager = com.promenar.nexara.startup.StartupIssueManager()
+        com.promenar.nexara.startup.StartupWriteBarrier.install(manager)
+        try {
+            manager.recover(com.promenar.nexara.startup.StartupStep.TOOL_LEDGER,
+                com.promenar.nexara.startup.StartupIssueScope.subsystem(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) { error("台账冲突") }
+            var reads = 0
+            var writes = 0
+            val read = testSkill("app_diagnostics") { reads++; ToolResult("diag", "安全诊断", "success") }
+            val write = testSkill("write_file", risk = ToolRisk.FILE_WRITE) { writes++; ToolResult("write", "不应执行", "success") }
+            val resolve = testSkill("resolve_startup_issue", risk = ToolRisk.SESSION_STATE) { writes++; ToolResult("resolve", "不应执行", "success") }
+            val registry = com.promenar.nexara.startup.StartupGuardedSkillRegistry(skillsRegistry(read, write, resolve))
+            val executor = ToolExecutor(store, messageManager, registry, SessionToolResolver { registry.getAllTools() },
+                ledger = mockk<ToolExecutionLedger>(), unavailableLedgerMessage = { "只读诊断通道" })
+            executor.executeTools("s1", "m1", listOf(ToolCall("read", "app_diagnostics", "{}"),
+                ToolCall("write", "write_file", "{}"), ToolCall("resolve", "resolve_startup_issue", "{}")), preparedTools = registry.getAllTools())
+            assertThat(reads).isEqualTo(1)
+            assertThat(writes).isEqualTo(0)
+            assertThat(store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL }.map { it.content })
+                .containsExactly("安全诊断", "只读诊断通道", "只读诊断通道")
+        } finally { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting() }
+    }
+
     private fun testSkill(
         name: String,
         description: String = "test",

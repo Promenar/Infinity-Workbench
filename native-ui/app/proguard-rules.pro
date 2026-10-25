@@ -3,10 +3,13 @@
 -keepattributes SourceFile,LineNumberTable
 -keep class kotlinx.serialization.** { *; }
 
-# R8 bytecode optimization to strip logging in production
+# 保留应用栈帧的包归属和异常类型名；类及普通成员仍可混淆、优化和裁剪。
+-keeppackagenames com.promenar.nexara,com.promenar.nexara.**
+-keepnames class com.promenar.nexara.** extends java.lang.Throwable
+
+# 发行版只剥离普通调试输出，logError 的私有诊断写入必须保留。
 -assumenosideeffects class com.promenar.nexara.utils.NexaraLogger {
     public void log(java.lang.String);
-    public void logError(java.lang.String, java.lang.Throwable);
     public void metro(java.lang.String, java.lang.String);
 }
 
