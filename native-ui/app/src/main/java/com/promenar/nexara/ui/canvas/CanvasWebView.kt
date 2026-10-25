@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.view.ContextThemeWrapper
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -25,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -59,38 +62,40 @@ fun CanvasWebView(
     }
     val palette = rememberRichContentPalette()
     val currentInsert by rememberUpdatedState(onInsertText)
-    val client = remember { CanvasWebViewClient { currentInsert(it) } }
-    val style = remember(palette) {
-        """
-        :root { color-scheme: ${if (palette.isDark) "dark" else "light"}; }
-        html, body { background: ${palette.background}; color: ${palette.foreground}; }
-        body { margin: 0; padding: 12px; box-sizing: border-box; font-family: system-ui, sans-serif; }
-        * { box-sizing: border-box; } a { color: ${palette.primary}; }
-        """.trimIndent()
-    }
+    // 主题切换会重建 WebView，旧实例释放时会废弃它的 client，所以 client 随主题一起重建。
+    val client = remember(palette.isDark) { CanvasWebViewClient { currentInsert(it) } }
+    val theme = remember(palette, html) { canvasTheme(palette, html) }
     val background = MaterialTheme.colorScheme.background.toArgb()
     Column(modifier.background(MaterialTheme.colorScheme.background)) {
         if (!scriptsAllowed) {
             Text(stringResource(R.string.canvas_scripts_unavailable), style = NexaraTypography.bodySmall, modifier = Modifier.padding(12.dp))
         }
-        AndroidView(
-            factory = { CanvasNativeWebView(context).apply { configure(client, scriptsAllowed) } },
-            modifier = Modifier.fillMaxSize().weight(1f),
-            onRelease = { view ->
-                client.dispose()
-                view.stopLoading()
-                view.removeAllViews()
-                view.destroy()
-            },
-            update = { view ->
-                view.interactive = interactive
-                view.isFocusable = interactive
-                view.isFocusableInTouchMode = interactive
-                view.importantForAccessibility = if (interactive) WebView.IMPORTANT_FOR_ACCESSIBILITY_AUTO else WebView.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-                view.setBackgroundColor(background)
-                client.load(view, html, style, scriptsAllowed && interactive && !readOnly)
-            },
-        )
+        // WebView 按所在 Context 主题报告 prefers-color-scheme 并决定能否算法变暗；Activity 主题恒为暗色，这里随应用主题包一层。
+        key(palette.isDark) {
+            AndroidView(
+                factory = {
+                    val webTheme = if (palette.isDark) androidx.appcompat.R.style.Theme_AppCompat_NoActionBar else androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar
+                    CanvasNativeWebView(ContextThemeWrapper(context, webTheme)).apply { configure(client, scriptsAllowed) }
+                },
+                modifier = Modifier.fillMaxSize().weight(1f),
+                onRelease = { view ->
+                    client.dispose()
+                    view.stopLoading()
+                    view.removeAllViews()
+                    view.destroy()
+                },
+                update = { view ->
+                    view.interactive = interactive
+                    view.isFocusable = interactive
+                    view.isFocusableInTouchMode = interactive
+                    view.importantForAccessibility = if (interactive) WebView.IMPORTANT_FOR_ACCESSIBILITY_AUTO else WebView.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                    // 没有暗色适配的页面在暗色主题下由系统变暗；Android 12 不支持时保持浅色页面，仍可读。
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) view.settings.isAlgorithmicDarkeningAllowed = theme.algorithmicDarkening
+                    view.setBackgroundColor(background)
+                    client.load(view, html, theme.style, scriptsAllowed && interactive && !readOnly)
+                },
+            )
+        }
     }
 }
 

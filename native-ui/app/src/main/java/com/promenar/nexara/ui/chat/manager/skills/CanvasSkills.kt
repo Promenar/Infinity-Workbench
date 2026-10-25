@@ -25,7 +25,7 @@ import kotlinx.serialization.json.put
 class CanvasCreateSkill(private val store: CanvasStore) : SkillDefinition {
     override val id = "canvas_create"
     override val name = id
-    override val description = "在当前会话创建可反复修改的 HTML 画布。适合图表、看板、计算器和交互小工具；页面可运行 JavaScript，但不能联网。页面须在 320–420 CSS px 宽的视口内可读；宽表格放进 overflow-x: auto 的容器或允许换行；不要使用超过容器的固定宽度。"
+    override val description = "在当前会话创建可反复修改的 HTML 画布。适合图表、看板、计算器和交互小工具；页面可运行 JavaScript，但不能联网。页面须在 320–420 CSS px 宽的视口内可读；宽表格放进 overflow-x: auto 的容器或允许换行；不要使用超过容器的固定宽度。页面随应用浅色或暗色主题显示：要自行适配暗色时声明 <meta name=\"color-scheme\" content=\"light dark\"> 并用 prefers-color-scheme 成对设置背景与文字颜色；未声明的页面按浅色排版，暗色主题下由系统自动变暗。给元素设背景色时同时设文字颜色。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
     override val parametersSchema = """{"type":"object","properties":{"title":{"type":"string","description":"1 到 120 字符的非空画布标题"},"html":{"type":"string","description":"完整 HTML 或 HTML 片段，UTF-8 不超过 1 MiB"}},"required":["title","html"],"additionalProperties":false}"""
@@ -43,7 +43,7 @@ class CanvasCreateSkill(private val store: CanvasStore) : SkillDefinition {
 class CanvasUpdateSkill(private val store: CanvasStore) : SkillDefinition {
     override val id = "canvas_update"
     override val name = id
-    override val description = "更新当前会话的画布，html 整体替换与 patches 文本补丁二选一。小改动优先补丁；find 必须在前一条补丁处理后的源码中唯一出现，任一失败整批不写入。expected_version 可防止覆盖其它更新。页面须在 320–420 CSS px 宽的视口内可读；宽表格放进 overflow-x: auto 的容器或允许换行；不要使用超过容器的固定宽度。"
+    override val description = "更新当前会话的画布，html 整体替换与 patches 文本补丁二选一。小改动优先补丁；find 必须在前一条补丁处理后的源码中唯一出现，任一失败整批不写入。expected_version 可防止覆盖其它更新。页面须在 320–420 CSS px 宽的视口内可读；宽表格放进 overflow-x: auto 的容器或允许换行；不要使用超过容器的固定宽度。页面随应用浅色或暗色主题显示：要自行适配暗色时声明 <meta name=\"color-scheme\" content=\"light dark\"> 并用 prefers-color-scheme 成对设置背景与文字颜色；未声明的页面按浅色排版，暗色主题下由系统自动变暗。给元素设背景色时同时设文字颜色。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
     override val parametersSchema = """{"type":"object","properties":{"canvas_id":{"type":"string"},"html":{"type":"string","description":"替换后的完整 HTML；与 patches 必须且只能提供其中一种"},"patches":{"type":"array","description":"至少一条顺序执行的文本补丁；与 html 必须且只能提供其中一种","items":{"type":"object","properties":{"find":{"type":"string","description":"非空查找串，在应用前一条补丁后的源码中必须唯一出现"},"replace":{"type":"string"}},"required":["find","replace"],"additionalProperties":false}},"expected_version":{"type":"integer","description":"可选的预期当前版本，必须是正整数"}},"required":["canvas_id"],"additionalProperties":false}"""

@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 - 运行坞只显示状态面板或只显示后台任务时，点按直接打开运行详情的对应页，不再总是落到计划页。
 - Git 面板中增删都为 0 的变更（如空文件）不再显示绿色“+0”，改为进入详情的箭头。
+- 暗色主题下画布页面若没有自带暗色适配（未声明含 dark 的 color-scheme 或 prefers-color-scheme 暗色规则），改按浅色页面排版并由系统 WebView 自动变暗（Android 13 起；Android 12 保持浅色页面），不再强加浅色文字，修复页面自设浅色背景（如表头）上浅字浅底看不清；画布 WebView 的 prefers-color-scheme 随应用浅色/暗色主题；画布工具说明提示模型声明暗色适配并成对设置背景与文字颜色。
 
 ### 会话界面：宽屏运行侧栏
 

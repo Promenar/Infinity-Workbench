@@ -35,6 +35,8 @@ class CanvasSkillsTest {
         val store = FileCanvasStore(folder.root, StandardTestDispatcher(testScheduler))
         for (skill in listOf(CanvasCreateSkill(store), CanvasUpdateSkill(store))) {
             assertThat(skill.description).contains("320–420 CSS px")
+            assertThat(skill.description).contains("color-scheme")
+            assertThat(skill.description).contains("同时设文字颜色")
             assertThat(skill.description).contains("overflow-x: auto")
             assertThat(skill.description).contains("换行")
             assertThat(skill.description).contains("不要使用超过容器的固定宽度")
