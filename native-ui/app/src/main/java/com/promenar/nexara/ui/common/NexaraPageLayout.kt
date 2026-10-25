@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.common
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +39,10 @@ fun NexaraPageLayout(
     scrollable: Boolean = true,
     imePadding: Boolean = true,
     modifier: Modifier = Modifier,
+    /** 标题下方的单行说明；为 null 时顶栏只有标题。 */
+    subtitle: String? = null,
+    /** 页面主体内边距；为 null 时使用设置类页面的默认留白。 */
+    bodyPadding: PaddingValues? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -51,7 +56,7 @@ fun NexaraPageLayout(
         topBar = {
             TopAppBar(
                 title = {
-                    Box(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
+                    Column(modifier = Modifier.padding(start = if (onBack != null) 0.dp else 4.dp)) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleLarge,
@@ -59,6 +64,15 @@ fun NexaraPageLayout(
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
+                        if (subtitle != null) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -89,10 +103,13 @@ fun NexaraPageLayout(
                     .fillMaxHeight()
                     .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                     .padding(
-                        horizontal = NexaraSpacing.ScreenHorizontal,
-                        vertical = NexaraSpacing.Large,
+                        bodyPadding ?: PaddingValues(
+                            start = NexaraSpacing.ScreenHorizontal,
+                            end = NexaraSpacing.ScreenHorizontal,
+                            top = NexaraSpacing.Large,
+                            bottom = NexaraSpacing.Large + NexaraSpacing.XLarge,
+                        )
                     )
-                    .padding(bottom = NexaraSpacing.XLarge)
                     .testTag("nexara_page_body")
             ) {
                 content()

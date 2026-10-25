@@ -29,6 +29,11 @@ All notable changes to this project will be documented in this file.
 - 两个渠道打包 JetBrains Mono NL 2.304（Regular、Bold，SIL OFL 1.1，无连字），APK 增加约 200 KB。终端（内置 Linux 与 SSH）、命令完整输出、聊天代码块与行内代码，以及路径、模型 ID 等原先使用系统 monospace 的文本统一改用该字体，不再受厂商字体主题替换影响（ColorOS 会把系统 monospace 换成非等宽字体）；中文等缺失字形仍回落系统字体并按两格宽度对齐。终端方向键按钮保留系统字体显示。
 - 新增源码契约测试：除主题入口外不得直接使用 `FontFamily.Monospace` 或 `Typeface.MONOSPACE`；并校验打包字体 ASCII、制表符与常用符号同宽、粗细两档列宽一致。
 
+### 终端页布局收紧
+
+- 环境与工作区说明移入顶栏标题下方；只有一个会话时不显示页签行，多个会话时页签高度收为 40dp。
+- 额外按键由三行 48dp 改为两行七列 40dp 网格（`Esc / - | ~ ↑ 键盘`、`Tab Ctrl Alt ← ↓ →`，↑ 与 ↓ 同列），键盘切换改为图标；页面上下留白收窄，键盘弹出时按键行紧贴输入法并隐藏底部说明。页面容器 `NexaraPageLayout` 新增可选副标题与主体内边距参数，其它页面默认不变。
+
 ### 移动工作流能力测试清单
 
 - 新增 `docs/testing/mobile-workflow-capability-checklist.md`，按基础能力、既有远端服务、端到端业务与故障变体组织测试，明确手机直接执行、服务调用和远端调度的交付边界。

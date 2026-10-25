@@ -1,11 +1,9 @@
 package com.promenar.nexara.ui.linux.terminal
 
-import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,6 +13,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
@@ -28,7 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
+import androidx.compose.material.icons.rounded.KeyboardHide
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,12 +37,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +55,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -75,6 +80,7 @@ import com.promenar.nexara.ui.linux.output.OutputDocument
 import com.promenar.nexara.ui.linux.output.OutputLineColors
 import com.promenar.nexara.ui.linux.output.outputLine
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 
@@ -152,8 +158,16 @@ fun LinuxTerminalContent(
 
     NexaraPageLayout(
         title = stringResource(R.string.linux_terminal_title),
+        subtitle = terminalSubtitle(state),
         onBack = onBack,
         scrollable = false,
+        // 终端区尽量占满：主体只留左右边距和很窄的上下留白，键盘弹出时按键行紧贴键盘。
+        bodyPadding = PaddingValues(
+            start = NexaraSpacing.ScreenHorizontal,
+            end = NexaraSpacing.ScreenHorizontal,
+            top = NexaraSpacing.XSmall,
+            bottom = NexaraSpacing.Small,
+        ),
         modifier = Modifier.testTag(UiTags.LINUX_TERMINAL_SCREEN),
         actions = {
             if (state.ready) {
@@ -173,7 +187,6 @@ fun LinuxTerminalContent(
             }
         },
     ) {
-        Subtitle(state)
         if (!state.ready) {
             EnvironmentNotReady(state.runtime, onOpenEnvironment)
             return@NexaraPageLayout
@@ -183,7 +196,7 @@ fun LinuxTerminalContent(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(vertical = NexaraSpacing.Small),
+                .padding(bottom = NexaraSpacing.Small),
         ) {
             when (selected) {
                 is TerminalTab.Shell -> Surface(
@@ -235,7 +248,8 @@ fun LinuxTerminalContent(
                     onToggleAlt = onToggleAlt,
                     onToggleKeyboard = { onToggleKeyboard(imeVisible) },
                 )
-                FooterNote(R.string.linux_terminal_footer)
+                // 输入时说明让位给终端行数；收起键盘后再显示。
+                if (!imeVisible) FooterNote(R.string.linux_terminal_footer)
             }
             is TerminalTab.AgentJob -> {
                 JobStatusLine(selected, state.jobTails[selected.job.id]?.truncated == true)
@@ -259,15 +273,15 @@ fun LinuxTerminalContent(
 }
 
 @Composable
-private fun Subtitle(state: LinuxTerminalUiState) {
-    val environment = state.environmentLabel ?: return
+private fun terminalSubtitle(state: LinuxTerminalUiState): String? {
+    val environment = state.environmentLabel ?: return null
     val workspaceSessionId = when (val tab = state.selectedTab) {
         is TerminalTab.Shell -> (tab.info.location as? LinuxTerminalLocation.SessionWorkspace)?.sessionId
         is TerminalTab.AgentJob -> tab.job.sessionId
         null -> null
     }
     val directory = ((state.selectedTab as? TerminalTab.Shell)?.info?.location as? LinuxTerminalLocation.Directory)?.path
-    val text = when {
+    return when {
         workspaceSessionId != null -> stringResource(
             R.string.linux_terminal_subtitle_workspace,
             environment,
@@ -276,59 +290,54 @@ private fun Subtitle(state: LinuxTerminalUiState) {
         directory != null -> stringResource(R.string.linux_terminal_subtitle_directory, environment, directory)
         else -> environment
     }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(bottom = NexaraSpacing.Small),
-    )
 }
 
 @Composable
 private fun TabsRow(state: LinuxTerminalUiState, onSelect: (String) -> Unit) {
-    if (state.tabs.isEmpty()) return
+    // 单个页签没有切换意义；新开第二个会话后才显示页签行。
+    if (state.tabs.size < 2) return
     val selectedKey = state.selectedTab?.key
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-        contentPadding = PaddingValues(vertical = NexaraSpacing.XSmall),
-    ) {
-        items(state.tabs, key = { it.key }) { tab ->
-            val label = when (tab) {
-                is TerminalTab.Shell -> stringResource(
-                    if (tab.info.running) R.string.linux_terminal_tab else R.string.linux_terminal_tab_exited,
-                    tab.info.ordinal,
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides CompactTouchTarget) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            contentPadding = PaddingValues(bottom = NexaraSpacing.XSmall),
+        ) {
+            items(state.tabs, key = { it.key }) { tab ->
+                val label = when (tab) {
+                    is TerminalTab.Shell -> stringResource(
+                        if (tab.info.running) R.string.linux_terminal_tab else R.string.linux_terminal_tab_exited,
+                        tab.info.ordinal,
+                    )
+                    is TerminalTab.AgentJob -> stringResource(R.string.linux_terminal_job_tab, tab.ordinal)
+                }
+                val tag = when (tab) {
+                    is TerminalTab.Shell -> UiTags.linuxTerminalTab(tab.info.id)
+                    is TerminalTab.AgentJob -> UiTags.linuxTerminalJobTab(tab.job.id)
+                }
+                FilterChip(
+                    selected = tab.key == selectedKey,
+                    onClick = { onSelect(tab.key) },
+                    label = { Text(label, maxLines = 1) },
+                    leadingIcon = if (tab is TerminalTab.AgentJob) {
+                        {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .background(
+                                        if (tab.job.state == BackgroundJobState.RUNNING) MaterialTheme.nexaraDomainColors.warning
+                                        else MaterialTheme.colorScheme.outline,
+                                        CircleShape,
+                                    ),
+                            )
+                        }
+                    } else null,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                    modifier = Modifier.testTag(tag),
                 )
-                is TerminalTab.AgentJob -> stringResource(R.string.linux_terminal_job_tab, tab.ordinal)
             }
-            val tag = when (tab) {
-                is TerminalTab.Shell -> UiTags.linuxTerminalTab(tab.info.id)
-                is TerminalTab.AgentJob -> UiTags.linuxTerminalJobTab(tab.job.id)
-            }
-            FilterChip(
-                selected = tab.key == selectedKey,
-                onClick = { onSelect(tab.key) },
-                label = { Text(label, maxLines = 1) },
-                leadingIcon = if (tab is TerminalTab.AgentJob) {
-                    {
-                        Box(
-                            Modifier
-                                .size(8.dp)
-                                .background(
-                                    if (tab.job.state == BackgroundJobState.RUNNING) MaterialTheme.nexaraDomainColors.warning
-                                    else MaterialTheme.colorScheme.outline,
-                                    CircleShape,
-                                ),
-                        )
-                    }
-                } else null,
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ),
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(tag),
-            )
         }
     }
 }
@@ -426,8 +435,8 @@ private fun ExitedBanner(tab: TerminalTab.Shell, onClose: (String) -> Unit) {
 }
 
 /**
- * 额外按键。按键触控区不小于 48dp：宽度足够放下 8 个键时排成“Esc Tab Ctrl Alt ← ↓ ↑ →”一行，
- * 否则拆为两行四键；第三行是 `| / - ~` 与“键盘”切换。
+ * 额外按键：两行七列的紧凑网格，与 Termux 按键行同为 40dp 高。
+ * 上行 `Esc / - | ~ ↑ 键盘`，下行 `Tab Ctrl Alt ← ↓ →`；Ctrl、Alt 各占一格半，使 ↑ 与 ↓ 对齐在同一列。
  */
 @Composable
 private fun ExtraKeys(
@@ -439,62 +448,62 @@ private fun ExtraKeys(
     onToggleAlt: () -> Unit,
     onToggleKeyboard: () -> Unit,
 ) {
-    val gap = 6.dp
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val wide = maxWidth >= NexaraSpacing.MinimumTouchTarget * 8 + gap * 7
+    val gap = NexaraSpacing.XSmall
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides CompactTouchTarget) {
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-            val modifierKeys: @Composable RowScope.() -> Unit = {
-                KeyButton("Esc", TerminalExtraKey.ESC.id, enabled) { onKey(TerminalExtraKey.ESC) }
-                KeyButton("Tab", TerminalExtraKey.TAB.id, enabled) { onKey(TerminalExtraKey.TAB) }
-                KeyButton("Ctrl", "ctrl", enabled, selected = modifiers.ctrl, onClick = onToggleCtrl)
-                KeyButton("Alt", "alt", enabled, selected = modifiers.alt, onClick = onToggleAlt)
-            }
-            // 方向键是按钮符号而非输入字符；JetBrains Mono 的箭头只占一格宽度，在按键上显得过小。
-            val arrowKeys: @Composable RowScope.() -> Unit = {
-                KeyButton("←", TerminalExtraKey.LEFT.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_left)) { onKey(TerminalExtraKey.LEFT) }
-                KeyButton("↓", TerminalExtraKey.DOWN.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_down)) { onKey(TerminalExtraKey.DOWN) }
-                KeyButton("↑", TerminalExtraKey.UP.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_up)) { onKey(TerminalExtraKey.UP) }
-                KeyButton("→", TerminalExtraKey.RIGHT.id, enabled, monospace = false, description = stringResource(R.string.linux_terminal_key_right)) { onKey(TerminalExtraKey.RIGHT) }
-            }
-            if (wide) {
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) { modifierKeys(); arrowKeys() }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) { modifierKeys() }
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) { arrowKeys() }
-            }
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                KeyButton("|", TerminalExtraKey.PIPE.id, enabled) { onKey(TerminalExtraKey.PIPE) }
+                KeyButton("Esc", TerminalExtraKey.ESC.id, enabled) { onKey(TerminalExtraKey.ESC) }
                 KeyButton("/", TerminalExtraKey.SLASH.id, enabled) { onKey(TerminalExtraKey.SLASH) }
                 KeyButton("-", TerminalExtraKey.DASH.id, enabled) { onKey(TerminalExtraKey.DASH) }
+                KeyButton("|", TerminalExtraKey.PIPE.id, enabled) { onKey(TerminalExtraKey.PIPE) }
                 KeyButton("~", TerminalExtraKey.TILDE.id, enabled) { onKey(TerminalExtraKey.TILDE) }
+                ArrowKey("↑", TerminalExtraKey.UP, R.string.linux_terminal_key_up, enabled, onKey)
                 KeyButton(
-                    label = stringResource(R.string.linux_terminal_keyboard),
+                    label = null,
+                    icon = if (imeVisible) Icons.Rounded.KeyboardHide else Icons.Rounded.Keyboard,
                     id = "keyboard",
                     enabled = enabled,
                     selected = imeVisible,
-                    weight = 2f,
-                    monospace = false,
+                    description = stringResource(R.string.linux_terminal_keyboard),
                     tag = UiTags.LINUX_TERMINAL_KEYBOARD,
                     onClick = onToggleKeyboard,
                 )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                KeyButton("Tab", TerminalExtraKey.TAB.id, enabled) { onKey(TerminalExtraKey.TAB) }
+                KeyButton("Ctrl", "ctrl", enabled, selected = modifiers.ctrl, weight = 1.5f, onClick = onToggleCtrl)
+                KeyButton("Alt", "alt", enabled, selected = modifiers.alt, weight = 1.5f, onClick = onToggleAlt)
+                ArrowKey("←", TerminalExtraKey.LEFT, R.string.linux_terminal_key_left, enabled, onKey)
+                ArrowKey("↓", TerminalExtraKey.DOWN, R.string.linux_terminal_key_down, enabled, onKey)
+                ArrowKey("→", TerminalExtraKey.RIGHT, R.string.linux_terminal_key_right, enabled, onKey)
             }
         }
     }
 }
 
+/** 方向键是按钮符号而非输入字符；JetBrains Mono 的箭头只占一格宽度，在按键上显得过小，改用系统字体。 */
+@Composable
+private fun RowScope.ArrowKey(label: String, key: TerminalExtraKey, description: Int, enabled: Boolean, onKey: (TerminalExtraKey) -> Unit) =
+    KeyButton(label, key.id, enabled, monospace = false, description = stringResource(description)) { onKey(key) }
+
+/** 终端页签与按键行的紧凑触控高度。 */
+private val CompactTouchTarget = 40.dp
+
 @Composable
 private fun RowScope.KeyButton(
-    label: String,
+    label: String?,
     id: String,
     enabled: Boolean,
     selected: Boolean = false,
     description: String? = null,
     weight: Float = 1f,
     monospace: Boolean = true,
+    icon: ImageVector? = null,
     tag: String = UiTags.linuxTerminalKey(id),
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val contentColor = if (enabled) androidx.compose.ui.graphics.Color.Unspecified else colors.onSurface.copy(alpha = 0.38f)
     Surface(
         selected = selected,
         onClick = onClick,
@@ -504,18 +513,22 @@ private fun RowScope.KeyButton(
         contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
         modifier = Modifier
             .weight(weight)
-            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+            .height(CompactTouchTarget)
             .testTag(tag)
             .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontFamily = if (monospace) NexaraMonospace else null,
-                maxLines = 1,
-                color = if (enabled) androidx.compose.ui.graphics.Color.Unspecified else colors.onSurface.copy(alpha = 0.38f),
-            )
+        Box(contentAlignment = Alignment.Center) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (enabled) LocalContentColor.current else contentColor)
+            } else if (label != null) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontFamily = if (monospace) NexaraMonospace else null,
+                    maxLines = 1,
+                    color = contentColor,
+                )
+            }
         }
     }
 }
