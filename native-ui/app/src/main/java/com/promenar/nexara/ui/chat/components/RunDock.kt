@@ -82,7 +82,7 @@ internal fun RunDockRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .clickable(onClickLabel = openLabel, role = Role.Button) { onOpen(null) }
+                    .clickable(onClickLabel = openLabel, role = Role.Button) { onOpen(runDockDefaultTab(state.label)) }
                     .padding(start = 14.dp)
                     .semantics(mergeDescendants = true) {
                         contentDescription = listOf(label, meta).filter(String::isNotBlank).joinToString("，")
@@ -154,7 +154,7 @@ internal fun RunDockRow(
                 }
             }
             if (keepScreenOn != null) KeepScreenOnToggle(on = keepScreenOn, onToggle = onToggleKeepScreenOn)
-            IconButton(onClick = { onOpen(null) }, modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)) {
+            IconButton(onClick = { onOpen(runDockDefaultTab(state.label)) }, modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)) {
                 Icon(
                     Icons.Rounded.ExpandLess,
                     contentDescription = openLabel,

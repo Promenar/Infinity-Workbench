@@ -18,6 +18,13 @@ internal sealed interface RunDockLabel {
     data class Board(val title: String) : RunDockLabel
 }
 
+/** 点按运行坞整行时的首选页：只有状态面板或只有后台任务时直接打开那一页，其余按详情面板默认页。 */
+internal fun runDockDefaultTab(label: RunDockLabel): RunDetailTab? = when (label) {
+    is RunDockLabel.Board -> RunDetailTab.STATE
+    RunDockLabel.BackgroundOnly -> RunDetailTab.BACKGROUND
+    else -> null
+}
+
 /**
  * 输入浮岛顶部唯一一行运行信息：计划、生成、审批、后台任务与状态面板合并显示，
  * 统计与清单收进运行详情面板。各项都没有时返回 null，浮岛不占位。

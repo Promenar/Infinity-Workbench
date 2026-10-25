@@ -208,3 +208,7 @@ object GitDiffModels {
         return FileDiffModel.fromTexts(sides.old.text.orEmpty(), sides.new.text.orEmpty(), fileName, changeKind = kind)
     }
 }
+
+/** 变更行右侧是否显示行数：二进制写明，有增删时显示计数；空文件或没有统计时显示进入详情的箭头。 */
+internal fun GitFileChange.showsLineCounts(): Boolean =
+    linesSkipped == "binary" || (addedLines ?: 0) > 0 || (removedLines ?: 0) > 0

@@ -166,4 +166,12 @@ class RunDockStateTest {
         assertThat(runSidePlanSteps(steps).map { it.id }).containsExactly("b", "c", "d", "e").inOrder()
         assertThat(runSidePlanSteps(emptyList())).isEmpty()
     }
+
+    @Test fun `运行坞只显示状态面板或后台任务时，点按直接打开对应页`() {
+        assertThat(runDockDefaultTab(RunDockLabel.Board("Probe"))).isEqualTo(RunDetailTab.STATE)
+        assertThat(runDockDefaultTab(RunDockLabel.BackgroundOnly)).isEqualTo(RunDetailTab.BACKGROUND)
+        assertThat(runDockDefaultTab(RunDockLabel.Step("写入"))).isNull()
+        assertThat(runDockDefaultTab(RunDockLabel.WaitingApproval)).isNull()
+        assertThat(runDockDefaultTab(RunDockLabel.PlanCompleted)).isNull()
+    }
 }

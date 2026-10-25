@@ -63,4 +63,15 @@ class GitTrackingDisplayTest {
         assertThat(status(changes = 1).canCommitPush()).isTrue()
         assertThat(status(tracking = GitTracking("origin/main", 2, 0, false, false)).canCommitPush()).isTrue()
     }
+
+    @Test fun `空文件增删都为 0 时不显示 +0，改显示箭头；二进制与有增删时显示`() {
+        fun change(added: Int?, removed: Int?, skipped: String? = null) =
+            GitFileChange("a.txt", GitChangeKind.DELETED, addedLines = added, removedLines = removed, linesSkipped = skipped)
+        assertThat(change(0, 0).showsLineCounts()).isFalse()
+        assertThat(change(null, null).showsLineCounts()).isFalse()
+        assertThat(change(null, null, "too_large").showsLineCounts()).isFalse()
+        assertThat(change(null, null, "binary").showsLineCounts()).isTrue()
+        assertThat(change(0, 1).showsLineCounts()).isTrue()
+        assertThat(change(3, 0).showsLineCounts()).isTrue()
+    }
 }

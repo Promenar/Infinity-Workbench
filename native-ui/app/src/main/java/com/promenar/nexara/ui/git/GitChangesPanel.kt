@@ -653,7 +653,7 @@ private fun ChangeRow(change: GitFileChange, onClick: () -> Unit, modifier: Modi
                 )
             }
         }
-        if (change.addedLines != null || change.removedLines != null || change.linesSkipped == "binary") {
+        if (change.showsLineCounts()) {
             LineCounts(change)
         } else {
             Icon(
@@ -677,7 +677,7 @@ private fun LineCounts(change: GitFileChange) {
     val added = change.addedLines ?: 0
     val removed = change.removedLines ?: 0
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (added > 0 || removed == 0) Text("+$added", style = style, color = MaterialTheme.nexaraDomainColors.success, maxLines = 1)
+        if (added > 0) Text("+$added", style = style, color = MaterialTheme.nexaraDomainColors.success, maxLines = 1)
         if (removed > 0) Text("\u2212$removed", style = style, color = MaterialTheme.colorScheme.error, maxLines = 1)
     }
 }
