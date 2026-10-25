@@ -60,6 +60,7 @@ import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.domain.tool.CommandToolBackend
 import com.promenar.nexara.domain.tool.CommandToolClassification
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.chat.components.ragScopeSegment
@@ -72,6 +73,7 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraElevation
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 /**
  * Summary Indicator: A pulsing pill for high-level status (e.g., "Analyzing document structure...")
@@ -892,104 +894,119 @@ internal fun approvalFixedWriteTarget(name: String): String? = when (name) {
 internal fun approvalHeaderTarget(name: String, target: String?): String? =
     target?.takeIf { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
 
-/** 标题行：动作名后跟风险类别；下一行是可复制的原始工具 ID 与执行位置。 */
+/**
+ * 审批卡顶部类别条：图标、类别（命令或内置工具）、执行位置与风险标签。
+ * 命令用主色淡底提示“能力更大”，内置工具用中性底；风险标签统一用琥珀色小标签，不使用红色色块。
+ */
 @Composable
-internal fun ApprovalCallHeader(
-    name: String,
+internal fun ApprovalKindBand(
+    toolName: String,
+    where: String?,
     riskLabel: String,
-    highRisk: Boolean,
-    target: String?,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val backend = CommandToolClassification.backendFor(toolName)
+    val label = when (backend) {
+        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command
+        CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command
+        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command
+        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command
+        null -> R.string.chat_approval_kind_tool
+    }
+    val scheme = MaterialTheme.colorScheme
+    val accent = if (backend != null) scheme.primary else scheme.onSurfaceVariant
+    val band = if (backend != null) scheme.primary.copy(alpha = 0.10f).compositeOver(scheme.surfaceContainerLow) else scheme.surfaceContainerHigh
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(band)
+            .heightIn(min = 40.dp)
+            .padding(start = 14.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+            .testTag(if (backend != null) UiTags.CHAT_APPROVAL_KIND_COMMAND else UiTags.CHAT_APPROVAL_KIND_TOOL),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = if (backend != null) Icons.Rounded.Terminal else Icons.Rounded.Extension,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(18.dp),
+        )
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(label),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (backend != null) accent else scheme.onSurface,
+                maxLines = 1,
+            )
+            if (!where.isNullOrBlank()) {
                 Text(
-                    text = approvalToolTitle(name),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = " $NexaraMetaSeparator $where",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                if (riskLabel.isNotBlank()) {
-                    Text(
-                        text = riskLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (highRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
-                        maxLines = 1,
-                    )
-                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SelectionContainer {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = NexaraMonospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (!target.isNullOrBlank()) {
-                    Text(
-                        text = " $NexaraMetaSeparator $target",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+        }
+        if (riskLabel.isNotBlank()) ApprovalTag(riskLabel)
     }
 }
 
-/**
- * 标明这次审批的是命令还是内置工具：命令以真实进程运行、可越出工作区，内置工具由 Nexara 按固定规则执行。
- * 两类并排出现时靠底色与图标区分，说明行写清各自能触及的范围。
- */
+/** 琥珀色小标签：风险类别、“等你批准”等需要留意但不是错误的状态。 */
 @Composable
-internal fun ApprovalKindNote(toolName: String, modifier: Modifier = Modifier) {
-    val backend = CommandToolClassification.backendFor(toolName)
-    val (label, detail) = when (backend) {
-        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON ->
-            R.string.chat_approval_kind_builtin_command to R.string.chat_approval_kind_builtin_command_detail
-        CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command to R.string.chat_approval_kind_linux_command_detail
-        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command to R.string.chat_approval_kind_termux_command_detail
-        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command to R.string.chat_approval_kind_ssh_command_detail
-        null -> R.string.chat_approval_kind_tool to R.string.chat_approval_kind_tool_detail
-    }
-    val scheme = MaterialTheme.colorScheme
-    // 命令用强调色淡底与描边提示“能力更大”，不使用满色块，避免与唯一实心的批准按钮争夺视线。
-    val accent = if (backend != null) scheme.tertiary else scheme.onSurfaceVariant
-    val container = if (backend != null) scheme.tertiary.copy(alpha = 0.12f).compositeOver(scheme.surfaceContainerHigh) else scheme.surfaceContainerHigh
-    Surface(
-        color = container,
-        contentColor = scheme.onSurfaceVariant,
-        shape = RoundedCornerShape(12.dp),
-        border = if (backend != null) BorderStroke(1.dp, scheme.tertiary.copy(alpha = 0.35f)) else null,
-        modifier = modifier.fillMaxWidth().testTag(if (backend != null) UiTags.CHAT_APPROVAL_KIND_COMMAND else UiTags.CHAT_APPROVAL_KIND_TOOL),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                imageVector = if (backend != null) Icons.Rounded.Terminal else Icons.Rounded.Extension,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.padding(top = 1.dp).size(18.dp),
+internal fun ApprovalTag(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.nexaraDomainColors.onWarningContainer,
+        maxLines = 1,
+        modifier = modifier
+            .background(MaterialTheme.nexaraDomainColors.warningContainer, RoundedCornerShape(10.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/** 卡片标题：待批准时写成“需要批准：动作”；下一行是可复制的原始工具 ID。 */
+@Composable
+internal fun ApprovalCallTitle(name: String, pending: Boolean) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        val title = approvalToolTitle(name)
+        Text(
+            text = if (pending) stringResource(R.string.chat_approval_title_required, title) else title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        SelectionContainer {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = NexaraMonospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    stringResource(label),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (backend != null) accent else scheme.onSurface,
-                )
-                Text(stringResource(detail), style = MaterialTheme.typography.bodySmall.forReading())
-            }
         }
     }
+}
+
+/** 类别说明：命令写清以什么身份运行、能触及哪些范围；内置工具说明由 Nexara 按固定规则执行。 */
+@Composable
+internal fun ApprovalKindDetail(toolName: String) {
+    val detail = when (CommandToolClassification.backendFor(toolName)) {
+        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command_detail
+        CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command_detail
+        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command_detail
+        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command_detail
+        null -> R.string.chat_approval_kind_tool_detail
+    }
+    Text(
+        stringResource(detail),
+        style = MaterialTheme.typography.bodySmall.forReading(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** 风险事实只占一行图标加文字，不使用整块红底。 */
@@ -1019,28 +1036,30 @@ private fun ApprovalReason(description: String) {
     }
 }
 
+/** 类别条上的执行位置：命令正文在下方完整展示时只给执行范围，不重复命令。 */
 @Composable
-private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
+private fun approvalCallWhere(call: ApprovalDisplayCall): String? {
     val preview = call.preview
     val target = call.executionTarget?.let(ToolExecutionTargets::display)
         ?: preview?.target?.takeIf(String::isNotBlank)
-    // 命令正文在下方完整展示时，标题行只给执行位置，不再重复命令。
     val headerTarget = if (preview?.action == ApprovalPreview.Action.SCRIPT && !preview.detail.isNullOrBlank()) {
         call.executionTarget?.let(ToolExecutionTargets::processScope) ?: target
     } else target
+    return approvalHeaderTarget(
+        call.name,
+        headerTarget ?: approvalFixedWriteTarget(call.name)
+            ?: call.schedule?.let { stringResource(R.string.schedule_approval_target) }
+            ?: stringResource(R.string.chat_approval_execution_target_unknown),
+    )
+}
+
+@Composable
+private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String, pending: Boolean) {
+    val preview = call.preview
+    val target = call.executionTarget?.let(ToolExecutionTargets::display)
+        ?: preview?.target?.takeIf(String::isNotBlank)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ApprovalCallHeader(
-            name = call.name,
-            riskLabel = call.riskLabel,
-            highRisk = call.highRisk,
-            target = approvalHeaderTarget(
-                call.name,
-                headerTarget ?: approvalFixedWriteTarget(call.name)
-                    ?: call.schedule?.let { stringResource(R.string.schedule_approval_target) }
-                    ?: stringResource(R.string.chat_approval_execution_target_unknown),
-            ),
-        )
-        ApprovalKindNote(call.name)
+        ApprovalCallTitle(call.name, pending)
         ApprovalReason(description)
         if (call.schedule != null) {
             ScheduleApprovalBlock(call.schedule)
@@ -1080,6 +1099,7 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String) {
                 body.isNotBlank() -> ApprovalTextBlock(body)
             }
         }
+        ApprovalKindDetail(call.name)
         call.background?.let { BackgroundRunLine(it) }
         // 命令的访问范围已由类别条说明，不再重复通用高风险提示。
         val command = CommandToolClassification.backendFor(call.name) != null
@@ -1213,6 +1233,7 @@ fun ApprovalCard(
             ?: stringResource(R.string.chat_approval_executed)
     } else stringResource(R.string.chat_approval_required)
 
+    val first = calls.firstOrNull()
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1221,65 +1242,79 @@ fun ApprovalCard(
             .testTag(UiTags.CHAT_APPROVAL_CARD),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         tonalElevation = NexaraElevation.Level0,
     ) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = if (isExecuted) 14.dp else 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // “需要审批 / 已执行”只进入无障碍状态与底部状态行，不再单独占一行标题。
-            Box(
-                modifier = Modifier
-                    .semantics(mergeDescendants = false) { stateDescription = statusLabel }
-                    .testTag(if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED),
+        Column {
+            ApprovalKindBand(
+                toolName = first?.name ?: toolName,
+                where = first?.let { approvalCallWhere(it) },
+                riskLabel = first?.riskLabel.orEmpty(),
+            )
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (calls.isEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ApprovalCallHeader(toolName, "", highRisk = false, target = null)
-                        ApprovalKindNote(toolName)
-                        ApprovalReason(description)
-                        approvalRiskLines(description, emptyList()).forEach { ApprovalRiskLine(it) }
+                // “需要审批 / 已执行”进入无障碍状态与标题措辞；已执行时底部另有状态行。
+                Box(
+                    modifier = Modifier
+                        .semantics(mergeDescendants = false) { stateDescription = statusLabel }
+                        .testTag(if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED),
+                ) {
+                    if (first == null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ApprovalCallTitle(toolName, pending = !isExecuted)
+                            ApprovalReason(description)
+                            ApprovalKindDetail(toolName)
+                            approvalRiskLines(description, emptyList()).forEach { ApprovalRiskLine(it) }
+                        }
+                    } else {
+                        ApprovalCallBody(first, description, pending = !isExecuted)
                     }
+                }
+                if (remainingCount > 0) {
+                    Text(
+                        text = stringResource(R.string.chat_approval_remaining, remainingCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    calls.drop(1).forEach { call ->
+                        // 后续调用各带一条类别条，命令与内置工具并排时一眼可分。
+                        Column(
+                            Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
+                        ) {
+                            ApprovalKindBand(call.name, approvalCallWhere(call), call.riskLabel)
+                            Box(Modifier.padding(12.dp)) { ApprovalCallBody(call, "", pending = false) }
+                        }
+                    }
+                }
+                if (isExecuted) {
+                    Text(statusLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    ApprovalCallBody(calls.first(), description)
+                    ApprovalActionBar(
+                        remainingCount = remainingCount,
+                        totalCount = calls.size,
+                        enabled = enabled,
+                        approveA11y = approveA11y,
+                        declineA11y = declineA11y,
+                        onApprove = onApprove,
+                        onDecline = onDecline,
+                        onApproveAll = onApproveAll?.takeIf { remainingCount > 0 },
+                    )
                 }
-            }
-            if (remainingCount > 0) {
-                Text(
-                    text = stringResource(R.string.chat_approval_remaining, remainingCount),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                calls.drop(1).forEach { call ->
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    ApprovalCallBody(call, "")
-                }
-            }
-            if (isExecuted) {
-                Text(statusLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                ApprovalActionBar(
-                    remainingCount = remainingCount,
-                    totalCount = calls.size,
-                    enabled = enabled,
-                    approveA11y = approveA11y,
-                    declineA11y = declineA11y,
-                    onApprove = onApprove,
-                    onDecline = onDecline,
-                    onApproveAll = onApproveAll?.takeIf { remainingCount > 0 },
-                )
             }
         }
     }
 }
 
 /**
- * 一行放下全部操作：次要文字操作靠左，拒绝与批准靠右。
- * 宽度不足（窄屏或大字号）时整组换行，主操作始终保持完整文字与 48dp 触控高度。
+ * 拒绝与批准等宽并排，批准是卡片里唯一的实心按钮；“全部批准”作为次要文字操作放在上方。
+ * 大字号时按钮文字最多两行，按钮随之长高，触控高度始终不小于 48dp。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ApprovalActionBar(
+internal fun ApprovalActionBar(
     remainingCount: Int,
     totalCount: Int,
     enabled: Boolean,
@@ -1288,15 +1323,11 @@ private fun ApprovalActionBar(
     onApprove: () -> Unit,
     onDecline: () -> Unit,
     onApproveAll: (() -> Unit)?,
+    approveLabel: String? = null,
 ) {
     val haptics = LocalNexaraHaptics.current
     val confirm: (() -> Unit) -> () -> Unit = { action -> { haptics.perform(NexaraHapticEvent.CONFIRM); action() } }
-    FlowRow(
-        modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         onApproveAll?.let { handler ->
             ApprovalSecondaryAction(
                 label = stringResource(R.string.chat_approval_approve_all, totalCount),
@@ -1305,16 +1336,55 @@ private fun ApprovalActionBar(
                 modifier = Modifier.testTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
             )
         }
-        if (onApproveAll != null) Spacer(Modifier.weight(1f))
-        ChatCompactApprovalButton(
-            label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_reject_current else R.string.chat_inline_approval_reject),
-            onClick = { haptics.perform(NexaraHapticEvent.REJECT); onDecline() }, outlined = true, enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = declineA11y }.testTag(UiTags.CHAT_APPROVAL_DECLINE),
-        )
-        ChatCompactApprovalButton(
-            label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_approve_current else R.string.chat_inline_approval_approve),
-            onClick = confirm(onApprove), outlined = false, enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = approveA11y }.testTag(UiTags.CHAT_APPROVAL_APPROVE),
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ApprovalPillButton(
+                label = stringResource(if (remainingCount > 0) R.string.chat_inline_approval_reject_current else R.string.chat_inline_approval_reject),
+                onClick = { haptics.perform(NexaraHapticEvent.REJECT); onDecline() },
+                primary = false,
+                enabled = enabled,
+                modifier = Modifier.weight(1f).semantics { contentDescription = declineA11y }.testTag(UiTags.CHAT_APPROVAL_DECLINE),
+            )
+            ApprovalPillButton(
+                label = approveLabel ?: stringResource(if (remainingCount > 0) R.string.chat_inline_approval_approve_current else R.string.chat_inline_approval_approve),
+                onClick = confirm(onApprove),
+                primary = true,
+                enabled = enabled,
+                modifier = Modifier.weight(1f).semantics { contentDescription = approveA11y }.testTag(UiTags.CHAT_APPROVAL_APPROVE),
+            )
+        }
+    }
+}
+
+/** 审批胶囊按钮：可见高度 44dp；主按钮为主色实心，次按钮为中性色块。 */
+@Composable
+private fun ApprovalPillButton(label: String, onClick: () -> Unit, primary: Boolean, enabled: Boolean, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val fill = when {
+        !enabled -> colors.onSurface.copy(alpha = 0.12f)
+        primary -> colors.primary
+        else -> colors.surfaceContainerHighest
+    }
+    val textColor = when {
+        !enabled -> colors.onSurface.copy(alpha = 0.38f)
+        primary -> colors.onPrimary
+        else -> colors.onSurface
+    }
+    Box(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(fill)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp),
+            fontWeight = if (primary) FontWeight.Medium else FontWeight.Normal,
+            color = textColor,
+            maxLines = 2,
+            textAlign = TextAlign.Center,
         )
     }
 }

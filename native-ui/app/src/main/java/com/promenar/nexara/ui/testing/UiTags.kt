@@ -463,6 +463,8 @@ object UiTags {
     const val CHAT_RUN_SHEET = "chat_run_sheet"
     const val CHAT_RUN_SHEET_MENU = "chat_run_sheet_menu"
     fun runSheetTab(name: String) = "chat_run_sheet_tab:$name"
+    const val CHAT_SUBAGENT_APPROVAL = "chat_subagent_approval"
+    fun subagentApproval(id: String) = "chat_subagent_approval:$id"
 
     // Linux 文件
     const val LINUX_FILES_HEADER = "linux_files_header"

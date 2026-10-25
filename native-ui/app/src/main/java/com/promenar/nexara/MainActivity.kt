@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -76,6 +77,8 @@ open class MainActivity : ComponentActivity() {
     }
     private val shareIntentQueue: ShareIntentQueue get() = shareIntentViewModel.queue
     @Volatile private var currentSessionId: String? = null
+    /** 当前路由上的聊天会话；它的子代理审批在会话流内显示，全局弹窗跳过。 */
+    private var visibleChatSessionId by androidx.compose.runtime.mutableStateOf<String?>(null)
     @Volatile private var currentShareSubmissionId: Long? = null
     private val shareTargetProvider by lazy {
         val app = application as NexaraApplication
@@ -137,7 +140,11 @@ open class MainActivity : ComponentActivity() {
             val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
             NexaraTheme(preferences = themePreferences) {
                 com.promenar.nexara.ui.chat.ScriptFileApprovalDialog(app.scriptFileApprovals) { app.chatStore.getSession(it)?.title }
-                com.promenar.nexara.ui.chat.SubagentApprovalDialog(app.subagentApprovalBroker) { app.chatStore.getSession(it)?.title }
+                com.promenar.nexara.ui.chat.SubagentApprovalDialog(
+                    broker = app.subagentApprovalBroker,
+                    sessionTitle = { app.chatStore.getSession(it)?.title },
+                    inlineSessionId = visibleChatSessionId,
+                )
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 StartupGate(
                     state = startupState,
@@ -214,6 +221,10 @@ open class MainActivity : ComponentActivity() {
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
                             app.visibleSessionId = currentSessionId
+                            // 只有聊天页把审批放进会话流；子代理查看页、命令输出页仍需弹窗。
+                            visibleChatSessionId = currentSessionId?.takeIf {
+                                backStackEntry?.destination?.route == com.promenar.nexara.navigation.NavDestinations.CHAT_HERO
+                            }
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
                         }
                         val skillRestoreNotice by app.skillRestoreNotice.collectAsStateWithLifecycle()

@@ -46,10 +46,11 @@ class ChatApprovalLayoutTest {
 
     private var primary = Color.Unspecified
     private var cardBackground = Color.Unspecified
+    private var neutralFill = Color.Unspecified
     private var warningFill = Color.Unspecified
 
     @Test
-    fun approvalActionsHave40DpVisualHeightAnd48DpTouchHeight() {
+    fun approvalActionsAreEqualWidthPillsWith48DpTouchHeight() {
         content {
             ApprovalCard(
                 toolName = "write_file",
@@ -60,7 +61,7 @@ class ChatApprovalLayoutTest {
 
         listOf(UiTags.CHAT_APPROVAL_DECLINE, UiTags.CHAT_APPROVAL_APPROVE).forEach { tag ->
             val action = rule.onNodeWithTag(tag)
-            action.assertHeightIsEqualTo(40.dp)
+            action.assertHeightIsEqualTo(44.dp)
             // WindowSize 覆盖会按窗口缩放组合密度，必须用节点自身的布局密度换算 dp。
             val node = action.fetchSemanticsNode()
             val touchHeight = node.touchBoundsInRoot.height / node.layoutInfo.density.density
@@ -69,6 +70,7 @@ class ChatApprovalLayoutTest {
         val reject = rule.onNodeWithTag(UiTags.CHAT_APPROVAL_DECLINE).fetchSemanticsNode().boundsInRoot
         val approve = rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).fetchSemanticsNode().boundsInRoot
         assertThat(abs(reject.center.y - approve.center.y)).isAtMost(with(rule.density) { 0.5.dp.toPx() })
+        assertThat(abs(reject.width - approve.width)).isAtMost(with(rule.density) { 1.dp.toPx() })
     }
 
     @Test
@@ -91,7 +93,7 @@ class ChatApprovalLayoutTest {
             rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
         )
         assertThat(actions.count { near(actionFill(it), primary) }).isEqualTo(1)
-        assertThat(near(actionFill(actions[1]), cardBackground)).isTrue()
+        assertThat(near(actionFill(actions[1]), neutralFill)).isTrue()
         assertThat(near(actionFill(actions[2]), cardBackground)).isTrue()
 
         val pixels = rule.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).captureToImage().toPixelMap()
@@ -176,6 +178,7 @@ class ChatApprovalLayoutTest {
             NexaraTheme(dynamicColor = false) {
                 primary = MaterialTheme.colorScheme.primary
                 cardBackground = MaterialTheme.colorScheme.surfaceContainerLow
+                neutralFill = MaterialTheme.colorScheme.surfaceContainerHighest
                 warningFill = MaterialTheme.colorScheme.errorContainer
                 Column(Modifier.width(411.dp).padding(20.dp)) { block() }
             }

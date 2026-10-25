@@ -48,4 +48,7 @@
     <string name="subagent_viewer_footer_title">仅供查看</string>
     <string name="subagent_event_waiting_approval">等待你审批</string>
     <string name="subagent_event_needed_approval">需要审批</string>
+    <string name="subagent_approval_waiting">等你批准</string>
+    <string name="subagent_approval_allow_a11y">允许%1$s，风险类别 %2$s</string>
+    <string name="subagent_approval_deny_a11y">拒绝%1$s，风险类别 %2$s</string>
 </resources>

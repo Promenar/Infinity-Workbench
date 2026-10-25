@@ -20,4 +20,5 @@
     <string name="chat_approval_kind_ssh_command_detail">在远程主机上以登录账户的权限运行。</string>
     <string name="chat_approval_kind_tool">内置工具</string>
     <string name="chat_approval_kind_tool_detail">由 &brand; 按固定规则执行，不会运行任意命令。</string>
+    <string name="chat_approval_title_required">需要批准：%1$s</string>
 </resources>

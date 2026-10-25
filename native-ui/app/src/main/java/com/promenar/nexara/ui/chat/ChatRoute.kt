@@ -250,7 +250,7 @@ fun ChatRoute(
     }
     val stateBoard by chatViewModel.stateBoard.collectAsStateWithLifecycle()
     val subagentApprovals by application.subagentApprovalBroker.pending.collectAsStateWithLifecycle()
-    val pendingSubagentApprovals = subagentApprovals.count { it.sessionId == sessionId }
+    val sessionSubagentApprovals = remember(subagentApprovals, sessionId) { subagentApprovals.filter { it.sessionId == sessionId } }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
@@ -650,10 +650,11 @@ fun ChatRoute(
                 keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
                 slashCommands = slashCommands.commands,
                 stateBoard = stateBoard,
-                pendingSubagentApprovals = pendingSubagentApprovals,
+                subagentApprovals = sessionSubagentApprovals,
             ),
             actions = ChatScreenActions(
                 onNavigateBack = onNavigateBack,
+                onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { requestOverlay(ChatOverlay.Workspace) },
                 onLocateWorkspacePath = { path ->
                     workspaceLocatePath = path

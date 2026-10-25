@@ -237,12 +237,14 @@ data class ChatScreenState(
     /** 输入框斜杠命令目录（内置命令与当前会话可用技能）。 */
     val slashCommands: List<com.promenar.nexara.ui.chat.command.SlashCommand> = emptyList(),
     val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
-    /** 当前会话中等待用户决定的子代理审批数。 */
-    val pendingSubagentApprovals: Int = 0,
+    /** 当前会话中等待用户决定的子代理审批，按请求时间排列，在会话流底部以卡片呈现。 */
+    val subagentApprovals: List<com.promenar.nexara.data.subagent.SubagentApproval> = emptyList(),
 )
 
 data class ChatScreenActions(
     val onNavigateBack: () -> Unit = {},
+    /** 允许或拒绝一项子代理审批（审批 id，是否允许）。 */
+    val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
     /** 打开资源管理器并定位到给定的工作区虚拟目录（媒体不可用占位的“在资源管理器中定位”）。 */
     val onLocateWorkspacePath: (String) -> Unit = {},
@@ -312,6 +314,15 @@ fun ChatScreenContent(
     val selectedImageUris = state.selectedImageUris
     val draftDocuments = state.draftDocuments
     val listState = rememberLazyListState()
+    val subagentApprovalGroups = remember(state.subagentApprovals) {
+        state.subagentApprovals.groupBy { it.subagentIndex }.values.toList()
+    }
+    // 新到的子代理审批振动一次（与全局弹窗一致）；列表项滚出滚入不重复振动。
+    val approvalHaptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
+    val newestSubagentApproval = state.subagentApprovals.maxByOrNull { it.requestedAt }?.id
+    LaunchedEffect(newestSubagentApproval) {
+        if (newestSubagentApproval != null) approvalHaptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.ATTENTION)
+    }
     var showModelHint by remember { mutableStateOf(false) }
     var attachmentMenuExpanded by attachmentMenuExpandedState
     var chatRootBounds by remember { mutableStateOf(Rect.Zero) }
@@ -780,6 +791,15 @@ fun ChatScreenContent(
                     }
                 }
 
+                // 子代理在原地挂起等待；按子代理分组，每组一张分组卡。
+                subagentApprovalGroups.forEach { group ->
+                    item(key = "subagent_approval_${group.first().subagentIndex}_${group.first().id}") {
+                        ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
+                            SubagentApprovalGroup(group, onResolve = actions.onResolveSubagentApproval)
+                        }
+                    }
+                }
+
                 item(key = "bottom_spacer") {
                     Spacer(modifier = Modifier.height(chatItemSpacing(
                         previous = null, current = ChatItemKind.ASSISTANT, isLast = true,
@@ -899,7 +919,7 @@ fun ChatScreenContent(
                                 val activitySummary = agentActivity?.summary
                                 val boardTitle = state.stateBoard?.board?.title
                                 val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
-                                    state.pendingSubagentApprovals
+                                    state.subagentApprovals.size
                                 val turnStartedAt = state.generationStartedAt?.takeIf { uiState.isGenerating }
                                 var dockNow by remember { mutableStateOf(System.currentTimeMillis()) }
                                 LaunchedEffect(uiState.isGenerating) {
@@ -933,8 +953,10 @@ fun ChatScreenContent(
                                             },
                                             onJumpToApproval = {
                                                 scope.launch {
-                                                    val target = if (uiState.approvalRequest != null) listState.layoutInfo.totalItemsCount - 2
-                                                    else listState.layoutInfo.totalItemsCount - 1
+                                                    // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
+                                                    val pendingItems = (if (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting } != null) 1 else 0) +
+                                                        subagentApprovalGroups.size
+                                                    val target = listState.layoutInfo.totalItemsCount - 1 - pendingItems
                                                     listState.animateScrollToItem(target.coerceAtLeast(0))
                                                 }
                                             },

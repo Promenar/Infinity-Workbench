@@ -12,6 +12,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import androidx.compose.foundation.background
+import com.promenar.nexara.ui.testing.UiTags
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -255,9 +261,14 @@ private fun subagentElapsed(ms: Long): String {
 
 /** 子代理运行中的审批卡：标注来源子代理，允许、允许并记住或拒绝该次调用。 */
 @Composable
-fun SubagentApprovalDialog(broker: SubagentApprovalBroker, sessionTitle: (String) -> String? = { null }) {
+fun SubagentApprovalDialog(
+    broker: SubagentApprovalBroker,
+    sessionTitle: (String) -> String? = { null },
+    /** 正在前台显示的会话；它的审批已在会话流内以卡片呈现，不再弹窗。 */
+    inlineSessionId: String? = null,
+) {
     val requests by broker.pending.collectAsState()
-    val request = requests.firstOrNull() ?: return
+    val request = requests.firstOrNull { it.sessionId != inlineSessionId } ?: return
     val title = sessionTitle(request.sessionId)?.takeIf(String::isNotBlank)
     val haptics = LocalNexaraHaptics.current
     LaunchedEffect(request.id) { haptics.perform(NexaraHapticEvent.ATTENTION) }
@@ -290,17 +301,12 @@ fun SubagentApprovalDialog(broker: SubagentApprovalBroker, sessionTitle: (String
     )
 }
 
-/** 审批卡正文：先交代来源会话与子代理任务，再按聊天内审批卡的样式给出动作、类别、执行位置与完整预览。 */
+/** 弹窗正文：先交代来源会话与子代理任务，再给出与会话内审批卡相同的类别条与预览。 */
 @Composable
 internal fun SubagentApprovalContent(
     request: SubagentApproval,
     sessionTitle: String?,
 ) {
-    val highRisk = request.risk == ToolRisk.PROCESS || request.risk == ToolRisk.DELETE
-    val target = request.target
-    // 命令正文在下方完整展示时，标题行只给执行位置。
-    val headerTarget = target?.let { ToolExecutionTargets.processScope(it) ?: ToolExecutionTargets.display(it) }
-        ?: approvalFixedWriteTarget(request.toolName)
     Column(
         modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()).testTag("SUBAGENT_APPROVAL"),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
@@ -315,23 +321,132 @@ internal fun SubagentApprovalContent(
             sessionTitle?.let { SubagentApprovalSourceRow(stringResource(R.string.subagent_approval_session_label), it) }
             SubagentApprovalSourceRow(stringResource(R.string.subagent_approval_task_label), request.subagentDescription)
         }
-        ApprovalCallHeader(
-            name = request.toolName,
-            riskLabel = approvalRiskLabel(request.risk.name.lowercase()),
-            highRisk = highRisk,
-            target = approvalHeaderTarget(request.toolName, headerTarget),
-        )
-        ApprovalKindNote(request.toolName)
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
+        ) {
+            SubagentApprovalBand(request)
+            Box(Modifier.padding(12.dp)) { SubagentApprovalBody(request) }
+        }
+    }
+}
+
+@Composable
+private fun SubagentApprovalBand(request: SubagentApproval) {
+    val target = request.target
+    // 命令正文在下方完整展示时，类别条只给执行位置。
+    val where = target?.let { ToolExecutionTargets.processScope(it) ?: ToolExecutionTargets.display(it) }
+        ?: approvalFixedWriteTarget(request.toolName)
+    ApprovalKindBand(
+        toolName = request.toolName,
+        where = approvalHeaderTarget(request.toolName, where),
+        riskLabel = approvalRiskLabel(request.risk.name.lowercase()),
+    )
+}
+
+@Composable
+private fun SubagentApprovalBody(request: SubagentApproval) {
+    val highRisk = request.risk == ToolRisk.PROCESS || request.risk == ToolRisk.DELETE
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ApprovalCallTitle(request.toolName, pending = true)
         if (request.preview.isNotBlank()) ApprovalTextBlock(request.preview)
-        // 命令的访问范围已由类别条说明。
-        if (highRisk && target != null && CommandToolClassification.backendFor(request.toolName) == null) {
+        ApprovalKindDetail(request.toolName)
+        // 命令的访问范围已由类别说明交代。
+        if (highRisk && request.target != null && CommandToolClassification.backendFor(request.toolName) == null) {
             ApprovalRiskLine(stringResource(R.string.chat_approval_high_risk_target_warning))
         }
-        Text(
-            stringResource(R.string.subagent_approval_timeout_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Rounded.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+            Text(
+                stringResource(R.string.subagent_approval_timeout_hint),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 会话流内的子代理审批：外层是子代理分组（名称、任务与“等你批准”标签），
+ * 内层每项待批准调用一张审批卡，按钮为“拒绝 / 允许”。
+ */
+@Composable
+internal fun SubagentApprovalGroup(
+    requests: List<SubagentApproval>,
+    onResolve: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val head = requests.firstOrNull() ?: return
+    val name = subagentName(head.subagentPreset, head.subagentIndex)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = NexaraSpacing.Small)
+            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(20.dp))
+            .padding(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 10.dp)
+            .testTag(UiTags.CHAT_SUBAGENT_APPROVAL),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(16.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                if (head.subagentDescription.isNotBlank()) {
+                    Text(
+                        head.subagentDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            ApprovalTag(stringResource(R.string.subagent_approval_waiting))
+        }
+        requests.forEach { request ->
+            key(request.id) { SubagentApprovalCard(request, onResolve) }
+        }
+    }
+}
+
+@Composable
+private fun SubagentApprovalCard(request: SubagentApproval, onResolve: (String, Boolean) -> Unit) {
+    var submitted by remember(request.id) { mutableStateOf(false) }
+    val tool = approvalToolTitle(request.toolName)
+    val risk = approvalRiskLabel(request.risk.name.lowercase())
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        modifier = Modifier.fillMaxWidth().testTag(UiTags.subagentApproval(request.id)),
+    ) {
+        Column {
+            SubagentApprovalBand(request)
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SubagentApprovalBody(request)
+                ApprovalActionBar(
+                    remainingCount = 0,
+                    totalCount = 1,
+                    enabled = !submitted,
+                    approveA11y = stringResource(R.string.subagent_approval_allow_a11y, tool, risk),
+                    declineA11y = stringResource(R.string.subagent_approval_deny_a11y, tool, risk),
+                    onApprove = { submitted = true; onResolve(request.id, true) },
+                    onDecline = { submitted = true; onResolve(request.id, false) },
+                    onApproveAll = null,
+                    approveLabel = stringResource(R.string.subagent_approval_allow),
+                )
+            }
+        }
     }
 }
 
