@@ -45,6 +45,7 @@ class DefaultScheduledTaskController(
     }
 
     suspend fun create(sessionId: String, args: ScheduleCreateArgs): ScheduleCreateResult = withContext(Dispatchers.IO) {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, subsystem = com.promenar.nexara.startup.StartupSubsystem.SCHEDULED_TASKS)
         mutex.withLock {
             require(sessionId !in suspendedSessions) { "会话正在删除，请稍后重试。" }
             val now = clock()
@@ -92,6 +93,7 @@ class DefaultScheduledTaskController(
     override suspend fun resume(id: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val task = dao.get(id) ?: return@withLock
+            com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = task.sessionId, subsystem = com.promenar.nexara.startup.StartupSubsystem.SCHEDULED_TASKS)
             if (task.enabled) return@withLock
             require(task.sessionId !in suspendedSessions) { "会话正在删除，请稍后重试。" }
             val now = clock()
@@ -172,9 +174,14 @@ class DefaultScheduledTaskController(
 
     /** 广播仅重排；过期的多个触发合并成一次，广播本身不发起生成。 */
     suspend fun reconcile(preservePeriodicTaskId: String? = null) = withContext(Dispatchers.IO) {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(subsystem = com.promenar.nexara.startup.StartupSubsystem.SCHEDULED_TASKS)
         mutex.withLock {
             val now = clock()
             dao.getAll().forEach { task ->
+                if (com.promenar.nexara.startup.StartupWriteBarrier.isReadOnly(sessionId = task.sessionId)) {
+                    backend.cancel(task)
+                    return@forEach
+                }
                 if (task.sessionId in suspendedSessions) return@forEach
                 if (!task.enabled) { backend.cancel(task); return@forEach }
                 if (task.claimToken != null) return@forEach
@@ -197,6 +204,7 @@ class DefaultScheduledTaskController(
 
     /** 前台计时器与系统后台共同入口；后台提前回调不能领取前台计划，重复回调不能重复领取。 */
     suspend fun fire(id: String, reschedule: Boolean = true, executionToken: String? = null, background: Boolean = false) = withContext(Dispatchers.IO) {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(subsystem = com.promenar.nexara.startup.StartupSubsystem.SCHEDULED_TASKS)
         val caller = currentCoroutineContext().job
         val token = executionToken ?: UUID.randomUUID().toString()
         var result = ScheduleRunResult.FAILED
@@ -205,6 +213,7 @@ class DefaultScheduledTaskController(
             val claimed = mutex.withLock {
                 val now = clock()
                 val existing = dao.get(id) ?: return@withLock null
+                com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = existing.sessionId)
                 if (existing.sessionId in suspendedSessions) return@withLock null
                 if (ScheduleCalculation.exhausted(existing.runCount, existing.maxRuns, existing.expiresAtMillis, now)) {
                     dao.update(existing.copy(enabled = false, nextFireAtMillis = null))

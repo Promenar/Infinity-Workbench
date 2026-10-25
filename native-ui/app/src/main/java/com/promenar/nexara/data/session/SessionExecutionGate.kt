@@ -70,6 +70,7 @@ class SessionExecutionGate {
         sessionId: String,
         block: suspend () -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
         val checkedSessionId = requireIdentifier(sessionId, "sessionId")
         val holder = checkNotNull(deletionSequenceLocks.compute(checkedSessionId) { _, current ->
             (current ?: DeletionSequenceLock()).also { it.references += 1 }
@@ -95,6 +96,7 @@ class SessionExecutionGate {
         beforeAdmissionsDrained: suspend () -> Unit = {},
         block: suspend () -> T,
     ): T {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = workspaceRootUuid)
         val checkedSessionId = requireIdentifier(sessionId, "sessionId")
         val checkedRoot = workspaceRootUuid?.takeIf { it.isNotBlank() }
         val existingAdmission = currentCoroutineContext()[AdmissionContext]
@@ -149,6 +151,7 @@ class SessionExecutionGate {
         rejectNestedAfterDeletion: Boolean = false,
         block: suspend () -> T,
     ): T {
+        roots.forEach { com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = it) }
         val inherited = currentCoroutineContext()[AdmissionContext]?.takeIf { it.gate === this }
         val newSessions = sessions - inherited.orEmptySessions()
         val newRoots = roots - inherited.orEmptyRoots()

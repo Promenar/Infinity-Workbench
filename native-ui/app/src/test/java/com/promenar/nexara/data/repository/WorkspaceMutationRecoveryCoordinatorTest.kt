@@ -129,6 +129,95 @@ class WorkspaceMutationRecoveryCoordinatorTest {
         assertThat(Files.isSymbolicLink(link)).isTrue()
     }
 
+    @Test
+    fun `按session恢复不会校验其它根的文件DELETE坏摘要`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.PREPARED, true, createRoot("scoped", "identity"))
+        val filePayload = WorkspaceMutationPayloadCodec.encode(
+            WorkspaceMutationPayload("file.txt", ".nexara_tombstones/token", "file-id", "other-identity"),
+        )
+        fixture.entities += fixture.entities.single().copy(
+            operationId = "unrelated-file-delete",
+            workspaceRootUuid = "other-root",
+            payload = filePayload,
+            payloadDigest = "invalid",
+        )
+
+        fixture.coordinator.recoverSessionOrThrow("session-1")
+
+        assertThat(fixture.deleted).containsExactly("op-scoped")
+        assertThat(Files.exists(fixture.source)).isTrue()
+    }
+
+    @Test
+    fun `损坏session摘要仍可定位session而不可恢复`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.PREPARED, true, createRoot("corrupt", "identity"))
+        fixture.entities[0] = fixture.entities.single().copy(payloadDigest = "invalid")
+
+        assertThat(fixture.coordinator.sessionIdOrNull(fixture.entities.single())).isEqualTo("session-1")
+        assertThat(runCatching { fixture.coordinator.recoverSessionOrThrow("session-1") }.isFailure).isTrue()
+        assertThat(fixture.deleted).isEmpty()
+    }
+
+    @Test
+    fun `无法定位session的损坏DELETE不在全量恢复中静默消失`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.PREPARED, true, createRoot("unclassified", "identity"))
+        fixture.entities[0] = fixture.entities.single().copy(payload = "broken", payloadDigest = Sha256Utils.hash("broken"))
+
+        assertThat(fixture.coordinator.sessionIdOrNull(fixture.entities.single())).isNull()
+        assertThat(runCatching { fixture.coordinator.recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(fixture.deleted).isEmpty()
+    }
+
+    @Test
+    fun `放弃PREPARED只清理稳定journal且保留source内容`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.PREPARED, true, createRoot("abandon", "identity"))
+
+        fixture.coordinator.abandonSessionOrThrow("session-1")
+
+        assertThat(fixture.deleted).containsExactly("op-abandon")
+        assertThat(Files.readAllBytes(fixture.source.resolve("payload.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(Files.exists(fixture.target)).isFalse()
+    }
+
+    @Test
+    fun `放弃session遇到stage残留只拒绝而不回滚或删除文件`() = runTest {
+        for (stage in WorkspaceMutationStage.entries) {
+            val source = createRoot("abandon-stage-${stage.name}", "identity")
+            val fixture = fixture(stage, stage == WorkspaceMutationStage.PREPARED, source)
+            Files.createDirectories(fixture.target.parent)
+            Files.move(source, fixture.target)
+
+            assertThat(runCatching { fixture.coordinator.abandonSessionOrThrow("session-1") }.isFailure).isTrue()
+
+            assertThat(fixture.deleted).isEmpty()
+            assertThat(Files.exists(source)).isFalse()
+            assertThat(Files.readAllBytes(fixture.target.resolve("payload.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        }
+    }
+
+    @Test
+    fun `放弃DB_COMMITTED仅在session和两个磁盘节点均不存在时清理journal`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.DB_COMMITTED, false, parent.resolve("abandon-gone"))
+
+        fixture.coordinator.abandonSessionOrThrow("session-1")
+
+        assertThat(fixture.deleted).containsExactly("op-abandon-gone")
+    }
+
+    @Test
+    fun `放弃session拒绝CAS快照变化且保留journal与文件`() = runTest {
+        val fixture = fixture(WorkspaceMutationStage.PREPARED, true, createRoot("changed", "identity"))
+        fixture.beforeAbandon = {
+            fixture.entities[0] = fixture.entities.single().copy(updatedAt = 2)
+        }
+
+        assertThat(runCatching { fixture.coordinator.abandonSessionOrThrow("session-1") }.isFailure).isTrue()
+
+        assertThat(fixture.deleted).isEmpty()
+        assertThat(Files.exists(fixture.source)).isTrue()
+    }
+
     private suspend fun assertConflict(fixture: Fixture) {
         assertThat(runCatching { fixture.coordinator.recoverOrThrow() }.exceptionOrNull())
             .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
@@ -161,9 +250,11 @@ class WorkspaceMutationRecoveryCoordinatorTest {
             updatedAt = 1,
         )
         val deleted = mutableListOf<String>()
+        val entities = mutableListOf(entity)
+        lateinit var fixture: Fixture
         val coordinator = WorkspaceMutationRecoveryCoordinator(
             workspaceParent = parent,
-            loadUnfinished = { listOf(entity) },
+            loadUnfinished = { entities.toList() },
             sessionExists = { dbExists },
             deletePrepared = { deleted += it },
             deleteCommitted = { deleted += it },
@@ -172,8 +263,19 @@ class WorkspaceMutationRecoveryCoordinatorTest {
                 check(Files.readAllBytes(marker).toString(Charsets.UTF_8) == expected)
             },
             identityMarkerName = ".identity",
+            abandonUnchanged = { expected, expectedSessionExists, verifyUnchanged ->
+                fixture.beforeAbandon()
+                if (expectedSessionExists != dbExists || entities.singleOrNull { it.operationId == expected.operationId } != expected) {
+                    false
+                } else {
+                    verifyUnchanged()
+                    deleted += expected.operationId
+                    true
+                }
+            },
         )
-        return Fixture(coordinator, source, parent.resolve(targetRelative), deleted)
+        fixture = Fixture(coordinator, source, parent.resolve(targetRelative), deleted, entities)
+        return fixture
     }
 
     private fun createRoot(name: String, identity: String): Path =
@@ -191,5 +293,7 @@ class WorkspaceMutationRecoveryCoordinatorTest {
         val source: Path,
         val target: Path,
         val deleted: MutableList<String>,
+        val entities: MutableList<WorkspaceMutationEntity>,
+        var beforeAbandon: () -> Unit = {},
     )
 }

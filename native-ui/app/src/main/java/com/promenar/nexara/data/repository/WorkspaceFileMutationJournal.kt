@@ -141,6 +141,59 @@ class WorkspaceFileMutationRecoveryCoordinator(
             ?.let { cleanupOrphanCreateOwnership(listOf(it)) }
     }
 
+    /** 仅清理已证明与数据库现状一致的移动类 journal，绝不移动或删除用户节点。 */
+    suspend fun abandonRootOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
+        require(workspaceRootUuid.isNotBlank()) { "工作区根标识不能为空" }
+        try {
+            val root = database.fileEntryDao().getAnyStateByUuidForLifecycle(workspaceRootUuid, workspaceRootUuid)
+                ?: conflict("文件 journal 工作区根不存在")
+            val rootPath = File(root.physicalRootPath).toPath()
+            WorkspaceMutationCoordinator.withBoundRoot(rootPath, root.hash) {
+                val entities = pendingFileMutations(workspaceRootUuid)
+                entities.forEach { entity ->
+                    if (entity.operationType !in setOf(WorkspaceMutationType.MOVE, WorkspaceMutationType.RENAME,
+                            WorkspaceMutationType.RECYCLE, WorkspaceMutationType.RESTORE)) {
+                        conflict("该 journal 类型需要保留内部恢复证据，不能安全放弃")
+                    }
+                    if (Sha256Utils.hash(entity.payload) != entity.payloadDigest) conflict("文件 journal payload 摘要不匹配")
+                    val payload = when (val decoded = WorkspaceMutationPayloadCodec.decode(entity.payloadVersion, entity.payload)) {
+                        is WorkspaceMutationPayloadResult.Valid -> decoded.payload
+                        is WorkspaceMutationPayloadResult.Invalid -> conflict(decoded.error.message)
+                    }
+                    if (payload.expectedSha256 != root.hash || payload.databaseTargetUuid.isNullOrBlank()) {
+                        conflict("文件 journal 的根身份或数据库目标无效")
+                    }
+                    relative(payload.sourceRelativePath)
+                    relative(payload.targetRelativePath ?: conflict("文件 journal 缺少目标路径"))
+                }
+                val entries = database.fileEntryDao().getAllStatesByWorkspaceRootForCleanup(workspaceRootUuid).sortedBy { it.uuid }
+                val snapshot = StartupJournalConsistency.rootSnapshot(root, entries, fileOps)
+                database.withTransaction {
+                    if (pendingFileMutations(workspaceRootUuid) != entities ||
+                        database.fileEntryDao().getAnyStateByUuidForLifecycle(workspaceRootUuid, workspaceRootUuid) != root ||
+                        database.fileEntryDao().getAllStatesByWorkspaceRootForCleanup(workspaceRootUuid).sortedBy { it.uuid } != entries) {
+                        conflict("文件 journal 或工作区数据库在检查后发生变化")
+                    }
+                    if (StartupJournalConsistency.rootSnapshot(root, entries, fileOps) != snapshot) {
+                        conflict("工作区文件在检查后发生变化")
+                    }
+                    entities.forEach { deleteForState(it) }
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (known: WorkspaceMutationRecoveryException) {
+            throw known
+        } catch (failure: Throwable) {
+            throw WorkspaceMutationRecoveryException("文件 journal 无法安全放弃", failure)
+        }
+    }
+
+    private suspend fun pendingFileMutations(workspaceRootUuid: String): List<WorkspaceMutationEntity> =
+        database.workspaceMutationDao().getUnfinished()
+            .filter { it.workspaceRootUuid == workspaceRootUuid && !isSessionDelete(it) }
+            .sortedBy { it.operationId }
+
     private suspend fun recoverEntities(entities: List<WorkspaceMutationEntity>) {
         entities.forEach { entity ->
                 try {
@@ -403,7 +456,8 @@ class WorkspaceFileMutationRecoveryCoordinator(
         if (entity.operationType != WorkspaceMutationType.DELETE) return false
         val payload = (WorkspaceMutationPayloadCodec.decode(entity.payloadVersion, entity.payload)
             as? WorkspaceMutationPayloadResult.Valid)?.payload ?: return false
-        return payload.targetRelativePath?.startsWith("${WorkspaceMutationRecoveryCoordinator.STAGING_DIRECTORY}/") == true
+        return !payload.databaseTargetUuid.isNullOrBlank() &&
+            payload.targetRelativePath?.startsWith("${WorkspaceMutationRecoveryCoordinator.STAGING_DIRECTORY}/") == true
     }
 
     private fun conflict(message: String): Nothing = throw WorkspaceMutationRecoveryException(message)

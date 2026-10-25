@@ -92,9 +92,15 @@ class BackgroundJobManager(
     private val active = ConcurrentHashMap<String, Active>()
     private val deletedSessions = ConcurrentHashMap.newKeySet<String>()
     private val state = MutableStateFlow<List<BackgroundJob>>(emptyList())
-    private val ready = scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) { recover() }
+    private val initializationMutex = Mutex()
+    private var initialized = false
 
-    suspend fun initialize() { ready.await() }
+    suspend fun initialize() {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(subsystem = com.promenar.nexara.startup.StartupSubsystem.BACKGROUND_JOBS)
+        initializationMutex.withLock {
+            if (!initialized) withContext(Dispatchers.IO) { recover(); initialized = true }
+        }
+    }
     override fun observe(sessionId: String?): Flow<List<BackgroundJob>> = flow {
         initialize()
         emitAll(state.map { jobs -> jobs.filter { sessionId == null || it.sessionId == sessionId } })
@@ -133,6 +139,7 @@ class BackgroundJobManager(
         return if(executionGate==null) checked() else executionGate.withNewSessionAdmission(sessionId) {checked()}
     }
     private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = gate.withLock {
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root, subsystem = com.promenar.nexara.startup.StartupSubsystem.BACKGROUND_JOBS)
         executionGate?.requireSessionWritable(sessionId)
         require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
         if(sessionId in deletedSessions) throw JobAccessException("JOB_SESSION_DELETED","会话正在删除，不能启动后台任务。")

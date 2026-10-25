@@ -31,6 +31,8 @@ class BackupRuntime internal constructor(
 ) {
     private val _state = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
     val state: StateFlow<BackupStartupState> = _state.asStateFlow()
+    private val _failureSummary = MutableStateFlow<String?>(null)
+    val failureSummary: StateFlow<String?> = _failureSummary.asStateFlow()
     private val _restoreResult = MutableStateFlow<BackupRestoreResult?>(null)
     val restoreResult: StateFlow<BackupRestoreResult?> = _restoreResult.asStateFlow()
     private val _restoreNotApplied = MutableStateFlow(false)
@@ -57,9 +59,10 @@ class BackupRuntime internal constructor(
         return withContext(NonCancellable) {
             val result = try {
                 withContext(Dispatchers.IO) { recoverAll() }
+                _failureSummary.value = null
                 BackupStartupState.Ready
             } catch (error: Exception) {
-                // 阻塞态的原因只写入脱敏调试日志，界面保持统一提示。
+                _failureSummary.value = com.promenar.nexara.startup.diagnostics.DiagnosticRedactor.summary(error)
                 com.promenar.nexara.utils.NexaraLogger.logError("BackupRuntimeRecovery", error)
                 BackupStartupState.Blocked
             }

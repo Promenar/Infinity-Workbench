@@ -168,6 +168,7 @@ class BuiltinExecService(
             put("runtime", runtime)
             fallback?.let { put("runtime_fallback", it) }
         }
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid, sessionId = sessionId)
         val target = sessionWorkspace(sessionId)
         if (target is SessionWorkspace.Unavailable) {
             return CommandToolResult(
@@ -177,6 +178,7 @@ class BuiltinExecService(
             )
         }
         val directory = target as? SessionWorkspace.Directory
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid, sessionId = sessionId, path = directory?.root?.canonicalPath)
         val workspaceKind = SessionWorkspaceResolver.kindOf(target)
         var physicalRoot: File? = null
         val control = BuiltinCommandControl()

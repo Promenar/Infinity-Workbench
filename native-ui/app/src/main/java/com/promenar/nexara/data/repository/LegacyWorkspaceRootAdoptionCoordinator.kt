@@ -32,6 +32,30 @@ internal class LegacyWorkspaceRootAdoptionCoordinator(
         pending.forEach { claim -> workspaceRepository.ensureSessionRoot(claim.session.id) }
     }
 
+    /** 只核验目标及与其共享物理目录的声明；无关旧根不阻断该会话。 */
+    suspend fun adoptSessionOrThrow(sessionId: String) {
+        val session = sessionDao.getById(sessionId) ?: return
+        val claim = session.claimOrNull() ?: return
+        val target = File(claim.root.physicalRootPath.trim()).canonicalFile
+        val roots = fileEntryDao.getStructurallyValidWorkspaceRootCandidates().filter { root ->
+            val other = File(root.physicalRootPath.trim())
+            other.canonicalFile == target || sameFile(other, target)
+        }
+        validateNoCanonicalRootAliases(roots)
+        val claims = mutableListOf<SessionRootClaim>()
+        for (candidate in sessionDao.getAll()) {
+            val rootId = candidate.workspaceRootUuid ?: continue
+            val root = fileEntryDao.getAnyStateByUuidForLifecycle(rootId, rootId) ?: continue
+            val other = File(root.physicalRootPath.trim())
+            if (other.canonicalFile == target || sameFile(other, target)) claims += SessionRootClaim(candidate, root)
+        }
+        validateNoCanonicalSharing(claims)
+        if (claim.root.hash.isBlank()) {
+            validatePendingClaim(claim)
+            workspaceRepository.ensureSessionRoot(sessionId)
+        }
+    }
+
     private fun validateNoCanonicalRootAliases(roots: List<FileEntry>) {
         val seen = mutableListOf<RootFileIdentity>()
         roots.forEach { root ->

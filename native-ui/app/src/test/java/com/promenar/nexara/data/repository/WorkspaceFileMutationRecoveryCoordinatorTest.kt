@@ -808,6 +808,137 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         return WorkspaceFileMutationRecoveryCoordinator(database, bindingRequiredOps)
     }
 
+    @Test
+    fun `放弃冲突move仅在全根DB内容一致时清理journal并保留两个文件`() = runTest {
+        val file = entry("file", "/source.txt", "source.txt", "root").copy(sizeBytes = 7)
+        database.fileEntryDao().insertAbort(file)
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        fileOps.createFile(root, listOf("target.txt"), "external".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+        val unrelated = database.workspaceMutationDao().get("op-1")!!.copy(
+            operationId = "unrelated",
+            workspaceRootUuid = "other-root",
+            payload = "broken",
+        )
+        database.workspaceMutationDao().insert(unrelated)
+
+        coordinator().abandonRootOrThrow("root")
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+        assertThat(database.workspaceMutationDao().get("unrelated")).isEqualTo(unrelated)
+        assertThat(database.fileEntryDao().getAnyStateByUuidForLifecycle("root", "file")).isEqualTo(file)
+        assertThat(Files.readAllBytes(root.resolve("source.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(Files.readAllBytes(root.resolve("target.txt")).toString(Charsets.UTF_8)).isEqualTo("external")
+    }
+
+    @Test
+    fun `放弃move拒绝根内其它活跃DB节点内容不匹配并保留journal`() = runTest {
+        database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root").copy(sizeBytes = 7))
+        database.fileEntryDao().insertAbort(entry("other", "/other.txt", "other.txt", "root").copy(sizeBytes = 7))
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        fileOps.createFile(root, listOf("other.txt"), "changed".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+
+        assertThat(runCatching { coordinator().abandonRootOrThrow("root") }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+        assertThat(Files.readAllBytes(root.resolve("other.txt")).toString(Charsets.UTF_8)).isEqualTo("changed")
+    }
+
+    @Test
+    fun `放弃move拒绝DB节点缺失及根内符号链接并保留journal`() = runTest {
+        database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root").copy(sizeBytes = 7))
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+        assertThat(runCatching { coordinator().abandonRootOrThrow("root") }.isFailure).isTrue()
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        val outside = Files.createTempFile("workspace-abandon-outside", ".txt")
+        try {
+            Files.createSymbolicLink(root.resolve("unindexed-link"), outside)
+            assertThat(runCatching { coordinator().abandonRootOrThrow("root") }.isFailure).isTrue()
+            assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+            assertThat(Files.isSymbolicLink(root.resolve("unindexed-link"))).isTrue()
+        } finally {
+            Files.deleteIfExists(root.resolve("unindexed-link"))
+            Files.deleteIfExists(outside)
+        }
+    }
+
+    @Test
+    fun `放弃create保留内部staging和journal`() = runTest {
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
+        val staged = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_STAGED_NODE)
+        fileOps.createFile(root, staged, "owned".toByteArray())
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED, "new.txt", "new.txt")
+
+        assertThat(runCatching { coordinator().abandonRootOrThrow("root") }.isFailure).isTrue()
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+        assertThat(fileOps.read(root, staged).toString(Charsets.UTF_8)).isEqualTo("owned")
+    }
+
+    @Test
+    fun `放弃根时拒绝journal快照变化且不删除新版记录`() = runTest {
+        database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root").copy(sizeBytes = 7))
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+        var changed = false
+        val changingOps = object : WorkspaceFileOps by fileOps {
+            override fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity {
+                val result = fileOps.inspect(root, relative)
+                if (!changed) {
+                    changed = true
+                    database.openHelper.writableDatabase.execSQL(
+                        "UPDATE workspace_mutations SET updated_at = 2 WHERE operation_id = ?",
+                        arrayOf("op-1"),
+                    )
+                }
+                return result
+            }
+        }
+
+        assertThat(runCatching {
+            WorkspaceFileMutationRecoveryCoordinator(database, changingOps).abandonRootOrThrow("root")
+        }.isFailure).isTrue()
+
+        assertThat(database.workspaceMutationDao().get("op-1")?.updatedAt).isEqualTo(2)
+        assertThat(Files.readAllBytes(root.resolve("source.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+    }
+
+    @Test
+    fun `缺失session标识的stage journal由根恢复拒绝而不静默跳过`() = runTest {
+        insertJournal(
+            WorkspaceMutationType.DELETE,
+            WorkspaceMutationStage.PREPARED,
+            "source",
+            "${WorkspaceMutationRecoveryCoordinator.STAGING_DIRECTORY}/op-1",
+            targetUuid = "",
+        )
+
+        assertThat(runCatching { coordinator().recoverRootOrThrow("root") }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `放弃RECYCLE拒绝回收站DB节点物理缺失以保留跨启动证据`() = runTest {
+        database.fileEntryDao().insertAbort(
+            entry("file", "/.recycle_bin/file", "original.txt", "recycle").copy(inRecycleBin = true, sizeBytes = 7),
+        )
+        database.fileEntryDao().insertAbort(
+            entry("recycle", "/.recycle_bin", ".recycle_bin", "root", directory = true).copy(inRecycleBin = true),
+        )
+        fileOps.createDirectory(root, listOf(".recycle_bin"))
+        fileOps.createFile(root, listOf("original.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.RECYCLE, WorkspaceMutationStage.DB_COMMITTED, "original.txt", ".recycle_bin/file")
+
+        assertThat(runCatching { coordinator().abandonRootOrThrow("root") }.isFailure).isTrue()
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+        assertThat(Files.readAllBytes(root.resolve("original.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+    }
+
     private suspend fun insertJournal(
         type: WorkspaceMutationType,
         stage: WorkspaceMutationStage,
