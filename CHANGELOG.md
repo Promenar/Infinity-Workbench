@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Agent 工具缺陷修复（真机能力探测）
+
+- `write_file`、`patch_file` 的参数说明与运行校验一致：必须提供 `expectedHash` 或 `expected_sha256` 之一，私有工作区与挂载路径缺参时都返回结构化 `MISSING_VERSION`，指明从 `read_file` 的 `Hash`/`sha256` 取得；不自动补填。
+- `move_file` 在同一目录内改名不再失败；目标路径未变化时直接成功，不产生物理移动与虚假改动摘要。文件操作失败改报具体原因（目标已存在、条目不存在、权限不足、跨文件系统、跨工作区），未知异常只附异常类别，不回显物理路径。
+- `calculator` 支持 `**`、sqrt/abs/pow/min/max/round/floor/ceil/log/ln/log10/sin/cos/tan、PI/E 与 `Math.` 前缀，描述改为中文并列出限制。
+- `exec_js` 中 `fetch` 返回的 `headers` 提供标准只读接口（get/has/keys/values/entries/forEach、可迭代），同名多值响应头以逗号合并；按小写属性读取与 `JSON.stringify` 输出保持不变。
+- SSH/SFTP 报错区分连接被拒绝、DNS 失败、主机不可达、超时、认证被拒与缺少凭据，各给出中文处理提示；原有错误码保留。
+- 未选择图像模型时不向模型提供 `generate_image`；状态面板 `list` 字段接受单个非空字符串作为单项列表；画布工具描述要求页面在 320–420 CSS px 宽内可读、宽表格横向滚动。
+
 ### 内置 Linux 环境（侧载版）
 
 - 侧载版新增内置 Alpine Linux 3.24.3 环境（仅 arm64-v8a 设备）：APK 打包源码构建的 proot（termux/proot 固定提交）与官方 minirootfs，在“工具 → 本机与远端 → Linux 环境”安装，无需 Termux 或 root。安装依次解包（校验 SHA-256）、初始化网络与证书（DNS 优先取当前网络与 VPN）、可选安装常用工具（bash、git、python3、py3-pip、curl、ca-certificates）、创建工作区映射与运行诊断；中断后可从断点继续。Play 版不打包 Linux 制品，入口不显示。
