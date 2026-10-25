@@ -237,19 +237,19 @@ class LinuxRunModeRecovery internal constructor(
     private suspend fun sessionHomeSource(sessionId: String): Path {
         val location = linuxHomeLocation(sessionId) ?: error("会话没有 Linux 主目录工作区")
         val token = location.removePrefix("/root#")
-        require(location.startsWith("/root#") && Regex("[0-9a-f]{64}").matches(token)) { "Linux 工作区身份无效" }
+        require(location.startsWith("/root#") && com.promenar.nexara.data.repository.PersistentFileIdentity.isValid(token)) { "Linux 工作区身份无效" }
         val root = rootfs()
         val home = root.resolve("root")
         require(access.isDirectory(home) && !access.isLink(home)) { "Linux 主目录不可读取" }
         val marker = home.resolve(HOME_IDENTITY)
         val actual = access.openRead(marker).use { handle ->
-            require(handle.channel.size() == 64L) { "Linux 工作区身份无效" }
-            val bytes = java.nio.ByteBuffer.allocate(65)
+            require(handle.channel.size() in 1..1024) { "Linux 工作区身份无效" }
+            val bytes = java.nio.ByteBuffer.allocate(handle.channel.size().toInt())
             while (bytes.hasRemaining() && handle.channel.read(bytes) >= 0) Unit
-            require(bytes.position() == 64) { "Linux 工作区身份无效" }
-            bytes.array().copyOf(64).toString(Charsets.US_ASCII)
+            require(!bytes.hasRemaining()) { "Linux 工作区身份无效" }
+            bytes.array().toString(Charsets.US_ASCII)
         }
-        require(actual == token) { "Linux 工作区对应的环境已被重置" }
+        require(com.promenar.nexara.data.repository.PersistentFileIdentity.verifyMarker(actual, access.attributes(home).fileKey()) == token) { "Linux 工作区对应的环境已被重置" }
         return home
     }
 

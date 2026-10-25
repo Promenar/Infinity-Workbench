@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.backup
 
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -112,7 +113,7 @@ internal class SkillRestoreTransaction(
         val staging = requireContainer(txId, record)
         val children = Files.newDirectoryStream(staging).use { entries -> entries.map { it.fileName.toString() }.toSet() }
         if (children.any { it != OWNER && it != NEW }) throw BackupValidationException("技能恢复暂存目录含未知内容")
-        // marker 最后删除，部分清理失败后仍可按 journal 和 fileKey 重试。
+        // marker 最后删除，部分清理失败后仍可按 journal 和持久身份重试。
         val marker = if (exists(staging.resolve(OWNER))) OWNER to txId else null
         operations.deleteTree(parent, staging.fileName.toString(), keyOrNull(staging)!!, marker)
         FileRestoreJournal.syncDirectory(parent)
@@ -175,7 +176,7 @@ internal class SkillRestoreTransaction(
         FileRestoreJournal.rejectSymlinkAncestors(path)
         val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
         if (!attributes.isDirectory || attributes.isSymbolicLink) throw BackupValidationException("技能恢复目录不是受信普通目录")
-        return attributes.fileKey()?.toString() ?: throw BackupValidationException("技能恢复目录缺少稳定 fileKey")
+        return PersistentFileIdentity.read(path)
     }
 
     private fun exists(path: Path) = Files.exists(path, NOFOLLOW_LINKS)

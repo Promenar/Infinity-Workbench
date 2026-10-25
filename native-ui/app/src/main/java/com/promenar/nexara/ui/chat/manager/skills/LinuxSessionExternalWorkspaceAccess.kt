@@ -465,7 +465,8 @@ class LinuxSessionExternalWorkspaceAccess(
         val attributes = try { Files.readAttributes(directory.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS) }
         catch (_: Exception) { fail("UNAVAILABLE", "Linux 目录来源不可用或缺少访问权限") }
         if (!attributes.isDirectory || attributes.isSymbolicLink) fail("INVALID_PATH", "Linux 目录来源不能是符号链接")
-        return attributes.fileKey()?.toString() ?: fail("UNAVAILABLE", "无法绑定 Linux 目录来源身份")
+        // 目录工作区可能位于共享存储（FUSE 不支持用户属性），不向用户目录写 nonce；与工作区 id、路径一起只取 inode，不含设备号。
+        return com.promenar.nexara.data.repository.PersistentFileIdentity.inode(attributes.fileKey())
     }
     private fun allowed(mount: ExternalMount) = mount.sourceType == "real_path" || mount.isUserSkills
     private fun directory(path: String) = ExternalFolderEntry(path, path.substringAfterLast('/'), true, 0, 0)

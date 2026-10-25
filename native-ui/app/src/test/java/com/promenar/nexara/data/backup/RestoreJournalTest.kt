@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.backup
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -8,6 +9,52 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class RestoreJournalTest {
+    private val nonce = "11111111-1111-4111-8111-111111111111"
+
+    @Test
+    fun `journal只持久化nonce与inode身份且设备号变化不改变记录`() {
+        val base = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".restore-journal-test")
+        try {
+            val before = PersistentFileIdentity.encode(nonce, "(dev=1,ino=42)")
+            val after = PersistentFileIdentity.encode(nonce, "(dev=999,ino=42)")
+            val record = RestoreJournalRecord(
+                "tx-1", "a".repeat(64), "0:" + java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(before.toByteArray()) + ":-", "restore-tx-1", before,
+                RestoreJournalPhase.PREPARED, SkillRestoreJournalRecord("skills", before, before, before),
+            )
+
+            FileRestoreJournal(base, TestRestoreJournalAuthenticator).write(record)
+
+            assertThat(after).isEqualTo(before)
+            assertThat(FileRestoreJournal(base, TestRestoreJournalAuthenticator).read()).isEqualTo(
+                record.copy(newRootFileKey = after, skills = SkillRestoreJournalRecord("skills", after, after, after)),
+            )
+        } finally { base.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `journal拒绝所有持久字段中的旧完整fileKey`() {
+        val base = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".restore-journal-test")
+        try {
+            val record = RestoreJournalRecord("tx-1", "a".repeat(64), "", "restore-tx-1", null, RestoreJournalPhase.PREPARED)
+            val rawKey = "(dev=1,ino=42)"
+            val invalid = listOf(
+                record.copy(newRootFileKey = rawKey),
+                record.copy(oldRootIdentity = "0:" + java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(rawKey.toByteArray()) + ":-"),
+                record.copy(skills = SkillRestoreJournalRecord("skills", rawKey)),
+                record.copy(skills = SkillRestoreJournalRecord("skills", null, rawKey)),
+                record.copy(skills = SkillRestoreJournalRecord("skills", null, null, rawKey)),
+            )
+
+            invalid.forEach { value ->
+                assertThat(runCatching { FileRestoreJournal(base, TestRestoreJournalAuthenticator).write(value) }.exceptionOrNull())
+                    .isInstanceOf(BackupValidationException::class.java)
+            }
+            assertThat(Files.exists(base.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        } finally { base.toFile().deleteRecursively() }
+    }
+
     @Test
     fun `journal is durable across store recreation and contains metadata only`() {
         val base = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".restore-journal-test")
@@ -42,7 +89,7 @@ class RestoreJournalTest {
                     txId = "tx-1",
                     expectedDatabaseFingerprint = "a".repeat(64),
                     oldRootIdentity = "0:" + java.util.Base64.getUrlEncoder().withoutPadding()
-                        .encodeToString("file-key".toByteArray()) + ":" + "b".repeat(64),
+                        .encodeToString(PersistentFileIdentity.encode(nonce, "(dev=1,ino=42)").toByteArray()) + ":" + "b".repeat(64),
                     newRootIdentity = "restore-tx-1",
                     newRootFileKey = null,
                     phase = RestoreJournalPhase.PREPARED,

@@ -40,6 +40,7 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.FileOperationRepository
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import com.promenar.nexara.data.repository.TestWorkspaceFileOps
 import com.promenar.nexara.data.repository.WorkspaceRepository
 import com.promenar.nexara.domain.repository.WriteResult
@@ -1280,6 +1281,106 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `备份恢复中断后设备号变化可回滚新根并保留旧根`() = runBlocking {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        try {
+            newDataSource(RestoreCrashPoint.FILES_MOVED).restore(validated(backup))
+        } catch (_: SimulatedRestoreProcessDeath) {
+            // 模拟新根已发布后进程退出。
+        }
+        val journal = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator)
+        val record = journal.read()!!
+        val finalRoot = restoreParent.resolve(record.newRootIdentity)
+        journal.write(record.copy(newRootFileKey = identityAfterDeviceChange(finalRoot)))
+
+        newDataSource().recoverInterruptedRestore()
+
+        assertThat(Files.exists(finalRoot)).isFalse()
+        assertThat(Files.isDirectory(sourceRoot)).isTrue()
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+        assertThat(journal.read()).isNull()
+    }
+
+    @Test
+    fun `备份提交后设备号变化可定位并清理旧managed根`() = runBlocking {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        try {
+            newDataSource(RestoreCrashPoint.JOURNAL_COMMITTED).restore(validated(backup))
+        } catch (_: SimulatedRestoreProcessDeath) {
+            // 模拟数据库与journal均提交后进程退出。
+        }
+        val journal = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator)
+        val record = journal.read()!!
+        val parts = record.oldRootIdentity.split(':', limit = 3)
+        val oldKey = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(identityAfterDeviceChange(sourceRoot).toByteArray())
+        journal.write(record.copy(
+            newRootFileKey = identityAfterDeviceChange(restoreParent.resolve(record.newRootIdentity)),
+            oldRootIdentity = "${parts[0]}:$oldKey:${parts[2]}",
+        ))
+
+        newDataSource().recoverInterruptedRestore()
+
+        assertThat(Files.exists(sourceRoot)).isFalse()
+        assertThat(Files.isDirectory(restoreParent.resolve(record.newRootIdentity))).isTrue()
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+        assertThat(journal.read()).isNull()
+    }
+
+    @Test
+    fun `旧managed根同inode的nonce变化时保留journal且修复后可收尾`() = runBlocking {
+        assertOldRootIdentityFailureKeepsJournal("22222222-2222-4222-8222-222222222222".toByteArray())
+    }
+
+    @Test
+    fun `旧managed根nonce属性损坏时保留journal且修复后可收尾`() = runBlocking {
+        assertOldRootIdentityFailureKeepsJournal("invalid-nonce".toByteArray())
+    }
+
+    private suspend fun assertOldRootIdentityFailureKeepsJournal(value: ByteArray) {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        try {
+            newDataSource(RestoreCrashPoint.JOURNAL_COMMITTED).restore(validated(backup))
+        } catch (_: SimulatedRestoreProcessDeath) {
+            // 模拟数据库已提交、旧根尚待清理的状态。
+        }
+        val journal = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator)
+        val record = journal.read()!!
+        val view = Files.getFileAttributeView(sourceRoot, java.nio.file.attribute.UserDefinedFileAttributeView::class.java)
+        val name = view.list().single { it == "nexara_persistent_identity" }
+        val original = java.nio.ByteBuffer.allocate(view.size(name))
+        view.read(name, original)
+        view.write(name, java.nio.ByteBuffer.wrap(value))
+
+        val failure = runCatching { newDataSource().recoverInterruptedRestore() }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(BackupValidationException::class.java)
+        assertThat(Files.isDirectory(sourceRoot)).isTrue()
+        assertThat(readUtf8(sourceRoot.resolve("docs/a.txt"))).isEqualTo("complete-graph")
+        assertThat(journal.read()).isEqualTo(record)
+        assertThat(newDataSource().hasCompletedRestore(record.txId)).isFalse()
+
+        original.flip()
+        view.write(name, original)
+        newDataSource().recoverInterruptedRestore()
+
+        assertThat(Files.exists(sourceRoot)).isFalse()
+        assertThat(journal.read()).isNull()
+        assertThat(newDataSource().hasCompletedRestore(record.txId)).isTrue()
+    }
+
+    private fun identityAfterDeviceChange(path: Path): String {
+        val identity = PersistentFileIdentity.read(path)
+        val inode = PersistentFileIdentity.inode(Files.readAttributes(
+            path, java.nio.file.attribute.BasicFileAttributes::class.java, java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        ).fileKey())
+        return PersistentFileIdentity.encode(PersistentFileIdentity.nonce(identity), "(dev=999,$inode)")
+    }
+
+    @Test
     fun `cleanup keeps owner marker until deep deletion succeeds and retry completes after reopen`() {
         runBlocking {
             seedCompleteGraph()
@@ -1339,6 +1440,38 @@ class RoomBackupDataSourceTest {
             assertThat(Files.exists(tombstone)).isFalse()
             assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
         }
+    }
+
+    @Test
+    fun `空tombstone被复制nonce的另一inode替换后保留journal并拒绝删除`() = runBlocking {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        val operations = TestRestoreFileOperations().apply { failFinalRmdirOnce = true }
+        try {
+            newDataSource(RestoreCrashPoint.FILES_MOVED, fileOperations = operations).restore(validated(backup))
+        } catch (_: SimulatedRestoreProcessDeath) {
+            // 模拟文件已发布后退出，再中断最后的目录删除。
+        }
+        assertFails { newDataSource(fileOperations = operations).recoverInterruptedRestore() }
+        val journal = FileRestoreJournal(restoreParent, TestRestoreJournalAuthenticator)
+        val record = journal.read()!!
+        val tombstone = restoreParent.resolve(".restore-delete-${record.txId}-new")
+        val original = Files.move(tombstone, sourceBase.parent.resolve("original-tombstone"))
+        Files.createDirectory(tombstone)
+        val from = Files.getFileAttributeView(original, java.nio.file.attribute.UserDefinedFileAttributeView::class.java)
+        val to = Files.getFileAttributeView(tombstone, java.nio.file.attribute.UserDefinedFileAttributeView::class.java)
+        from.list().forEach { name ->
+            val bytes = java.nio.ByteBuffer.allocate(from.size(name))
+            from.read(name, bytes)
+            bytes.flip()
+            to.write(name, bytes)
+        }
+
+        assertFails { newDataSource(fileOperations = operations).recoverInterruptedRestore() }
+
+        assertThat(Files.isDirectory(tombstone)).isTrue()
+        assertThat(Files.isDirectory(original)).isTrue()
+        assertThat(journal.read()).isEqualTo(record)
     }
 
     @Test
@@ -2242,12 +2375,9 @@ internal class TestRestoreFileOperations : RestoreFileOperations {
             target,
             java.nio.file.attribute.BasicFileAttributes::class.java,
             java.nio.file.LinkOption.NOFOLLOW_LINKS,
-        ).fileKey()?.toString() ?: error("测试 workspace root 缺少 fileKey")
-        writeNew(root, relative + ".nexara_root_identity", "$nonce\n$key".toByteArray())
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(key.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return "$nonce|$digest"
+        ).fileKey() ?: error("测试 workspace root 缺少 fileKey")
+        writeNew(root, relative + ".nexara_root_identity", PersistentFileIdentity.marker(nonce, key).toByteArray())
+        return PersistentFileIdentity.encode(nonce, key)
     }
 
     override fun deleteTree(
@@ -2261,11 +2391,7 @@ internal class TestRestoreFileOperations : RestoreFileOperations {
         if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
         if (Files.isSymbolicLink(root)) throw BackupValidationException("测试恢复目录为符号链接")
         beforeDelete?.also { beforeDelete = null }?.invoke(root)
-        val actualKey = Files.readAttributes(
-            root,
-            java.nio.file.attribute.BasicFileAttributes::class.java,
-            java.nio.file.LinkOption.NOFOLLOW_LINKS,
-        ).fileKey()?.toString() ?: throw BackupValidationException("测试恢复目录缺少 fileKey")
+        val actualKey = PersistentFileIdentity.read(root)
         if (actualKey != expectedFileKey) throw BackupValidationException("测试恢复目录 fileKey 已变化")
         expectedInventory?.let { expected ->
             if (inventory(parent, childName) != expected) {

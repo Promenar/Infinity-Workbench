@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.resetSessionSamplingJson
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import kotlinx.coroutines.Dispatchers
@@ -202,7 +203,7 @@ class RoomBackupDataSource(
             val expectedTree = staged.expectedTree
             moveAtomically(stagingRoot, finalRoot)
             restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
-            record = record.copy(newRootFileKey = fileKey(finalRoot))
+            record = record.copy(newRootFileKey = PersistentFileIdentity.read(finalRoot))
             journal.write(record)
             crashHook.hit(RestoreCrashPoint.FILES_MOVED)
             validated.skills?.let { partition ->
@@ -1260,7 +1261,7 @@ class RoomBackupDataSource(
                 "旧 managed root 包含未登记、缺失或异常内容；missing=${expected - actual}；unexpected=${actual - expected}",
             )
             val encodedKey = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(fileKey(managed.path).toByteArray())
+                .encodeToString(PersistentFileIdentity.read(managed.path).toByteArray())
             "${managed.baseIndex}:$encodedKey:${inventoryToken(expected)}"
         }
     }
@@ -1368,10 +1369,12 @@ class RoomBackupDataSource(
             } catch (error: IllegalArgumentException) {
                 throw BackupValidationException("旧 root identity 编码无效", error)
             }
+            val expectedNonce = PersistentFileIdentity.nonce(expectedKey)
             val matches = Files.newDirectoryStream(base).use { stream ->
                 stream.filter { child ->
                     !Files.isSymbolicLink(child) && Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS) &&
-                        runCatching { fileKey(child) == expectedKey }.getOrDefault(false)
+                        PersistentFileIdentity.encode(expectedNonce, fileKey(child)) == expectedKey &&
+                        requireOldRootIdentity(child, expectedKey)
                 }.toList()
             }
             if (matches.size > 1) throw BackupValidationException("旧 root fileKey 匹配不唯一")
@@ -1413,6 +1416,16 @@ class RoomBackupDataSource(
         }
     }
 
+    private fun requireOldRootIdentity(path: Path, expected: String): Boolean {
+        val actual = try {
+            PersistentFileIdentity.read(path)
+        } catch (error: Exception) {
+            throw BackupValidationException("旧 managed root 持久身份读取失败", error)
+        }
+        if (actual != expected) throw BackupValidationException("旧 managed root nonce 与 journal 不一致")
+        return true
+    }
+
     private fun managedContainer(root: Path): ManagedContainer {
         val directIndex = trustedSourceBases.indexOf(root.parent)
         if (directIndex >= 0) return ManagedContainer(root, directIndex)
@@ -1435,7 +1448,7 @@ class RoomBackupDataSource(
             val isDirectory = row.requiredBoolean("is_directory")
             if (row.requiredString("uuid") == row.requiredString("workspace_root_uuid") &&
                 row.optionalString("parent_uuid") == null &&
-                Regex("^[^|]+\\|[0-9a-f]{64}$").matches(row.requiredString("hash"))
+                PersistentFileIdentity.isValid(row.requiredString("hash"))
             ) {
                 add(RestoreTreeEntry((prefix + ".nexara_root_identity").joinToString("/"), false))
             }
@@ -1474,9 +1487,9 @@ class RoomBackupDataSource(
                 val expectedInventory = if (terminalPartial) emptySet() else {
                     restoreFileOperations.inventory(restoreParent, root.fileName.toString())
                 }
-                val expectedKey = if (root.fileName.toString() == record.newRootIdentity) {
-                    record.newRootFileKey ?: fileKey(root)
-                } else fileKey(root)
+                val expectedKey = if (kind == "new") {
+                    record.newRootFileKey ?: PersistentFileIdentity.read(root)
+                } else PersistentFileIdentity.read(root)
                 if (root.fileName.toString() != tombstoneName) {
                     restoreFileOperations.moveTree(restoreParent, root.fileName.toString(), tombstoneName)
                     FileRestoreJournal.syncDirectory(restoreParent)
@@ -1499,7 +1512,9 @@ class RoomBackupDataSource(
             !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)
         ) throw BackupValidationException("恢复 root 身份无效")
         record.newRootFileKey?.let { expected ->
-            if (root.fileName.toString() == record.newRootIdentity && fileKey(root) != expected) {
+            if (root.fileName.toString() in setOf(record.newRootIdentity, ".restore-delete-${record.txId}-new") &&
+                PersistentFileIdentity.read(root) != expected
+            ) {
                 throw BackupValidationException("恢复 root fileKey 已变化")
             }
         }

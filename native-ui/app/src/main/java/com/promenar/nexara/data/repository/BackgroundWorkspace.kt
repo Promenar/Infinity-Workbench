@@ -261,7 +261,7 @@ internal class BackgroundWorkspace(
     private fun directoryKey(root: Path): String {
         val attributes = Files.readAttributes(root, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         if (!attributes.isDirectory || attributes.isSymbolicLink) throw SecurityException("后台工作区根目录无效")
-        return attributes.fileKey()?.toString() ?: throw SecurityException("后台工作区缺少目录身份")
+        return PersistentFileIdentity.read(root)
     }
 
     private fun ensureDirectories(root: Path, directories: List<String>) {

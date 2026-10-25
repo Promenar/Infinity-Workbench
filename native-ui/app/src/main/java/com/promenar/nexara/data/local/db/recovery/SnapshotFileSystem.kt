@@ -1,5 +1,9 @@
 package com.promenar.nexara.data.local.db.recovery
 
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import java.io.Closeable
 import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
@@ -17,6 +21,8 @@ internal data class SnapshotNode(val directory: Boolean, val size: Long, val key
 internal interface SnapshotDirectory : Closeable {
     val path: Path
     val key: String
+    val persistentIdentity: String
+    fun persistentIdentity(name: String): String
     fun names(maxEntries: Int = Int.MAX_VALUE): List<String>
     fun node(name: String): SnapshotNode?
     fun openDirectory(name: String): SnapshotDirectory
@@ -83,6 +89,30 @@ internal class DescriptorDirectory private constructor(
 ) : SnapshotDirectory {
     override val key: String = attributes(Paths.get(".")).fileKey()?.toString()
         ?: throw SecurityException("快照目录缺少稳定身份")
+
+    override val persistentIdentity: String get() = readPersistentIdentity(path, key)
+
+    override fun persistentIdentity(name: String): String {
+        safeSnapshotName(name)
+        val expected = node(name) ?: throw SecurityException("持久身份节点不存在")
+        return readPersistentIdentity(path.resolve(name), expected.key).also {
+            check(node(name)?.key == expected.key) { "持久身份节点绑定已变化" }
+        }
+    }
+
+    private fun readPersistentIdentity(target: Path, expectedKey: String): String {
+        val fd = Os.open(target.toString(), OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or
+            OsConstants.O_NONBLOCK or OsConstants.O_CLOEXEC, 0)
+        try {
+            return ParcelFileDescriptor.dup(fd).use { descriptor ->
+                val actual = Files.readAttributes(Paths.get("/proc/self/fd/${descriptor.fd}"),
+                    java.nio.file.attribute.BasicFileAttributes::class.java)
+                check(actual.fileKey()?.toString() == expectedKey &&
+                    attributes(Paths.get(".")).fileKey()?.toString() == key) { "持久身份句柄与快照能力不符" }
+                PersistentFileIdentity.readFd(descriptor.fd, expectedKey)
+            }
+        } finally { Os.close(fd) }
+    }
 
     override fun names(maxEntries: Int): List<String> = stream.newDirectoryStream(Paths.get("."), LinkOption.NOFOLLOW_LINKS).use {
         buildList {

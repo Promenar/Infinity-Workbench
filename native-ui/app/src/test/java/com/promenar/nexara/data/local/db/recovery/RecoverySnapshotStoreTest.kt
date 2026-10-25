@@ -145,6 +145,66 @@ class RecoverySnapshotStoreTest {
     }
 
     @Test
+    fun `新进程设备号变化不影响同事务快照复用`() {
+        val fileSystem = TestSnapshotFileSystem()
+        val manifest = store(fileSystem = fileSystem).createSnapshot("tx-device", sourceRoot, databaseFile, archiveRoot)
+        fileSystem.device = "99"
+        val reused = store(fileSystem = fileSystem).createSnapshot("tx-device", sourceRoot, databaseFile, archiveRoot)
+        assertThat(reused).isEqualTo(manifest)
+    }
+
+    @Test
+    fun `新进程设备号变化仍能验证物化根回执`() {
+        val fileSystem = TestSnapshotFileSystem()
+        val snapshot = store(fileSystem = fileSystem)
+        val manifest = snapshot.createTreeSnapshot("tx-device", sourceRoot, archiveRoot)
+        val target = root.resolve("active/workspace")
+        var receipt: String? = null
+        snapshot.materializeVerifiedArchive("tx-device", archiveRoot, manifest.sourceManifestSha256, target) { receipt = it }
+        fileSystem.device = "99"
+        val recovered = store(fileSystem = fileSystem).materializeVerifiedArchive("tx-device", archiveRoot,
+            manifest.sourceManifestSha256, target, receipt) { error("已有身份回执不得重新认领") }
+        assertThat(recovered.rootIdentity).isEqualTo(receipt)
+        assertThat(Files.readAllBytes(target.resolve("nexara.db")).toString(Charsets.UTF_8)).isEqualTo("main-db")
+    }
+
+    @Test
+    fun `物化根nonce相同但inode变化时拒绝回执`() {
+        val fileSystem = TestSnapshotFileSystem()
+        val snapshot = store(fileSystem = fileSystem)
+        val manifest = snapshot.createTreeSnapshot("tx-inode", sourceRoot, archiveRoot)
+        val target = root.resolve("active/workspace")
+        var receipt: String? = null
+        snapshot.materializeVerifiedArchive("tx-inode", archiveRoot, manifest.sourceManifestSha256, target) { receipt = it }
+        val original = target.resolveSibling("original")
+        Files.move(target, original)
+        Files.createDirectory(target)
+        Files.list(original).use { files -> files.forEach { Files.copy(it, target.resolve(it.fileName)) } }
+        fileSystem.copyNonce(original, target)
+        assertThrows(IllegalStateException::class.java) {
+            store(fileSystem = fileSystem).materializeVerifiedArchive("tx-inode", archiveRoot,
+                manifest.sourceManifestSha256, target, receipt) { error("复制身份不能重新认领") }
+        }
+        assertThat(Files.readAllBytes(target.resolve("nexara.db")).toString(Charsets.UTF_8)).isEqualTo("main-db")
+    }
+
+    @Test
+    fun `物化根inode相同但nonce变化时拒绝回执`() {
+        val fileSystem = TestSnapshotFileSystem()
+        val snapshot = store(fileSystem = fileSystem)
+        val manifest = snapshot.createTreeSnapshot("tx-nonce", sourceRoot, archiveRoot)
+        val target = root.resolve("active/workspace")
+        var receipt: String? = null
+        snapshot.materializeVerifiedArchive("tx-nonce", archiveRoot, manifest.sourceManifestSha256, target) { receipt = it }
+        fileSystem.replaceNonce(target)
+        assertThrows(IllegalStateException::class.java) {
+            store(fileSystem = fileSystem).materializeVerifiedArchive("tx-nonce", archiveRoot,
+                manifest.sourceManifestSha256, target, receipt) { error("nonce变化不能重新认领") }
+        }
+        assertThat(Files.readAllBytes(target.resolve("nexara.db")).toString(Charsets.UTF_8)).isEqualTo("main-db")
+    }
+
+    @Test
     fun `认证归档读取不重新扫描已有新写入的source`() {
         val snapshot = store()
         val manifest = snapshot.createSnapshot("tx-authenticated", sourceRoot, databaseFile, archiveRoot)

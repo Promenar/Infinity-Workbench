@@ -50,6 +50,23 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         database.fileEntryDao().insertAbort(rootEntry)
     }
 
+    @Test
+    fun `设备号变化后启动恢复清理孤立ownership且回滚文件journal`() = runTest {
+        createCurrentProofFixture(directory = false)
+        fileOps.move(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"), listOf(CREATE_OWNERSHIP_DIRECTORY, "completed")).commit()
+        database.fileEntryDao().insertAbort(entry("created", "/created.txt", "created.txt", "root"))
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root"))
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+        fileOps.move(root, listOf("source.txt"), listOf("target.txt"))
+        fileOps.identityFileKeyOverride = { it.replace(Regex("dev=[^,)]+"), "dev=123") }
+        coordinator().recoverOrThrow()
+        assertThat(database.workspaceMutationDao().getUnfinished()).isEmpty()
+        assertThat(Files.exists(root.resolve("source.txt"))).isTrue()
+        assertThat(Files.exists(root.resolve(CREATE_OWNERSHIP_DIRECTORY))).isFalse()
+        coordinator().recoverOrThrow()
+    }
+
     @After
     fun tearDown() {
         database.close()

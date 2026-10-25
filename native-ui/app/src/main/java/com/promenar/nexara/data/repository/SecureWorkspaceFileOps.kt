@@ -89,6 +89,11 @@ interface WorkspaceFileRollback {
 /** 工作区 descriptor-relative 文件操作；文件系统不支持 SecureDirectoryStream 时失败关闭。 */
 class SecureWorkspaceFileOps(
     private val identityStorage: WorkspaceInternalStorage? = null,
+    private val directoryOpener: (Path) -> DirectoryStream<Path> = { Files.newDirectoryStream(it) },
+    private val identityFileKey: (Any?) -> Any? = { it },
+    private val rootNonceReader: (Path, String) -> String? = { path, key ->
+        AndroidWorkspaceCreationProof.withRootDirectory(path, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) }
+    },
     private val hook: ((WorkspaceFilePhase) -> Unit)? = null,
 ) : WorkspaceFileOps {
     override fun ensureRoot(
@@ -154,7 +159,7 @@ class SecureWorkspaceFileOps(
         try {
             withParent(root, relative) { parent, name ->
                 parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { }
-                WorkspaceNodeIdentity("directory", 0, null, nodeFileKey(parent, name))
+                WorkspaceNodeIdentity("directory", 0, null, nodeIdentity(root, relative, parent, name))
             }
         } catch (_: java.nio.file.NotDirectoryException) {
             withParent(root, relative) { parent, name ->
@@ -176,7 +181,7 @@ class SecureWorkspaceFileOps(
                         "file",
                         size,
                         digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
-                        nodeFileKey(parent, name),
+                        nodeIdentity(root, relative, parent, name),
                     )
                 }
             }
@@ -188,6 +193,32 @@ class SecureWorkspaceFileOps(
             java.nio.file.attribute.BasicFileAttributeView::class.java,
             LinkOption.NOFOLLOW_LINKS,
         ).readAttributes().fileKey()?.toString() ?: throw SecurityException("工作区节点缺少 fileKey")
+    }
+
+    private fun nodeIdentity(root: Path, relative: List<String>, parent: SecureDirectoryStream<Path>, name: Path): String {
+        val before = nodeFileKey(parent, name)
+        if (System.getProperty("java.vm.name") == "Dalvik") {
+            val parentKey = directoryKey(parent)
+            return openSecure(root).use { anchor ->
+                val rootKey = directoryKey(anchor)
+                val validate: (SecureDirectoryStream<Path>, SecureDirectoryStream<Path>, String) -> Unit = { openedRoot, openedParent, openedKey ->
+                    if (directoryKey(openedRoot) != rootKey || directoryKey(openedParent) != parentKey ||
+                        openedKey != before || nodeFileKey(parent, name) != before) {
+                        throw SecurityException("工作区节点在身份读取期间被替换")
+                    }
+                }
+                val action: (android.os.ParcelFileDescriptor) -> String = { fd -> PersistentFileIdentity.readFd(fd.fd, before) }
+                val attributes = parent.getFileAttributeView(name, java.nio.file.attribute.BasicFileAttributeView::class.java,
+                    LinkOption.NOFOLLOW_LINKS).readAttributes()
+                if (attributes.isDirectory) AndroidWorkspaceCreationProof.withDirectory(root, relative, validate, action)
+                else AndroidWorkspaceCreationProof.withFile(root, relative, validate, action)
+            }
+        }
+        val path = relative.fold(root) { directory, segment -> directory.resolve(segment) }
+        val identity = PersistentFileIdentity.read(path)
+        val pathKey = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).fileKey()?.toString()
+        if (pathKey != before || nodeFileKey(parent, name) != before) throw SecurityException("工作区节点在身份读取期间被替换")
+        return identity
     }
 
     override fun listChildren(root: Path, relative: List<String>): List<String> {
@@ -253,10 +284,15 @@ class SecureWorkspaceFileOps(
             val rootKey = directoryKey(secure)
             AndroidWorkspaceCreationProof.withDirectory(root, node, { anchored, source, openedKey ->
                 if (directoryKey(anchored) != rootKey || directoryKey(source) != parentKey ||
-                    openedKey != expected.fileKey || nodeFileKey(parent, name) != openedKey) {
+                    PersistentFileIdentity.encode(PersistentFileIdentity.nonce(expected.fileKey), openedKey) != expected.fileKey || nodeFileKey(parent, name) != openedKey) {
                     throw SecurityException("创建目录FD与目录绑定不匹配")
                 }
-            }, action)
+            }) { file ->
+                if (PersistentFileIdentity.readFd(file.fd, "ino=${android.system.Os.fstat(file.fileDescriptor).st_ino}") != expected.fileKey) {
+                    throw SecurityException("创建目录持久 nonce 不匹配")
+                }
+                action(file)
+            }
         }
     }
 
@@ -269,10 +305,13 @@ class SecureWorkspaceFileOps(
             val rootKey = directoryKey(secure)
             AndroidWorkspaceCreationProof.withFile(root, node, { anchored, source, openedKey ->
                 if (directoryKey(anchored) != rootKey || directoryKey(source) != parentKey ||
-                    openedKey != expected.fileKey || nodeFileKey(parent, name) != openedKey) {
+                    PersistentFileIdentity.encode(PersistentFileIdentity.nonce(expected.fileKey), openedKey) != expected.fileKey || nodeFileKey(parent, name) != openedKey) {
                     throw SecurityException("创建文件FD与目录绑定不匹配")
                 }
             }) { file ->
+                if (PersistentFileIdentity.readFd(file.fd, "ino=${android.system.Os.fstat(file.fileDescriptor).st_ino}") != expected.fileKey) {
+                    throw SecurityException("创建文件持久 nonce 不匹配")
+                }
                 check(android.system.Os.fstat(file.fileDescriptor).st_size == expected.sizeBytes) { "创建文件FD大小不匹配" }
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
                 android.os.ParcelFileDescriptor.AutoCloseInputStream(android.os.ParcelFileDescriptor.dup(file.fileDescriptor)).use { input ->
@@ -903,7 +942,7 @@ class SecureWorkspaceFileOps(
         if (expected.isSymbolicLink || !expected.isDirectory || expected.fileKey() == null) {
             throw SecurityException("工作区根目录身份无效")
         }
-        val stream: DirectoryStream<Path> = Files.newDirectoryStream(root)
+        val stream: DirectoryStream<Path> = directoryOpener(root)
         val secure = stream as? SecureDirectoryStream<Path> ?: run {
             stream.close()
             throw SecurityException("当前文件系统不支持 SecureDirectoryStream，拒绝降低路径安全保证")
@@ -932,74 +971,64 @@ class SecureWorkspaceFileOps(
         initialize: Boolean,
         expectedIdentity: String?,
     ): String {
-        val key = directoryKey(root).toString()
-        val legacy = readLegacyIdentity(root)
-        val stored = try { identityStorage?.readIdentity(key) } catch (failure: Exception) {
-            identityStorage?.recordFailure("identity-$key", "root-identity-read", failure)
-            null
+        val operationKey = directoryKey(root).toString()
+        val key = PersistentFileIdentity.inode(identityFileKey(operationKey))
+        val marker = readLegacyIdentity(root)
+        val proof = marker?.let(PersistentFileIdentity::parseMarker)
+        if (proof != null && proof.second != key) throw SecurityException("工作区根身份标记与目录 fileKey 不一致")
+        val persistentNonce = if (identityStorage != null || marker == null) readRootNonce(path, operationKey, marker) else null
+        if (persistentNonce != null && proof != null && persistentNonce != proof.first) {
+            throw SecurityException("工作区根目录FD身份与标记冲突")
         }
-        if (stored != null && legacy != null && stored != legacy) throw SecurityException("私有根身份与旧标记冲突")
-        val persistentNonce = if (identityStorage != null || legacy == null) readRootNonce(path, key, legacy) else null
-        if (persistentNonce != null && legacy != null && legacy != "$persistentNonce\n$key") {
-            throw SecurityException("工作区根目录FD身份与旧标记冲突")
-        }
-        val existing = persistentNonce?.let { "$it\n$key" } ?: legacy
-        if (persistentNonce == null && legacy == null && stored != null) {
-            throw SecurityException("工作区根缺少目录FD身份，拒绝从私有索引重建")
-        }
-        if (stored != null && existing != null && stored != existing) throw SecurityException("工作区根目录FD身份与私有索引冲突")
-        val actual = when {
-            existing != null -> existing
-            !initialize -> throw SecurityException("工作区根缺少持久身份标记")
-            else -> "${UUID.randomUUID()}\n$key"
-        }
-        if (actual.substringAfter('\n', "") != key) throw SecurityException("工作区根身份标记与目录 fileKey 不一致")
-        val nonce = actual.substringBefore('\n')
-        val identity = "$nonce|${sha256(key.toByteArray(Charsets.UTF_8))}"
+        val nonce = persistentNonce ?: proof?.first ?: if (initialize) UUID.randomUUID().toString()
+            else throw SecurityException("工作区根缺少持久身份标记")
+        val identity = PersistentFileIdentity.encode(nonce, key)
         if (expectedIdentity != null && identity != expectedIdentity) {
             throw SecurityException("工作区根身份与数据库认领不一致")
         }
+        val record = PersistentFileIdentity.marker(nonce, key)
+        val stored = try { identityStorage?.readIdentity(identity) } catch (failure: Exception) {
+            identityStorage?.recordFailure(identity, "root-identity-read", failure)
+            null
+        }
+        if (stored != null && stored != record) throw SecurityException("工作区根目录FD身份与私有索引冲突")
         if (identityStorage == null) {
-            if (legacy == null && persistentNonce == null) writeNew(root, Paths.get(ROOT_IDENTITY_FILE), actual.toByteArray(Charsets.UTF_8))
+            if (marker == null && persistentNonce == null) writeNew(root, Paths.get(ROOT_IDENTITY_FILE), record.toByteArray(Charsets.UTF_8))
         } else {
             var durableNonce = persistentNonce != null
             try {
-                if (persistentNonce == null) AndroidWorkspaceCreationProof.withRootDirectory(path, key) {
+                if (persistentNonce == null) AndroidWorkspaceCreationProof.withRootDirectory(path, operationKey) {
                     AndroidWorkspaceFileIdentity.createRoot(it.fd, nonce)
                 }
                 durableNonce = true
-                identityStorage.storeIdentity(key, actual)
-                if (legacy != null) root.deleteFile(Paths.get(ROOT_IDENTITY_FILE))
+                identityStorage.storeIdentity(identity, record)
+                if (marker != null) root.deleteFile(Paths.get(ROOT_IDENTITY_FILE))
             } catch (failure: Exception) {
                 identityStorage.recordFailure(identity, "root-identity", failure)
-                // 存量标记仍是有效身份源；迁移失败不使启动恢复失去读取能力。
-                if (legacy == null && !durableNonce) throw failure
+                if (marker == null && !durableNonce) throw failure
             }
         }
         return identity
     }
 
     private fun verifyRootIdentity(path: Path, root: SecureDirectoryStream<Path>, fileKey: Any?) {
-        val actualKey = fileKey?.toString() ?: throw SecurityException("工作区根缺少稳定fileKey")
-        val expected = if (identityStorage != null) {
-            val legacy = readLegacyIdentity(root)
-            val nonce = readRootNonce(path, actualKey, legacy)
-            nonce?.let { "$it\n$actualKey" } ?: legacy
-        } else readLegacyIdentity(root) ?: AndroidWorkspaceCreationProof.withRootDirectory(path, actualKey) {
-            AndroidWorkspaceFileIdentity.readRoot(it.fd)
-        }?.let { "$it\n$actualKey" }
-        if (expected == null) throw SecurityException("工作区根缺少持久身份标记")
+        val operationKey = fileKey?.toString() ?: throw SecurityException("工作区根缺少稳定fileKey")
+        val key = PersistentFileIdentity.inode(identityFileKey(fileKey))
+        val marker = readLegacyIdentity(root)
+        val proof = marker?.let(PersistentFileIdentity::parseMarker)
+        val nonce = if (identityStorage != null || proof == null) readRootNonce(path, operationKey, marker) else null
+        if (nonce != null && proof != null && nonce != proof.first) throw SecurityException("工作区根目录FD身份与标记冲突")
+        val actualNonce = nonce ?: proof?.first ?: throw SecurityException("工作区根缺少持久身份标记")
         val trusted = identityStorage?.privateIdentity(path) ?: WorkspaceMutationCoordinator.expectedIdentity(path)
             ?: throw SecurityException("工作区根缺少进程内数据库身份绑定")
-        val actualIdentity = "${expected.substringBefore('\n')}|${sha256(actualKey.toByteArray(Charsets.UTF_8))}"
-        if (expected.substringAfter('\n', "") != actualKey || actualIdentity != trusted) {
+        if ((proof != null && proof.second != key) || PersistentFileIdentity.encode(actualNonce, key) != trusted) {
             throw SecurityException("工作区根身份标记与目录 fileKey 不一致")
         }
     }
 
-    private fun readRootNonce(path: Path, key: String, legacy: String?): String? = readWorkspaceIdentityAttribute(legacy != null,
-        { AndroidWorkspaceCreationProof.withRootDirectory(path, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) } },
-        { identityStorage?.recordFailure("identity-$key", "root-xattr-unsupported", it) })
+    private fun readRootNonce(path: Path, key: String, marker: String?): String? = readWorkspaceIdentityAttribute(marker != null,
+        { rootNonceReader(path, key) },
+        { identityStorage?.recordFailure("root-xattr", "root-xattr-unsupported", it) })
 
     override fun captureRootIdentityRestorer(root: Path): () -> Boolean {
         if (identityStorage == null) return { false }
@@ -1023,7 +1052,7 @@ class SecureWorkspaceFileOps(
         val key = directoryKey(secure).toString()
         val nonce = try { AndroidWorkspaceCreationProof.withRootDirectory(root, key) { AndroidWorkspaceFileIdentity.readRoot(it.fd) } }
             catch (_: UnsupportedOperationException) { null }
-        nonce != null || identityStorage?.readIdentity(key) != null
+        nonce != null || readLegacyIdentity(secure) != null
     }
 
     private fun readLegacyIdentity(root: SecureDirectoryStream<Path>): String? = try {

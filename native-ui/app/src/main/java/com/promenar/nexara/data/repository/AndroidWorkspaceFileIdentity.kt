@@ -15,10 +15,14 @@ internal object AndroidWorkspaceFileIdentity {
     fun createRoot(fd: Int, token: String) { requireCreationToken(token); nativeCreateRoot(fd, token) }
     fun readRoot(fd: Int): String? = nativeReadRoot(fd)
     fun restoreRoot(fd: Int, token: String) { requireCreationToken(token); nativeRestoreRoot(fd, token) }
+    fun createPersistent(fd: Int, token: String) { requireCreationToken(token); nativeCreatePersistent(fd, token) }
+    fun readPersistent(fd: Int): String? = nativeReadPersistent(fd)
 
     private external fun nativeCreate(fd: Int, token: String)
     private external fun nativeRead(fd: Int): String?
     private external fun nativeCreateRoot(fd: Int, token: String)
     private external fun nativeReadRoot(fd: Int): String?
     private external fun nativeRestoreRoot(fd: Int, token: String)
+    private external fun nativeCreatePersistent(fd: Int, token: String)
+    private external fun nativeReadPersistent(fd: Int): String?
 }

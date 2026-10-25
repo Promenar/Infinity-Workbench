@@ -33,9 +33,9 @@ class PrivateWorkspaceStorageTest {
     @Test
     fun `私有身份记录发布中断不留下半写最终文件且损坏记录隔离后重建`() {
         val base = Files.createTempDirectory("workspace-private-identity-test").toFile().canonicalFile.toPath()
-        val fileKey = "fixture-key"
-        val nonce = java.util.UUID.randomUUID().toString()
-        val value = "$nonce\n$fileKey"
+        val fileKey = PersistentFileIdentity.encode("11111111-1111-4111-8111-111111111111", "ino=1")
+        val nonce = "11111111-1111-4111-8111-111111111111"
+        val value = PersistentFileIdentity.marker(nonce, "ino=1")
         var fail = true
         val interrupted = WorkspaceInternalStorage(base, directoryOpener = { PrivateStorageTestDirectory(it) },
             metadataPublisher = { directory, source, target, _ ->

@@ -50,11 +50,7 @@ class AndroidSecureBackupFileOpsTest {
 
         SecureBackupFileOps.moveTree(testRoot, "staging", "tombstone")
         val tombstone = testRoot.resolve("tombstone")
-        val fileKey = Files.readAttributes(
-            tombstone,
-            BasicFileAttributes::class.java,
-            LinkOption.NOFOLLOW_LINKS,
-        ).fileKey().toString()
+        val fileKey = com.promenar.nexara.data.repository.PersistentFileIdentity.read(tombstone)
         val sibling = Files.write(testRoot.resolve("sibling.keep"), byteArrayOf(9))
 
         SecureBackupFileOps.deleteTree(
@@ -76,11 +72,7 @@ class AndroidSecureBackupFileOpsTest {
         val owned = testRoot.resolve("owned")
         SecureBackupFileOps.writeNew(owned, listOf(".restore-owner"), txId.toByteArray())
         val expected = setOf(RestoreTreeEntry(".restore-owner", false))
-        val fileKey = Files.readAttributes(
-            owned,
-            BasicFileAttributes::class.java,
-            LinkOption.NOFOLLOW_LINKS,
-        ).fileKey().toString()
+        val fileKey = com.promenar.nexara.data.repository.PersistentFileIdentity.read(owned)
         val parked = testRoot.resolve("parked")
         Files.move(owned, parked)
         val outside = Files.createDirectory(testRoot.resolve("outside"))

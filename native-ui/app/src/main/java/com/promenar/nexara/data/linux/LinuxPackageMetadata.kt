@@ -78,7 +78,7 @@ internal class LinuxPackageMetadata(private val runtime: LinuxRuntime, private v
         if (!root.isDirectory || !release.isFile) return null
         val attributes = Files.readAttributes(root.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS)
         // Android 不支持 birthtime 时 creationTime 回退为 mtime，目录正常变更不能使来源失效。
-        return attributes.fileKey()?.toString() ?: root.canonicalPath
+        return com.promenar.nexara.data.repository.PersistentFileIdentity.read(root.toPath())
     }
 
     private fun encode(origin: LinuxPackageOrigin) = buildJsonObject {

@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.backup
 
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -16,6 +17,7 @@ import java.util.Base64
 @Serializable
 enum class RestoreJournalPhase { PREPARED, COMMITTED }
 
+/** FileKey 字段保存版本化 nonce 与 inode 身份，不保存操作期间的完整 fileKey。 */
 @Serializable
 data class RestoreJournalRecord(
     val txId: String,
@@ -27,6 +29,7 @@ data class RestoreJournalRecord(
     val skills: SkillRestoreJournalRecord? = null,
 )
 
+/** 技能根与暂存目录使用相同的持久身份格式。 */
 @Serializable
 data class SkillRestoreJournalRecord(
     val rootName: String,
@@ -154,10 +157,29 @@ internal class FileRestoreJournal(
             record.oldRootIdentity.split(',').filter(String::isNotBlank).any { !OLD_ROOT_ID.matches(it) } ||
             record.newRootFileKey?.length.orZero() > 512
         ) throw BackupValidationException("恢复 journal 元数据无效")
+        record.newRootFileKey?.let(::requirePersistentIdentity)
+        record.oldRootIdentity.split(',').filter(String::isNotBlank).forEach { encoded ->
+            val identity = try {
+                String(Base64.getUrlDecoder().decode(encoded.split(':', limit = 3)[1]), Charsets.UTF_8)
+            } catch (error: IllegalArgumentException) {
+                throw BackupValidationException("恢复 journal 旧根身份编码无效", error)
+            }
+            requirePersistentIdentity(identity)
+        }
         record.skills?.let { skills ->
             if (!Regex("[A-Za-z0-9_-]{1,128}").matches(skills.rootName) ||
                 listOf(skills.oldRootFileKey, skills.newRootFileKey, skills.stagingFileKey).any { it != null && (it.isBlank() || it.length > 512) }
             ) throw BackupValidationException("技能恢复 journal 元数据无效")
+            listOfNotNull(skills.oldRootFileKey, skills.newRootFileKey, skills.stagingFileKey)
+                .forEach(::requirePersistentIdentity)
+        }
+    }
+
+    private fun requirePersistentIdentity(value: String) {
+        try {
+            PersistentFileIdentity.nonce(value)
+        } catch (error: Exception) {
+            throw BackupValidationException("恢复 journal 持久身份无效", error)
         }
     }
 

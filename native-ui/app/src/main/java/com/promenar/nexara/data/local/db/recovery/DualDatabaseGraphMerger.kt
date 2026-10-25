@@ -3,6 +3,7 @@ package com.promenar.nexara.data.local.db.recovery
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import com.promenar.nexara.data.repository.PersistentFileIdentity
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -144,7 +145,7 @@ internal class DualDatabaseGraphMerger(
 
     private fun bindRecoveredWorkspaceRoots(db: SQLiteDatabase) {
         recoveredRootIdentities.forEach { (physicalPath, identity) ->
-            require(physicalPath.startsWith('/') && identity.matches(Regex("[0-9a-f-]{36}\\|[0-9a-f]{64}"))) {
+            require(physicalPath.startsWith('/') && PersistentFileIdentity.isValid(identity)) {
                 "恢复工作区身份合同无效"
             }
             db.execSQL(
