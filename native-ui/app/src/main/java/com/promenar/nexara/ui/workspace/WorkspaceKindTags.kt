@@ -37,6 +37,10 @@ fun workspaceKindTags(kind: String?): List<WorkspaceTag> = when (kind) {
         WorkspaceTag(R.string.workspace_tag_termux, WorkspaceTagTone.NEUTRAL),
         WorkspaceTag(R.string.workspace_tag_kept_on_uninstall, WorkspaceTagTone.GOOD),
     )
+    WorkspaceEntity.KIND_LINUX_HOME -> listOf(
+        WorkspaceTag(R.string.workspace_tag_not_backed_up, WorkspaceTagTone.NEUTRAL),
+        WorkspaceTag(R.string.workspace_tag_cleared_on_reset, WorkspaceTagTone.CAUTION),
+    )
     else -> listOf(
         WorkspaceTag(R.string.workspace_tag_recycle_bin, WorkspaceTagTone.GOOD),
         WorkspaceTag(R.string.workspace_tag_gone_with_chat, WorkspaceTagTone.CAUTION),

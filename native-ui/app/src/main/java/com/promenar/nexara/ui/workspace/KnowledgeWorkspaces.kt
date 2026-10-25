@@ -325,6 +325,7 @@ fun KnowledgeWorkspaceListContent(
                         // 内置文件夹只在显示名与目录名不同时补目录名；设备文件夹的路径本身有用。
                         workspaceKindLabel(workspace.kind) + when {
                             workspace.kind == WorkspaceEntity.KIND_SHARED -> " · " + compactSharedPath(workspace.location)
+                            workspace.kind == WorkspaceEntity.KIND_LINUX_HOME -> " · " + workspaceLocationText(workspace.kind, workspace.location)
                             workspace.displayName != workspace.location -> " · " + workspace.location
                             else -> ""
                         },

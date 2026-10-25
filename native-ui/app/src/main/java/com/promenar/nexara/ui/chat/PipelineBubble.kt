@@ -281,6 +281,7 @@ fun PipelineBubble(
                     )
                     is PipelineStep.ToolExec -> InlineToolRow(
                         steps = step.steps, isExecuting = step.isExecuting, fontSize = fontSize,
+                        commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
                     )
                     is PipelineStep.Content -> {
                         val displayContent = if (isLastInGroup && isGenerating) {
@@ -600,6 +601,17 @@ private fun extractSyntheticExecutionSteps(content: String): List<ExecutionStep>
     val toolResults = separatorPattern.split(content).drop(1).map { it.trim() }
 
     return buildSyntheticExecutionSteps(toolCalls, toolResults)
+}
+
+/**
+ * 展示副本中的调用步骤 id 形如 `消息id::原始步骤id`，工具调用 id 也被改写；
+ * 完整输出页按原始记录定位，因此从所属消息取回持久化的工具调用 id。返回 (消息 id, 工具调用 id)。
+ */
+internal fun commandOutputTarget(messages: List<Message>, callStepId: String): Pair<String, String>? {
+    val messageId = callStepId.substringBefore("::", "").takeIf(String::isNotEmpty) ?: return null
+    val toolCallId = messages.firstOrNull { it.id == messageId }?.executionSteps
+        ?.firstOrNull { it.id == unscopedStepId(callStepId) }?.toolCallId
+    return toolCallId?.takeIf(String::isNotBlank)?.let { messageId to it }
 }
 
 /** 消息只在展示副本中限定作用域，避免跨工具轮次复用调用 ID 时混淆真实调用。 */
@@ -1038,8 +1050,11 @@ internal fun InlineToolRow(
     isExecuting: Boolean,
     fontSize: Int,
     initiallyExpanded: Boolean = false,
+    /** 由调用步骤 id 取回完整输出页所需的 (消息 id, 工具调用 id)；取不到时不显示入口。 */
+    commandOutputTarget: (callStepId: String) -> Pair<String, String>? = { null },
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    val linuxNavigation = com.promenar.nexara.ui.linux.LocalLinuxNavigation.current
     val invocations = remember(steps) { toolInvocations(steps) }
     // 审批通过后的调用不在生成任务内执行，以实时输出通道判断它是否正在运行。
     val liveKeys = LocalToolLiveOutput.current?.activeKeys?.collectAsState()?.value.orEmpty()
@@ -1103,7 +1118,18 @@ internal fun InlineToolRow(
                                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
                                 }
+                                if (invocation.ranInLinux) LinuxRuntimeChip()
                                 invocation.durationMs?.let { Text(stepDurationText(it), style = NexaraTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                            val outputTarget = remember(invocation) {
+                                invocation.call?.id?.takeIf { invocation.complete && invocation.isCommand }?.let(commandOutputTarget)
+                            }
+                            if (linuxNavigation != null && outputTarget != null) {
+                                TextButton(
+                                    onClick = { linuxNavigation.openCommandOutput(outputTarget.first, outputTarget.second) },
+                                    contentPadding = PaddingValues(horizontal = NexaraSpacing.Small),
+                                    modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(UiTags.CHAT_TOOL_FULL_OUTPUT),
+                                ) { Text(stringResource(R.string.chat_tool_full_output), style = NexaraTypography.labelLarge) }
                             }
                             val invocationChanges = remember(invocation) { invocation.fileChanges }
                             if (invocationChanges.isNotEmpty()) {
@@ -1142,6 +1168,20 @@ internal fun InlineToolRow(
             }
         }
     }
+}
+
+/** 标明这条命令在内置 Linux 环境中运行，与系统 shell 的结果区分。 */
+@Composable
+private fun LinuxRuntimeChip() {
+    Text(
+        stringResource(R.string.linux_runner_name),
+        style = NexaraTypography.labelSmall,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+        maxLines = 1,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 /** 命令改动了运行时关键数据时的提醒：列出前几项位置，其余以数量概括。 */

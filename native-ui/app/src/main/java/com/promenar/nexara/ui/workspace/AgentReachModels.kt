@@ -9,6 +9,7 @@ import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.ui.settings.TermuxEntryStatus
 import com.promenar.nexara.ui.settings.termuxEntryStatus
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
+import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.domain.tool.LinuxExecRouting
 
 /**
@@ -82,6 +83,7 @@ internal data class WorkspaceTraits(
 internal fun workspaceTraits(kind: String?): WorkspaceTraits = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false)
     WorkspaceEntity.KIND_SHARED -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = true, survivesUninstall = true)
+    WorkspaceEntity.KIND_LINUX_HOME -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false)
     else -> WorkspaceTraits(tracked = true, backedUp = true, termuxVisible = false, survivesUninstall = false)
 }
 
@@ -121,11 +123,13 @@ internal fun reachBackends(
     sshHostCount: Int?,
     linuxState: LinuxRuntimeState = LinuxExecRouting.state,
     linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
-): List<ReachBackend> = listOf(
+): List<ReachBackend> = listOfNotNull(
     ReachBackend(ReachBackendKind.FILES, ReachBackendStatus.READY),
     ReachBackend(ReachBackendKind.BUILTIN, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.SHELL_ONLY),
     ReachBackend(ReachBackendKind.SANDBOX, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.JS_ONLY),
-    ReachBackend(ReachBackendKind.LINUX, linuxReachStatus(linuxState, linuxAgentEnabled), destination = "linux_environment"),
+    // 渠道本身不提供 Linux 环境时不列出，避免让用户以为可以安装。
+    ReachBackend(ReachBackendKind.LINUX, linuxReachStatus(linuxState, linuxAgentEnabled), destination = "linux_environment")
+        .takeUnless { linuxState == LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION) },
     ReachBackend(ReachBackendKind.TERMUX, termuxReachStatus(termuxEnabled, termuxAvailability)),
     ReachBackend(
         ReachBackendKind.SSH,

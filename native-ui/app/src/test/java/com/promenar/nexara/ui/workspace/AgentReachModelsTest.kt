@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.workspace
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.termux.TermuxAvailability
+import com.promenar.nexara.domain.linux.LinuxRuntimeState
+import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.domain.network.AgentNetworkSnapshot
 import com.promenar.nexara.domain.network.NetworkAccessState
 import com.promenar.nexara.domain.network.NetworkTargetClass
@@ -54,7 +56,10 @@ class AgentReachModelsTest {
 
     @Test
     fun `backends report missing python and missing ssh hosts`() {
-        val backends = reachBackends(pythonAvailable = false, termuxEnabled = false, termuxAvailability = null, sshHostCount = 0)
+        val backends = reachBackends(
+            pythonAvailable = false, termuxEnabled = false, termuxAvailability = null, sshHostCount = 0,
+            linuxState = LinuxRuntimeState.NotInstalled(0), linuxAgentEnabled = true,
+        )
         assertThat(backends.map { it.kind }).containsExactlyElementsIn(ReachBackendKind.entries).inOrder()
         assertThat(backends.first { it.kind == ReachBackendKind.BUILTIN }.status).isEqualTo(ReachBackendStatus.SHELL_ONLY)
         assertThat(backends.first { it.kind == ReachBackendKind.SANDBOX }.status).isEqualTo(ReachBackendStatus.JS_ONLY)
@@ -62,6 +67,21 @@ class AgentReachModelsTest {
         val ready = reachBackends(pythonAvailable = true, termuxEnabled = false, termuxAvailability = null, sshHostCount = 3)
         assertThat(ready.first { it.kind == ReachBackendKind.SSH }).isEqualTo(ReachBackend(ReachBackendKind.SSH, ReachBackendStatus.READY, 3))
         assertThat(reachBackends(true, false, null, null).first { it.kind == ReachBackendKind.SSH }.status).isEqualTo(ReachBackendStatus.LOADING)
+    }
+
+    @Test
+    fun `linux row is omitted only when the distribution has no linux environment`() {
+        fun linux(state: LinuxRuntimeState) =
+            reachBackends(true, false, null, 0, linuxState = state, linuxAgentEnabled = true).firstOrNull { it.kind == ReachBackendKind.LINUX }
+        assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION))).isNull()
+        assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.UNSUPPORTED_ABI))?.status).isEqualTo(ReachBackendStatus.UNAVAILABLE)
+        assertThat(linux(LinuxRuntimeState.NotInstalled(0))?.status).isEqualTo(ReachBackendStatus.NOT_INSTALLED)
+    }
+
+    @Test
+    fun `linux home workspace is untracked, not backed up and gone with the app`() {
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_LINUX_HOME))
+            .isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false))
     }
 
     @Test
