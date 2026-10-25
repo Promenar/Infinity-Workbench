@@ -40,6 +40,18 @@ class WorkspaceBindingDaoTest {
         WorkspaceEntity(id, kind, "仓库😀", location, createdAt = 1)
 
     @Test
+    fun `Linux主目录使用现有字符串列且登记与原始数据库读取兼容`(): Unit = runBlocking {
+        val first = db.workspaceDao().register(workspace("linux", WorkspaceEntity.KIND_LINUX_HOME, "/root#" + "a".repeat(64)))
+        assertThat(db.workspaceDao().register(first.copy(id = "duplicate"))).isEqualTo(first)
+        db.openHelper.readableDatabase.query("SELECT kind, location FROM workspaces WHERE id = 'linux'").use {
+            assertThat(it.moveToFirst()).isTrue()
+            assertThat(it.getString(0)).isEqualTo("linux_home")
+            assertThat(it.getString(1)).isEqualTo(first.location)
+        }
+        assertThat(WorkspaceEntity.isValidLocation(WorkspaceEntity.KIND_LINUX_HOME, "/root/a")).isFalse()
+    }
+
+    @Test
     fun `同一目录重复登记返回已有记录`(): Unit = runBlocking {
         val dao = db.workspaceDao()
         val first = dao.register(workspace("ws-1"))

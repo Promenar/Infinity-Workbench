@@ -6,6 +6,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application>
+        <provider
+            android:name="com.promenar.nexara.data.linux.LinuxDocumentsProvider"
+            android:authorities="${applicationId}.linux.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
         <service
             android:name="com.promenar.nexara.background.exec.ExecForegroundService"
             android:exported="false"

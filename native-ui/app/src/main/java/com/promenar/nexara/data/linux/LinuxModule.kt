@@ -46,7 +46,10 @@ class LinuxModule(
     val mirrors: LinuxMirrorSettings get() = if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) unavailablePackages else packageBackend.mirrors
 
     // ── 文件浏览 ──
-    val files: LinuxFileSystem by lazy { UnavailableLinuxFiles() }
+    val files: LinuxFileSystem by lazy {
+        if (runtime.state.value is com.promenar.nexara.domain.linux.LinuxRuntimeState.Unavailable) UnavailableLinuxFiles()
+        else LinuxFileSystemImpl(runtime)
+    }
 
     // ── 本地终端 ──
     val terminals: LinuxTerminalSessions by lazy {

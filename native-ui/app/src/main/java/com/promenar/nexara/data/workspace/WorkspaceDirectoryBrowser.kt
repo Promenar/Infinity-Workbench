@@ -51,12 +51,23 @@ class WorkspaceDirectoryBrowser(
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val linuxHome: LinuxHomeWorkspaceSource? = null,
 ) {
     val sharedSupported: Boolean get() = shared.supported
 
     fun hasSharedPermission(): Boolean = shared.supported && shared.hasPermission()
 
     fun sharedRoots(): List<File> = if (shared.supported) shared.roots() else emptyList()
+
+    suspend fun linuxHomeAvailability(): LinuxHomeAvailability = withContext(io) {
+        linuxHome?.availability() ?: LinuxHomeAvailability.UNSUPPORTED
+    }
+
+    /** 只登记就绪环境的主目录；相同目录身份重复登记返回已有记录，重置后产生新的登记。 */
+    suspend fun registerLinuxHome(displayName: String = "Linux /root"): WorkspaceEntity = withContext(io) {
+        val source = linuxHome ?: throw ExternalFolderException("UNSUPPORTED", "此发行渠道不支持 Linux 主目录")
+        workspaceDao.register(WorkspaceEntity(idFactory(), WorkspaceEntity.KIND_LINUX_HOME, displayName, source.location(), clock()))
+    }
 
     suspend fun listProjects(): List<WorkspaceFolder> = withContext(io) {
         val root = canonicalProjectsRoot()
