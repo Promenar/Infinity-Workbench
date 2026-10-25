@@ -58,8 +58,14 @@ import com.promenar.nexara.ui.testing.UiTags
 /** 宽屏（折叠屏展开、平板）会话右侧的运行侧栏宽度。 */
 internal val RunSidePanelWidth = 320.dp
 
-/** 窗口宽度与高度都达到下限时运行信息移到侧栏，浮岛不再显示运行坞；横屏手机高度不足，仍用运行坞。 */
-internal val RunSidePanelMinWindowWidth = 840.dp
+/** 侧栏出现后会话列至少保留常见手机的宽度。 */
+internal val RunSidePanelMinChatWidth = 360.dp
+
+/**
+ * 窗口宽度与高度都达到下限时运行信息移到侧栏，浮岛不再显示运行坞；横屏手机高度不足，仍用运行坞。
+ * 宽度下限按侧栏、分隔线与会话列最小宽度相加，折叠屏内屏（约 690–810dp）也能放下侧栏。
+ */
+internal val RunSidePanelMinWindowWidth = RunSidePanelWidth + 1.dp + RunSidePanelMinChatWidth
 internal val RunSidePanelMinWindowHeight = 480.dp
 
 /** 侧栏计划区从当前步骤起列出的步数；其余在运行详情中查看。 */
