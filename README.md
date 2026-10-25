@@ -37,6 +37,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 - **SSH 与远端终端**：设置 → 工具 → SSH 主机与终端中管理主机别名、密码或密钥认证，支持生成 Ed25519、导入口令保护的 OpenSSH 私钥和复制公钥。首次连接需要确认 SHA256 指纹，指纹变化会拦截；Agent 可通过别名执行命令、读写 SFTP 和使用常驻 PTY，工作区档下每条命令逐次审批，并支持大输出分页。用户终端支持 ANSI、滚动历史、控制键与旋转调整窗口，本地转发仅监听 `127.0.0.1`。在同一页开启“允许 Agent 管理 SSH 主机”（默认关闭、不随备份迁移）后，Agent 可列出、新增、修改、删除主机，并为密码主机安装本机生成的 Ed25519 公钥实现免密登录；这些变更在两档权限范围下都逐次审批，密码与指纹只在应用弹窗中由用户输入和确认，工具结果不含凭据。
 - **Termux 本机终端**：两个发行渠道均可从设置 → 工具 → Termux 接入与诊断启用集成。`termux_exec` 在 Termux 的 bash 中后台执行，支持工作目录、stdin 和 1–600 秒超时，默认 60 秒；沿用 PROCESS 审批，目标绑定 `termux` 与完整命令。诊断页提供安装、外部调用开关、系统权限、SSH 公钥复制和主目录 SAF 挂载引导。
 - **内置命令执行**：无需 Termux，`shell_exec` 用系统 `/system/bin/sh`（POSIX sh 与系统 toybox，命令随设备不同）、`python_exec` 用随 APK 打包的 Python 3.14（仅 arm64-v8a，标准库完整，附带 dulwich）直接在会话工作区根目录运行；shell 中可用 `python3`/`python`，以及基于 dulwich 的 `git`（clone、commit、log、diff、push、pull 等常用子命令，远端只支持 HTTPS，不支持的子命令返回 `GIT_UNSUPPORTED`）；侧载版另有 `pip`，可把纯 Python 包装到应用用户目录（含原生扩展的包无法导入），Play 版不提供 pip。`.git` 内部文件入索引但不进入资料向量化。工作区档逐条审批，完全访问档不审批；审批卡以“内置命令”类别条写明命令以 Nexara 身份运行、可访问全部应用数据、不受工作区限制，删除或覆盖的文件不进回收站。命令结束后检测数据库、`shared_prefs`、`no_backup`、用户级技能目录与诊断日志的变化，在工具行下方常驻标出；系统提示词要求模型改动这些关键数据前取得你的书面同意。运行期间独占工作区写锁（文件工具的读写排队等待），结束后按磁盘对账索引并在 `workspace_changes` 中列出新增、修改、删除与移动；保留路径、符号链接与特殊文件不入索引并给出警告。默认 60 秒、最多 600 秒，超时、取消或命令结束时结束整个进程组，stdout/stderr 各保留尾部 32,000 字符。运行期间持有唤醒锁，侧载版在通知栏显示命令并可停止（Play 版只有唤醒锁）；系统冻结的时间不计入超时，ColorOS 等系统需把 Nexara 设为“完全允许后台行为”，离开应用后命令才能持续运行。
+- **内置 Linux 环境（侧载版）**：设置 → 工具 → 本机与远端 → Linux 环境，一键安装随 APK 打包的 Alpine Linux（proot，仅 arm64-v8a，无需 Termux 或 root）。开启“命令在 Linux 中运行”后，`shell_exec` 与 shell 后台任务在 Alpine 中执行，可用 `apk add` 安装软件包；另有本地终端、Linux 文件浏览、软件包与镜像源管理、命令完整输出查看，`/root` 可作为会话工作区并出现在系统“文件”应用中。使用方式与边界见下文“内置 Linux 环境”。
 - **内置 Tailscale**：设置 → 工具 → Tailscale 启用后，Nexara 在进程内运行一个 Tailscale 节点（tsnet），不占用系统 VPN，可与其它 VPN 同时使用；支持浏览器登录或 auth key、自建控制服务器（Headscale）、临时节点与设备白名单。SSH 主机、`shell_exec`、`python_exec`（含内置 git）、应用内 HTTPS 请求以及模型提供商（对话、向量化、重排、生图）可直接访问 tailnet IP 与 MagicDNS 名称，其它目标保持原有路径；`web_fetch`、`media_fetch` 与脚本联网访问 tailnet 时固定经内置 Tailscale 代理，未连接时直接失败；Agent 可用只读工具 `tailnet_status` 查看节点与设备。提供商表单按接口地址自动识别“公网 / Tailscale 内网”API 源，并可从 tailnet 设备下拉框选择网关设备填入地址（内网地址需为 https，可在网关设备上用 `tailscale serve` 提供）；发送到内网模型时会等待内置 Tailscale 接入后自动继续，未接入时请求直接失败而不回退直连（内置 Tailscale 关闭时立即提示去开启），模型选择器以公网与 Tailscale 两盏指示灯显示连通状态。节点只在 Nexara 运行期间在线，退出后下线。
 - **本机 MCP（高级）**：工具的 MCP 配置中可显式开启本机 HTTP，仅接受 `http://127.0.0.1:<端口>`。访问令牌必填并由 SecretStore 保存，发现和执行均使用 Bearer，工具按 PROCESS 风险审批；关闭开关立即停止暴露与执行环回工具。
 - **会话工作区**：资源管理器与资料页同样按目录下钻浏览（页头只有一个返回按钮，子目录内回到上一级；上级路径可点击跳级，系统返回同样逐级退回），搜索结果平铺并显示所在路径，点击即进入所在目录。按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护；文档索引使用版本化目标与失败重试，进程重启后按当前文件版本和 KG 配置补建缺失任务。
@@ -62,6 +63,14 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 - 内置 Tailscale 的节点状态写入不进备份的应用私有目录，auth key 存于 `SecretStore`；两者不进入备份、日志、命令行与模型上下文，换设备需要重新登录。本机代理只监听 `127.0.0.1` 并只接受每次启动随机生成的凭据；该凭据经代理环境变量交给 `shell_exec`/`python_exec` 子进程，命令可读取，Nexara 退出后失效。
 - 云端 Provider、WebDAV 与远端 MCP 使用 HTTPS；网络安全配置仅对精确地址 `127.0.0.1` 放开明文。本机 MCP 需显式启用和 Bearer 认证，因为同机其它应用也可能访问该端口；`localhost`、其它 IPv4 和 IPv6 地址均不作为 HTTP 例外。
 - Release 诊断事件不得写入 Prompt、模型输出、请求/响应正文、完整 URL、Authorization、API Key、SQL 参数或完整异常堆栈；文件限制为 512 KiB，并可由用户主动导出。
+
+## 内置 Linux 环境
+
+仅侧载版、arm64-v8a 设备提供；Play 版不打包相关文件，入口不显示。安装包内含 Alpine 3.24.3 minirootfs（约 4 MB）与 proot，安装需约 64 MB 空间，勾选常用工具时约 200 MB 并需联网下载（默认清华镜像，可在镜像源页切换或测速）。安装在 `filesDir/linux/alpine`，不进备份；卸载 Nexara 时一并删除。
+
+环境就绪且“命令在 Linux 中运行”开启时，`shell_exec` 在 Alpine 中以 Nexara 身份运行：工作区映射为 `/workspace`，有真实路径的外部挂载为 `/mnt/<别名>`，用户级技能为 `/mnt/skills`；SAF 授权的挂载只对文件工具可见。Linux 命令不受工作区路径约束，“工作区”档逐条审批，“完全访问”档免审批。关闭开关或环境未就绪时回到系统 `/system/bin/sh`，结果中的 `runtime` 字段说明实际环境。`python_exec` 与 `python_sandbox` 使用打包 Python，与 Alpine 中的 `python3` 和 pip 包相互独立。
+
+重置会清空 `/root` 与已安装软件包、恢复初始系统，会话工作区不受影响；绑定到旧 `/root` 的会话需重新选择工作区。proot 下文件元数据密集的操作（大量小文件解包、编译）比原生慢。当前 Alpine 中原生 git 不使用 Nexara 保存的 HTTPS 凭据与 SSH 桥，需要认证的推拉可暂时关闭“命令在 Linux 中运行”，由系统 sh 中的内置 git 完成。
 
 ## Termux 接入
 

@@ -23,7 +23,7 @@ private fun at(minutesAgo: Long): Long = PreviewNow.minusMinutes(minutesAgo).atZ
 
 private val NowMs = at(0)
 
-private val Ready = LinuxRuntimeState.Ready(LinuxEnvironmentInfo("Alpine", "3.22", "aarch64", "5.4.0", NowMs, null))
+private val Ready = LinuxRuntimeState.Ready(LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "5.4.0", NowMs, null))
 
 private fun entry(
     name: String,

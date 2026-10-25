@@ -97,10 +97,20 @@ Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以�
 
 - [mwiede/jsch 2.28.8](https://github.com/mwiede/jsch/tree/jsch-2.28.8)：SSH、SFTP、PTY 与本地转发。主库为三条款 BSD；内嵌 JZlib 为 BSD、jBCrypt 为 ISC。完整许可与版权归档在 [ssh/jsch-LICENSE.txt](ssh/jsch-LICENSE.txt)、[JZlib](ssh/jsch-LICENSE.JZlib.txt)、[jBCrypt](ssh/jsch-LICENSE.jBCrypt.txt)。
 - [Bouncy Castle bcprov-jdk15to18 1.86](https://www.bouncycastle.org/download/bouncy-castle-java/)：SSH 仅使用 lightweight 密码学路径补足 Android API 31 的 Ed25519/X25519，不注册或替换系统 Provider；既有 PDFBox 的 bcpkix-jdk15to18、bcutil-jdk15to18 同步统一到 1.86，避免重复类及跨版本 API 混用。许可采用 Bouncy Castle/MIT 条款，完整声明见 [ssh/bouncycastle-LICENSE.txt](ssh/bouncycastle-LICENSE.txt)。
-- [Termux terminal-emulator / terminal-view 0.118.0](https://github.com/termux/termux-app/tree/v0.118.0)：使用终端仿真器和渲染器连接远端 SSH PTY，不构造本地 TerminalSession，不启动本地进程。上游为 GPLv3-only，包含 Apache-2.0 来源例外，见 [ssh/termux-LICENSE.md](ssh/termux-LICENSE.md) 与[上游源码](https://github.com/termux/termux-app/tree/v0.118.0/terminal-emulator)。项目 GPL-3.0 许可允许该组合。
+- [Termux terminal-emulator / terminal-view 0.118.0](https://github.com/termux/termux-app/tree/v0.118.0)：使用终端仿真器和渲染器连接远端 SSH PTY；侧载渠道另以其 `TerminalSession` 与 JNI 库 `libtermux.so` 驱动内置 Linux 环境的本地 PTY，Play 渠道不打包该原生库。上游为 GPLv3-only，包含 Apache-2.0 来源例外，见 [ssh/termux-LICENSE.md](ssh/termux-LICENSE.md) 与[上游源码](https://github.com/termux/termux-app/tree/v0.118.0/terminal-emulator)。项目 GPL-3.0 许可允许该组合。
 - [Apache MINA SSHD 2.16.0](https://github.com/apache/mina-sshd/tree/sshd-2.16.0)：Apache-2.0，仅用于 JVM 测试中的内嵌 SSH/SFTP 服务端，不进入应用运行时。
 
-SSH 与终端依赖保持版本固定；引入的终端原生进程桥接库不属于远端 PTY 的执行路径。许可原文按上游保留，中文说明不替代许可条款。
+SSH 与终端依赖保持版本固定；终端原生进程桥接库只用于侧载渠道的内置 Linux 终端，不属于远端 PTY 的执行路径。许可原文按上游保留，中文说明不替代许可条款。
+
+## 内置 Linux 环境（仅侧载渠道）
+
+以下组件只随侧载 APK 分发，版本与摘要固定在 `native-ui/app/linux/linux-runtime.properties`，构建时从上游下载并校验 SHA-256：
+
+- [termux/proot](https://github.com/termux/proot/tree/b27d81a68d765f3462e807f4a14e01a03f8e89ea)（提交 b27d81a6）：编译为 `libnxproot.so` 与 `libnxproot-loader.so`，以独立进程运行。GPL-2.0-or-later。
+- [talloc 2.4.4](https://www.samba.org/ftp/talloc/talloc-2.4.4.tar.gz)：只编译 `talloc.c`，静态链接进 proot。LGPL-3.0-or-later。
+- [Alpine Linux 3.24.3 aarch64 minirootfs](https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/)：官方归档原样打包为 `assets/linux/alpine-minirootfs.tar.gz.bin`，安装时在应用私有目录解包。其中 BusyBox、apk-tools 为 GPL-2.0，musl 为 MIT，其余软件包按各自许可；对应源码见 [Alpine aports](https://gitlab.alpinelinux.org/alpine/aports) 中 3.24 分支与 [Alpine 源码发布](https://dl-cdn.alpinelinux.org/alpine/)。用户之后经 apk 安装的软件包直接取自所选镜像源，不随 Nexara 分发。
+
+上述 GPL-2.0 组件以独立进程或独立文件系统映像形式运行，与 Nexara 主程序通过进程参数和文件交互。对外发布侧载 APK 时，应按 GPL 要求随附或书面提供对应源码（上游源码地址与固定版本见上文及属性文件），本节不构成合规结论。
 
 ## 内置 Tailscale（tsnet）
 

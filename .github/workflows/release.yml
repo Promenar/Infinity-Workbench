@@ -452,6 +452,7 @@ jobs:
               --expected-version-code 4 \
               --expected-version-name 0.2.2-beta \
               --expected-cert-sha256 "${NEXARA_SIGNING_CERT_SHA256}" \
+              --distribution "${distribution}" \
               --checksum-output "${apk}.sha256"
             r8_output_dir="native-ui/app/build/outputs/mapping/${distribution}Release"
             mapping_path="${r8_output_dir}/mapping.txt"
@@ -557,6 +558,7 @@ jobs:
         env:
           NEXARA_SIGNING_CERT_SHA256: ${{ vars.NEXARA_SIGNING_CERT_SHA256 }}
           ANDROID_RELEASE_SMOKE_ARTIFACT_DIR: artifacts/release-smoke-${{ matrix.distribution }}-api-${{ matrix.api-level }}
+          NEXARA_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}
         with:
           api-level: ${{ matrix.api-level }}
           target: default

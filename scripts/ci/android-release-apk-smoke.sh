@@ -13,6 +13,7 @@ PACKAGE_NAME="${NEXARA_EXPECTED_PACKAGE:-com.promenar.nexara.native}"
 EXPECTED_VERSION_CODE="${NEXARA_EXPECTED_VERSION_CODE:-4}"
 EXPECTED_VERSION_NAME="${NEXARA_EXPECTED_VERSION_NAME:-0.2.2-beta}"
 EXPECTED_CERT_SHA256="${NEXARA_SIGNING_CERT_SHA256:-}"
+EXPECTED_DISTRIBUTION="${NEXARA_EXPECTED_DISTRIBUTION:-sideload}"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 ARTIFACT_DIR="${ANDROID_RELEASE_SMOKE_ARTIFACT_DIR:-${REPO_ROOT}/artifacts/release-smoke-api-${API_LEVEL:-unknown}}"
 
@@ -56,7 +57,8 @@ python3 "${REPO_ROOT}/scripts/verify-release-apk.py" "${APK_PATH}" \
     --expected-package "${PACKAGE_NAME}" \
     --expected-version-code "${EXPECTED_VERSION_CODE}" \
     --expected-version-name "${EXPECTED_VERSION_NAME}" \
-    --expected-cert-sha256 "${EXPECTED_CERT_SHA256}"
+    --expected-cert-sha256 "${EXPECTED_CERT_SHA256}" \
+    --distribution "${EXPECTED_DISTRIBUTION}"
 
 adb wait-for-device
 adb shell pm uninstall "${PACKAGE_NAME}" >/dev/null 2>&1 || true

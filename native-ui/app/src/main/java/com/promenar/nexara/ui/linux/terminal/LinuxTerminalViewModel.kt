@@ -61,7 +61,7 @@ data class LinuxTerminalUiState(
 
     val selectedTab: TerminalTab? get() = tabs.firstOrNull { it.key == selectedKey } ?: tabs.firstOrNull()
 
-    /** 例如“Alpine 3.22”；环境未就绪时为 null。 */
+    /** 例如“Alpine 3.24.3”；环境未就绪时为 null。 */
     val environmentLabel: String?
         get() = (runtime as? LinuxRuntimeState.Ready)?.info?.let { "${it.distribution} ${it.version}".trim() }
 }

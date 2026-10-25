@@ -71,6 +71,18 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 升级 tailscale.com 或 Go：在 `native-ui/app/tailnet/` 修改 `go.mod` 后运行 `go mod tidy` 更新 `go.sum`，同步 `build.gradle.kts` 的 `tailnetGoVersion` 与两个工作流的 `go-version`，重新生成 `docs/legal/tailnet/go-modules-LICENSES.txt`，再运行 `TailnetDeviceTest`（沙箱启动、待登录链接、代理凭据与回环监听、公网直连、stdin 关闭后自行退出；需要设备能访问公网）。
 
+## 内置 Linux 环境
+
+只有侧载渠道且变体包含 arm64-v8a 时接入 Linux 制品；Play 变体与纯 x86_64 变体不接入，运行时分别报告 `Unavailable(DISTRIBUTION)` 与 `Unavailable(UNSUPPORTED_ABI)`（`DistributionCapabilities.linuxRuntimeAvailable`）。固定输入登记在 `native-ui/app/linux/linux-runtime.properties`：termux/proot 提交、talloc 2.4.4 与 Alpine 3.24.3 aarch64 minirootfs 的下载地址和 SHA-256。
+
+- `fetchLinuxRuntime<Proot|Talloc|Alpine>` 下载到 `app/build/linux-downloads/` 并校验摘要；`buildLinuxRuntime` 用 AGP 所选 NDK 与 `app/linux/CMakeLists.txt` 编译 `libnxproot.so`（proot 与入口）和 `libnxproot-loader.so`；`prepareLinuxRuntimeAssets` 把原始归档放为 `assets/linux/alpine-minirootfs.tar.gz.bin`（`.bin` 后缀防止资产合并器解压），摘要与解包大小写入 BuildConfig。
+- 两个库随 `useLegacyPackaging` 解压到 `nativeLibraryDir` 后执行（W^X），rootfs 在安装时解到 `filesDir/linux/alpine`。
+- 本地终端使用 Termux terminal-emulator 的 `libtermux.so`，只在侧载变体打包，Play 变体排除。该库为上游 AAR 原样，PT_LOAD 4 KB 对齐，16 KB 页设备兼容性需单独验收。
+- 侧载清单额外声明 `ACCESS_NETWORK_STATE`（安装时读取当前网络 DNS）与受 `MANAGE_DOCUMENTS` 保护的 `${applicationId}.linux.documents` DocumentsProvider（只暴露 `/root`）；`scripts/ci/check-distribution-manifests.py` 校验侧载具备、Play 缺席。
+- `scripts/verify-release-apk.py` 需传入渠道参数：侧载 APK 必须同时含两个库与 rootfs 资产且摘要与 properties 一致，Play APK 不得含任一 ABI 的 Linux 库或资产。Debug 侧载 APK 增加约 4.1 MB（压缩后）。
+
+设备回归类：`com.promenar.nexara.data.linux.LinuxRuntimeDeviceTest`（安装、诊断、工作区读写、重置、卸载）、`LinuxTerminalDeviceTest`（PTY 输出与进程组清理）、`LinuxFileIoDeviceTest`（fd 固定、不覆盖移动）。
+
 ## 富内容 WebView
 
 富内容池及所有派生客户端统一应用协议、地址与导航策略。打包的 KaTeX、Mermaid、ECharts、知识图谱模板通过 `https://appassets.androidplatform.net/assets/` 受控读取；其它应用资产、路径穿越和缺失文件直接拒绝。复用现有 OkHttp，无新增 AndroidX WebKit 依赖。

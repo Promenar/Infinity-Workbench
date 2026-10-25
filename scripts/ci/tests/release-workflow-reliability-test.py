@@ -99,6 +99,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             self.assertIn(f"distribution: {flavor}", smoke)
         self.assertIn('matrix.apk-name', smoke)
         self.assertIn('matrix.distribution', smoke)
+        self.assertIn('NEXARA_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}', smoke)
+        self.assertIn('--distribution "${distribution}"', build)
         self.assertIn('check-distribution-manifests.py', ANDROID_CI)
         self.assertIn('check-distribution-manifests.py', build)
         self.assertNotIn('-play.apk', workflow_job("signed-apk-upgrade-smoke"))
@@ -458,6 +460,7 @@ is_expected_resumed_activity "$2"
             "--expected-version-code",
             "--expected-version-name",
             "--expected-cert-sha256",
+            "--distribution",
         ):
             self.assertIn(option, SMOKE)
         self.assertLess(SMOKE.find(verifier_call), SMOKE.find('adb install --no-streaming'))

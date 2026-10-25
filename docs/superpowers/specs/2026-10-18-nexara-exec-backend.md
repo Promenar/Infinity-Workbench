@@ -175,6 +175,12 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | git（dulwich） | 有 | 有（代码随 APK 分发） |
 | 前台服务类型 | `specialUse`（已声明） | 不声明，只持有唤醒锁；待评审 |
 
+### 4.7 内置 Linux 后端（侧载 arm64）
+
+- 侧载渠道在 arm64-v8a 设备上另带 proot + Alpine 3.24.3 minirootfs（设计与决策见 `.agent/plans/2026-10-24-linux-runtime.md`）。用户在设置中安装并开启“Agent 使用 Linux”后，`LinuxExecRouting` 判定环境 Ready 时 `shell_exec` 改在 Alpine 中执行；环境未安装、安装中、损坏或关闭时仍走第 4 节的内置 shell。`python_exec`、`python_sandbox` 与 git（dulwich）不受影响。
+- 路径映射：会话工作区为 `/workspace`，会话挂载为 `/mnt/<别名>`，选择 Linux 主目录作为工作区时为 `/root`。结果格式沿用第 3.1 节，`runtime` 字段标明 LINUX，审批卡片以独立类别提示“在 Linux 环境中执行”。
+- Play 渠道不打包 proot、rootfs 与 `libtermux.so`，Linux 运行时恒为 `Unavailable(DISTRIBUTION)`；`scripts/verify-release-apk.py --distribution` 对两个渠道分别校验。
+
 ## 5. Termux 与 SSH 后端（D）
 
 - `termux_exec`、`ssh_exec` 保持现有接口，结果按第 3.1 节对齐。

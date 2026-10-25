@@ -117,7 +117,7 @@ private val sampleJobLog = buildString {
 }
 
 private fun readyState(selectedKey: String, secondExited: Boolean = false): LinuxTerminalUiState {
-    val info = LinuxEnvironmentInfo("Alpine", "3.22", "aarch64", "5.4.0", 0L, null)
+    val info = LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "5.4.0", 0L, null)
     val workspace = LinuxTerminalLocation.SessionWorkspace("chat-1")
     val job = BackgroundJob(
         id = "job-3",

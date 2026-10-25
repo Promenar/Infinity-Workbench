@@ -255,7 +255,10 @@ class LinuxExecIntegrationTest {
 
     @Test fun `可达范围列出 Linux 状态和跳转标识`() {
         val expected = listOf(ReachBackendStatus.UNAVAILABLE, ReachBackendStatus.NOT_INSTALLED, ReachBackendStatus.INSTALLING, ReachBackendStatus.BROKEN, ReachBackendStatus.READY, ReachBackendStatus.INSTALLING, ReachBackendStatus.BROKEN)
-        states().zip(expected).forEach { (state, status) ->
+        // Play 渠道不列出 Linux 行；其它不可用原因（如 ABI）仍显示为不可用。
+        assertThat(reachBackends(true, false, null, 0, states().first(), true).none { it.kind == ReachBackendKind.LINUX }).isTrue()
+        val abi = LinuxRuntimeState.Unavailable(LinuxUnavailableReason.UNSUPPORTED_ABI)
+        (listOf(abi) + states().drop(1)).zip(expected).forEach { (state, status) ->
             val backend = reachBackends(true, false, null, 0, state, true).single { it.kind == ReachBackendKind.LINUX }
             assertThat(backend.status).isEqualTo(status)
             assertThat(backend.destination).isEqualTo("linux_environment")

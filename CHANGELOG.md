@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 内置 Linux 环境（侧载版）
+
+- 侧载版新增内置 Alpine Linux 3.24.3 环境（仅 arm64-v8a 设备）：APK 打包源码构建的 proot（termux/proot 固定提交）与官方 minirootfs，在“工具 → 本机与远端 → Linux 环境”安装，无需 Termux 或 root。安装依次解包（校验 SHA-256）、初始化网络与证书（DNS 优先取当前网络与 VPN）、可选安装常用工具（bash、git、python3、py3-pip、curl、ca-certificates）、创建工作区映射与运行诊断；中断后可从断点继续。Play 版不打包 Linux 制品，入口不显示。
+- 环境就绪且“命令在 Linux 中运行”开启时，`shell_exec` 与 shell 后台任务在 Alpine 中执行：会话工作区为 `/workspace`，有真实路径的挂载为 `/mnt/<别名>`，用户级技能为 `/mnt/skills`；结果带 `runtime: linux|system`，启动前环境不可用时回退系统 sh 并说明。后台任务创建时固定执行器，环境被重置或卸载时终止。`python_exec` 与 `python_sandbox` 仍使用独立的打包 Python。
+- 环境管理页提供存储分布、清理下载缓存、诊断、重置（清空 `/root` 与已装软件包，工作区不受影响）与卸载；镜像源可选清华、中科大、阿里云、官方或自定义 https 地址并测速；软件包页支持搜索、安装、更新、移除，标出由 Agent 在哪个会话安装。
+- 新增本地终端（多页签、修饰键与额外按键行、只读查看后台任务输出）、Linux 文件浏览（排序、多选复制移动压缩删除、修改权限、文本编辑与冲突处理、十六进制预览），以及命令“完整输出”查看器（ANSI 着色、分段、搜索、截断说明、保存与在终端重跑）。系统“文件”应用中出现“Linux 主目录”，工作区选择器可选 `/root` 作为会话工作区。
+- 会话页：Linux 命令的审批卡显示“Linux 命令”类别与作用范围；工具详情标出 Linux 运行环境并提供“完整输出”入口；Agent 可达范围面板的 Linux 行可点按进入环境页。
+- 已知限制：Alpine 中原生 git 尚不能使用 Nexara 保存的 HTTPS 凭据与 SSH 桥；本地终端依赖的 `libtermux.so` 为 4 KB 页对齐；真机验收待完成。
+
 ### 移动工作流能力测试清单
 
 - 新增 `docs/testing/mobile-workflow-capability-checklist.md`，按基础能力、既有远端服务、端到端业务与故障变体组织测试，明确手机直接执行、服务调用和远端调度的交付边界。
