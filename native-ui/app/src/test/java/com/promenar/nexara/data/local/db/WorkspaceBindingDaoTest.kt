@@ -41,7 +41,8 @@ class WorkspaceBindingDaoTest {
 
     @Test
     fun `Linux主目录使用现有字符串列且登记与原始数据库读取兼容`(): Unit = runBlocking {
-        val first = db.workspaceDao().register(workspace("linux", WorkspaceEntity.KIND_LINUX_HOME, "/root#" + "a".repeat(64)))
+        val first = db.workspaceDao().register(workspace("linux", WorkspaceEntity.KIND_LINUX_HOME,
+            "/root#nx1:00000000-0000-4000-8000-000000000001|" + "a".repeat(64)))
         assertThat(db.workspaceDao().register(first.copy(id = "duplicate"))).isEqualTo(first)
         db.openHelper.readableDatabase.query("SELECT kind, location FROM workspaces WHERE id = 'linux'").use {
             assertThat(it.moveToFirst()).isTrue()
@@ -49,6 +50,8 @@ class WorkspaceBindingDaoTest {
             assertThat(it.getString(1)).isEqualTo(first.location)
         }
         assertThat(WorkspaceEntity.isValidLocation(WorkspaceEntity.KIND_LINUX_HOME, "/root/a")).isFalse()
+        // 含设备号的旧身份格式不迁移，直接视为无效。
+        assertThat(WorkspaceEntity.isValidLocation(WorkspaceEntity.KIND_LINUX_HOME, "/root#" + "a".repeat(64))).isFalse()
     }
 
     @Test

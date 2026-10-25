@@ -70,9 +70,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
 import com.promenar.nexara.ui.common.ModelBrandIcon
 import com.promenar.nexara.ui.common.NexaraBackButton
+import com.promenar.nexara.ui.common.NexaraMetaSeparator
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -1631,51 +1633,66 @@ fun ChatTopBar(
     )
     Box {
     TopAppBar(
-        expandedHeight = if (git != null) 64.dp else 56.dp,
+        expandedHeight = if (git != null || runMode != null) 64.dp else 56.dp,
         windowInsets = windowInsets,
         title = {
+            // 标题独占首行；运行模式与 Git 合并为其下的状态行，标题再长也不挤动模式标识。
+            val statusLine = git != null || runMode != null
             Column {
-              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                        .heightIn(min = if (git != null) 32.dp else 48.dp)
+                    modifier = Modifier
+                        .heightIn(min = if (statusLine) 32.dp else 48.dp)
                         .clickable(role = Role.Button, onClickLabel = stringResource(R.string.chat_menu_rename), onClick = onRename)
                         .wrapContentHeight(Alignment.CenterVertically)
                         .testTag("chat_top_title"),
                 )
-                // 运行模式标识只在侧载版出现；触控区借到 48dp，视觉高度保持标签大小。
-                if (runMode != null) {
-                    com.promenar.nexara.ui.chat.runmode.RunModeChip(runMode.mode, runMode.unavailable, onClick = onRunMode)
-                }
-              }
-                // 分支 · 改动数 · ↑领先，点开 Git 面板；标题与 Git 行各自是独立的点按目标。
-                if (git != null) {
-                    val line = com.promenar.nexara.ui.git.gitSummaryLine(git, compactChanges = true)
-                    val description = stringResource(R.string.git_top_bar_cd, line)
-                    // 长分支名先从中间缩短，仍放不下时只截分支名，改动数与领先落后始终完整。
-                    val suffix = com.promenar.nexara.ui.git.gitSummarySuffix(git, compactChanges = true)
+                if (statusLine) Row(verticalAlignment = Alignment.CenterVertically) {
                     val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.heightIn(min = 24.dp)
-                            .clickable(role = Role.Button, onClick = onOpenGit)
-                            .clearAndSetSemantics { contentDescription = description }
-                            .testTag(UiTags.CHAT_GIT_LINE),
-                    ) {
-                        Text(
-                            text = com.promenar.nexara.ui.git.shortenMiddle(line.removeSuffix(suffix), 22),
-                            style = style,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Text(text = suffix, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                    // 运行模式标识只在侧载版出现；模式、分支各是独立的点按目标。
+                    if (runMode != null) {
+                        com.promenar.nexara.ui.chat.runmode.RunModeChip(runMode.mode, runMode.unavailable, onClick = onRunMode)
+                    }
+                    if (runMode != null && git != null) {
+                        Text(" $NexaraMetaSeparator ", style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                    }
+                    // 分支 · 改动数 · ↑领先，点开 Git 面板。
+                    if (git != null) {
+                        val line = com.promenar.nexara.ui.git.gitSummaryLine(git, compactChanges = true)
+                        val description = stringResource(R.string.git_top_bar_cd, line)
+                        // 长分支名先从中间缩短，仍放不下时只截分支名，改动数与领先落后始终完整。
+                        val suffix = com.promenar.nexara.ui.git.gitSummarySuffix(git, compactChanges = true)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.weight(1f, fill = false)
+                                .heightIn(min = 24.dp)
+                                .clickable(role = Role.Button, onClick = onOpenGit)
+                                .clearAndSetSemantics { contentDescription = description }
+                                .testTag(UiTags.CHAT_GIT_LINE),
+                        ) {
+                            Icon(
+                                Icons.Rounded.AccountTree,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = com.promenar.nexara.ui.git.shortenMiddle(line.removeSuffix(suffix), 22),
+                                    style = style,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                Text(text = suffix, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                            }
+                        }
                     }
                 }
             }

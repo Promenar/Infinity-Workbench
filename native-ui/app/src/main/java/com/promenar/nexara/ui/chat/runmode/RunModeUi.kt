@@ -3,7 +3,7 @@ package com.promenar.nexara.ui.chat.runmode
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -21,10 +23,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,10 +34,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -107,35 +109,51 @@ fun SessionRunMode?.labelRes(): Int = when (this) {
     null -> R.string.run_mode_unset
 }
 
-/** 顶栏标题旁的模式标识；Linux 不可用时换成警示样式，点按回到检查点。 */
+/**
+ * 顶栏状态行开头的模式标识：图标加文字，不画边框，与其后的 Git 信息同一行同一字号。
+ * Linux 用主色；内置用次要文字色；Linux 不可用时换成警示图标与警示色（读屏说明不可用），点按回到检查点。
+ */
 @Composable
 fun RunModeChip(mode: SessionRunMode?, unavailable: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val label = stringResource(mode.labelRes())
     val description = if (unavailable) stringResource(R.string.run_mode_chip_unavailable_cd, label)
         else stringResource(R.string.run_mode_chip_cd, label)
     val colors = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        color = if (unavailable) colors.tertiaryContainer else colors.surfaceContainerHigh,
-        contentColor = if (unavailable) colors.onTertiaryContainer else colors.onSurfaceVariant,
-        border = if (unavailable) null else BorderStroke(1.dp, colors.outlineVariant),
+    val tint = when {
+        unavailable -> colors.tertiary
+        mode == SessionRunMode.LINUX -> colors.primary
+        else -> colors.onSurfaceVariant
+    }
+    Row(
         modifier = modifier
-            .minimumInteractiveComponentSize()
-            .semantics(mergeDescendants = true) {
+            .heightIn(min = 24.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .clearAndSetSemantics {
                 role = Role.Button
                 contentDescription = description
             }
             .testTag(RunModeTags.CHIP),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (unavailable) Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(14.dp))
-            Text(label, style = NexaraTypography.labelMedium, maxLines = 1)
-        }
+        Icon(
+            imageVector = when {
+                unavailable -> Icons.Rounded.WarningAmber
+                mode == SessionRunMode.LINUX -> Icons.Rounded.Terminal
+                else -> Icons.Rounded.Inventory2
+            },
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = label,
+            style = NexaraTypography.labelMedium,
+            color = tint,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 

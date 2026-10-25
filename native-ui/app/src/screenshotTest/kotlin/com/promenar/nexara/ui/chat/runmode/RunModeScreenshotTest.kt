@@ -39,15 +39,23 @@ private fun RunModePreview(mode: NexaraThemeMode, content: @Composable () -> Uni
 private val Loss = LinuxResetLossSummary(rootfsBytes = 420L shl 20, rootHomeBytes = 96L shl 20, otherHomeBytes = 0,
     installedPackages = List(38) { "pkg$it" }, unreadablePaths = listOf("/var/cache"))
 
-// 顶栏模式标识（可用 / 不可用）与 C1 修复检查点。
+private val PreviewGit = com.promenar.nexara.ui.git.GitEntrySummary.Repository(
+    branch = "master", detached = false, headShortSha = "cf2a667", unborn = false,
+    changeCount = 1, truncated = false, ahead = null, behind = null,
+)
+
+// 顶栏状态行（长标题 + Linux + Git、内置无 Git、Linux 不可用 + 长分支）与 C1 修复检查点。
 @PreviewTest
 @Preview(name = "运行模式 顶栏与修复 深中360", widthDp = 360, heightDp = 640, locale = "zh-rCN")
 @Composable
 fun runModeTopBarAndUnavailableDarkPreview() = RunModePreview(NexaraThemeMode.DARK) {
-    ChatTopBar("修复构建脚本", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
-        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = false))
+    ChatTopBar("在会话目录中创建文件并返回完整路径与说明", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
+        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = false), git = PreviewGit)
+    ChatTopBar("新对话", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
+        runMode = RunModeBadge(SessionRunMode.BUILTIN, unavailable = false))
     ChatTopBar("工作环境能力探测", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
-        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = true))
+        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = true),
+        git = PreviewGit.copy(branch = "feature/very-long-branch-name-for-layout", changeCount = 0, ahead = 2, behind = null))
     Spacer(Modifier.height(16.dp))
     RunModeCheckpointContent(RunModeCheckpointStage.Unavailable(RunModeUnavailableReason.BROKEN), canExport = true,
         message = null, actions = RunModeCheckpointActions())
