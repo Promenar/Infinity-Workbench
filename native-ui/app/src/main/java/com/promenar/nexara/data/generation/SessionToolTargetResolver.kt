@@ -8,6 +8,8 @@ import com.promenar.nexara.domain.tool.ToolArgumentsValidator
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonPrimitive
+import com.promenar.nexara.domain.model.SessionRunMode
+import com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess
 
 /** UUID 必须在当前会话工作区内解析；解析失败不产生可记住的授权目标。 */
 suspend fun resolveSessionToolTarget(
@@ -18,10 +20,15 @@ suspend fun resolveSessionToolTarget(
     mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
     sshSessionHost: ((String, String) -> String?)? = null,
+    linuxFiles: LinuxSessionExternalWorkspaceAccess? = null,
 ): String? {
     val args = (ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid)?.arguments ?: return null
     val paths = mutableMapOf<String, String>()
     try {
+        val usesLinux = session.runMode == SessionRunMode.LINUX
+        if (usesLinux && tool.mcpServerId == null && tool.sourceId == "builtin" &&
+            tool.function.name in setOf("read_file", "write_file", "patch_file", "diff_file", "delete_file", "create_file", "create_directory", "move_file", "list_files", "search_files")
+        ) return linuxFiles?.executionTarget(session.id, tool, args)
         val visibleMounts = mounts?.visible(session.id).orEmpty()
         // 自选目录工作区以空别名挂载承载 `/`：路径授权绑定工作区身份，切换工作区后旧授权不再适用。
         val workspaceMount = mounts?.workspaceMount(session.id)
@@ -49,7 +56,7 @@ suspend fun resolveSessionToolTarget(
             val host = sshHostStore?.find(alias) ?: return null
             mapOf(alias to host.executionIdentity())
         } else emptyMap()
-        val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities) ?: return null
+        val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities, usesLinux = usesLinux) ?: return null
         if (mounts == null) return target
         val parts = kotlinx.serialization.json.Json.parseToJsonElement(target) as? kotlinx.serialization.json.JsonArray ?: return null
         val metadata = parts.lastOrNull() as? kotlinx.serialization.json.JsonObject

@@ -45,6 +45,7 @@ class ProcessLinuxRuntime(
     @Volatile private var installJob: Job? = null
     @Volatile private var lastDns: LinuxDnsResult? = null
     @Volatile private var bootstrapProgress: LinuxInstallProgress? = null
+    @Volatile private var preserveHomeDuringRepair = false
     private var lastDiagnostics: LinuxDiagnostics? = null
 
     init {
@@ -83,11 +84,12 @@ class ProcessLinuxRuntime(
         installJob?.cancel()
     }
 
-    private suspend fun install(options: LinuxInstallOptions, maintenance: Boolean = false) {
+    private suspend fun install(options: LinuxInstallOptions, maintenance: Boolean = false, repairing: Boolean = false) {
         var progress = emptyProgress()
         fun publish() {
             bootstrapProgress = progress
-            if (!maintenance) mutableState.value = LinuxRuntimeState.Installing(progress)
+            mutableState.value = if (maintenance) LinuxRuntimeState.Maintaining(LinuxMaintenance.RESETTING, progress)
+                else LinuxRuntimeState.Installing(progress)
         }
         fun update(step: LinuxInstallStep, status: LinuxStepStatus, detail: LinuxStepDetail? = null, duration: Long? = null, output: String = "") {
             val steps = progress.steps.map { if (it.step == step) LinuxInstallStepState(step, status, duration, detail) else it }
@@ -102,6 +104,8 @@ class ProcessLinuxRuntime(
                 operationSummary(maintenance), 0, System.currentTimeMillis()), { owner.cancel() }) {
                 if (!proot.isAvailable) throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.PROOT_MISSING))
                 val existing = runCatching { installer.readRecord() }.getOrNull()
+                val repairBaseOnly = repairing || (existing == null && java.nio.file.Files.exists(paths.rootfs.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                preserveHomeDuringRepair = repairBaseOnly
                 progress = progress.copy(steps = progress.steps.map { step ->
                     step.copy(status = existing?.steps?.get(step.step)?.takeIf { it in TERMINAL } ?: LinuxStepStatus.PENDING)
                 })
@@ -123,16 +127,16 @@ class ProcessLinuxRuntime(
                             val result = refreshDns()
                             try {
                                 val mirror = mirrors()
-                                mirror.select(mirror.selected.value)
-                                installer.rememberGeneratedConfiguration("etc/apk/repositories")
+                                if (!repairBaseOnly) {
+                                    mirror.select(mirror.selected.value)
+                                    installer.rememberGeneratedConfiguration("etc/apk/repositories")
+                                }
                             } catch (cancelled: CancellationException) { throw cancelled }
                             catch (error: Exception) { throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.NETWORK, error.message), error) }
-                            val proxy = launchBuilder.build(LinuxLaunchSpec(emptyList())).environment.keys.any { it.equals("HTTPS_PROXY", true) || it.equals("ALL_PROXY", true) }
+                            val proxy = buildLaunch(LinuxLaunchSpec(emptyList())).environment.keys.any { it.equals("HTTPS_PROXY", true) || it.equals("ALL_PROXY", true) }
                             detail = LinuxStepDetail.Network(result.servers, result.viaVpn, proxy)
                         }
-                        LinuxInstallStep.COMMON_TOOLS -> if (!options.installCommonTools) {
-                            status = LinuxStepStatus.SKIPPED
-                        } else {
+                        LinuxInstallStep.COMMON_TOOLS -> {
                             coroutineScope {
                                 val manager = packages()
                                 val observer = launch(start = CoroutineStart.UNDISPATCHED) {
@@ -143,8 +147,26 @@ class ProcessLinuxRuntime(
                                     }
                                 }
                                 try {
-                                    val result = manager.install(LinuxPackagePresets.COMMON, LinuxPackageOrigin.Preset)
-                                    if (!result.success) throw LinuxRootfsException(result.failure ?: LinuxFailure(LinuxFailureCode.PACKAGE_INSTALL_FAILED, result.output.takeLast(4096)))
+                                    val installed = if (repairBaseOnly) checkPackageStateForRepair() else emptySet()
+                                    val names = if (repairBaseOnly) LinuxPackagePresets.BASE else options.packages
+                                    val toInstall = if (repairBaseOnly) names.filterNot { it in installed } else names
+                                    if (toInstall.isNotEmpty()) {
+                                        val result = manager.install(toInstall, LinuxPackageOrigin.Preset)
+                                        if (!result.success) throw LinuxRootfsException(result.failure ?: LinuxFailure(LinuxFailureCode.PACKAGE_INSTALL_FAILED, result.output.takeLast(4096)))
+                                    }
+                                    // 已登记的包直接 fix，保留来源；全部基础包均检查，避免只看入口文件而漏掉损坏依赖。
+                                    if (repairBaseOnly) {
+                                        val fixed = execute(buildLaunch(LinuxLaunchSpec(listOf("/sbin/apk", "--no-interactive", "--no-progress", "fix", "--reinstall", "--depends", "--") + names)), 120)
+                                        if (fixed.exitCode != 0 || fixed.timedOut || fixed.stoppedByUser) {
+                                            val reason = when {
+                                                fixed.timedOut -> "软件包修复超时"
+                                                fixed.stoppedByUser -> "用户终止了软件包修复"
+                                                else -> "exit=${fixed.exitCode}"
+                                            }
+                                            throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.PACKAGE_INSTALL_FAILED,
+                                                listOf(fixed.stdout, fixed.stderr, reason).filter { it.isNotBlank() }.joinToString("\n").takeLast(4096)))
+                                        }
+                                    }
                                 } catch (cancelled: CancellationException) { throw cancelled }
                                 catch (error: LinuxRootfsException) { throw error }
                                 catch (error: Exception) { throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.PACKAGE_INSTALL_FAILED, error.message), error) }
@@ -170,7 +192,75 @@ class ProcessLinuxRuntime(
             val failure = (error as? LinuxRootfsException)?.failure ?: LinuxFailure(LinuxFailureCode.IO, error.message)
             val failed = progress.steps.map { if (it.status == LinuxStepStatus.RUNNING) it.copy(status = LinuxStepStatus.FAILED) else it }
             mutableState.value = LinuxRuntimeState.InstallInterrupted(progress.copy(steps = failed), failure)
-        } finally { bootstrapProgress = null }
+        } finally { bootstrapProgress = null; preserveHomeDuringRepair = false }
+    }
+
+    private fun checkPackageStateForRepair(): Set<String> {
+        fun damaged(): Nothing = throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.ROOTFS_DAMAGED,
+            "软件包状态缺失或格式损坏；已保留用户文件，请导出或手动处理"))
+        try {
+            for (relative in listOf("etc/apk/world", "lib/apk/db/installed")) {
+                val file = LinuxPackageStorage.checked(paths.rootfs, relative)
+                if (!java.nio.file.Files.isRegularFile(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) damaged()
+            }
+            val names = mutableSetOf<String>()
+            var name: String? = null
+            var version: String? = null
+            var fields = 0
+            fun finish() {
+                if (fields == 0) return
+                val packageName = name ?: damaged()
+                if (!LinuxPackageParsing.validName(packageName) || version.isNullOrBlank() || !names.add(packageName)) damaged()
+                name = null; version = null; fields = 0
+            }
+            LinuxPackageStorage.read(paths.rootfs, "lib/apk/db/installed").lineSequence().forEach { line ->
+                if (line.isBlank()) finish()
+                else {
+                    if (line.length < 2 || !line[0].isLetter() || line[1] != ':') damaged()
+                    fields++
+                    when (line[0]) {
+                        'P' -> { if (name != null) damaged(); name = line.substring(2) }
+                        'V' -> { if (version != null) damaged(); version = line.substring(2) }
+                    }
+                }
+            }
+            finish()
+            if (names.isEmpty()) damaged()
+            return names
+        } catch (error: LinuxRootfsException) { throw error }
+        catch (_: Exception) { damaged() }
+    }
+
+    private fun buildLaunch(spec: LinuxLaunchSpec) = launchBuilder.build(spec, maintainHomeConfiguration = !preserveHomeDuringRepair)
+
+    override suspend fun repair(): LinuxRepairResult = withContext(dispatcher) {
+        lifecycle.withLock {
+            if (state.value is LinuxRuntimeState.Ready) return@withLock LinuxRepairResult(true)
+            if (state.value is LinuxRuntimeState.Unavailable || state.value is LinuxRuntimeState.Maintaining) {
+                return@withLock LinuxRepairResult(false, LinuxFailure(LinuxFailureCode.ROOTFS_DAMAGED, "Linux 环境当前无法修复"))
+            }
+            mutableState.value = LinuxRuntimeState.Installing(emptyProgress())
+            val owner = currentCoroutineContext().job
+            installJob = owner
+            try {
+                if (!proot.isAvailable) throw LinuxRootfsException(LinuxFailure(LinuxFailureCode.PROOT_MISSING))
+                runInterruptible { installer.repairMissingBaseFiles() }
+                install(LinuxInstallOptions(false), repairing = true)
+                when (val result = state.value) {
+                    is LinuxRuntimeState.Ready -> LinuxRepairResult(true)
+                    is LinuxRuntimeState.InstallInterrupted -> LinuxRepairResult(false, result.failure)
+                    is LinuxRuntimeState.Broken -> LinuxRepairResult(false, result.failure)
+                    else -> LinuxRepairResult(false, LinuxFailure(LinuxFailureCode.IO, "Linux 修复未完成"))
+                }
+            } catch (cancelled: CancellationException) {
+                mutableState.value = LinuxRuntimeState.InstallInterrupted(emptyProgress(), null)
+                throw cancelled
+            } catch (error: Exception) {
+                val failure = (error as? LinuxRootfsException)?.failure ?: LinuxFailure(LinuxFailureCode.IO, error.message)
+                mutableState.value = LinuxRuntimeState.Broken(failure)
+                LinuxRepairResult(false, failure)
+            } finally { if (installJob === owner) installJob = null }
+        }
     }
 
     override suspend fun prepareLaunch(spec: LinuxLaunchSpec): LinuxProcessLaunch = withContext(dispatcher) {
@@ -178,13 +268,13 @@ class ProcessLinuxRuntime(
         // 包安装和镜像提供者在引导阶段也通过同一接口运行；解包完成前不能启动。
         val installing = current as? LinuxRuntimeState.Installing
         val bootstrapping = installing?.progress ?: bootstrapProgress?.takeIf {
-            current == LinuxRuntimeState.Maintaining(LinuxMaintenance.RESETTING)
+            (current as? LinuxRuntimeState.Maintaining)?.operation == LinuxMaintenance.RESETTING
         }
         val canBootstrap = bootstrapping?.steps?.firstOrNull()?.status == LinuxStepStatus.DONE
         if (current !is LinuxRuntimeState.Ready && !canBootstrap) throw LinuxUnavailableException(current)
         checkHealthy()
         refreshDns()
-        launchBuilder.build(spec)
+        buildLaunch(spec)
     }
 
     override suspend fun runDiagnostics(): LinuxDiagnostics = withContext(dispatcher) {
@@ -205,18 +295,20 @@ class ProcessLinuxRuntime(
         val shell = diagnosticCheck("shell", "/bin/sh -c true")
         val startupMs = (System.nanoTime() - started) / 1_000_000
         val release = diagnosticCheck("release", "cat /etc/alpine-release") { it.trim() == installer.metadata.version }
+        val bash = diagnosticCheck("bash", "/bin/bash -c true")
+        val curl = diagnosticCheck("curl", "/usr/bin/curl --version") { it.startsWith("curl ") }
         val dnsCheck = diagnosticCheck("dns", "if command -v nslookup >/dev/null 2>&1; then nslookup dl-cdn.alpinelinux.org; else getent hosts dl-cdn.alpinelinux.org; fi")
         val source = LinuxDiagnosticCheck("dns-source", !network.fallback, messages(
             when { network.fallback -> LinuxRuntimeMessage.DNS_PUBLIC; network.viaVpn -> LinuxRuntimeMessage.DNS_VPN; else -> LinuxRuntimeMessage.DNS_ACTIVE },
             network.servers.joinToString(),
         ))
         val certificates = LinuxDiagnosticCheck("ca-certificates", LinuxRootfsFiles.isGuestFile(paths.rootfs, File(paths.rootfs, "etc/ssl/certs/ca-certificates.crt")), messages(LinuxRuntimeMessage.ALPINE_CA))
-        return LinuxDiagnostics(shell.passed && release.passed, System.currentTimeMillis(), startupMs,
-            listOf(shell, release, dnsCheck, source, certificates)).also { lastDiagnostics = it }
+        return LinuxDiagnostics(shell.passed && release.passed && bash.passed && curl.passed && certificates.passed, System.currentTimeMillis(), startupMs,
+            listOf(shell, release, bash, curl, dnsCheck, source, certificates)).also { lastDiagnostics = it }
     }
 
     private suspend fun diagnosticCheck(id: String, command: String, validate: (String) -> Boolean = { true }): LinuxDiagnosticCheck = try {
-        val output = execute(launchBuilder.build(LinuxLaunchSpec.shell(command)), 15)
+        val output = execute(buildLaunch(LinuxLaunchSpec.shell(command)), 15)
         LinuxDiagnosticCheck(id, output.exitCode == 0 && !output.timedOut && validate(output.stdout),
             (output.stdout + output.stderr).takeLast(4096).ifBlank { if (output.timedOut) messages(LinuxRuntimeMessage.TIMEOUT) else "exit=${output.exitCode}" })
     } catch (cancelled: CancellationException) { throw cancelled }
@@ -231,8 +323,7 @@ class ProcessLinuxRuntime(
             mutableState.value = LinuxRuntimeState.Maintaining(LinuxMaintenance.RESETTING)
             try {
                 runInterruptible { installer.install(force = true, preserveConfiguration = true) }
-                // 基础系统不含常用工具；生成配置由安装器按内容摘要保留。
-                installer.completeStep(LinuxInstallStep.COMMON_TOOLS, LinuxStepStatus.SKIPPED)
+                // 重置补齐基础包，不自动恢复附加包；生成配置由安装器按内容摘要保留。
                 install(LinuxInstallOptions(false), maintenance = true)
             } catch (cancelled: CancellationException) { mutableState.value = deriveState(); throw cancelled }
             catch (error: Exception) { mutableState.value = LinuxRuntimeState.Broken((error as? LinuxRootfsException)?.failure ?: LinuxFailure(LinuxFailureCode.IO, error.message)) }

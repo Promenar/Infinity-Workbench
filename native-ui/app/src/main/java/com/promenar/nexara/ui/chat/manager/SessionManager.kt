@@ -42,7 +42,7 @@ class SessionManager(
 
         sessionRepository.create(enrichedSession)
 
-        store.upsertSession(enrichedSession)
+        store.upsertSession(sessionRepository.getById(enrichedSession.id) ?: enrichedSession)
     }
 
     suspend fun updateSession(id: String, updates: Map<String, Any?>) {

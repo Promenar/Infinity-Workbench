@@ -59,7 +59,7 @@ class LinuxModule(
     // ── 本地终端 ──
     val terminals: LinuxTerminalSessions by lazy {
         if (unavailable) UnavailableLinuxTerminals()
-        else LinuxTerminalSessionsImpl(runtime, scope, host)
+        else LinuxTerminalSessionsImpl(runtime, scope, host, sessionHome = host.sessionHome, reconcileSession = host.reconcileSession)
     }
 }
 
@@ -67,6 +67,10 @@ class LinuxModule(
 class LinuxHostServices(
     /** 安装、后台命令与终端会话的前台服务保活。 */
     val keepAlive: ExecKeepAlive,
+    /** 会话私有目录，独立于会话选中的主工作区。 */
+    val sessionHome: suspend (sessionId: String) -> File? = { null },
+    /** 将终端写入的会话私有空间收敛到 Room；启动前也执行以恢复上次意外退出。 */
+    val reconcileSession: suspend (sessionId: String) -> Unit = {},
     /** 会话工作区的宿主根目录，不持工作区写锁；会话工作区不可用时为 null。 */
     val sessionWorkspaceRoot: suspend (sessionId: String) -> File?,
 )

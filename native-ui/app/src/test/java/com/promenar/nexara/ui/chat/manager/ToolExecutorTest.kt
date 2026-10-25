@@ -415,6 +415,51 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `Linux命令定义通过账本校验后到达执行后端`() = testScope.runTest {
+        seedSessionWithAssistant()
+        store.updateSession("s1") { it.copy(runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX) }
+        val backend = mockk<com.promenar.nexara.data.exec.BuiltinExecService>()
+        every { backend.pipAvailable } returns false
+        coEvery { backend.runShell(any(), any(), any(), any(), any(), any(), any()) } returns
+            com.promenar.nexara.domain.tool.CommandToolResult(exitCode = 0, stdout = "linux")
+        val skill = com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(backend)
+        val registry = singleSkillRegistry(skill)
+        val settings = mockk<SharedPreferences>(relaxed = true)
+        every { settings.getStringSet(any(), any()) } returns null
+        val resolver = DefaultSessionToolResolver(settings, registry)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, registry, resolver, ledger = ledger)
+        executor.executeTools("s1", "m1", listOf(ToolCall("linux-shell", "shell_exec", "{\"command\":\"printf linux\"}")),
+            preparedTools = resolver.resolve(store.getSession("s1")!!))
+        io.mockk.coVerify(exactly = 1) {
+            backend.runShell("workspace-root-1", "s1", "printf linux", null, 60, any(), com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+        }
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "linux-shell"))).isEqualTo(ToolLedgerState.SUCCEEDED)
+    }
+
+    @Test
+    fun `模式切换窗口保留准入时的命令模式快照`() = testScope.runTest {
+        seedSessionWithAssistant()
+        store.updateSession("s1") { it.copy(runMode = com.promenar.nexara.domain.model.SessionRunMode.BUILTIN) }
+        val backend = mockk<com.promenar.nexara.data.exec.BuiltinExecService>()
+        every { backend.pipAvailable } returns false
+        coEvery { backend.runShell(any(), any(), any(), any(), any(), any(), any()) } returns
+            com.promenar.nexara.domain.tool.CommandToolResult(errorCode = "EXEC_MODE_CHANGED")
+        val registry = singleSkillRegistry(com.promenar.nexara.ui.chat.manager.skills.ShellExecSkill(backend))
+        val settings = mockk<SharedPreferences>(relaxed = true)
+        every { settings.getStringSet(any(), any()) } returns null
+        val resolver = DefaultSessionToolResolver(settings, registry)
+        val executor = ToolExecutor(store, messageManager, registry, resolver, ledger = RecordingLedger(), hooks = ToolExecutorHooks(
+            beforeAppendStep = { store.updateSession("s1") { it.copy(runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX) } },
+        ))
+        executor.executeTools("s1", "m1", listOf(ToolCall("mode-race", "shell_exec", "{\"command\":\"touch forbidden\"}")),
+            preparedTools = resolver.resolve(store.getSession("s1")!!))
+        io.mockk.coVerify(exactly = 1) {
+            backend.runShell("workspace-root-1", "s1", "touch forbidden", null, 60, any(), com.promenar.nexara.domain.model.SessionRunMode.BUILTIN)
+        }
+    }
+
+    @Test
     fun preparedSnapshotPreservesNestedTypedArguments() = testScope.runTest {
         seedSessionWithAssistant()
         var recorded: JsonObject? = null

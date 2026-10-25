@@ -18,13 +18,14 @@ internal fun linuxExecSpec(
     kind: String,
     mounts: List<ExternalMount>,
     skills: File,
+    sessionHome: File = workspace,
 ): LinuxLaunchSpec {
     val binds = mounts.filterNot { it.isUserSkills }.mapNotNull { mount ->
         if (runCatching { ExternalMountPaths.validateAlias(mount.alias) }.getOrNull() != mount.alias) return@mapNotNull null
         val path = ExternalMountPaths.commandAccess(mount).realPath ?: return@mapNotNull null
         LinuxBind(File(path), "/mnt/${mount.alias}")
     } + LinuxBind(skills, "/mnt/skills")
-    return LinuxLaunchSpec.shell(command, workspace, binds).copy(environment = mapOf(
+    return LinuxLaunchSpec.shell(command, workspace, binds).copy(sessionHome = sessionHome, environment = mapOf(
         "NEXARA_WORKSPACE" to "/workspace",
         "NEXARA_WORKSPACE_KIND" to kind,
         "NEXARA_BACKEND" to "linux",

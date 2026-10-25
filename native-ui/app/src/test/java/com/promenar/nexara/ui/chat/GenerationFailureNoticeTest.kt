@@ -28,6 +28,8 @@ class GenerationFailureNoticeTest {
             GenerationFailureCode.PERSISTENCE to R.string.generation_failure_persistence,
             GenerationFailureCode.TOOL_BUDGET_EXHAUSTED to R.string.generation_failure_tool_budget,
             GenerationFailureCode.TAILNET_UNAVAILABLE to R.string.generation_failure_tailnet_failed,
+            GenerationFailureCode.RUN_MODE_REQUIRED to R.string.run_mode_required,
+            GenerationFailureCode.LINUX_UNAVAILABLE to R.string.run_mode_linux_unavailable,
             GenerationFailureCode.UNKNOWN to R.string.generation_failure_unknown,
         )
 

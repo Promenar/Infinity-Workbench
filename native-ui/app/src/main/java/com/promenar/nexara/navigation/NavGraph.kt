@@ -281,6 +281,7 @@ fun NexaraNavGraph(
                                     },
                                     newSessionId = IdGenerator::session,
                                     createSession = app.sessionRepository::create,
+                                    loadSession = app.sessionRepository::getById,
                                     deleteSession = app.sessionRepository::delete,
                                     deleteAgent = app.agentRepository::delete,
                                     chatStore = app.chatStore,

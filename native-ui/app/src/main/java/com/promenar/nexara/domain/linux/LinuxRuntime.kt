@@ -12,10 +12,10 @@ import java.io.File
 interface LinuxRuntime {
     val state: StateFlow<LinuxRuntimeState>
 
-    /** 用户开关：关闭后 `shell_exec` 与后台任务改用系统 sh；终端与文件浏览不受影响。默认开启。 */
+    /** 新会话默认使用 Linux；已确定运行模式的会话不随此偏好变化。默认开启。 */
     val agentEnabled: StateFlow<Boolean>
 
-    /** 环境已就绪且 [agentEnabled] 为 true 时，Agent 命令走 Linux。 */
+    /** 兼容旧调用方的默认偏好可用性查询；命令路由必须使用会话运行模式。 */
     val agentUsesLinux: Boolean
         get() = agentEnabled.value && state.value is LinuxRuntimeState.Ready
 
@@ -29,6 +29,9 @@ interface LinuxRuntime {
 
     /** 取消正在进行的安装；已解包的内容保留，状态转为 [LinuxRuntimeState.InstallInterrupted]。 */
     fun cancelInstall()
+
+    /** 补齐缺失基础文件与基础软件包，保留用户目录、已有文件和包数据库。进度经 [state] 发布。 */
+    suspend fun repair(): LinuxRepairResult = LinuxRepairResult(false, LinuxFailure(LinuxFailureCode.ROOTFS_DAMAGED))
 
     /** 统计占用；目录遍历在 IO 线程完成。 */
     suspend fun storageUsage(): LinuxStorageUsage
@@ -75,7 +78,7 @@ sealed interface LinuxRuntimeState {
     data class Ready(val info: LinuxEnvironmentInfo) : LinuxRuntimeState
 
     /** 重置或卸载进行中。 */
-    data class Maintaining(val operation: LinuxMaintenance) : LinuxRuntimeState
+    data class Maintaining(val operation: LinuxMaintenance, val progress: LinuxInstallProgress? = null) : LinuxRuntimeState
 
     /** 已安装但无法运行，例如 rootfs 缺失关键文件或 proot 库不存在；界面提供重置与卸载。 */
     data class Broken(val failure: LinuxFailure) : LinuxRuntimeState
@@ -101,9 +104,14 @@ enum class LinuxFailureCode {
 }
 
 data class LinuxInstallOptions(
-    /** 是否联网安装 [LinuxPackagePresets.COMMON]。 */
+    /** 兼容入口；false 表示不选附加包，基础包始终安装。显式 [optionalPackages] 优先。 */
     val installCommonTools: Boolean = true,
-)
+    val optionalPackages: Set<LinuxOptionalPackage> = if (installCommonTools) LinuxOptionalPackage.entries.toSet() else emptySet(),
+) {
+    val packages: List<String> get() = LinuxPackagePresets.BASE + LinuxPackagePresets.optional(optionalPackages)
+}
+
+data class LinuxRepairResult(val success: Boolean, val failure: LinuxFailure? = null)
 
 enum class LinuxInstallStep { UNPACK, NETWORK, COMMON_TOOLS, WORKSPACE, DIAGNOSTICS }
 
@@ -182,6 +190,8 @@ data class LinuxLaunchSpec(
     val workingDirectory: String? = null,
     /** 追加的环境变量，覆盖默认值（PATH、HOME、LANG、TERM、代理、PIP_BREAK_SYSTEM_PACKAGES 等）。 */
     val environment: Map<String, String> = emptyMap(),
+    /** 会话私有空间，仅绑定到 `/home/session`，独立于当前主工作区。 */
+    val sessionHome: File? = null,
 ) {
     companion object {
         /** `sh -c <command>`；有 bash 时仍用 POSIX sh，保持与系统 sh 一致的语义。 */

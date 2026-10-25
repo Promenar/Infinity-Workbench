@@ -621,7 +621,8 @@ class ApprovalManagerTest {
         val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
         val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
             Session(id = "s1", agentId = "a1"), tool, call.arguments, null, sshHostStore = sshHosts,
-        ) { owner, id -> leases[owner to id] }
+            sshSessionHost = { owner, id -> leases[owner to id] },
+        )
         assertThat(ToolExecutionTargets.display(requireNotNull(initialTarget))).isEqualTo("local · echo ok")
         assertThat(initialTarget).contains("\"sshHostId\":\"local-id\"")
         val grants = ToolAllowlistStore(grantFiles.newFolder("ssh-grants"))
@@ -657,7 +658,8 @@ class ApprovalManagerTest {
         val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
         val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
             Session(id = "s1", agentId = "a1"), tool, call.arguments, null, sshHostStore = sshHosts,
-        ) { owner, id -> leases[owner to id] }
+            sshSessionHost = { owner, id -> leases[owner to id] },
+        )
         val grants = ToolAllowlistStore(grantFiles.newFolder("ssh-rejected-grants"))
         approvalManager = sshApprovalManager(tool, leases, grants)
         val request = seedExactApproval(listOf(call), initialTarget)

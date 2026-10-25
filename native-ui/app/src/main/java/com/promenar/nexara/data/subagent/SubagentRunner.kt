@@ -83,7 +83,7 @@ class SubagentRunner(
         suspend fun loop(): SubagentRun {
             val first = session() ?: return finish(run, SubagentStatus.CANCELLED, error = SESSION_GONE, publish = ::update)
             val messages = mutableListOf(
-                ProtocolMessage("system", systemPrompt(preset, SubagentLimits.toolset(host.tools(first), initial.toolProfile), first.executionMode)),
+                ProtocolMessage("system", systemPrompt(preset, SubagentLimits.toolset(host.tools(first), initial.toolProfile), first.executionMode, first.runMode)),
                 ProtocolMessage("user", initial.prompt),
             )
             var tokens = 0L
@@ -95,7 +95,7 @@ class SubagentRunner(
                 currentCoroutineContext().ensureActive()
                 val current = session() ?: return finish(run, SubagentStatus.CANCELLED, error = SESSION_GONE, publish = ::update)
                 val tools = SubagentLimits.toolset(host.tools(current), initial.toolProfile)
-                messages[0] = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode))
+                messages[0] = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode, current.runMode))
                 round++
                 val finalRound = round > run.maxSteps || tokens >= run.maxTokens
                 if (finalRound) messages += ProtocolMessage("user", FINAL_ANSWER_PROMPT)
@@ -196,7 +196,7 @@ class SubagentRunner(
         val session = sessions() ?: return CallOutcome.SessionGone
         val target = host.target(session, tool, call.arguments)
         val mode = ExecutionModeCodec.parseOrWorkspace(session.executionMode.ifEmpty { "workspace" })
-        val needsApproval = ToolExecutionPolicy.requiresApproval(mode, call.name, tool.risk, call.arguments, target)
+        val needsApproval = ToolExecutionPolicy.requiresApproval(mode, call.name, tool.risk, call.arguments, target, usesLinux = session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX)
         if (needsApproval) {
             val preview = approvalPreview(call.name, arguments)
             update(current().copy(status = SubagentStatus.WAITING_APPROVAL, currentTool = call.name), true)
@@ -223,6 +223,7 @@ class SubagentRunner(
         val sink = liveOutput?.open(key) ?: ToolLiveOutputSink.None
         update(current().copy(currentTool = call.name, liveOutputKey = key.takeIf { liveOutput != null }), false)
         val context = object : SkillExecutionContext by parent {
+            override val runMode = session.runMode
             override val approvedExecutionTarget = if (needsApproval) target else null
             override val isApprovalBoundExecution = needsApproval
             override val liveOutput = sink
@@ -322,12 +323,13 @@ class SubagentRunner(
         return RoundResponse(content.toString(), reasoning.toString(), toolCalls, replay, inputTokens, outputTokens, !reported, failure)
     }
 
-    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>, executionMode: String): String = buildString {
+    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>, executionMode: String, runMode: com.promenar.nexara.domain.model.SessionRunMode?): String = buildString {
         append(SYSTEM_PROMPT)
-        append("\n\n").append(com.promenar.nexara.ui.chat.manager.SystemPromptSections.permissions(ExecutionModeCodec.parseOrWorkspace(executionMode)))
+        append("\n\n").append(com.promenar.nexara.ui.chat.manager.SystemPromptSections.permissions(ExecutionModeCodec.parseOrWorkspace(executionMode), runMode = runMode ?: com.promenar.nexara.domain.model.SessionRunMode.BUILTIN))
         preset?.let { append("\n\n").append(it.instruction) }
         if (tools.isEmpty()) append("\n\n本次没有可用工具，请直接根据任务内容作答。")
-        else append("\n\n").append(WORKSPACE_PATHS)
+        else append("\n\n").append(if (runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+            com.promenar.nexara.ui.chat.manager.SystemPromptSections.LINUX_SHELL_GUIDANCE else WORKSPACE_PATHS)
     }
 
     /** 审批卡展示的内容：已知工具用专门的预览，其余工具展示完整参数，用户批准的就是实际执行的。 */

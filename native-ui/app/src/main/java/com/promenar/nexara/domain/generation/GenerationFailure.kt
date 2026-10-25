@@ -26,6 +26,8 @@ enum class GenerationFailureCode {
     TOOL_BUDGET_EXHAUSTED,
     /** 接口在 tailnet 内，内置 Tailscale 未能接入（需要登录、启动失败或等待超时）；请求未发出。 */
     TAILNET_UNAVAILABLE,
+    RUN_MODE_REQUIRED,
+    LINUX_UNAVAILABLE,
     UNKNOWN,
 }
 

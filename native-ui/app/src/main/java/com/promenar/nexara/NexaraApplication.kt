@@ -25,6 +25,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
 import com.promenar.nexara.data.local.db.MIGRATION_22_23
+import com.promenar.nexara.data.local.db.MIGRATION_26_27
 import com.promenar.nexara.data.local.db.MIGRATION_25_26
 import com.promenar.nexara.data.local.db.SessionMountNormalizationCallback
 import com.promenar.nexara.data.local.db.MIGRATION_24_25
@@ -294,7 +295,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
             .addCallback(SessionMountNormalizationCallback { NexaraLogger.logError("SessionMountNormalization", it) })
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
@@ -352,7 +353,30 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val sessionRepository: ISessionRepository by lazy {
-        SessionRepository(database.sessionDao(), database.messageDao())
+        SessionRepository(database.sessionDao(), database.messageDao(), newSessionRunMode = sessionRunModes::newSessionMode)
+    }
+
+    val sessionRunModes by lazy {
+        com.promenar.nexara.data.session.SessionRunModeService(database.sessionDao(), database.workspaceDao(), linux.runtime,
+            onModeChanged = { sessionId, mode -> chatStore.updateSession(sessionId) { it.copy(runMode = mode) } })
+    }
+
+    /** 进入会话和发出模型请求前使用同一检查，失败仅阻断该会话请求。 */
+    suspend fun checkSessionRunMode(sessionId: String): com.promenar.nexara.domain.generation.GenerationFailure? {
+        val code = when (val check = sessionRunModes.check(sessionId)) {
+            is com.promenar.nexara.data.session.SessionRunModeCheck.Available -> {
+                chatStore.updateSession(sessionId) { it.copy(runMode = check.mode) }
+                return null
+            }
+            is com.promenar.nexara.data.session.SessionRunModeCheck.EnvironmentUnavailable -> com.promenar.nexara.domain.generation.GenerationFailureCode.LINUX_UNAVAILABLE
+            else -> com.promenar.nexara.domain.generation.GenerationFailureCode.RUN_MODE_REQUIRED
+        }
+        return com.promenar.nexara.domain.generation.GenerationFailure(code)
+    }
+
+    private suspend fun reconcileSessionHome(sessionId: String) {
+        val root = workspaceRepository.ensureSessionRoot(sessionId)
+        (workspaceRepository as WorkspaceRepository).reconcileSessionWorkspace(root.uuid, sessionId)
     }
 
     val toolAllowlistStore by lazy {
@@ -697,7 +721,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
             arguments: String,
         ) = com.promenar.nexara.data.generation.resolveSessionToolTarget(
-            session, tool, arguments, workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost,
+            session, tool, arguments, workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost, linuxSessionFiles,
         )
 
         override suspend fun isGranted(sessionId: String, toolName: String, target: String) = false
@@ -990,6 +1014,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             tailnetGate = tailnetConnectGate,
             composerQueueStore = composerQueueStore,
             stateBoardRepository = stateBoardRepository,
+            runModeCheck = ::checkSessionRunMode,
+            linuxFiles = linuxSessionFiles,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1065,6 +1091,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             CoroutineScope(SupervisorJob() + Dispatchers.IO),
             com.promenar.nexara.data.linux.LinuxHostServices(
                 keepAlive = commandKeepAlive,
+                sessionHome = { sessionId -> File(workspaceRepository.ensureSessionRoot(sessionId).physicalRootPath) },
+                reconcileSession = ::reconcileSessionHome,
                 sessionWorkspaceRoot = { sessionId ->
                     when (val workspace = sessionWorkspaceResolver.resolve(sessionId)) {
                         is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> workspace.root
@@ -1096,6 +1124,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.background.exec.AndroidExecKeepAlive(this, execRunRegistry,
             com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
     }
+    private val runModeMessages by lazy { com.promenar.nexara.data.exec.RunModeMessages { key -> getString(when (key) {
+                com.promenar.nexara.data.exec.RunModeMessage.LINUX_UNAVAILABLE -> R.string.run_mode_linux_unavailable
+                com.promenar.nexara.data.exec.RunModeMessage.MODE_REQUIRED -> R.string.run_mode_required
+                com.promenar.nexara.data.exec.RunModeMessage.MODE_CHANGED -> R.string.run_mode_changed
+                com.promenar.nexara.data.exec.RunModeMessage.BUILTIN_TOOL_BLOCKED -> R.string.run_mode_builtin_tool_blocked
+                com.promenar.nexara.data.exec.RunModeMessage.INSTALL_PACKAGE -> R.string.run_mode_install_package
+                com.promenar.nexara.data.exec.RunModeMessage.SEARCH_PACKAGE -> R.string.run_mode_search_package
+            }) } }
+
     val backgroundJobController: com.promenar.nexara.domain.jobs.BackgroundJobController get() = backgroundJobs
     val backgroundJobs: com.promenar.nexara.data.jobs.BackgroundJobManager by lazy {
         val notifications = com.promenar.nexara.background.jobs.BackgroundJobNotifications(this) { sessionOpenIntentFactory }
@@ -1110,7 +1147,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> com.promenar.nexara.data.jobs.BackgroundJobLocation(target.root, target.root, false,
                         target.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED)
                     com.promenar.nexara.data.workspace.SessionWorkspace.Private -> {
-                        if (record.runner == "TERMUX") {
+                        if (record.runner == "LINUX") {
+                            val root = File(workspaceRepository.ensureSessionRoot(record.sessionId).physicalRootPath)
+                            com.promenar.nexara.data.jobs.BackgroundJobLocation(root, root, false, false, workspaceKindOverride = "private")
+                        } else if (record.runner == "TERMUX") {
                             // Termux 不能访问应用私有根，不复制整个工作区。
                             com.promenar.nexara.data.jobs.BackgroundJobLocation(File(record.runDirectory), File(record.runDirectory), false, false)
                         } else {
@@ -1125,6 +1165,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             reconcile = { record, finished, interrupted ->
                 if (record.isolatedWorkspace || File(record.runDirectory, "baseline.json").isFile) (workspaceRepository as WorkspaceRepository).reconcileBackgroundWorkspace(
                     record.workspaceRootUuid, record.sessionId, record.id, File(record.runDirectory, "workspace"), finished, interrupted)
+                else if (record.runner == "LINUX") { reconcileSessionHome(record.sessionId); null }
                 else null
             },
             termux = com.promenar.nexara.data.termux.TermuxBackgroundJobs(termuxRuntime::executeRequest),
@@ -1134,6 +1175,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             executionGate = sessionExecutionGate,
             sessionExists = { database.sessionDao().getById(it) != null },
             linuxRuntime = linux.runtime,
+            sessionMode = sessionRunModes::modeFor,
+            messages = runModeMessages,
         )
     }
 
@@ -1151,6 +1194,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             linuxProvenance = linux.provenance,
             visibleMounts = externalFolderManager::visible,
             sessionTitle = { database.sessionDao().getById(it)?.title },
+            sessionMode = { id -> id?.let { sessionRunModes.modeFor(it) } },
+            sessionHome = { id -> File(workspaceRepository.ensureSessionRoot(id).physicalRootPath) },
+            reconcileSessionHome = ::reconcileSessionHome,
+            messages = runModeMessages,
         )
     }
 
@@ -1302,11 +1349,41 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         }
     }
 
+    val linuxSessionFiles by lazy {
+        com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess(
+            externalFolderManager, workspaceRepository, fileOperationRepository, sessionWorkspaceResolver::resolve,
+            com.promenar.nexara.data.workspace.LinuxSessionRootfsBackend(linux.files), pendingDocumentIndexCoordinator,
+        )
+    }
+
+    val linuxRunModeRecovery by lazy {
+        com.promenar.nexara.data.linux.LinuxRunModeRecovery(linux.runtime, linuxHomeLocation = { sessionId ->
+            database.sessionDao().getById(sessionId)?.workspaceId?.let { id -> database.workspaceDao().getById(id) }
+                ?.takeIf { it.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME }?.location
+        })
+    }
+
+    fun exportLinuxSessionHome(sessionId: String, treeUri: android.net.Uri? = null): kotlinx.coroutines.flow.Flow<com.promenar.nexara.data.linux.LinuxRecoveryEvent> =
+        kotlinx.coroutines.flow.flow {
+            val target = withContext(Dispatchers.IO) {
+                if (treeUri != null) com.promenar.nexara.data.linux.LinuxRunModeSafExportTarget(contentResolver, treeUri)
+                else {
+                    val root = workspaceRepository.ensureSessionRoot(sessionId)
+                    com.promenar.nexara.data.linux.LinuxRunModeDirectoryExportTarget(File(root.physicalRootPath),
+                        reconcile = { reconcileSessionHome(sessionId) })
+                }
+            }
+            linuxRunModeRecovery.export(sessionId, target).collect { emit(it) }
+        }
+
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
         com.promenar.nexara.domain.tool.LinuxExecRouting.runtime = linux.runtime
         DefaultSkillRegistry().apply {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
-                com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
+                com.promenar.nexara.ui.chat.manager.skills.LinuxSessionFileSkill(
+                    com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator),
+                    sessionRunModes::modeFor, linuxSessionFiles, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator,
+                )
             startupDiagnosticTools(startupIssueManager).forEach(::register)
             register(CalculatorSkill())
             register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
@@ -1424,9 +1501,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             // 审批后的执行路径从主线程调用；技能注册表会同步扫描磁盘，必须切到 IO。
             override suspend fun resolveForExecution(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> =
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val target = resolveMediaViewTarget(session)
-                    if (target.modelId.isBlank()) resolve(session).filterNot { it.runtimeToolId == "view_media" }
-                    else resolve(session.copy(modelId = target.modelId))
+                    val current = session.copy(runMode = sessionRunModes.modeFor(session.id))
+                    val target = resolveMediaViewTarget(current)
+                    if (target.modelId.isBlank()) resolve(current).filterNot { it.runtimeToolId == "view_media" }
+                    else resolve(current.copy(modelId = target.modelId))
                 }
         }
     }

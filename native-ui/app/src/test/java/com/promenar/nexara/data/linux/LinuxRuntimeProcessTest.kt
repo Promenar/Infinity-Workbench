@@ -37,6 +37,14 @@ class LinuxRuntimeProcessTest {
     private var mirrorUsesLaunch = false
     private var blockResetMirror = false
     private var notificationStop: (() -> Unit)? = null
+    private val installedNames = mutableListOf<List<String>>()
+    private var failRepairCommand = false
+    private var failCurl = false
+    private val executedLaunches = mutableListOf<LinuxProcessLaunch>()
+    private fun installBaseFiles(names: List<String>) {
+        val files = mapOf("bash" to "bin/bash", "curl" to "usr/bin/curl", "ca-certificates" to "etc/ssl/certs/ca-certificates.crt")
+        names.mapNotNull(files::get).forEach { File(paths.rootfs, it).apply { parentFile!!.mkdirs(); if (!exists()) writeText("installed") } }
+    }
     private val preferences = object : LinuxRuntimePreferences {
         var enabled = true
         override fun readAgentEnabled() = enabled
@@ -60,10 +68,11 @@ class LinuxRuntimeProcessTest {
             override suspend fun install(names: List<String>, origin: LinuxPackageOrigin): LinuxPackageResult {
                 check(held)
                 runtime.prepareLaunch(LinuxLaunchSpec.shell("apk add"))
-                assertEquals(listOf("bash", "git", "python3", "py3-pip", "curl", "ca-certificates"), names)
+                installedNames += names
                 assertEquals(LinuxPackageOrigin.Preset, origin)
                 operation.value = LinuxPackageOperation(LinuxPackageAction.INSTALL, names, 1, 2, 123, 456, "downloading")
                 if (blockPackages) awaitCancellation()
+                if (packageSuccess) installBaseFiles(names)
                 return LinuxPackageResult(packageSuccess, if (packageSuccess) 0 else 1, "result")
             }
         }
@@ -90,22 +99,32 @@ class LinuxRuntimeProcessTest {
                 }
             }, packages = { packages }, mirrors = { mirrors },
             execute = { launch, _ ->
+                executedLaunches += launch
                 val cmd = launch.arguments.last()
                 val dnsFailed = cmd.contains("nslookup") && failDns
-                val text = if (cmd.contains("alpine-release")) "3.24.3\n" else ""
-                BuiltinCommandOutput(if (dnsFailed) 1 else 0, false, text, "", text.length.toLong(), 0, false, false)
+                val text = when {
+                    cmd.contains("alpine-release") -> "3.24.3\n"
+                    cmd.contains("curl --version") -> "curl test\n"
+                    else -> ""
+                }
+                val repairFailed = launch.arguments.contains("fix") && failRepairCommand
+                val curlFailed = cmd.contains("curl --version") && failCurl
+                if (launch.arguments.contains("fix") && !repairFailed) installBaseFiles(LinuxPackagePresets.BASE)
+                BuiltinCommandOutput(if (dnsFailed || repairFailed || curlFailed) 1 else 0, false, text,
+                    if (repairFailed) "apk fix failed" else "", text.length.toLong(), 0, false, false)
             }, operationSummary = { "Linux" }, dispatcher = dispatcher,
         )
         return runtime
     }
 
-    @Test fun `安装完整状态步骤跳过工具且持久化Agent开关`() = runTest {
+    @Test fun `安装基础包且持久化新会话默认开关`() = runTest {
         val runtime = runtime(); runCurrent()
         assertTrue(runtime.state.value is LinuxRuntimeState.NotInstalled)
         runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
         assertTrue(runtime.state.value is LinuxRuntimeState.Ready, runtime.state.value.toString())
         val installer = LinuxRootfsInstaller(paths, linuxTestMetadata(), { linuxTestArchive().inputStream() }, { free })
-        assertEquals(LinuxStepStatus.SKIPPED, installer.readRecord()!!.steps[LinuxInstallStep.COMMON_TOOLS])
+        assertEquals(LinuxStepStatus.DONE, installer.readRecord()!!.steps[LinuxInstallStep.COMMON_TOOLS])
+        assertEquals(LinuxPackagePresets.BASE, installedNames.single())
         runtime.setAgentEnabled(false)
         assertFalse(runtime.agentUsesLinux)
         val restored = runtime(); runCurrent()
@@ -231,5 +250,87 @@ class LinuxRuntimeProcessTest {
         blockResetMirror = false
         runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
         assertTrue(runtime.state.value is LinuxRuntimeState.Ready)
+    }
+
+    @Test fun `无损修复保留主目录配置和用户包且基础包失败准确返回`() = runTest {
+        val runtime = runtime(); runCurrent()
+        runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
+        File(paths.home, "user").writeText("keep")
+        val ignore = File(paths.home, ".config/git/ignore").apply { parentFile!!.mkdirs(); writeText("user-only\n") }
+        val repositories = File(paths.rootfs, "etc/apk/repositories").apply { writeText("https://custom.example/main\n") }
+        File(paths.rootfs, "etc/apk/world").writeText("user-package\n")
+        File(paths.rootfs, "bin/sh").delete()
+        val broken = runtime(); runCurrent()
+        failRepairCommand = true
+        val failed = broken.repair()
+        assertFalse(failed.success)
+        assertEquals(LinuxFailureCode.PACKAGE_INSTALL_FAILED, failed.failure?.code)
+        assertTrue(failed.failure?.detail.orEmpty().contains("apk fix failed"))
+        assertEquals("keep", File(paths.home, "user").readText())
+        assertEquals("user-only\n", ignore.readText())
+        assertEquals("user-package\n", File(paths.rootfs, "etc/apk/world").readText())
+        assertEquals("https://custom.example/main\n", repositories.readText())
+        failRepairCommand = false
+        assertTrue(broken.repair().success)
+        assertEquals(LinuxPackagePresets.BASE, installedNames.last())
+        assertTrue(broken.state.value is LinuxRuntimeState.Ready)
+    }
+
+    @Test fun `包数据库缺失时修复只补文件而不重建或伪造包状态`() = runTest {
+        val runtime = runtime(); runCurrent()
+        runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
+        File(paths.home, "user").writeText("keep")
+        File(paths.rootfs, "lib/apk/db/installed").delete()
+        File(paths.rootfs, "bin/sh").delete()
+        val broken = runtime(); runCurrent()
+        val calls = installedNames.size
+        val result = broken.repair()
+        assertFalse(result.success)
+        assertEquals(LinuxFailureCode.ROOTFS_DAMAGED, result.failure?.code)
+        assertFalse(File(paths.rootfs, "lib/apk/db/installed").exists())
+        assertEquals(calls, installedNames.size)
+        assertEquals("keep", File(paths.home, "user").readText())
+    }
+
+    @Test fun `空值截断或非法包数据库均不触发apk初始化`() = runTest {
+        val runtime = runtime(); runCurrent()
+        runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
+        val database = File(paths.rootfs, "lib/apk/db/installed")
+        for (text in listOf("", "P:busybox\n", "P:busybox\nV:1\ninvalid\n", "P:busybox\nP:other\nV:1\n")) {
+            database.writeText(text)
+            File(paths.rootfs, "bin/sh").delete()
+            val broken = runtime(); runCurrent()
+            val calls = installedNames.size
+            val fixed = executedLaunches.count { it.arguments.contains("fix") }
+            val result = broken.repair()
+            assertFalse(result.success, text)
+            assertEquals(LinuxFailureCode.ROOTFS_DAMAGED, result.failure?.code)
+            assertEquals(calls, installedNames.size)
+            assertEquals(fixed, executedLaunches.count { it.arguments.contains("fix") })
+            assertEquals(text, database.readText())
+        }
+    }
+
+    @Test fun `已登记基础包来源不经install覆写并递归修复依赖且实际诊断工具`() = runTest {
+        val runtime = runtime(); runCurrent()
+        runtime.startInstall(LinuxInstallOptions(false)); runCurrent()
+        File(paths.rootfs, "lib/apk/db/installed").writeText(
+            (listOf("busybox") + LinuxPackagePresets.BASE).joinToString("\n\n", postfix = "\n") { "P:$it\nV:1" },
+        )
+        File(paths.rootfs, "bin/sh").delete()
+        File(paths.rootfs, "bin/bash").delete()
+        val broken = runtime(); runCurrent()
+        val calls = installedNames.size
+        failCurl = true
+        val failed = broken.repair()
+        assertFalse(failed.success)
+        assertEquals(LinuxFailureCode.DIAGNOSTICS_FAILED, failed.failure?.code)
+        assertEquals(calls, installedNames.size)
+        val fix = executedLaunches.last { it.arguments.contains("fix") }
+        assertEquals(listOf("fix", "--reinstall", "--depends", "--") + LinuxPackagePresets.BASE,
+            fix.arguments.dropWhile { it != "fix" })
+        failCurl = false
+        assertTrue(broken.repair().success)
+        assertEquals(calls, installedNames.size)
     }
 }

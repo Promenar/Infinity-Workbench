@@ -59,6 +59,22 @@ class WorkspaceCommandHostTest {
     }
 
     @Test
+    fun `终端直接写入的已有文件能在完整对账时进入索引`() = runBlocking<Unit> {
+        val root = root()
+        val created = File(root.physicalRootPath, "terminal-output.txt").apply { writeText("from terminal") }
+        assertThat(repo.getByMaterializedPath(root.uuid, "/terminal-output.txt")).isNull()
+        repo.reconcileSessionWorkspace(root.uuid, "s")
+        val indexed = checkNotNull(repo.getByMaterializedPath(root.uuid, "/terminal-output.txt"))
+        assertThat(indexed.hash).isEqualTo(Sha256Utils.hash("from terminal"))
+        created.writeText("changed by terminal")
+        repo.reconcileSessionWorkspace(root.uuid, "s")
+        assertThat(repo.getByUuid(root.uuid, indexed.uuid)?.hash).isEqualTo(Sha256Utils.hash("changed by terminal"))
+        created.delete()
+        repo.reconcileSessionWorkspace(root.uuid, "s")
+        assertThat(repo.getByUuid(root.uuid, indexed.uuid)).isNull()
+    }
+
+    @Test
     fun `命令新增、修改、删除与重命名后索引与磁盘一致`() = runBlocking<Unit> {
         val root = root()
         val keep = repo.createFileInWorkspace(root.uuid, "keep", "keep.md", "old", root.uuid, "/keep.md").also { repo.confirmCreatedEntry(root.uuid, it.uuid) }

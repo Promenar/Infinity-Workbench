@@ -8,7 +8,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 /** 普通绝对链接使用容器根；只有 proot 的隐藏链接允许引用当前 rootfs 内的宿主绝对路径。 */
-internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = LinuxFileIo()) {
+internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = LinuxFileIo(), private val rejectGuestLinks: Boolean = false) {
     val root: Path = rootfs.parentFile!!.canonicalFile.toPath().resolve(rootfs.name)
     private val hostRoots = listOf(root, rootfs.absoluteFile.toPath().normalize()).distinct()
 
@@ -39,12 +39,16 @@ internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = L
             }
             current = current.resolve(name)
             requireInside(current)
-            if (access.isLink(current) && (followFinal || pending.isNotEmpty())) {
-                if (++links > 40) outside()
-                val target = access.readLink(current)
-                val translated = root.relativize(linkPath(current, target)).toString()
-                pending = translated.split('/').filter(String::isNotEmpty) + pending
-                current = root
+            val linked = access.isLink(current)
+            if (linked) {
+                if (rejectGuestLinks) outside()
+                if (followFinal || pending.isNotEmpty()) {
+                    if (++links > 40) outside()
+                    val target = access.readLink(current)
+                    val translated = root.relativize(linkPath(current, target)).toString()
+                    pending = translated.split('/').filter(String::isNotEmpty) + pending
+                    current = root
+                }
             }
         }
         requireInside(current)
@@ -52,6 +56,7 @@ internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = L
     }
 
     fun isEmulatedHardLink(path: Path): Boolean {
+        if (rejectGuestLinks) return false
         if (!access.isLink(path)) return false
         val target = access.readLink(path)
         if (!isLink2SymlinkName(target.fileName?.toString().orEmpty())) return false

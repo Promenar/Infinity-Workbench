@@ -8,5 +8,6 @@ data class Session(
     val isPinned: Boolean = false,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
-    val messageCount: Int = 0
+    val messageCount: Int = 0,
+    val runMode: SessionRunMode? = null,
 )

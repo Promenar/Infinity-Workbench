@@ -17,6 +17,7 @@ import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -26,7 +27,8 @@ import java.util.UUID
 
 open class SessionRepository(
     private val sessionDao: SessionDao,
-    private val messageDao: MessageDao
+    private val messageDao: MessageDao,
+    private val newSessionRunMode: () -> SessionRunMode = { SessionRunMode.BUILTIN },
 ) : ISessionRepository,
     com.promenar.nexara.domain.repository.ISessionRepository {
 
@@ -36,7 +38,7 @@ open class SessionRepository(
     // ── Data-layer ISessionRepository (existing) ────────────────────────
 
     override suspend fun create(session: Session) {
-        sessionDao.insert(session.toEntity())
+        sessionDao.insert(session.copy(runMode = session.runMode ?: newSessionRunMode()).toEntity())
     }
 
     open suspend fun update(session: Session) {
@@ -156,6 +158,7 @@ open class SessionRepository(
             id = id,
             agentId = agentId,
             modelId = modelId,
+            runMode = newSessionRunMode(),
             createdAt = now,
             updatedAt = now
         )
@@ -175,6 +178,7 @@ open class SessionRepository(
             agentId = agentId,
             title = title,
             modelId = modelId ?: "",
+            runMode = SessionRunMode.fromStored(runMode),
             isPinned = isPinned == 1,
             createdAt = createdAt,
             updatedAt = updatedAt
@@ -186,6 +190,7 @@ open class SessionRepository(
             agentId = agentId,
             title = title,
             modelId = modelId ?: "",
+            runMode = runMode,
             isPinned = isPinned,
             createdAt = createdAt,
             updatedAt = updatedAt,

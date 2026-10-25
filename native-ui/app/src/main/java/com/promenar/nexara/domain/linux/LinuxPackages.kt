@@ -76,7 +76,22 @@ data class LinuxPackageResult(
 )
 
 object LinuxPackagePresets {
-    val COMMON: List<String> = listOf("bash", "git", "python3", "py3-pip", "curl", "ca-certificates")
+    val BASE: List<String> = listOf("bash", "ca-certificates", "curl")
+    val COMMON: List<String> = BASE + optional(LinuxOptionalPackage.entries.toSet())
+
+    fun optional(selection: Set<LinuxOptionalPackage>): List<String> =
+        LinuxOptionalPackage.entries.filter { it in selection }.flatMap { it.packages }
+}
+
+enum class LinuxOptionalPackage(val packages: List<String>) {
+    GIT(listOf("git")),
+    PYTHON3(listOf("python3", "py3-pip")),
+}
+
+/** 已安装环境补装勾选的附加包，沿用现有软件包操作、保活和来源记录。 */
+suspend fun LinuxPackageManager.installOptionalPackages(selection: Set<LinuxOptionalPackage>): LinuxPackageResult {
+    val names = LinuxPackagePresets.optional(selection)
+    return if (names.isEmpty()) LinuxPackageResult(true, 0, "") else install(names, LinuxPackageOrigin.Preset)
 }
 
 /** apk 仓库镜像。签名始终用 Alpine 官方密钥校验。 */

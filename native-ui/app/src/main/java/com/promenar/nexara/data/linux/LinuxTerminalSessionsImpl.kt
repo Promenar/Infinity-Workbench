@@ -12,6 +12,8 @@ import com.promenar.nexara.domain.linux.LinuxUnavailableException
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import java.util.UUID
+import java.io.File
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -36,6 +38,8 @@ internal class LinuxTerminalSessionsImpl(
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
+    private val sessionHome: suspend (String) -> File? = host.sessionHome,
+    private val reconcileSession: suspend (String) -> Unit = host.reconcileSession,
 ) : LinuxTerminalSessions {
     private class Entry(val infoAtStart: LinuxTerminalInfo, initialCommand: String?) {
         val id get() = infoAtStart.id
@@ -81,6 +85,9 @@ internal class LinuxTerminalSessionsImpl(
         val launch = withContext(ioDispatcher) {
             val spec = when (location) {
                 is LinuxTerminalLocation.SessionWorkspace -> {
+                    reconcileSession(location.sessionId)
+                    val home = sessionHome(location.sessionId)
+                        ?: error("Session home is unavailable for session ${location.sessionId}")
                     val workspace = try {
                         host.sessionWorkspaceRoot(location.sessionId)
                     } catch (cancelled: CancellationException) {
@@ -88,7 +95,7 @@ internal class LinuxTerminalSessionsImpl(
                     } catch (error: Exception) {
                         throw IllegalStateException("Cannot resolve workspace for session ${location.sessionId}", error)
                     } ?: error("Workspace is unavailable for session ${location.sessionId}")
-                    LinuxLaunchSpec(emptyList(), workspace, workingDirectory = "/workspace")
+                    LinuxLaunchSpec(emptyList(), workspace, workingDirectory = "/workspace", sessionHome = home)
                 }
                 is LinuxTerminalLocation.Directory -> {
                     require(location.path.startsWith('/') && '\u0000' !in location.path) { "Terminal directory must be absolute" }
@@ -214,6 +221,12 @@ internal class LinuxTerminalSessionsImpl(
             if (entry.discarded) entries.remove(entry.id)
             publish()
             entry.ended.complete(Unit)
+        }
+        (entry.infoAtStart.location as? LinuxTerminalLocation.SessionWorkspace)?.let { location ->
+            scope.launch(NonCancellable + ioDispatcher) {
+                try { reconcileSession(location.sessionId) }
+                catch (failure: Exception) { NexaraLogger.logError("LinuxTerminal.reconcile", failure) }
+            }
         }
     }
 

@@ -22,7 +22,7 @@ class LinuxLaunchBuilder(
     private val tailnetEnvironment: () -> Map<String, String> = { InstalledTailnetRouting.routing.subprocessEnvironment() },
     private val messages: LinuxRuntimeMessages = LinuxRuntimeMessages(),
 ) {
-    fun build(spec: LinuxLaunchSpec): LinuxProcessLaunch {
+    fun build(spec: LinuxLaunchSpec, maintainHomeConfiguration: Boolean = true): LinuxProcessLaunch {
         val tmp = File(cacheDirectory, "proot-tmp")
         val shm = File(cacheDirectory, "proot-shm")
         listOf(tmp, shm).forEach { check(it.isDirectory || it.mkdirs()) { messages(LinuxRuntimeMessage.TEMP_DIRECTORY) } }
@@ -33,6 +33,11 @@ class LinuxLaunchBuilder(
         spec.workspace?.let {
             require(it.isDirectory && ':' !in it.path && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY) }
             arguments += listOf("-b", "${it.absolutePath}:/workspace")
+        }
+        spec.sessionHome?.let {
+            require(Files.isDirectory(it.toPath(), NOFOLLOW_LINKS) && ':' !in it.path && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY) }
+            Files.createDirectories(LinuxRootfsFiles.safePath(rootfs, "home/session").toPath())
+            arguments += listOf("-b", "${it.absolutePath}:/home/session")
         }
         spec.mounts.forEach { bind ->
             val guest = bind.guestPath
@@ -61,7 +66,7 @@ class LinuxLaunchBuilder(
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
         environment.putAll(spec.environment)
         // 忽略文件只是保护措施，写入失败（空间不足、权限）不阻止命令启动。
-        runCatching { LinuxLaunchGitIgnore.ensure(rootfs, cacheDirectory, environment) }
+        if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.ensure(rootfs, cacheDirectory, environment) }
         return LinuxProcessLaunch(proot.executable.path, arguments, environment, spec.workspace ?: rootfs)
     }
 

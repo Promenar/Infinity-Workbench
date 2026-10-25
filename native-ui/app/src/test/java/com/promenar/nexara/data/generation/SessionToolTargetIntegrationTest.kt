@@ -56,7 +56,8 @@ class SessionToolTargetIntegrationTest {
         resolveSessionToolTarget(
             session, ProtocolTool(function = ProtocolToolFunction(name, "集成测试工具", "{}"), risk = risk),
             arguments, null, mounts, sshHosts,
-        ) { owner, id -> leases[owner to id] }
+            sshSessionHost = { owner, id -> leases[owner to id] },
+        )
 
     private fun baseTarget(target: String?): String {
         val tuple = kotlinx.serialization.json.Json.parseToJsonElement(requireNotNull(target)) as kotlinx.serialization.json.JsonArray

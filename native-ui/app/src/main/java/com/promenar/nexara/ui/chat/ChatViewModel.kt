@@ -169,12 +169,13 @@ internal suspend fun resolveChatApprovalExecutionTarget(
     sshSessionHost: (String, String) -> String?,
     mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
+    linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
 ): String? {
     val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
         .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName } ?: return null
     val tool = toolLookup(identity.runtimeToolId) ?: return null
     return com.promenar.nexara.data.generation.resolveSessionToolTarget(
-        session, tool, call.arguments, workspaceRepository, mounts, sshHostStore, sshSessionHost,
+        session, tool, call.arguments, workspaceRepository, mounts, sshHostStore, sshSessionHost, linuxFiles,
     )
 }
 
@@ -409,6 +410,7 @@ class ChatViewModel(
                 sshSessionHost = (application as NexaraApplication).sshRuntime::sessionHost,
                 mounts = (application as NexaraApplication).externalFolderManager,
                 sshHostStore = (application as NexaraApplication).sshHostStore,
+                linuxFiles = (application as NexaraApplication).linuxSessionFiles,
             )
         },
         resolveAllowlistScope = (application as NexaraApplication)::resolveToolAllowlistScope,
@@ -1833,6 +1835,7 @@ class ChatViewModel(
     }
 
     fun loadSession(sessionId: String) {
+        viewModelScope.launch(Dispatchers.IO) { (application as NexaraApplication).checkSessionRunMode(sessionId) }
         _inputText.value = ""
         resetSessionTransientState()
         val existing = store.getSession(sessionId)

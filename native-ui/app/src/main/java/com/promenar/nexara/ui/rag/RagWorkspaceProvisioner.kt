@@ -108,6 +108,7 @@ internal class RagWorkspaceProvisioner(
                             id = SESSION_ID,
                             agentId = SYSTEM_AGENT_ID,
                             title = SESSION_TITLE,
+                            runMode = com.promenar.nexara.domain.model.SessionRunMode.BUILTIN.name,
                             workspacePath = legacyPath,
                             workspaceRootUuid = migratedRootUuid,
                             createdAt = timestamp,

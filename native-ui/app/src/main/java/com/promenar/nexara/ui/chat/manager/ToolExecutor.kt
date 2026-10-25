@@ -263,6 +263,7 @@ class ToolExecutor internal constructor(
             ?.let(ToolInvocationIdentityFactory::definitionDigest)
         val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
         val currentDefinition = currentSkill?.toProtocolTool()
+            ?.let { com.promenar.nexara.data.generation.SessionRunModeToolDefinitions.forSession(it, currentSession?.runMode) }
             ?.let(ToolInvocationIdentityFactory::definitionDigest)
         if (currentSession == null || currentResolvedTool == null ||
             currentResolvedDigest !is ToolDefinitionDigestResolution.Valid ||
@@ -428,6 +429,7 @@ class ToolExecutor internal constructor(
                 arguments,
                 object : SkillExecutionContext {
                     override val sessionId = session.id
+                    override val runMode = session.runMode
                     override val agentId = session.agentId
                     override val assistantMessageId = ownerMessageId
                     override val workspacePath = session.workspacePath

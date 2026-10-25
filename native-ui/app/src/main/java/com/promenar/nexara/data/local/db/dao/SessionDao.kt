@@ -24,7 +24,14 @@ interface SessionDao {
     suspend fun insert(session: SessionEntity)
 
     @Update
-    suspend fun update(session: SessionEntity)
+    suspend fun updateRow(session: SessionEntity)
+
+    /** 常规整行保存不能撤销显式模式切换；读取与写入在同一个事务内完成。 */
+    @Transaction
+    suspend fun update(session: SessionEntity) {
+        val existing = getById(session.id) ?: return
+        updateRow(session.copy(runMode = existing.runMode))
+    }
 
     @Delete
     suspend fun delete(session: SessionEntity)
@@ -43,6 +50,15 @@ interface SessionDao {
 
     @Query("SELECT * FROM sessions ORDER BY updated_at DESC")
     suspend fun getAll(): List<SessionEntity>
+
+    @Query("UPDATE sessions SET run_mode = :runMode, updated_at = :updatedAt WHERE id = :sessionId")
+    suspend fun updateRunMode(sessionId: String, runMode: String, updatedAt: Long): Int
+
+    @Query("UPDATE sessions SET run_mode = :runMode, updated_at = :updatedAt WHERE id = :sessionId AND run_mode IS NULL")
+    suspend fun initializeRunMode(sessionId: String, runMode: String, updatedAt: Long): Int
+
+    @Query("SELECT COUNT(*) FROM sessions WHERE run_mode = 'LINUX'")
+    suspend fun countLinuxSessions(): Int
 
     @Query("SELECT * FROM sessions WHERE is_pinned = 1 ORDER BY updated_at DESC")
     fun observePinned(): Flow<List<SessionEntity>>

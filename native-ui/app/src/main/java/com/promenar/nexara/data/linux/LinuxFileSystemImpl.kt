@@ -33,21 +33,25 @@ class LinuxFileSystemImpl internal constructor(
     private val metadata: LinuxFileMetadata,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val homeOnly: Boolean = false,
+    private val rejectGuestLinks: Boolean = false,
 ) : LinuxFileSystem {
     constructor(runtime: LinuxRuntime) : this(runtime.paths.rootfs, { runtime.state.value is LinuxRuntimeState.Ready }, LinuxFileAndroidMetadata)
 
     private val access = metadata.access
-    internal val paths by lazy { LinuxFilePaths(rootfs, access) }
+    internal val paths by lazy { LinuxFilePaths(rootfs, access, rejectGuestLinks) }
     private val mutex by lazy { locks.getOrPut(paths.root.toString()) { Mutex() } }
 
     internal fun forHome(available: () -> Boolean = { true }) = LinuxFileSystemImpl(rootfs, { isReady() && available() }, metadata, io, homeOnly = true)
+
+    /** Agent 文件路径在真正解析时拒绝物理链接，避免预检后被 guest 换成其它目标。 */
+    internal fun forAgentTools() = LinuxFileSystemImpl(rootfs, isReady, metadata, io, homeOnly, rejectGuestLinks = true)
 
     override suspend fun list(path: String): List<LinuxFileEntry> = operation {
         val normalized = LinuxFilePaths.normalize(path)
         val directory = resolvePath(normalized)
         requireDirectory(directory)
         run {
-            access.children(directory).filterNot { LinuxFilePaths.isLink2SymlinkName(it.fileName.toString()) }.mapNotNull {
+            access.children(directory).filterNot { LinuxFilePaths.isLink2SymlinkName(it.fileName.toString()) || rejectGuestLinks && access.isLink(it) }.mapNotNull {
                 currentCoroutineContext().ensureActive()
                 entry(join(normalized, it.fileName.toString()), it)
             }.sortedWith(compareByDescending<LinuxFileEntry> { it.type == LinuxFileType.DIRECTORY || it.targetIsDirectory }.thenBy { it.name })
@@ -136,10 +140,11 @@ class LinuxFileSystemImpl internal constructor(
         val normalized = mutationPath(path)
         val source = resolvePath(normalized, followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         val targetPath = join(normalized.substringBeforeLast('/').ifEmpty { "/" }, LinuxFilePaths.validateName(newName))
         val destination = resolvePath(targetPath, followFinal = false)
         if (access.exists(destination)) fail(LinuxFileErrorCode.NAME_EXISTS)
-        LinuxFileLinks(paths).preserveBacking(source)
+        if (!rejectGuestLinks) LinuxFileLinks(paths).preserveBacking(source)
         access.move(source, destination)
         entry(targetPath, destination) ?: fail(LinuxFileErrorCode.IO)
     }
@@ -148,6 +153,7 @@ class LinuxFileSystemImpl internal constructor(
         val normalized = mutationPath(raw)
         val source = resolvePath(normalized, followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         val directory = resolvePath(targetDirectory)
         requireDirectory(directory)
         rejectInside(source, directory)
@@ -170,20 +176,22 @@ class LinuxFileSystemImpl internal constructor(
     override suspend fun move(paths: List<String>, targetDirectory: String): Map<String, LinuxFileErrorCode> = batch(paths) { raw ->
         val source = resolvePath(mutationPath(raw), followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         val directory = resolvePath(targetDirectory)
         requireDirectory(directory)
         rejectInside(source, directory)
         val destination = directory.resolve(source.fileName)
         this.paths.guest(destination)
         if (access.exists(destination)) fail(LinuxFileErrorCode.NAME_EXISTS)
-        LinuxFileLinks(this.paths).preserveBacking(source)
+        if (!rejectGuestLinks) LinuxFileLinks(this.paths).preserveBacking(source)
         access.move(source, destination)
     }
 
     override suspend fun delete(paths: List<String>): Map<String, LinuxFileErrorCode> = batch(paths) {
         val source = resolvePath(mutationPath(it), followFinal = false)
         requireExists(source)
-        LinuxFileLinks(this.paths).preserveBacking(source)
+        requireAgentTree(source)
+        if (!rejectGuestLinks) LinuxFileLinks(this.paths).preserveBacking(source)
         deleteNode(source)
     }
 
@@ -191,10 +199,11 @@ class LinuxFileSystemImpl internal constructor(
         val source = resolvePath(mutationPath(sourcePath), followFinal = false)
         val target = resolvePath(mutationPath(targetPath), followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         requireDirectory(target.parent)
         rejectInside(source, target)
         if (access.exists(target)) fail(LinuxFileErrorCode.NAME_EXISTS)
-        LinuxFileLinks(paths).preserveBacking(source)
+        if (!rejectGuestLinks) LinuxFileLinks(paths).preserveBacking(source)
         access.move(source, target)
     }
 
@@ -202,6 +211,7 @@ class LinuxFileSystemImpl internal constructor(
         val source = resolvePath(mutationPath(sourcePath), followFinal = false)
         val target = resolvePath(mutationPath(targetPath), followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         requireDirectory(target.parent)
         rejectInside(source, target)
         if (access.exists(target)) fail(LinuxFileErrorCode.NAME_EXISTS)
@@ -213,8 +223,9 @@ class LinuxFileSystemImpl internal constructor(
     internal suspend fun deleteChecked(path: String, expectedSha256: String?) = operation {
         val source = resolvePath(mutationPath(path), followFinal = false)
         requireExists(source)
+        requireAgentTree(source)
         if (expectedSha256 != null && hash(resolvePath(path)) != expectedSha256) fail(LinuxFileErrorCode.CHANGED)
-        LinuxFileLinks(paths).preserveBacking(source)
+        if (!rejectGuestLinks) LinuxFileLinks(paths).preserveBacking(source)
         deleteNode(source)
     }
 
@@ -260,6 +271,7 @@ class LinuxFileSystemImpl internal constructor(
 
     private fun entry(guestPath: String, source: Path): LinuxFileEntry? {
         if (!access.exists(source)) return null
+        if (rejectGuestLinks && access.isLink(source)) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         val emulated = paths.isEmulatedHardLink(source)
         val actual = if (emulated) resolvePath(paths.guest(source)) else source
         val attrs = access.attributes(actual)
@@ -279,6 +291,7 @@ class LinuxFileSystemImpl internal constructor(
 
     private suspend fun copyNode(source: Path, destination: Path) {
         currentCoroutineContext().ensureActive()
+        if (rejectGuestLinks && access.isLink(source)) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         val actual = if (paths.isEmulatedHardLink(source)) resolvePath(paths.guest(source)) else source
         when {
             access.isLink(actual) -> access.createLink(destination, access.readLink(actual))
@@ -316,11 +329,24 @@ class LinuxFileSystemImpl internal constructor(
     }
 
     private fun deleteNode(source: Path, cleanup: Boolean = false) {
+        if (rejectGuestLinks && access.isLink(source)) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         if (access.isDirectory(source)) {
             if (cleanup) access.chmod(source, access.identity(source, metadata).mode or 0x1c0, metadata)
             access.children(source).forEach { deleteNode(it, cleanup) }
         }
         access.delete(source)
+    }
+
+    /** 严格文件工具不接管 proot 隐藏实体，也不为批准路径以外的别名执行修复。 */
+    private fun requireAgentTree(source: Path) {
+        if (!rejectGuestLinks) return
+        if (LinuxFilePaths.isLink2SymlinkName(source.fileName.toString())) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
+        val attributes = access.attributes(source)
+        when {
+            attributes.isSymbolicLink -> fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
+            attributes.isDirectory -> access.children(source).forEach(::requireAgentTree)
+            !attributes.isRegularFile -> fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
+        }
     }
 
     private fun read(source: Path, offset: Long, length: Int): ByteArray = access.openRead(source).use { opened ->

@@ -7,6 +7,15 @@ import org.junit.Test
 
 class BranchSessionPlannerTest {
     @Test
+    fun `分支保留已固定运行模式和未确定旧模式`() {
+        listOf(null, "LINUX", "BUILTIN").forEach { mode ->
+            val result = BranchSessionPlanner.plan(session().copy(runMode = mode),
+                listOf(message("m1", "user", "问题")), "m1", "branch", 2) { "copy-$it" }
+            assertThat((result as BranchSessionPlanResult.Ready).plan.session.runMode).isEqualTo(mode)
+        }
+    }
+
+    @Test
     fun `分支只复制到目标消息并清空运行态与工作区`() {
         val source = session()
         val messages = listOf(

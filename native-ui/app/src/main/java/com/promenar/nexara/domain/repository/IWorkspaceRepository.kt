@@ -64,6 +64,15 @@ interface IWorkspaceRepository {
         newName: String,
         expectedName: String? = null,
     ): RenameResult
+    /** 在同一根锁与 journal 提交中移动并重命名，保留 UUID 与文件版本链。 */
+    suspend fun relocate(
+        workspaceRootUuid: String,
+        uuid: String,
+        newParentUuid: String,
+        newName: String,
+        expectedName: String? = null,
+        expectedHash: String? = null,
+    ): RenameResult = throw UnsupportedOperationException("仓库不支持原子移动并重命名")
     suspend fun getNextSeqForDate(dateKey: String): Int
     suspend fun resetAllRAGStatus(workspaceRootUuid: String)
 }

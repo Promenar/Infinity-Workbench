@@ -102,7 +102,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         ParameterSchemeEntity::class,
         com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -143,6 +143,7 @@ internal const val NEXARA_SCHEMA_V21_IDENTITY_HASH = "b59d4265cdf25db536fb91226c
 internal const val NEXARA_SCHEMA_V22_IDENTITY_HASH = "44c225495bedbde35d20c36ffbddf6a4"
 internal const val NEXARA_SCHEMA_V23_IDENTITY_HASH = "7d4eb1523842672010345f378c8b7bd9"
 internal const val NEXARA_SCHEMA_V26_IDENTITY_HASH = "d7823d310bc01ce689665a8f95f25c08"
+internal const val NEXARA_SCHEMA_V27_IDENTITY_HASH = "58972c98147d4a85a83a42d7257d0535"
 internal const val NEXARA_SCHEMA_V25_IDENTITY_HASH = "3345ac5e27ee342bbe8512e82146c406"
 internal const val NEXARA_SCHEMA_V24_IDENTITY_HASH = "25746d91c031c8c926030a9e148b20a1"
 

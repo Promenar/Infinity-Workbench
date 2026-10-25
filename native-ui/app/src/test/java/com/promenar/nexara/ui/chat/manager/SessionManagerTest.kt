@@ -14,6 +14,21 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionManagerTest {
+    @Test
+    fun `创建会话的内存状态使用仓库确定的运行模式`() = kotlinx.coroutines.test.runTest {
+        val localStore = ChatStore()
+        var saved: Session? = null
+        val repository = object : ISessionRepository by stubSessionRepo {
+            override suspend fun create(session: Session) {
+                saved = session.copy(runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+            }
+            override suspend fun getById(id: String): Session? = saved?.takeIf { it.id == id }
+        }
+        SessionManager(localStore, repository).addSession(Session("fixed", "agent"))
+        assertThat(localStore.getSession("fixed")!!.runMode)
+            .isEqualTo(com.promenar.nexara.domain.model.SessionRunMode.LINUX)
+    }
+
     private lateinit var store: ChatStore
     private lateinit var sessionManager: SessionManager
     private val testScope = TestScope()
