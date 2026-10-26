@@ -42,7 +42,8 @@ class BettboxVisualContractTest {
 
         assertThat(navigation).contains("RoundedCornerShape(36.dp)")
         assertThat(navigation).contains("MaterialTheme.colorScheme.surfaceContainer")
-        assertThat(navigation).contains("MaterialTheme.colorScheme.secondaryContainer")
+        assertThat(navigation).contains("MaterialTheme.colorScheme.selectionIndicator()")
+        assertThat(navigation).contains("MaterialTheme.colorScheme.onSelectionIndicator")
         assertThat(navigation).contains("tween(durationMillis = 250)")
         assertThat(navigation).doesNotContain("fluidNavigationIndicatorScale")
     }

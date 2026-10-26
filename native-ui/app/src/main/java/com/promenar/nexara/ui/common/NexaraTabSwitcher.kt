@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.onSelectionIndicator
+import com.promenar.nexara.ui.theme.selectionIndicator
 
 /**
  * 单项页签描述模型
@@ -61,9 +63,9 @@ private val NexaraTabSwitcherHeight = NexaraSpacing.MinimumTouchTarget + NexaraT
  *
  * 特性：
  * 1. 外层全胶囊容器 (CircleShape) + surfaceContainer 底色 + outlineVariant 0.5f 微描边；
- * 2. 同心全圆胶囊滑动底座 (secondaryContainer) + 物理弹簧动画 (Spring, dampingRatio=0.85f)；
+ * 2. 同心全圆胶囊滑动底座（主色淡染 [selectionIndicator]）+ 物理弹簧动画 (Spring, dampingRatio=0.85f)；
  * 3. 切换触发原生 SEGMENT_TICK 触觉反馈震动；
- * 4. 选中项加粗并应用 onSecondaryContainer，未选中态为 onSurfaceVariant；
+ * 4. 选中项加粗并使用主色，未选中态为 onSurfaceVariant；
  * 5. 容器高度由组件统一为 56dp，调用方不可压低；上下 4dp 内缩只作用于滑动底座，
  *    页签触控区占满容器高度，避免内边距按像素取整后触控高度低于 48dp。
  */
@@ -74,13 +76,16 @@ fun NexaraTabSwitcher(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
-    indicatorColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    indicatorColor: Color = MaterialTheme.colorScheme.selectionIndicator(containerColor),
+    itemRole: Role = Role.Tab,
     tabModifier: (index: Int) -> Modifier = { Modifier },
     tabContent: @Composable (index: Int, isSelected: Boolean, contentColor: Color) -> Unit,
 ) {
     if (itemCount <= 0) return
 
     val haptics = LocalNexaraHaptics.current
+    // 越界表示没有选中项（如表单里当前值不在选项中），此时不画底座。
+    val hasSelection = selectedIndex in 0 until itemCount
     val safeSelectedIndex = selectedIndex.coerceIn(0, itemCount - 1)
 
     BoxWithConstraints(
@@ -107,7 +112,7 @@ fun NexaraTabSwitcher(
         )
 
         // 胶囊滑动高亮底座
-        Box(
+        if (hasSelection) Box(
             modifier = Modifier
                 .offset(x = indicatorOffset)
                 .width(tabWidth)
@@ -125,10 +130,10 @@ fun NexaraTabSwitcher(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             for (index in 0 until itemCount) {
-                val selected = safeSelectedIndex == index
+                val selected = hasSelection && safeSelectedIndex == index
                 val contentColor by animateColorAsState(
                     targetValue = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
+                        MaterialTheme.colorScheme.onSelectionIndicator
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -143,9 +148,9 @@ fun NexaraTabSwitcher(
                         .clip(CircleShape)
                         .selectable(
                             selected = selected,
-                            role = Role.Tab,
+                            role = itemRole,
                             onClick = {
-                                if (safeSelectedIndex != index) {
+                                if (!selected) {
                                     haptics.perform(NexaraHapticEvent.SELECTION)
                                     onTabSelected(index)
                                 }
@@ -171,7 +176,8 @@ fun NexaraCapsuleTabRow(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
-    indicatorColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    indicatorColor: Color = MaterialTheme.colorScheme.selectionIndicator(containerColor),
+    itemRole: Role = Role.Tab,
 ) {
     NexaraTabSwitcher(
         itemCount = tabs.size,
@@ -180,6 +186,7 @@ fun NexaraCapsuleTabRow(
         modifier = modifier,
         containerColor = containerColor,
         indicatorColor = indicatorColor,
+        itemRole = itemRole,
         tabModifier = { index ->
             tabs.getOrNull(index)?.testTag?.let { Modifier.testTag(it) } ?: Modifier
         },

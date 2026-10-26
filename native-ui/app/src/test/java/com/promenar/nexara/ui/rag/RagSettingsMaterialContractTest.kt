@@ -52,10 +52,11 @@ class RagSettingsMaterialContractTest {
     }
 
     @Test
-    fun `全局检索使用主维度分段与值行弹层及确认`() {
+    fun `全局检索使用胶囊预设与值行弹层及确认`() {
         val screen = sources.getValue("global")
-        assertThat(screen).contains("SingleChoiceSegmentedButtonRow(")
-        assertThat(screen).contains("SegmentedButton(")
+        assertThat(screen).contains("NexaraCapsuleTabRow(")
+        assertThat(screen).contains("itemRole = Role.RadioButton")
+        assertThat(screen).doesNotContain("SegmentedButton(")
         assertThat(screen).contains("NexaraSettingsSection(")
         assertThat(screen).contains("NexaraNumericSetting(")
         assertThat(screen).doesNotContain("NexaraSlider(")

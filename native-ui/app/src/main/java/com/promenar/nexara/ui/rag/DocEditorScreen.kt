@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import com.promenar.nexara.ui.theme.NexaraMotion
 import android.content.ClipData
 import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraTabSwitcher
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
@@ -61,10 +62,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.SingleChoiceSegmentedButtonRowScope
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -97,11 +94,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -932,74 +926,38 @@ private fun ModeSelector(
         add(DocEditorViewMode.PREVIEW to Icons.Rounded.Visibility)
         if (splitAvailable) add(DocEditorViewMode.SPLIT to Icons.Rounded.VerticalSplit)
     }
-    SingleChoiceSegmentedButtonRow(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTagCompat(UiTags.DOC_EDITOR_MODE_SELECTOR),
-    ) {
-        modes.forEachIndexed { index, (mode, icon) ->
-            ModeTab(
-                mode = mode,
-                icon = icon,
-                selected = selectedMode == mode,
-                index = index,
-                count = modes.size,
-                onClick = { onModeChange(mode) },
+    NexaraTabSwitcher(
+        itemCount = modes.size,
+        selectedIndex = modes.indexOfFirst { it.first == selectedMode },
+        onTabSelected = { index -> onModeChange(modes[index].first) },
+        modifier = modifier.testTagCompat(UiTags.DOC_EDITOR_MODE_SELECTOR),
+        tabModifier = { index -> Modifier.testTagCompat(modeTag(modes[index].first)) },
+    ) { index, _, contentColor ->
+        val (mode, icon) = modes[index]
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+            Icon(imageVector = icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(
+                    when (mode) {
+                        DocEditorViewMode.EDIT -> R.string.doc_editor_edit
+                        DocEditorViewMode.PREVIEW -> R.string.doc_editor_preview
+                        DocEditorViewMode.SPLIT -> R.string.doc_editor_split
+                    },
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
-@Composable
-private fun SingleChoiceSegmentedButtonRowScope.ModeTab(
-    mode: DocEditorViewMode,
-    icon: ImageVector,
-    selected: Boolean,
-    index: Int,
-    count: Int,
-    onClick: () -> Unit,
-) {
-    val label = stringResource(
-        when (mode) {
-            DocEditorViewMode.EDIT -> R.string.doc_editor_edit
-            DocEditorViewMode.PREVIEW -> R.string.doc_editor_preview
-            DocEditorViewMode.SPLIT -> R.string.doc_editor_split
-        },
-    )
-    val tag = when (mode) {
-        DocEditorViewMode.EDIT -> UiTags.DOC_EDITOR_MODE_EDIT
-        DocEditorViewMode.PREVIEW -> UiTags.DOC_EDITOR_MODE_PREVIEW
-        DocEditorViewMode.SPLIT -> UiTags.DOC_EDITOR_MODE_SPLIT
-    }
-    this@ModeTab.SegmentedButton(
-        selected = selected,
-        onClick = onClick,
-        shape = SegmentedButtonDefaults.itemShape(index = index, count = count),
-        modifier = Modifier
-            .weight(1f)
-            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .fillMaxWidth()
-            // Tag 与 Role 必须落在实际 SegmentedButton，而不是由外层容器伪造。
-            .testTagCompat(tag)
-            .semantics {
-                role = Role.Tab
-                this.selected = selected
-            },
-        icon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-        },
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+private fun modeTag(mode: DocEditorViewMode): String = when (mode) {
+    DocEditorViewMode.EDIT -> UiTags.DOC_EDITOR_MODE_EDIT
+    DocEditorViewMode.PREVIEW -> UiTags.DOC_EDITOR_MODE_PREVIEW
+    DocEditorViewMode.SPLIT -> UiTags.DOC_EDITOR_MODE_SPLIT
 }
 
 @Composable

@@ -9,6 +9,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import com.promenar.nexara.ui.theme.NexaraMotion
+import com.promenar.nexara.ui.theme.onSelectionIndicator
+import com.promenar.nexara.ui.theme.selectionIndicator
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -25,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -184,6 +187,11 @@ internal fun AdaptiveNavigationSurface(
                             )
                         },
                         label = { Text(stringResource(tab.titleRes)) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSelectionIndicator,
+                            selectedTextColor = MaterialTheme.colorScheme.onSelectionIndicator,
+                            indicatorColor = MaterialTheme.colorScheme.selectionIndicator(MaterialTheme.colorScheme.surface),
+                        ),
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .semantics { role = Role.Tab }
@@ -288,16 +296,16 @@ private fun BettboxNavigationContent(
             )
             val containerColor by animateColorAsState(
                 targetValue = if (selected) {
-                    MaterialTheme.colorScheme.secondaryContainer
+                    MaterialTheme.colorScheme.selectionIndicator()
                 } else {
-                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0f)
+                    MaterialTheme.colorScheme.selectionIndicator().copy(alpha = 0f)
                 },
                 animationSpec = tween(NexaraMotion.DurationMedium, easing = NexaraMotion.Standard),
                 label = "bottom-navigation-container-${tab.name}",
             )
             val contentColor by animateColorAsState(
                 targetValue = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
+                    MaterialTheme.colorScheme.onSelectionIndicator
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -26,9 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -53,6 +49,8 @@ import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,31 +117,17 @@ internal fun GlobalRagConfigScreenContent(
                     Triple(Icons.Rounded.Edit, stringResource(R.string.rag_config_preset_writing), "writing"),
                     Triple(Icons.Rounded.Code, stringResource(R.string.rag_config_preset_coding), "coding"),
                 )
-                SingleChoiceSegmentedButtonRow(
+                NexaraCapsuleTabRow(
+                    tabs = presets.map { (icon, title, presetId) ->
+                        NexaraTabItem(title = title, icon = icon, testTag = "rag_global_preset_$presetId")
+                    },
+                    selectedIndex = presets.indexOfFirst { it.third == config.currentPreset },
+                    onTabSelected = { index -> actions.onPresetSelected(presets[index].third) },
                     modifier = Modifier
-                        .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .sizeIn(minHeight = 48.dp)
                         .testTag("rag_global_presets"),
-                ) {
-                    presets.forEachIndexed { index, (icon, title, presetId) ->
-                        val selected = config.currentPreset == presetId
-                        SegmentedButton(
-                            modifier = Modifier
-                                .sizeIn(minHeight = 48.dp)
-                                .testTag("rag_global_preset_$presetId"),
-                            selected = selected,
-                            onClick = { actions.onPresetSelected(presetId) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = presets.size),
-                            icon = {
-                                SegmentedButtonDefaults.Icon(active = selected) {
-                                    Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                                }
-                            },
-                            label = { Text(title, style = MaterialTheme.typography.labelMedium) },
-                        )
-                    }
-                }
+                    itemRole = Role.RadioButton,
+                )
             }
 
             NexaraSettingsSection(title = stringResource(R.string.rag_config_retrieval_params)) {

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -25,9 +24,6 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -68,6 +64,8 @@ import com.promenar.nexara.ui.common.NexaraPopoverSpec
 import com.promenar.nexara.ui.common.nexaraPopoverAnchor
 import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import com.promenar.nexara.ui.common.NexaraPopoverAlign
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 
 /** 内置 Tailscale 状态行所需的本机信息。 */
 data class ProviderTailnetInfo(
@@ -96,30 +94,15 @@ internal fun ProviderApiSourceSection(
                 Triple(ProviderApiSource.PUBLIC, R.string.provider_api_source_public, Icons.Rounded.Language),
                 Triple(ProviderApiSource.TAILNET, R.string.provider_api_source_tailnet, Icons.Rounded.Lan),
             )
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                    .testTag(PROVIDER_API_SOURCE_TAG),
-            ) {
-                options.forEachIndexed { index, (option, label, icon) ->
-                    val selected = source.selected == option
-                    SegmentedButton(
-                        selected = selected,
-                        onClick = { onSourceSelected(option) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                        modifier = Modifier
-                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                            .testTag(providerApiSourceOptionTag(option)),
-                        icon = {
-                            SegmentedButtonDefaults.Icon(active = selected) {
-                                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        },
-                        label = { Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    )
-                }
-            }
+            NexaraCapsuleTabRow(
+                tabs = options.map { (option, label, icon) ->
+                    NexaraTabItem(title = stringResource(label), icon = icon, testTag = providerApiSourceOptionTag(option))
+                },
+                selectedIndex = options.indexOfFirst { it.first == source.selected },
+                onTabSelected = { index -> onSourceSelected(options[index].first) },
+                modifier = Modifier.testTag(PROVIDER_API_SOURCE_TAG),
+                itemRole = Role.RadioButton,
+            )
             AnimatedVisibility(
                 visible = source.selected == ProviderApiSource.TAILNET,
                 enter = NexaraMotion.expandIn,
