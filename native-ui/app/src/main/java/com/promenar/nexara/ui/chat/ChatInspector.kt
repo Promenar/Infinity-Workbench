@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowRight
 import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Badge
 import androidx.compose.ui.layout.Layout
@@ -71,11 +72,15 @@ internal data class ChatInspectorBadges(
     val gitAvailable: Boolean = false,
     val gitChanges: Int = 0,
     val canvases: Int = 0,
+    /** 本会话的 Agent 浏览器状态；为空表示还没有打开网页，不显示浏览器页签。 */
+    val browser: com.promenar.nexara.data.browser.BrowserMode? = null,
 ) {
     /** 没有运行内容、改动与产物时检视器完全隐藏，只留顶栏入口。 */
-    val hasContent: Boolean get() = running || pendingApprovals > 0 || hasRunContent || gitChanges > 0 || canvases > 0
+    val hasContent: Boolean get() = running || pendingApprovals > 0 || hasRunContent || gitChanges > 0 || canvases > 0 || browser != null
 
-    fun pages(): List<ChatPage> = ChatPage.entries.filter { it != ChatPage.Git || gitAvailable }
+    fun pages(): List<ChatPage> = ChatPage.entries.filter {
+        (it != ChatPage.Git || gitAvailable) && (it != ChatPage.Browser || browser != null)
+    }
 }
 
 private val ChatPage.icon: ImageVector
@@ -84,6 +89,7 @@ private val ChatPage.icon: ImageVector
         ChatPage.Explorer -> Icons.Outlined.Folder
         ChatPage.Git -> Icons.Rounded.AccountTree
         ChatPage.Canvas -> Icons.Rounded.Dashboard
+        ChatPage.Browser -> Icons.Rounded.Public
     }
 
 @Composable
@@ -93,6 +99,7 @@ private fun ChatPage.label(): String = stringResource(
         ChatPage.Explorer -> R.string.chat_inspector_tab_files
         ChatPage.Git -> R.string.chat_inspector_tab_git
         ChatPage.Canvas -> R.string.chat_inspector_tab_canvas
+        ChatPage.Browser -> R.string.chat_inspector_tab_browser
     },
 )
 
@@ -104,6 +111,7 @@ private fun ChatPage.description(badges: ChatInspectorBadges): String = listOfNo
         pluralStringResource(R.plurals.chat_inspector_pending_approvals, badges.pendingApprovals, badges.pendingApprovals)
     } else null,
     if (this == ChatPage.Run && badges.running) stringResource(R.string.chat_inspector_running) else null,
+    if (this == ChatPage.Browser) browserDotDescription(badges.browser) else null,
     when (this) {
         ChatPage.Git -> badges.gitChanges
         ChatPage.Canvas -> badges.canvases
@@ -123,8 +131,10 @@ private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Col
         ChatPage.Run -> badges.pendingApprovals
         ChatPage.Git -> badges.gitChanges
         ChatPage.Canvas -> badges.canvases
-        ChatPage.Explorer -> 0
+        ChatPage.Explorer, ChatPage.Browser -> 0
     }
+    // 浏览器页签不计数，只用圆点区分 Agent 操作中（主色）与需要用户处理（橙色）。
+    val dot = if (page == ChatPage.Browser) browserDotColor(badges.browser) else null
     val badgeColor = if (page == ChatPage.Run) scheme.tertiary else scheme.primary
     val badgeContent = if (page == ChatPage.Run) scheme.onTertiary else scheme.onPrimary
     Layout(
@@ -138,6 +148,8 @@ private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Col
             }
             if (count > 0) {
                 Badge(containerColor = badgeColor, contentColor = badgeContent) { Text(count.toString()) }
+            } else if (dot != null) {
+                Badge(containerColor = dot)
             }
         },
     ) { measurables, constraints ->
@@ -152,6 +164,20 @@ private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Col
             badge?.place(badgeX, -BadgeLift.roundToPx())
         }
     }
+}
+
+@Composable
+private fun browserDotColor(mode: com.promenar.nexara.data.browser.BrowserMode?): Color? = when (mode) {
+    com.promenar.nexara.data.browser.BrowserMode.AGENT -> MaterialTheme.colorScheme.primary
+    com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> MaterialTheme.colorScheme.tertiary
+    else -> null
+}
+
+@Composable
+private fun browserDotDescription(mode: com.promenar.nexara.data.browser.BrowserMode?): String? = when (mode) {
+    com.promenar.nexara.data.browser.BrowserMode.AGENT -> stringResource(R.string.chat_inspector_browser_agent)
+    com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> stringResource(R.string.chat_inspector_browser_needs_you)
+    else -> null
 }
 
 private val BadgeOverlap = 4.dp

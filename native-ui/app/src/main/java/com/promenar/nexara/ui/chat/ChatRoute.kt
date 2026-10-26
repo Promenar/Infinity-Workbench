@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import com.promenar.nexara.ui.common.NexaraPaneLevel
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -679,7 +680,15 @@ fun ChatRoute(
         val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.gitChangesService.status(sessionId) }
         gitSummary = com.promenar.nexara.ui.git.GitEntrySummary.from(status) as? com.promenar.nexara.ui.git.GitEntrySummary.Repository
     }
-    // 资源管理器与 Git 变更的层级：窄窗口整页覆盖会话，宽窗口作为检视器“文件”“Git”页签的内容。
+    // 本会话打开过 Agent 浏览器时才有状态；顶栏入口、检视器页签与浏览器步骤行据此显示。
+    val browserIds by application.agentBrowser.sessionIds.collectAsStateWithLifecycle()
+    val browserFlow = remember(browserIds, sessionId) {
+        if (sessionId in browserIds) application.agentBrowser.state(sessionId) else null
+    }
+    val browserState by produceState<com.promenar.nexara.data.browser.BrowserUiState?>(null, browserFlow) {
+        if (browserFlow == null) value = null else browserFlow.collect { value = it }
+    }
+    // 资源管理器、Git 变更与浏览器的层级：窄窗口整页覆盖会话，宽窗口作为检视器页签的内容。
     val chatPageLevels: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         androidx.compose.runtime.CompositionLocalProvider(
             com.promenar.nexara.ui.workspace.LocalSessionLinuxMode provides (runModeStatus?.mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX),
@@ -717,6 +726,10 @@ fun ChatRoute(
                                     sessionId = sessionId,
                                     onExit = closeTopChatPage.takeUnless { inInspector && shownChatPages.size == 1 },
                                 )
+                                ChatPage.Browser -> com.promenar.nexara.ui.browser.BrowserPage(
+                                    sessionId = sessionId,
+                                    onBack = closeTopChatPage.takeUnless { inInspector },
+                                )
                                 ChatPage.Run, ChatPage.Canvas -> Unit
                             }
                         }
@@ -737,6 +750,7 @@ fun ChatRoute(
         LocalMemoryChangeHost provides rememberMemoryChangeHost(application.longTermMemoryRepository),
         LocalSubagentRuns provides subagentRuns,
         com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
+        LocalChatBrowser provides ChatBrowserAccess(browserState) { openChatPage(ChatPage.Browser) },
     ) {
         ChatScreenContent(
             state = ChatScreenState(
@@ -767,6 +781,7 @@ fun ChatRoute(
                 startupWritePaused = startupWritePaused,
                 runMode = runModeBadge,
                 inspectorPages = chatPages,
+                browser = browserState,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },
@@ -779,6 +794,7 @@ fun ChatRoute(
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { openChatPage(ChatPage.Explorer) },
                 onOpenGit = { openChatPage(ChatPage.Git) },
+                onOpenBrowser = { openChatPage(ChatPage.Browser) },
                 onSetInspectorPages = setChatPages,
                 onInspectorBack = closeTopChatPage,
                 onLocateWorkspacePath = { path ->

@@ -1010,6 +1010,7 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.COMMAND -> R.plurals.chat_step_command_done
         ToolSummaryAction.WEB_SEARCH -> if (part.count == 1) R.plurals.chat_step_web_search_once else R.plurals.chat_step_web_search_done
         ToolSummaryAction.WEB_READ -> R.plurals.chat_step_web_read_done
+        ToolSummaryAction.BROWSER -> R.plurals.chat_step_browser_done
         ToolSummaryAction.FILE_READ -> R.plurals.chat_step_file_read_done
         ToolSummaryAction.FILE_EDIT -> R.plurals.chat_step_file_edit_done
         ToolSummaryAction.KNOWLEDGE_SEARCH -> R.plurals.chat_step_knowledge_done
@@ -1034,6 +1035,7 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.COMMAND -> R.string.chat_step_command_name
     ToolSummaryAction.WEB_SEARCH -> R.string.chat_step_web_search_name
     ToolSummaryAction.WEB_READ -> R.string.chat_step_web_read_name
+    ToolSummaryAction.BROWSER -> R.string.chat_step_browser_name
     ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_name
     ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_name
     ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_name
@@ -1061,6 +1063,7 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.COMMAND -> R.string.chat_step_command_running
             ToolSummaryAction.WEB_SEARCH -> R.string.chat_step_web_search_running
             ToolSummaryAction.WEB_READ -> R.string.chat_step_web_read_running
+            ToolSummaryAction.BROWSER -> R.string.chat_step_browser_running
             ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_running
             ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_running
             ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_running
@@ -1130,6 +1133,9 @@ internal fun InlineToolRow(
     val memoryChanges = remember(invocations) { invocations.mapNotNull(::memoryChange) }
     // 只有记忆写入时用逐条“已记住”行代替摘要，混合工具时追加在摘要下方。
     val memoryOnly = memoryChanges.isNotEmpty() && memoryChanges.size == invocations.size
+    // 只有浏览器调用时逐条显示“打开网页 · 主机”等步骤行，点按打开浏览器。
+    val browserSteps = remember(invocations) { invocations.mapNotNull(::browserStep) }
+    val browserOnly = browserSteps.isNotEmpty() && browserSteps.size == invocations.size
     val segments = buildList<CharSequence> {
         if (stateSummaries.isNotEmpty()) add(stateSummaries.joinToString("，"))
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
@@ -1141,7 +1147,7 @@ internal fun InlineToolRow(
         com.promenar.nexara.ui.chat.diff.FileChangeDiffSheet(change, onDismissRequest = { openedChange = null })
     }
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (memoryOnly) MemoryChangeRows(memoryChanges) else CompactStepRow(
+        if (memoryOnly) MemoryChangeRows(memoryChanges) else if (browserOnly) BrowserStepRows(browserSteps, fontSize) else CompactStepRow(
             segments = segments,
             icon = Icons.Rounded.CheckCircle,
             active = summary.status == ToolSummaryStatus.RUNNING,

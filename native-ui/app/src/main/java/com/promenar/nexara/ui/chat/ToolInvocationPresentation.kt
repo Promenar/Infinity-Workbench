@@ -141,6 +141,7 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     COMMAND(ToolSummaryCategory.COMMAND),
     WEB_SEARCH(ToolSummaryCategory.WEB_SEARCH),
     WEB_READ(ToolSummaryCategory.WEB_READ),
+    BROWSER(ToolSummaryCategory.WEB_READ),
     FILE_READ(ToolSummaryCategory.FILE_READ),
     FILE_EDIT(ToolSummaryCategory.FILE_EDIT),
     KNOWLEDGE_SEARCH(ToolSummaryCategory.RETRIEVAL),
@@ -183,6 +184,7 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "job_status", "job_wait", "job_stop", "job_list", "job_input" -> ToolSummaryAction.COMMAND
     "web_search", "search_tavily", "search_searxng" -> ToolSummaryAction.WEB_SEARCH
     "web_fetch" -> ToolSummaryAction.WEB_READ
+    "browser_open", "browser_snapshot", "browser_click", "browser_type" -> ToolSummaryAction.BROWSER
     "read_file", "list_files", "search_files", "read_tool_output", "read_skill_file" -> ToolSummaryAction.FILE_READ
     "write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file",
     "create_directory" -> ToolSummaryAction.FILE_EDIT

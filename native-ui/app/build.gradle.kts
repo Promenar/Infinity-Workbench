@@ -570,6 +570,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.7.0")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.webkit:webkit:1.18.0")
 
     // ─── OkHttp (SSE Client 临时依赖，后期迁移到 Ktor) ───
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

@@ -59,6 +59,10 @@ internal val NexaraLightSignalOn = Color(0xFF22C55E)
 internal val NexaraLightSignalPending = Color(0xFFF59E0B)
 internal val NexaraLightSignalDown = Color(0xFFEF4444)
 
+// Agent 浏览器在网页上标出元素的描边色：网页底色不随应用主题变化，取在白底与暗底上都醒目的固定色。
+val NexaraBrowserAgentHighlight = Color(0xFF4548C7)
+val NexaraBrowserHandoffHighlight = Color(0xFFC25E00)
+
 internal val NexaraDarkDomainColors = NexaraDomainColors(
     success = Color(0xFF4ADE80),
     onSuccess = Color(0xFF003914),

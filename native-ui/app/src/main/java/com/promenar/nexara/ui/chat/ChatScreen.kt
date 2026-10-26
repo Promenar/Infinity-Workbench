@@ -96,6 +96,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
@@ -263,6 +264,8 @@ data class ChatScreenState(
     val runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
     /** 会话二级内容层级；宽窗口下其根即检视器当前页签，为空表示检视器收起。 */
     val inspectorPages: List<ChatPage> = emptyList(),
+    /** 本会话 Agent 浏览器的页面与操作权状态；还没有打开网页时为 null，不显示浏览器入口。 */
+    val browser: com.promenar.nexara.data.browser.BrowserUiState? = null,
 )
 
 data class ChatScreenActions(
@@ -271,6 +274,8 @@ data class ChatScreenActions(
     val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
     val onOpenGit: () -> Unit = {},
+    /** 窄窗口打开 Agent 浏览器整页；宽窗口由检视器页签承载。 */
+    val onOpenBrowser: () -> Unit = {},
     /** 宽窗口检视器：替换整个层级（打开页签、收起）。 */
     val onSetInspectorPages: (List<ChatPage>) -> Unit = {},
     /** 宽窗口检视器的返回：弹出最上层，只剩根层时收起。 */
@@ -663,6 +668,13 @@ fun ChatScreenContent(
                     ) else null,
                     runMode = state.runMode,
                     onRunMode = actions.onOpenRunMode,
+                    browser = state.browser?.let { browser ->
+                        ChatTopBarBrowser(
+                            mode = browser.mode,
+                            open = inspectorRoot == ChatPage.Browser,
+                            onClick = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Browser) }) else actions.onOpenBrowser,
+                        )
+                    },
                 )
                 if (state.startupWritePaused) {
                     com.promenar.nexara.ui.startup.StartupWritePausedBanner(onOpen = actions.onOpenStartupIssues)
@@ -738,9 +750,12 @@ fun ChatScreenContent(
                 gitAvailable = state.gitSummary != null,
                 gitChanges = state.gitSummary?.changeCount ?: 0,
                 canvases = sideCanvases.size,
+                browser = state.browser?.mode,
             )
             var inspectorWidened by rememberSaveable { mutableStateOf(false) }
-            val inspectorWidth = com.promenar.nexara.ui.common.nexaraInspectorWidth(maxWidth, inspectorWidened)
+            // 浏览器页签加宽时铺满会话区，只留左侧一条边距，再按一次恢复。
+            val inspectorWidth = if (inspectorWidened && inspectorRoot == ChatPage.Browser) maxWidth - BrowserMaximizedInset
+            else com.promenar.nexara.ui.common.nexaraInspectorWidth(maxWidth, inspectorWidened)
             // 让位后会话仍有足够宽度（平板横屏）时整体让位；否则（折叠屏内屏）浮在会话右缘之上，会话不动。
             val inspectorFloats = com.promenar.nexara.ui.common.nexaraInspectorPlacement(maxWidth, inspectorWidth) ==
                 com.promenar.nexara.ui.common.NexaraInspectorPlacement.Float
@@ -1270,7 +1285,7 @@ fun ChatScreenContent(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                ChatPage.Explorer, ChatPage.Git -> inspectorPageContent()
+                                ChatPage.Explorer, ChatPage.Git, ChatPage.Browser -> inspectorPageContent()
                             }
                         }
                     }
@@ -1792,6 +1807,8 @@ fun ChatTopBar(
     onRunMode: () -> Unit = {},
     /** 宽窗口：文件、画布与检视器开合直接放在顶栏；为 null 时（窄窗口）只有文件入口与菜单。 */
     inspector: ChatTopBarInspector? = null,
+    /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
+    browser: ChatTopBarBrowser? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     // 运行模式面板贴着点按的入口弹出：标识或菜单按钮。
@@ -1884,6 +1901,13 @@ fun ChatTopBar(
             NexaraBackButton(onClick = onBack)
         },
         actions = {
+            browser?.let { entry ->
+                ChatTopBarAction(
+                    selected = entry.open,
+                    onClick = entry.onClick,
+                    modifier = Modifier.testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY),
+                ) { BrowserTopBarIcon(entry.mode) }
+            }
             ChatTopBarAction(selected = inspector?.filesOpen == true, onClick = onWorkspace) {
                 Icon(
                     Icons.Outlined.Folder,
@@ -2056,6 +2080,39 @@ data class ChatTopBarInspector(
     val showCanvas: Boolean,
     val onToggle: () -> Unit,
 )
+
+/** 顶栏的 Agent 浏览器入口：Agent 操作时挂主色圆点，需要用户处理时挂橙色圆点。 */
+@Immutable
+data class ChatTopBarBrowser(
+    val mode: com.promenar.nexara.data.browser.BrowserMode,
+    val open: Boolean,
+    val onClick: () -> Unit,
+)
+
+private val BrowserMaximizedInset = 24.dp
+
+@Composable
+private fun BrowserTopBarIcon(mode: com.promenar.nexara.data.browser.BrowserMode) {
+    val dot = when (mode) {
+        com.promenar.nexara.data.browser.BrowserMode.AGENT -> MaterialTheme.colorScheme.primary
+        com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> MaterialTheme.colorScheme.tertiary
+        else -> null
+    }
+    val description = listOfNotNull(
+        stringResource(R.string.browser_cd_open),
+        when (mode) {
+            com.promenar.nexara.data.browser.BrowserMode.AGENT -> stringResource(R.string.chat_inspector_browser_agent)
+            com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> stringResource(R.string.chat_inspector_browser_needs_you)
+            else -> null
+        },
+    ).joinToString(", ")
+    Box {
+        Icon(Icons.Rounded.Public, description, modifier = Modifier.size(22.dp))
+        if (dot != null) {
+            Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(dot, androidx.compose.foundation.shape.CircleShape))
+        }
+    }
+}
 
 /** 顶栏图标按钮；对应的检视器页签展开时以浅色底标出。 */
 @Composable

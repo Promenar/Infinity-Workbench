@@ -700,6 +700,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val composerDraftRecovery = com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore()
+    /** 各聊天会话的 Agent 浏览器页面，WebView 只在主线程创建。 */
+    val agentBrowser: com.promenar.nexara.ui.browser.AgentBrowserHost by lazy { com.promenar.nexara.ui.browser.AgentBrowserHost(this) }
     val canvasStore: com.promenar.nexara.data.canvas.CanvasStore by lazy {
         com.promenar.nexara.data.canvas.FileCanvasStore(
             java.io.File(filesDir, "session_canvases"),
@@ -1455,6 +1457,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             }.forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebFetchSkill(gitRemoteHttpClient, networkPolicy = agentNetworkPolicy, tailnetRouting = tailnetManager))
+            com.promenar.nexara.ui.chat.manager.skills.browserTools(agentBrowser, agentNetworkPolicy).forEach(::register)
             register(com.promenar.nexara.ui.chat.manager.skills.ViewMediaSkill(workspaceMediaViewer) { sessionId ->
                 chatStore.getSession(sessionId)?.let { resolveMediaViewTarget(it) }
                     ?: com.promenar.nexara.data.generation.MediaViewTarget()

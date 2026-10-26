@@ -2,7 +2,7 @@ package com.promenar.nexara.ui.chat
 
 /**
  * 会话的二级内容层级，与单一模态层队列相互独立：宽窗口下检视器展开时仍可继续对话，审批到来也不会把它收起。
- * - 资源管理器、Git 变更（[isPage]）：窄窗口由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 整页承载，宽窗口在检视器中；
+ * - 资源管理器、Git 变更、Agent 浏览器（[isPage]）：窄窗口由 [com.promenar.nexara.ui.common.NexaraAdaptivePaneHost] 整页承载，宽窗口在检视器中；
  * - 运行、画布：只作为宽窗口检视器的页签；窄窗口仍用运行详情面板与画布列表，不进入层级。
  * 宽窗口下层级的根即检视器当前页签，层级为空表示检视器收起。
  */
@@ -11,6 +11,7 @@ enum class ChatPage(val token: String, val isPage: Boolean) {
     Explorer("explorer", isPage = true),
     Git("git", isPage = true),
     Canvas("canvas", isPage = false),
+    Browser("browser", isPage = true),
 }
 
 /** 从顶栏、检视器页签等会话入口打开：替换整个层级，以该页为根。 */
@@ -28,7 +29,7 @@ internal fun saveChatPages(pages: List<ChatPage>): String = pages.joinToString("
 internal fun restoreChatPages(token: String): List<ChatPage> =
     token.split(',').mapNotNull { part -> ChatPage.entries.firstOrNull { it.token == part } }.distinct()
 
-/** 窄窗口整页承载的层级：只取资源管理器与 Git；运行与画布只是宽窗口检视器的页签，窄窗口不覆盖会话。 */
+/** 窄窗口整页承载的层级：只取资源管理器、Git 与浏览器；运行与画布只是宽窗口检视器的页签，窄窗口不覆盖会话。 */
 internal fun chatPageStack(pages: List<ChatPage>): List<ChatPage> = pages.filter { it.isPage }
 
 /**
