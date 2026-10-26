@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.browser.BrowserElement
 import com.promenar.nexara.data.browser.BrowserHandoffReason
+import com.promenar.nexara.data.browser.BrowserMode
 import com.promenar.nexara.data.browser.BrowserSnapshot
 import com.promenar.nexara.data.browser.BrowserSnapshotFormatter
 import com.promenar.nexara.data.model.ExecutionStep
@@ -69,5 +70,17 @@ class BrowserToolPresentationTest {
         assertThat(badges.hasContent).isTrue()
         assertThat(chatPageStack(listOf(ChatPage.Browser))).containsExactly(ChatPage.Browser)
         assertThat(restoreChatPages("browser")).containsExactly(ChatPage.Browser)
+    }
+
+    @Test fun `宽窗口有检视器侧栏时顶栏不再放浏览器入口，状态由侧栏边缘条显示`() {
+        val opened = mutableListOf<String>()
+        val narrow = chatTopBarBrowser(inspectorMode = false, mode = BrowserMode.HANDOFF, open = false) { opened += "browser" }
+        assertThat(narrow?.mode).isEqualTo(BrowserMode.HANDOFF)
+        narrow!!.onClick()
+        assertThat(opened).containsExactly("browser")
+
+        assertThat(chatTopBarBrowser(inspectorMode = true, mode = BrowserMode.HANDOFF, open = false) {}).isNull()
+        // 侧栏收起时，打开过网页的浏览器仍让边缘条出现，并带状态点。
+        assertThat(ChatInspectorBadges(browser = BrowserMode.HANDOFF, browserEntry = true).hasContent).isTrue()
     }
 }

@@ -681,13 +681,12 @@ fun ChatScreenContent(
                     onRunMode = actions.onOpenRunMode,
                     workspace = state.workspace,
                     onWorkspaceStatus = actions.onOpenWorkspaceStatus,
-                    browser = (state.browser?.mode ?: com.promenar.nexara.data.browser.BrowserMode.IDLE).let { mode ->
-                        ChatTopBarBrowser(
-                            mode = mode,
-                            open = inspectorRoot == ChatPage.Browser,
-                            onClick = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Browser) }) else actions.onOpenBrowser,
-                        )
-                    },
+                    browser = chatTopBarBrowser(
+                        inspectorMode = inspectorMode,
+                        mode = state.browser?.mode ?: com.promenar.nexara.data.browser.BrowserMode.IDLE,
+                        open = inspectorRoot == ChatPage.Browser,
+                        onOpen = actions.onOpenBrowser,
+                    ),
                 )
                 if (state.startupWritePaused) {
                     com.promenar.nexara.ui.startup.StartupWritePausedBanner(onOpen = actions.onOpenStartupIssues)
@@ -2171,6 +2170,14 @@ data class ChatTopBarBrowser(
     val open: Boolean,
     val onClick: () -> Unit,
 )
+
+/** 宽窗口的检视器侧栏已有常驻浏览器页签，收起时边缘条也带状态点，顶栏地球入口只在窄窗口出现。 */
+internal fun chatTopBarBrowser(
+    inspectorMode: Boolean,
+    mode: com.promenar.nexara.data.browser.BrowserMode,
+    open: Boolean,
+    onOpen: () -> Unit,
+): ChatTopBarBrowser? = if (inspectorMode) null else ChatTopBarBrowser(mode = mode, open = open, onClick = onOpen)
 
 private val BrowserMaximizedInset = 24.dp
 
