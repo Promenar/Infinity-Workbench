@@ -22,11 +22,9 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.model.CredentialUpdate
-import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.onboarding.OnboardingStateStore
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.onboarding.OnboardingLanguageSelectionCoordinator
-import com.promenar.nexara.onboarding.createOnboardingAgentSession
 import com.promenar.nexara.onboarding.isSuccessfulOnboardingAssistant
 import com.promenar.nexara.ui.chat.ChatRoute
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
@@ -50,8 +48,8 @@ import com.promenar.nexara.ui.settings.DefaultModelsScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
-import com.promenar.nexara.ui.welcome.WelcomeScreen
-import com.promenar.nexara.ui.welcome.onboardingModelCandidates
+import com.promenar.nexara.ui.welcome.OnboardingRoute
+import com.promenar.nexara.ui.welcome.offersOnboardingLinux
 import com.promenar.nexara.util.LocaleController
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
@@ -156,10 +154,9 @@ fun NexaraNavGraph(
     val context = LocalContext.current
     val app = context.applicationContext as NexaraApplication
     val onboardingStore = remember(app, onboardingStateStore) {
-        onboardingStateStore ?: OnboardingStateStore(app)
+        onboardingStateStore ?: OnboardingStateStore(app, linuxOffered = app.offersOnboardingLinux())
     }
     val onboardingState by onboardingStore.state.collectAsState()
-    val onboardingScope = rememberCoroutineScope()
     val languageSelection = remember(context, onboardingStore) {
         OnboardingLanguageSelectionCoordinator(
             stateStore = onboardingStore,
@@ -205,24 +202,6 @@ fun NexaraNavGraph(
         mainTabs.settingsLastRoot = pages.first()
     }
 
-    val providerFormHooks = ProviderFormHooks(
-        onboardingMode = {
-            onboardingState.step == OnboardingStep.PROVIDER ||
-                onboardingState.step == OnboardingStep.CONNECTION
-        },
-        forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
-        onSaved = { savedProviderId ->
-            if (onboardingState.step == OnboardingStep.PROVIDER) {
-                onboardingStore.recordProviderSaved(savedProviderId)
-            }
-        },
-        onConnectionVerified = { verifiedProviderId ->
-            if (onboardingState.step == OnboardingStep.CONNECTION) {
-                onboardingStore.recordConnectionResult(verifiedProviderId, succeeded = true)
-            }
-        },
-    )
-
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -233,103 +212,12 @@ fun NexaraNavGraph(
         popExitTransition = { NexaraMotion.sharedAxisXExit(forward = false) },
     ) {
         composable(NavDestinations.WELCOME) {
-            val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
-            val providerModels by viewModel.providerModels.collectAsState()
-            val isFetchingModels by viewModel.isFetchingModels.collectAsState()
-            val models = onboardingModelCandidates(
-                onboardingModelsOverride ?: providerModels,
-                onboardingState.providerId,
-            )
-            LaunchedEffect(onboardingState.step, onboardingState.providerId) {
-                if (onboardingState.step == OnboardingStep.MODEL && onboardingModelsOverride == null) {
-                    onboardingState.providerId?.let(viewModel::refreshProviderModels)
-                }
-            }
-            var isWorking by remember { mutableStateOf(false) }
-            var onboardingError by remember { mutableStateOf<String?>(null) }
-            val actionFailed = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.onboarding_action_failed)
-            WelcomeScreen(
-                onLanguageSelected = { languageCode ->
-                    if (!isWorking) {
-                        isWorking = true
-                        languageSelection.select(languageCode)
-                        isWorking = false
-                    }
-                },
-                state = onboardingState,
-                models = models,
-                isWorking = isWorking || isFetchingModels,
-                errorMessage = onboardingError,
-                onOpenProvider = { navController.navigate(NavDestinations.providerForm()) },
-                onOpenConnection = {
-                    navController.navigate(NavDestinations.providerForm(onboardingState.providerId))
-                },
-                onModelSelected = { modelId: String ->
-                    models.firstOrNull { it.id == modelId }?.let { model ->
-                        if (!isWorking) {
-                            isWorking = true
-                            onboardingError = null
-                            onboardingScope.launch {
-                                val verified = viewModel.verifyOnboardingModel(
-                                    providerId = onboardingState.providerId.orEmpty(),
-                                    model = model,
-                                )
-                                if (verified == null) {
-                                    onboardingError = app.getString(
-                                        com.promenar.nexara.R.string.onboarding_model_probe_failed
-                                    )
-                                } else {
-                                    if (!verified.enabled) viewModel.updateModel(verified.copy(enabled = true))
-                                    onboardingStore.selectModel(verified.id)
-                                }
-                                isWorking = false
-                            }
-                        }
-                    }
-                },
-                onRefreshModels = {
-                    onboardingState.providerId?.let(viewModel::refreshProviderModels)
-                },
-                onBackToConnection = { onboardingStore.returnToConnection() },
-                onCreateAgent = { name ->
-                    if (!isWorking) {
-                        isWorking = true
-                        onboardingError = null
-                        onboardingScope.launch {
-                            runCatching {
-                                val modelId = requireNotNull(
-                                    onboardingState.modelId?.takeIf { it.isNotBlank() }
-                                ) { "首次引导尚未选择模型" }
-                                createOnboardingAgentSession(
-                                    modelId = modelId,
-                                    createAgent = {
-                                        app.createAgentUseCase(
-                                            name = name,
-                                            description = "",
-                                            modelId = modelId,
-                                            systemPrompt = "",
-                                        ).id
-                                    },
-                                    newSessionId = IdGenerator::session,
-                                    createSession = app.sessionRepository::create,
-                                    loadSession = app.sessionRepository::getById,
-                                    deleteSession = app.sessionRepository::delete,
-                                    deleteAgent = app.agentRepository::delete,
-                                    chatStore = app.chatStore,
-                                    recordCheckpoint = onboardingStore::recordAgentCreated,
-                                )
-                            }.onFailure {
-                                onboardingError = actionFailed
-                            }
-                            isWorking = false
-                        }
-                    }
-                },
-                onOpenFirstChat = {
-                    onboardingState.sessionId?.let { sessionId ->
-                        openOnboardingFirstChat(navController, sessionId)
-                    }
-                },
+            OnboardingRoute(
+                store = onboardingStore,
+                languageSelection = languageSelection,
+                navController = navController,
+                modelsOverride = onboardingModelsOverride,
+                forceLocalProbeFailureForTesting = forceLocalProbeFailureForTesting,
             )
         }
 
@@ -345,7 +233,7 @@ fun NexaraNavGraph(
                     navController.navigate(NavDestinations.chatHero(sessionId))
                 },
                 state = mainTabs,
-                settingsPaneGraph = { navigator -> settingsDestinations(navigator, providerFormHooks) },
+                settingsPaneGraph = { navigator -> settingsDestinations(navigator) },
             )
         }
 
@@ -468,7 +356,7 @@ fun NexaraNavGraph(
             )
         }
 
-        settingsDestinations(SettingsNavigator(navController), providerFormHooks)
+        settingsDestinations(SettingsNavigator(navController))
 
         composable(
             route = NavDestinations.KNOWLEDGE_GRAPH_ROUTE,
@@ -562,19 +450,11 @@ fun NexaraNavGraph(
 }
 
 
-/** 提供商表单在引导流程中的回调；设置右列中引导已结束，沿用同一份。 */
-internal class ProviderFormHooks(
-    val onboardingMode: () -> Boolean,
-    val forceLocalProbeFailureForTesting: Boolean,
-    val onSaved: (String) -> Unit,
-    val onConnectionVerified: (String) -> Unit,
-)
-
 /**
  * 设置子页的注册：主导航（整页）与宽屏设置右列（[SettingsNavigator] 带 outside）共用。
  * 页面间跳转经 [navigator]，右列中打开终端、文件、知识图谱与会话等整页内容时交给主导航。
  */
-internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator, providerForm: ProviderFormHooks) {
+internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) {
     composable(NavDestinations.RAG_ADVANCED) { entry ->
         navigator.Page(entry) {
             AdvancedRetrievalScreen(
@@ -629,10 +509,8 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator, 
             val app = LocalContext.current.applicationContext as NexaraApplication
             val providerId = backStackEntry.arguments?.getString("providerId")
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
-            val onboardingMode = providerForm.onboardingMode()
             ProviderFormScreen(
                 providerId = providerId,
-                forceLocalProbeFailureForTesting = providerForm.forceLocalProbeFailureForTesting,
                 onNavigateBack = { navigator.back() },
                 onOpenTailscaleSettings = { navigator.open(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
                 onNavigateToModels = {
@@ -648,73 +526,9 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator, 
                         }
                     }
                 },
-                onboardingMode = onboardingMode,
-                onSaved = providerForm.onSaved,
-                onConnectionVerified = providerForm.onConnectionVerified,
                 onSave = { protocolType, baseUrl, credential, model, name ->
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                      val providerManager = com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                      val existingSummary = providerId?.let(providerManager::getProviderSummary)
-                      val credentialPresent = when (credential) {
-                          is CredentialUpdate.Replace -> true
-                          CredentialUpdate.Clear -> false
-                          CredentialUpdate.Preserve -> existingSummary?.let {
-                              it.hasApiKey || it.hasVertexCredentials
-                          } ?: false
-                      }
-                      if (providerId == null) {
-                        // 判断是首次配置还是新增额外提供商
-                        val mainConfig = providerManager.getProviderSummary("default")
-                        if (mainConfig == null || (!mainConfig.hasApiKey && !mainConfig.hasVertexCredentials)) {
-                            // 全新安装 / 主提供商未配置：创建主提供商，使 Tier 3 兜底生效
-                            app.updateProvider(protocolType, baseUrl, credential, model, name)
-                            "default"
-                        } else {
-                            // 已有主提供商：新增额外提供商
-                            val id = "extra_${java.util.UUID.randomUUID()}"
-                            val item = com.promenar.nexara.data.model.ProviderListItem(
-                                id = id,
-                                name = name ?: protocolType.displayName,
-                                typeName = protocolType.displayName,
-                                baseUrl = baseUrl,
-                                model = model,
-                                protocolType = protocolType,
-                                hasApiKey = credentialPresent && protocolType !is ProtocolType.Google_VertexAI,
-                                hasVertexCredentials = credentialPresent && protocolType is ProtocolType.Google_VertexAI,
-                            )
-                            com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                                .addProvider(
-                                    item,
-                                    credential,
-                                )
-                            id
-                        }
-                      } else if (providerId == "default") {
-                        // 编辑主提供商
-                        app.updateProvider(protocolType, baseUrl, credential, model, name)
-                        providerId
-                      } else {
-                        // 编辑额外提供商
-                        val item = com.promenar.nexara.data.model.ProviderListItem(
-                            id = providerId,
-                            name = name ?: protocolType.displayName,
-                            typeName = protocolType.displayName,
-                            baseUrl = baseUrl,
-                            model = model,
-                            protocolType = protocolType,
-                            hasApiKey = credentialPresent && protocolType !is ProtocolType.Google_VertexAI,
-                            hasVertexCredentials = credentialPresent && protocolType is ProtocolType.Google_VertexAI,
-                        )
-                        com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                            .updateExtraProvider(
-                                providerId,
-                                item,
-                                credential,
-                            )
-                        providerId
-                      }
-                    }
-                }
+                    saveProviderConfiguration(app, providerId, protocolType, baseUrl, credential, model, name)
+                },
             )
         }
     }

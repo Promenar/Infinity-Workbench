@@ -462,7 +462,7 @@ internal fun LinuxOutputBox(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun LinuxFailureCard(failure: LinuxFailure) {
+internal fun LinuxFailureCard(failure: LinuxFailure) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Medium)) {
@@ -491,7 +491,7 @@ private fun LinuxFailureCard(failure: LinuxFailure) {
 }
 
 @Composable
-private fun LinuxInstallStepRow(step: LinuxInstallStepState) {
+internal fun LinuxInstallStepRow(step: LinuxInstallStepState) {
     val pending = step.status == LinuxStepStatus.PENDING || step.status == LinuxStepStatus.SKIPPED
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = NexaraSpacing.Large, vertical = 10.dp),

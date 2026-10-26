@@ -63,8 +63,6 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.domain.repository.RenameIndexTarget
-import com.promenar.nexara.onboarding.OnboardingState
-import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.chat.ApprovalCard
 import com.promenar.nexara.ui.chat.ApprovalDisplayCall
 import com.promenar.nexara.ui.chat.ApprovalPreview
@@ -164,7 +162,6 @@ import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
-import com.promenar.nexara.ui.welcome.WelcomeScreen
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
@@ -438,90 +435,6 @@ fun ragHomeMemoryContentPhoneReleasePreview() {
 
 @PreviewTest
 @Preview(
-    name = "Onboarding language English",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "en",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun onboardingLanguageReleasePreview() {
-    ReleasePreviewSurface {
-        WelcomeScreen(onLanguageSelected = {})
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Onboarding language Chinese tablet",
-    widthDp = 840,
-    heightDp = 900,
-    locale = "zh-rCN",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun onboardingLanguageTabletReleasePreview() {
-    ReleasePreviewSurface {
-        WelcomeScreen(onLanguageSelected = {})
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Onboarding language font scale 2",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "en",
-    fontScale = 2f,
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun onboardingLanguageLargeFontReleasePreview() {
-    ReleasePreviewSurface {
-        WelcomeScreen(onLanguageSelected = {})
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Onboarding model list Chinese",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "zh-rCN",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun onboardingModelListReleasePreview() {
-    ReleasePreviewSurface {
-        WelcomeScreen(
-            onLanguageSelected = {},
-            state = OnboardingState(
-                step = OnboardingStep.MODEL,
-                languageCode = "zh",
-                providerId = "preview-provider",
-            ),
-            models = listOf(
-                ModelInfo(
-                    name = "MiniMax-M3",
-                    id = "preview-provider::minimax-m3",
-                    description = "Multimodal",
-                    enabled = true,
-                    type = "chat",
-                ),
-                ModelInfo(
-                    name = "DeepSeek Reasoning",
-                    id = "preview-provider::deepseek-reasoning",
-                    description = "Reasoning",
-                    enabled = true,
-                    type = "reasoning",
-                ),
-            ),
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
     name = "Provider masked API key",
     widthDp = PHONE_WIDTH_DP,
     heightDp = 220,
@@ -605,32 +518,6 @@ fun providerFormEditActionsLargeFontReleasePreview() {
             ),
             actions = ProviderFormActions(),
             listState = rememberLazyListState(initialFirstVisibleItemIndex = 3),
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Provider form local onboarding failure",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
-    locale = "zh-rCN",
-    uiMode = Configuration.UI_MODE_NIGHT_YES,
-)
-@Composable
-fun providerFormLocalFailureReleasePreview() {
-    ReleasePreviewSurface {
-        ProviderFormContent(
-            state = ProviderFormUiState(
-                isEditing = true,
-                isExistingProvider = true,
-                name = "Local",
-                selectedPreset = PROVIDER_PRESETS.first { it.name == "Local" },
-                isLocal = true,
-                onboardingMode = true,
-                localConnectionFailed = true,
-            ),
-            actions = ProviderFormActions(),
         )
     }
 }

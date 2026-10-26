@@ -168,7 +168,7 @@ class NavigationMotionContractTest {
             "git/GitChangesPanel.kt" to listOf("label = \"git_panel_page\"", "label = \"git_panel_tab\"", "label = \"git_panel_title\"", "GitLoadContent("),
             "chat/components/RagDetailsSheet.kt" to listOf("label = \"rag_details_tab\""),
             "settings/SkillsScreen.kt" to listOf("label = \"skills_tab\""),
-            "welcome/WelcomeScreen.kt" to listOf("label = \"onboarding_language\"", "label = \"onboarding_step\""),
+            "welcome/OnboardingScreen.kt" to listOf("label = \"onboarding_intro\"", "label = \"onboarding_step\""),
             "rag/DocEditorScreen.kt" to listOf("label = \"doc_editor_state\"", "exit = ExitTransition.None"),
             "rag/KnowledgeGraphScreen.kt" to listOf("label = \"kg_canvas_phase\""),
             "rag/KnowledgeGraphPageParts.kt" to listOf("label = \"kg_search_phase\""),

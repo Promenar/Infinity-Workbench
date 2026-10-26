@@ -456,12 +456,12 @@ class SettingsViewModel(
         streamRetryLimit.value = readStreamRetryLimit()
     }
 
-    /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */
-    fun refreshProviderModels(providerId: String) {
-        if (!modelSyncGate.tryAcquire()) return
+    /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新）；已有同步在进行时返回 null。 */
+    fun refreshProviderModels(providerId: String): Job? {
+        if (!modelSyncGate.tryAcquire()) return null
         _isFetchingModels.value = true
         _modelSyncNotice.value = ModelSyncNotice.loading()
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val config = pm.getProviderConfig(providerId)
                 if (config == null) {

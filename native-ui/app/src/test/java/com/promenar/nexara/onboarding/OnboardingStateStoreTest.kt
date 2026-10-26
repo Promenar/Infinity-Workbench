@@ -21,29 +21,51 @@ class OnboardingStateStoreTest {
             .edit().clear().commit()
     }
 
-    @Test
-    fun `固定步骤只能在前置成功后推进且失败不越级`() {
-        val store = OnboardingStateStore(context)
+    private fun store(linuxOffered: Boolean = false) = OnboardingStateStore(context, linuxOffered)
 
-        assertThat(store.state.value.step).isEqualTo(OnboardingStep.LANGUAGE)
-        assertThat(store.recordProviderSaved("provider")).isFalse()
+    @Test
+    fun `连接成功一次即进入选模型而没有单独的验证连接步骤`() {
+        val store = store()
+
+        assertThat(OnboardingStep.entries.map { it.name }).doesNotContain("CONNECTION")
+        assertThat(store.recordProviderConnected("provider")).isFalse()
         assertThat(store.selectLanguage("zh")).isTrue()
         assertThat(store.state.value.step).isEqualTo(OnboardingStep.PROVIDER)
-        assertThat(store.recordConnectionResult("provider", succeeded = true)).isFalse()
-        assertThat(store.recordProviderSaved("provider")).isTrue()
-        assertThat(store.recordConnectionResult("provider", succeeded = false)).isFalse()
-        assertThat(store.state.value.step).isEqualTo(OnboardingStep.CONNECTION)
-        assertThat(store.recordConnectionResult("other", succeeded = true)).isFalse()
-        assertThat(store.recordConnectionResult("provider", succeeded = true)).isTrue()
+        assertThat(store.recordProviderConnected(" ")).isFalse()
+        assertThat(store.recordProviderConnected("provider")).isTrue()
         assertThat(store.state.value.step).isEqualTo(OnboardingStep.MODEL)
+        assertThat(store.state.value.providerId).isEqualTo("provider")
+        // 已在选模型时再记录连接不会重复推进。
+        assertThat(store.recordProviderConnected("provider")).isFalse()
+    }
+
+    @Test
+    fun `支持Linux时语言之后进入Linux步骤且安装或跳过都推进到连接`() {
+        val store = store(linuxOffered = true)
+
+        assertThat(store.completeLinuxStep()).isFalse()
+        assertThat(store.selectLanguage("en")).isTrue()
+        assertThat(store.state.value.step).isEqualTo(OnboardingStep.LINUX)
+        assertThat(store.recordProviderConnected("provider")).isFalse()
+        assertThat(store.completeLinuxStep()).isTrue()
+        assertThat(store.state.value.step).isEqualTo(OnboardingStep.PROVIDER)
+        assertThat(store.completeLinuxStep()).isFalse()
+    }
+
+    @Test
+    fun `不支持Linux时语言之后直接连接提供商`() {
+        val store = store(linuxOffered = false)
+
+        assertThat(store.selectLanguage("zh")).isTrue()
+        assertThat(store.state.value.step).isEqualTo(OnboardingStep.PROVIDER)
+        assertThat(store.completeLinuxStep()).isFalse()
     }
 
     @Test
     fun `无模型时保持阻断且仅有效模型可推进到Agent`() {
-        val store = OnboardingStateStore(context)
+        val store = store()
         assertThat(store.selectLanguage("en")).isTrue()
-        assertThat(store.recordProviderSaved("provider")).isTrue()
-        assertThat(store.recordConnectionResult("provider", succeeded = true)).isTrue()
+        assertThat(store.recordProviderConnected("provider")).isTrue()
         assertThat(store.selectModel(null)).isFalse()
         assertThat(store.selectModel("  ")).isFalse()
         assertThat(store.state.value.step).isEqualTo(OnboardingStep.MODEL)
@@ -53,14 +75,33 @@ class OnboardingStateStoreTest {
     }
 
     @Test
+    fun `选模型可返回连接提供商且创建Agent可返回选模型`() {
+        val store = store()
+        assertThat(store.selectLanguage("zh")).isTrue()
+        assertThat(store.recordProviderConnected("provider")).isTrue()
+        assertThat(store.recordAgentCreated("agent", "session")).isFalse()
+        assertThat(store.returnToProvider()).isTrue()
+        assertThat(store.state.value.step).isEqualTo(OnboardingStep.PROVIDER)
+        // 返回后保留已保存的提供商，重新连接时更新同一个而不是新增。
+        assertThat(store.state.value.providerId).isEqualTo("provider")
+
+        assertThat(store.recordProviderConnected("provider")).isTrue()
+        assertThat(store.selectModel("provider::model")).isTrue()
+        assertThat(store.returnToModel()).isTrue()
+        assertThat(store.state.value).isEqualTo(
+            OnboardingState(step = OnboardingStep.MODEL, languageCode = "zh", providerId = "provider"),
+        )
+    }
+
+    @Test
     fun `首聊只有目标会话最终成功态才完成`() {
-        val store = OnboardingStateStore(context)
+        val store = store()
         assertThat(store.selectLanguage("en")).isTrue()
-        assertThat(store.recordProviderSaved("provider")).isTrue()
-        assertThat(store.recordConnectionResult("provider", succeeded = true)).isTrue()
+        assertThat(store.recordProviderConnected("provider")).isTrue()
         assertThat(store.selectModel("provider::model")).isTrue()
         assertThat(store.recordAgentCreated("agent", "session")).isTrue()
         assertThat(store.state.value.step).isEqualTo(OnboardingStep.FIRST_CHAT)
+        assertThat(store.returnToModel()).isFalse()
 
         assertThat(store.recordFirstChatResult("other", assistantSucceeded = true)).isFalse()
         assertThat(store.recordFirstChatResult("session", assistantSucceeded = false)).isFalse()
@@ -72,27 +113,14 @@ class OnboardingStateStoreTest {
     }
 
     @Test
-    fun `模型缺失时不能创建Agent且可返回连接重试`() {
-        val store = OnboardingStateStore(context)
-        assertThat(store.selectLanguage("zh")).isTrue()
-        assertThat(store.recordProviderSaved("provider")).isTrue()
-        assertThat(store.recordConnectionResult("provider", succeeded = true)).isTrue()
-        assertThat(store.recordAgentCreated("agent", "session")).isFalse()
-        assertThat(store.returnToConnection()).isTrue()
-        assertThat(store.state.value.step).isEqualTo(OnboardingStep.CONNECTION)
-    }
-
-    @Test
     fun `旋转或进程重建从最后成功检查点恢复`() {
-        val first = OnboardingStateStore(context)
+        val first = store()
         assertThat(first.selectLanguage("zh")).isTrue()
-        assertThat(first.recordProviderSaved("provider-id")).isTrue()
+        assertThat(first.recordProviderConnected("provider-id")).isTrue()
 
-        val restored = OnboardingStateStore(context)
-
-        assertThat(restored.state.value).isEqualTo(
+        assertThat(store().state.value).isEqualTo(
             OnboardingState(
-                step = OnboardingStep.CONNECTION,
+                step = OnboardingStep.MODEL,
                 languageCode = "zh",
                 providerId = "provider-id",
             )
@@ -100,11 +128,45 @@ class OnboardingStateStoreTest {
     }
 
     @Test
+    fun `旧版本停在验证连接的检查点读入为连接提供商并保留提供商`() {
+        context.getSharedPreferences(OnboardingStateStore.PREFERENCES_NAME, Context.MODE_PRIVATE).edit()
+            .putString("step", "CONNECTION")
+            .putString("language", "zh")
+            .putString("provider_id", "default")
+            .commit()
+
+        val restored = store()
+
+        assertThat(restored.state.value).isEqualTo(
+            OnboardingState(step = OnboardingStep.PROVIDER, languageCode = "zh", providerId = "default"),
+        )
+        assertThat(restored.recordProviderConnected("default")).isTrue()
+        assertThat(restored.state.value.step).isEqualTo(OnboardingStep.MODEL)
+    }
+
+    @Test
+    fun `停在Linux步骤但当前版本不支持时恢复为连接提供商`() {
+        val offered = store(linuxOffered = true)
+        assertThat(offered.selectLanguage("en")).isTrue()
+        assertThat(offered.state.value.step).isEqualTo(OnboardingStep.LINUX)
+
+        assertThat(store(linuxOffered = false).state.value.step).isEqualTo(OnboardingStep.PROVIDER)
+        assertThat(store(linuxOffered = true).state.value.step).isEqualTo(OnboardingStep.LINUX)
+    }
+
+    @Test
     fun `历史已完成欢迎页迁移为完成态`() {
         context.getSharedPreferences("nexara_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("has_shown_welcome", true).commit()
 
-        assertThat(OnboardingStateStore(context).state.value.step)
-            .isEqualTo(OnboardingStep.COMPLETED)
+        assertThat(store().state.value.step).isEqualTo(OnboardingStep.COMPLETED)
+    }
+
+    @Test
+    fun `只有侧载渠道且主ABI为arm64时引导提供Linux`() {
+        assertThat(onboardingOffersLinux(linuxRuntimeAvailable = true, primaryAbi = "arm64-v8a")).isTrue()
+        assertThat(onboardingOffersLinux(linuxRuntimeAvailable = false, primaryAbi = "arm64-v8a")).isFalse()
+        assertThat(onboardingOffersLinux(linuxRuntimeAvailable = true, primaryAbi = "x86_64")).isFalse()
+        assertThat(onboardingOffersLinux(linuxRuntimeAvailable = true, primaryAbi = null)).isFalse()
     }
 }
