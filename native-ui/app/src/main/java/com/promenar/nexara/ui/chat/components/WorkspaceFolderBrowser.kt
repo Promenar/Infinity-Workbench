@@ -1,6 +1,11 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.delay
+import com.promenar.nexara.ui.workspace.WorkspaceNameDialog
+import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,6 +100,7 @@ internal suspend fun resolveFolderChain(
 /**
  * 会话工作区的穿透式目录浏览：每次只显示一级，点目录进入下一级，面包屑与系统返回回到上级。
  * 搜索时改为整个工作区的扁平结果并标出所在路径，点结果跳转到对应目录。
+ * 提供 [fileActions] 时与目录工作区一致：长按多选后移动、重命名、删除（移入回收站）。
  */
 @Composable
 internal fun WorkspaceFolderBrowser(
@@ -110,6 +116,8 @@ internal fun WorkspaceFolderBrowser(
     onClearSearch: () -> Unit,
     initialFolderPath: String? = null,
     onImport: (() -> Unit)? = null,
+    fileOps: PrivateFileOpsState = PrivateFileOpsState(),
+    fileActions: PrivateFileActions? = null,
 ) {
     var folderStack by rememberSaveable(workspaceRootUuid) { mutableStateOf(listOf<FolderCrumb>()) }
     val atRoot = folderStack.isEmpty()
@@ -134,9 +142,13 @@ internal fun WorkspaceFolderBrowser(
     val openMedia = rememberWorkspaceMediaOpener(sessionId, workspaceRootUuid)
     val onMediaFileClick: ((FileEntry) -> Unit)? = openMedia?.let { open -> { entry -> open(entry.materializedPath) } }
 
-    BackHandler(enabled = !atRoot && searchQuery.isBlank()) {
-        folderStack = folderStack.dropLast(1)
+    val selecting = fileActions != null && fileOps.selection.isNotEmpty()
+    BackHandler(enabled = selecting || (!atRoot && searchQuery.isBlank())) {
+        if (selecting) fileActions?.onClearSelection?.invoke() else folderStack = folderStack.dropLast(1)
     }
+    // 选择只在当前一级目录内有效，换目录即清空；剪贴板保留以便粘贴到别处。
+    val currentFolderId = folderStack.lastOrNull()?.id ?: workspaceRootUuid
+    LaunchedEffect(currentFolderId) { fileActions?.onClearSelection?.invoke() }
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (searchQuery.isBlank()) {
@@ -181,8 +193,19 @@ internal fun WorkspaceFolderBrowser(
                         },
                         onMediaFileClick = onMediaFileClick,
                         onImport = onImport.takeIf { shownAtRoot },
+                        onToggleSelection = fileActions?.onToggleSelect,
+                        selectionKeys = fileOps.selection.keys,
                     )
                 }
+            }
+            if (fileActions != null && workspaceRootUuid != null && currentFolderId != null) {
+                PrivateFileActionArea(
+                    workspaceRootUuid = workspaceRootUuid,
+                    workspaceRepo = workspaceRepo,
+                    currentFolderId = currentFolderId,
+                    state = fileOps,
+                    actions = fileActions,
+                )
             }
         } else {
             WorkspaceSearchResults(
@@ -288,5 +311,98 @@ private fun WorkspaceSearchHitRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** 文件页底部的进度、结果提示与操作栏，以及改名、删除确认对话框；载体与目录工作区相同。 */
+@Composable
+private fun PrivateFileActionArea(
+    workspaceRootUuid: String,
+    workspaceRepo: IWorkspaceRepository,
+    currentFolderId: String,
+    state: PrivateFileOpsState,
+    actions: PrivateFileActions,
+) {
+    var renaming by remember { mutableStateOf<FileEntry?>(null) }
+    var renameError by remember { mutableStateOf<DirectoryFileOpCode?>(null) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+    // 粘贴目标按物化路径判定；路径读出前不允许粘贴。
+    val currentFolderPath by produceState<String?>(null, workspaceRootUuid, currentFolderId) {
+        value = if (currentFolderId == workspaceRootUuid) "/" else workspaceRepo.getByUuid(workspaceRootUuid, currentFolderId)?.materializedPath
+    }
+    AnimatedVisibility(visible = state.operating, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Large))
+    }
+    state.outcome?.let { outcome ->
+        DirectoryOutcomeLine(outcome)
+        LaunchedEffect(outcome) {
+            delay(OUTCOME_VISIBLE_MS)
+            actions.onDismissOutcome()
+        }
+    }
+    val clipboard = state.clipboard
+    AnimatedContent(
+        targetState = when {
+            state.selection.isNotEmpty() -> 1
+            clipboard != null -> 2
+            else -> 0
+        },
+        transitionSpec = { NexaraMotion.fadeThrough() },
+        label = "private_file_action_bar",
+    ) { bar ->
+        when (bar) {
+            1 -> DirectorySelectionBar(
+                count = state.selection.size,
+                busy = state.operating,
+                onCopy = null,
+                onMove = actions.onCut,
+                onRename = {
+                    renameError = null
+                    renaming = state.selection.values.singleOrNull()
+                },
+                onDelete = { confirmingDelete = true },
+                onClear = actions.onClearSelection,
+                modifier = Modifier.testTag(UiTags.RESOURCE_EXPLORER_PRIVATE_SELECTION_BAR),
+            )
+            2 -> clipboard?.let {
+                DirectoryPasteBar(
+                    clipboard = it.board,
+                    canPaste = currentFolderPath?.let(it::canPasteInto) == true,
+                    busy = state.operating,
+                    onPaste = { actions.onPaste(currentFolderId) },
+                    onCancel = actions.onCancelClipboard,
+                )
+            }
+            else -> Spacer(Modifier.fillMaxWidth())
+        }
+    }
+    renaming?.let { target ->
+        WorkspaceNameDialog(
+            title = stringResource(R.string.directory_action_rename),
+            label = stringResource(R.string.linux_files_name_label),
+            confirmLabel = stringResource(R.string.directory_action_rename),
+            initialValue = target.name,
+            error = renameError?.let { directoryOpCodeText(it) },
+            busy = state.operating,
+            onValueChange = { renameError = null },
+            onDismiss = { renaming = null },
+            onConfirm = { name ->
+                if (name == target.name) {
+                    renaming = null
+                } else {
+                    actions.onRename(target.uuid, name) { code -> if (code == null) renaming = null else renameError = code }
+                }
+            },
+        )
+    }
+    if (confirmingDelete) {
+        DirectoryDeleteDialog(
+            count = state.selection.size,
+            onConfirm = {
+                confirmingDelete = false
+                actions.onDelete()
+            },
+            onCancel = { confirmingDelete = false },
+        )
     }
 }

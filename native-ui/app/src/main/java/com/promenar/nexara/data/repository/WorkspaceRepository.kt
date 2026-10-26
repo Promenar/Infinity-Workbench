@@ -840,7 +840,7 @@ class WorkspaceRepository(
                         ?: throw SecurityException("父目录不属于当前工作区")
                     val newPath = joinMaterializedPath(parent.materializedPath, newName)
                     if (dao.getActiveByMaterializedPath(workspaceRootUuid, newPath) != null) {
-                        throw IllegalStateException("目标名称已存在")
+                        throw WorkspaceLifecycleException(WorkspaceLifecycleErrorCode.TARGET_COLLISION, "目标名称已存在")
                     }
                     val commitClock = clock()
                     val nextEpoch = nextMutationEpoch(commitClock, entry.updatedAt)

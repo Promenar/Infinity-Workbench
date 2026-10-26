@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.storage.ExternalRecycleItem
 import com.promenar.nexara.domain.storage.IExternalFolderManager
 import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
@@ -76,6 +77,18 @@ internal data class DirectoryFileActions(
     val onDismissOutcome: () -> Unit,
     val onDeletePermanently: () -> Unit = {},
     val onKeepTooLarge: () -> Unit = {},
+)
+
+/** 私有工作区文件页的长按操作回调；条目以 UUID 标识，为 null 时文件页保持只读。 */
+internal data class PrivateFileActions(
+    val onToggleSelect: (FileEntry) -> Unit,
+    val onClearSelection: () -> Unit,
+    val onCut: () -> Unit,
+    val onPaste: (targetParentUuid: String) -> Unit,
+    val onCancelClipboard: () -> Unit,
+    val onDelete: () -> Unit,
+    val onRename: (uuid: String, name: String, onResult: (DirectoryFileOpCode?) -> Unit) -> Unit,
+    val onDismissOutcome: () -> Unit,
 )
 
 @Composable
@@ -107,7 +120,7 @@ internal fun directoryOutcomeText(outcome: DirectoryOpOutcome): String {
 }
 
 /**
- * 选择期间的底部操作栏；重命名只对单个条目可用。
+ * 选择期间的底部操作栏；重命名只对单个条目可用，[onCopy] 为 null 的来源不显示复制。
  *
  * 各来源在 [topActions]（计数行右侧，如全选、权限）与 [extraActions]（删除前，如压缩、在终端打开）补充自身能力。
  */
@@ -115,7 +128,7 @@ internal fun directoryOutcomeText(outcome: DirectoryOpOutcome): String {
 internal fun DirectorySelectionBar(
     count: Int,
     busy: Boolean,
-    onCopy: () -> Unit,
+    onCopy: (() -> Unit)?,
     onMove: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -137,7 +150,7 @@ internal fun DirectorySelectionBar(
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.XSmall)) {
-            DirectorySelectionAction(Icons.Rounded.ContentCopy, R.string.directory_action_copy, !busy, onCopy, "directory_action_copy")
+            if (onCopy != null) DirectorySelectionAction(Icons.Rounded.ContentCopy, R.string.directory_action_copy, !busy, onCopy, "directory_action_copy")
             DirectorySelectionAction(Icons.AutoMirrored.Rounded.DriveFileMove, R.string.directory_action_move, !busy, onMove, "directory_action_move")
             DirectorySelectionAction(Icons.Rounded.DriveFileRenameOutline, R.string.directory_action_rename, !busy && count == 1, onRename, "directory_action_rename")
             extraActions()

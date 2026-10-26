@@ -77,6 +77,7 @@ import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerWorkspaceMode
 import com.promenar.nexara.ui.chat.components.DirectoryFileActions
+import com.promenar.nexara.ui.chat.components.PrivateFileActions
 import com.promenar.nexara.ui.chat.components.DirectoryRecycleList
 import com.promenar.nexara.ui.chat.components.DirectoryWorkspaceBrowser
 import com.promenar.nexara.ui.chat.components.ExternalFoldersPanel
@@ -138,6 +139,19 @@ fun ResourceExplorerPage(
     val gitEntry by viewModel.gitEntry.collectAsStateWithLifecycle()
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
     val directory by viewModel.directory.collectAsStateWithLifecycle()
+    val privateFiles by viewModel.privateFiles.collectAsStateWithLifecycle()
+    val privateFileActions = remember(viewModel) {
+        if (!viewModel.privateFileOpsAvailable) null else PrivateFileActions(
+            onToggleSelect = viewModel::togglePrivateSelection,
+            onClearSelection = viewModel::clearPrivateSelection,
+            onCut = viewModel::cutPrivateSelection,
+            onPaste = viewModel::pastePrivateClipboard,
+            onCancelClipboard = viewModel::clearPrivateClipboard,
+            onDelete = viewModel::deletePrivateSelection,
+            onRename = viewModel::renamePrivateEntry,
+            onDismissOutcome = viewModel::dismissPrivateOutcome,
+        )
+    }
     var showRecycle by rememberSaveable(sessionId) { mutableStateOf(false) }
     var searchActive by rememberSaveable(sessionId) { mutableStateOf(searchQuery.isNotEmpty()) }
     var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
@@ -262,6 +276,8 @@ fun ResourceExplorerPage(
                     initialFolderPath = initialFolderPath,
                     onImport = { filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) }
                         .takeIf { workspaceRootUuid != null && !isImporting },
+                    fileOps = privateFiles,
+                    fileActions = privateFileActions,
                 )
             },
             recycleBinContent = {

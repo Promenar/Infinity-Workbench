@@ -195,6 +195,12 @@ internal fun FilesPanel(
     allowTreeExpansion: Boolean = true,
     /** 点按图片、视频、音频文件时调用（[onFileClick] 为空时生效），其它文件行为不变。 */
     onMediaFileClick: ((FileEntry) -> Unit)? = null,
+    /**
+     * 提供时改用目录工作区式的长按多选：长按与多选期间的点按都切换选择，不弹出条目菜单，
+     * 选择状态由调用方持有（[selectionKeys]），底部操作栏也由调用方提供。
+     */
+    onToggleSelection: ((FileEntry) -> Unit)? = null,
+    selectionKeys: Set<String> = emptySet(),
 ) {
     val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo) {
         if (rootFiles == null) {
@@ -305,7 +311,7 @@ internal fun FilesPanel(
         hasReindex = onReindex != null,
         hasDelete = onDelete != null,
     )
-    val isMultiSelectMode = selectedIds.isNotEmpty() && supportsMultiSelect
+    val isMultiSelectMode = if (onToggleSelection != null) selectionKeys.isNotEmpty() else selectedIds.isNotEmpty() && supportsMultiSelect
     var deleteFailure by remember { mutableStateOf<FileBatchOperationResult?>(null) }
     var isDeleting by remember { mutableStateOf(false) }
     val requestDelete: (Collection<String>) -> Unit = request@{ ids ->
@@ -379,6 +385,8 @@ internal fun FilesPanel(
             folders = folders,
             nowMillis = nowMillis,
             allowTreeExpansion = allowTreeExpansion,
+            onToggleSelection = onToggleSelection,
+            selectionKeys = selectionKeys,
         )
     }
 
@@ -611,12 +619,14 @@ private fun FileTreeRow(
     folders: List<FileEntry> = emptyList(),
     nowMillis: Long,
     allowTreeExpansion: Boolean = true,
+    onToggleSelection: ((FileEntry) -> Unit)? = null,
+    selectionKeys: Set<String> = emptySet(),
 ) {
     val file = node.file
     var showMenu by rememberSaveable(file.uuid, "menu") { mutableStateOf(false) }
     var showRenameDialog by rememberSaveable(file.uuid, "rename") { mutableStateOf(false) }
     var showMoveSheet by rememberSaveable(file.uuid, "move") { mutableStateOf(false) }
-    val isSelected = file.uuid in selectedIds
+    val isSelected = if (onToggleSelection != null) file.uuid in selectionKeys else file.uuid in selectedIds
     val optionsLabel = stringResource(R.string.chat_cd_options)
     val isVirtualRoot = CompositeWorkspaceConstants.isVirtualSessionWorkspacesRoot(file.uuid)
     val isVirtualSession = CompositeWorkspaceConstants.isVirtualSessionFolder(file.uuid)
@@ -646,8 +656,10 @@ private fun FileTreeRow(
     val handleActivate: (() -> Unit)? = activation?.let { resolvedActivation ->
         {
             when {
-                resolvedActivation == FileNodeActivation.ToggleSelection -> {
-                    if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
+                resolvedActivation == FileNodeActivation.ToggleSelection -> when {
+                    onToggleSelection != null -> onToggleSelection(file)
+                    isSelected -> selectedIds.remove(file.uuid)
+                    else -> selectedIds.add(file.uuid)
                 }
                 resolvedActivation == FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
                 isVirtualNode -> if (onFolderClick != null) onFolderClick.invoke(file.uuid, file.name) else onToggleExpanded()
@@ -659,6 +671,9 @@ private fun FileTreeRow(
 
     val isSessionFile = (file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid) ||
         CompositeWorkspaceConstants.isVirtualSessionFolder(file.parentUuid)
+    // 外部选择模式下长按即选择，虚拟节点不参与。
+    val selectable = onToggleSelection != null && !isVirtualNode
+    val selectLabel = stringResource(R.string.files_multi_select)
 
     FileRow(
         file = file,
@@ -670,17 +685,30 @@ private fun FileTreeRow(
         isMultiSelectMode = isMultiSelectMode,
         isSelected = isSelected,
         onSelectionChange = { checked ->
-            if (checked && file.uuid !in selectedIds) selectedIds.add(file.uuid)
-            if (!checked) selectedIds.remove(file.uuid)
+            if (onToggleSelection != null) {
+                if (checked != isSelected) onToggleSelection(file)
+            } else {
+                if (checked && file.uuid !in selectedIds) selectedIds.add(file.uuid)
+                if (!checked) selectedIds.remove(file.uuid)
+            }
         },
         onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
         onToggleExpanded = onToggleExpanded,
-        onFolderClick = onFolderClick,
+        // 多选期间点按目录图标也只切换选择，不进入目录。
+        onFolderClick = if (onToggleSelection != null && isMultiSelectMode) ({ _, _ -> onToggleSelection(file) }) else onFolderClick,
         allowTreeExpansion = allowTreeExpansion,
         modifier = Modifier
             .testTag("files_panel_node_${file.uuid}")
             .then(
-                if (handleActivate != null) {
+                if (selectable) {
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = file.name.takeIf { handleActivate != null },
+                        onLongClickLabel = selectLabel,
+                        onLongClick = { onToggleSelection?.invoke(file) },
+                        onClick = handleActivate ?: {},
+                    )
+                } else if (handleActivate != null) {
                     Modifier.combinedClickable(
                         role = Role.Button,
                         onClickLabel = file.name,

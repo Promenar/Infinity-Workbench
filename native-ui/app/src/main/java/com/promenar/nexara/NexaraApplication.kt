@@ -1307,19 +1307,31 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     fun registerDirectoryWorkspaceBusyCheck(check: (String) -> Boolean): AutoCloseable =
         directoryWorkspaceBusyChecks.register(check)
 
+    /** 会话正在生成、等待审批或有其它占用时，资源管理器的用户文件操作一律拒绝。 */
+    private suspend fun isSessionBusyForUserFileOps(sessionId: String): Boolean {
+        val phase = generationCoordinator.observe(sessionId).value?.phase
+        val running = phase != null && phase !in setOf(
+            com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
+            com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
+            com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
+            com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
+        )
+        return running || directoryWorkspaceBusyChecks.isBusy(sessionId) ||
+            chatStore.getSession(sessionId)?.approvalRequest != null ||
+            database.sessionDao().getById(sessionId)?.approvalRequest != null
+    }
+
     val directoryWorkspaceFiles: com.promenar.nexara.domain.workspace.DirectoryWorkspaceFiles by lazy {
-        com.promenar.nexara.data.workspace.DefaultDirectoryWorkspaceFiles(externalFolderManager, sessionExecutionGate) { sessionId ->
-            val phase = generationCoordinator.observe(sessionId).value?.phase
-            val running = phase != null && phase !in setOf(
-                com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
-                com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
-                com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
-                com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
-            )
-            running || directoryWorkspaceBusyChecks.isBusy(sessionId) ||
-                chatStore.getSession(sessionId)?.approvalRequest != null ||
-                database.sessionDao().getById(sessionId)?.approvalRequest != null
-        }
+        com.promenar.nexara.data.workspace.DefaultDirectoryWorkspaceFiles(externalFolderManager, sessionExecutionGate, ::isSessionBusyForUserFileOps)
+    }
+
+    val privateWorkspaceFiles: com.promenar.nexara.domain.workspace.PrivateWorkspaceFiles by lazy {
+        com.promenar.nexara.data.workspace.DefaultPrivateWorkspaceFiles(
+            workspaceRepository,
+            pendingDocumentIndexCoordinator,
+            sessionExecutionGate,
+            ::isSessionBusyForUserFileOps,
+        )
     }
 
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {
