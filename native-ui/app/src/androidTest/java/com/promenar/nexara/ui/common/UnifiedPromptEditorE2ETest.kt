@@ -113,9 +113,11 @@ class UnifiedPromptEditorE2ETest {
         rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_close))
             .performClick()
 
-        rule.onNodeWithText(resources.getString(R.string.shared_action_cannot_undo))
+        rule.onNodeWithText(resources.getString(R.string.prompt_editor_discard_title))
             .assertIsDisplayed()
-        rule.onNodeWithText(resources.getString(R.string.shared_btn_close)).performClick()
+        rule.onNodeWithText(resources.getString(R.string.prompt_editor_discard_message))
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.prompt_editor_discard_confirm)).performClick()
         rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertDoesNotExist()
     }

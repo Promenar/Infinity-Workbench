@@ -32,6 +32,10 @@
     <string name="prompt_editor_cd_code">Inline code</string>
     <string name="prompt_editor_cd_undo">Undo</string>
     <string name="prompt_editor_cd_redo">Redo</string>
+    <string name="prompt_editor_discard_title">Discard unsaved changes?</string>
+    <string name="prompt_editor_discard_message">Your edits to this prompt will be lost.</string>
+    <string name="prompt_editor_discard_confirm">Discard</string>
+    <string name="prompt_editor_discard_keep">Keep editing</string>
 
     <!-- InferencePresets -->
 

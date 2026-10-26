@@ -360,9 +360,10 @@ fun UnifiedPromptEditor(
     if (showDiscardConfirmation) {
         NexaraConfirmDialog(
             onDismissRequest = { showDiscardConfirmation = false },
-            title = resolvedTitle,
-            message = stringResource(R.string.shared_action_cannot_undo),
-            confirmText = stringResource(R.string.shared_btn_close),
+            title = stringResource(R.string.prompt_editor_discard_title),
+            message = stringResource(R.string.prompt_editor_discard_message),
+            confirmText = stringResource(R.string.prompt_editor_discard_confirm),
+            cancelText = stringResource(R.string.prompt_editor_discard_keep),
             onConfirm = onDismiss,
             onCancel = { showDiscardConfirmation = false },
             isDestructive = true,
