@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.remote.protocol
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
@@ -15,7 +18,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import com.promenar.nexara.domain.generation.CompletionReason
 
@@ -50,13 +52,13 @@ class AnthropicProtocol(
 
     override val protocolType: ProtocolType = ProtocolType.Anthropic_Messages
 
-    private val httpClient: HttpClient = httpClient ?: ModelHttp.client {
+    private val httpClient: HttpClient = (httpClient ?: ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 120_000
         }
-    }
+    }).withModelTimeoutSupport()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -84,6 +86,7 @@ class AnthropicProtocol(
             while (true) {
                 var retryWithoutThinking = false
                 httpClient.preparePost(inferenceUrl()) {
+                    applyModelTimeout(ModelTimeoutKind.LLM)
                     contentType(ContentType.Application.Json)
                     header("x-api-key", apiKey)
                     header("anthropic-version", anthropicVersion)
@@ -127,26 +130,13 @@ class AnthropicProtocol(
                     val channel = response.body<ByteReadChannel>()
                     activeChannel = channel
                     val sb = StringBuilder()
-                    val timeoutMs = request.streamTimeout ?: 120000L
                     var currentEvent = ""
                     var currentData = ""
                     var sawTerminal = false
 
                     while (!channel.isClosedForRead) {
                         sb.clear()
-                        val readSuccess = withTimeoutOrNull(timeoutMs) {
-                            channel.readUTF8LineTo(sb, 1_048_576)
-                        }
-
-                        if (readSuccess == null) {
-                            send(StreamChunk.Error(
-                                code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
-                                retryable = true,
-                                technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
-                            ))
-                            sawTerminal = true
-                            break
-                        }
+                        val readSuccess = channel.readUTF8LineTo(sb, 1_048_576)
                         if (!readSuccess) break
 
                         val line = sb.toString()
@@ -218,6 +208,7 @@ class AnthropicProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(inferenceUrl()) {
+                applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)

@@ -1,72 +1,82 @@
 package com.promenar.nexara.ui.common
 
-import com.promenar.nexara.ui.theme.NexaraMonospace
-import androidx.compose.animation.AnimatedContent
-import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.annotation.StringRes
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
+import androidx.compose.material.icons.automirrored.rounded.Redo
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.FormatBold
+import androidx.compose.material.icons.rounded.Title
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMonospace
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.CancellationException
@@ -171,11 +181,26 @@ private fun Int.isCjkIdeograph(): Boolean =
 private fun Int.isInternalWordPunctuation(): Boolean =
     this == '.'.code || this == '-'.code || this == '_'.code || this == '\''.code
 
-private enum class EditorTab(@param:StringRes val labelRes: Int) {
-    EDITOR(R.string.prompt_editor_tab_edit),
-    PREVIEW(R.string.prompt_editor_tab_preview)
-}
 
+@get:StringRes
+private val PromptEditorView.labelRes: Int
+    get() = when (this) {
+        PromptEditorView.EDIT -> R.string.prompt_editor_tab_edit
+        PromptEditorView.SPLIT -> R.string.prompt_editor_tab_split
+        PromptEditorView.PREVIEW -> R.string.prompt_editor_tab_preview
+    }
+
+/** 宽于此值（折叠屏内屏、平板）时默认左写右看，保存放进顶栏。 */
+private val PromptEditorWideWidth = 600.dp
+
+/** 单栏编辑或预览时正文的最大宽度，宽屏上不至于一行过长。 */
+private val PromptEditorReadableWidth = 760.dp
+
+/**
+ * 提示词与文本文件的整页编辑器：全屏窗口承载，顶栏为返回、标题与视图切换。
+ * 窄窗口在编辑与预览之间切换，底部是格式工具条与整宽保存按钮；宽窗口默认分栏，保存在顶栏。
+ * [showPreviewTab] 为 false 时按代码文本处理：等宽字体、不做 Markdown 高亮、没有格式按钮。
+ */
 @Composable
 fun UnifiedPromptEditor(
     show: Boolean,
@@ -185,15 +210,15 @@ fun UnifiedPromptEditor(
     title: String = "",
     placeholder: String = "",
     mode: EditorMode = EditorMode.DIALOG,
-    fontSize: Int = 13,
-    /** 为 false 时只保留编辑页，不显示 Markdown 预览页签（例如编辑脚本与配置文件）。 */
+    fontSize: Int = 15,
+    /** 为 false 时只保留编辑页，不显示 Markdown 预览（例如编辑脚本与配置文件）。 */
     showPreviewTab: Boolean = true,
 ) {
     if (!show) return
 
     val textFieldState = rememberTextFieldState(initialText)
     val text = textFieldState.text.toString()
-    var selectedTab by remember { mutableIntStateOf(EditorTab.EDITOR.ordinal) }
+    var chosenView by rememberSaveable { mutableStateOf<PromptEditorView?>(null) }
     var showDiscardConfirmation by remember(initialText) { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
@@ -202,371 +227,32 @@ fun UnifiedPromptEditor(
     val coroutineScope = rememberCoroutineScope()
 
     val statistics = remember(text) { promptTextStatistics(text) }
-    val lineCount = statistics.lines
-    val charCount = statistics.characters
-    val wordCount = statistics.words
-
+    val dirty = hasUnsavedPromptChanges(initialText, text)
     val resolvedTitle = title.ifBlank { stringResource(R.string.prompt_editor_default_title) }
     val resolvedPlaceholder = placeholder.ifBlank { stringResource(R.string.prompt_editor_default_placeholder) }
     val requestDismiss = {
         if (isSaving) {
             saveJob?.cancel()
             Unit
-        } else if (hasUnsavedPromptChanges(initialText, text)) {
+        } else if (dirty) {
             showDiscardConfirmation = true
         } else {
             onDismiss()
         }
     }
-
-    @Composable
-    fun TopBar() {
-        val closeDescription = stringResource(R.string.prompt_editor_cd_close)
-        val saveDescription = stringResource(R.string.prompt_editor_cd_save)
-        val savingDescription = stringResource(R.string.shared_loading)
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = requestDismiss,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = closeDescription,
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-                text = resolvedTitle,
-                style = NexaraTypography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-
-            IconButton(
-                onClick = {
-                    if (!saveGate.tryStart()) return@IconButton
-                    isSaving = true
-                    saveFailed = false
-                    saveJob = coroutineScope.launch {
-                        try {
-                            val result = runPromptSave(text, onSave)
-                            if (result.isSuccess) {
-                                onDismiss()
-                            } else {
-                                saveFailed = true
-                            }
-                        } finally {
-                            saveGate.finish()
-                            isSaving = false
-                            saveJob = null
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .semantics {
-                        if (isSaving) {
-                            contentDescription = saveDescription
-                            stateDescription = savingDescription
-                        }
-                    },
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = saveDescription,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
+    val save = {
+        if (saveGate.tryStart()) {
+            isSaving = true
+            saveFailed = false
+            saveJob = coroutineScope.launch {
+                try {
+                    if (runPromptSave(text, onSave).isSuccess) onDismiss() else saveFailed = true
+                } finally {
+                    saveGate.finish()
+                    isSaving = false
+                    saveJob = null
                 }
             }
-        }
-    }
-
-    @Composable
-    fun TabBar() {
-        val tabs = EditorTab.entries
-        val tabItems = tabs.map { tab ->
-            NexaraTabItem(title = stringResource(tab.labelRes))
-        }
-        NexaraCapsuleTabRow(
-            tabs = tabItems,
-            selectedIndex = selectedTab,
-            onTabSelected = { selectedTab = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-        )
-    }
-
-    @Composable
-    fun EditorPane(modifier: Modifier = Modifier) {
-        val scrollState = rememberScrollState()
-        val textMeasurer = rememberTextMeasurer()
-        var layoutResultProvider by remember { mutableStateOf<(() -> TextLayoutResult?)?>(null) }
-        val lineNumberColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-
-        val textLines = text.split("\n")
-        val lineOffsets = remember(text) {
-            val offsets = mutableListOf<Int>()
-            var currentOffset = 0
-            for (line in textLines) {
-                offsets.add(currentOffset)
-                currentOffset += line.length + 1
-            }
-            offsets
-        }
-
-        Row(modifier = modifier) {
-            Canvas(
-                modifier = Modifier
-                    .width(36.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                    .padding(end = 6.dp, top = 8.dp)
-            ) {
-                // 在绘制阶段读取布局，避免在布局回调内订阅结果并回写状态形成反馈循环。
-                val layout = layoutResultProvider?.invoke()
-                if (layout != null) {
-                    for (i in textLines.indices) {
-                        val startOffset = lineOffsets.getOrNull(i) ?: continue
-                        if (startOffset > text.length) continue
-
-                        val physicalLine = layout.getLineForOffset(startOffset)
-                        val topPx = layout.getLineTop(physicalLine)
-
-                        val lineStr = (i + 1).toString()
-                        val textLayout = textMeasurer.measure(
-                            text = lineStr,
-                            style = NexaraTypography.bodySmall.copy(
-                                fontSize = 11.sp,
-                                fontFamily = NexaraMonospace,
-                                color = lineNumberColor
-                            )
-                        )
-
-                        val x = size.width - textLayout.size.width
-                        val physicalLineHeight = layout.getLineBottom(physicalLine) - topPx
-                        val y = topPx +
-                            (physicalLineHeight - textLayout.size.height) / 2f -
-                            scrollState.value
-                        if (y + textLayout.size.height < 0f || y > size.height) continue
-
-                        drawText(
-                            textLayoutResult = textLayout,
-                            topLeft = androidx.compose.ui.geometry.Offset(x, y)
-                        )
-                    }
-                } else {
-                    var currentY = 0f
-                    val lineHeightPx = 20.sp.toPx()
-                    for (i in textLines.indices) {
-                        val lineStr = (i + 1).toString()
-                        val textLayout = textMeasurer.measure(
-                            text = lineStr,
-                            style = NexaraTypography.bodySmall.copy(
-                                fontSize = 11.sp,
-                                fontFamily = NexaraMonospace,
-                                color = lineNumberColor
-                            )
-                        )
-                        val x = size.width - textLayout.size.width
-                        val y = currentY +
-                            (lineHeightPx - textLayout.size.height) / 2f -
-                            scrollState.value
-                        if (y + textLayout.size.height < 0f || y > size.height) {
-                            currentY += lineHeightPx
-                            continue
-                        }
-                        drawText(
-                            textLayoutResult = textLayout,
-                            topLeft = androidx.compose.ui.geometry.Offset(x, y)
-                        )
-                        currentY += lineHeightPx
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            ) {
-                BasicTextField(
-                    state = textFieldState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag(UiTags.PROMPT_EDITOR_INPUT)
-                        .semantics { contentDescription = resolvedPlaceholder }
-                        .padding(top = 8.dp, start = 8.dp, end = 8.dp),
-                    onTextLayout = { getResult -> layoutResultProvider = getResult },
-                    textStyle = NexaraTypography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp,
-                        fontFamily = NexaraMonospace,
-                        lineHeight = 20.sp
-                    ).forInput(),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    decorator = { innerTextField ->
-                        if (text.isEmpty()) {
-                            Text(
-                                text = resolvedPlaceholder,
-                                style = NexaraTypography.bodyMedium.copy(
-                                    fontFamily = NexaraMonospace,
-                                    fontSize = 14.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                        }
-                        innerTextField()
-                    },
-                    scrollState = scrollState,
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun PreviewPane(modifier: Modifier = Modifier) {
-        Box(
-            modifier = modifier
-                .verticalScroll(rememberScrollState())
-                .padding(12.dp)
-        ) {
-            if (text.isBlank()) {
-                Text(
-                    text = resolvedPlaceholder,
-                    style = NexaraTypography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                )
-            } else {
-                MarkdownText(
-                    markdown = text,
-                    isStreaming = false,
-                    fontSize = fontSize,
-                    showCursor = false,
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun BottomBar() {
-        Column {
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = pluralStringResource(
-                        id = R.plurals.prompt_editor_word_count,
-                        count = wordCount,
-                        wordCount
-                    ),
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = pluralStringResource(
-                        id = R.plurals.prompt_editor_line_count,
-                        count = lineCount,
-                        lineCount
-                    ),
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = pluralStringResource(
-                        id = R.plurals.prompt_editor_char_count,
-                        count = charCount,
-                        charCount
-                    ),
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-
-    @Composable
-    fun Content() {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding()
-        ) {
-            TopBar()
-            if (saveFailed) {
-                Text(
-                    text = stringResource(R.string.shared_error_generic),
-                    style = NexaraTypography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { liveRegion = LiveRegionMode.Assertive }
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-            if (showPreviewTab) TabBar()
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                // 编辑与预览按标签左右顺序做共享 X 轴切换。
-                AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState > initialState) },
-                    modifier = Modifier.fillMaxSize(),
-                    label = "prompt_editor_tab",
-                ) { tab ->
-                    when (EditorTab.entries[tab]) {
-                        EditorTab.EDITOR -> {
-                            EditorPane(
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        EditorTab.PREVIEW -> {
-                            PreviewPane(
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                }
-            }
-
-            BottomBar()
         }
     }
 
@@ -575,7 +261,98 @@ fun UnifiedPromptEditor(
             onDismissRequest = requestDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            Content()
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                val wide = maxWidth >= PromptEditorWideWidth
+                val views = promptEditorViews(wide, showPreviewTab)
+                val view = (chosenView ?: defaultPromptEditorView(wide, showPreviewTab)).coerceTo(views)
+                val status = buildList {
+                    if (dirty) add(stringResource(R.string.prompt_editor_modified))
+                    add(pluralStringResource(R.plurals.prompt_editor_word_count, statistics.words, statistics.words))
+                    if (wide) add(pluralStringResource(R.plurals.prompt_editor_line_count, statistics.lines, statistics.lines))
+                }.joinToString(" · ")
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .imePadding(),
+                ) {
+                    PromptEditorTopBar(
+                        title = resolvedTitle,
+                        views = views,
+                        view = view,
+                        onViewChange = { chosenView = it },
+                        onBack = requestDismiss,
+                        saveInBar = wide,
+                        isSaving = isSaving,
+                        onSave = save,
+                    )
+                    if (saveFailed) {
+                        Text(
+                            text = stringResource(R.string.shared_error_generic),
+                            style = NexaraTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { liveRegion = LiveRegionMode.Assertive }
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                        )
+                    }
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    // 视图按页签左右顺序做共享 X 轴切换；文本状态在外层，切换不丢内容与撤销记录。
+                    AnimatedContent(
+                        targetState = view,
+                        transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState.ordinal > initialState.ordinal) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        label = "prompt_editor_view",
+                    ) { current ->
+                        when (current) {
+                            PromptEditorView.SPLIT -> Row(Modifier.fillMaxSize()) {
+                                PromptEditorField(textFieldState, resolvedPlaceholder, codeMode = false, Modifier.weight(1f))
+                                VerticalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                                PromptPreviewPane(
+                                    text = text,
+                                    placeholder = resolvedPlaceholder,
+                                    fontSize = fontSize,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                                )
+                            }
+                            PromptEditorView.EDIT -> ReadableColumn {
+                                PromptEditorField(textFieldState, resolvedPlaceholder, codeMode = !showPreviewTab, it)
+                            }
+                            PromptEditorView.PREVIEW -> ReadableColumn {
+                                PromptPreviewPane(text, resolvedPlaceholder, fontSize, it)
+                            }
+                        }
+                    }
+                    PromptEditorToolbar(
+                        state = textFieldState,
+                        showFormatting = showPreviewTab && view != PromptEditorView.PREVIEW,
+                        showHistory = view != PromptEditorView.PREVIEW,
+                        showRedo = wide,
+                        status = status,
+                    )
+                    if (!wide) {
+                        PromptSaveButton(
+                            isSaving = isSaving,
+                            onSave = save,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -589,5 +366,231 @@ fun UnifiedPromptEditor(
             onCancel = { showDiscardConfirmation = false },
             isDestructive = true,
         )
+    }
+}
+
+@Composable
+private fun PromptEditorTopBar(
+    title: String,
+    views: List<PromptEditorView>,
+    view: PromptEditorView,
+    onViewChange: (PromptEditorView) -> Unit,
+    onBack: () -> Unit,
+    saveInBar: Boolean,
+    isSaving: Boolean,
+    onSave: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .padding(start = 4.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = stringResource(R.string.prompt_editor_cd_close),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (views.size > 1) {
+            NexaraCapsuleTabRow(
+                tabs = views.map { NexaraTabItem(title = stringResource(it.labelRes)) },
+                selectedIndex = views.indexOf(view),
+                onTabSelected = { onViewChange(views[it]) },
+                modifier = Modifier.width(if (views.size > 2) 216.dp else 148.dp),
+            )
+        }
+        if (saveInBar) PromptSaveButton(isSaving = isSaving, onSave = onSave)
+    }
+}
+
+/** 保存中保留按钮宽度，文字隐去换成进度圈，避免按钮跳动。 */
+@Composable
+private fun PromptSaveButton(isSaving: Boolean, onSave: () -> Unit, modifier: Modifier = Modifier) {
+    val savingDescription = stringResource(R.string.shared_loading)
+    Button(
+        onClick = onSave,
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .testTag(UiTags.PROMPT_EDITOR_SAVE)
+            .semantics { if (isSaving) stateDescription = savingDescription },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(R.string.prompt_editor_cd_save),
+                modifier = Modifier.alpha(if (isSaving) 0f else 1f),
+            )
+            if (isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = LocalContentColor.current,
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadableColumn(content: @Composable (Modifier) -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        content(
+            Modifier
+                .widthIn(max = PromptEditorReadableWidth)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+        )
+    }
+}
+
+@Composable
+private fun PromptEditorField(
+    state: TextFieldState,
+    placeholder: String,
+    codeMode: Boolean,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val highlight = remember(codeMode, colors) {
+        if (codeMode) null else promptSyntaxHighlight(colors.primary, colors.onSurfaceVariant, colors.surfaceContainerHigh)
+    }
+    val baseStyle = if (codeMode) {
+        NexaraTypography.bodySmall.copy(fontSize = 14.sp, fontFamily = NexaraMonospace, lineHeight = 20.sp)
+    } else {
+        NexaraTypography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 24.sp)
+    }
+    val isEmpty = state.text.isEmpty()
+    BasicTextField(
+        state = state,
+        modifier = modifier
+            .fillMaxHeight()
+            .testTag(UiTags.PROMPT_EDITOR_INPUT)
+            .semantics { contentDescription = placeholder }
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp),
+        textStyle = baseStyle.copy(color = colors.onSurface).forInput(),
+        cursorBrush = SolidColor(colors.primary),
+        outputTransformation = highlight,
+        scrollState = rememberScrollState(),
+        decorator = { innerTextField ->
+            Box {
+                if (isEmpty) {
+                    Text(text = placeholder, style = baseStyle, color = colors.onSurfaceVariant.copy(alpha = 0.6f))
+                }
+                innerTextField()
+            }
+        },
+    )
+}
+
+/** 标题用主色加粗，标记符号弱化，加粗与代码按 Markdown 语义显示；不改动文本本身。 */
+private fun promptSyntaxHighlight(accent: Color, muted: Color, codeBackground: Color) = OutputTransformation {
+    promptSyntaxSpans(asCharSequence().toString()).forEach { span ->
+        val style = when (span.kind) {
+            PromptSyntaxKind.HEADING -> SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)
+            PromptSyntaxKind.MARKER -> SpanStyle(color = muted.copy(alpha = 0.7f))
+            PromptSyntaxKind.STRONG -> SpanStyle(fontWeight = FontWeight.SemiBold)
+            PromptSyntaxKind.CODE -> SpanStyle(fontFamily = NexaraMonospace, background = codeBackground)
+        }
+        addStyle(style, span.start, span.end)
+    }
+}
+
+@Composable
+private fun PromptPreviewPane(text: String, placeholder: String, fontSize: Int, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        if (text.isBlank()) {
+            Text(
+                text = placeholder,
+                style = NexaraTypography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        } else {
+            MarkdownText(markdown = text, isStreaming = false, fontSize = fontSize, showCursor = false)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PromptEditorToolbar(
+    state: TextFieldState,
+    showFormatting: Boolean,
+    showHistory: Boolean,
+    showRedo: Boolean,
+    status: String,
+) {
+    Column {
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showFormatting) {
+                ToolbarButton(Icons.Rounded.Title, R.string.prompt_editor_cd_heading) { state.applyPromptEdit(::cycleHeading) }
+                ToolbarButton(Icons.AutoMirrored.Rounded.FormatListBulleted, R.string.prompt_editor_cd_list) {
+                    state.applyPromptEdit(::toggleListItems)
+                }
+                ToolbarButton(Icons.Rounded.FormatBold, R.string.prompt_editor_cd_bold) {
+                    state.applyPromptEdit { text, start, end -> toggleInlineWrap(text, start, end, "**") }
+                }
+                ToolbarButton(Icons.Rounded.Code, R.string.prompt_editor_cd_code) {
+                    state.applyPromptEdit { text, start, end -> toggleInlineWrap(text, start, end, "`") }
+                }
+            }
+            if (showHistory) {
+                ToolbarButton(Icons.AutoMirrored.Rounded.Undo, R.string.prompt_editor_cd_undo, state.undoState.canUndo) {
+                    state.undoState.undo()
+                }
+                if (showRedo) {
+                    ToolbarButton(Icons.AutoMirrored.Rounded.Redo, R.string.prompt_editor_cd_redo, state.undoState.canRedo) {
+                        state.undoState.redo()
+                    }
+                }
+            }
+            Text(
+                text = status,
+                style = NexaraTypography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp, end = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolbarButton(icon: ImageVector, @StringRes description: Int, enabled: Boolean = true, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+        Icon(imageVector = icon, contentDescription = stringResource(description), modifier = Modifier.size(22.dp))
+    }
+}
+
+private fun TextFieldState.applyPromptEdit(build: (String, Int, Int) -> PromptTextEdit) {
+    val change = build(text.toString(), selection.min, selection.max)
+    edit {
+        replace(change.start, change.end, change.replacement)
+        selection = TextRange(change.selectionStart, change.selectionEnd)
     }
 }

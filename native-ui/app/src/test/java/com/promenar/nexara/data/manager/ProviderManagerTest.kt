@@ -66,6 +66,16 @@ class ProviderManagerTest {
     }
 
     @Test
+    fun `模型超时与预设模型共用偏好且可持久化往返`() {
+        manager.setModelTimeout(com.promenar.nexara.data.remote.ModelTimeoutKind.LLM, 137)
+        manager.setModelTimeout(com.promenar.nexara.data.remote.ModelTimeoutKind.EMBEDDING, 89)
+        val restored = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(restored.modelTimeouts.value)
+            .isEqualTo(com.promenar.nexara.data.remote.ModelTimeoutSettings(llmSeconds = 137, embeddingSeconds = 89))
+        assertThat(app.getSharedPreferences("nexara_settings", 0).getInt("model_timeout_llm_seconds", -1)).isEqualTo(137)
+    }
+
+    @Test
     fun `新增模型使用稳定复合标识并保留远端模型 ID`() {
         val stored = manager.providerModels.value.single()
         assertThat(stored.id).isEqualTo("default::remote-model")

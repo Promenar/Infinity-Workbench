@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.remote.protocol
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import com.promenar.nexara.data.remote.provider.ParsedVertexCredential
 import com.promenar.nexara.data.remote.provider.VertexCredentialException
 import com.promenar.nexara.data.remote.provider.VertexCredentialFailure
@@ -18,7 +21,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import com.promenar.nexara.domain.generation.CompletionReason
 
@@ -33,13 +35,13 @@ class VertexAIProtocol(
 
     override val protocolType: ProtocolType = ProtocolType.Google_VertexAI
 
-    private val httpClient: HttpClient = httpClient ?: ModelHttp.client {
+    private val httpClient: HttpClient = (httpClient ?: ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 120_000
         }
-    }
+    }).withModelTimeoutSupport()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -101,6 +103,7 @@ class VertexAIProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(endpoint) {
+                applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))
@@ -142,7 +145,6 @@ class VertexAIProtocol(
         try {
             consumeGeminiStream(
                 channel = channel,
-                timeoutMs = request.streamTimeout ?: 120000L,
                 state = GeminiStreamState(),
                 json = json,
                 label = "Vertex",
@@ -178,6 +180,7 @@ class VertexAIProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(endpoint) {
+                applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))

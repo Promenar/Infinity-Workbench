@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -23,7 +26,7 @@ class ImageGenClient(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String,
-    private val httpClient: HttpClient = ModelHttp.client {
+    httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000  // 图像生成可能较慢
             connectTimeoutMillis = 15_000
@@ -35,6 +38,7 @@ class ImageGenClient(
         response.bodyAsText()
     },
 ) {
+    private val httpClient = httpClient.withModelTimeoutSupport()
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -74,6 +78,7 @@ class ImageGenClient(
         }
 
         val response: HttpResponse = httpClient.post(endpoint) {
+            applyModelTimeout(ModelTimeoutKind.IMAGE)
             contentType(ContentType.Application.Json)
             header("Authorization", "Bearer $apiKey")
             setBody(json.encodeToString(JsonObject.serializer(), requestBody))

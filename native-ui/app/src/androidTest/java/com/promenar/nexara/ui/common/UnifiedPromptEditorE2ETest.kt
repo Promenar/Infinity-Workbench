@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -55,7 +56,7 @@ class UnifiedPromptEditorE2ETest {
         rule.waitForIdle()
         rule.onNodeWithTag(UiTags.PROMPT_EDITOR_INPUT).performTextReplacement(edited)
         rule.waitForIdle()
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save)).performClick()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE).performClick()
         rule.runOnIdle { assertThat(saved).isEqualTo(edited) }
     }
 
@@ -77,9 +78,7 @@ class UnifiedPromptEditorE2ETest {
             }
         }
 
-        val save = rule.onNodeWithContentDescription(
-            resources.getString(R.string.prompt_editor_cd_save),
-        ).assertHasClickAction()
+        val save = rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE).assertHasClickAction()
         val bounds = save.fetchSemanticsNode().boundsInRoot
         val minimumPx = 48f * resources.displayMetrics.density
         assertTrue(bounds.width >= minimumPx)
@@ -92,7 +91,7 @@ class UnifiedPromptEditorE2ETest {
 
         save.performClick()
         rule.runOnIdle { assertThat(saved).isEqualTo("before") }
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertDoesNotExist()
     }
 
@@ -117,7 +116,7 @@ class UnifiedPromptEditorE2ETest {
         rule.onNodeWithText(resources.getString(R.string.shared_action_cannot_undo))
             .assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.shared_btn_close)).performClick()
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertDoesNotExist()
     }
 
@@ -139,7 +138,7 @@ class UnifiedPromptEditorE2ETest {
             }
         }
 
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertIsDisplayed()
             .assertHasClickAction()
     }
@@ -167,9 +166,8 @@ class UnifiedPromptEditorE2ETest {
             }
         }
 
-        val saveDescription = resources.getString(R.string.prompt_editor_cd_save)
-        rule.onNodeWithContentDescription(saveDescription).performClick()
-        rule.onNodeWithContentDescription(saveDescription).performClick()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE).performClick()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE).performClick()
         rule.runOnIdle {
             assertThat(calls).isEqualTo(1)
             assertThat(dismissals).isEqualTo(0)
@@ -198,13 +196,13 @@ class UnifiedPromptEditorE2ETest {
         }
 
         rule.onNodeWithText("before").performTextReplacement("after")
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .performClick()
         rule.waitForIdle()
 
         rule.onNodeWithText("after").assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.shared_error_generic)).assertIsDisplayed()
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertIsDisplayed()
     }
 
@@ -229,7 +227,7 @@ class UnifiedPromptEditorE2ETest {
             }
         }
 
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .performClick()
         rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_close))
             .performClick()
@@ -237,7 +235,26 @@ class UnifiedPromptEditorE2ETest {
 
         rule.runOnIdle { assertThat(cancelled).isTrue() }
         rule.onNodeWithText("draft").assertIsDisplayed()
-        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save))
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_SAVE)
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun headingButtonFormatsCurrentLineAndUndoRestoresIt() {
+        rule.setContent {
+            NexaraTheme {
+                UnifiedPromptEditor(
+                    show = true,
+                    onDismiss = {},
+                    onSave = { Result.success(Unit) },
+                    initialText = "规则",
+                )
+            }
+        }
+
+        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_heading)).performClick()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_INPUT).assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("# 规则")))
+        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_undo)).performClick()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_INPUT).assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("规则")))
     }
 }

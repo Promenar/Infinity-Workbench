@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.remote.protocol
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import com.promenar.nexara.domain.generation.GenerationFailureCode
@@ -35,13 +38,13 @@ class GeminiProtocol(
 
     override val protocolType: ProtocolType = ProtocolType.Google_Gemini
 
-    private val httpClient: HttpClient = httpClient ?: ModelHttp.client {
+    private val httpClient: HttpClient = (httpClient ?: ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 120_000
         }
-    }
+    }).withModelTimeoutSupport()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -62,6 +65,7 @@ class GeminiProtocol(
         }
         try {
             httpClient.preparePost(endpoint) {
+                applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header(API_KEY_HEADER, apiKey)
                 setBody(GeminiContentCodec.buildRequestBody(request, json))
@@ -76,7 +80,6 @@ class GeminiProtocol(
                 try {
                     consumeGeminiStream(
                         channel = channel,
-                        timeoutMs = request.streamTimeout ?: 120_000L,
                         state = GeminiStreamState(),
                         json = json,
                         label = "Gemini",
@@ -95,6 +98,7 @@ class GeminiProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val endpoint = inferenceUrl(request, streaming = false)
         return httpClient.preparePost(endpoint) {
+            applyModelTimeout(ModelTimeoutKind.LLM)
             contentType(ContentType.Application.Json)
             header(API_KEY_HEADER, apiKey)
             setBody(GeminiContentCodec.buildRequestBody(request, json))

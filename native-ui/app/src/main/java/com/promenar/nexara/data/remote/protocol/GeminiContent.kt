@@ -8,7 +8,6 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8LineTo
 import java.util.UUID
 import kotlinx.coroutines.channels.SendChannel
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -479,7 +478,6 @@ internal class GeminiStreamState(
  */
 internal suspend fun SendChannel<StreamChunk>.consumeGeminiStream(
     channel: ByteReadChannel,
-    timeoutMs: Long,
     state: GeminiStreamState,
     json: Json,
     label: String,
@@ -487,15 +485,7 @@ internal suspend fun SendChannel<StreamChunk>.consumeGeminiStream(
     val line = StringBuilder()
     while (!channel.isClosedForRead) {
         line.clear()
-        val read = withTimeoutOrNull(timeoutMs) { channel.readUTF8LineTo(line, 1_048_576) }
-        if (read == null) {
-            send(StreamChunk.Error(
-                code = GenerationFailureCode.TIMEOUT,
-                retryable = true,
-                technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
-            ))
-            return
-        }
+        val read = channel.readUTF8LineTo(line, 1_048_576)
         if (!read) break
         val raw = line.toString()
         if (raw.isBlank()) continue

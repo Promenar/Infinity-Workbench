@@ -98,6 +98,17 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `模型超时设置契约同步状态并夹取范围`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        vm.setModelTimeout(com.promenar.nexara.data.remote.ModelTimeoutKind.LLM, 901)
+        assertThat(vm.modelTimeouts.value.llmSeconds).isEqualTo(901)
+        vm.setModelTimeout(com.promenar.nexara.data.remote.ModelTimeoutKind.IMAGE, 0)
+        assertThat(vm.modelTimeouts.value.imageSeconds).isEqualTo(5)
+        vm.setModelTimeout(com.promenar.nexara.data.remote.ModelTimeoutKind.RERANK, 9000)
+        assertThat(vm.modelTimeouts.value.rerankSeconds).isEqualTo(1800)
+    }
+
+    @Test
     fun `settings asynchronous failures expose only account scoped typed retry state`() {
         val getters = SettingsViewModel::class.java.methods.map { it.name }
 
