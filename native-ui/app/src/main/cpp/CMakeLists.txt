@@ -3,12 +3,19 @@ project("nexara_llama")
 
 option(NEXARA_ENABLE_LOCAL_INFERENCE "Build the local llama.cpp inference engine" OFF)
 
+# 本工程所有共享库（含 FetchContent 拉取的 llama/ggml）显式按 16KB 最大页大小链接，兼容 16KB 页设备；
+# APK 级检查见 scripts/ci/check-native-page-alignment.py。
+string(APPEND CMAKE_SHARED_LINKER_FLAGS " -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384")
+
 # 工作区持久文件身份只依赖NDK/libc；所有变体均提供，不触发推理引擎下载或初始化。
 add_library(nexara_workspace_fs SHARED workspace-file-identity.cpp)
 set_target_properties(nexara_workspace_fs PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
+# 终端 PTY 桥接：重新编译 terminal-emulator 的 JNI 源码，替换其 AAR 内按 4KB 对齐的 libtermux.so（来源见 termux/README.md）。
+add_library(termux SHARED termux/termux.c)
+
 if(NOT NEXARA_ENABLE_LOCAL_INFERENCE)
-    # 推理关闭时仍构建工作区文件身份桥接。
+    # 推理关闭时仍构建工作区文件身份与终端 PTY 桥接。
     set(_nexara_disabled_variant_inputs
         "${CMAKE_EXPORT_COMPILE_COMMANDS}"
         "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"

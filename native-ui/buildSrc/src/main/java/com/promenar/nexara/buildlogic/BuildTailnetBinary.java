@@ -88,7 +88,8 @@ public abstract class BuildTailnetBinary extends DefaultTask {
         File abiDir = new File(output, getAbi().get());
         Files.createDirectories(abiDir.toPath());
         File binary = new File(abiDir, "libnxtailnet.so");
-        run(module, environment, "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w -buildid=",
+        // -R 显式固定 64KB 段地址舍入（PT_LOAD 对齐），兼容 16KB 页设备，不依赖 Go 链接器默认值。
+        run(module, environment, "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w -buildid= -R 0x10000",
                 "-o", binary.getPath(), ".");
         if (!binary.isFile() || binary.length() == 0) throw new GradleException("Go 构建未生成 " + binary);
     }

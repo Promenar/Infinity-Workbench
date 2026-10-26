@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 16 KB 页大小兼容：原生库对齐
+
+- 侧载渠道本地终端的 `libtermux.so` 改为从 Termux terminal-emulator v0.118.0 原样源码以 16 KB 页对齐重新编译，替换上游 AAR 中按 4 KB 对齐的预编译库；JNI 接口不变。两个渠道的 64 位原生库现已全部 16 KB 对齐，16 KB 页设备不再进入页大小兼容模式，4 KB 页设备上的调试包也不再弹出“Android 应用兼容性”对话框。
+- 项目 CMake 对所有共享库（含推理开启时的 llama/ggml）统一加 16 KB 最大页链接参数；内置 Tailscale 的 Go 构建显式指定 64 KB 段对齐（产物与此前一致）。
+- 新增 `scripts/ci/check-native-page-alignment.py`，逐个检查两个渠道 APK 中 64 位 ELF 的 PT_LOAD 对齐，Android CI 与发行工作流在构建后执行。对话框中大量“未知错误”条目是系统把已对齐库也列入清单所致，排查说明见 `docs/distribution-builds.md`。
+
 ### 长期记忆：助手主动记住跨会话信息
 
 - 新增用户级长期记忆。助手认为值得跨会话记住时，会直接调用 `memory_save` 写入（用户偏好、对协作方式的纠正、项目事实与约束、外部资源位置），过时或有误时用 `memory_forget` 删除；写入不需要审批。所有非私密助手共享同一份记忆，每轮作为资料（不是指令）注入系统提示，正文合计超过 6000 字符时较旧条目只列标题，可用 `memory_read` 读全文。上限 200 条，疑似凭据（密钥、令牌、私钥、密码）拒绝写入。

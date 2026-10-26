@@ -103,6 +103,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn('--distribution "${distribution}"', build)
         self.assertIn('check-distribution-manifests.py', ANDROID_CI)
         self.assertIn('check-distribution-manifests.py', build)
+        self.assertIn('check-native-page-alignment.py --build-type release', build)
+        self.assertIn('check-native-page-alignment.py', ANDROID_CI)
         self.assertNotIn('-play.apk', workflow_job("signed-apk-upgrade-smoke"))
 
     def test_release_identity_matches_android_source(self) -> None:

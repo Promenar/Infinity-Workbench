@@ -23,7 +23,7 @@
 
 ## 4. 项目排障沉淀
 
-当前 Android 任务显式指定 `distribution` 风味：日常使用 `:app:testSideloadDebugUnitTest`、`:app:lintSideloadDebug`、`:app:assembleSideloadDebug`、`:app:validateSideloadDebugScreenshotTest`；另构建 `:app:assemblePlayDebug` 并执行 `python3 scripts/ci/check-distribution-manifests.py`。Gradle 在 `native-ui/` 运行，Python 检查在仓库根运行。两个渠道的 APK、mapping 与设备构建入口见 [docs/distribution-builds.md](docs/distribution-builds.md)。
+当前 Android 任务显式指定 `distribution` 风味：日常使用 `:app:testSideloadDebugUnitTest`、`:app:lintSideloadDebug`、`:app:assembleSideloadDebug`、`:app:validateSideloadDebugScreenshotTest`；另构建 `:app:assemblePlayDebug` 并执行 `python3 scripts/ci/check-distribution-manifests.py` 与 `python3 scripts/ci/check-native-page-alignment.py`。Gradle 在 `native-ui/` 运行，Python 检查在仓库根运行。两个渠道的 APK、mapping 与设备构建入口见 [docs/distribution-builds.md](docs/distribution-builds.md)。
 
 - **Markdown 渲染排障分层**：遇到“Markdown 标记存在但排版堆成一坨”时，必须先区分两类根因：
   - 文本中已有换行，但渲染库按 CommonMark 软换行规则吞掉换行；

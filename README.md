@@ -179,6 +179,7 @@ cd native-ui
 ./gradlew :app:assembleSideloadDebug :app:assemblePlayDebug
 ./gradlew :app:testSideloadDebugUnitTest :app:testPlayDebugUnitTest :app:lintSideloadDebug
 python3 ../scripts/ci/check-distribution-manifests.py
+python3 ../scripts/ci/check-native-page-alignment.py
 ```
 
 首次构建会从 python.org 下载官方 CPython Android 包（每个 ABI 约 23 MB）并按 SHA-256 校验，之后使用 Gradle 缓存。构建期需要 PATH 中有 `python3.14`，用它预编译打包 Python 的字节码（也可用 `-Pnexara.hostPython=<路径>` 指定）。离线方式与打包结构见[打包 Python](docs/distribution-builds.md#打包-python)。Debug 构建不需要发行签名变量。Release 构建必须通过进程环境提供 `NEXARA_KEYSTORE_PATH`、`NEXARA_STORE_PASSWORD`、`NEXARA_KEY_ALIAS` 和 `NEXARA_KEY_PASSWORD`；仓库不保存 keystore 或密码。

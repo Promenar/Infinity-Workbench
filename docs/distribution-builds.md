@@ -16,6 +16,7 @@
 ./gradlew -Pnexara.deviceE2e=true -Pnexara.deviceE2eAbi=arm64-v8a :app:assembleSideloadDeviceTest :app:assembleSideloadDeviceTestAndroidTest :mainactivity-e2e:assembleDeviceTest
 ./gradlew :app:validateSideloadDebugScreenshotTest :app:validatePlayDebugScreenshotTest
 python3 ../scripts/ci/check-distribution-manifests.py
+python3 ../scripts/ci/check-native-page-alignment.py
 ```
 
 截图验证共用 `app/src/screenshotTestDebug/reference/`，不按渠道复制像素。设备构建只生成 APK；设备脚本会连接并修改设备，需在已授权的专用本机 AVD 上另行执行。`mainactivity-e2e` 以 `missingDimensionStrategy` 固定匹配侧载应用，其任务名保持 `assembleDeviceTest`。黑盒夹具为独立应用，保持 `:blackbox-fixture:assembleDebug`。
@@ -32,7 +33,7 @@ python3 ../scripts/ci/check-distribution-manifests.py
 | sideloadRelease | `app/build/outputs/apk/sideload/release/app-sideload-release.apk` | `app/build/outputs/mapping/sideloadRelease/mapping.txt` |
 | playRelease | `app/build/outputs/apk/play/release/app-play-release.apk` | `app/build/outputs/mapping/playRelease/mapping.txt` |
 
-Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得签名构建授权的主控会话执行 `:app:assembleSideloadRelease :app:assemblePlayRelease`，随后执行 `python3 ../scripts/ci/check-distribution-manifests.py --build-type release`。不把秘密写入命令、文档或报告。
+Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得签名构建授权的主控会话执行 `:app:assembleSideloadRelease :app:assemblePlayRelease`，随后执行 `python3 ../scripts/ci/check-distribution-manifests.py --build-type release` 与 `python3 ../scripts/ci/check-native-page-alignment.py --build-type release`。不把秘密写入命令、文档或报告。
 
 发行工作流整理侧载主资产 `dist/nexara-v0.2.2-beta.apk` 和 Play 资产 `dist/nexara-v0.2.2-beta-play.apk`；二者各有 `.sha256`。R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书；v0.1 升级只使用侧载主资产。准备发行链路不构成公开发布，也不代表 Play 商店审核通过。
 
@@ -63,7 +64,7 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 两个渠道都打包 `libnxtailnet.so`：`native-ui/app/tailnet/` 的 Go 程序（tailscale.com 的 tsnet，版本由 `go.mod`/`go.sum` 锁定），由应用以子进程启动，经 stdin/stdout 的 JSON 行协议控制。ABI 规则与打包 Python 相同：设了 `abiFilters` 的变体按过滤打包，未设过滤的 Release 通用包只带 arm64-v8a。arm64-v8a 以 `GOOS=android GOARCH=arm64` 编译；x86_64 以 `GOOS=linux GOARCH=amd64` 编译（Go 的 android/amd64 必须 cgo 外部链接），两者都 `CGO_ENABLED=0` 静态链接，`feature/androidbin` 提供合成网卡、经系统 dnsproxyd 的 DNS 与系统 CA 证书。
 
-构建任务 `buildTailnet<ABI>` 输出到 `app/build/generated/tailnet/<ABI>/`，作为生成的 jniLibs 目录接入，不入库。任务固定 `GOTOOLCHAIN=go1.27.1`、`GOFLAGS=-mod=readonly`，使用 `-trimpath -buildvcs=false -ldflags=-s -w -buildid=`，同一输入得到相同产物，二进制不含构建机路径；宿主只需 Go 1.21 及以上，`-Pnexara.goExecutable=<路径>` 指定 go。首次构建由 Go 模块代理下载工具链与依赖，离线构建需预先填好 `GOMODCACHE` 并设 `GOPROXY=off`。`-Pnexara.tailnet=false` 跳过编译，只用于没有 Go 的临时环境：设置页提示安装包未包含内置 Tailscale，发行校验拒绝这样的 APK。CI 的 Gradle 作业用 `actions/setup-go`（按 SHA 固定）安装 Go 1.27.1。Go 侧单元测试：在 `native-ui/app/tailnet/` 运行 `go test -race ./...` 与 `go vet ./...`。
+构建任务 `buildTailnet<ABI>` 输出到 `app/build/generated/tailnet/<ABI>/`，作为生成的 jniLibs 目录接入，不入库。任务固定 `GOTOOLCHAIN=go1.27.1`、`GOFLAGS=-mod=readonly`，使用 `-trimpath -buildvcs=false -ldflags=-s -w -buildid= -R 0x10000`（`-R` 显式固定 64 KB 段对齐，见[16 KB 页大小](#16-kb-页大小)），同一输入得到相同产物，二进制不含构建机路径；宿主只需 Go 1.21 及以上，`-Pnexara.goExecutable=<路径>` 指定 go。首次构建由 Go 模块代理下载工具链与依赖，离线构建需预先填好 `GOMODCACHE` 并设 `GOPROXY=off`。`-Pnexara.tailnet=false` 跳过编译，只用于没有 Go 的临时环境：设置页提示安装包未包含内置 Tailscale，发行校验拒绝这样的 APK。CI 的 Gradle 作业用 `actions/setup-go`（按 SHA 固定）安装 Go 1.27.1。Go 侧单元测试：在 `native-ui/app/tailnet/` 运行 `go test -race ./...` 与 `go vet ./...`。
 
 可执行文件已剥离符号，`keepDebugSymbols` 保持原样。运行时只传入 `HOME`、`TMPDIR`，节点状态目录位于 `noBackupFilesDir/tailnet`，不进备份；更换控制服务器会清空该目录。本机代理只监听 127.0.0.1，同一端口同时提供 HTTP（CONNECT 与绝对 URI）和 SOCKS5，用户名与口令每次启动随机生成；tailnet IP 与 MagicDNS 名称经 tsnet 转发，其它目标由子进程直连（域名经 Android 系统 DNS 解析），节点未连接时 tailnet 目标返回 503，不回落到公网。
 
@@ -77,11 +78,28 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 - `fetchLinuxRuntime<Proot|Talloc|Alpine>` 下载到 `app/build/linux-downloads/` 并校验摘要；`buildLinuxRuntime` 用 AGP 所选 NDK 与 `app/linux/CMakeLists.txt` 编译 `libnxproot.so`（proot 与入口）和 `libnxproot-loader.so`；`prepareLinuxRuntimeAssets` 把原始归档放为 `assets/linux/alpine-minirootfs.tar.gz.bin`（`.bin` 后缀防止资产合并器解压），摘要与解包大小写入 BuildConfig。
 - 两个库随 `useLegacyPackaging` 解压到 `nativeLibraryDir` 后执行（W^X），rootfs 在安装时解到 `filesDir/linux/alpine`。
-- 本地终端使用 Termux terminal-emulator 的 `libtermux.so`，只在侧载变体打包，Play 变体排除。该库为上游 AAR 原样，PT_LOAD 4 KB 对齐，16 KB 页设备兼容性需单独验收。
+- 本地终端的 PTY 桥接 `libtermux.so` 由 `app/src/main/cpp/termux/termux.c`（Termux terminal-emulator v0.118.0 原样源码，来源与哈希见同目录 README）经项目 CMake 以 16 KB 页对齐重新编译，覆盖 AAR 自带的 4 KB 对齐副本；只在侧载变体打包，Play 变体排除。
 - 侧载清单额外声明 `ACCESS_NETWORK_STATE`（安装时读取当前网络 DNS）与受 `MANAGE_DOCUMENTS` 保护的 `${applicationId}.linux.documents` DocumentsProvider（只暴露 `/root`）；`scripts/ci/check-distribution-manifests.py` 校验侧载具备、Play 缺席。
 - `scripts/verify-release-apk.py` 需传入渠道参数：侧载 APK 必须同时含两个库与 rootfs 资产且摘要与 properties 一致，Play APK 不得含任一 ABI 的 Linux 库或资产。Debug 侧载 APK 增加约 4.1 MB（压缩后）。
 
 设备回归类：`com.promenar.nexara.data.linux.LinuxRuntimeDeviceTest`（安装、诊断、工作区读写、重置、卸载）、`LinuxTerminalDeviceTest`（PTY 输出与进程组清理）、`LinuxFileIoDeviceTest`（fd 固定、不覆盖移动）。
+
+## 16 KB 页大小
+
+两个渠道的 64 位原生库（arm64-v8a、x86_64）全部按不小于 16 KB 的 PT_LOAD 段对齐链接，16 KB 页设备无需兼容模式，4 KB 页设备上调试包也不再弹出“Android 应用兼容性”对话框。原生库以 `useLegacyPackaging` 解压安装，系统只检查解压后的 ELF 段对齐，不要求 APK 内 ZIP 偏移对齐。
+
+| 库 | 来源 | 对齐保证 |
+|---|---|---|
+| `libnexara_workspace_fs.so`、`libtermux.so`，推理开启时的 llama/ggml | `app/src/main/cpp/CMakeLists.txt` | 全局 `-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384`，覆盖 FetchContent 子工程 |
+| `libnxproot.so`、`libnxproot-loader.so` | `app/linux/CMakeLists.txt` | 各目标 `-z,max-page-size=16384` |
+| `libnxpython.so` | `python/pylauncher.c` | `-Wl,-z,max-page-size=16384` |
+| `libnxtailnet.so` | Go 内部链接器（`CGO_ENABLED=0`） | `-ldflags=-R 0x10000`，64 KB |
+| `libpython3.*.so`、`libpyext_*.so` 等 | python.org 官方 Android 预编译包 | 上游已 16 KB 对齐，无法重链，由下方检查兜底 |
+| AndroidX 等依赖 AAR 自带库 | Maven 依赖 | 由下方检查兜底 |
+
+`scripts/ci/check-native-page-alignment.py` 逐个读取两个渠道 APK 内 64 位 ELF 的程序头，任一 PT_LOAD 对齐小于 16 KB、未压缩存放的库 ZIP 偏移未按 16 KB 对齐或 APK 中没有 64 位原生库时失败；`libpystdlib.so`、`libpysite.so` 是借 `.so` 名随安装解压的 Python 归档而非 ELF，跳过。Android CI 与发行工作流在构建后执行该检查。升级 terminal-emulator 依赖时须同步替换 `termux.c`；若 AAR 内的库改为 16 KB 对齐，可删除本地源码与 CMake 目标。
+
+调试包弹出兼容性对话框时，系统列出的“未知错误”不代表这些库有问题：系统对齐检查（`NativeLibraryHelper.checkApkAlignment`，Android 17 真机实测）把 APK 内当前 ABI 的每个库都加入列表，已对齐库的错误码为 0，界面没有对应文案便显示为“未知错误”，真正触发对话框的是标为“LOAD 区段未对齐”的库。`adb shell dumpsys package <包名>` 的 `pageSizeCompat` 为 0 表示未进入兼容模式；对话框窗口由系统进程持有，重装应用后需先关闭旧对话框再复测。
 
 ## 富内容 WebView
 

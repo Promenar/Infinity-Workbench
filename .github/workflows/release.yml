@@ -409,6 +409,7 @@ jobs:
             :app:assembleSideloadRelease \
             :app:assemblePlayRelease
           python3 ../scripts/ci/check-distribution-manifests.py --build-type release
+          python3 ../scripts/ci/check-native-page-alignment.py --build-type release
 
       - name: 删除临时 keystore
         if: always()
