@@ -782,7 +782,6 @@ fun ChatRoute(
                 runMode = runModeBadge,
                 inspectorPages = chatPages,
                 browser = browserState,
-                browserEntry = true,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },

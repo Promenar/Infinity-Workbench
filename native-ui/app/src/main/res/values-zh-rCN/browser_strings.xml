@@ -3,7 +3,9 @@
     <string name="browser_title">浏览器</string>
     <string name="browser_cd_open">打开 Agent 浏览器</string>
     <string name="browser_cd_reload">刷新</string>
-    <string name="browser_cd_back">上一页</string>
+    <string name="browser_cd_close">关闭浏览器</string>
+    <string name="browser_cd_forward">前进</string>
+    <string name="browser_cd_back">后退</string>
     <string name="browser_loading">正在加载…</string>
     <string name="browser_empty_title">还没有打开网页</string>
     <string name="browser_empty_detail">Agent 打开网页后会显示在这里，你可以随时旁观、接手或交回。</string>

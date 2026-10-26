@@ -3,7 +3,9 @@
     <string name="browser_title">Browser</string>
     <string name="browser_cd_open">Open Agent browser</string>
     <string name="browser_cd_reload">Reload</string>
-    <string name="browser_cd_back">Previous page</string>
+    <string name="browser_cd_close">Close browser</string>
+    <string name="browser_cd_forward">Forward</string>
+    <string name="browser_cd_back">Back</string>
     <string name="browser_loading">Loading…</string>
     <string name="browser_empty_title">No page open yet</string>
     <string name="browser_empty_detail">When the agent opens a web page, it appears here. You can watch, take over, or hand it back at any time.</string>

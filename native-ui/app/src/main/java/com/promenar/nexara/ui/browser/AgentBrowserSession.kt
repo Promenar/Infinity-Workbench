@@ -112,8 +112,10 @@ class AgentBrowserSession(
 
     fun takeOver() = control.userTakeOver(explicit = true)
     fun handBack() = control.handBack()
-    fun goBack() { if (webView.canGoBack()) webView.goBack() }
-    fun reload() = webView.reload()
+    // 用户点导航按钮与触摸网页一样视为接手，Agent 正在操作时会暂停等待交回。
+    fun goBack() { if (webView.canGoBack()) { control.userTakeOver(explicit = false); webView.goBack() } }
+    fun goForward() { if (webView.canGoForward()) { control.userTakeOver(explicit = false); webView.goForward() } }
+    fun reload() { control.userTakeOver(explicit = false); webView.reload() }
 
     fun destroy() {
         if (destroyed) return
@@ -313,15 +315,15 @@ class AgentBrowserSession(
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             mainFrameError = null
             navigations.value += 1
-            control.updatePage { it.copy(url = url ?: it.url, loading = true, progress = 0, canGoBack = view.canGoBack()) }
+            control.updatePage { it.copy(url = url ?: it.url, loading = true, progress = 0, canGoBack = view.canGoBack(), canGoForward = view.canGoForward()) }
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
-            control.updatePage { it.copy(url = url ?: it.url, title = view.title.orEmpty(), loading = false, progress = 100, canGoBack = view.canGoBack()) }
+            control.updatePage { it.copy(url = url ?: it.url, title = view.title.orEmpty(), loading = false, progress = 100, canGoBack = view.canGoBack(), canGoForward = view.canGoForward()) }
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-            control.updatePage { it.copy(url = url ?: it.url, canGoBack = view.canGoBack()) }
+            control.updatePage { it.copy(url = url ?: it.url, canGoBack = view.canGoBack(), canGoForward = view.canGoForward()) }
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {

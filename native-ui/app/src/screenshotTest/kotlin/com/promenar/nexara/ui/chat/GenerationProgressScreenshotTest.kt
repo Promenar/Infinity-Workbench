@@ -313,7 +313,6 @@ private fun WideRunPage(mode: NexaraThemeMode, english: Boolean, pages: List<Cha
                         stateBoard = sideBoard(english),
                         gitSummary = sideGit,
                         inspectorPages = pages,
-                        browserEntry = true,
                     ),
                     actions = ChatScreenActions(),
                 )

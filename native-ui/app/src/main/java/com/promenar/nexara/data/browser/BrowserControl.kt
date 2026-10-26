@@ -22,6 +22,7 @@ data class BrowserUiState(
     val loading: Boolean = false,
     val progress: Int = 0,
     val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
     val mode: BrowserMode = BrowserMode.IDLE,
     val action: BrowserAgentAction? = null,
     val handoff: BrowserHandoffReason? = null,

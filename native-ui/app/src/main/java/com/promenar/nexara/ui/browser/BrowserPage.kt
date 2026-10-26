@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
@@ -32,12 +34,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -65,7 +69,6 @@ import com.promenar.nexara.data.browser.BrowserHandoffReason
 import com.promenar.nexara.data.browser.BrowserMode
 import com.promenar.nexara.data.browser.BrowserUiState
 import com.promenar.nexara.ui.common.LocalNexaraPanePresentation
-import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraPanePresentation
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -86,6 +89,7 @@ fun BrowserPage(sessionId: String, onBack: (() -> Unit)?) {
         onHandBack = { session?.handBack() },
         onReload = { session?.reload() },
         onPageBack = { session?.goBack() },
+        onPageForward = { session?.goForward() },
         onUpdateWebView = { openWebViewStore(context) },
         modifier = Modifier
             .fillMaxSize()
@@ -109,12 +113,13 @@ fun BrowserPageContent(
     onHandBack: () -> Unit,
     onReload: () -> Unit,
     onPageBack: () -> Unit,
+    onPageForward: () -> Unit,
     onUpdateWebView: () -> Unit,
     modifier: Modifier = Modifier,
     web: @Composable () -> Unit,
 ) {
     Column(modifier.testTag(BrowserTags.PAGE)) {
-        BrowserUrlBar(state, onBack, onReload, onPageBack)
+        BrowserUrlBar(state, onBack, onReload, onPageBack, onPageForward)
         when {
             availability is BrowserAvailability.Unsupported -> BrowserUnsupported(availability.currentVersion, onUpdateWebView)
             state == null -> BrowserEmpty()
@@ -122,8 +127,10 @@ fun BrowserPageContent(
                 Box(Modifier.fillMaxWidth().height(2.dp)) {
                     if (state.loading) LinearProgressIndicator(progress = { state.progress / 100f }, modifier = Modifier.fillMaxWidth())
                 }
+                val lastActive = remember { LastActiveState() }
+                val barState = browserStatusBarState(state, lastActive.value).also { lastActive.value = it }
                 AnimatedVisibility(visible = state.mode != BrowserMode.IDLE) {
-                    BrowserStatusBar(state, onTakeOver, onHandBack)
+                    barState?.let { BrowserStatusBar(it, onTakeOver, onHandBack) }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) { web() }
             }
@@ -131,14 +138,31 @@ fun BrowserPageContent(
     }
 }
 
+/** 状态条显示的状态：转为空闲后退场动画期间沿用退场前的状态，空闲态本身没有文案。 */
+internal fun browserStatusBarState(state: BrowserUiState, previous: BrowserUiState?): BrowserUiState? =
+    if (state.mode != BrowserMode.IDLE) state else previous
+
+private class LastActiveState(var value: BrowserUiState? = null)
+
 @Composable
-private fun BrowserUrlBar(state: BrowserUiState?, onBack: (() -> Unit)?, onReload: () -> Unit, onPageBack: () -> Unit) {
+private fun BrowserUrlBar(
+    state: BrowserUiState?,
+    onBack: (() -> Unit)?,
+    onReload: () -> Unit,
+    onPageBack: () -> Unit,
+    onPageForward: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onBack != null) NexaraBackButton(onClick = onBack) else Spacer(Modifier.size(8.dp))
+        // 离开浏览器用关闭图标，和网页内的“后退”箭头区分开。
+        if (onBack != null) {
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, stringResource(R.string.browser_cd_close)) }
+        } else {
+            Spacer(Modifier.size(8.dp))
+        }
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = scheme.surfaceContainerHigh,
@@ -164,13 +188,20 @@ private fun BrowserUrlBar(state: BrowserUiState?, onBack: (() -> Unit)?, onReloa
                 )
             }
         }
-        if (state?.canGoBack == true) {
-            IconButton(onClick = onPageBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.browser_cd_back), tint = scheme.onSurfaceVariant)
+        // 打开过网页后后退、前进、刷新常驻，不可用的按钮置灰；还没打开网页时都不显示。
+        if (state != null) {
+            val navColors = IconButtonDefaults.iconButtonColors(contentColor = scheme.onSurfaceVariant)
+            IconButton(onClick = onPageBack, enabled = state.canGoBack, colors = navColors) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.browser_cd_back))
             }
-        }
-        IconButton(onClick = onReload, enabled = state != null) {
-            Icon(Icons.Rounded.Refresh, stringResource(R.string.browser_cd_reload), tint = scheme.onSurfaceVariant)
+            IconButton(onClick = onPageForward, enabled = state.canGoForward, colors = navColors) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowForward, stringResource(R.string.browser_cd_forward))
+            }
+            IconButton(onClick = onReload, colors = navColors) {
+                Icon(Icons.Rounded.Refresh, stringResource(R.string.browser_cd_reload))
+            }
+        } else {
+            Spacer(Modifier.size(12.dp))
         }
     }
 }

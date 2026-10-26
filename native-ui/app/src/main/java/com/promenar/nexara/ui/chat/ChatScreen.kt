@@ -264,10 +264,8 @@ data class ChatScreenState(
     val runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
     /** 会话二级内容层级；宽窗口下其根即检视器当前页签，为空表示检视器收起。 */
     val inspectorPages: List<ChatPage> = emptyList(),
-    /** 本会话 Agent 浏览器的页面与操作权状态；还没有打开网页时为 null。 */
+    /** 本会话 Agent 浏览器的页面与操作权状态；还没有打开网页时为 null，入口仍常驻并进入空状态。 */
     val browser: com.promenar.nexara.data.browser.BrowserUiState? = null,
-    /** 顶栏常驻浏览器入口；为 false 时只在打开过网页后出现。 */
-    val browserEntry: Boolean = false,
 )
 
 data class ChatScreenActions(
@@ -670,7 +668,7 @@ fun ChatScreenContent(
                     ) else null,
                     runMode = state.runMode,
                     onRunMode = actions.onOpenRunMode,
-                    browser = (state.browser?.mode ?: com.promenar.nexara.data.browser.BrowserMode.IDLE.takeIf { state.browserEntry })?.let { mode ->
+                    browser = (state.browser?.mode ?: com.promenar.nexara.data.browser.BrowserMode.IDLE).let { mode ->
                         ChatTopBarBrowser(
                             mode = mode,
                             open = inspectorRoot == ChatPage.Browser,
@@ -753,7 +751,7 @@ fun ChatScreenContent(
                 gitChanges = state.gitSummary?.changeCount ?: 0,
                 canvases = sideCanvases.size,
                 browser = state.browser?.mode,
-                browserEntry = state.browserEntry,
+                browserEntry = true,
             )
             var inspectorWidened by rememberSaveable { mutableStateOf(false) }
             // 浏览器页签加宽时铺满会话区，只留左侧一条边距，再按一次恢复。

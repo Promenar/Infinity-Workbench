@@ -117,6 +117,7 @@ private fun handoffState() = BrowserUiState(
         onHandBack = {},
         onReload = {},
         onPageBack = {},
+        onPageForward = {},
         onUpdateWebView = {},
         modifier = Modifier.fillMaxSize(),
     ) { FakePage(login) }
