@@ -3,7 +3,6 @@ package com.promenar.nexara.ui.chat
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.animation.AnimatedContent
@@ -63,26 +62,3 @@ import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraMotion
 
-/** 浮岛上的亮屏开关：只影响本次生成，默认值来自“生成时保持亮屏”设置。 */
-@Composable
-internal fun KeepScreenOnToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
-    val haptics = LocalNexaraHaptics.current
-    val state = stringResource(if (on) R.string.keep_screen_toggle_on else R.string.keep_screen_toggle_off)
-    IconToggleButton(
-        checked = on,
-        onCheckedChange = {
-            haptics.toggle(it)
-            onToggle()
-        },
-        modifier = modifier
-            .testTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE)
-            .semantics { stateDescription = state },
-    ) {
-        Icon(
-            imageVector = if (on) Icons.Rounded.LightMode else Icons.Outlined.LightMode,
-            contentDescription = stringResource(R.string.keep_screen_toggle_cd),
-            tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}

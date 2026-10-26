@@ -23,15 +23,8 @@
     <string name="run_detail_tab_state">状态</string>
     <string name="run_detail_group_done">%1$d/%2$d 已完成</string>
     <string name="run_detail_current">当前</string>
-    <string name="run_detail_tokens">%1$s Token</string>
     <string name="run_detail_elapsed_seconds">用时 %1$d 秒</string>
     <string name="run_detail_elapsed_minutes">用时 %1$d 分 %2$02d 秒</string>
-    <plurals name="run_detail_rounds">
-        <item quantity="other">%d 轮</item>
-    </plurals>
-    <plurals name="run_detail_calls">
-        <item quantity="other">%d 次调用</item>
-    </plurals>
     <string name="state_board_maintained_by_agent">Agent 维护</string>
     <string name="state_board_updated_at">%1$s 更新</string>
     <plurals name="state_board_field_count">

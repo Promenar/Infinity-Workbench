@@ -102,6 +102,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -167,6 +168,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -249,8 +251,9 @@ data class ChatScreenState(
     val turnGraphStates: Map<String, com.promenar.nexara.data.rag.TurnGraphState> = emptyMap(),
     /** 生成中按发送键排队的后续消息。 */
     val composerQueue: ComposerQueueUiState = ComposerQueueUiState(),
-    /** 本次生成是否保持亮屏；为 null 时浮岛不显示亮屏开关。 */
-    val keepScreenOn: Boolean? = null,
+    /** 是否已锁定触摸；生成结束后仍保持，直到用户解锁。 */
+    val touchLocked: Boolean = false,
+    val touchLockUnlock: com.promenar.nexara.ui.theme.TouchLockUnlock = com.promenar.nexara.ui.theme.TouchLockUnlock.HOLD,
     /** 输入框斜杠命令目录（内置命令与当前会话可用技能）。 */
     val slashCommands: List<com.promenar.nexara.ui.chat.command.SlashCommand> = emptyList(),
     val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
@@ -262,6 +265,10 @@ data class ChatScreenState(
     val startupWritePaused: Boolean = false,
     /** 侧载版顶栏标题旁的运行模式标识；Play 版为 null。 */
     val runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
+    /** 浮岛工具行的执行模式；会话关闭工具时为 null，不显示盾牌。 */
+    val executionMode: com.promenar.nexara.ui.common.ExecutionMode? = null,
+    /** 顶栏状态行的会话工作区；解析完成前为 null，不显示。 */
+    val workspace: com.promenar.nexara.ui.workspace.SessionWorkspaceUi? = null,
     /** 会话二级内容层级；宽窗口下其根即检视器当前页签，为空表示检视器收起。 */
     val inspectorPages: List<ChatPage> = emptyList(),
     /** 本会话 Agent 浏览器的页面与操作权状态；还没有打开网页时为 null，入口仍常驻并进入空状态。 */
@@ -274,6 +281,9 @@ data class ChatScreenActions(
     val onResolveSubagentApproval: (String, Boolean) -> Unit = { _, _ -> },
     val onOpenWorkspace: () -> Unit = {},
     val onOpenGit: () -> Unit = {},
+    val onExecutionModeChange: (com.promenar.nexara.ui.common.ExecutionMode) -> Unit = {},
+    /** 点按顶栏状态行的工作区：打开工作区与 Agent 可达范围面板，可在其中切换。 */
+    val onOpenWorkspaceStatus: () -> Unit = {},
     /** 窄窗口打开 Agent 浏览器整页；宽窗口由检视器页签承载。 */
     val onOpenBrowser: () -> Unit = {},
     /** 宽窗口检视器：替换整个层级（打开页签、收起）。 */
@@ -330,7 +340,8 @@ data class ChatScreenActions(
     val onMoveQueuedToFront: (String) -> Unit = {},
     val onRemoveQueued: (String) -> Unit = {},
     val onResumeQueue: () -> Unit = {},
-    val onToggleKeepScreenOn: () -> Unit = {},
+    val onLockTouch: () -> Unit = {},
+    val onUnlockTouch: () -> Unit = {},
     /** 点选斜杠命令候选。 */
     val onSlashCommandPicked: (com.promenar.nexara.ui.chat.command.SlashCommand) -> Unit = {},
     /** 斜杠命令候选弹出时调用一次，用于刷新技能列表。 */
@@ -668,6 +679,8 @@ fun ChatScreenContent(
                     ) else null,
                     runMode = state.runMode,
                     onRunMode = actions.onOpenRunMode,
+                    workspace = state.workspace,
+                    onWorkspaceStatus = actions.onOpenWorkspaceStatus,
                     browser = (state.browser?.mode ?: com.promenar.nexara.data.browser.BrowserMode.IDLE).let { mode ->
                         ChatTopBarBrowser(
                             mode = mode,
@@ -737,6 +750,20 @@ fun ChatScreenContent(
             )
             var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
             if (dock != null) lastDock = dock
+            if (state.touchLocked) {
+                val lockDock = dock ?: lastDock
+                com.promenar.nexara.ui.chat.TouchLockDialog(
+                    state = com.promenar.nexara.ui.chat.TouchLockUiState(
+                        phase = com.promenar.nexara.ui.chat.touchLockPhase(uiState.isGenerating, pendingApprovals),
+                        label = lockDock?.let { com.promenar.nexara.ui.chat.components.runDockLabelText(it.label) }
+                            ?: stringResource(R.string.touch_lock_running),
+                        meta = lockDock?.let { com.promenar.nexara.ui.chat.components.runDockMetaText(it) }.orEmpty(),
+                        progress = lockDock?.progress,
+                    ),
+                    unlock = state.touchLockUnlock,
+                    onUnlock = actions.onUnlockTouch,
+                )
+            }
             val canvasSession = com.promenar.nexara.ui.canvas.LocalCanvasSession.current
             // 侧栏计划区与运行坞同一可见规则：隐藏或自动收起的计划不占侧栏。
             val sidePlan = taskPanel?.takeIf { planBarVisible && it.totalCount > 0 }
@@ -1098,8 +1125,7 @@ fun ChatScreenContent(
                                                 runSheetOpen = true
                                             },
                                             onJumpToApproval = jumpToApproval,
-                                            keepScreenOn = state.keepScreenOn.takeIf { uiState.isGenerating },
-                                            onToggleKeepScreenOn = actions.onToggleKeepScreenOn,
+                                            onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
                                         )
                                     }
                                 }
@@ -1148,6 +1174,8 @@ fun ChatScreenContent(
                             onManualSummary = actions.onManualSummary,
                             reasoningControl = state.reasoningControl,
                             onReasoningChange = actions.onReasoningEffortChange,
+                            executionMode = state.executionMode,
+                            onExecutionModeChange = actions.onExecutionModeChange,
                             attachmentContent = {
                                 ChatComposerAttachments(
                                     imageUris = selectedImageUris,
@@ -1806,6 +1834,9 @@ fun ChatTopBar(
     onOpenGit: () -> Unit = {},
     runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
     onRunMode: () -> Unit = {},
+    /** 状态行中运行模式之后的会话工作区；为 null 时不显示。 */
+    workspace: com.promenar.nexara.ui.workspace.SessionWorkspaceUi? = null,
+    onWorkspaceStatus: () -> Unit = {},
     /** 宽窗口：文件、画布与检视器开合直接放在顶栏；为 null 时（窄窗口）只有文件入口与菜单。 */
     inspector: ChatTopBarInspector? = null,
     /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
@@ -1824,11 +1855,11 @@ fun ChatTopBar(
     )
     Box {
     TopAppBar(
-        expandedHeight = if (git != null || runMode != null) 64.dp else 56.dp,
+        expandedHeight = if (git != null || runMode != null || workspace != null) 64.dp else 56.dp,
         windowInsets = windowInsets,
         title = {
-            // 标题独占首行；运行模式与 Git 合并为其下的状态行，标题再长也不挤动模式标识。
-            val statusLine = git != null || runMode != null
+            // 标题独占首行；运行模式、工作区与 Git 合并为其下的状态行，标题再长也不挤动模式标识。
+            val statusLine = git != null || runMode != null || workspace != null
             Column {
                 Text(
                     text = title,
@@ -1842,56 +1873,106 @@ fun ChatTopBar(
                         .wrapContentHeight(Alignment.CenterVertically)
                         .testTag("chat_top_title"),
                 )
-                if (statusLine) Row(verticalAlignment = Alignment.CenterVertically) {
+                if (statusLine) BoxWithConstraints {
                     val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
-                    // 运行模式标识只在侧载版出现；模式、分支各是独立的点按目标。
-                    if (runMode != null) {
-                        com.promenar.nexara.ui.chat.runmode.RunModeChip(
-                            runMode.mode,
-                            runMode.unavailable,
-                            onClick = {
-                                if (runModeAnchor?.consumeRecentDismiss() != true) {
-                                    runModeAnchor?.pointAt(runModeChipAnchor)
-                                    onRunMode()
-                                }
-                            },
-                            modifier = Modifier.nexaraPopoverAnchor(runModeChipAnchor),
+                    val chipStyle = NexaraTypography.labelMedium
+                    val measurer = rememberTextMeasurer()
+                    val density = LocalDensity.current
+                    val runLabel = runMode?.let { stringResource(it.mode.labelRes()) }
+                    val workspaceName = workspace?.let { com.promenar.nexara.ui.git.shortenMiddle(workspaceStatusName(it), 18) }
+                    val gitLine = git?.let { com.promenar.nexara.ui.git.gitSummaryLine(it, compactChanges = true) }
+                    val gitSuffix = git?.let { com.promenar.nexara.ui.git.gitSummarySuffix(it, compactChanges = true) }.orEmpty()
+                    val gitBranch = gitLine?.removeSuffix(gitSuffix)?.let { com.promenar.nexara.ui.git.shortenMiddle(it, 22) }
+                    val gitCounts = gitSuffix.removePrefix(" $NexaraMetaSeparator ")
+                    val available = constraints.maxWidth.toFloat()
+                    // 状态行逐级收缩：先收 Git 分支名，再把 Git 收成图标，最后运行模式只留图标。
+                    val fit = remember(available, runLabel, workspaceName, gitLine, style, density) {
+                        fun text(value: String, textStyle: androidx.compose.ui.text.TextStyle = style) =
+                            measurer.measure(value, textStyle, maxLines = 1, softWrap = false).size.width.toFloat()
+                        fun dp(value: Float) = with(density) { value.dp.toPx() }
+                        val gitIcon = if (gitLine != null) dp(13f) else 0f
+                        val gitText = dp(3f) + gitIcon
+                        statusLineFit(
+                            available = available,
+                            widths = StatusLineWidths(
+                                runFull = runLabel?.let { dp(17f) + text(it, chipStyle) } ?: 0f,
+                                runIcon = if (runLabel != null) dp(14f) else 0f,
+                                workspace = workspaceName?.let { dp(16f) + text(it) } ?: 0f,
+                                gitFull = if (gitLine != null) gitText + text(gitBranch.orEmpty()) + text(gitSuffix) else 0f,
+                                gitSuffix = if (gitLine != null) gitText + text(gitCounts) else 0f,
+                                gitIcon = gitIcon,
+                                separator = text(" $NexaraMetaSeparator "),
+                            ),
                         )
                     }
-                    if (runMode != null && git != null) {
-                        Text(" $NexaraMetaSeparator ", style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1)
-                    }
-                    // 分支 · 改动数 · ↑领先，点开 Git 面板。
-                    if (git != null) {
-                        val line = com.promenar.nexara.ui.git.gitSummaryLine(git, compactChanges = true)
-                        val description = stringResource(R.string.git_top_bar_cd, line)
-                        // 长分支名先从中间缩短，仍放不下时只截分支名，改动数与领先落后始终完整。
-                        val suffix = com.promenar.nexara.ui.git.gitSummarySuffix(git, compactChanges = true)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier.weight(1f, fill = false)
-                                .heightIn(min = 24.dp)
-                                .clickable(role = Role.Button, onClick = onOpenGit)
-                                .clearAndSetSemantics { contentDescription = description }
-                                .testTag(UiTags.CHAT_GIT_LINE),
-                        ) {
-                            Icon(
-                                Icons.Rounded.AccountTree,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 运行模式标识只在侧载版出现；模式、工作区、分支各是独立的点按目标。
+                        if (runMode != null) {
+                            com.promenar.nexara.ui.chat.runmode.RunModeChip(
+                                runMode.mode,
+                                runMode.unavailable,
+                                onClick = {
+                                    if (runModeAnchor?.consumeRecentDismiss() != true) {
+                                        runModeAnchor?.pointAt(runModeChipAnchor)
+                                        onRunMode()
+                                    }
+                                },
+                                showLabel = fit != StatusLineFit.RUN_ICON,
+                                modifier = Modifier.nexaraPopoverAnchor(runModeChipAnchor),
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = com.promenar.nexara.ui.git.shortenMiddle(line.removeSuffix(suffix), 22),
-                                    style = style,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false),
+                        }
+                        if (runMode != null && (workspace != null || git != null)) {
+                            Text(" $NexaraMetaSeparator ", style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                        }
+                        if (workspace != null && workspaceName != null) {
+                            ChatTopBarWorkspace(
+                                workspace = workspace,
+                                name = workspaceName,
+                                style = style,
+                                onClick = onWorkspaceStatus,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        if (workspace != null && git != null) {
+                            Text(" $NexaraMetaSeparator ", style = style, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                        }
+                        // 分支 · 改动数 · ↑领先，点开 Git 面板；收缩时依次去掉分支名、只留图标，读屏始终读完整摘要。
+                        if (git != null && gitLine != null) {
+                            val description = stringResource(R.string.git_top_bar_cd, gitLine)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                modifier = Modifier
+                                    .then(if (workspace == null) Modifier.weight(1f, fill = false) else Modifier)
+                                    .heightIn(min = 24.dp)
+                                    .clickable(role = Role.Button, onClick = onOpenGit)
+                                    .clearAndSetSemantics { contentDescription = description }
+                                    .testTag(UiTags.CHAT_GIT_LINE),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.AccountTree,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(13.dp),
                                 )
-                                Text(text = suffix, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                when (fit) {
+                                    StatusLineFit.FULL -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // 长分支名先从中间缩短，仍放不下时只截分支名，改动数与领先落后始终完整。
+                                        Text(
+                                            text = gitBranch.orEmpty(),
+                                            style = style,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                        )
+                                        Text(text = gitSuffix, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                    }
+                                    StatusLineFit.GIT_SUFFIX -> if (gitCounts.isNotEmpty()) {
+                                        Text(text = gitCounts, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                    }
+                                    StatusLineFit.GIT_ICON, StatusLineFit.RUN_ICON -> Unit
+                                }
                             }
                         }
                     }
@@ -2115,6 +2196,46 @@ private fun BrowserTopBarIcon(mode: com.promenar.nexara.data.browser.BrowserMode
     }
 }
 
+/** 顶栏状态行中工作区的显示名称。 */
+@Composable
+private fun workspaceStatusName(workspace: com.promenar.nexara.ui.workspace.SessionWorkspaceUi): String = when (workspace) {
+    com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Loading -> "…"
+    com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Private -> com.promenar.nexara.ui.workspace.privateWorkspaceLabel()
+    is com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Directory -> workspace.name
+    is com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
+}
+
+/** 顶栏状态行中的工作区：文件夹图标加名称，不可用时换成警示色；名称取状态行剩余宽度，放不下时从末尾省略。 */
+@Composable
+private fun ChatTopBarWorkspace(
+    workspace: com.promenar.nexara.ui.workspace.SessionWorkspaceUi,
+    name: String,
+    style: androidx.compose.ui.text.TextStyle,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val unavailable = workspace is com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Unavailable
+    val color = if (unavailable) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    val description = stringResource(R.string.chat_top_workspace_cd, workspaceStatusName(workspace))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = modifier
+            .heightIn(min = 24.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .clearAndSetSemantics { contentDescription = description }
+            .testTag(UiTags.CHAT_WORKSPACE_LINE),
+    ) {
+        Icon(
+            if (unavailable) Icons.Rounded.Warning else Icons.Outlined.Folder,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(13.dp),
+        )
+        Text(text = name, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 /** 顶栏图标按钮；对应的检视器页签展开时以浅色底标出。 */
 @Composable
 private fun ChatTopBarAction(
@@ -2254,6 +2375,9 @@ fun ChatInputBar(
     onManualSummary: () -> Unit = {},
     reasoningControl: ChatReasoningControl? = null,
     onReasoningChange: (com.promenar.nexara.data.model.params.ReasoningEffort?) -> Unit = {},
+    /** 工具行上的执行模式盾牌；会话关闭工具时为 null，不显示。 */
+    executionMode: com.promenar.nexara.ui.common.ExecutionMode? = null,
+    onExecutionModeChange: (com.promenar.nexara.ui.common.ExecutionMode) -> Unit = {},
     attachmentContent: @Composable () -> Unit = {},
     /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
     topContent: @Composable ColumnScope.() -> Unit = {},
@@ -2346,7 +2470,11 @@ fun ChatInputBar(
                         tint = if (hasImages || hasDocuments) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp).rotate(attachmentIconRotation))
                 }
-                BoxWithConstraints(Modifier.weight(1f)) {
+                // 附件按钮向左借了 12dp，盾牌同样左移，两者间距与其余控件一致。
+                executionMode?.let { mode ->
+                    ExecutionModeButton(mode, onExecutionModeChange, Modifier.offset(x = (-12).dp))
+                }
+                BoxWithConstraints(Modifier.weight(1f).then(if (executionMode != null) Modifier.offset(x = (-12).dp) else Modifier)) {
                     // 空间不足时推理强度胶囊只留灯泡，模型名优先显示。
                     val compactReasoning = maxWidth < ReasoningChipCompactBelow
                     Row(verticalAlignment = Alignment.CenterVertically) {

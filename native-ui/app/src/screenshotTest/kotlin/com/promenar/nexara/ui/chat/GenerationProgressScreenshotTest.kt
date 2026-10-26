@@ -162,7 +162,7 @@ private fun RunDockStates(mode: NexaraThemeMode, english: Boolean) {
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(vertical = 8.dp)) {
-                states.forEach { RunDockRow(state = it, onOpen = {}, onJumpToApproval = {}, keepScreenOn = it.tone == RunDockTone.RUNNING) }
+                states.forEach { RunDockRow(state = it, onOpen = {}, onJumpToApproval = {}, onLockTouch = if (it.tone == RunDockTone.RUNNING) ({}) else null) }
             }
         }
     }

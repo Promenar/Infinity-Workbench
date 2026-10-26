@@ -1,0 +1,296 @@
+package com.promenar.nexara.ui.chat
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraTouchLockAccent
+import com.promenar.nexara.ui.theme.NexaraTouchLockContent
+import com.promenar.nexara.ui.theme.NexaraTouchLockScrim
+import com.promenar.nexara.ui.theme.NexaraTouchLockWarning
+import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.TouchLockUnlock
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+
+/** 浮岛运行坞上的锁按钮：生成中点按后锁定触摸。 */
+@Composable
+internal fun TouchLockButton(onLock: () -> Unit, modifier: Modifier = Modifier) {
+    val haptics = LocalNexaraHaptics.current
+    IconButton(
+        onClick = {
+            haptics.toggle(true)
+            onLock()
+        },
+        modifier = modifier.testTag(UiTags.CHAT_TOUCH_LOCK_BUTTON),
+    ) {
+        Icon(
+            Icons.Outlined.Lock,
+            contentDescription = stringResource(R.string.touch_lock_button_cd),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/** 触摸锁遮罩上显示的运行阶段。 */
+internal enum class TouchLockPhase { RUNNING, APPROVAL, DONE }
+
+/** 有待批准时优先提示批准；生成结束后显示已完成，锁保持到用户解锁。 */
+internal fun touchLockPhase(isGenerating: Boolean, pendingApprovals: Int): TouchLockPhase = when {
+    pendingApprovals > 0 -> TouchLockPhase.APPROVAL
+    isGenerating -> TouchLockPhase.RUNNING
+    else -> TouchLockPhase.DONE
+}
+
+/** 滑块拖到轨道九成以上才算解锁，避免口袋里的误触滑到一半就解开。 */
+internal fun slideUnlockReached(offset: Float, max: Float): Boolean = max > 0f && offset >= max * 0.9f
+
+internal data class TouchLockUiState(
+    val phase: TouchLockPhase,
+    /** 当前步骤或运行状态，与运行坞同一文案。 */
+    val label: String,
+    /** 计划进度与已用时长；没有时为空串。 */
+    val meta: String = "",
+    val progress: Float? = null,
+)
+
+/**
+ * 生成中锁定触摸：全屏对话框盖住整个窗口（含顶栏与检视器），只有解锁控件响应；
+ * 返回键被吞掉，生成在后面照常进行。读屏用户可以直接双击解锁控件。
+ */
+@Composable
+internal fun TouchLockDialog(state: TouchLockUiState, unlock: TouchLockUnlock, onUnlock: () -> Unit) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        // 对话框窗口默认半透明遮暗，改为不遮暗，由内容自己画纯黑底。
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect { window?.setDimAmount(0f) }
+        TouchLockContent(state, unlock, onUnlock, Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+internal fun TouchLockContent(
+    state: TouchLockUiState,
+    unlock: TouchLockUnlock,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.background(NexaraTouchLockScrim).testTag(UiTags.CHAT_TOUCH_LOCK),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(32.dp).widthIn(max = 360.dp),
+        ) {
+            val status = when (state.phase) {
+                TouchLockPhase.RUNNING -> stringResource(R.string.touch_lock_running)
+                TouchLockPhase.APPROVAL -> stringResource(R.string.touch_lock_waiting_approval)
+                TouchLockPhase.DONE -> stringResource(R.string.touch_lock_done)
+            }
+            Text(
+                text = listOf(status, state.meta).filter { it.isNotBlank() }.joinToString(" · "),
+                style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                color = if (state.phase == TouchLockPhase.APPROVAL) NexaraTouchLockWarning else NexaraTouchLockContent.copy(alpha = 0.7f),
+            )
+            Text(
+                text = state.label,
+                style = NexaraTypography.titleMedium,
+                color = NexaraTouchLockContent,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            state.progress?.let { progress ->
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.width(160.dp).height(2.dp),
+                    color = NexaraTouchLockAccent,
+                    trackColor = NexaraTouchLockContent.copy(alpha = 0.18f),
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                )
+            }
+            Spacer(Modifier.height(40.dp))
+            when (unlock) {
+                TouchLockUnlock.HOLD -> HoldToUnlock(onUnlock)
+                TouchLockUnlock.SLIDE -> SlideToUnlock(onUnlock)
+            }
+            Text(
+                text = stringResource(if (unlock == TouchLockUnlock.HOLD) R.string.touch_lock_hold_hint else R.string.touch_lock_slide_hint),
+                style = NexaraTypography.labelMedium,
+                color = NexaraTouchLockContent.copy(alpha = 0.7f),
+            )
+        }
+    }
+}
+
+private const val HoldToUnlockMillis = 1_500
+
+/** 按住锁按钮，圆环走满 1.5 秒后解锁；中途松手圆环退回。 */
+@Composable
+private fun HoldToUnlock(onUnlock: () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val haptics = LocalNexaraHaptics.current
+    val action = stringResource(R.string.touch_lock_unlock_action)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(80.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = action
+                onClick(label = action) { onUnlock(); true }
+            }
+            .testTag(UiTags.CHAT_TOUCH_LOCK_UNLOCK)
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    var hold: Job? = null
+                    hold = scope.launch {
+                        progress.animateTo(1f, tween(HoldToUnlockMillis, easing = LinearEasing))
+                        haptics.toggle(false)
+                        onUnlock()
+                    }
+                    tryAwaitRelease()
+                    if (progress.value < 1f) {
+                        hold.cancel()
+                        scope.launch { progress.animateTo(0f, tween(200)) }
+                    }
+                })
+            }
+    ) {
+        CircularProgressIndicator(
+            progress = { progress.value },
+            modifier = Modifier.matchParentSize(),
+            color = NexaraTouchLockAccent,
+            trackColor = NexaraTouchLockContent.copy(alpha = 0.18f),
+            strokeWidth = 3.dp,
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+        )
+        Icon(Icons.Rounded.Lock, contentDescription = null, tint = NexaraTouchLockContent, modifier = Modifier.size(28.dp))
+    }
+}
+
+private val SlideTrackWidth = 240.dp
+private val SlideKnobSize = 52.dp
+private val SlideTrackPadding = 4.dp
+
+/** 把锁沿轨道拖到尽头解锁；不到九成松手时滑块弹回起点。从右到左布局时向左滑。 */
+@Composable
+private fun SlideToUnlock(onUnlock: () -> Unit) {
+    val knob = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val haptics = LocalNexaraHaptics.current
+    val action = stringResource(R.string.touch_lock_unlock_action)
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+    val maxOffset = with(LocalDensity.current) { (SlideTrackWidth - SlideKnobSize - SlideTrackPadding * 2).toPx() }
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = Modifier
+            .width(SlideTrackWidth)
+            .height(SlideKnobSize + SlideTrackPadding * 2)
+            .clip(CircleShape)
+            .background(NexaraTouchLockContent.copy(alpha = 0.12f))
+            .semantics {
+                role = Role.Button
+                contentDescription = action
+                onClick(label = action) { onUnlock(); true }
+            }
+            .testTag(UiTags.CHAT_TOUCH_LOCK_UNLOCK),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .padding(horizontal = SlideTrackPadding)
+                .offset { IntOffset(knob.value.roundToInt(), 0) }
+                .size(SlideKnobSize)
+                .clip(CircleShape)
+                .background(NexaraTouchLockContent)
+                .pointerInput(maxOffset, direction) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (slideUnlockReached(knob.value, maxOffset)) {
+                                haptics.toggle(false)
+                                onUnlock()
+                            } else {
+                                scope.launch { knob.animateTo(0f, tween(200)) }
+                            }
+                        },
+                        onDragCancel = { scope.launch { knob.animateTo(0f, tween(200)) } },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        scope.launch { knob.snapTo((knob.value + dragAmount * direction).coerceIn(0f, maxOffset)) }
+                    }
+                },
+        ) {
+            Icon(Icons.Rounded.Lock, contentDescription = null, tint = NexaraTouchLockScrim, modifier = Modifier.size(22.dp))
+        }
+    }
+}

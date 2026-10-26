@@ -21,7 +21,9 @@ import com.promenar.nexara.data.linux.LinuxRunModeExportReport
 import com.promenar.nexara.domain.linux.LinuxFailure
 import com.promenar.nexara.domain.linux.LinuxFailureCode
 import com.promenar.nexara.domain.model.SessionRunMode
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.ui.chat.ChatTopBar
+import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -46,16 +48,21 @@ private val PreviewGit = com.promenar.nexara.ui.git.GitEntrySummary.Repository(
 
 // 顶栏状态行（长标题 + Linux + Git、内置无 Git、Linux 不可用 + 长分支）与 C1 修复检查点。
 @PreviewTest
-@Preview(name = "运行模式 顶栏与修复 深中360", widthDp = 360, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "运行模式 顶栏与修复 深中360", widthDp = 360, heightDp = 720, locale = "zh-rCN")
 @Composable
 fun runModeTopBarAndUnavailableDarkPreview() = RunModePreview(NexaraThemeMode.DARK) {
     ChatTopBar("在会话目录中创建文件并返回完整路径与说明", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
-        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = false), git = PreviewGit)
+        runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = false), git = PreviewGit,
+        workspace = SessionWorkspaceUi.Directory("w1", "nexara-app", WorkspaceEntity.KIND_PROJECT, "nexara-app"))
     ChatTopBar("新对话", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
-        runMode = RunModeBadge(SessionRunMode.BUILTIN, unavailable = false))
+        runMode = RunModeBadge(SessionRunMode.BUILTIN, unavailable = false), workspace = SessionWorkspaceUi.Private)
     ChatTopBar("工作环境能力探测", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
         runMode = RunModeBadge(SessionRunMode.LINUX, unavailable = true),
-        git = PreviewGit.copy(branch = "feature/very-long-branch-name-for-layout", changeCount = 0, ahead = 2, behind = null))
+        git = PreviewGit.copy(branch = "feature/very-long-branch-name-for-layout", changeCount = 0, ahead = 2, behind = null),
+        workspace = SessionWorkspaceUi.Directory("w2", "multimodal-retrieval-system", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/multimodal-retrieval-system"))
+    // Play 版没有运行模式标识：状态行只有工作区；工作区不可用时显示警示色。
+    ChatTopBar("整理论文参考文献", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
+        workspace = SessionWorkspaceUi.Unavailable("w3", "论文初稿", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/论文初稿", "需要所有文件访问权限"))
     Spacer(Modifier.height(16.dp))
     RunModeCheckpointContent(RunModeCheckpointStage.Unavailable(RunModeUnavailableReason.BROKEN), canExport = true,
         message = null, actions = RunModeCheckpointActions())

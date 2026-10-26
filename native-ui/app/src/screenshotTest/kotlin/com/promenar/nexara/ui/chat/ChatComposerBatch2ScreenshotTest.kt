@@ -54,6 +54,25 @@ fun chatComposerReasoningSelectedBatch2Preview() = ComposerFrame(
     reasoning = previewReasoning("claude-opus-5-5", ReasoningEffort.XHIGH),
 )
 
+// 工具行带执行模式盾牌：窄屏、长模型名与推理强度同时出现时的最挤情形；完全访问换警示图标与第三色。
+@PreviewTest
+@Preview(name = "输入执行模式 工作区 深中360", widthDp = 360, heightDp = 156, locale = "zh-rCN")
+@Preview(name = "输入执行模式 工作区 深英360 大字", widthDp = 360, heightDp = 170, locale = "en", fontScale = 1.3f)
+@Composable
+fun chatComposerExecutionModeBatch2Preview() = ComposerFrame(
+    "请审阅这段代码。", modelName = "Claude Opus 5.5 (Thinking) Long Name",
+    reasoning = previewReasoning("claude-opus-5-5", ReasoningEffort.XHIGH),
+    executionMode = com.promenar.nexara.ui.common.ExecutionMode.WORKSPACE,
+)
+
+@PreviewTest
+@Preview(name = "输入执行模式 完全访问 浅中411", widthDp = 411, heightDp = 156, locale = "zh-rCN")
+@Composable
+fun chatComposerFullAccessBatch2Preview() = ComposerFrame(
+    "请整理工作区。", modelName = "Gemini 2.5 Flash",
+    executionMode = com.promenar.nexara.ui.common.ExecutionMode.FULL_ACCESS, dark = false,
+)
+
 @PreviewTest
 @Preview(name = "推理强度菜单 深中411", widthDp = 240, heightDp = 420, locale = "zh-rCN")
 @Composable
@@ -112,8 +131,9 @@ fun chatComposerLargeFontBatch2Preview() = ComposerFrame("请比较这两份报�
 private fun ComposerFrame(
     text: String = "", generating: Boolean = false, attachments: Boolean = false, task: Boolean = false,
     modelName: String = "Gemini 2.5 Flash", retry: GenerationRetry? = null, reasoning: ChatReasoningControl? = null,
+    executionMode: com.promenar.nexara.ui.common.ExecutionMode? = null, dark: Boolean = true,
 ) {
-    ChatBatch2Frame {
+    ChatBatch2Frame(dark) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (retry != null) ChatComposerStatusBar(taskPanel = null, postProcessTasks = emptyList(), retry = retry)
             if (task) ChatComposerStatusBar(
@@ -128,6 +148,7 @@ private fun ComposerFrame(
                 tokenState = ChatViewModel.TokenIndicatorState(used = 44800, max = 128000),
                 hasImages = attachments, hasDocuments = attachments,
                 reasoningControl = reasoning,
+                executionMode = executionMode,
                 attachmentContent = {
                     if (attachments) CompositionLocalProvider(
                         LocalAsyncImagePreviewHandler provides AsyncImagePreviewHandler { ColorImage(0xFF426A85.toInt()) },
@@ -188,6 +209,8 @@ private fun Batch2Page(dark: Boolean = true, english: Boolean = false, empty: Bo
                 ),
                 modelDisplayNames = mapOf("google::gemini-2.5-flash" to "Gemini 2.5 Flash"),
                 tokenState = ChatViewModel.TokenIndicatorState(used = 44800, max = 128000),
+                executionMode = com.promenar.nexara.ui.common.ExecutionMode.WORKSPACE,
+                workspace = com.promenar.nexara.ui.workspace.SessionWorkspaceUi.Private,
             ),
             actions = ChatScreenActions(),
         )

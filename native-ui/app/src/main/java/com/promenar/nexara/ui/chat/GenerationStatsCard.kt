@@ -109,22 +109,6 @@ private fun GenerationStatsText.resolve(): String = stringResource(resId, *args.
 @Composable
 private fun currentLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
 
-/** 回复下方统计行：轮次 · 工具调用 · Token · 用时，缺数据的项不显示。 */
-@Composable
-internal fun replyRunStatsText(stats: ReplyRunStats): String {
-    val locale = currentLocale()
-    val parts = buildList {
-        if (stats.rounds > 0) add(pluralStringResource(R.plurals.run_detail_rounds, stats.rounds, stats.rounds))
-        add(pluralStringResource(R.plurals.run_detail_calls, stats.toolCalls, stats.toolCalls))
-        stats.tokens?.takeIf { it > 0 }?.let { tokens ->
-            val text = com.promenar.nexara.ui.chat.ChatViewModel.formatTokenCount(tokens.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-            add(stringResource(R.string.run_detail_tokens, if (stats.estimated) "≈$text" else text))
-        }
-        stats.durationMs?.let { add(formatStatsDuration(it, locale).resolve()) }
-    }
-    return parts.joinToString(" $NexaraMetaSeparator ")
-}
-
 /**
  * 在锚点上方弹出生成统计浮卡；上方放不下时改在下方，两侧都放不下时放在空间较大的一侧并限制高度、内部滚动。
  * 上下边界避开状态栏、导航栏、刘海与输入法（safeDrawing）并保留边距，浮卡不遮住锚点。点外部或返回键关闭。

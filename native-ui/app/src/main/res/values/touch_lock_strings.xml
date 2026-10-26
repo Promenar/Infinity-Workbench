@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="touch_lock_button_cd">Lock touch</string>
+    <string name="touch_lock_running">Agent is working</string>
+    <string name="touch_lock_waiting_approval">Needs your approval</string>
+    <string name="touch_lock_done">Done</string>
+    <string name="touch_lock_hold_hint">Hold the lock for 1.5 s to unlock</string>
+    <string name="touch_lock_slide_hint">Slide the lock to unlock</string>
+    <string name="touch_lock_unlock_action">Unlock</string>
+    <string name="touch_lock_setting_title">Unlock touch lock</string>
+    <string name="touch_lock_setting_footer">The screen stays on while a reply is generating. The lock button on the composer ignores every touch except the lock itself, so you can put your phone in a pocket while the task keeps running.</string>
+    <string name="touch_lock_unlock_hold">Hold the lock</string>
+    <string name="touch_lock_unlock_hold_desc">Press and hold for 1.5 seconds</string>
+    <string name="touch_lock_unlock_slide">Slide the lock</string>
+    <string name="touch_lock_unlock_slide_desc">Drag the lock to the end of the track</string>
+</resources>

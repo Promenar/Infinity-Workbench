@@ -22,6 +22,10 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,22 +61,36 @@ internal data class AgentReachActions(
     val onOpenTailscale: (() -> Unit)? = null,
     /** 非 null 时 Linux 行可点按，进入 Linux 环境页安装、修复或开关。 */
     val onOpenLinux: (() -> Unit)? = null,
+    /** 非 null 时工作区一行提供切换；从会话顶栏打开面板时传入。 */
+    val workspaceSwitch: AgentReachWorkspaceSwitch? = null,
 )
 
-/** 会话资源管理器中的“Agent 可达范围”面板；[executionMode] 为会话保存的执行模式原值。 */
+/** 面板内的工作区切换：生成进行中或有待审批时停用，切换失败时在工作区下方提示。 */
+internal data class AgentReachWorkspaceSwitch(
+    val busy: Boolean,
+    val failed: Boolean,
+    val onChoose: () -> Unit,
+)
+
+/**
+ * 会话的工作区与“Agent 可达范围”面板，从顶栏状态行的工作区打开；[executionMode] 为会话保存的执行模式原值。
+ * [workspaceKey] 变化（切换了工作区）时重新解析工作区。
+ */
 @Composable
-fun AgentReachSheet(
+internal fun AgentReachSheet(
     sessionId: String,
     executionMode: String?,
     onDismiss: () -> Unit,
     onOpenTailscaleSettings: (() -> Unit)? = null,
+    workspaceSwitch: AgentReachWorkspaceSwitch? = null,
+    workspaceKey: Any? = null,
 ) {
     val application = LocalContext.current.applicationContext as Application
     val viewModel: AgentReachViewModel = viewModel(
         key = "agent-reach-$sessionId",
         factory = AgentReachViewModel.factory(application, sessionId),
     )
-    LaunchedEffect(viewModel) { viewModel.refresh() }
+    LaunchedEffect(viewModel, workspaceKey) { viewModel.refresh() }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var editingHosts by remember { mutableStateOf(false) }
     val linuxNavigation = com.promenar.nexara.ui.linux.LocalLinuxNavigation.current
@@ -88,6 +106,7 @@ fun AgentReachSheet(
                 onEditLanHosts = { editingHosts = true },
                 onOpenTailscale = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
                 onOpenLinux = linuxNavigation?.let { navigation -> { onDismiss(); navigation.openEnvironment() } },
+                workspaceSwitch = workspaceSwitch,
             ),
         )
     }
@@ -118,7 +137,7 @@ internal fun AgentReachContent(
             .testTag("agent_reach_content"),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.SectionGap),
     ) {
-        WorkspaceSection(state)
+        WorkspaceSection(state, actions.workspaceSwitch)
         PathSection(state)
         BackendSection(state, actions)
         ApprovalSection(state)
@@ -127,7 +146,7 @@ internal fun AgentReachContent(
 }
 
 @Composable
-private fun WorkspaceSection(state: AgentReachState) {
+private fun WorkspaceSection(state: AgentReachState, switch: AgentReachWorkspaceSwitch?) {
     val workspace = state.workspace
     NexaraSettingsSection(title = stringResource(R.string.agent_reach_section_workspace)) {
         NexaraSettingsRowLayout(
@@ -150,8 +169,37 @@ private fun WorkspaceSection(state: AgentReachState) {
                     WorkspaceKindIcon((workspace as? SessionWorkspaceUi.Directory)?.kind)
                 }
             },
+            trailingContent = switch?.let { entry ->
+                {
+                    val label = stringResource(R.string.agent_reach_workspace_switch)
+                    TextButton(
+                        onClick = entry.onChoose,
+                        enabled = !entry.busy && workspace != SessionWorkspaceUi.Loading,
+                        modifier = Modifier
+                            .semantics { contentDescription = label }
+                            .testTag("agent_reach_workspace_switch"),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (workspace is SessionWorkspaceUi.Unavailable) R.string.workspace_session_reselect
+                                else R.string.workspace_bar_switch,
+                            ),
+                        )
+                    }
+                }
+            },
             modifier = Modifier.testTag("agent_reach_workspace"),
         )
+        if (switch != null && (switch.busy || switch.failed)) {
+            Text(
+                text = stringResource(if (switch.failed) R.string.workspace_switch_failed else R.string.workspace_session_busy),
+                style = MaterialTheme.typography.bodySmall.forReading(),
+                color = if (switch.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = NexaraSpacing.RowHorizontal)
+                    .padding(bottom = NexaraSpacing.Small),
+            )
+        }
         if (workspace is SessionWorkspaceUi.Private || workspace is SessionWorkspaceUi.Directory) {
             FlowRow(
                 modifier = Modifier

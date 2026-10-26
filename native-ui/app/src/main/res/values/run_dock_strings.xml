@@ -24,17 +24,8 @@
     <string name="run_detail_tab_state">State</string>
     <string name="run_detail_group_done">%1$d/%2$d done</string>
     <string name="run_detail_current">Current</string>
-    <string name="run_detail_tokens">%1$s tokens</string>
     <string name="run_detail_elapsed_seconds">%1$d s elapsed</string>
     <string name="run_detail_elapsed_minutes">%1$d min %2$02d s elapsed</string>
-    <plurals name="run_detail_rounds">
-        <item quantity="one">%d round</item>
-        <item quantity="other">%d rounds</item>
-    </plurals>
-    <plurals name="run_detail_calls">
-        <item quantity="one">%d call</item>
-        <item quantity="other">%d calls</item>
-    </plurals>
     <string name="state_board_maintained_by_agent">Maintained by the agent</string>
     <string name="state_board_updated_at">Updated %1$s</string>
     <plurals name="state_board_field_count">

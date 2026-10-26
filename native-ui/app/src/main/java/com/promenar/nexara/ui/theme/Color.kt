@@ -63,6 +63,12 @@ internal val NexaraLightSignalDown = Color(0xFFEF4444)
 val NexaraBrowserAgentHighlight = Color(0xFF4548C7)
 val NexaraBrowserHandoffHighlight = Color(0xFFC25E00)
 
+// 触摸锁全屏遮罩：手机放进口袋时的纯黑底，文字与强调色取暗底上的浅色，不随应用主题变化。
+val NexaraTouchLockScrim = Color(0xFF000000)
+val NexaraTouchLockContent = Color(0xFFE8E6DF)
+val NexaraTouchLockAccent = Color(0xFFAFA9EC)
+val NexaraTouchLockWarning = Color(0xFFFAC775)
+
 internal val NexaraDarkDomainColors = NexaraDomainColors(
     success = Color(0xFF4ADE80),
     onSuccess = Color(0xFF003914),

@@ -109,11 +109,17 @@ fun SessionRunMode?.labelRes(): Int = when (this) {
 }
 
 /**
- * 顶栏状态行开头的模式标识：图标加文字，不画边框，与其后的 Git 信息同一行同一字号。
+ * 顶栏状态行开头的模式标识：图标加文字（状态行放不下时只留图标），不画边框，与其后的工作区、Git 信息同一行同一字号。
  * Linux 用主色；内置用次要文字色；Linux 不可用时换成警示图标与警示色（读屏说明不可用），点按回到检查点。
  */
 @Composable
-fun RunModeChip(mode: SessionRunMode?, unavailable: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun RunModeChip(
+    mode: SessionRunMode?,
+    unavailable: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
+) {
     val label = stringResource(mode.labelRes())
     val description = if (unavailable) stringResource(R.string.run_mode_chip_unavailable_cd, label)
         else stringResource(R.string.run_mode_chip_cd, label)
@@ -146,7 +152,7 @@ fun RunModeChip(mode: SessionRunMode?, unavailable: Boolean, onClick: () -> Unit
             tint = tint,
             modifier = Modifier.size(14.dp),
         )
-        Text(
+        if (showLabel) Text(
             text = label,
             style = NexaraTypography.labelMedium,
             color = tint,

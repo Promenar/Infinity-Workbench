@@ -21,6 +21,17 @@ enum class NexaraColorSource {
     }
 }
 
+/** 触摸锁的解锁方式：长按锁按钮，或把锁滑到轨道尽头。 */
+enum class TouchLockUnlock {
+    HOLD,
+    SLIDE;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): TouchLockUnlock =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: HOLD
+    }
+}
+
 data class NexaraThemePreferences(
     val mode: NexaraThemeMode = NexaraThemeMode.DARK,
     val colorSource: NexaraColorSource = NexaraColorSource.NEXARA,
@@ -34,6 +45,6 @@ data class NexaraThemePreferences(
     val hapticsEnabled: Boolean = true,
     /** 等待审批、较长生成完成或失败时振动一次。 */
     val statusHapticsEnabled: Boolean = true,
-    /** 回复生成期间保持屏幕常亮；生成中可在浮岛上临时切换。 */
-    val keepScreenOnWhileGenerating: Boolean = true,
+    /** 生成中锁定触摸后的解锁方式；生成期间屏幕始终保持常亮。 */
+    val touchLockUnlock: TouchLockUnlock = TouchLockUnlock.HOLD,
 )

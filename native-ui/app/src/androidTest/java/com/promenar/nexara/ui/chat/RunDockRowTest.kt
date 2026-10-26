@@ -5,8 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertContentDescriptionContains
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -82,28 +80,26 @@ class RunDockRowTest {
     }
 
     @Test
-    fun keepScreenToggleReportsTapAndHidesWhenNull() {
-        var on by mutableStateOf<Boolean?>(true)
-        var toggles = 0
+    fun touchLockButtonReportsTapAndHidesWhenNull() {
+        var onLock by mutableStateOf<(() -> Unit)?>(null)
+        var locks = 0
+        onLock = { locks++ }
         rule.setContent {
             NexaraTheme {
                 RunDockRow(
                     state = requireNotNull(runDockState(null, true, 0, 0, 0, null, null)),
                     onOpen = {},
                     onJumpToApproval = {},
-                    keepScreenOn = on,
-                    onToggleKeepScreenOn = { toggles++ },
+                    onLockTouch = onLock,
                 )
             }
         }
-        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertIsOn().performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TOUCH_LOCK_BUTTON).performClick()
         rule.runOnIdle {
-            assertThat(toggles).isEqualTo(1)
-            on = false
+            assertThat(locks).isEqualTo(1)
+            onLock = null
         }
-        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertIsOff()
-        rule.runOnIdle { on = null }
-        rule.onNodeWithTag(UiTags.CHAT_KEEP_SCREEN_TOGGLE).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_TOUCH_LOCK_BUTTON).assertDoesNotExist()
     }
 
     @Test
@@ -131,8 +127,6 @@ class RunDockRowTest {
                 }
             }
         }
-        // 本次运行统计挂在回复下方，运行详情不再显示。
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_PROGRESS).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertExists()
     }
 }

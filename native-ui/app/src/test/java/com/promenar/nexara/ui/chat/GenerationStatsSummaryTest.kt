@@ -165,9 +165,7 @@ class GenerationStatsSummaryTest {
     }
 
     @Test
-    fun `回复统计只在调用过工具时给出 并按调用合并结果计数`() {
-        assertThat(replyRunStats(listOf(assistant("a", TokenUsage(100, 20, 120))))).isNull()
-
+    fun `工具调用按调用 ID 合并调用与结果计数`() {
         val messages = listOf(
             assistant(
                 "a",
@@ -180,15 +178,5 @@ class GenerationStatsSummaryTest {
         )
 
         assertThat(summarizeGenerationStats(messages).toolCalls).isEqualTo(3)
-        assertThat(replyRunStats(messages)).isEqualTo(
-            ReplyRunStats(rounds = 3, toolCalls = 3, tokens = 2_950, estimated = true, durationMs = 8_000),
-        )
-    }
-
-    @Test
-    fun `回复统计缺用量与计时时对应项为 null`() {
-        val stats = replyRunStats(listOf(assistant("a", tokens = null, steps = toolSteps("1", 1_000, 2_000))))
-
-        assertThat(stats).isEqualTo(ReplyRunStats(rounds = 1, toolCalls = 1, tokens = null, estimated = false, durationMs = null))
     }
 }

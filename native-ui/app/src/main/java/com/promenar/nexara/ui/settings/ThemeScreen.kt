@@ -85,7 +85,7 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onCollapseFinishedTurnsChange = viewModel::setCollapseFinishedTurns,
         onHapticsChange = viewModel::setHapticsEnabled,
         onStatusHapticsChange = viewModel::setStatusHapticsEnabled,
-        onKeepScreenOnChange = viewModel::setKeepScreenOnWhileGenerating,
+        onTouchLockUnlockChange = viewModel::setTouchLockUnlock,
     )
 }
 
@@ -102,7 +102,7 @@ fun ThemeScreenContent(
     onCollapseFinishedTurnsChange: (Boolean) -> Unit = {},
     onHapticsChange: (Boolean) -> Unit = {},
     onStatusHapticsChange: (Boolean) -> Unit = {},
-    onKeepScreenOnChange: (Boolean) -> Unit = {},
+    onTouchLockUnlockChange: (com.promenar.nexara.ui.theme.TouchLockUnlock) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -194,12 +194,14 @@ fun ThemeScreenContent(
                         onCheckedChange = onCollapseFinishedTurnsChange,
                         modifier = Modifier.testTag("theme_collapse_finished_turns_switch"),
                     )
-                    SettingsToggle(
-                        title = stringResource(R.string.keep_screen_setting_title),
-                        checked = preferences.keepScreenOnWhileGenerating,
-                        onCheckedChange = onKeepScreenOnChange,
-                        modifier = Modifier.testTag("theme_keep_screen_on_switch"),
-                    )
+                }
+            }
+            item("touch-lock") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.touch_lock_setting_title),
+                    footer = stringResource(R.string.touch_lock_setting_footer),
+                ) {
+                    TouchLockUnlockSelector(preferences.touchLockUnlock, onTouchLockUnlockChange)
                 }
             }
             item("haptics") {
@@ -265,6 +267,30 @@ private fun ThemeModeSelector(
                 trailingContent = { androidx.compose.material3.RadioButton(selected = selected, onClick = null) },
             )
         }
+    }
+}
+
+/** 触摸锁的解锁方式：长按或滑动，以单选列表直接展示两种说明。 */
+@Composable
+private fun TouchLockUnlockSelector(
+    selected: com.promenar.nexara.ui.theme.TouchLockUnlock,
+    onSelect: (com.promenar.nexara.ui.theme.TouchLockUnlock) -> Unit,
+) {
+    val options = listOf(
+        Triple(com.promenar.nexara.ui.theme.TouchLockUnlock.HOLD, R.string.touch_lock_unlock_hold, R.string.touch_lock_unlock_hold_desc),
+        Triple(com.promenar.nexara.ui.theme.TouchLockUnlock.SLIDE, R.string.touch_lock_unlock_slide, R.string.touch_lock_unlock_slide_desc),
+    )
+    options.forEach { (option, titleRes, descriptionRes) ->
+        val isSelected = selected == option
+        NexaraSettingsItem(
+            title = stringResource(titleRes),
+            subtitle = stringResource(descriptionRes),
+            onClick = { onSelect(option) },
+            modifier = Modifier.testTag("theme_touch_lock_${option.name.lowercase()}"),
+            role = Role.RadioButton,
+            selected = isSelected,
+            trailingContent = { androidx.compose.material3.RadioButton(selected = isSelected, onClick = null) },
+        )
     }
 }
 

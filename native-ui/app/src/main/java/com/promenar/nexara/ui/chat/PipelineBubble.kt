@@ -338,10 +338,6 @@ fun PipelineBubble(
                         )
                     }
                 }
-                // 生成中操作行不显示，统计等回合结束后再算，避免流式输出时反复解析工具步骤。
-                val runStats = remember(group.messages, isGenerating) {
-                    if (isGenerating) null else replyRunStats(group.messages)
-                }
                 val memoryOwner = if (onOpenTurnMemory == null) null
                     else group.assistantMessages.lastOrNull { it.turnMemory != null || it.id in turnGraphStates }
                 AssistantActionRow(
@@ -352,7 +348,6 @@ fun PipelineBubble(
                     graphState = memoryOwner?.let { turnGraphStates[it.id] },
                     onOpenMemory = memoryOwner?.let { owner -> onOpenTurnMemory?.let { open -> { open(owner.id) } } },
                     stats = statsFactory,
-                    runStats = runStats,
                     onCopy = { onCopy?.invoke(replyCopyText) ?: copyToClipboard(context, replyCopyText) },
                     onCopyAllProcess = allProcessCopyText?.let { text ->
                         { onCopy?.invoke(text) ?: copyToClipboard(context, text) }
@@ -810,8 +805,6 @@ internal fun AssistantActionRow(
     /** 本轮的图谱抽取状态；记忆已记入或未写入记忆时取代记忆状态显示。 */
     graphState: com.promenar.nexara.data.rag.TurnGraphState? = null,
     onOpenMemory: (() -> Unit)? = null,
-    /** 本次回复调用过工具时的运行统计，显示在操作行下方，点按打开生成统计；为 null 时不显示。 */
-    runStats: ReplyRunStats? = null,
 ) {
     // 生成结束后操作行淡入展开，重新生成时立即收起，不在流式输出期间占位。
     AnimatedVisibility(
@@ -948,31 +941,6 @@ internal fun AssistantActionRow(
                                 }
                             }
                         }
-                    }
-                }
-            }
-            runStats?.let { run ->
-                // 可见高度 24dp，点按区域向上下各借 12dp 凑足 48dp；向上借到的是同样打开统计的模型名与时间。
-                Box(Modifier.fillMaxWidth().height(24.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .fillMaxWidth()
-                            .wrapContentHeight(unbounded = true)
-                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                            .then(
-                                if (stats != null) {
-                                    Modifier.clickable(onClickLabel = stringResource(R.string.generation_stats_open_action), role = androidx.compose.ui.semantics.Role.Button) { showStats = true }
-                                } else Modifier,
-                            ),
-                        contentAlignment = Alignment.CenterEnd,
-                    ) {
-                        Text(
-                            text = replyRunStatsText(run),
-                            style = metaStyle.copy(fontFeatureSettings = "tnum"),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                            modifier = Modifier.testTag(UiTags.CHAT_GENERATION_PROGRESS),
-                        )
                     }
                 }
             }

@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.settings
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.ui.theme.TouchLockUnlock
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
@@ -147,14 +148,15 @@ class ThemeViewModelTest {
     }
 
     @Test
-    fun keepScreenOnWhileGeneratingDefaultsOnAndPersistsWhenTurnedOff() = runTest {
+    fun touchLockUnlockDefaultsToHoldAndPersistsSlide() = runTest {
         val store = createStore()
         val viewModel = ThemeViewModel(store, dynamicColorAvailable = true)
-        assertThat(viewModel.uiState.value.preferences.keepScreenOnWhileGenerating).isTrue()
+        assertThat(viewModel.uiState.value.preferences.touchLockUnlock).isEqualTo(TouchLockUnlock.HOLD)
 
-        viewModel.setKeepScreenOnWhileGenerating(false)
+        viewModel.setTouchLockUnlock(TouchLockUnlock.SLIDE)
 
-        assertThat(viewModel.uiState.value.preferences.keepScreenOnWhileGenerating).isFalse()
-        assertThat(store.state.value.keepScreenOnWhileGenerating).isFalse()
+        assertThat(viewModel.uiState.value.preferences.touchLockUnlock).isEqualTo(TouchLockUnlock.SLIDE)
+        // 重新读取偏好仍是滑动解锁。
+        assertThat(createStore().state.value.touchLockUnlock).isEqualTo(TouchLockUnlock.SLIDE)
     }
 }

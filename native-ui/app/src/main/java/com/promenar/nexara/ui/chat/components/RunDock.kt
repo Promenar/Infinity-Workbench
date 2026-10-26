@@ -46,7 +46,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.chat.KeepScreenOnToggle
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.nexaraDomainColors
@@ -61,8 +60,8 @@ internal fun RunDockRow(
     onOpen: (RunDetailTab?) -> Unit,
     onJumpToApproval: () -> Unit,
     modifier: Modifier = Modifier,
-    keepScreenOn: Boolean? = null,
-    onToggleKeepScreenOn: () -> Unit = {},
+    /** 生成中显示锁按钮，点按锁定触摸；为 null 时不显示。 */
+    onLockTouch: (() -> Unit)? = null,
 ) {
     val label = runDockLabelText(state.label)
     val meta = runDockMetaText(state)
@@ -153,7 +152,7 @@ internal fun RunDockRow(
                     }
                 }
             }
-            if (keepScreenOn != null) KeepScreenOnToggle(on = keepScreenOn, onToggle = onToggleKeepScreenOn)
+            if (onLockTouch != null) com.promenar.nexara.ui.chat.TouchLockButton(onLock = onLockTouch)
             IconButton(onClick = { onOpen(runDockDefaultTab(state.label)) }, modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)) {
                 Icon(
                     Icons.Rounded.ExpandLess,
@@ -244,7 +243,7 @@ internal fun runDockLabelText(label: RunDockLabel): String = when (label) {
 }
 
 @Composable
-private fun runDockMetaText(state: RunDockUiState): String = buildList {
+internal fun runDockMetaText(state: RunDockUiState): String = buildList {
     if (state.planTotal != null) add("${state.planDone ?: 0}/${state.planTotal}")
     state.elapsedMinutes?.let { add(stringResource(R.string.run_dock_elapsed_minutes, it)) }
 }.joinToString(" · ")

@@ -78,8 +78,8 @@ class ThemeViewModel(
         store.setStatusHapticsEnabled(enabled)
     }
 
-    fun setKeepScreenOnWhileGenerating(enabled: Boolean) {
-        store.setKeepScreenOnWhileGenerating(enabled)
+    fun setTouchLockUnlock(unlock: com.promenar.nexara.ui.theme.TouchLockUnlock) {
+        store.setTouchLockUnlock(unlock)
     }
 
     companion object {

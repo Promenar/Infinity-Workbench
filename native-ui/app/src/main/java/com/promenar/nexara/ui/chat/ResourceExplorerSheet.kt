@@ -4,11 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import com.promenar.nexara.ui.theme.NexaraMotion
 import androidx.compose.runtime.remember
-import com.promenar.nexara.ui.workspace.WorkspacePickerSheet
-import com.promenar.nexara.ui.workspace.SessionWorkspaceUi
-import com.promenar.nexara.ui.workspace.SessionWorkspaceBar
-import com.promenar.nexara.ui.workspace.AgentReachSheet
-import com.promenar.nexara.data.workspace.WorkspaceSwitchResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.promenar.nexara.ui.common.NexaraIdentifierText
@@ -94,7 +89,6 @@ import com.promenar.nexara.ui.common.NexaraToolbarSearch
 import com.promenar.nexara.ui.git.GitEntrySummary
 import com.promenar.nexara.ui.git.GitWorkspaceEntry
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.workspace.workspaceKindLabel
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -113,8 +107,6 @@ fun ResourceExplorerPage(
     chatViewModel: ChatViewModel,
     /** 打开后定位到的工作区虚拟目录；不存在时定位到最近的已存在上级。 */
     initialFolderPath: String? = null,
-    /** 从“Agent 可达范围”跳转 Tailscale 设置；先关闭资源管理器再导航。 */
-    onOpenTailscaleSettings: (() -> Unit)? = null,
     viewModel: ResourceExplorerViewModel = viewModel(
         factory = ResourceExplorerViewModel.factory(
             LocalContext.current.applicationContext as android.app.Application
@@ -154,15 +146,15 @@ fun ResourceExplorerPage(
     }
     var showRecycle by rememberSaveable(sessionId) { mutableStateOf(false) }
     var searchActive by rememberSaveable(sessionId) { mutableStateOf(searchQuery.isNotEmpty()) }
-    var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
     val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
-    // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
-    val workspaceBusy = chatState.isGenerating || chatState.session?.approvalRequest != null
-    var pickingWorkspace by rememberSaveable(sessionId) { mutableStateOf(false) }
-    var workspaceSwitchFailed by remember(sessionId) { mutableStateOf(false) }
-    val onWorkspaceSwitched: (WorkspaceSwitchResult) -> Unit = { result ->
-        workspaceSwitchFailed = result is WorkspaceSwitchResult.Failed || result is WorkspaceSwitchResult.RejectedBusy
-        if (result is WorkspaceSwitchResult.Switched) viewModel.retryLoadSession()
+    // 工作区在顶栏状态行切换；本页打开期间工作区变化时重新加载文件。会话尚未读出时为 null，不算变化。
+    val boundWorkspace = chatState.session?.let { it.workspaceId.orEmpty() }
+    val shownWorkspace = remember(sessionId) { arrayOfNulls<String>(1) }
+    LaunchedEffect(boundWorkspace) {
+        if (boundWorkspace == null) return@LaunchedEffect
+        val previous = shownWorkspace[0]
+        shownWorkspace[0] = boundWorkspace
+        if (previous != null && previous != boundWorkspace) viewModel.retryLoadSession()
     }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -199,13 +191,9 @@ fun ResourceExplorerPage(
                 hasLoadError = loadError != null,
                 gitEntry = gitEntry,
                 workspaceMode = workspaceMode,
-                workspaceSwitchBusy = workspaceBusy,
-                workspaceSwitchFailed = workspaceSwitchFailed,
             ),
             actions = ResourceExplorerSheetActions(
                 onOpenGitPanel = onOpenGit,
-                onOpenReach = { showReach = true },
-                onChooseWorkspace = { pickingWorkspace = true },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
                 onSearchActiveChange = { searchActive = it },
                 onImportFiles = {
@@ -300,27 +288,6 @@ fun ResourceExplorerPage(
             },
         )
     }
-    WorkspacePickerSheet(
-        show = pickingWorkspace && !workspaceBusy,
-        onDismiss = { pickingWorkspace = false },
-        currentWorkspaceId = chatState.session?.workspaceId,
-        onPicked = { picked ->
-            pickingWorkspace = false
-            chatViewModel.switchSessionWorkspace(picked.id, onWorkspaceSwitched)
-        },
-        onPickPrivate = {
-            pickingWorkspace = false
-            if (chatState.session?.workspaceId != null) chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched)
-        },
-    )
-    if (showReach) {
-        AgentReachSheet(
-            sessionId = sessionId,
-            executionMode = chatState.session?.executionMode,
-            onDismiss = { showReach = false },
-            onOpenTailscaleSettings = onOpenTailscaleSettings,
-        )
-    }
 }
 
 internal data class ResourceExplorerSheetState(
@@ -339,9 +306,6 @@ internal data class ResourceExplorerSheetState(
     val gitEntry: GitEntrySummary = GitEntrySummary.Hidden,
     /** 文件区展示的工作区；目录与不可用状态下停用搜索、导入与会话回收站。 */
     val workspaceMode: ResourceExplorerWorkspaceMode = ResourceExplorerWorkspaceMode.Private,
-    /** 生成进行中或有待审批时停用工作区切换。 */
-    val workspaceSwitchBusy: Boolean = false,
-    val workspaceSwitchFailed: Boolean = false,
 )
 
 internal data class ResourceExplorerSheetActions(
@@ -354,8 +318,6 @@ internal data class ResourceExplorerSheetActions(
     val onCloseRecycle: () -> Unit = {},
     val onRetryLoad: () -> Unit = {},
     val onOpenGitPanel: () -> Unit = {},
-    val onChooseWorkspace: () -> Unit = {},
-    val onOpenReach: (() -> Unit)? = null,
 )
 
 @Composable
@@ -452,7 +414,6 @@ private fun ResourceExplorerFilesPage(
         )
         ResourceExplorerWorkspaceMode.Private -> ResourceExplorerPrivateFilesPage(state, actions, filesContent)
         is ResourceExplorerWorkspaceMode.Directory -> Column(modifier = Modifier.fillMaxSize()) {
-            ResourceExplorerWorkspaceBar(state, actions)
             ResourceExplorerGitEntry(state, actions)
             Spacer(modifier = Modifier.height(NexaraSpacing.Small))
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -460,7 +421,6 @@ private fun ResourceExplorerFilesPage(
             }
         }
         is ResourceExplorerWorkspaceMode.Unavailable -> Column(modifier = Modifier.fillMaxSize()) {
-            ResourceExplorerWorkspaceBar(state, actions)
             WorkspaceUnavailableState(mode, onRetry = actions.onRetryLoad)
             ResourceExplorerGitEntry(state, actions)
         }
@@ -487,29 +447,6 @@ private fun ResourceExplorerGitEntry(
     }
 }
 
-/** 文件页顶部的工作区栏：显示当前工作区并提供切换，取代原先在会话设置中的工作区项。 */
-@Composable
-private fun ResourceExplorerWorkspaceBar(
-    state: ResourceExplorerSheetState,
-    actions: ResourceExplorerSheetActions,
-) {
-    SessionWorkspaceBar(
-        workspace = state.workspaceMode.toWorkspaceUi(),
-        busy = state.workspaceSwitchBusy,
-        switchFailed = state.workspaceSwitchFailed,
-        onChoose = actions.onChooseWorkspace,
-        onOpenReach = actions.onOpenReach,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-internal fun ResourceExplorerWorkspaceMode.toWorkspaceUi(): SessionWorkspaceUi = when (this) {
-    ResourceExplorerWorkspaceMode.Resolving -> SessionWorkspaceUi.Loading
-    ResourceExplorerWorkspaceMode.Private -> SessionWorkspaceUi.Private
-    is ResourceExplorerWorkspaceMode.Directory -> SessionWorkspaceUi.Directory(workspaceId, displayName, kind, location)
-    is ResourceExplorerWorkspaceMode.Unavailable -> SessionWorkspaceUi.Unavailable(workspaceId, displayName, kind, location, reason)
-}
-
 @Composable
 private fun WorkspaceUnavailableState(
     mode: ResourceExplorerWorkspaceMode.Unavailable,
@@ -527,7 +464,12 @@ private fun WorkspaceUnavailableState(
             .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Medium),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        // 名称与原因已在工作区栏中显示，这里只保留说明与重试；无障碍仍即时播报原因。
+        // 顶栏状态行只显示名称与警示色，原因在这里写明；无障碍即时播报原因。
+        Text(
+            text = reason,
+            style = NexaraTypography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
         Text(
             text = stringResource(R.string.resource_explorer_unavailable_help),
             style = NexaraTypography.bodySmall,
@@ -568,8 +510,6 @@ private fun ResourceExplorerPrivateFilesPage(
     filesContent: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        ResourceExplorerWorkspaceBar(state, actions)
-        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
         ResourceExplorerToolbar(state, actions)
 
         val shownImports = remember { arrayOfNulls<List<ShareImportItem>>(1) }

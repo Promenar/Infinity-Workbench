@@ -17,7 +17,7 @@ class ThemePreferenceStore(context: Context) {
         const val COLLAPSE_FINISHED_TURNS_KEY = "theme_collapse_finished_turns"
         const val HAPTICS_KEY = "haptic_enabled"
         const val STATUS_HAPTICS_KEY = "haptic_status_enabled"
-        const val KEEP_SCREEN_ON_KEY = "chat_keep_screen_on"
+        const val TOUCH_LOCK_UNLOCK_KEY = "chat_touch_lock_unlock"
         private const val PREFERENCES_NAME = "nexara_settings"
         private val THEME_KEYS = setOf(
             MODE_KEY,
@@ -29,7 +29,7 @@ class ThemePreferenceStore(context: Context) {
             COLLAPSE_FINISHED_TURNS_KEY,
             HAPTICS_KEY,
             STATUS_HAPTICS_KEY,
-            KEEP_SCREEN_ON_KEY,
+            TOUCH_LOCK_UNLOCK_KEY,
         )
     }
 
@@ -96,9 +96,9 @@ class ThemePreferenceStore(context: Context) {
         preferences.edit().putBoolean(STATUS_HAPTICS_KEY, enabled).apply()
     }
 
-    fun setKeepScreenOnWhileGenerating(enabled: Boolean) {
-        _state.value = _state.value.copy(keepScreenOnWhileGenerating = enabled)
-        preferences.edit().putBoolean(KEEP_SCREEN_ON_KEY, enabled).apply()
+    fun setTouchLockUnlock(unlock: TouchLockUnlock) {
+        _state.value = _state.value.copy(touchLockUnlock = unlock)
+        preferences.edit().putString(TOUCH_LOCK_UNLOCK_KEY, unlock.name.lowercase()).apply()
     }
 
     private fun readPreferences(): NexaraThemePreferences = NexaraThemePreferences(
@@ -127,7 +127,7 @@ class ThemePreferenceStore(context: Context) {
         // 触感与状态提醒同样缺省开启。
         hapticsEnabled = !preferences.contains(HAPTICS_KEY) || preferences.getBoolean(HAPTICS_KEY, true),
         statusHapticsEnabled = !preferences.contains(STATUS_HAPTICS_KEY) || preferences.getBoolean(STATUS_HAPTICS_KEY, true),
-        keepScreenOnWhileGenerating = !preferences.contains(KEEP_SCREEN_ON_KEY) || preferences.getBoolean(KEEP_SCREEN_ON_KEY, true),
+        touchLockUnlock = TouchLockUnlock.fromPreferenceValue(preferences.getString(TOUCH_LOCK_UNLOCK_KEY, null)),
     )
 }
 

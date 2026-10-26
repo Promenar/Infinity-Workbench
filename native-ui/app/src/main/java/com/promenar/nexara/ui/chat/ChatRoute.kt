@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.promenar.nexara.ui.workspace.toUi
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -246,6 +247,29 @@ fun ChatRoute(
     val runModeBadge = runModeStatus?.takeIf { linuxSupported }?.let { status ->
         com.promenar.nexara.ui.chat.runmode.RunModeBadge(status.mode,
             unavailable = status.check is com.promenar.nexara.data.session.SessionRunModeCheck.EnvironmentUnavailable)
+    }
+    // 顶栏状态行的工作区：进入会话、切换工作区与每轮生成结束时解析一次；解析失败时不显示。
+    var workspaceRefresh by remember(sessionId) { mutableStateOf(0) }
+    val boundWorkspaceId = uiState.session?.workspaceId
+    val workspaceStatus by produceState<com.promenar.nexara.ui.workspace.SessionWorkspaceUi?>(null, sessionId, boundWorkspaceId, workspaceRefresh, uiState.isGenerating) {
+        if (uiState.isGenerating) return@produceState
+        value = try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.sessionWorkspaceResolver.resolve(sessionId) }.toUi()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+    var showWorkspaceStatus by remember(sessionId) { mutableStateOf(false) }
+    var pickingWorkspace by remember(sessionId) { mutableStateOf(false) }
+    var workspaceSwitchFailed by remember(sessionId) { mutableStateOf(false) }
+    // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
+    val workspaceBusy = uiState.isGenerating || uiState.session?.approvalRequest != null
+    val onWorkspaceSwitched: (com.promenar.nexara.data.workspace.WorkspaceSwitchResult) -> Unit = { result ->
+        workspaceSwitchFailed = result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Failed ||
+            result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.RejectedBusy
+        if (result is com.promenar.nexara.data.workspace.WorkspaceSwitchResult.Switched) workspaceRefresh++
     }
     val turnGraphStates by chatViewModel.turnGraphStates.collectAsStateWithLifecycle()
     val composerQueue by chatViewModel.composerQueue.collectAsStateWithLifecycle()
@@ -480,12 +504,10 @@ fun ChatRoute(
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
-    // 浮岛上的临时开关只覆盖本次生成；生成结束后回到设置里的默认值。
-    var keepScreenOverride by remember(sessionId) { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(uiState.isGenerating) { if (!uiState.isGenerating) keepScreenOverride = null }
-    val keepScreenOn = keepScreenOverride ?: themePreferences.keepScreenOnWhileGenerating
-    LaunchedEffect(uiState.isGenerating, keepScreenOn, activity) {
-        if (uiState.isGenerating && keepScreenOn) {
+    // 回复生成期间始终保持亮屏；触摸锁定后同样只在生成期间常亮，结束后屏幕按系统设置熄灭。
+    var touchLocked by rememberSaveable(sessionId) { mutableStateOf(false) }
+    LaunchedEffect(uiState.isGenerating, activity) {
+        if (uiState.isGenerating) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -715,12 +737,6 @@ fun ChatRoute(
                                     sessionId = sessionId,
                                     chatViewModel = chatViewModel,
                                     initialFolderPath = workspaceLocatePath,
-                                    onOpenTailscaleSettings = onOpenTailscaleSettings?.let { open ->
-                                        {
-                                            setChatPages(emptyList())
-                                            open()
-                                        }
-                                    },
                                 )
                                 ChatPage.Git -> com.promenar.nexara.ui.git.GitChangesPage(
                                     sessionId = sessionId,
@@ -773,13 +789,20 @@ fun ChatRoute(
                 collapseFinishedTurns = themePreferences.collapseFinishedTurns,
                 turnGraphStates = turnGraphStates,
                 composerQueue = composerQueue,
-                keepScreenOn = if (uiState.isGenerating) keepScreenOn else null,
+                touchLocked = touchLocked,
+                touchLockUnlock = themePreferences.touchLockUnlock,
                 slashCommands = slashCommands.commands,
                 stateBoard = stateBoard,
                 subagentApprovals = sessionSubagentApprovals,
                 gitSummary = gitSummary,
                 startupWritePaused = startupWritePaused,
                 runMode = runModeBadge,
+                workspace = workspaceStatus,
+                executionMode = uiState.session?.takeIf { it.options.toolsEnabled }?.let { session ->
+                    com.promenar.nexara.ui.common.ExecutionMode.valueOf(
+                        com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode).name,
+                    )
+                },
                 inspectorPages = chatPages,
                 browser = browserState,
             ),
@@ -793,6 +816,15 @@ fun ChatRoute(
                 onNavigateBack = onNavigateBack,
                 onResolveSubagentApproval = { id, approved -> application.subagentApprovalBroker.resolve(id, approved) },
                 onOpenWorkspace = { openChatPage(ChatPage.Explorer) },
+                onExecutionModeChange = { mode ->
+                    chatViewModel.updateExecutionMode(
+                        com.promenar.nexara.domain.model.ExecutionModeCodec.serialize(com.promenar.nexara.domain.model.ExecutionMode.valueOf(mode.name)),
+                    )
+                },
+                onOpenWorkspaceStatus = {
+                    workspaceSwitchFailed = false
+                    showWorkspaceStatus = true
+                },
                 onOpenGit = { openChatPage(ChatPage.Git) },
                 onOpenBrowser = { openChatPage(ChatPage.Browser) },
                 onSetInspectorPages = setChatPages,
@@ -908,7 +940,8 @@ fun ChatRoute(
                 onMoveQueuedToFront = chatViewModel::moveQueuedMessageToFront,
                 onRemoveQueued = chatViewModel::removeQueuedMessage,
                 onResumeQueue = chatViewModel::resumeComposerQueue,
-                onToggleKeepScreenOn = { keepScreenOverride = !keepScreenOn },
+                onLockTouch = { touchLocked = true },
+                onUnlockTouch = { touchLocked = false },
                 onSlashCommandPicked = slashCommands.onPick,
                 onSlashPaletteShown = slashCommands.onPaletteShown,
             ),
@@ -1038,6 +1071,37 @@ fun ChatRoute(
                     android.widget.Toast.makeText(context, runModeSwitchFailed, android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
+        },
+    )
+    // 工作区与可达范围面板从顶栏状态行打开；选择器叠在面板之上，切换后面板随之刷新。
+    if (showWorkspaceStatus) {
+        com.promenar.nexara.ui.workspace.AgentReachSheet(
+            sessionId = sessionId,
+            executionMode = uiState.session?.executionMode,
+            onDismiss = { showWorkspaceStatus = false },
+            onOpenTailscaleSettings = onOpenTailscaleSettings,
+            workspaceSwitch = com.promenar.nexara.ui.workspace.AgentReachWorkspaceSwitch(
+                busy = workspaceBusy,
+                failed = workspaceSwitchFailed,
+                onChoose = {
+                    workspaceSwitchFailed = false
+                    pickingWorkspace = true
+                },
+            ),
+            workspaceKey = boundWorkspaceId to workspaceRefresh,
+        )
+    }
+    com.promenar.nexara.ui.workspace.WorkspacePickerSheet(
+        show = pickingWorkspace && !workspaceBusy,
+        onDismiss = { pickingWorkspace = false },
+        currentWorkspaceId = uiState.session?.workspaceId,
+        onPicked = { picked ->
+            pickingWorkspace = false
+            chatViewModel.switchSessionWorkspace(picked.id, onWorkspaceSwitched)
+        },
+        onPickPrivate = {
+            pickingWorkspace = false
+            if (uiState.session?.workspaceId != null) chatViewModel.switchSessionWorkspace(null, onWorkspaceSwitched)
         },
     )
     runModeCheckpoint?.let { stage ->

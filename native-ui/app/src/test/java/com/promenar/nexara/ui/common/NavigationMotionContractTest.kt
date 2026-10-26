@@ -135,12 +135,12 @@ class NavigationMotionContractTest {
     }
 
     @Test
-    fun `运行信息收为浮岛顶部一行运行坞，统计挂在回复下方`() {
+    fun `运行信息收为浮岛顶部一行运行坞，回复下方不再挂运行统计`() {
         val dock = source("chat/components/RunDock.kt")
-        // 运行坞读屏读完整一句；本次运行统计绑定在回复下方，运行详情与侧栏不再显示。
+        // 运行坞读屏读完整一句；轮次与用时已在回合顶部，详细统计在统计浮卡，回复下方不再重复。
         assertThat(dock).contains("semantics(mergeDescendants = true)")
         assertThat(source("chat/components/RunDetailSheet.kt")).doesNotContain("GenerationProgress")
-        assertThat(source("chat/PipelineBubble.kt")).contains("replyRunStats(group.messages)")
+        assertThat(source("chat/PipelineBubble.kt")).doesNotContain("replyRunStats")
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).doesNotContain("R.string.p0_progress")
         assertThat(chat).doesNotContain("ChatGenerationProgressBar")
