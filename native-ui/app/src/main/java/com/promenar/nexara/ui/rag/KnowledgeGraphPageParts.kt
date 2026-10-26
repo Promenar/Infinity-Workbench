@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,6 +89,7 @@ import com.promenar.nexara.ui.rag.canvas.KgEntityKind
 import com.promenar.nexara.ui.rag.canvas.kgEntityPalette
 import com.promenar.nexara.ui.rag.canvas.of
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /** 实体头像：与画布节点同一语言，类型色描边、淡色底、类型图标。 */
@@ -543,27 +545,37 @@ internal fun KnowledgeGraphSearchResults(
         shadowElevation = 4.dp,
         modifier = modifier.fillMaxWidth(),
     ) {
-        when {
-            isSearching -> KgSearchMessage(stringResource(R.string.kg_graph_searching))
-            failed -> KgSearchMessage(stringResource(R.string.kg_graph_search_failed), MaterialTheme.colorScheme.error)
-            results.isEmpty() -> KgSearchMessage(stringResource(R.string.kg_graph_search_empty))
-            else -> LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                items(results, key = { it.id }) { entity ->
-                    val kind = KgEntityKind.of(entity.type)
-                    ListItem(
-                        modifier = Modifier.clickable(role = Role.Button) { onPick(entity.id) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        leadingContent = { KgEntityAvatar(kind, 32.dp) },
-                        headlineContent = { Text(entity.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        trailingContent = {
-                            Text(stringResource(kind.label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        },
-                    )
+        val phase = when {
+            isSearching -> KgSearchPhase.Searching
+            failed -> KgSearchPhase.Failed
+            results.isEmpty() -> KgSearchPhase.Empty
+            else -> KgSearchPhase.Results
+        }
+        AnimatedContent(targetState = phase, transitionSpec = { NexaraMotion.fadeThrough() }, label = "kg_search_phase") { shown ->
+            when (shown) {
+                KgSearchPhase.Searching -> KgSearchMessage(stringResource(R.string.kg_graph_searching))
+                KgSearchPhase.Failed -> KgSearchMessage(stringResource(R.string.kg_graph_search_failed), MaterialTheme.colorScheme.error)
+                KgSearchPhase.Empty -> KgSearchMessage(stringResource(R.string.kg_graph_search_empty))
+                KgSearchPhase.Results -> LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
+                    items(results, key = { it.id }) { entity ->
+                        val kind = KgEntityKind.of(entity.type)
+                        ListItem(
+                            modifier = Modifier.clickable(role = Role.Button) { onPick(entity.id) },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            leadingContent = { KgEntityAvatar(kind, 32.dp) },
+                            headlineContent = { Text(entity.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            trailingContent = {
+                                Text(stringResource(kind.label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private enum class KgSearchPhase { Searching, Failed, Empty, Results }
 
 @Composable
 private fun KgSearchMessage(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
