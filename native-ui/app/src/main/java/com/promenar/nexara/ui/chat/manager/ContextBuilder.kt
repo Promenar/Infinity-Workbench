@@ -438,19 +438,18 @@ class ContextBuilder(
         val sb = StringBuilder()
         val session = params.session
 
-        // 1. 身份：Agent 提示词优先，未配置时使用基础身份。
-        val agentPrompt = params.agentSystemPrompt?.takeIf(String::isNotBlank)
-        sb.appendLine(agentPrompt?.trim() ?: SystemPromptSections.DEFAULT_IDENTITY)
+        // 1. 身份只来自用户填写的助手提示词；为空时不补任何内置身份或行为要求。
+        params.agentSystemPrompt?.takeIf(String::isNotBlank)?.let { sb.appendLine(it.trim()) }
 
         // 2. 会话级指令
         val customPrompt = params.sessionCustomPrompt ?: session.customPrompt
         if (!customPrompt.isNullOrBlank()) {
-            sb.appendLine()
+            if (sb.isNotEmpty()) sb.appendLine()
             sb.appendLine("## Session Instructions")
             sb.appendLine(customPrompt.trim())
         }
 
-        sb.appendLine()
+        if (sb.isNotEmpty()) sb.appendLine()
         sb.append(SystemPromptSections.permissions(
             com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode),
             runMode = session.runMode ?: com.promenar.nexara.domain.model.SessionRunMode.BUILTIN,

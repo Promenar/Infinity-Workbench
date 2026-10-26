@@ -1,16 +1,15 @@
 package com.promenar.nexara.data.agent
 
 /**
- * 预置 Agent 在用户未填写系统提示词时使用的默认身份。
+ * 预置 Agent 新装时写入数据库的可见提示词，用户可在 Agent 编辑页修改或清空。
  *
- * 只在运行时补位，不写入 Room；用户一旦在 Agent 编辑页填写提示词即以用户内容为准。
- * `default` 返回 null，由上下文构建器使用通用基础身份。
+ * 运行时不再补位：提示词为空即不发送任何身份或行为要求。
  */
 object PresetAgentPrompts {
-    fun forAgentId(agentId: String?): String? = when (agentId) {
+    fun forAgentId(agentId: String?): String = when (agentId) {
         "coder" -> CODER
         "writer" -> WRITER
-        else -> null
+        else -> ""
     }
 
     private const val CODER =

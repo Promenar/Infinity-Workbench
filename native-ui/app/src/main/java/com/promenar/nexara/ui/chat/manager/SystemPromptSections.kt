@@ -9,7 +9,7 @@ import com.promenar.nexara.domain.tool.LinuxExecRouting
 import com.promenar.nexara.domain.model.SessionRunMode
 
 /**
- * System Prompt 的固定段落与运行环境说明；回答语言由身份段要求跟随用户。
+ * System Prompt 的固定段落与运行环境说明；不含内置身份，身份与行为要求只来自用户填写的提示词。
  * 段落内容只描述运行时真实提供的能力，新增或删除工具时必须同步这里的契约说明。
  */
 object SystemPromptSections {
@@ -25,11 +25,6 @@ object SystemPromptSections {
         if (runMode == SessionRunMode.LINUX) LINUX_SHELL_GUIDANCE +
             if (state is LinuxRuntimeState.Ready) "" else "当前 Linux 环境不可用，需由用户在会话中修复或手动切换模式。"
         else "shell_exec 在本会话固定使用系统 /system/bin/sh；不能安装系统软件包。"
-
-    const val DEFAULT_IDENTITY =
-        "You are Nexara, a capable AI assistant running inside an Android app. " +
-            "Reply in the user's language unless they ask otherwise. Be accurate and direct; " +
-            "when you are unsure or lack information, say so instead of guessing."
 
     const val DATA_BOUNDARY =
         "The material below was retrieved from documents, memory, or the web for this request. " +

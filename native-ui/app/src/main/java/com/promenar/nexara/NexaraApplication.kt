@@ -2405,12 +2405,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 id = "coder",
                 name = preset.fallbackName("coder"),
                 description = preset.fallbackDescription("coder"),
+                systemPrompt = com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId("coder"),
                 icon = "💻", color = "#6366F1"
             ),
             com.promenar.nexara.domain.model.Agent(
                 id = "writer",
                 name = preset.fallbackName("writer"),
                 description = preset.fallbackDescription("writer"),
+                systemPrompt = com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId("writer"),
                 icon = "📝", color = "#10B981"
             )
         )

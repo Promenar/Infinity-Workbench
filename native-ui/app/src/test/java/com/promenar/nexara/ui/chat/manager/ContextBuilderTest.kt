@@ -231,14 +231,14 @@ class ContextBuilderTest {
     }
 
     @Test
-    fun systemPromptUsesDefaultIdentityAndPlacesTimeLast() = testScope.runTest {
+    fun systemPromptAddsNoBuiltInIdentityAndPlacesTimeLast() = testScope.runTest {
         val session = Session(id = "s1", agentId = "a1", customPrompt = "Be concise")
 
         val prompt = ContextBuilder().buildContext(
             ContextBuilderParams("s1", "hi", assistantMsgId = "m1", session = session, availableToolNames = emptySet()),
         ).finalSystemPrompt
 
-        assertThat(prompt).startsWith(SystemPromptSections.DEFAULT_IDENTITY)
+        assertThat(prompt).startsWith("## Session Instructions")
         assertThat(prompt.indexOf("Be concise")).isGreaterThan(0)
         assertThat(prompt).doesNotContain("## Tool Use")
         assertThat(prompt.trimEnd().lines().last()).contains("System Time")
@@ -255,7 +255,18 @@ class ContextBuilderTest {
         ).finalSystemPrompt
 
         assertThat(prompt).startsWith("You are a pirate.")
-        assertThat(prompt).doesNotContain(SystemPromptSections.DEFAULT_IDENTITY)
+    }
+
+    @Test
+    fun emptyAgentAndSessionPromptsSendNoIdentityOrStyleRules() = testScope.runTest {
+        val prompt = ContextBuilder().buildContext(
+            ContextBuilderParams("s1", "hi", assistantMsgId = "m1", session = Session(id = "s1", agentId = "default"), availableToolNames = emptySet()),
+        ).finalSystemPrompt
+
+        assertThat(prompt).doesNotContain("Nexara,")
+        assertThat(prompt).doesNotContain("You are")
+        assertThat(prompt).doesNotContain("Be accurate")
+        assertThat(prompt).startsWith("## Permissions and Runtime Data")
     }
 
     @Test
@@ -275,7 +286,7 @@ class ContextBuilderTest {
         assertThat(withWorkspace).contains("### Workspace Files")
         assertThat(withWorkspace).contains("expectedHash")
         assertThat(withWorkspace).contains("### Multi-step Tasks")
-        assertThat(withWorkspace.indexOf("## Tool Use")).isGreaterThan(withWorkspace.indexOf(SystemPromptSections.DEFAULT_IDENTITY))
+        assertThat(withWorkspace.indexOf("## Tool Use")).isGreaterThan(withWorkspace.indexOf("## Permissions and Runtime Data"))
         assertThat(calculatorOnly).contains("## Tool Use")
         assertThat(calculatorOnly).doesNotContain("### Workspace Files")
         assertThat(calculatorOnly).doesNotContain("### Multi-step Tasks")

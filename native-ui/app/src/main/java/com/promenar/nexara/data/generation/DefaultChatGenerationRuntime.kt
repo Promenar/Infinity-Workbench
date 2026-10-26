@@ -384,8 +384,7 @@ internal class DefaultChatGenerationRuntime(
             assistantMsgId = request.assistantMessageId,
             session = session,
             ragOptions = session.ragOptions,
-            agentSystemPrompt = config.systemPrompt.takeIf(String::isNotBlank)
-                ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
+            agentSystemPrompt = config.systemPrompt.takeIf(String::isNotBlank),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = config.retrievalConfig,
             agentMemoryPolicy = config.memoryPolicy,
@@ -492,8 +491,7 @@ internal class DefaultChatGenerationRuntime(
                 )
                 ui.updateRagPhases { updateRagProgress(it, stage, percentage, detail) }
             },
-            agentSystemPrompt = agentConfig.systemPrompt.takeIf(String::isNotBlank)
-                ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
+            agentSystemPrompt = agentConfig.systemPrompt.takeIf(String::isNotBlank),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = agentConfig.retrievalConfig,
             agentMemoryPolicy = agentConfig.memoryPolicy,
