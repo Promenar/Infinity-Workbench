@@ -1,6 +1,8 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ResolvedProviderModel
+import com.promenar.nexara.data.remote.requireOpenAiModelRoute
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
@@ -29,15 +31,16 @@ class RerankClient(
     private val modelId: String,
     private val llmProtocol: LlmProtocol? = null,
     private val llmModelId: String? = null,
-    private val maxPerCall: Int = 100  // P1: 单次最多重排文档数，超过分批
-) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val httpClient = ModelHttp.client {
+    private val maxPerCall: Int = 100,  // P1: 单次最多重排文档数，超过分批
+    private val modelRouteResolver: (() -> ResolvedProviderModel)? = null,
+    private val httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
         }
-    }
+    },
+) {
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun rerank(
         query: String,
@@ -45,7 +48,7 @@ class RerankClient(
         topK: Int
     ): List<SearchResult> = rerankWithOutcome(query, documents, topK).results
 
-    /** 先走重排 API，失败再用大模型打分；都失败时保持召回顺序并截取前 [topK] 条。 */
+    /** 预设模型仅使用精确路由；手动客户端可显式提供 LLM 后备，失败时保留召回顺序。 */
     suspend fun rerankWithOutcome(
         query: String,
         documents: List<SearchResult>,
@@ -53,27 +56,31 @@ class RerankClient(
     ): RerankOutcome {
         if (documents.size <= 1) return RerankOutcome(documents, RerankMethod.SKIPPED)
 
-        rerankViaApi(query, documents, topK)?.let { return RerankOutcome(it, RerankMethod.API, modelId.ifBlank { null }) }
-        rerankViaLlm(query, documents, topK)?.let { return RerankOutcome(it, RerankMethod.LLM, llmModelId) }
+        val route = modelRouteResolver?.invoke()?.requireOpenAiModelRoute()
+        rerankViaApi(query, documents, topK, route)?.let { return RerankOutcome(it, RerankMethod.API, route?.remoteModelId ?: modelId.ifBlank { null }) }
+        if (modelRouteResolver == null) {
+            rerankViaLlm(query, documents, topK)?.let { return RerankOutcome(it, RerankMethod.LLM, llmModelId) }
+        }
         return RerankOutcome(documents.take(topK), RerankMethod.FAILED)
     }
 
     private suspend fun rerankViaApi(
         query: String,
         documents: List<SearchResult>,
-        topK: Int
+        topK: Int,
+        route: ResolvedProviderModel?,
     ): List<SearchResult>? {
-        if (baseUrl.isBlank() || apiKey.isBlank()) return null
+        if ((route?.config?.baseUrl ?: baseUrl).isBlank() || (route?.config?.apiKey ?: apiKey).isBlank()) return null
 
         return try {
             // P1: 分批重排，单次不超过 maxPerCall
             if (documents.size <= maxPerCall) {
-                rerankBatch(query, documents, topK)
+                rerankBatch(query, documents, topK, route)
             } else {
                 val batches = documents.chunked(maxPerCall)
                 val allResults = mutableListOf<SearchResult>()
                 for (batch in batches) {
-                    val batchResults = rerankBatch(query, batch, topK)
+                    val batchResults = rerankBatch(query, batch, topK, route)
                     if (batchResults != null) allResults.addAll(batchResults)
                 }
                 if (allResults.isEmpty()) null
@@ -89,8 +96,12 @@ class RerankClient(
     private suspend fun rerankBatch(
         query: String,
         documents: List<SearchResult>,
-        topK: Int
+        topK: Int,
+        route: ResolvedProviderModel?,
     ): List<SearchResult>? {
+        val baseUrl = route?.config?.baseUrl ?: baseUrl
+        val apiKey = route?.config?.apiKey ?: apiKey
+        val modelId = route?.remoteModelId ?: modelId
         val cleanBase = baseUrl.trimEnd('/')
         val suffix = if (cleanBase.endsWith("/v1")) "/rerank" else "/v1/rerank"
         val endpoint = "$cleanBase$suffix"

@@ -1,0 +1,3 @@
+<resources>
+    <string name="model_request_route_failed">Model unavailable (%1$s). Check the selected model and provider in Settings.</string>
+</resources>

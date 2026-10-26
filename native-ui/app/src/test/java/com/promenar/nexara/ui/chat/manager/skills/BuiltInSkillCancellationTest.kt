@@ -5,6 +5,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
@@ -46,12 +48,15 @@ class BuiltInSkillCancellationTest {
         every { workspaceRepository.observeChildren(any(), any()) } returns flow { throw cancellation }
         every { workspaceRepository.searchByName(any(), any()) } returns flow { throw cancellation }
         val providerManager = mockk<ProviderManager>()
-        every { providerManager.getMainProviderConfig() } returns ProviderConfig(
+        every { providerManager.getProviderConfig("default") } returns ProviderConfig(
             protocolType = ProtocolType.Generic_OpenAI_Compat,
-            baseUrl = "https://images.example.com",
+            baseUrl = "https://images.example.com/v1",
             apiKey = "test-key",
         )
-        every { providerManager.imageModelId } returns MutableStateFlow("image-model")
+        every { providerManager.imageModelId } returns MutableStateFlow("default::image-model")
+        every { providerManager.providerModels } returns MutableStateFlow(listOf(ModelInfo(id = "default::image-model", remoteModelId = "image-model", providerId = "default", name = "Image", description = "", enabled = true)))
+        every { providerManager.providers } returns MutableStateFlow(listOf(ProviderListItem(id = "default", name = "Image")))
+        every { providerManager.isPersistedProtocolUnsupported("default") } returns false
 
         val cases = listOf(
             FileSearchSkill(workspaceRepository) to skillArgs("query" to "needle"),

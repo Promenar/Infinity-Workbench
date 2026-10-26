@@ -538,10 +538,15 @@ class SettingsViewModel(
 
     suspend fun verifyOnboardingModel(providerId: String, model: ModelInfo): ModelInfo? {
         // 这是用户明确选择具体模型后的最小生成能力验证，不是 Provider 连接探测。
-        val verified = verifyOnboardingModelCandidate(model) { remoteModelId ->
-            val config = pm.getProviderConfig(providerId) ?: return@verifyOnboardingModelCandidate false
+        val verified = verifyOnboardingModelCandidate(model) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runOnboardingEndpointProbe {
+                    val resolved = when (val result = com.promenar.nexara.ui.welcome.resolveOnboardingModelRoute(pm, providerId, model.id)) {
+                        is ProviderResolution.Success -> result.value
+                        is ProviderResolution.Failure -> throw IllegalStateException(result.reason.name)
+                    }
+                    val config = resolved.config
+                    val remoteModelId = resolved.remoteModelId
                     val provider = if (config.protocolType is ProtocolType.Local) {
                         com.promenar.nexara.data.remote.provider.LlmProvider.local(
                             app.localInferenceEngine,
@@ -552,9 +557,9 @@ class SettingsViewModel(
                             .protocolType(config.protocolType)
                             .baseUrl(config.baseUrl)
                             .apiKey(config.apiKey)
-                            .serviceAccountJson(config.vertexServiceAccountJson)
-                            .projectId("")
-                            .location(VERTEX_DEFAULT_LOCATION)
+                            .serviceAccountJson(config.serviceAccountJson)
+                            .projectId(config.projectId)
+                            .location(config.location)
                             .model(remoteModelId)
                             .build()
                     }

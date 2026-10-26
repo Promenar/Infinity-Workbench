@@ -72,6 +72,8 @@ import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
+import com.promenar.nexara.data.remote.requireModelRoute
+import com.promenar.nexara.data.remote.requireOpenAiModelRoute
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.remote.provider.VertexCredentialException
 import com.promenar.nexara.data.remote.provider.VertexCredentialParser
@@ -1462,7 +1464,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 chatStore.getSession(sessionId)?.let { resolveMediaViewTarget(it) }
                     ?: com.promenar.nexara.data.generation.MediaViewTarget()
             })
-            register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance(), workspaceMediaStore, workspaceMediaDownloader))
+            register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance(), workspaceMediaStore, workspaceMediaDownloader, providerRequestRouter = providerRequestRouter))
             register(com.promenar.nexara.ui.chat.manager.skills.MediaFetchSkill(workspaceMediaStore, workspaceMediaDownloader,
                 mounts = externalFolderManager, sessionWorkspace = sessionWorkspaceResolver::resolve))
             register(mounted(FileReadSkill(fileOperationRepository, workspaceRepository)))
@@ -2047,34 +2049,37 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val embeddingClient: EmbeddingClient
         get() = _embeddingClient ?: buildEmbeddingClient().also { _embeddingClient = it }
 
-    private fun buildEmbeddingClient(): EmbeddingClient {
-        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        // 1. 优先读取显式手动配置的 embedding_base_url (nexara_provider)
-        var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        var apiKey = readSecret(SecretCatalog.embeddingApiKey)
-        var resolvedBy = if (baseUrl.isNotBlank()) "manual" else ""
-        
-        // 2. 如果手动配置为空，则根据预设模型自动查找所属提供商配置
-        val presetModel = settingsPrefs.getString("preset_embedding_model", "") ?: ""
-        if (baseUrl.isBlank() && presetModel.isNotBlank()) {
-            val config = ProviderManager.getInstance().getProviderConfigByModelId(presetModel)
-            if (config != null) {
-                baseUrl = config.baseUrl
-                apiKey = config.apiKey
-                resolvedBy = "preset-model"
-            }
-        }
-        
-        val presetRemoteModel = ProviderManager.getInstance().getRemoteModelId(presetModel).orEmpty()
-        val model = prefs.getString("embedding_model", "")
-            ?.ifBlank { presetRemoteModel }
-            ?: presetRemoteModel
-        NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()}")
+    private fun modelRouteError(reason: com.promenar.nexara.data.remote.ProviderResolutionError): String =
+        getString(R.string.model_request_route_failed, reason.name)
+
+    private fun resolveAuxiliaryModel(modelId: String, allowLocal: Boolean = false): com.promenar.nexara.data.remote.ResolvedProviderModel {
+        val route = providerRequestRouter.requireModelRoute(modelId, ::modelRouteError)
+        return if (allowLocal && route.config.protocolType == ProtocolType.Local) route
+        else route.requireOpenAiModelRoute(::modelRouteError)
+    }
+
+    private fun buildEmbeddingClient(): EmbeddingClient = EmbeddingClient(
+        baseUrl = "",
+        apiKey = "",
+        clientResolver = ::buildCurrentEmbeddingClient,
+    )
+
+    private fun buildCurrentEmbeddingClient(httpClient: io.ktor.client.HttpClient): EmbeddingClient {
+        val manager = ProviderManager.getInstance()
+        val presetModel = manager.embeddingModelId.value
+        val manualBase = prefs.getString("embedding_base_url", "").orEmpty()
+        val manualModel = prefs.getString("embedding_model", "").orEmpty()
+        // 预设选择拥有完整路由；历史手动配置只在未选预设时作为独立配置使用。
+        val routeModel = presetModel.ifBlank { manualModel.takeIf { id -> manager.providerModels.value.any { it.id == id } }.orEmpty() }
         return EmbeddingClient(
-            baseUrl = baseUrl,
-            apiKey = apiKey,
-            model = model,
+            baseUrl = if (routeModel.isBlank()) manualBase else "",
+            apiKey = if (routeModel.isBlank()) readSecret(SecretCatalog.embeddingApiKey) else "",
+            model = if (routeModel.isBlank()) manualModel else "",
+            httpClient = httpClient,
             localEngine = localInferenceRuntimeGate.createIfAvailable { localInferenceEngine },
+            modelRouteResolver = if (routeModel.isNotBlank()) {
+                { resolveAuxiliaryModel(routeModel, allowLocal = true) }
+            } else null,
         )
     }
 
@@ -2092,40 +2097,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val rerankClient: RerankClient
         get() = _rerankClient ?: buildRerankClient().also { _rerankClient = it }
 
-    private fun buildRerankClient(): RerankClient {
-        val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
-        var baseUrl = prefs.getString("embedding_base_url", "") ?: ""
-        var apiKey = readSecret(SecretCatalog.embeddingApiKey)
-        
-        val presetModel = settingsPrefs.getString("preset_rerank_model", "") ?: ""
-        if (baseUrl.isBlank() && presetModel.isNotBlank()) {
-            val config = ProviderManager.getInstance().getProviderConfigByModelId(presetModel)
-            if (config != null) {
-                baseUrl = config.baseUrl
-                apiKey = config.apiKey
-            }
-        }
-        
-        if (baseUrl.isBlank()) {
-            baseUrl = prefs.getString("base_url", "") ?: ""
-            apiKey = getSavedProviderConfig()?.apiKey.orEmpty()
-        }
-        
-        val savedConfig = getSavedProviderConfig()
-        val remotePresetModel = ProviderManager.getInstance().getRemoteModelId(presetModel).orEmpty()
-        val maxPerCall = ragConfigPersistence.loadFullConfig().rerankMaxPerCall
-        NexaraLogger.log("[RerankClient] 构建: model=$presetModel hasBaseUrl=${baseUrl.isNotBlank()} maxPerCall=$maxPerCall")
-        return RerankClient(
-            baseUrl = baseUrl,
-            apiKey = apiKey,
-            modelId = remotePresetModel,
-            llmProtocol = savedConfig?.let {
-                try { llmProvider.protocol } catch (_: Exception) { null }
-            },
-            llmModelId = savedConfig?.model,
-            maxPerCall = maxPerCall
-        )
-    }
+    private fun buildRerankClient(): RerankClient = RerankClient(
+        baseUrl = "",
+        apiKey = "",
+        modelId = "",
+        maxPerCall = ragConfigPersistence.loadFullConfig().rerankMaxPerCall,
+        modelRouteResolver = { resolveAuxiliaryModel(ProviderManager.getInstance().rerankModelId.value) },
+    )
 
     fun rebuildRerankClient() {
         _rerankClient = buildRerankClient()
@@ -2202,7 +2180,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             graphStore = graphStore,
             embeddingClient = embeddingClient,
             rerankClient = rerankClient,
-            queryRewriter = QueryRewriter(llmProvider.protocol, modelId = getSavedProviderConfig()?.model),
+            queryRewriter = QueryRewriter(
+                llmProvider.protocol,
+                modelRouteResolver = { selected ->
+                    providerRequestRouter.requireModelRoute(
+                        selected?.takeIf(String::isNotBlank) ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty(),
+                        ::modelRouteError,
+                    )
+                },
+                protocolFactory = ::createRoutedModelProtocol,
+            ),
             ragConfig = ragConfigPersistence.loadFullConfig()  // P0: 从用户保存的配置读取，不再硬编码默认值
         ).also { _memoryManager = it }
 
@@ -2229,20 +2216,22 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         router = providerRequestRouter,
         usageStore = kgUsageStore,
         defaultMaxOutputTokens = ragConfigPersistence.loadFullConfig().kgRequestMaxOutputTokens.coerceIn(128, 16384),
-        protocolFactory = { resolved ->
-            val config = resolved.config
-            com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
-                type = config.protocolType,
-                baseUrl = config.baseUrl,
-                apiKey = config.apiKey,
-                model = resolved.remoteModelId,
-                serviceAccountJson = config.serviceAccountJson,
-                projectId = config.projectId,
-                location = config.location,
-                localEngine = if (config.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local) localInferenceEngine else null,
-            )
-        },
+        protocolFactory = ::createRoutedModelProtocol,
     )
+
+    private fun createRoutedModelProtocol(resolved: com.promenar.nexara.data.remote.ResolvedProviderModel): com.promenar.nexara.data.remote.protocol.LlmProtocol {
+        val config = resolved.config
+        return com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
+            type = config.protocolType,
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            model = resolved.remoteModelId,
+            serviceAccountJson = config.serviceAccountJson,
+            projectId = config.projectId,
+            location = config.location,
+            localEngine = if (config.protocolType == ProtocolType.Local) localInferenceEngine else null,
+        )
+    }
 
     private var _microGraphExtractor: MicroGraphExtractor? = null
     val microGraphExtractor: MicroGraphExtractor

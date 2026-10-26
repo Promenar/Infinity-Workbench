@@ -3,11 +3,20 @@ package com.promenar.nexara.data.rag
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.remote.ResolvedProviderModel
+import com.promenar.nexara.data.remote.protocol.ProtocolFactory
+import kotlinx.coroutines.CancellationException
 
 class QueryRewriter(
     private val protocol: LlmProtocol,
     private val strategy: RewriteStrategy = RewriteStrategy.MULTI_QUERY,
-    private val modelId: String? = null
+    private val modelId: String? = null,
+    private val modelRouteResolver: ((String?) -> ResolvedProviderModel)? = null,
+    private val protocolFactory: (ResolvedProviderModel) -> LlmProtocol = { route ->
+        val config = route.config
+        ProtocolFactory.create(config.protocolType, config.baseUrl, config.apiKey, route.remoteModelId,
+            config.serviceAccountJson, config.projectId, config.location)
+    },
 ) {
     suspend fun rewrite(
         query: String,
@@ -17,6 +26,7 @@ class QueryRewriter(
     ): RewriteResult {
         val queries = linkedSetOf(query)
         var totalUsage: RewriteUsage? = null
+        val route = modelRouteResolver?.invoke(modelIdOverride?.takeIf(String::isNotBlank) ?: modelId)
 
         try {
             val effectiveStrategy = strategyOverride ?: strategy
@@ -28,12 +38,12 @@ class QueryRewriter(
 
             val request = PromptRequest(
                 messages = listOf(ProtocolMessage(role = "user", content = prompt)),
-                model = modelIdOverride ?: modelId ?: "default",
+                model = route?.remoteModelId ?: modelIdOverride ?: modelId ?: "default",
                 temperature = 0.7,
                 stream = false
             )
 
-            val response = protocol.sendPromptSync(request)
+            val response = (route?.let(protocolFactory) ?: protocol).sendPromptSync(request)
 
             val content = response.content
             totalUsage = response.usage?.let {
@@ -56,8 +66,10 @@ class QueryRewriter(
                     }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            // Silently fail, return original query
+            // 请求失败时保留原查询；路由失败在发出请求前向调用方报告。
         }
 
         return RewriteResult(

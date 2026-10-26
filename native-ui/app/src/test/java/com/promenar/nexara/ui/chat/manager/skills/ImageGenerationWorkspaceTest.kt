@@ -5,6 +5,8 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.media.download.WorkspaceMediaDownloader
 import com.promenar.nexara.data.model.ProviderConfig
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.rag.ImageGenClient
 import com.promenar.nexara.domain.media.*
 import com.promenar.nexara.domain.network.AgentNetworkPolicy
@@ -25,8 +27,11 @@ import org.junit.Test
 class ImageGenerationWorkspaceTest {
     private val store = RecordingMediaStore()
     private val providers = mockk<ProviderManager> {
-        every { getMainProviderConfig() } returns ProviderConfig(baseUrl = "https://images.test", apiKey = "test-key")
-        every { imageModelId } returns MutableStateFlow("image-test")
+        every { imageModelId } returns MutableStateFlow("default::image-test")
+        every { providerModels } returns MutableStateFlow(listOf(ModelInfo(id = "default::image-test", remoteModelId = "image-test", providerId = "default", name = "Image", description = "", enabled = true)))
+        every { this@mockk.providers } returns MutableStateFlow(listOf(ProviderListItem(id = "default", name = "Image")))
+        every { getProviderConfig("default") } returns ProviderConfig(baseUrl = "https://images.test/v1", apiKey = "test-key")
+        every { isPersistedProtocolUnsupported("default") } returns false
     }
     private val downloader = WorkspaceMediaDownloader(OkHttpClient.Builder().addInterceptor {
         Response.Builder().request(it.request()).protocol(Protocol.HTTP_1_1).code(200).message("ok")

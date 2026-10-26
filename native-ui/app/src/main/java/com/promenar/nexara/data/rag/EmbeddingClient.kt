@@ -2,6 +2,9 @@ package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
+import com.promenar.nexara.data.remote.ResolvedProviderModel
+import com.promenar.nexara.data.remote.requireOpenAiModelRoute
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.plugins.*
@@ -21,20 +24,37 @@ class EmbeddingClient(
             connectTimeoutMillis = 10_000
         }
     },
-    private val localEngine: LocalInferenceEngine? = null
+    private val localEngine: LocalInferenceEngine? = null,
+    private val modelRouteResolver: (() -> ResolvedProviderModel)? = null,
+    /** 长期持有的应用入口按次取得当前配置，子客户端共享 HTTP 传输。 */
+    private val clientResolver: ((HttpClient) -> EmbeddingClient)? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** 远程 Embedding 是否已配置（baseUrl 和 apiKey 均非空） */
     val isConfigured: Boolean
-        get() = baseUrl.isNotBlank() && apiKey.isNotBlank()
+        get() = clientResolver?.invoke(httpClient)?.isConfigured ?: modelRouteResolver?.let { resolve -> runCatching {
+            val route = resolve()
+            route.config.protocolType != ProtocolType.Local && route.requireOpenAiModelRoute().config.baseUrl.isNotBlank()
+        }.getOrDefault(false) }
+            ?: (baseUrl.isNotBlank() && apiKey.isNotBlank())
 
     /** 是否有本地引擎可用作降级 */
     val hasLocalFallback: Boolean
-        get() = localEngine?.embeddingSlot?.value?.isLoaded == true
+        get() {
+            clientResolver?.let { return it(httpClient).hasLocalFallback }
+            modelRouteResolver?.let { resolve ->
+                if (!runCatching { resolve().config.protocolType == ProtocolType.Local }.getOrDefault(false)) return false
+            }
+            return localEngine?.embeddingSlot?.value?.isLoaded == true
+        }
 
     /** 诊断信息：用于向用户解释当前配置状态 */
     fun diagnosticMessage(): String = buildString {
+        clientResolver?.let { return it(httpClient).diagnosticMessage() }
+        modelRouteResolver?.let { resolve ->
+            runCatching { resolve() }.exceptionOrNull()?.message?.let { return it }
+        }
         if (baseUrl.isBlank()) {
             append("Embedding 服务未配置")
             if (model.isNotBlank()) append("（当前已选模型: \"$model\"）")
@@ -54,6 +74,15 @@ class EmbeddingClient(
 
     suspend fun embedDocuments(texts: List<String>): EmbeddingResult {
         if (texts.isEmpty()) throw IllegalArgumentException("No texts provided for embedding")
+        clientResolver?.let { return it(httpClient).embedDocuments(texts) }
+        modelRouteResolver?.let { resolve ->
+            val route = resolve()
+            return if (route.config.protocolType == ProtocolType.Local) {
+                requireNotNull(localEngine).embedBatch(texts).getOrThrow().let { EmbeddingResult(it, null) }
+            } else {
+                embedViaRemote(texts, route.requireOpenAiModelRoute())
+            }
+        }
         // 如果远程未配置但有本地引擎，直接走本地通道
         if (!isConfigured && localEngine != null) {
             return localEngine.embedBatch(texts).fold(
@@ -75,14 +104,14 @@ class EmbeddingClient(
         }
     }
 
-    private suspend fun embedViaRemote(texts: List<String>): EmbeddingResult {
+    private suspend fun embedViaRemote(texts: List<String>, route: ResolvedProviderModel? = null): EmbeddingResult {
         val batchSize = 50
         val allEmbeddings = mutableListOf<FloatArray>()
         var totalTokens = 0
 
         for (i in texts.indices step batchSize) {
             val batch = texts.subList(i, minOf(i + batchSize, texts.size))
-            val result = embedBatch(batch)
+            val result = embedBatch(batch, route)
             allEmbeddings.addAll(result.embeddings)
             totalTokens += result.usage?.totalTokens ?: 0
         }
@@ -94,6 +123,11 @@ class EmbeddingClient(
     }
 
     suspend fun embedQuery(text: String): Pair<FloatArray, EmbeddingUsage?> {
+        clientResolver?.let { return it(httpClient).embedQuery(text) }
+        if (modelRouteResolver != null) {
+            val result = embedDocuments(listOf(text))
+            return result.embeddings.first() to result.usage
+        }
         // 如果远程未配置但有本地引擎，直接走本地通道
         if (!isConfigured && localEngine != null) {
             return localEngine.embed(text).fold(
@@ -116,8 +150,11 @@ class EmbeddingClient(
         }
     }
 
-    private suspend fun embedBatch(texts: List<String>): EmbeddingResult {
-        if (!isConfigured) throw IllegalStateException(diagnosticMessage())
+    private suspend fun embedBatch(texts: List<String>, route: ResolvedProviderModel? = null): EmbeddingResult {
+        val baseUrl = route?.config?.baseUrl ?: baseUrl
+        val apiKey = route?.config?.apiKey ?: apiKey
+        val model = route?.remoteModelId ?: model
+        if (baseUrl.isBlank() || apiKey.isBlank() || model.isBlank()) throw IllegalStateException(diagnosticMessage())
 
         val cleanBase = baseUrl.trim().trimEnd('/')
         val cleanApiKey = apiKey.trim()
@@ -128,7 +165,7 @@ class EmbeddingClient(
         }
 
         val requestBody = buildJsonObject {
-            put("model", model.trim())
+            put("model", model)
             put("input", buildJsonArray { texts.forEach { add(it) } })
         }
 
@@ -169,12 +206,14 @@ class EmbeddingClient(
     }
 
     suspend fun embedLocal(text: String): Result<FloatArray> {
+        clientResolver?.let { return it(httpClient).embedLocal(text) }
         val engine = localEngine
             ?: return Result.failure(IllegalStateException("Local engine not configured"))
         return engine.embed(text)
     }
 
     suspend fun embedLocalBatch(texts: List<String>): Result<List<FloatArray>> {
+        clientResolver?.let { return it(httpClient).embedLocalBatch(texts) }
         val engine = localEngine
             ?: return Result.failure(IllegalStateException("Local engine not configured"))
         return engine.embedBatch(texts)

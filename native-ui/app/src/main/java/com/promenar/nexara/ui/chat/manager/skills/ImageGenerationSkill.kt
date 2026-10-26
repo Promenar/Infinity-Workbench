@@ -3,6 +3,11 @@ package com.promenar.nexara.ui.chat.manager.skills
 import android.content.Context
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.rag.ImageGenClient
+import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderRequestRouter
+import com.promenar.nexara.data.remote.ModelRequestRouteException
+import com.promenar.nexara.data.remote.requireModelRoute
+import com.promenar.nexara.data.remote.requireOpenAiModelRoute
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.data.model.ToolResult
@@ -34,6 +39,7 @@ class ImageGenerationSkill(
     private val providerManager: ProviderManager,
     private val mediaStore: WorkspaceMediaStore? = null,
     private val mediaDownloader: WorkspaceMediaDownloader? = null,
+    private val providerRequestRouter: ProviderRequestRouter = DefaultProviderRequestRouter(providerManager),
     private val imageGenClientFactory: (baseUrl: String, apiKey: String, modelId: String) -> ImageGenClient =
         { baseUrl, apiKey, modelId -> ImageGenClient(baseUrl = baseUrl, apiKey = apiKey, model = modelId) },
 ) : SkillDefinition {
@@ -94,25 +100,16 @@ class ImageGenerationSkill(
         val style = args.stringArgument("style")
 
         // ── 读取图像模型配置 ──
-        val mainConfig = providerManager.getMainProviderConfig()
-        val baseUrl = mainConfig?.baseUrl?.takeIf { it.isNotBlank() } ?: ""
-        val apiKey = mainConfig?.apiKey?.takeIf { it.isNotBlank() } ?: ""
         val modelId = providerManager.imageModelId.value.takeIf { it.isNotBlank() } ?: ""
 
-        if (baseUrl.isBlank()) {
-            return ToolResult(id = resultId, content = "Image generation not configured: no provider base URL set. Please configure a provider in Settings.", status = "error")
-        }
-        if (apiKey.isBlank()) {
-            return ToolResult(id = resultId, content = "Image generation not configured: no API key set. Please configure a provider in Settings.", status = "error")
-        }
         if (modelId.isBlank()) {
             return ToolResult(id = resultId, content = "Image generation not configured: no image model selected. Please select an image model in Settings → Default Image Model.", status = "error")
         }
 
         return try {
-            val client = imageGenClientFactory(baseUrl, apiKey, modelId)
-
             val result = withContext(Dispatchers.IO) {
+                val resolved = providerRequestRouter.requireModelRoute(modelId).requireOpenAiModelRoute()
+                val client = imageGenClientFactory(resolved.config.baseUrl, resolved.config.apiKey, resolved.remoteModelId)
                 client.generate(
                     prompt = prompt,
                     size = size,
@@ -165,6 +162,8 @@ class ImageGenerationSkill(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: ModelRequestRouteException) {
+            ToolResult(id = resultId, content = "Image generation unavailable: ${failure.message} Select an image model in Settings → Default Image Model.", status = "error")
         } catch (e: Exception) {
             ToolResult(
                 id = resultId,
