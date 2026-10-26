@@ -70,6 +70,7 @@ object UiTags {
     fun chatDocumentChip(documentId: String): String = CHAT_DOCUMENT_CHIP_PREFIX + documentId
     fun chatDocumentRemove(documentId: String): String = CHAT_DOCUMENT_REMOVE_PREFIX + documentId
     const val PROMPT_EDITOR_INPUT = "prompt_editor_input"
+    const val PROMPT_EDITOR_SAVE = "prompt_editor_save"
     const val CHAT_MODEL_SELECTOR = "chat_model_selector"
     const val CHAT_REASONING_CHIP = "chat_reasoning_chip"
     const val CHAT_MODEL_SELECTOR_VISUAL = "chat_model_selector_visual"

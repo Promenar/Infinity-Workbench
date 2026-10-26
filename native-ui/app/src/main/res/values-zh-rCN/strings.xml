@@ -18,8 +18,16 @@
     <string name="prompt_editor_default_placeholder">输入系统提示词…</string>
     <string name="prompt_editor_tab_edit">编辑</string>
     <string name="prompt_editor_tab_preview">预览</string>
-    <string name="prompt_editor_cd_close">关闭</string>
+    <string name="prompt_editor_cd_close">返回</string>
     <string name="prompt_editor_cd_save">保存</string>
+    <string name="prompt_editor_tab_split">分栏</string>
+    <string name="prompt_editor_modified">已修改</string>
+    <string name="prompt_editor_cd_heading">标题</string>
+    <string name="prompt_editor_cd_list">列表</string>
+    <string name="prompt_editor_cd_bold">加粗</string>
+    <string name="prompt_editor_cd_code">行内代码</string>
+    <string name="prompt_editor_cd_undo">撤销</string>
+    <string name="prompt_editor_cd_redo">重做</string>
 
     <!-- InferencePresets -->
 
@@ -1611,19 +1619,14 @@
     <string name="rag_back_to_parent">返回上一级</string>
 
     <plurals name="prompt_editor_word_count">
-        <item quantity="zero">共 %1$d 词</item>
-        <item quantity="one">共 %1$d 词</item>
-        <item quantity="other">共 %1$d 词</item>
+        <item quantity="zero">%1$d 词</item>
+        <item quantity="one">%1$d 词</item>
+        <item quantity="other">%1$d 词</item>
     </plurals>
     <plurals name="prompt_editor_line_count">
-        <item quantity="zero">共 %1$d 行</item>
-        <item quantity="one">共 %1$d 行</item>
-        <item quantity="other">共 %1$d 行</item>
-    </plurals>
-    <plurals name="prompt_editor_char_count">
-        <item quantity="zero">共 %1$d 字</item>
-        <item quantity="one">共 %1$d 字</item>
-        <item quantity="other">共 %1$d 字</item>
+        <item quantity="zero">%1$d 行</item>
+        <item quantity="one">%1$d 行</item>
+        <item quantity="other">%1$d 行</item>
     </plurals>
     <plurals name="code_block_description">
         <item quantity="other">%1$s代码块，共 %2$d 行</item>

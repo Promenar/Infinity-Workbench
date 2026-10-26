@@ -6,6 +6,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.ui.theme.NexaraTheme
 
+private val SamplePrompt = """
+    # 角色
+    你是 Nexara 的写作助手，帮助用户整理思路。
+
+    ## 规则
+    - 先给**结论**，再展开细节
+    - 引用资料时标注来源
+    - 不确定时直接说明，命令写成 `ls -la`
+
+    ## 输出格式
+    使用 Markdown，标题不超过三级。
+""".trimIndent()
+
 @PreviewTest
 @Preview(
     name = "Prompt editor compact large font",
@@ -31,6 +44,48 @@ fun unifiedPromptEditorCompactLargeFontPreview() {
 
 @PreviewTest
 @Preview(
+    name = "Prompt editor compact Chinese",
+    widthDp = 360,
+    heightDp = 720,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun unifiedPromptEditorCompactChinesePreview() {
+    NexaraTheme {
+        UnifiedPromptEditor(
+            show = true,
+            onDismiss = {},
+            onSave = { Result.success(Unit) },
+            initialText = SamplePrompt,
+            title = "系统提示词",
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Prompt editor split Chinese tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun unifiedPromptEditorSplitTabletPreview() {
+    NexaraTheme {
+        UnifiedPromptEditor(
+            show = true,
+            onDismiss = {},
+            onSave = { Result.success(Unit) },
+            initialText = SamplePrompt,
+            title = "系统提示词",
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "Prompt editor empty Chinese tablet",
     widthDp = 840,
     heightDp = 900,
@@ -45,6 +100,27 @@ fun unifiedPromptEditorEmptyTabletPreview() {
             onDismiss = {},
             onSave = { Result.success(Unit) },
             initialText = "",
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Prompt editor script light",
+    widthDp = 360,
+    heightDp = 640,
+    locale = "zh-rCN",
+)
+@Composable
+fun unifiedPromptEditorScriptPreview() {
+    NexaraTheme(darkTheme = false) {
+        UnifiedPromptEditor(
+            show = true,
+            onDismiss = {},
+            onSave = { Result.success(Unit) },
+            initialText = "#!/bin/sh\n# 每日备份\nset -e\ntar -czf backup.tgz ~/notes\necho done",
+            title = "backup.sh",
+            showPreviewTab = false,
         )
     }
 }

@@ -108,16 +108,14 @@ class UnifiedPromptEditorTest {
     }
 
     @Test
-    fun `行号画布不绑定第二个纵向滚动容器`() {
-        val editorPane = sourceFile().readText()
-            .substringAfter("fun EditorPane")
-            .substringBefore("fun PreviewPane")
-        val canvas = editorPane.substringAfter("Canvas(").substringBefore("BasicTextField(")
+    fun `编辑区只用输入框自身滚动且不再画行号`() {
+        val field = sourceFile().readText()
+            .substringAfter("private fun PromptEditorField")
+            .substringBefore("private fun promptSyntaxHighlight")
 
-        assertThat(canvas).doesNotContain("verticalScroll(")
-        assertThat(editorPane).contains("scrollState.value")
-        assertThat(editorPane).contains("scrollState = scrollState")
-        assertThat(editorPane).doesNotContain(".verticalScroll(scrollState)")
+        assertThat(field).contains("scrollState = rememberScrollState()")
+        assertThat(field).doesNotContain(".verticalScroll(")
+        assertThat(field).doesNotContain("Canvas(")
     }
 
     private fun sourceFile(): File {

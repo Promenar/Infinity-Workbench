@@ -345,7 +345,7 @@ Welcome 引导             ██████████ 100%   已完成
 | Token 仪表盘 | TokenUsageScreen（全局统计/会话排行/趋势图/模型明细）、费用估算 |
 | Agent 工具 | 18 内置工具 + MCP 动态扩展 + JS 沙箱 + 文件系统 + 联网搜索三引擎 + 审批增强 + 工具链 Fallback 兜底 |
 | HTML Artifacts | HtmlArtifactCard WebView 实时预览 + 全屏分屏模式 + PNG 导出 |
-| 提示词编辑器 | UnifiedPromptEditor（编辑/预览双模式、行号、字数统计、MD3 原生风格）|
+| 提示词编辑器 | UnifiedPromptEditor（整页编辑、窄屏编辑/预览切换与宽屏分栏、输入时 Markdown 高亮、格式工具条与撤销、词数统计）|
 | 测试覆盖 | 58 个测试文件，覆盖 Skill/ViewModel/Repository/RAG/Protocol/Domain 全链路 |
 | 本地推理引擎 | llama.cpp JNI 绑定、GGUF 解析、GPU 检测、模型下载管理、三槽位（Main/Embed/Rerank）|
 | 调试桥 | Nexara Metro 调试桥（Room QueryCallback Auditor + MetroLogInterceptor + MetroLoggingMiddleware + TUI 终端）|

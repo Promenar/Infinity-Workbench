@@ -174,7 +174,7 @@ class NavigationMotionContractTest {
             "rag/KnowledgeGraphPageParts.kt" to listOf("label = \"kg_search_phase\""),
             "chat/components/RecycleBinPanel.kt" to listOf("Modifier.animateItem()", "label = \"recycle_operation_icon\""),
             "chat/ResourceExplorerSheet.kt" to listOf("label = \"resource_explorer_recycle_phase\""),
-            "common/UnifiedPromptEditor.kt" to listOf("label = \"prompt_editor_tab\""),
+            "common/UnifiedPromptEditor.kt" to listOf("label = \"prompt_editor_view\""),
             "settings/ProviderModelsScreen.kt" to listOf("Box(Modifier.animateItem())", "label = \"provider_models_sync_icon\""),
             "settings/ProviderListScreen.kt" to listOf(".animateItem()", ".animateContentSize("),
             "settings/ProviderFormScreen.kt" to listOf("animatedFormItem(\"cloud-section\")"),
