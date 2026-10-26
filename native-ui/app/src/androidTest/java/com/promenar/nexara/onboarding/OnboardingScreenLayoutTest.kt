@@ -5,8 +5,8 @@ import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.then
@@ -14,13 +14,16 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraTheme
-import com.promenar.nexara.ui.welcome.WelcomeScreen
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.ui.theme.NexaraTheme
+import com.promenar.nexara.ui.welcome.OnboardingActions
+import com.promenar.nexara.ui.welcome.OnboardingScreen
+import com.promenar.nexara.ui.welcome.OnboardingTags
+import com.promenar.nexara.ui.welcome.OnboardingUiState
 import org.junit.Rule
 import org.junit.Test
 
-class WelcomeScreenLayoutTest {
+class OnboardingScreenLayoutTest {
     @get:Rule
     val rule = createComposeRule()
 
@@ -36,7 +39,7 @@ class WelcomeScreenLayoutTest {
                     DeviceConfigurationOverride.FontScale(2f),
             ) {
                 NexaraTheme {
-                    WelcomeScreen(onLanguageSelected = {})
+                    OnboardingScreen(OnboardingUiState(OnboardingStep.LANGUAGE), OnboardingActions())
                 }
             }
         }
@@ -60,18 +63,12 @@ class WelcomeScreenLayoutTest {
         }
         rule.setContent {
             NexaraTheme {
-                WelcomeScreen(
-                    onLanguageSelected = {},
-                    state = OnboardingState(
-                        step = OnboardingStep.MODEL,
-                        providerId = "provider",
-                    ),
-                    models = models,
-                )
+                OnboardingScreen(OnboardingUiState(OnboardingStep.MODEL, models = models), OnboardingActions())
             }
         }
 
-        rule.onNodeWithTag("onboarding_step_model").performScrollToIndex(500)
+        // 第 0 项是标题，模型从第 1 项开始。
+        rule.onNodeWithTag(OnboardingTags.MODEL_LIST).performScrollToIndex(500)
         rule.onNodeWithText("Model 499", substring = true).assertIsDisplayed()
     }
 }

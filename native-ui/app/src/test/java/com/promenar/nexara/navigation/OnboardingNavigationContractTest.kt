@@ -9,6 +9,7 @@ import org.junit.Test
 class OnboardingNavigationContractTest {
     private val navGraph = read("app/src/main/java/com/promenar/nexara/navigation/NavGraph.kt")
     private val mainActivity = read("app/src/main/java/com/promenar/nexara/MainActivity.kt")
+    private val onboardingRoute = read("app/src/main/java/com/promenar/nexara/ui/welcome/OnboardingRoute.kt")
 
     @Test
     fun `启动目的地只取Activity创建时的引导快照而不随首聊完成重建导航图`() {
@@ -28,7 +29,7 @@ class OnboardingNavigationContractTest {
 
     @Test
     fun `打开首次聊天前先建立主界面作为返回栈基座`() {
-        val firstChatHandler = functionBody(navGraph, "onOpenFirstChat =")
+        val firstChatHandler = functionBody(onboardingRoute, "onStartChat =")
 
         assertThat(firstChatHandler).contains("openOnboardingFirstChat")
         assertThat(firstChatHandler).doesNotContain("navController.navigate(")

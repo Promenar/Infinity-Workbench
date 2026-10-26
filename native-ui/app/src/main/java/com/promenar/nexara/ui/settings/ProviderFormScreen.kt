@@ -121,8 +121,6 @@ internal data class ProviderFormUiState(
     val connectionTestFailureMessage: String? = null,
     val isSaving: Boolean = false,
     val saveFailed: Boolean = false,
-    val localConnectionFailed: Boolean = false,
-    val onboardingMode: Boolean = false,
     /** 云端提供商的 API 源（公网或 Tailscale 内网）；本地推理为 null。 */
     val apiSource: ProviderApiSourceState? = null,
     val tailnetInfo: ProviderTailnetInfo = ProviderTailnetInfo(),
@@ -142,7 +140,6 @@ internal data class ProviderFormActions(
     val onTestConnection: () -> Unit = {},
     val onSave: () -> Unit = {},
     val onLocalPrimaryAction: () -> Unit = {},
-    val onOpenLocalModels: () -> Unit = {},
     val onApiSourceSelected: (ProviderApiSource) -> Unit = {},
     val onTailnetPeerSelected: (com.promenar.nexara.data.tailnet.TailnetPeer) -> Unit = {},
     val onOpenTailscaleSettings: () -> Unit = {},
@@ -196,7 +193,7 @@ val PROVIDER_PRESETS = listOf(
     ProviderPreset("Custom", ProtocolType.Generic_OpenAI_Compat, "", R.drawable.ic_provider_custom),
 )
 
-private val CUSTOM_PROTOCOL_OPTIONS = listOf(
+internal val CUSTOM_PROTOCOL_OPTIONS = listOf(
     ProtocolType.Generic_OpenAI_Compat,
     ProtocolType.Anthropic_Messages,
     ProtocolType.OpenAI_Responses,
@@ -208,14 +205,10 @@ internal const val PROVIDER_FORM_LIST_TAG = "provider_form_list"
 @Composable
 fun ProviderFormScreen(
     providerId: String? = null,
-    forceLocalProbeFailureForTesting: Boolean = false,
     onNavigateBack: () -> Unit,
     onOpenTailscaleSettings: () -> Unit = {},
     onNavigateToModels: () -> Unit = {},
     onNavigateToLocalModels: () -> Unit = {},
-    onboardingMode: Boolean = false,
-    onSaved: (String) -> Unit = {},
-    onConnectionVerified: (String) -> Unit = {},
     onSave: suspend (ProtocolType, String, CredentialUpdate, String, String?) -> String = { _, _, _, _, _ -> "" },
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -239,7 +232,6 @@ fun ProviderFormScreen(
     var originalUsesVertex by remember { mutableStateOf<Boolean?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
-    var localConnectionFailed by remember { mutableStateOf(false) }
     var unavailableLocalConfiguration by remember { mutableStateOf(false) }
     var localProtocol by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     var protocolMenuExpanded by remember { mutableStateOf(false) }
@@ -255,19 +247,7 @@ fun ProviderFormScreen(
 
     LaunchedEffect(providerId) {
         if (providerId != null) {
-            val config = if (forceLocalProbeFailureForTesting) {
-                ProviderSummary(
-                    id = providerId,
-                    name = "Local",
-                    protocolType = ProtocolType.Local,
-                    baseUrl = "",
-                    model = "",
-                    hasApiKey = false,
-                    hasVertexCredentials = false,
-                )
-            } else {
-                viewModel.getProviderSummary(providerId)
-            }
+            val config = viewModel.getProviderSummary(providerId)
             if (config != null) {
                 unavailableLocalConfiguration =
                     config.protocolType is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
@@ -348,17 +328,14 @@ fun ProviderFormScreen(
             saveFailed = false
             scope.launch {
                 try {
-                    val savedProviderId = onSave(
+                    onSave(
                         effectiveProtocol,
                         baseUrl,
                         credentialUpdate,
                         "",
                         name.ifBlank { null },
                     )
-                    onSaved(savedProviderId)
-                    if (onboardingMode) {
-                        onNavigateBack()
-                    } else if (providerId != null) {
+                    if (providerId != null) {
                         onNavigateToModels()
                     } else {
                         onNavigateBack()
@@ -456,7 +433,7 @@ fun ProviderFormScreen(
                     isSaving = true
                     saveFailed = false
                     try {
-                        val savedProviderId = persistVerifiedProviderConnection(
+                        persistVerifiedProviderConnection(
                             protocolType = effectiveProtocol,
                             baseUrl = baseUrl,
                             credential = credentialUpdate,
@@ -465,8 +442,6 @@ fun ProviderFormScreen(
                             onSave = onSave,
                             readSummary = viewModel::getProviderSummary,
                         )
-                        onConnectionVerified(savedProviderId)
-                        if (onboardingMode) onNavigateBack()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -483,51 +458,17 @@ fun ProviderFormScreen(
     val launchLocalPrimary: () -> Unit = {
         if (!isSaving) {
             scope.launch {
-                if (onboardingMode && providerId != null) {
-                    isSaving = true
-                    localConnectionFailed = false
-                    val probeState = if (forceLocalProbeFailureForTesting) {
-                        SlotState()
-                    } else {
-                        app.localInferenceEngine.mainSlot.value
-                    }
-                    val discoveredModels = localProviderModelsForConnection(probeState)
-                    if (discoveredModels.isEmpty()) {
-                        localConnectionFailed = true
-                        isSaving = false
-                        return@launch
-                    }
-                    try {
-                        val savedProviderId = onSave(
-                            ProtocolType.Local,
-                            "",
-                            CredentialUpdate.Preserve,
-                            discoveredModels.first(),
-                            "本地模型",
-                        )
-                        onConnectionVerified(savedProviderId)
-                        onNavigateBack()
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        localConnectionFailed = true
-                    } finally {
-                        isSaving = false
-                    }
-                    return@launch
-                }
                 isSaving = true
                 saveFailed = false
                 try {
-                    val savedProviderId = onSave(
+                    onSave(
                         ProtocolType.Local,
                         "",
                         CredentialUpdate.Preserve,
                         "",
                         "本地模型",
                     )
-                    onSaved(savedProviderId)
-                    if (onboardingMode) onNavigateBack() else onNavigateToLocalModels()
+                    onNavigateToLocalModels()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -563,8 +504,6 @@ fun ProviderFormScreen(
             connectionTestFailureMessage = connectionTestFailureMessage,
             isSaving = isSaving,
             saveFailed = saveFailed,
-            localConnectionFailed = localConnectionFailed,
-            onboardingMode = onboardingMode,
             apiSource = apiSource,
             tailnetInfo = ProviderTailnetInfo(
                 selfName = tailnetState.summary?.selfName,
@@ -623,7 +562,6 @@ fun ProviderFormScreen(
             onTestConnection = launchConnectionTest,
             onSave = launchSave,
             onLocalPrimaryAction = launchLocalPrimary,
-            onOpenLocalModels = onNavigateToLocalModels,
             onApiSourceSelected = { manualApiSource = it },
             onTailnetPeerSelected = { peer ->
                 com.promenar.nexara.data.tailnet.TailnetEndpoints.addressForPeer(peer, baseUrl)?.let { address ->
@@ -1005,37 +943,12 @@ private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFo
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (state.localConnectionFailed) {
-            TextButton(
-                onClick = actions.onLocalPrimaryAction,
-                enabled = !state.isSaving,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text(stringResource(R.string.provider_form_btn_test))
-            }
-            ProviderFormErrorText(stringResource(R.string.onboarding_local_model_unavailable))
-            Button(
-                onClick = actions.onOpenLocalModels,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text(stringResource(R.string.local_models_title))
-            }
-        } else {
-            Button(
-                onClick = actions.onLocalPrimaryAction,
-                enabled = !state.isSaving,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        if (state.onboardingMode && state.isExistingProvider) {
-                            R.string.provider_form_btn_test
-                        } else {
-                            R.string.local_models_title
-                        },
-                    ),
-                )
-            }
+        Button(
+            onClick = actions.onLocalPrimaryAction,
+            enabled = !state.isSaving,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) {
+            Text(stringResource(R.string.local_models_title))
         }
     }
 }

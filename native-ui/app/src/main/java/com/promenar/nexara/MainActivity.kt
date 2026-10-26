@@ -1,5 +1,6 @@
 package com.promenar.nexara
 
+import com.promenar.nexara.ui.welcome.offersOnboardingLinux
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -70,7 +71,9 @@ open class MainActivity : ComponentActivity() {
 
     private val appIntentRouter: AppIntentRouter
         get() = (application as NexaraApplication).appIntentRouter
-    private val onboardingStore by lazy { OnboardingStateStore(applicationContext) }
+    private val onboardingStore by lazy {
+        OnboardingStateStore(applicationContext, linuxOffered = (application as NexaraApplication).offersOnboardingLinux())
+    }
     private val durableShareInbox by lazy { DurableShareInbox.get(noBackupFilesDir) }
     private val shareIntentViewModel by viewModels<ShareIntentViewModel> {
         ShareIntentViewModel.factory(durableShareInbox, applicationContext.contentResolver)

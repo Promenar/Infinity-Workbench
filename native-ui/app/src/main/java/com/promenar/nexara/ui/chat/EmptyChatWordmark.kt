@@ -96,8 +96,46 @@ internal fun Modifier.trackWordmarkPointer(pointer: WordmarkPointer): Modifier {
 
 @Composable
 internal fun EmptyChatWordmark(dispersed: Boolean, pointer: WordmarkPointer, modifier: Modifier = Modifier) {
-    val wordmark = stringResource(R.string.brand_wordmark)
     val prompt = stringResource(R.string.chat_empty_prompt)
+    BoxWithConstraints(modifier.fillMaxSize().testTag(UiTags.CHAT_EMPTY_WORDMARK)) {
+        val centerY = constraints.maxHeight * WordmarkCenterFraction
+        ParticleWordmark(dispersed = dispersed, pointer = pointer, modifier = Modifier.fillMaxSize())
+
+        val promptAlpha by animateFloatAsState(if (dispersed) 0f else 1f, tween(500), label = "empty_prompt_alpha")
+        val promptTop by animateDpAsState(with(LocalDensity.current) { centerY.toDp() } + 56.dp, label = "empty_prompt_top")
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .offset(y = promptTop)
+                .padding(horizontal = 24.dp)
+                .alpha(promptAlpha),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Text(
+                text = prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * 粒子字标画布：会话空态与首次引导共用。粒子飞入拼成品牌字标并轻微呼吸，[dispersed] 时散成流场，复原时重新聚拢；
+ * [pointer] 非空时手指按住划过让开。系统关闭动画或静态预览时直接显示静止的字标。纯装饰，不进入无障碍树。
+ */
+@Composable
+internal fun ParticleWordmark(
+    dispersed: Boolean,
+    modifier: Modifier = Modifier,
+    pointer: WordmarkPointer? = null,
+    centerFraction: Float = WordmarkCenterFraction,
+    maxTextSizeDp: Float = WordmarkMaxTextSizeDp,
+    logoLimit: Int = WordmarkLogoLimit,
+    ambientCount: Int = WordmarkAmbientCount,
+) {
+    val wordmark = stringResource(R.string.brand_wordmark)
     val density = LocalDensity.current.density
     val inspection = LocalInspectionMode.current
     val animate = rememberAnimationsEnabled() && !inspection
@@ -105,20 +143,21 @@ internal fun EmptyChatWordmark(dispersed: Boolean, pointer: WordmarkPointer, mod
     val (primary, tertiary) = composerGlowColors()
     val secondary = MaterialTheme.colorScheme.secondary.let { if (dark) it else vividAccent(it) }
     val palette = remember(primary, tertiary, secondary) { intArrayOf(primary.toArgb(), tertiary.toArgb(), secondary.toArgb()) }
+    val shape = remember(maxTextSizeDp, logoLimit, ambientCount) { WordmarkShape(maxTextSizeDp, logoLimit, ambientCount) }
 
-    BoxWithConstraints(modifier.fillMaxSize().testTag(UiTags.CHAT_EMPTY_WORDMARK)) {
+    BoxWithConstraints(modifier) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
-        val centerY = heightPx * WordmarkCenterFraction
+        val centerY = heightPx * centerFraction
         // 只按宽度重建：高度随键盘和输入框变化，交给 recenter 平移，粒子不会因此重置。
         // 静态预览同步生成，截图才有确定内容；运行时放到后台线程。
-        val preview = remember(wordmark, widthPx, density) {
-            if (inspection) buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density).also { it.settle() } else null
+        val preview = remember(wordmark, widthPx, density, shape) {
+            if (inspection) buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density, shape).also { it.settle() } else null
         }
-        val particles by produceState(preview, wordmark, widthPx, density) {
+        val particles by produceState(preview, wordmark, widthPx, density, shape) {
             if (value == null) {
                 value = withContext(Dispatchers.Default) {
-                    buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density)
+                    buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density, shape)
                 }
             }
         }
@@ -148,7 +187,9 @@ internal fun EmptyChatWordmark(dispersed: Boolean, pointer: WordmarkPointer, mod
                     if (last > 0) {
                         val delta = (now - last) / 1_000_000_000f
                         time += delta
-                        system.step(delta, time, pointer.root[0] - origin[0], pointer.root[1] - origin[1])
+                        val pointerX = pointer?.let { it.root[0] - origin[0] } ?: Float.NaN
+                        val pointerY = pointer?.let { it.root[1] - origin[1] } ?: Float.NaN
+                        system.step(delta, time, pointerX, pointerY)
                     }
                     last = now
                     frame = now
@@ -203,26 +244,11 @@ internal fun EmptyChatWordmark(dispersed: Boolean, pointer: WordmarkPointer, mod
                 }
             }
         }
-
-        val promptAlpha by animateFloatAsState(if (dispersed) 0f else 1f, tween(500), label = "empty_prompt_alpha")
-        val promptTop by animateDpAsState(with(LocalDensity.current) { centerY.toDp() } + 56.dp, label = "empty_prompt_top")
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .offset(y = promptTop)
-                .padding(horizontal = 24.dp)
-                .alpha(promptAlpha),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Text(
-                text = prompt,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
     }
 }
+
+/** 字标的字号上限与粒子数量。 */
+private data class WordmarkShape(val maxTextSizeDp: Float, val logoLimit: Int, val ambientCount: Int)
 
 /** 按层：远、中、近三层环境粒子，最后一项是字标粒子。 */
 private val ParticleSizeDp = floatArrayOf(0.7f, 1.1f, 1.7f, 1.6f)
@@ -235,6 +261,7 @@ private fun buildWordmarkParticles(
     heightPx: Float,
     centerY: Float,
     density: Float,
+    shape: WordmarkShape,
 ): WordmarkParticles {
     val width = (widthPx / density).toInt().coerceAtLeast(1)
     val height = (heightPx / density).toInt().coerceAtLeast(1)
@@ -243,7 +270,7 @@ private fun buildWordmarkParticles(
         letterSpacing = 0.12f
         textAlign = Paint.Align.CENTER
     }
-    paint.textSize = fitWordmarkTextSize({ size -> paint.textSize = size; paint.measureText(wordmark) }, width * 0.78f, WordmarkMaxTextSizeDp)
+    paint.textSize = fitWordmarkTextSize({ size -> paint.textSize = size; paint.measureText(wordmark) }, width * 0.78f, shape.maxTextSizeDp)
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
     val metrics = paint.fontMetrics
     val baseline = centerY / density - (metrics.ascent + metrics.descent) / 2f
@@ -251,7 +278,7 @@ private fun buildWordmarkParticles(
     val alpha = ByteArray(width * height)
     bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(alpha))
     bitmap.recycle()
-    val targets = sampleWordmarkTargets(alpha, width, height, WordmarkSampleStepDp, WordmarkLogoLimit)
+    val targets = sampleWordmarkTargets(alpha, width, height, WordmarkSampleStepDp, shape.logoLimit)
     for (i in targets.indices) targets[i] *= density
-    return WordmarkParticles(targets, WordmarkAmbientCount, widthPx, heightPx, density).also { it.recenter(centerY, heightPx) }
+    return WordmarkParticles(targets, shape.ambientCount, widthPx, heightPx, density).also { it.recenter(centerY, heightPx) }
 }

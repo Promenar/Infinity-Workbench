@@ -268,43 +268,6 @@ class ProviderFormInteractionTest {
     }
 
     @Test
-    fun localOnboardingFailureKeepsRecoveryActionReachable() {
-        val primary = AtomicInteger()
-        val recovery = AtomicInteger()
-        rule.setContent {
-            NexaraTheme {
-                ProviderFormContent(
-                    state = ProviderFormUiState(
-                        isEditing = true,
-                        isExistingProvider = true,
-                        name = "Local",
-                        selectedPreset = PROVIDER_PRESETS.first { it.name == "Local" },
-                        isLocal = true,
-                        onboardingMode = true,
-                        localConnectionFailed = true,
-                    ),
-                    actions = ProviderFormActions(
-                        onLocalPrimaryAction = { primary.incrementAndGet() },
-                        onOpenLocalModels = { recovery.incrementAndGet() },
-                    ),
-                )
-            }
-        }
-
-        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
-            .performScrollTo()
-            .assertIsEnabled()
-            .performClick()
-        rule.onNodeWithText(resources.getString(R.string.local_models_title))
-            .performScrollTo()
-            .assertHeightIsAtLeast(48.dp)
-            .performClick()
-
-        assertThat(primary.get()).isEqualTo(1)
-        assertThat(recovery.get()).isEqualTo(1)
-    }
-
-    @Test
     fun allCloudFieldsAndActionsRemainReachableAt360By800WithTwoXFontScale() {
         rule.setContent {
             val density = LocalDensity.current

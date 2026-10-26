@@ -5,6 +5,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -32,7 +33,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assume.assumeTrue
-import org.junit.BeforeClass
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 
 /**
  * 真实 Activity/Compose 设备端首次引导回归。
@@ -41,8 +43,18 @@ import org.junit.BeforeClass
  * `adb shell am force-stop` 再以保留数据方式运行验证入口；本类自身不把 JVM 重建冒充进程死亡。
  */
 class OnboardingAndroidEndToEndTest {
-    @get:Rule
     val rule = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * 每个测试的 Activity 启动前先清空引导检查点：否则上一个测试完成引导后，新 Activity 直接进入主界面，
+     * 之后的 recreate 会恢复主界面的返回栈而不再回到欢迎页。
+     */
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(object : ExternalResource() {
+        override fun before() {
+            if (InstrumentationRegistry.getArguments().getString("onboardingPhase") == null) clearPersistentPreferences()
+        }
+    }).around(rule)
     private var originalProviderSummary: com.promenar.nexara.data.model.ProviderSummary? = null
     private var originalMainSlot: com.promenar.nexara.data.local.inference.SlotState? = null
     private var originalChatState: com.promenar.nexara.ui.chat.ChatState? = null
@@ -96,6 +108,13 @@ class OnboardingAndroidEndToEndTest {
         rule.onNodeWithTag("onboarding_step_language").assertIsDisplayed()
         rule.activity.intent.putExtra(MainActivity.EXTRA_ONBOARDING_EMPTY_MODELS_FOR_TESTING, true)
         rule.onNodeWithText("English").performClick()
+        if (rule.activity.onboardingStateStoreForTesting().linuxOffered) {
+            // sideload arm64 先出现 Linux 步骤；跳过后进入连接页，且跳过状态需经得起重建。
+            waitForStep(OnboardingStep.LINUX)
+            recreateAndAssert(OnboardingStep.LINUX, "onboarding_step_linux")
+            waitForTag("onboarding_linux_skip")
+        rule.onNodeWithTag("onboarding_linux_skip").performClick()
+        }
         waitForStep(OnboardingStep.PROVIDER)
         rule.activityRule.scenario.recreate()
         rule.waitUntil(timeoutMillis = 10_000) {
@@ -103,18 +122,12 @@ class OnboardingAndroidEndToEndTest {
         }
         rule.onNodeWithText("Connect an AI provider").assertIsDisplayed()
         rule.onNodeWithTag("onboarding_step_provider").assertIsDisplayed()
+        // 合并后的连接页只有一个连接按钮，不再出现第二个“测试连接”步骤。
+        rule.onAllNodesWithTag("onboarding_provider_connect").assertCountEquals(1)
+        rule.onAllNodesWithText(rule.activity.getString(R.string.provider_form_btn_test)).assertCountEquals(0)
 
         rule.runOnIdle {
-            check(rule.activity.onboardingStateStoreForTesting().recordProviderSaved("provider-test"))
-        }
-        waitForStep(OnboardingStep.CONNECTION)
-        recreateAndAssert(OnboardingStep.CONNECTION, "onboarding_step_connection")
-
-        rule.runOnIdle {
-            check(
-                rule.activity.onboardingStateStoreForTesting()
-                    .recordConnectionResult("provider-test", succeeded = true)
-            )
+            check(rule.activity.onboardingStateStoreForTesting().recordProviderConnected("provider-test"))
         }
         waitForStep(OnboardingStep.MODEL)
         recreateAndAssert(OnboardingStep.MODEL, "onboarding_step_model")
@@ -123,7 +136,7 @@ class OnboardingAndroidEndToEndTest {
         rule.onAllNodesWithTag("onboarding_model_option").assertCountEquals(0)
         rule.onNodeWithTag("onboarding_model_empty").assertIsDisplayed()
         rule.onNodeWithTag("onboarding_model_refresh").assertIsDisplayed()
-        rule.onNodeWithTag("onboarding_model_back_connection").assertIsDisplayed()
+        rule.onNodeWithTag("onboarding_model_back_provider").assertIsDisplayed()
         assertStep(OnboardingStep.MODEL)
         recreateAndAssert(OnboardingStep.MODEL, "onboarding_step_model")
         rule.runOnIdle {
@@ -260,7 +273,7 @@ class OnboardingAndroidEndToEndTest {
     }
 
     @Test
-    fun localProviderRespectsBuildCapabilityAndStaysOnConnection() {
+    fun localProviderRespectsBuildCapabilityAndStaysOnProvider() {
         assumeTrue("常规E2E不在force-stop分阶段模式运行", phaseArgument() == null)
         val app = rule.activity.application as NexaraApplication
         rule.activity.intent.putExtra(MainActivity.EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING, true)
@@ -269,27 +282,28 @@ class OnboardingAndroidEndToEndTest {
         rule.runOnIdle {
             val store = rule.activity.onboardingStateStoreForTesting()
             check(store.selectLanguage("zh"))
-            check(store.recordProviderSaved("default"))
+            if (store.linuxOffered) check(store.completeLinuxStep())
         }
-        waitForStep(OnboardingStep.CONNECTION)
-        rule.onNodeWithTag("onboarding_step_connection").assertIsDisplayed()
-        rule.onNodeWithText(rule.activity.getString(R.string.onboarding_connection_action)).performClick()
+        waitForStep(OnboardingStep.PROVIDER)
+        waitForTag("onboarding_service_more")
+        rule.onNodeWithTag("onboarding_service_more").performScrollTo().performClick()
+        waitForTag("onboarding_service_list")
+        rule.onNodeWithTag("onboarding_service_list").assertIsDisplayed()
+        val localTag = "onboarding_service_sheet_Local"
         if (app.localInferenceRuntimeGate.isAvailable) {
-            rule.onNodeWithText(rule.activity.getString(R.string.provider_form_btn_test)).performClick()
-            rule.onNodeWithText(rule.activity.getString(R.string.onboarding_local_model_unavailable))
-                .assertIsDisplayed()
-        } else {
-            val unavailableMessage = rule.activity.getString(R.string.local_inference_release_unavailable)
+            rule.onNodeWithTag("onboarding_service_list").performScrollToNode(hasTestTag(localTag))
+            rule.onNodeWithTag(localTag).performClick()
+            rule.onNodeWithTag("onboarding_provider_connect").performClick()
+            val unavailable = rule.activity.getString(R.string.onboarding_local_model_unavailable)
             rule.waitUntil(timeoutMillis = 10_000) {
-                rule.onAllNodesWithText(unavailableMessage).fetchSemanticsNodes().isNotEmpty()
+                rule.onAllNodesWithText(unavailable).fetchSemanticsNodes().isNotEmpty()
             }
-            rule.onNodeWithText(unavailableMessage)
-                .performScrollTo()
-                .assertIsDisplayed()
-            rule.onAllNodesWithText(rule.activity.getString(R.string.onboarding_local_model_unavailable))
-                .assertCountEquals(0)
+            rule.onNodeWithText(unavailable).performScrollTo().assertIsDisplayed()
+        } else {
+            // 不带本地推理的构建不提供本地选项，也就不会走到缺少模型的分支。
+            rule.onAllNodesWithTag(localTag).assertCountEquals(0)
         }
-        assertStep(OnboardingStep.CONNECTION)
+        assertStep(OnboardingStep.PROVIDER)
     }
 
     @Test
@@ -302,8 +316,8 @@ class OnboardingAndroidEndToEndTest {
                 val store = rule.activity.onboardingStateStoreForTesting()
                 rule.runOnIdle {
                     check(store.selectLanguage("zh"))
-                    check(store.recordProviderSaved("provider-force-stop"))
-                    check(store.recordConnectionResult("provider-force-stop", succeeded = true))
+                    if (store.linuxOffered) check(store.completeLinuxStep())
+                    check(store.recordProviderConnected("provider-force-stop"))
                     check(store.selectModel("provider-force-stop::model"))
                     check(store.recordAgentCreated("agent-force-stop", "session-force-stop"))
                 }
@@ -335,6 +349,13 @@ class OnboardingAndroidEndToEndTest {
         }
     }
 
+    /** 检查点先于转场动画落定，操作控件前等它真正出现在界面上。 */
+    private fun waitForTag(tag: String) {
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
     private fun assertStep(step: OnboardingStep) {
         rule.runOnIdle { assertEquals(step, rule.activity.onboardingStateForTesting().step) }
     }
@@ -355,10 +376,7 @@ class OnboardingAndroidEndToEndTest {
         .getString("onboardingPhase")
 
     companion object {
-        @JvmStatic
-        @BeforeClass
-        fun resetBeforeInitialActivityLaunch() {
-            if (InstrumentationRegistry.getArguments().getString("onboardingPhase") != null) return
+        private fun clearPersistentPreferences() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             context.getSharedPreferences(OnboardingStateStore.PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .edit().clear().commit()

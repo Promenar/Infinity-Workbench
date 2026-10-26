@@ -25,18 +25,17 @@ class OnboardingEndToEndTest {
 
     @Test
     fun 首次引导_重建后恢复并且只有成功首聊才完成() {
-        var store = OnboardingStateStore(context)
+        var store = OnboardingStateStore(context, linuxOffered = true)
         assertTrue(store.selectLanguage("zh"))
-        assertTrue(store.recordProviderSaved("default"))
 
-        // 模拟 Activity 旋转或进程重建：必须恢复到尚未完成的连接检查。
-        store = OnboardingStateStore(context)
-        assertEquals(OnboardingStep.CONNECTION, store.state.value.step)
-        assertEquals("default", store.state.value.providerId)
+        // 模拟 Activity 旋转或进程重建：必须恢复到尚未完成的 Linux 步骤。
+        store = OnboardingStateStore(context, linuxOffered = true)
+        assertEquals(OnboardingStep.LINUX, store.state.value.step)
+        assertTrue(store.completeLinuxStep())
 
-        assertFalse(store.recordConnectionResult("default", succeeded = false))
-        assertEquals(OnboardingStep.CONNECTION, store.state.value.step)
-        assertTrue(store.recordConnectionResult("default", succeeded = true))
+        store = OnboardingStateStore(context, linuxOffered = true)
+        assertEquals(OnboardingStep.PROVIDER, store.state.value.step)
+        assertTrue(store.recordProviderConnected("default"))
         assertFalse(store.selectModel(null))
         assertEquals(OnboardingStep.MODEL, store.state.value.step)
         assertTrue(store.selectModel("default::model"))
@@ -45,6 +44,6 @@ class OnboardingEndToEndTest {
         assertFalse(store.recordFirstChatResult("session-1", assistantSucceeded = false))
         assertEquals(OnboardingStep.FIRST_CHAT, store.state.value.step)
         assertTrue(store.recordFirstChatResult("session-1", assistantSucceeded = true))
-        assertEquals(OnboardingStep.COMPLETED, OnboardingStateStore(context).state.value.step)
+        assertEquals(OnboardingStep.COMPLETED, OnboardingStateStore(context, linuxOffered = true).state.value.step)
     }
 }
