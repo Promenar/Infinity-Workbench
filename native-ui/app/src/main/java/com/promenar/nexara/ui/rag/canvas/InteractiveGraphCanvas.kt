@@ -1,11 +1,8 @@
 package com.promenar.nexara.ui.rag.canvas
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -14,50 +11,54 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PointMode
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.VectorPainter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.IntSize
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.rag.GraphEdge
 import com.promenar.nexara.ui.testing.UiTags
-import androidx.compose.material3.MaterialTheme
-import com.promenar.nexara.ui.theme.NexaraTypography
-import kotlin.math.max
-import kotlin.math.sqrt
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
+/**
+ * 知识图谱画布：同一圆形节点以类型色描边、浅底与内部图标区分类型，关系多的枢纽带一圈轨道；
+ * 连线为轻弧线，终点外侧的小圆点表示方向。轻点实体选中、轻点空白取消，单指拖动实体或平移，双指缩放。
+ *
+ * 只在布局仿真或交互时重绘；标签、关系名与角标画在屏幕坐标里，缩放时字号不变。
+ */
 @Composable
 fun InteractiveGraphCanvas(
     simulator: GraphPhysicsSimulator,
@@ -66,344 +67,355 @@ fun InteractiveGraphCanvas(
     gestureSummary: String = "",
     modifier: Modifier = Modifier,
     resetKey: Int = 0,
+    highlight: KgCanvasHighlight = KgCanvasHighlight(),
+    /** 需要居中显示的实体（例如搜索选中）；[centerRequestKey] 变化时执行一次。 */
+    centerOnNodeId: String? = null,
+    centerRequestKey: Int = 0,
+    /** 居中时实体在画布中的纵向位置比例，底部被面板遮挡时调小。 */
+    centerFraction: Float = 0.5f,
+    onNodeTap: (String) -> Unit = {},
+    onBackgroundTap: () -> Unit = {},
 ) {
     var scale by remember { mutableFloatStateOf(1.0f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var hasUserTransform by remember { mutableStateOf(false) }
+    val densityPx = LocalDensity.current.density
+    // 边缘留出节点、轨道环与标签的位置。
+    val fitPaddingPx = 44f * densityPx
 
     fun fitView() {
-        val fitted = fitGraphToViewport(simulator.nodesState.map { Offset(it.x, it.y) }, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+        val fitted = fitGraphToViewport(simulator.nodesState.map { Offset(it.x, it.y) }, canvasSize.width.toFloat(), canvasSize.height.toFloat(), fitPaddingPx)
         scale = fitted.scale
         offset = fitted.offset
     }
-    LaunchedEffect(simulator, simulator.datasetVersion, canvasSize, resetKey) {
+    LaunchedEffect(simulator, simulator.datasetVersion, resetKey) {
         hasUserTransform = false
         fitView()
     }
-    LaunchedEffect(simulator.isSimulating) {
-        if (!simulator.isSimulating && !hasUserTransform) fitView()
+    // 轮次条、键盘出现收起会改变画布尺寸；用户已调整的视角保持不动。
+    LaunchedEffect(canvasSize) {
+        if (!hasUserTransform) fitView()
+    }
+    // 布局展开的十几秒里持续跟随适配，用户平移缩放或拖动后不再接管视角。
+    LaunchedEffect(simulator, canvasSize) {
+        snapshotFlow { simulator.nodesState }.collect { if (!hasUserTransform) fitView() }
+    }
+    val currentCenterFraction by rememberUpdatedState(centerFraction)
+    LaunchedEffect(centerRequestKey) {
+        val node = centerOnNodeId?.let { simulator.nodesById[it] } ?: return@LaunchedEffect
+        if (canvasSize == IntSize.Zero) return@LaunchedEffect
+        hasUserTransform = true
+        val fromScale = scale
+        val fromOffset = offset
+        // 保持当前缩放，邻居仍在视野内；只在缩得过小时放大到能看清。
+        val toScale = maxOf(scale, 0.35f)
+        val toOffset = Offset(canvasSize.width / 2f, canvasSize.height * currentCenterFraction) - Offset(node.x, node.y) * toScale
+        animate(0f, 1f, animationSpec = tween(320)) { t, _ ->
+            scale = fromScale + (toScale - fromScale) * t
+            offset = fromOffset + (toOffset - fromOffset) * t
+        }
     }
 
-    val animationScope = rememberCoroutineScope()
-    val motionScale = animationScope.coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
-    val decorativePulseEnabled = shouldAnimateDecorativePulse(motionScale, simulator.isVisible, simulator.isSimulating)
-    val particlePhase = if (decorativePulseEnabled) {
-        val infiniteTransition = rememberInfiniteTransition(label = "particlePulse")
-        val phase by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 2800, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "phase"
-        )
-        phase
-    } else {
-        0f
-    }
+    val degrees = remember(edges) { kgDegrees(edges) }
+    val currentDegrees by rememberUpdatedState(degrees)
+    val currentOnNodeTap by rememberUpdatedState(onNodeTap)
+    val currentOnBackgroundTap by rememberUpdatedState(onBackgroundTap)
 
-    // 矢量图标画家缓存
-    val psychologyPainter = rememberVectorPainter(Icons.Rounded.Psychology)
-    val descriptionPainter = rememberVectorPainter(Icons.Rounded.Description)
-    val personPainter = rememberVectorPainter(Icons.Rounded.Person)
-    val hubPainter = rememberVectorPainter(Icons.Rounded.Hub)
-
+    val palette = kgEntityPalette()
+    val painters = KgEntityKind.entries.associateWith { rememberVectorPainter(it.icon) }
     val density = LocalDensity.current
-    val colorScheme = MaterialTheme.colorScheme
-    val textPaint = remember(density, colorScheme.onSurface) {
-        android.graphics.Paint().apply {
-            isAntiAlias = true
-            textSize = with(density) { 10.sp.toPx() }
-            color = colorScheme.onSurface.toArgb()
-            textAlign = android.graphics.Paint.Align.CENTER
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        }
-    }
-
-    val edgeTextPaint = remember(density, colorScheme.onSurfaceVariant) {
-        android.graphics.Paint().apply {
-            isAntiAlias = true
-            textSize = with(density) { 8.sp.toPx() }
-            color = colorScheme.onSurfaceVariant.toArgb()
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
-    }
-
-    val colorMap = remember(colorScheme) {
-        mapOf(
-            "concept" to (colorScheme.primary to colorScheme.onPrimary),
-            "document" to (colorScheme.tertiary to colorScheme.onTertiary),
-            "person" to (colorScheme.secondary to colorScheme.onSecondary),
-            "organization" to (colorScheme.primaryContainer to colorScheme.onPrimaryContainer),
-            "location" to (colorScheme.error to colorScheme.onError),
-            "event" to (colorScheme.secondaryContainer to colorScheme.onSecondaryContainer),
-            "other" to (colorScheme.outline to colorScheme.surface)
-        )
-    }
-    val gridColor = colorScheme.outlineVariant.copy(alpha = 0.18f)
-    val edgeColor = colorScheme.outline.copy(alpha = 0.35f)
-    val pulseColor = colorScheme.primary.copy(alpha = 0.55f)
-    val nodeOutlineColor = colorScheme.onSurface.copy(alpha = 0.8f)
+    val colors = MaterialTheme.colorScheme
+    val domain = MaterialTheme.nexaraDomainColors
+    val background = colors.background
+    val newBadge = stringResource(R.string.kg_entity_new_badge)
+    val paints = remember(density, colors, domain) { KgTextPaints(density.density, density.fontScale, colors.onSurface, colors.onSurfaceVariant, background, domain.onWarning) }
+    val gridColor = colors.outlineVariant.copy(alpha = if (domain.isDark) 0.35f else 0.6f)
+    val edgeColor = colors.outline.copy(alpha = 0.32f)
+    val dimEdgeColor = colors.outline.copy(alpha = 0.08f)
+    val selectionRing = colors.onSurface
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { canvasSize = it }
-            .background(MaterialTheme.colorScheme.background)
+            .background(background)
             .semantics(mergeDescendants = true) {
                 contentDescription = listOf(summary, gestureSummary)
                     .filter { it.isNotBlank() }
                     .joinToString(" ")
             }
             .testTag(UiTags.KG_CANVAS)
-            // 🧠 部署极致无冲突手势控制器：单指高敏感拖曳节点/平移，多指无缝 focal-point 缩放
             .pointerInput(simulator) {
+                val slop = viewConfiguration.touchSlop
+                val touchRadius = 48.dp.toPx()
                 awaitEachGesture {
-                    var activeDraggedNodeId: String? = null
-                    var isPanning = false
-
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    val mappedDown = (down.position - offset) / scale
-
-                    // 检索触碰范围内的节点 (点击半径 32dp ~ 80px)
-                    val clickedNode = simulator.nodesState.find { simNode ->
-                        val dx = simNode.x - mappedDown.x
-                        val dy = simNode.y - mappedDown.y
-                        sqrt(dx * dx + dy * dy) < 40f
-                    }
-
-                    if (clickedNode != null) {
-                        activeDraggedNodeId = clickedNode.id
-                        simulator.startDragging(clickedNode.id)
-                    } else {
-                        isPanning = true
-                    }
-
+                    val hit = kgHitTest(simulator.nodesState, currentDegrees, down.position, scale, offset, touchRadius) { kgNodeScreenRadius(it, scale, densityPx) }
+                    var moved = false
+                    var dragging = false
+                    var travelled = Offset.Zero
                     do {
                         val event = awaitPointerEvent()
-                        val canceled = event.changes.any { it.isConsumed }
-                        if (!canceled) {
-                            if (event.changes.size == 1) {
-                                // 单指追踪
-                                val change = event.changes.first()
-                                if (change.pressed) {
-                                    val dragAmount = change.position - change.previousPosition
-                                    val currentDrag = activeDraggedNodeId?.let { simulator.nodesById[it] }
-                                    if (currentDrag != null) {
-                                        hasUserTransform = true
-                                        change.consume()
-                                        val newX = currentDrag.x + dragAmount.x / scale
-                                        val newY = currentDrag.y + dragAmount.y / scale
-                                        simulator.updateDragPosition(currentDrag.id, Offset(newX, newY))
-                                    } else if (isPanning) {
-                                        hasUserTransform = true
-                                        change.consume()
-                                        offset += dragAmount
-                                    }
-                                }
-                            } else if (event.changes.size >= 2) {
-                                // 双指缩放平移，瞬间释放任何被拖拽节点的锁定
-                                activeDraggedNodeId?.let { simulator.stopDragging(it) }
-                                activeDraggedNodeId = null
-                                isPanning = false
+                        if (event.changes.any { it.isConsumed }) continue
+                        if (event.changes.size == 1) {
+                            val change = event.changes.first()
+                            if (!change.pressed) continue
+                            val delta = change.position - change.previousPosition
+                            travelled += delta
+                            if (!moved && travelled.getDistance() > slop) {
+                                moved = true
                                 hasUserTransform = true
-
-                                val centroid = event.calculateCentroid(useCurrent = true)
-                                val pan = event.calculatePan()
-                                val zoom = event.calculateZoom()
-
-                                if (zoom != 1f) {
-                                    val oldScale = scale
-                                    scale = (scale * zoom).coerceIn(0.001f, 4.0f)
-                                    // 矩阵缩放聚焦质心计算
-                                    offset = centroid - (centroid - offset) * (scale / oldScale)
+                                if (hit != null) {
+                                    dragging = true
+                                    simulator.startDragging(hit.id)
                                 }
-                                offset += pan
-                                event.changes.forEach { it.consume() }
                             }
+                            if (!moved) continue
+                            change.consume()
+                            val dragged = if (dragging) hit?.let { simulator.nodesById[it.id] } else null
+                            if (dragged != null) {
+                                simulator.updateDragPosition(dragged.id, Offset(dragged.x + delta.x / scale, dragged.y + delta.y / scale))
+                            } else if (!dragging) {
+                                offset += delta
+                            }
+                        } else {
+                            // 双指缩放平移时释放被拖动的实体。
+                            if (dragging && hit != null) simulator.stopDragging(hit.id)
+                            dragging = false
+                            moved = true
+                            hasUserTransform = true
+                            val centroid = event.calculateCentroid(useCurrent = true)
+                            val zoom = event.calculateZoom()
+                            if (zoom != 1f) {
+                                val oldScale = scale
+                                scale = (scale * zoom).coerceIn(0.001f, 4.0f)
+                                offset = centroid - (centroid - offset) * (scale / oldScale)
+                            }
+                            offset += event.calculatePan()
+                            event.changes.forEach { it.consume() }
                         }
                     } while (event.changes.any { it.pressed })
-
-                    activeDraggedNodeId?.let { simulator.stopDragging(it) }
-                    activeDraggedNodeId = null
+                    if (dragging && hit != null) simulator.stopDragging(hit.id)
+                    if (!moved) {
+                        if (hit != null) currentOnNodeTap(hit.id) else currentOnBackgroundTap()
+                    }
                 }
-            }
+            },
     ) {
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val canvasWidth = size.width
-            val canvasHeight = size.height
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawDotGrid(gridColor, offset, scale)
+            val nodes = simulator.nodesState
+            val nodesById = simulator.nodesById
+            val resolver = KgHighlightResolver(highlight, edges) { id -> nodesById[id]?.let { KgEntityKind.of(it.type) } }
+            val kindById = HashMap<String, KgEntityKind>(nodes.size)
+            nodes.forEach { kindById[it.id] = KgEntityKind.of(it.type) }
 
-            // 1. 绘制科幻宇宙空间微光网格背景
-            val gridSpacing = (85f * scale).coerceAtLeast(24f)
-            val startX = offset.x % gridSpacing
-            val startY = offset.y % gridSpacing
+            // 视口反算到布局坐标，留出缓冲避免边缘生硬裁切。
+            val margin = 120f
+            val viewport = Rect(
+                -offset.x / scale - margin, -offset.y / scale - margin,
+                (size.width - offset.x) / scale + margin, (size.height - offset.y) / scale + margin,
+            )
+            val hair = 1f / scale
+            val dp = densityPx * hair
+            fun screenRadius(degree: Int) = kgNodeScreenRadius(degree, scale, densityPx)
+            fun layoutRadius(degree: Int) = screenRadius(degree) * hair
 
-            for (x in generateSequence(startX) { it + gridSpacing }.takeWhile { it < canvasWidth }) {
-                drawLine(
-                    color = gridColor,
-                    start = Offset(x, 0f),
-                    end = Offset(x, canvasHeight),
-                    strokeWidth = 1f
-                )
-            }
-            for (y in generateSequence(startY) { it + gridSpacing }.takeWhile { it < canvasHeight }) {
-                drawLine(
-                    color = gridColor,
-                    start = Offset(0f, y),
-                    end = Offset(canvasWidth, y),
-                    strokeWidth = 1f
-                )
-            }
-
-            // 2. 进入硬件加速的 GPU 全局缩放平移视图转换层
             withTransform({
                 translate(offset.x, offset.y)
                 scale(scale, scale, pivot = Offset.Zero)
             }) {
-                val currentNodes = simulator.nodesState
-                val currentNodesById = simulator.nodesById
-
-                // 计算当前屏幕视口反向映射到虚拟物理坐标系下的可见边界（带 120 像素安全渲染缓冲区以防过渡生硬）
-                val padding = 120f
-                val viewLeft = -offset.x / scale - padding
-                val viewRight = (canvasWidth - offset.x) / scale + padding
-                val viewTop = -offset.y / scale - padding
-                val viewBottom = (canvasHeight - offset.y) / scale + padding
-                val viewport = Rect(viewLeft, viewTop, viewRight, viewBottom)
-
-                // --- A. 绘制关系连线与脉冲粒子流动 ---
+                // 普通与淡出的线各合成一条路径一次绘制；着色强调的线单独绘制。
+                val normalPath = Path()
+                val dimPath = Path()
                 edges.forEach { edge ->
-                    val sourceNode = currentNodesById[edge.sourceId]
-                    val targetNode = currentNodesById[edge.targetId]
-                    if (sourceNode != null && targetNode != null) {
-                        val start = Offset(sourceNode.x, sourceNode.y)
-                        val end = Offset(targetNode.x, targetNode.y)
-                        if (!segmentIntersectsRect(start, end, viewport)) return@forEach
-
-                        // 柔和微透明关系底线
-                        drawLine(
-                            color = edgeColor,
-                            start = start,
-                            end = end,
-                            strokeWidth = 1.5f
-                        )
-
-                        val dx = end.x - start.x
-                        val dy = end.y - start.y
-                        val length = sqrt(dx * dx + dy * dy)
-                        if (length > 0f) {
-                            // 绘制动态滚动的脉冲粒子流
-                            if (decorativePulseEnabled) {
-                                val particleCount = 2
-                                for (p in 0 until particleCount) {
-                                    val fraction = (particlePhase + p.toFloat() / particleCount) % 1.0f
-                                    val px = start.x + dx * fraction
-                                    val py = start.y + dy * fraction
-                                    drawCircle(
-                                        color = pulseColor,
-                                        radius = 2.2f,
-                                        center = Offset(px, py)
-                                    )
-                                }
-                            }
-
-                            // 渲染关系边 Label 文本
-                            if (edge.relation.isNotEmpty() && scale > 0.6f) {
-                                val midX = start.x + dx * 0.5f
-                                val midY = start.y + dy * 0.5f
-                                drawContext.canvas.nativeCanvas.drawText(
-                                    edge.relation,
-                                    midX,
-                                    midY - 4f,
-                                    edgeTextPaint
-                                )
-                            }
+                    val source = nodesById[edge.sourceId] ?: return@forEach
+                    val target = nodesById[edge.targetId] ?: return@forEach
+                    val start = Offset(source.x, source.y)
+                    val end = Offset(target.x, target.y)
+                    if (!segmentIntersectsRect(start, end, viewport)) return@forEach
+                    val control = kgEdgeControl(start, end)
+                    when {
+                        resolver.isEdgeEmphasized(edge) -> {
+                            val color = palette.of(kindById[edge.sourceId] ?: KgEntityKind.OTHER)
+                            val path = Path().apply { moveTo(start.x, start.y); quadraticTo(control.x, control.y, end.x, end.y) }
+                            drawPath(path, color.copy(alpha = 0.9f), style = Stroke(width = 1.6f * dp, cap = StrokeCap.Round))
+                            drawCircle(color, radius = 2.4f * dp, center = kgEdgeArrowPoint(start, end, layoutRadius(degrees[edge.targetId] ?: 0)))
+                        }
+                        resolver.isEdgeLit(edge) -> {
+                            normalPath.moveTo(start.x, start.y)
+                            normalPath.quadraticTo(control.x, control.y, end.x, end.y)
+                            drawCircle(edgeColor, radius = 1.6f * dp, center = kgEdgeArrowPoint(start, end, layoutRadius(degrees[edge.targetId] ?: 0)))
+                        }
+                        else -> {
+                            dimPath.moveTo(start.x, start.y)
+                            dimPath.quadraticTo(control.x, control.y, end.x, end.y)
                         }
                     }
                 }
+                drawPath(dimPath, dimEdgeColor, style = Stroke(width = 1f * dp))
+                drawPath(normalPath, edgeColor, style = Stroke(width = 1f * dp, cap = StrokeCap.Round))
 
-                // --- B. 绘制节点（呼吸发光、同心渐变圆、矢量图标、文字投影） ---
-                currentNodes.forEach { node ->
-                    // 视口裁剪：如果节点本身完全不在屏幕可视边界内，跳过绘制，免除高画质圆和文字投影负载！
-                    val inView = node.x in viewLeft..viewRight && node.y in viewTop..viewBottom
-                    if (!inView) return@forEach
-
-                    val (nodeColor, nodeContentColor) = colorMap[node.type] ?: colorMap.getValue("other")
-
-                    // 1) 绘制柔美渐变呼吸发光阴影 Halo
-                    drawCircle(
-                        color = nodeColor.copy(alpha = 0.12f),
-                        radius = 28f,
-                        center = Offset(node.x, node.y)
-                    )
-                    drawCircle(
-                        color = nodeColor.copy(alpha = 0.28f),
-                        radius = 23f,
-                        center = Offset(node.x, node.y)
-                    )
-
-                    // 2) 绘制星球实体
-                    drawCircle(
-                        color = nodeColor,
-                        radius = 16f,
-                        center = Offset(node.x, node.y)
-                    )
-
-                    // 3) 绘制精细的纯白星球亮边轮廓线
-                    drawCircle(
-                        color = nodeOutlineColor,
-                        radius = 16f,
+                nodes.forEach { node ->
+                    if (node.x !in viewport.left..viewport.right || node.y !in viewport.top..viewport.bottom) return@forEach
+                    val kind = kindById[node.id] ?: KgEntityKind.OTHER
+                    val degree = degrees[node.id] ?: 0
+                    drawEntity(
                         center = Offset(node.x, node.y),
-                        style = Stroke(width = 1.2f)
+                        radius = layoutRadius(degree),
+                        color = palette.of(kind),
+                        painter = painters.getValue(kind),
+                        lit = resolver.isLit(node.id),
+                        selected = node.id == highlight.selectedId,
+                        hub = degree >= KG_HUB_MIN_DEGREE,
+                        nodeId = node.id,
+                        dp = dp,
+                        background = background,
+                        selectionRing = selectionRing,
+                        darkTheme = domain.isDark,
+                        showIcon = screenRadius(degree) >= 7f * densityPx,
                     )
-
-                    // 4) 节点中心高精度矢量图标绘制
-                    val painter = when (node.type) {
-                        "concept" -> psychologyPainter
-                        "document" -> descriptionPainter
-                        "person" -> personPainter
-                        else -> hubPainter
-                    }
-                    val iconSize = 16f
-                    translate(node.x - iconSize / 2f, node.y - iconSize / 2f) {
-                        with(painter) {
-                            draw(
-                                size = Size(iconSize, iconSize),
-                                colorFilter = ColorFilter.tint(nodeContentColor.copy(alpha = 0.85f))
-                            )
-                        }
-                    }
-
-                    // 5) 绘制防重叠防溢出的抗锯齿文本
-                    if (scale > 0.4f) {
-                        drawContext.canvas.nativeCanvas.drawText(
-                            node.label,
-                            node.x,
-                            node.y + 30f,
-                            textPaint
-                        )
-                    }
                 }
             }
-        }
 
-        // --- C. 能效静止休眠状态低调提示 (WOW 微光指示灯) ---
-        if (simulator.isSimulating) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .background(Color.Transparent)
-            ) {
-                // 可选：可在 UI 顶部或底部放置一个极简微弱指示器，这里保持整体界面绝对精简
+            // 屏幕坐标中的文字：选中实体的关系名、实体名与“新”角标。
+            val native = drawContext.canvas.nativeCanvas
+            fun toScreen(x: Float, y: Float) = Offset(x * scale + offset.x, y * scale + offset.y)
+            highlight.selectedId?.let { selected ->
+                edges.forEach { edge ->
+                    if (edge.relation.isBlank() || !resolver.isEdgeEmphasized(edge)) return@forEach
+                    if (edge.sourceId != selected && edge.targetId != selected) return@forEach
+                    val source = nodesById[edge.sourceId] ?: return@forEach
+                    val target = nodesById[edge.targetId] ?: return@forEach
+                    val start = Offset(source.x, source.y)
+                    val end = Offset(target.x, target.y)
+                    val at = kgQuadPoint(start, kgEdgeControl(start, end), end, 0.5f)
+                    val screen = toScreen(at.x, at.y)
+                    paints.relation.color = palette.of(kindById[edge.sourceId] ?: KgEntityKind.OTHER).toArgb()
+                    native.drawText(edge.relation, screen.x, screen.y + paints.relation.textSize / 3f, paints.relationHalo)
+                    native.drawText(edge.relation, screen.x, screen.y + paints.relation.textSize / 3f, paints.relation)
+                }
+            }
+            nodes.forEach { node ->
+                val degree = degrees[node.id] ?: 0
+                val radius = screenRadius(degree)
+                val screen = toScreen(node.x, node.y)
+                if (screen.x < -80f || screen.x > size.width + 80f || screen.y < -40f || screen.y > size.height + 60f) return@forEach
+                if (resolver.showsLabel(node.id, degree, scale)) {
+                    val selected = node.id == highlight.selectedId
+                    val paint = if (selected) paints.labelStrong else paints.label
+                    val halo = if (selected) paints.labelStrongHalo else paints.labelHalo
+                    val ringGap = (if (degree >= KG_HUB_MIN_DEGREE) 6f else 2f) * densityPx
+                    val baseline = screen.y + radius + ringGap + paint.textSize * 1.15f
+                    val text = ellipsize(node.label, paint, 120.dp.toPx())
+                    native.drawText(text, screen.x, baseline, halo)
+                    native.drawText(text, screen.x, baseline, paint)
+                }
+                if (node.id in highlight.newNodeIds && resolver.isLit(node.id)) {
+                    val badge = Offset(screen.x + radius * 0.75f, screen.y - radius * 0.75f)
+                    val badgeRadius = 8.dp.toPx() * maxOf(1f, density.fontScale * 0.9f)
+                    drawCircle(background, radius = badgeRadius + 2.dp.toPx(), center = badge)
+                    drawCircle(domain.warning, radius = badgeRadius, center = badge)
+                    native.drawText(newBadge, badge.x, badge.y + paints.badge.textSize / 3f, paints.badge)
+                }
             }
         }
     }
 }
 
-internal fun shouldAnimateDecorativePulse(
-    motionScaleFactor: Float,
-    isVisible: Boolean = true,
-    isSimulating: Boolean = true,
-): Boolean = motionScaleFactor > 0f && isVisible && isSimulating
+private fun DrawScope.drawDotGrid(color: Color, offset: Offset, scale: Float) {
+    val spacing = (22.dp.toPx() * scale.coerceIn(0.6f, 1.6f)).coerceAtLeast(14.dp.toPx())
+    val startX = ((offset.x % spacing) + spacing) % spacing
+    val startY = ((offset.y % spacing) + spacing) % spacing
+    val points = ArrayList<Offset>()
+    var y = startY
+    while (y < size.height) {
+        var x = startX
+        while (x < size.width) {
+            points.add(Offset(x, y))
+            x += spacing
+        }
+        y += spacing
+    }
+    drawPoints(points, PointMode.Points, color, strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+}
+
+private fun DrawScope.drawEntity(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    painter: VectorPainter,
+    lit: Boolean,
+    selected: Boolean,
+    hub: Boolean,
+    nodeId: String,
+    /** 布局坐标中 1dp 的长度。 */
+    dp: Float,
+    background: Color,
+    selectionRing: Color,
+    darkTheme: Boolean,
+    showIcon: Boolean,
+) {
+    val alpha = if (lit) 1f else 0.16f
+    if (hub) {
+        val orbit = radius + 6f * dp
+        drawCircle(color.copy(alpha = 0.35f * alpha), radius = orbit, center = center, style = Stroke(width = 1f * dp))
+        drawCircle(color.copy(alpha = alpha), radius = 2.4f * dp, center = kgOrbitPoint(center, orbit, nodeId))
+    }
+    if (selected) {
+        drawCircle(selectionRing, radius = radius + 4f * dp, center = center, style = Stroke(width = 2f * dp))
+        drawCircle(color, radius = radius, center = center)
+    } else {
+        // 先用画布底色垫一层，浅底不会透出身后的连线。
+        drawCircle(background.copy(alpha = alpha), radius = radius, center = center)
+        drawCircle(color.copy(alpha = (if (darkTheme) 0.18f else 0.14f) * alpha), radius = radius, center = center)
+        drawCircle(color.copy(alpha = alpha), radius = radius, center = center, style = Stroke(width = 1.5f * dp))
+    }
+    if (!showIcon && !selected) return
+    val iconSize = radius * 1.05f
+    translate(center.x - iconSize / 2f, center.y - iconSize / 2f) {
+        with(painter) {
+            draw(Size(iconSize, iconSize), colorFilter = ColorFilter.tint(if (selected) background else color.copy(alpha = alpha)))
+        }
+    }
+}
+
+private fun ellipsize(text: String, paint: android.graphics.Paint, maxWidth: Float): String {
+    if (paint.measureText(text) <= maxWidth) return text
+    val count = paint.breakText(text, true, maxWidth - paint.measureText("…"), null)
+    return text.take(count.coerceAtLeast(1)) + "…"
+}
+
+/** 画布文字画笔：实体名与关系名先画一层底色描边作光晕，压在连线上仍可读。 */
+private class KgTextPaints(
+    private val density: Float,
+    private val fontScale: Float,
+    onSurface: Color,
+    onSurfaceVariant: Color,
+    background: Color,
+    onWarning: Color,
+) {
+    private fun sp(value: Float) = value * density * fontScale
+    private fun base(sizeSp: Float, color: Color, medium: Boolean = false) = android.graphics.Paint().apply {
+        isAntiAlias = true
+        textSize = sp(sizeSp)
+        this.color = color.toArgb()
+        textAlign = android.graphics.Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create(if (medium) "sans-serif-medium" else "sans-serif", android.graphics.Typeface.NORMAL)
+    }
+    private fun halo(of: android.graphics.Paint, color: Color) = android.graphics.Paint(of).apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 4f * density
+        strokeJoin = android.graphics.Paint.Join.ROUND
+        this.color = color.toArgb()
+    }
+
+    val label = base(11.5f, onSurfaceVariant)
+    val labelStrong = base(12f, onSurface, medium = true)
+    val labelHalo = halo(label, background)
+    val labelStrongHalo = halo(labelStrong, background)
+    val relation = base(10.5f, onSurfaceVariant)
+    val relationHalo = halo(relation, background)
+    val badge = base(9f, onWarning, medium = true)
+}

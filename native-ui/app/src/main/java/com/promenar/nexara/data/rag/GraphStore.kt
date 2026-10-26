@@ -15,6 +15,16 @@ class GraphStore(internal val database: NexaraDatabase) {
     suspend fun searchGraphEntities(request: GraphEntitySearchRequest): List<KgNode> =
         GraphSubgraphStore(database).search(request)
 
+    /** 按最近证据时间返回最多 1,000 个会话。 */
+    suspend fun getSessionOptions(): List<KgSessionOption> = KgSessionGraphStore(database).getSessionOptions()
+
+    /** 返回最早的完整轮次前缀，最多 400 轮、20,000 条实体出现记录。 */
+    suspend fun getSessionTurns(sessionId: String): List<KgSessionTurn> = KgSessionGraphStore(database).getSessionTurns(sessionId)
+
+    /** 两类来源分别限额，硬上限各 100 条；非正限额返回空来源。 */
+    suspend fun getEntitySources(nodeId: String, limit: Int = 20): KgEntitySources =
+        KgSessionGraphStore(database).getEntitySources(nodeId, limit)
+
     private val nodes get() = database.kgNodeDao()
     private val edges get() = database.kgEdgeDao()
     private val evidence get() = database.kgEvidenceDao()

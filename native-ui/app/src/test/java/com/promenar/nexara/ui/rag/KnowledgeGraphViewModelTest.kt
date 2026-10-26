@@ -8,6 +8,10 @@ import com.promenar.nexara.data.rag.GraphSubgraphRequest
 import com.promenar.nexara.data.rag.GraphEntitySearchRequest
 import com.promenar.nexara.data.rag.GraphStore
 import com.promenar.nexara.data.rag.KgDocumentOption
+import com.promenar.nexara.data.rag.KgEntitySessionRef
+import com.promenar.nexara.data.rag.KgEntitySources
+import com.promenar.nexara.data.rag.KgSessionTurn
+import com.promenar.nexara.ui.rag.canvas.KgEntityKind
 import com.promenar.nexara.data.rag.KgNode
 import com.promenar.nexara.data.rag.KgEdge
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -319,18 +323,124 @@ class KnowledgeGraphViewModelTest {
     }
 
     @Test
-    fun `概念模式首次加载不会被重置为全局模式`() = runTest {
-        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
-        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(conceptOnly = true)) } returns
-            subgraph(listOf(dataNode(id = "concept-node")), emptyList())
+    fun `会话模式未选会话时要求选择且不复用全局图`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns
+            subgraph(listOf(dataNode(id = "global-node")), emptyList())
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
-        vm.setViewMode(KgViewMode.CONCEPT)
+        vm.setViewMode(KgViewMode.SESSION)
 
-        assertThat(vm.viewMode.value).isEqualTo(KgViewMode.CONCEPT)
-        assertThat(vm.graphState.value.scopeKey).isEqualTo("concept:mode")
-        assertThat(vm.nodes.value.map { it.id }).containsExactly("concept-node")
-        coVerify(exactly = 1) { graphStore.getGraphSubgraph(GraphSubgraphRequest(conceptOnly = true)) }
+        assertThat(vm.sessionSelectionRequired.value).isTrue()
+        assertThat(vm.documentSelectionRequired.value).isFalse()
+        assertThat(vm.nodes.value).isEmpty()
+        coVerify(exactly = 0) { graphStore.getGraphSubgraph(match { it.sessionId != null }) }
+    }
+
+    @Test
+    fun `选会话后按会话读取子图与轮次并在会话内搜索`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(sessionId = "s1")) } returns
+            subgraph(listOf(dataNode("a"), dataNode("b")), listOf(dataEdge(sourceId = "a", targetId = "b")), total = 2)
+        coEvery { graphStore.getSessionTurns("s1") } returns listOf(
+            KgSessionTurn("m1", 1, 10L, listOf("a"), listOf("a")),
+            KgSessionTurn("m2", 2, 20L, listOf("a", "b"), listOf("b")),
+        )
+        coEvery { graphStore.searchGraphEntities(GraphEntitySearchRequest("a", sessionId = "s1")) } returns listOf(dataNode("a"))
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.loadGraphBySession("s1")
+        vm.searchEntities("a")
+        advanceTimeBy(200)
+        runCurrent()
+
+        assertThat(vm.viewMode.value).isEqualTo(KgViewMode.SESSION)
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("session:s1")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("a", "b")
+        assertThat(vm.sessionTurns.value.map { it.turnNumber }).containsExactly(1, 2).inOrder()
+        assertThat(vm.searchResults.value.map { it.id }).containsExactly("a")
+    }
+
+    @Test
+    fun `轮次再次点选取消聚焦且切换范围清空轮次筛选与选中`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(any()) } returns subgraph(listOf(dataNode("a")), emptyList())
+        coEvery { graphStore.getSessionTurns("s1") } returns listOf(KgSessionTurn("m1", 1, 10L, listOf("a"), listOf("a")))
+        coEvery { graphStore.getEntitySources("a") } returns KgEntitySources(emptyList(), emptyList())
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        vm.loadGraphBySession("s1")
+
+        vm.selectTurn("m1")
+        assertThat(vm.selectedTurnId.value).isEqualTo("m1")
+        vm.selectTurn("m1")
+        assertThat(vm.selectedTurnId.value).isNull()
+
+        vm.selectTurn("m1")
+        vm.toggleTypeFilter(KgEntityKind.CONCEPT)
+        vm.selectEntity("a")
+        vm.loadGraph()
+
+        assertThat(vm.selectedTurnId.value).isNull()
+        assertThat(vm.sessionTurns.value).isEmpty()
+        assertThat(vm.typeFilter.value).isEmpty()
+        assertThat(vm.selectedEntity.value).isNull()
+    }
+
+    @Test
+    fun `选中实体加载来源，失败时标记且再次点同一实体取消选中`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns
+            subgraph(listOf(dataNode("a"), dataNode("b")), emptyList())
+        val sources = KgEntitySources(
+            documents = listOf(KgDocumentOption("doc-1", "架构说明.md")),
+            sessionTurns = listOf(KgEntitySessionRef("s1", "选型", "m2", 2)),
+        )
+        coEvery { graphStore.getEntitySources("a") } returns sources
+        coEvery { graphStore.getEntitySources("b") } throws IllegalStateException("db")
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.selectEntity("a")
+        assertThat(vm.selectedEntity.value).isEqualTo(KgEntityDetail("a", sources, isLoading = false))
+
+        vm.selectEntity("b")
+        assertThat(vm.selectedEntity.value).isEqualTo(KgEntityDetail("b", isLoading = false, failed = true))
+
+        vm.selectEntity("b")
+        assertThat(vm.selectedEntity.value).isNull()
+    }
+
+    @Test
+    fun `画布点实体选中并请求居中，再点同一实体取消且不再移动视角`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(listOf(dataNode("a")), emptyList())
+        coEvery { graphStore.getEntitySources("a") } returns KgEntitySources(emptyList(), emptyList())
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        val before = vm.centerRequest.value.key
+
+        vm.tapEntity("a")
+        assertThat(vm.selectedEntity.value?.nodeId).isEqualTo("a")
+        assertThat(vm.centerRequest.value).isEqualTo(KgCenterRequest("a", before + 1))
+
+        vm.tapEntity("a")
+        assertThat(vm.selectedEntity.value).isNull()
+        assertThat(vm.centerRequest.value.key).isEqualTo(before + 1)
+    }
+
+    @Test
+    fun `搜索选中画布外实体先展开再选中并请求居中`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(listOf(dataNode("root")), emptyList())
+        coEvery { graphStore.getGraphSubgraph(match { it.expandNodeId == "far" }) } returns
+            subgraph(listOf(dataNode("root"), dataNode("far")), emptyList())
+        coEvery { graphStore.getEntitySources(any()) } returns KgEntitySources(emptyList(), emptyList())
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        val before = vm.centerRequest.value.key
+
+        vm.focusEntity("far")
+
+        assertThat(vm.nodes.value.map { it.id }).contains("far")
+        assertThat(vm.selectedEntity.value?.nodeId).isEqualTo("far")
+        assertThat(vm.centerRequest.value).isEqualTo(KgCenterRequest("far", before + 1))
+
+        vm.focusEntity("root")
+        assertThat(vm.selectedEntity.value?.nodeId).isEqualTo("root")
+        assertThat(vm.centerRequest.value).isEqualTo(KgCenterRequest("root", before + 2))
+        coVerify(exactly = 0) { graphStore.getGraphSubgraph(match { it.expandNodeId == "root" }) }
     }
 
     @Test

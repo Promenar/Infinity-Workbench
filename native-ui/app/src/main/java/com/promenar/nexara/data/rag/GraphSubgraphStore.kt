@@ -19,7 +19,10 @@ data class GraphSubgraphRequest(
     val edgeLimit: Int = DEFAULT_GRAPH_EDGE_LIMIT,
     val retainedNodeIds: List<String> = emptyList(),
     val expandNodeId: String? = null,
-)
+    val sessionId: String? = null,
+) {
+    init { require(docId == null || sessionId == null) { "文档与会话范围不能同时指定" } }
+}
 
 data class GraphSubgraph(val data: GraphData, val totalNodeCount: Int)
 
@@ -28,7 +31,10 @@ data class GraphEntitySearchRequest(
     val docId: String? = null,
     val conceptOnly: Boolean = false,
     val limit: Int = 20,
-)
+    val sessionId: String? = null,
+) {
+    init { require(docId == null || sessionId == null) { "文档与会话范围不能同时指定" } }
+}
 
 const val DEFAULT_GRAPH_NODE_LIMIT = 300
 const val DEFAULT_GRAPH_EDGE_LIMIT = 1_200
@@ -44,7 +50,7 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
                 nodeLimit = request.nodeLimit.coerceIn(1, MAX_GRAPH_NODE_LIMIT),
                 edgeLimit = request.edgeLimit.coerceIn(1, MAX_GRAPH_EDGE_LIMIT),
             )
-            val predicate = activeNode(bounded.docId, bounded.conceptOnly)
+            val predicate = activeNode(bounded.docId, bounded.conceptOnly, bounded.sessionId)
             val count = query("SELECT COUNT(*) AS total FROM kg_nodes n WHERE ${predicate.sql}", predicate.args) {
                 getLong(getColumnIndexOrThrow("total")).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             }.single()
@@ -77,7 +83,7 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
         if (term.isBlank()) return@withContext emptyList()
         database.withTransaction {
             val limit = request.limit.coerceIn(1, 100)
-            val predicate = activeNode(request.docId, request.conceptOnly)
+            val predicate = activeNode(request.docId, request.conceptOnly, request.sessionId)
             val upper = term + String(Character.toChars(Character.MAX_CODE_POINT))
             // 精确和前缀匹配使用 normalized_name 索引；包含匹配仅补齐有界结果。
             val prefix = readNodes(
@@ -102,7 +108,7 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
         nodePredicate: SqlPredicate,
     ) {
         val targetSize = minOf(request.nodeLimit, selected.size + GRAPH_EXPANSION_BATCH_SIZE)
-        val edgePredicate = activeEvidence("edge_id", "e.id", request.docId)
+        val edgePredicate = activeEvidence("edge_id", "e.id", request.docId, request.sessionId)
         var offset = 0
         // 分页跳过已经显示的邻居，避免把数千个 ID 放进同一条 SQLite 绑定语句。
         while (selected.size < targetSize) {
@@ -132,7 +138,7 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
 
     private suspend fun readEdges(ids: List<String>, request: GraphSubgraphRequest): List<KgEdge> {
         if (ids.isEmpty()) return emptyList()
-        val predicate = activeEvidence("edge_id", "e.id", request.docId)
+        val predicate = activeEvidence("edge_id", "e.id", request.docId, request.sessionId)
         val selected = linkedMapOf<String, KgEdgeEntity>()
         val chunks = ids.sorted().chunked(400)
         // 双端分批最多使用 800 个 ID 参数，兼容 SQLite 的绑定数量限制。
@@ -150,6 +156,20 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
                 if (selected.size >= request.edgeLimit) break@outer
             }
         }
+        if (request.sessionId != null) {
+            // 会话置信度在数据库内聚合，避免读入同一条边的其它会话、文档和即时证据。
+            val weights = selected.keys.toList().chunked(400).flatMap { chunk ->
+                query(
+                    "SELECT p.edge_id, MAX(p.weight) AS weight FROM kg_evidence p WHERE p.edge_id IN (${placeholders(chunk.size)}) " +
+                        "AND p.source_type = 'session' AND p.session_id = ? AND $ACTIVE_KG_EVIDENCE GROUP BY p.edge_id LIMIT ?",
+                    chunk + listOf(request.sessionId, chunk.size),
+                ) { string("edge_id") to getColumnIndexOrThrow("weight").let { if (isNull(it)) 1.0 else getDouble(it) } }
+            }.toMap()
+            return selected.values.map { edge ->
+                KgEdge(id = edge.id, sourceId = edge.sourceId, targetId = edge.targetId, relation = edge.relation,
+                    weight = weights.getValue(edge.id), sourceType = "session", createdAt = edge.createdAt)
+            }
+        }
         val evidence = selected.keys.toList().chunked(400).flatMap { database.kgEvidenceDao().getActiveForEdges(it) }
             .filter { request.docId == null || it.docId == request.docId }.groupBy { it.edgeId }
         return selected.values.map { edge ->
@@ -165,16 +185,26 @@ class GraphSubgraphStore(private val database: NexaraDatabase) {
         }
     }
 
-    private fun activeNode(docId: String?, conceptOnly: Boolean): SqlPredicate {
-        val evidence = activeEvidence("node_id", "n.id", docId)
+    private fun activeNode(docId: String?, conceptOnly: Boolean, sessionId: String?): SqlPredicate {
+        val evidence = activeEvidence("node_id", "n.id", docId, sessionId)
         return SqlPredicate(evidence.sql + if (conceptOnly) " AND n.type = 'concept'" else "", evidence.args)
     }
 
-    private fun activeEvidence(column: String, owner: String, docId: String?): SqlPredicate = SqlPredicate(
-        "EXISTS (SELECT 1 FROM kg_evidence p WHERE p.$column = $owner AND $ACTIVE_KG_EVIDENCE" +
-            if (docId == null) ")" else " AND p.doc_id = ?)",
-        if (docId == null) emptyList() else listOf(docId),
-    )
+    private fun activeEvidence(column: String, owner: String, docId: String?, sessionId: String?): SqlPredicate {
+        if (sessionId != null) {
+            // 会话证据只扫描一次，由实体主键或关系端点索引匹配，避免逐节点重复扫描同一会话。
+            return SqlPredicate(
+                "$owner IN (SELECT p.$column FROM kg_evidence p WHERE p.$column IS NOT NULL " +
+                    "AND p.source_type = 'session' AND p.session_id = ? AND $ACTIVE_KG_EVIDENCE)",
+                listOf(sessionId),
+            )
+        }
+        return SqlPredicate(
+            "EXISTS (SELECT 1 FROM kg_evidence p WHERE p.$column = $owner AND $ACTIVE_KG_EVIDENCE" +
+                if (docId == null) ")" else " AND p.doc_id = ?)",
+            listOfNotNull(docId),
+        )
+    }
 
     private fun readNodes(sql: String, args: List<Any?>): List<KgNode> = query(sql, args) {
         KgNode(id = string("id"), name = string("name"), type = string("type"), metadata = nullableString("metadata"),

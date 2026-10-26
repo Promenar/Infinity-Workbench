@@ -1,43 +1,32 @@
 package com.promenar.nexara.ui.rag
 
+import android.app.Application
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import com.promenar.nexara.ui.theme.NexaraMotion
-import android.app.Application
-import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,11 +34,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,33 +48,34 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.data.rag.MAX_GRAPH_NODE_LIMIT
 import com.promenar.nexara.ui.common.NexaraBottomSheet
-import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraPageSearch
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
+import com.promenar.nexara.ui.rag.canvas.KgCanvasHighlight
+import com.promenar.nexara.ui.rag.canvas.KgEntityKind
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.forInput
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeGraphScreen(
     viewModel: KnowledgeGraphViewModel = viewModel(factory = KnowledgeGraphViewModel.factory(LocalContext.current.applicationContext as Application)),
     /** 从“本轮记忆”面板进入时预填的实体搜索，图谱首次加载完成后执行一次。 */
     initialQuery: String? = null,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    /** 实体详情里点“打开”时进入对应会话。 */
+    onOpenSession: (String) -> Unit = {},
 ) {
     val nodes by viewModel.nodes.collectAsState()
     val edges by viewModel.edges.collectAsState()
@@ -95,6 +85,15 @@ fun KnowledgeGraphScreen(
     val documentSelectionRequired by viewModel.documentSelectionRequired.collectAsState()
     val documentOptions by viewModel.documentOptions.collectAsState()
     val documentOptionsError by viewModel.documentOptionsError.collectAsState()
+    val selectedSessionId by viewModel.selectedSessionId.collectAsState()
+    val sessionSelectionRequired by viewModel.sessionSelectionRequired.collectAsState()
+    val sessionOptions by viewModel.sessionOptions.collectAsState()
+    val sessionOptionsError by viewModel.sessionOptionsError.collectAsState()
+    val sessionTurns by viewModel.sessionTurns.collectAsState()
+    val selectedTurnId by viewModel.selectedTurnId.collectAsState()
+    val typeFilter by viewModel.typeFilter.collectAsState()
+    val selectedEntity by viewModel.selectedEntity.collectAsState()
+    val centerRequest by viewModel.centerRequest.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
     val graphState by viewModel.graphState.collectAsState()
     val totalNodeCount by viewModel.totalNodeCount.collectAsState()
@@ -102,7 +101,9 @@ fun KnowledgeGraphScreen(
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val searchFailed by viewModel.searchFailed.collectAsState()
+    var searchActive by rememberSaveable { mutableStateOf(false) }
     var showDocumentSelector by remember { mutableStateOf(false) }
+    var showSessionSelector by remember { mutableStateOf(false) }
     var showAccessibilityList by remember { mutableStateOf(false) }
     var resetKey by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -111,11 +112,11 @@ fun KnowledgeGraphScreen(
     val scope = rememberCoroutineScope()
     val simulator = remember(scope) { GraphPhysicsSimulator(scope) }
 
-    // 动态同步数据流至力导向模拟器
     var initialQueryApplied by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(initialQuery, isLoading) {
         if (!initialQueryApplied && !isLoading && !initialQuery.isNullOrBlank()) {
             initialQueryApplied = true
+            searchActive = true
             viewModel.searchEntities(initialQuery)
         }
     }
@@ -138,98 +139,128 @@ fun KnowledgeGraphScreen(
         }
     }
 
+    val selectionRequired = documentSelectionRequired || sessionSelectionRequired
+    val selectedTurn = sessionTurns.firstOrNull { it.messageId == selectedTurnId }
+    val highlight = remember(selectedEntity?.nodeId, selectedTurn, typeFilter) {
+        KgCanvasHighlight(
+            selectedId = selectedEntity?.nodeId,
+            turnNodeIds = selectedTurn?.nodeIds?.toSet(),
+            newNodeIds = selectedTurn?.newNodeIds?.toSet().orEmpty(),
+            typeFilter = typeFilter,
+        )
+    }
+    val viewLabel = stringResource(
+        when (viewMode) {
+            KgViewMode.GLOBAL -> R.string.kg_view_global
+            KgViewMode.DOCUMENT -> R.string.kg_view_document
+            KgViewMode.SESSION -> R.string.kg_view_session
+        },
+    )
+    val selectedSession = sessionOptions.firstOrNull { it.sessionId == selectedSessionId }
+    val scopeLabel = when (viewMode) {
+        KgViewMode.GLOBAL -> stringResource(R.string.kg_scope_all_sources)
+        KgViewMode.DOCUMENT -> documentOptions.firstOrNull { it.docId == selectedDocumentId }?.title
+            ?: stringResource(R.string.kg_select_document)
+        KgViewMode.SESSION -> when {
+            selectedSessionId == null -> stringResource(R.string.kg_select_session)
+            selectedSession?.title.isNullOrBlank() -> stringResource(R.string.kg_session_untitled)
+            else -> selectedSession!!.title
+        }
+    }
+    val scopeMeta = buildList {
+        if (selectionRequired) return@buildList
+        add(
+            when (viewMode) {
+                KgViewMode.GLOBAL -> stringResource(R.string.kg_scope_meta_global, totalNodeCount, edges.size)
+                KgViewMode.DOCUMENT -> stringResource(R.string.kg_scope_meta_document, totalNodeCount)
+                KgViewMode.SESSION -> stringResource(R.string.kg_scope_meta_session, sessionTurns.size, totalNodeCount)
+            },
+        )
+        // 子图有界读取：未全部显示时说明当前显示数。
+        if (nodes.isNotEmpty() && nodes.size < totalNodeCount) {
+            add(stringResource(R.string.kg_graph_displayed_count, nodes.size, totalNodeCount))
+        }
+    }
+
     NexaraSettingsPageLayout(
         title = stringResource(R.string.kg_title),
         onBack = onNavigateBack,
+        horizontalContentPadding = 0.dp,
+        search = if (selectionRequired) {
+            null
+        } else {
+            NexaraPageSearch(
+                query = searchQuery,
+                active = searchActive,
+                onQueryChange = viewModel::searchEntities,
+                onActiveChange = { searchActive = it },
+                placeholder = stringResource(R.string.kg_graph_search_entities),
+            )
+        },
+        actions = {
+            if (!searchActive) {
+                IconButton(
+                    onClick = { showAccessibilityList = true },
+                    enabled = nodes.isNotEmpty(),
+                    modifier = Modifier.testTag(UiTags.KG_LIST_ENTRY),
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.List, contentDescription = stringResource(R.string.kg_open_accessibility_list))
+                }
+                IconButton(onClick = viewModel::refreshCurrentScope, modifier = Modifier.testTag(UiTags.KG_REFRESH)) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.workbench_refresh))
+                }
+            }
+        },
     ) { contentPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
-                .bettboxListGroup()
-                .padding(NexaraSpacing.Large),
+                .padding(contentPadding),
         ) {
-            NexaraMetaLine(
-                segments = listOf(
-                    stringResource(R.string.kg_graph_displayed_count, nodes.size, totalNodeCount),
-                    stringResource(R.string.kg_stats_edges, edges.size),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = NexaraSpacing.Medium),
-            )
             KnowledgeGraphModeSelector(
                 viewMode = viewMode,
                 onModeSelected = { mode ->
+                    searchActive = false
                     viewModel.setViewMode(mode)
-                    if (mode == KgViewMode.DOCUMENT && selectedDocumentId == null) {
-                        showDocumentSelector = true
+                    if (mode == KgViewMode.DOCUMENT && selectedDocumentId == null) showDocumentSelector = true
+                    if (mode == KgViewMode.SESSION && selectedSessionId == null && sessionOptions.isNotEmpty()) showSessionSelector = true
+                },
+                modifier = Modifier.padding(horizontal = NexaraSpacing.Large),
+            )
+            KnowledgeGraphScopeRow(
+                viewMode = viewMode,
+                scopeLabel = scopeLabel,
+                meta = scopeMeta,
+                onPick = {
+                    when (viewMode) {
+                        KgViewMode.DOCUMENT -> showDocumentSelector = true
+                        KgViewMode.SESSION -> showSessionSelector = true
+                        KgViewMode.GLOBAL -> Unit
                     }
                 },
-                onRefresh = viewModel::refreshCurrentScope,
+                modifier = Modifier.padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
             )
-            AnimatedVisibility(visible = viewMode == KgViewMode.DOCUMENT, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Description,
-                    title = documentOptions.firstOrNull { it.docId == selectedDocumentId }?.title
-                        ?: stringResource(R.string.kg_select_document),
-                    onClick = { showDocumentSelector = true },
-                    showChevron = true,
-                    modifier = Modifier
-                        .padding(bottom = NexaraSpacing.Medium)
-                        .testTag(UiTags.KG_DOCUMENT_SELECTOR),
+            val typeCounts = remember(nodes) { kgTypeCounts(nodes) }
+            AnimatedVisibility(visible = typeCounts.size >= 2, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                KnowledgeGraphTypeFilterRow(
+                    counts = typeCounts,
+                    selected = typeFilter,
+                    onToggle = viewModel::toggleTypeFilter,
                 )
             }
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = viewModel::searchEntities,
-                textStyle = MaterialTheme.typography.bodyLarge.forInput(),
-                label = { Text(stringResource(R.string.kg_graph_search_entities)) },
-                singleLine = true,
-                enabled = !documentSelectionRequired,
-                modifier = Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.Small),
-            )
-            // 搜索结果区随输入展开收起，搜索中、失败、无结果与列表之间交叉淡入。
-            AnimatedVisibility(visible = searchQuery.isNotBlank(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-                val searchPhase = when {
-                    isSearching -> KgSearchPhase.Searching
-                    searchFailed -> KgSearchPhase.Failed
-                    searchResults.isEmpty() -> KgSearchPhase.Empty
-                    else -> KgSearchPhase.Results
-                }
-                AnimatedContent(targetState = searchPhase, transitionSpec = { NexaraMotion.fadeThrough() }, label = "kg_search_phase") { shown ->
-                    when (shown) {
-                        KgSearchPhase.Searching -> Text(stringResource(R.string.kg_graph_searching), style = MaterialTheme.typography.bodySmall)
-                        KgSearchPhase.Failed -> Text(stringResource(R.string.kg_graph_search_failed), color = MaterialTheme.colorScheme.error)
-                        KgSearchPhase.Empty -> Text(stringResource(R.string.kg_graph_search_empty), style = MaterialTheme.typography.bodySmall)
-                        KgSearchPhase.Results -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
-                            items(searchResults, key = { it.id }) { entity ->
-                                ListItem(
-                                    headlineContent = { Text(entity.name) },
-                                    supportingContent = { Text(entity.type) },
-                                    trailingContent = {
-                                        TextButton(
-                                            onClick = { viewModel.expandNode(entity.id) },
-                                            enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT,
-                                            modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
-                                        ) {
-                                            Text(stringResource(R.string.kg_graph_expand_neighbors))
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
             AnimatedVisibility(visible = nodes.size >= MAX_GRAPH_NODE_LIMIT, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-                Text(stringResource(R.string.kg_graph_display_limit), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.kg_graph_display_limit),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = NexaraSpacing.Large),
+                )
             }
             AnimatedVisibility(visible = loadError != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = NexaraSpacing.Small)
+                        .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.XSmall)
                         .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.errorContainer)
                         .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
@@ -249,46 +280,19 @@ fun KnowledgeGraphScreen(
                     }
                 }
             }
-            AnimatedVisibility(visible = nodes.isNotEmpty(), enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-                    FilledTonalButton(
-                        onClick = { showAccessibilityList = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(bottom = NexaraSpacing.Small)
-                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                            .testTag(UiTags.KG_LIST_ENTRY),
-                        shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.List,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(NexaraSpacing.Small))
-                        Text(
-                            stringResource(R.string.kg_open_accessibility_list),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                    TextButton(onClick = { resetKey++ }, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                        Text(stringResource(R.string.kg_graph_reset_view))
-                    }
-                }
-            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    // 平移缩放后的连线不得画到上方的筛选与搜索控件上。
+                    // 平移缩放后的连线不得画到上方的筛选控件上。
                     .clipToBounds(),
             ) {
-                // 图谱画布、加载、需选文档与空图谱之间交叉淡入；画布阶段内数据增长不触发切换。
+                // 图谱画布、加载、需选范围与空图谱之间交叉淡入；画布阶段内数据增长不触发切换。
                 val canvasPhase = when {
                     nodes.isNotEmpty() -> KgCanvasPhase.Graph
                     isLoading -> KgCanvasPhase.Loading
                     documentSelectionRequired -> KgCanvasPhase.DocumentRequired
+                    sessionSelectionRequired -> KgCanvasPhase.SessionRequired
                     else -> KgCanvasPhase.Empty
                 }
                 AnimatedContent(
@@ -298,39 +302,111 @@ fun KnowledgeGraphScreen(
                     label = "kg_canvas_phase",
                 ) { shown ->
                     when (shown) {
-                        KgCanvasPhase.Graph -> InteractiveGraphCanvas(
-                            simulator = simulator,
-                            edges = edges,
-                            summary = stringResource(
-                                R.string.kg_canvas_summary,
-                                nodes.size,
-                                edges.size,
-                                when (viewMode) {
-                                    KgViewMode.GLOBAL -> stringResource(R.string.kg_view_global)
-                                    KgViewMode.DOCUMENT -> stringResource(R.string.kg_view_document)
-                                    KgViewMode.CONCEPT -> stringResource(R.string.kg_filter_concepts)
-                                },
-                                stringResource(R.string.kg_canvas_gestures),
-                            ),
-                            modifier = Modifier.fillMaxSize(),
-                            resetKey = resetKey,
-                        )
-                        KgCanvasPhase.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            androidx.compose.material3.CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        }
-                        KgCanvasPhase.DocumentRequired, KgCanvasPhase.Empty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = stringResource(
-                                    if (shown == KgCanvasPhase.DocumentRequired) R.string.kg_document_required else R.string.kg_empty_graph,
+                        KgCanvasPhase.Graph -> Box(Modifier.fillMaxSize()) {
+                            InteractiveGraphCanvas(
+                                simulator = simulator,
+                                edges = edges,
+                                summary = stringResource(
+                                    R.string.kg_canvas_summary,
+                                    nodes.size,
+                                    edges.size,
+                                    viewLabel,
+                                    stringResource(R.string.kg_canvas_gestures),
                                 ),
-                                modifier = Modifier.padding(horizontal = NexaraSpacing.Large),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxSize(),
+                                resetKey = resetKey,
+                                highlight = highlight,
+                                centerOnNodeId = centerRequest.nodeId,
+                                centerRequestKey = centerRequest.key,
+                                // 详情面板盖住画布下半部分，选中实体移到上方三成处。
+                                centerFraction = if (selectedEntity != null) 0.3f else 0.5f,
+                                onNodeTap = { nodeId ->
+                                    searchActive = false
+                                    viewModel.tapEntity(nodeId)
+                                },
+                                onBackgroundTap = { viewModel.selectEntity(null) },
+                            )
+                            FilledTonalIconButton(
+                                onClick = { resetKey++ },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(NexaraSpacing.Medium)
+                                    .testTag(UiTags.KG_FIT_VIEW),
+                            ) {
+                                Icon(Icons.Rounded.CenterFocusStrong, contentDescription = stringResource(R.string.kg_fit_view))
+                            }
+                        }
+                        KgCanvasPhase.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                        KgCanvasPhase.DocumentRequired -> KnowledgeGraphCanvasMessage(
+                            text = stringResource(R.string.kg_document_required),
+                            actionLabel = stringResource(R.string.kg_select_document),
+                            onAction = { showDocumentSelector = true },
+                        )
+                        KgCanvasPhase.SessionRequired -> if (sessionOptions.isEmpty() && sessionOptionsError == null) {
+                            KnowledgeGraphCanvasMessage(text = stringResource(R.string.kg_session_options_empty))
+                        } else {
+                            KnowledgeGraphCanvasMessage(
+                                text = stringResource(R.string.kg_session_required),
+                                actionLabel = stringResource(R.string.kg_select_session),
+                                onAction = { showSessionSelector = true },
                             )
                         }
+                        KgCanvasPhase.Empty -> KnowledgeGraphCanvasMessage(text = stringResource(R.string.kg_empty_graph))
                     }
                 }
+                // 详情面板与轮次条叠在画布底部，图谱仍可平移缩放。
+                val detail = selectedEntity
+                val detailNode = detail?.let { selected -> nodes.firstOrNull { it.id == selected.nodeId } }
+                KgOverlay(
+                    visible = detail != null && detailNode != null,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    if (detail != null && detailNode != null) {
+                        val relationCount = remember(detailNode.id, edges) {
+                            edges.count { it.sourceId == detailNode.id || it.targetId == detailNode.id }
+                        }
+                        KnowledgeGraphEntityPanel(
+                            name = detailNode.label,
+                            kind = KgEntityKind.of(detailNode.type),
+                            detail = detail,
+                            relationCount = relationCount,
+                            relations = remember(detailNode.id, nodes, edges) { kgRelationItems(detailNode.id, nodes, edges) },
+                            onClose = { viewModel.selectEntity(null) },
+                            onOpenSession = onOpenSession,
+                            onPickEntity = viewModel::focusEntity,
+                            modifier = Modifier.heightIn(max = 360.dp),
+                        )
+                    }
+                }
+                KgOverlay(
+                    visible = searchActive && searchQuery.isNotBlank(),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = NexaraSpacing.Medium),
+                ) {
+                    KnowledgeGraphSearchResults(
+                        results = searchResults,
+                        isSearching = isSearching,
+                        failed = searchFailed,
+                        onPick = { nodeId ->
+                            searchActive = false
+                            viewModel.focusEntity(nodeId)
+                        },
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = viewMode == KgViewMode.SESSION && sessionTurns.isNotEmpty() && selectedEntity == null,
+                enter = NexaraMotion.expandIn,
+                exit = NexaraMotion.shrinkOut,
+            ) {
+                KnowledgeGraphTurnStrip(
+                    turns = sessionTurns,
+                    selectedTurnId = selectedTurnId,
+                    onSelectTurn = viewModel::selectTurn,
+                )
             }
         }
     }
@@ -353,6 +429,24 @@ fun KnowledgeGraphScreen(
             )
         }
     }
+    if (showSessionSelector) {
+        NexaraBottomSheet(
+            show = true,
+            onDismiss = { showSessionSelector = false },
+            title = stringResource(R.string.kg_select_session),
+        ) {
+            KnowledgeGraphSessionOptionsContent(
+                options = sessionOptions,
+                selectedSessionId = selectedSessionId,
+                loadError = sessionOptionsError,
+                onRetry = viewModel::retrySessionOptions,
+                onSelect = { sessionId ->
+                    showSessionSelector = false
+                    viewModel.loadGraphBySession(sessionId)
+                },
+            )
+        }
+    }
     if (showAccessibilityList) {
         KnowledgeGraphAccessibilitySheet(
             nodes = nodes,
@@ -365,74 +459,16 @@ fun KnowledgeGraphScreen(
     }
 }
 
-internal fun kgLoadErrorMessageRes(isStale: Boolean): Int =
-    if (isStale) R.string.kg_load_failed_stale else R.string.kg_load_failed
-
-@OptIn(ExperimentalMaterial3Api::class)
+/** 叠在画布上的面板；独立成函数以使用不带父布局作用域的展开动画。 */
 @Composable
-internal fun KnowledgeGraphModeSelector(
-    viewMode: KgViewMode,
-    onModeSelected: (KgViewMode) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = NexaraSpacing.Medium)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-    ) {
-        listOf(
-            KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
-            KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
-            KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
-        ).forEach { (mode, label) ->
-            val isActive = viewMode == mode
-            FilterChip(
-                selected = isActive,
-                onClick = { onModeSelected(mode) },
-                label = {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                },
-                shape = MaterialTheme.shapes.small,
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                border = null,
-                modifier = Modifier
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .testTag(UiTags.kgMode(mode.name)),
-            )
-        }
-        FilledTonalButton(
-            onClick = onRefresh,
-            modifier = Modifier
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                .testTag(UiTags.KG_REFRESH),
-            contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
-            shape = MaterialTheme.shapes.small,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(NexaraSpacing.XSmall))
-            Text(
-                text = stringResource(R.string.workbench_refresh),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
+private fun KgOverlay(visible: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
+    AnimatedVisibility(visible = visible, modifier = modifier, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+        content()
     }
 }
+
+internal fun kgLoadErrorMessageRes(isStale: Boolean): Int =
+    if (isStale) R.string.kg_load_failed_stale else R.string.kg_load_failed
 
 @Composable
 internal fun KnowledgeGraphDocumentOptionsContent(
@@ -502,6 +538,4 @@ internal fun KnowledgeGraphDocumentOptionsContent(
     }
 }
 
-private enum class KgSearchPhase { Searching, Failed, Empty, Results }
-
-private enum class KgCanvasPhase { Graph, Loading, DocumentRequired, Empty }
+private enum class KgCanvasPhase { Graph, Loading, DocumentRequired, SessionRequired, Empty }

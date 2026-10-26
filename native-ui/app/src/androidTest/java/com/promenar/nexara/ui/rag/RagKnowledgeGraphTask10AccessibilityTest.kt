@@ -192,15 +192,13 @@ class RagKnowledgeGraphTask10AccessibilityTest {
     }
 
     @Test
-    fun graphModeSelectorUsesSelectableSemanticsAndRefreshAction() {
+    fun graphModeSelectorUsesSelectableSemanticsWithSessionMode() {
         val selected = AtomicReference<KgViewMode?>(null)
-        val refreshes = AtomicInteger(0)
         rule.setContent {
             NexaraTheme {
                 KnowledgeGraphModeSelector(
                     viewMode = KgViewMode.GLOBAL,
                     onModeSelected = selected::set,
-                    onRefresh = { refreshes.incrementAndGet() },
                 )
             }
         }
@@ -211,13 +209,12 @@ class RagKnowledgeGraphTask10AccessibilityTest {
         rule.onNodeWithTag(UiTags.kgMode(KgViewMode.DOCUMENT.name))
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
-            .performClick()
-        rule.onNodeWithTag(UiTags.KG_REFRESH)
+        rule.onNodeWithTag(UiTags.kgMode(KgViewMode.SESSION.name))
+            .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
             .performClick()
 
-        assertThat(selected.get()).isEqualTo(KgViewMode.DOCUMENT)
-        assertThat(refreshes.get()).isEqualTo(1)
+        assertThat(selected.get()).isEqualTo(KgViewMode.SESSION)
     }
 
     @Test

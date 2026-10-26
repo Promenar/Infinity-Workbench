@@ -211,3 +211,18 @@ val NexaraAnsiLight = listOf(
     Color(0xFF47464F), Color(0xFF93000A), Color(0xFF00522F), Color(0xFF5B4300),
     Color(0xFF2F2FA8), Color(0xFF6C2085), Color(0xFF004E5C), Color(0xFF1C1B1F),
 )
+
+/**
+ * 知识图谱实体类型色（深色底），顺序：人物、组织、地点、事件、物品、概念、文档、其它。
+ * 节点为同一圆形，靠这组颜色与内部图标区分类型；彼此色相拉开，在 16% 底色与描边下都可辨。
+ */
+val NexaraKgEntityDark = listOf(
+    Color(0xFFF6A08F), Color(0xFF81C995), Color(0xFF5CC8C8), Color(0xFFF48FB1),
+    Color(0xFF7CACF8), Color(0xFFC58AF9), Color(0xFFF2C75C), Color(0xFFA8B0BE),
+)
+
+/** 知识图谱实体类型色（浅色底）：同一色相加深，保证描边、图标与文字对比度。 */
+val NexaraKgEntityLight = listOf(
+    Color(0xFFC4472B), Color(0xFF1E8E3E), Color(0xFF00838F), Color(0xFFC2185B),
+    Color(0xFF1A73E8), Color(0xFF8E3FD1), Color(0xFF9A6A00), Color(0xFF5F6673),
+)

@@ -475,7 +475,8 @@ fun NexaraNavGraph(
         ) { backStackEntry ->
             KnowledgeGraphScreen(
                 initialQuery = backStackEntry.arguments?.getString("query"),
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onOpenSession = { sessionId -> navController.navigate(NavDestinations.chatHero(sessionId)) },
             )
         }
 

@@ -2,10 +2,7 @@ package com.promenar.nexara.ui.rag
 
 import android.app.Application
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -19,10 +16,14 @@ import com.promenar.nexara.data.rag.GRAPH_EXPANSION_BATCH_SIZE
 import com.promenar.nexara.data.rag.MAX_GRAPH_NODE_LIMIT
 import com.promenar.nexara.data.rag.MAX_GRAPH_EDGE_LIMIT
 import com.promenar.nexara.data.rag.KgDocumentOption
+import com.promenar.nexara.data.rag.KgEntitySources
 import com.promenar.nexara.data.rag.KgNode
+import com.promenar.nexara.data.rag.KgSessionOption
+import com.promenar.nexara.data.rag.KgSessionTurn
 import com.promenar.nexara.data.repository.KnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.ui.rag.canvas.KgEntityKind
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +34,7 @@ import kotlinx.coroutines.delay
 
 import com.promenar.nexara.utils.NexaraLogger
 
-enum class KgViewMode { GLOBAL, DOCUMENT, CONCEPT }
+enum class KgViewMode { GLOBAL, DOCUMENT, SESSION }
 
 enum class KgLoadErrorCode { LoadFailed }
 
@@ -50,6 +51,17 @@ data class KgDocumentOptionsError(
     val canRetry: Boolean,
     val technical: String?,
 )
+
+/** 选中实体的详情：来源文档与会话轮次异步加载。 */
+data class KgEntityDetail(
+    val nodeId: String,
+    val sources: KgEntitySources? = null,
+    val isLoading: Boolean = true,
+    val failed: Boolean = false,
+)
+
+/** 请求画布把某实体移到视野中央；[key] 每次请求递增。 */
+data class KgCenterRequest(val nodeId: String? = null, val key: Int = 0)
 
 data class KgGraphState(
     val scopeKey: String? = null,
@@ -121,17 +133,188 @@ class KnowledgeGraphViewModel(
     val documentOptionsError: StateFlow<KgDocumentOptionsError?> =
         _documentOptionsError.asStateFlow()
 
+    private val _sessionOptions = MutableStateFlow<List<KgSessionOption>>(emptyList())
+    val sessionOptions: StateFlow<List<KgSessionOption>> = _sessionOptions.asStateFlow()
+
+    private val _sessionOptionsError = MutableStateFlow<KgDocumentOptionsError?>(null)
+    val sessionOptionsError: StateFlow<KgDocumentOptionsError?> = _sessionOptionsError.asStateFlow()
+
+    private val _selectedSessionId = MutableStateFlow<String?>(null)
+    val selectedSessionId: StateFlow<String?> = _selectedSessionId.asStateFlow()
+
+    private val _sessionSelectionRequired = MutableStateFlow(false)
+    val sessionSelectionRequired: StateFlow<Boolean> = _sessionSelectionRequired.asStateFlow()
+
+    /** 当前会话有存活证据的轮次，按轮次升序。 */
+    private val _sessionTurns = MutableStateFlow<List<KgSessionTurn>>(emptyList())
+    val sessionTurns: StateFlow<List<KgSessionTurn>> = _sessionTurns.asStateFlow()
+
+    /** 聚焦的轮次（助手消息 id）；为 null 时显示整个会话。 */
+    private val _selectedTurnId = MutableStateFlow<String?>(null)
+    val selectedTurnId: StateFlow<String?> = _selectedTurnId.asStateFlow()
+
+    private val _typeFilter = MutableStateFlow<Set<KgEntityKind>>(emptySet())
+    val typeFilter: StateFlow<Set<KgEntityKind>> = _typeFilter.asStateFlow()
+
+    private val _selectedEntity = MutableStateFlow<KgEntityDetail?>(null)
+    val selectedEntity: StateFlow<KgEntityDetail?> = _selectedEntity.asStateFlow()
+
+    private val _centerRequest = MutableStateFlow(KgCenterRequest())
+    val centerRequest: StateFlow<KgCenterRequest> = _centerRequest.asStateFlow()
+
     private var loadJob: Job? = null
     private var loadGeneration = 0L
     private var lastSuccessfulScopeKey: String? = null
     private var documentOptionsJob: Job? = null
     private var documentOptionsGeneration = 0L
+    private var sessionOptionsJob: Job? = null
+    private var sessionOptionsGeneration = 0L
+    private var sessionTurnsJob: Job? = null
+    private var sessionTurnsGeneration = 0L
+    private var entitySourcesJob: Job? = null
+    private var entitySourcesGeneration = 0L
     private var searchJob: Job? = null
     private var searchGeneration = 0L
+    /** 搜索选中但尚未在画布中的实体：展开加载完成后再选中并居中。 */
+    private var pendingFocusId: String? = null
 
     init {
         loadDocumentOptions()
+        loadSessionOptions()
         loadGraph()
+    }
+
+    fun loadSessionOptions() {
+        val generation = ++sessionOptionsGeneration
+        sessionOptionsJob?.cancel()
+        sessionOptionsJob = viewModelScope.launch {
+            try {
+                val options = graphStore.getSessionOptions()
+                if (generation != sessionOptionsGeneration) return@launch
+                _sessionOptions.value = options
+                _sessionOptionsError.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation != sessionOptionsGeneration) return@launch
+                NexaraLogger.logError("[KG] loadSessionOptions failed", failure)
+                _sessionOptionsError.value = KgDocumentOptionsError(
+                    code = KgDocumentOptionsErrorCode.LoadFailed,
+                    canRetry = true,
+                    technical = failure::class.simpleName?.take(80),
+                )
+            }
+        }
+    }
+
+    fun loadGraphBySession(sessionId: String) {
+        require(sessionId.isNotBlank()) { "会话标识不能为空" }
+        clearSearch()
+        clearScopeFocus()
+        _viewMode.value = KgViewMode.SESSION
+        _selectedSessionId.value = sessionId
+        _documentSelectionRequired.value = false
+        _sessionSelectionRequired.value = false
+        _loadError.value = null
+        loadGraphInternal(scope = KgScope.Session(sessionId), preserveSameScope = false)
+        loadSessionTurns(sessionId)
+    }
+
+    /** 再次点选同一轮取消聚焦。 */
+    fun selectTurn(messageId: String?) {
+        _selectedTurnId.value = if (messageId == _selectedTurnId.value) null else messageId
+        _selectedEntity.value = null
+    }
+
+    fun toggleTypeFilter(kind: KgEntityKind) {
+        _typeFilter.value = _typeFilter.value.let { if (kind in it) it - kind else it + kind }
+    }
+
+    fun clearTypeFilter() {
+        _typeFilter.value = emptySet()
+    }
+
+    /** 选中实体并加载来源；传 null 或再次点同一实体取消选中。 */
+    fun selectEntity(nodeId: String?) {
+        val generation = ++entitySourcesGeneration
+        entitySourcesJob?.cancel()
+        if (nodeId == null || nodeId == _selectedEntity.value?.nodeId) {
+            _selectedEntity.value = null
+            return
+        }
+        _selectedEntity.value = KgEntityDetail(nodeId)
+        entitySourcesJob = viewModelScope.launch {
+            try {
+                val sources = graphStore.getEntitySources(nodeId)
+                if (generation != entitySourcesGeneration) return@launch
+                _selectedEntity.value = KgEntityDetail(nodeId, sources, isLoading = false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation != entitySourcesGeneration) return@launch
+                NexaraLogger.logError("[KG] getEntitySources failed", failure)
+                _selectedEntity.value = KgEntityDetail(nodeId, isLoading = false, failed = true)
+            }
+        }
+    }
+
+    /** 画布上点实体：选中并移到可见区域；再点同一实体取消选中。 */
+    fun tapEntity(nodeId: String) {
+        if (_selectedEntity.value?.nodeId == nodeId) {
+            selectEntity(null)
+            return
+        }
+        selectEntity(nodeId)
+        requestCenter(nodeId)
+    }
+
+    /** 搜索结果选中：已在画布中直接选中并居中，否则先展开它的邻居。 */
+    fun focusEntity(nodeId: String) {
+        clearSearch()
+        if (_nodes.value.any { it.id == nodeId }) {
+            pendingFocusId = null
+            if (_selectedEntity.value?.nodeId != nodeId) selectEntity(nodeId)
+            requestCenter(nodeId)
+        } else {
+            pendingFocusId = nodeId
+            expandNode(nodeId)
+        }
+    }
+
+    private fun requestCenter(nodeId: String) {
+        _centerRequest.value = KgCenterRequest(nodeId, _centerRequest.value.key + 1)
+    }
+
+    private fun loadSessionTurns(sessionId: String) {
+        val generation = ++sessionTurnsGeneration
+        sessionTurnsJob?.cancel()
+        sessionTurnsJob = viewModelScope.launch {
+            try {
+                val turns = graphStore.getSessionTurns(sessionId)
+                if (generation != sessionTurnsGeneration) return@launch
+                _sessionTurns.value = turns
+                if (turns.none { it.messageId == _selectedTurnId.value }) _selectedTurnId.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation != sessionTurnsGeneration) return@launch
+                // 轮次条只是辅助导航，读取失败时隐藏，图谱本身照常显示。
+                NexaraLogger.logError("[KG] getSessionTurns failed", failure)
+                _sessionTurns.value = emptyList()
+                _selectedTurnId.value = null
+            }
+        }
+    }
+
+    /** 切换范围时清掉只对旧范围有意义的选中、轮次与类型筛选。 */
+    private fun clearScopeFocus() {
+        selectEntity(null)
+        pendingFocusId = null
+        _typeFilter.value = emptySet()
+        _selectedTurnId.value = null
+        sessionTurnsGeneration++
+        sessionTurnsJob?.cancel()
+        _sessionTurns.value = emptyList()
     }
 
     fun loadDocumentOptions() {
@@ -159,59 +342,51 @@ class KnowledgeGraphViewModel(
 
     fun retryDocumentOptions() = loadDocumentOptions()
 
+    fun retrySessionOptions() = loadSessionOptions()
+
     fun setViewMode(mode: KgViewMode) {
         clearSearch()
+        clearScopeFocus()
         _viewMode.value = mode
         _loadError.value = null
-        when (mode) {
-            KgViewMode.GLOBAL, KgViewMode.CONCEPT -> {
-                _documentSelectionRequired.value = false
-                loadGraphInternal(docId = null, mode = mode, preserveSameScope = false)
-            }
-            KgViewMode.DOCUMENT -> {
-                val docId = _selectedDocumentId.value
-                _documentSelectionRequired.value = docId == null
-                if (docId == null) {
-                    cancelPendingLoad()
-                    _nodes.value = emptyList()
-                    _edges.value = emptyList()
-                    _totalNodeCount.value = 0
-                    lastSuccessfulScopeKey = null
-                    _graphState.value = KgGraphState()
-                } else {
-                    loadGraphInternal(
-                        docId = docId,
-                        mode = KgViewMode.DOCUMENT,
-                        preserveSameScope = false,
-                    )
-                }
-            }
+        _documentSelectionRequired.value = false
+        _sessionSelectionRequired.value = false
+        val scope = currentScope()
+        if (scope == null) {
+            // 文档与会话视角在选定前不复用全局图，明确要求选择。
+            if (mode == KgViewMode.DOCUMENT) _documentSelectionRequired.value = true
+            if (mode == KgViewMode.SESSION) _sessionSelectionRequired.value = true
+            cancelPendingLoad()
+            _nodes.value = emptyList()
+            _edges.value = emptyList()
+            _totalNodeCount.value = 0
+            lastSuccessfulScopeKey = null
+            _graphState.value = KgGraphState()
+            return
         }
+        loadGraphInternal(scope = scope, preserveSameScope = false)
+        if (scope is KgScope.Session) loadSessionTurns(scope.sessionId)
     }
 
     fun loadGraph() {
         clearSearch()
+        clearScopeFocus()
         _viewMode.value = KgViewMode.GLOBAL
         _documentSelectionRequired.value = false
-        loadGraphInternal(
-            docId = null,
-            mode = KgViewMode.GLOBAL,
-            preserveSameScope = false,
-        )
+        _sessionSelectionRequired.value = false
+        loadGraphInternal(scope = KgScope.Global, preserveSameScope = false)
     }
 
     fun loadGraphByDoc(docId: String) {
         require(docId.isNotBlank()) { "文档标识不能为空" }
         clearSearch()
+        clearScopeFocus()
         _viewMode.value = KgViewMode.DOCUMENT
         _selectedDocumentId.value = docId
         _documentSelectionRequired.value = false
+        _sessionSelectionRequired.value = false
         _loadError.value = null
-        loadGraphInternal(
-            docId = docId,
-            mode = KgViewMode.DOCUMENT,
-            preserveSameScope = false,
-        )
+        loadGraphInternal(scope = KgScope.Document(docId), preserveSameScope = false)
     }
 
     fun retryLoad() {
@@ -220,6 +395,7 @@ class KnowledgeGraphViewModel(
 
     fun refreshCurrentScope() {
         reloadCurrentScope(preserveSameScope = true)
+        if (_viewMode.value == KgViewMode.SESSION) loadSessionOptions()
     }
 
     fun searchEntities(query: String) {
@@ -228,15 +404,16 @@ class KnowledgeGraphViewModel(
         _searchQuery.value = query.take(512)
         _searchFailed.value = false
         _searchResults.value = emptyList()
-        if (query.isBlank() || _documentSelectionRequired.value) {
+        val scope = currentScope()
+        if (query.isBlank() || scope == null) {
             _isSearching.value = false
             return
         }
         val expectedScope = _graphState.value.scopeKey
         val request = GraphEntitySearchRequest(
             query = _searchQuery.value,
-            docId = if (_viewMode.value == KgViewMode.DOCUMENT) _selectedDocumentId.value else null,
-            conceptOnly = _viewMode.value == KgViewMode.CONCEPT,
+            docId = (scope as? KgScope.Document)?.docId,
+            sessionId = (scope as? KgScope.Session)?.sessionId,
         )
         _isSearching.value = true
         searchJob = viewModelScope.launch {
@@ -256,16 +433,14 @@ class KnowledgeGraphViewModel(
     }
 
     fun expandNode(nodeId: String) {
-        if (_isLoading.value || _documentSelectionRequired.value || _nodes.value.size >= MAX_GRAPH_NODE_LIMIT) return
-        val mode = _viewMode.value
-        val docId = if (mode == KgViewMode.DOCUMENT) _selectedDocumentId.value else null
+        val scope = currentScope() ?: return
+        if (_isLoading.value || _nodes.value.size >= MAX_GRAPH_NODE_LIMIT) return
         loadGraphInternal(
-            docId = docId,
-            mode = mode,
+            scope = scope,
             preserveSameScope = true,
             request = GraphSubgraphRequest(
-                docId = docId,
-                conceptOnly = mode == KgViewMode.CONCEPT,
+                docId = (scope as? KgScope.Document)?.docId,
+                sessionId = (scope as? KgScope.Session)?.sessionId,
                 nodeLimit = (_nodes.value.size + GRAPH_EXPANSION_BATCH_SIZE + 1).coerceAtMost(MAX_GRAPH_NODE_LIMIT),
                 edgeLimit = maxOf(DEFAULT_GRAPH_EDGE_LIMIT, (_nodes.value.size + GRAPH_EXPANSION_BATCH_SIZE) * 4).coerceAtMost(MAX_GRAPH_EDGE_LIMIT),
                 retainedNodeIds = _nodes.value.map { it.id },
@@ -283,27 +458,30 @@ class KnowledgeGraphViewModel(
         _searchFailed.value = false
     }
 
+    /** 当前视角对应的查询范围；文档或会话未选定时为 null。 */
+    private fun currentScope(): KgScope? = when (_viewMode.value) {
+        KgViewMode.GLOBAL -> KgScope.Global
+        KgViewMode.DOCUMENT -> _selectedDocumentId.value?.let(KgScope::Document)
+        KgViewMode.SESSION -> _selectedSessionId.value?.let(KgScope::Session)
+    }
+
     private fun reloadCurrentScope(preserveSameScope: Boolean) {
-        val mode = _viewMode.value
-        val docId = if (mode == KgViewMode.DOCUMENT) _selectedDocumentId.value else null
-        if (mode == KgViewMode.DOCUMENT && docId == null) {
-            _documentSelectionRequired.value = true
+        val scope = currentScope()
+        if (scope == null) {
+            _documentSelectionRequired.value = _viewMode.value == KgViewMode.DOCUMENT
+            _sessionSelectionRequired.value = _viewMode.value == KgViewMode.SESSION
             return
         }
-        loadGraphInternal(
-            docId = docId,
-            mode = mode,
-            preserveSameScope = preserveSameScope,
-        )
+        loadGraphInternal(scope = scope, preserveSameScope = preserveSameScope)
+        if (scope is KgScope.Session) loadSessionTurns(scope.sessionId)
     }
 
     private fun loadGraphInternal(
-        docId: String?,
-        mode: KgViewMode,
+        scope: KgScope,
         preserveSameScope: Boolean,
         request: GraphSubgraphRequest? = null,
     ) {
-        val scopeKey = scopeKey(mode, docId)
+        val scopeKey = scope.key
         val preserveLastGood = preserveSameScope &&
             _graphState.value.scopeKey == scopeKey &&
             lastSuccessfulScopeKey == scopeKey
@@ -324,26 +502,25 @@ class KnowledgeGraphViewModel(
         )
         loadJob = viewModelScope.launch {
             try {
-                val result = graphStore.getGraphSubgraph(request ?: GraphSubgraphRequest(docId = docId, conceptOnly = mode == KgViewMode.CONCEPT))
+                val result = graphStore.getGraphSubgraph(request ?: scope.request())
                 val data = result.data
                 if (generation != loadGeneration) return@launch
-                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (docId=$docId)")
+                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (scope=$scopeKey)")
                 if (data.nodes.isEmpty() && data.edges.isEmpty()) {
                     NexaraLogger.log("[KG] WARNING: No graph data available — KG extraction may not have been completed, or all extractions failed")
-                }
-                if (data.nodes.isNotEmpty() && data.edges.isEmpty()) {
-                    NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
                 }
                 _loadError.value = null
                 render(data)
                 _totalNodeCount.value = result.totalNodeCount
                 lastSuccessfulScopeKey = scopeKey
                 _graphState.value = KgGraphState(scopeKey = scopeKey)
+                applyPendingFocus()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 if (generation != loadGeneration) return@launch
                 NexaraLogger.logError("[KG] loadGraphInternal failed", e)
+                pendingFocusId = null
                 _loadError.value = KgLoadError(
                     code = KgLoadErrorCode.LoadFailed,
                     canRetry = true,
@@ -365,10 +542,12 @@ class KnowledgeGraphViewModel(
         }
     }
 
-    private fun scopeKey(mode: KgViewMode, docId: String?): String = when (mode) {
-        KgViewMode.GLOBAL -> "global"
-        KgViewMode.DOCUMENT -> "document:${requireNotNull(docId)}"
-        KgViewMode.CONCEPT -> "concept:mode"
+    private fun applyPendingFocus() {
+        val nodeId = pendingFocusId ?: return
+        pendingFocusId = null
+        if (_nodes.value.none { it.id == nodeId }) return
+        if (_selectedEntity.value?.nodeId != nodeId) selectEntity(nodeId)
+        requestCenter(nodeId)
     }
 
     private fun cancelPendingLoad() {
@@ -388,12 +567,7 @@ class KnowledgeGraphViewModel(
                 type = node.type,
                 x = 0f,
                 y = 0f,
-                icon = when (node.type) {
-                    "concept" -> Icons.Rounded.Psychology
-                    "document" -> Icons.Rounded.Description
-                    "person" -> Icons.Rounded.Person
-                    else -> Icons.Rounded.Hub
-                }
+                icon = KgEntityKind.of(node.type).icon,
             )
         }
         val ids = mappedNodes.map { it.id }.toSet()
@@ -407,10 +581,10 @@ class KnowledgeGraphViewModel(
 
         _nodes.value = mappedNodes
         _edges.value = mappedEdges
+        // 展开或刷新后选中实体可能已不在子图中。
+        _selectedEntity.value?.let { selected -> if (selected.nodeId !in ids) selectEntity(null) }
         NexaraLogger.log("[KG] render success: mapped ${mappedNodes.size} nodes, ${mappedEdges.size} edges")
     }
-
-
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =
@@ -425,5 +599,26 @@ class KnowledgeGraphViewModel(
                     return KnowledgeGraphViewModel(repo, app.graphStore, application) as T
                 }
             }
+    }
+}
+
+/** 图谱查询范围；scope key 用来判断加载结果与缓存是否属于当前范围。 */
+private sealed interface KgScope {
+    val key: String
+    fun request(): GraphSubgraphRequest
+
+    data object Global : KgScope {
+        override val key = "global"
+        override fun request() = GraphSubgraphRequest()
+    }
+
+    data class Document(val docId: String) : KgScope {
+        override val key get() = "document:$docId"
+        override fun request() = GraphSubgraphRequest(docId = docId)
+    }
+
+    data class Session(val sessionId: String) : KgScope {
+        override val key get() = "session:$sessionId"
+        override fun request() = GraphSubgraphRequest(sessionId = sessionId)
     }
 }
