@@ -8,6 +8,12 @@ enum class ToolOutputStream { STDOUT, STDERR }
 interface ToolLiveOutputSink {
     fun emit(stream: ToolOutputStream, text: String)
 
+    /** PTY 回车覆盖后的有界文本快照。 */
+    fun replace(stream: ToolOutputStream, text: String) = emit(stream, text)
+
+    /** 工具让出后保留同一面板；返回值在任务结束时释放。 */
+    fun retain(): () -> Unit = {}
+
     /** 登记单个命令的停止动作（须为非阻塞，可在主线程调用）；不登记时界面不提供停止按钮。 */
     fun onStop(stop: () -> Unit)
 

@@ -19,7 +19,10 @@ object SystemPromptSections {
         "文件工具与命令使用相同的 Linux 路径，相对路径相对 /workspace；/root、/etc 等绝对路径指向 Linux rootfs。" +
         "/home/session 保存在 rootfs 之外，重置 Linux 不删除它；/root 不进入备份，重置会清空。文件元数据密集操作较慢。" +
         "Linux 不可用时返回错误，请用户在会话中处理环境，不能自动改用系统 sh、打包 Python 或其它运行环境。" +
-        "Linux 命令以 Nexara 身份运行，工作区档逐条审批，完全访问档免批。"
+        "Linux 命令以 Nexara 身份运行，工作区档逐条审批，完全访问档免批。" +
+        "shell_exec 在伪终端运行（TERM=xterm-256color，120列×40行，stderr合并到stdout）。默认15秒让出为后台任务，yield_after_seconds=0 等待到 timeout_seconds；background:true 立即返回任务号。" +
+        "命令输出实时显示给用户，模型仅在工具返回或查询任务时看到输出。交互命令让出后，应立即把已有输出中需用户操作的登录链接、验证码转告用户，再用 job_wait 等待或 job_input 回答提示。" +
+        "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。"
 
     fun shellRuntimeGuidance(state: LinuxRuntimeState, runMode: SessionRunMode = SessionRunMode.BUILTIN): String =
         if (runMode == SessionRunMode.LINUX) LINUX_SHELL_GUIDANCE +
@@ -41,9 +44,9 @@ object SystemPromptSections {
         else appendLine("- File tools and isolated scripts can access only workspace paths, including explicitly exposed /mnt/<alias> mounts and /skills. Paths outside this virtual namespace are invisible to them.")
         appendLine("- Built-in shell_exec and python_exec run as the Nexara app identity. They can access all app data and are not constrained to the workspace; Android does not provide a path-level process sandbox here. termux_exec runs as the Termux identity; SSH commands run on the remote host.")
         if (mode == com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE) {
-            appendLine("- Current scope: Workspace. Every shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open and ssh_session_send call requires user approval. If rejected, do not repeat the command.")
+            appendLine("- Current scope: Workspace. Every shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open, ssh_session_send and job_input call requires user approval. If rejected, do not repeat the command.")
         } else {
-            appendLine("- Current scope: Full access. shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open and ssh_session_send run without per-command approval.")
+            appendLine("- Current scope: Full access. shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open, ssh_session_send and job_input run without per-command approval.")
         }
         appendLine("- In both scopes, schedule_create, skill-directory mutations and SSH host configuration require approval for every call. Other tools do not require execution approval.")
         appendLine("- Critical runtime data includes databases/ (including nexara_v2.db), shared_prefs/, no_backup/, files/agent_skills/, and diagnostic logs (files/nexara_diagnostics.jsonl, files/nexara_logs.txt, files/diag-keep). In either scope, before modifying any of these, explain the purpose and impact in your reply and obtain the user's explicit written consent. Tool approval alone does not replace that consent.")
@@ -142,7 +145,8 @@ object SystemPromptSections {
             appendLine("- 用户要求跟踪游戏状态或写作进度时，用 state_define 定义状态面板，以 state_update 更新，state_get 读取，state_remove 移除；无需额外模型抽取。")
         }
         if (toolNames.any { it in setOf("shell_exec", "python_exec", "termux_exec") } && "job_wait" in toolNames) {
-            appendLine("- 耗时超过约一分钟或需要持续运行的命令使用 background:true；启动后继续其它工作，需要结果时用 job_wait。长任务优先 on_exit:\"wake\"，不要循环轮询。私有工作区后台命令在快照中运行，结束时合入，冲突产物保留在 jobs/；job_status/job_wait 发布日志。")
+            if (runMode == SessionRunMode.LINUX) appendLine("- Linux 长命令可用 background:true 立即返回，或等待前台默认15秒让出；两者均用 job_status/job_wait/job_input/job_stop 操作。让出的进程持续在原目录持锁运行，结束后对账，结果包含 workspace_changes；自选目录不对账。")
+            else appendLine("- 耗时超过约一分钟或需要持续运行的命令使用 background:true；启动后继续其它工作，需要结果时用 job_wait。长任务优先 on_exit:\"wake\"，不要循环轮询。私有工作区后台命令在快照中运行，结束时合入，冲突产物保留在 jobs/；job_status/job_wait 发布日志。")
         }
         if (toolNames.any(PLAN_TOOLS::contains)) {
             appendLine()

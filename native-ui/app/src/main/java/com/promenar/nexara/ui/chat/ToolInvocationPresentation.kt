@@ -63,7 +63,7 @@ internal data class ToolInvocationPresentation(val steps: List<ExecutionStep>) {
 
     private companion object {
         val WORKSPACE_TRACKED_COMMANDS = setOf("shell_exec", "python_exec")
-        val RUNTIME_MONITORED_TOOLS = setOf("shell_exec", "python_exec", "job_status", "job_wait")
+        val RUNTIME_MONITORED_TOOLS = setOf("shell_exec", "python_exec", "job_status", "job_wait", "job_input")
     }
 }
 
@@ -179,7 +179,7 @@ internal data class ToolGroupSummary(
 internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "shell_exec", "python_exec", "termux_exec", "ssh_exec", "ssh_session_open", "ssh_session_send", "ssh_session_read",
     "ssh_session_close", "ssh_host_install_key", "run_script", "exec_js", "python_sandbox",
-    "job_status", "job_wait", "job_stop", "job_list" -> ToolSummaryAction.COMMAND
+    "job_status", "job_wait", "job_stop", "job_list", "job_input" -> ToolSummaryAction.COMMAND
     "web_search", "search_tavily", "search_searxng" -> ToolSummaryAction.WEB_SEARCH
     "web_fetch" -> ToolSummaryAction.WEB_READ
     "read_file", "list_files", "search_files", "read_tool_output", "read_skill_file" -> ToolSummaryAction.FILE_READ

@@ -58,6 +58,8 @@ class BuiltinExecService(
     private val reconcileSessionHome: suspend (String) -> Unit = {},
     private val messages: RunModeMessages = RunModeMessages(),
 ) {
+    suspend fun runModeForSession(sessionId: String?): SessionRunMode? = sessionMode(sessionId)
+
     val pipAvailable: Boolean get() = environment.pipAvailable
     private val packageProvenance = LinuxExecProvenance(linuxProvenance)
 
@@ -70,7 +72,7 @@ class BuiltinExecService(
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = home.canonicalPath)
         val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home)
         val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
-        BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment, stdin, seconds)
+        BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment + ("TERM" to "xterm-256color"), stdin, seconds, terminal = true)
     }
 
     suspend fun runShell(
@@ -81,10 +83,11 @@ class BuiltinExecService(
         timeoutSeconds: Int,
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
         expectedMode: SessionRunMode? = null,
+        attachment: LinuxExecAttachment? = null,
     ): CommandToolResult {
         val mode = sessionMode(sessionId) ?: return modeRequired()
         if (expectedMode != null && mode != expectedMode) return modeChanged()
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds, if (mode == SessionRunMode.LINUX) ExecRunKind.LINUX else ExecRunKind.SHELL, command, live, stdin) { root, kind ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, if (mode == SessionRunMode.LINUX) ExecRunKind.LINUX else ExecRunKind.SHELL, command, live, stdin, attachment) { root, kind ->
             BuiltinCommandRequest(
                 argv = listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", command),
                 workingDirectory = root,
@@ -183,10 +186,11 @@ class BuiltinExecService(
         source: String,
         live: ToolLiveOutputSink,
         stdin: String? = null,
+        attachment: LinuxExecAttachment? = null,
         request: (File, String) -> BuiltinCommandRequest,
     ): CommandToolResult {
         val runtime = if (kind == ExecRunKind.LINUX) "linux" else "system"
-        fun executionFields() = buildJsonObject { put("runtime", runtime) }
+        fun executionFields() = buildJsonObject { put("runtime", runtime); if (kind == ExecRunKind.LINUX) put("stderr_merged", true) }
         if (kind == ExecRunKind.LINUX && linuxRuntime?.state?.value !is com.promenar.nexara.domain.linux.LinuxRuntimeState.Ready) {
             return linuxUnavailable()
         }
@@ -203,13 +207,14 @@ class BuiltinExecService(
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(rootId = workspaceRootUuid, sessionId = sessionId, path = directory?.root?.canonicalPath)
         val workspaceKind = SessionWorkspaceResolver.kindOf(target)
         var physicalRoot: File? = null
-        val control = BuiltinCommandControl()
+        val control = attachment?.control ?: BuiltinCommandControl()
         live.onStop(control::requestStop)
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
         // 代理不可用时命令照常执行，内置 git 退回直连。
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
         var runtimeFields = JsonObject(emptyMap())
         suspend fun runCommand(root: File): BuiltinCommandOutput {
+            attachment?.onDirectory?.invoke(root)
             val base = if (kind == ExecRunKind.LINUX) {
                 linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds)
             } else request(root, workspaceKind)
@@ -220,6 +225,9 @@ class BuiltinExecService(
             var before: RuntimeDataMonitor.Snapshot? = null
             try {
                 before = runtimeDataMonitor?.capture()
+                if (linux) return runner.runTerminal(commandRequest, control,
+                    onTerminalOutput = { live.replace(ToolOutputStream.STDOUT, virtualize(it, root)) },
+                    processGroupFile = attachment?.processGroupFile, terminalLog = attachment?.logFile)
                 if (live === ToolLiveOutputSink.None) return runner.run(commandRequest, control)
                 val tee = LiveWorkspaceOutput(root, live::emit)
                 return try { runner.run(commandRequest, control, tee::accept) } finally { tee.finish() }

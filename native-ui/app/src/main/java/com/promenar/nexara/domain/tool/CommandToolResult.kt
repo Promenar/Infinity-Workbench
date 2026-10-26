@@ -36,7 +36,7 @@ data class CommandToolResult(
     /** 命令本身未出错、未超时且退出码为 0 才算成功。 */
     val succeeded: Boolean get() = errorCode == null && !timedOut && exitCode == 0
 
-    val toolStatus: String get() = if (succeeded) "success" else "error"
+    val toolStatus: String get() = if (succeeded || errorCode == null && (backendFields["state"] as? JsonPrimitive)?.content == "running") "success" else "error"
 
     fun toJson(): JsonObject = buildJsonObject {
         put("error_code", errorCode?.let(::JsonPrimitive) ?: JsonNull)

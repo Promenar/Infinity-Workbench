@@ -1111,7 +1111,8 @@ internal fun InlineToolRow(
     val invocations = remember(steps) { toolInvocations(steps) }
     // 审批通过后的调用不在生成任务内执行，以实时输出通道判断它是否正在运行。
     val liveKeys = LocalToolLiveOutput.current?.activeKeys?.collectAsState()?.value.orEmpty()
-    val liveRunning = invocations.any { invocation -> !invocation.complete && invocation.call?.id?.let(::unscopedStepId) in liveKeys }
+    val liveInvocations = activeToolOutputs(invocations, liveKeys)
+    val liveRunning = liveInvocations.isNotEmpty()
     val executing = isExecuting || liveRunning
     val summary = remember(invocations, executing) { toolGroupDisplaySummary(invocations, executing) }
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
@@ -1151,7 +1152,7 @@ internal fun InlineToolRow(
         }
         if (executing) {
             // 运行中的命令在摘要下方显示实时输出，结束后由结果展示接替。
-            invocations.filterNot { it.complete }.forEach { invocation ->
+            liveInvocations.forEach { invocation ->
                 invocation.call?.id?.let { stepId -> key(stepId) { RunningToolLiveOutput(unscopedStepId(stepId)) } }
             }
         }

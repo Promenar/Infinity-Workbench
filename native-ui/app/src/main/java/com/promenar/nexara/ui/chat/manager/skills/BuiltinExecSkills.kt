@@ -4,6 +4,7 @@ import com.promenar.nexara.data.exec.BuiltinCommandRunner
 import com.promenar.nexara.data.exec.BuiltinExecService
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.tool.CommandToolResult
+import com.promenar.nexara.domain.tool.ExecToolArguments
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
@@ -38,18 +39,28 @@ class ShellExecSkill(private val service: BuiltinExecService, private val jobs: 
         "（可改用 python3 -m nexara_git" + (if (service.pipAvailable) " / python3 -m nexara_pip" else "") + "，或用 . 脚本 在当前 shell 执行）。" + workspaceNote() +
         "需要 apt 包、编译工具链、SSH 远端 git 或原生 Python 扩展时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
-    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA}},"required":["command"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入；Linux 交互命令请省略"},"yield_after_seconds":{"type":"integer","description":"Linux 前台让出阈值，0 不让出；默认 min(15,timeout_seconds)，不得超过 timeout_seconds"},${BACKGROUND_EXEC_SCHEMA}},"required":["command"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        if (args.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL, "command")
-        return runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
-            val command = (args.getValue("command") as JsonPrimitive).content
+        val normalized = ExecToolArguments.normalize(args)
+        val values = normalized.arguments
+        if (values.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL, "command")
+        val result = runBuiltin(id, validator, parametersSchema, values, ::invalid) { timeout, stdin ->
+            val command = (values.getValue("command") as JsonPrimitive).content
             if (command.isBlank()) return@runBuiltin invalid("command 不能为空")
             if (command.length > MAX_COMMAND_CHARS) return@runBuiltin invalid("command 超过 $MAX_COMMAND_CHARS 字符，请把脚本写入工作区文件后执行")
-            service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput, expectedMode = context.runMode)
+            val mode = context.runMode ?: service.runModeForSession(context.sessionId)
+            val threshold = ExecToolArguments.integer(values, "yield_after_seconds", minOf(15, timeout), 0..timeout)
+            if (mode == com.promenar.nexara.domain.model.SessionRunMode.LINUX && jobs != null && threshold > 0) {
+                val minutes = ExecToolArguments.integer(values, "max_runtime_minutes", 120, 1..1440)
+                val action = com.promenar.nexara.domain.jobs.BackgroundJobExitAction.fromWire((values["on_exit"] as? JsonPrimitive)?.content ?: "notify")!!
+                jobs.runLinuxForeground(context.sessionId, context.workspaceRootUuid, command, threshold, minutes, action, context.liveOutput) { attachment, live ->
+                    service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, live, expectedMode = mode, attachment = attachment)
+                }
+            } else service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput, expectedMode = mode)
         }
-
+        return result.copy(content = normalized.result(kotlinx.serialization.json.Json.parseToJsonElement(result.content) as JsonObject).toString())
     }
 
     private fun invalid(reason: String?) = CommandToolResult(
@@ -115,7 +126,7 @@ private suspend fun runBuiltin(
         when (val validation = validator.validate(schema, args)) {
             is ToolSchemaValidation.Invalid -> invalid("${validation.error.path}：${validation.error.message}")
             else -> {
-                val timeout = (args["timeout_seconds"] as? JsonPrimitive)?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                val timeout = ExecToolArguments.integer(args, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS, 1..BuiltinCommandRunner.MAX_TIMEOUT_SECONDS)
                 if (timeout !in 1..BuiltinCommandRunner.MAX_TIMEOUT_SECONDS) invalid("timeout_seconds 超出范围")
                 else body(timeout, (args["stdin"] as? JsonPrimitive)?.content)
             }

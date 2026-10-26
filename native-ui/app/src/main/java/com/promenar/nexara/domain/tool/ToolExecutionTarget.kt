@@ -50,6 +50,12 @@ object ToolExecutionTargets {
             val alias = args.string("alias")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
             return JsonArray(listOf(JsonPrimitive("ssh_host"), JsonPrimitive(alias), JsonObject(mapOf("oneShot" to JsonPrimitive(true))))).toString()
         }
+        if (tool.function.name == "job_input" && tool.sourceId == "builtin") {
+            val job = args.string("job_id") ?: return null
+            val text = args.string("text") ?: return null
+            return JsonArray(listOf(JsonPrimitive("process"), JsonPrimitive("linux"),
+                JsonPrimitive("$job: $text"), JsonObject(mapOf("oneShot" to JsonPrimitive(true))))).toString()
+        }
         if (tool.risk == ToolRisk.PROCESS && tool.function.name == "python_exec" && tool.sourceId == "builtin") {
             val code = args.string("code")?.takeIf(String::isNotBlank) ?: return null
             return tuple("process", "python", code)

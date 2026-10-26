@@ -54,6 +54,7 @@ class ToolLiveOutputStore(
 
     /** 只移除 [sink] 本身登记的通道，避免旧调用的收尾移除新调用。 */
     fun close(key: String, sink: ToolLiveOutputSink) {
+        if (sink is ToolLiveOutputStore.Entry && sink.deferClose()) return
         if (entries.remove(key, sink)) {
             _activeKeys.update { keys -> keys - key }
             bump()
@@ -81,6 +82,33 @@ class ToolLiveOutputStore(
     private inner class Entry(private val key: String) : ToolLiveOutputSink {
         private val buffer = StringBuilder()
         private var dropped = false
+        private var retainCount = 0
+        private var closePending = false
+        @Synchronized fun deferClose(): Boolean {
+            if (retainCount == 0) return false
+            closePending = true
+            return true
+        }
+        override fun retain(): () -> Unit {
+            synchronized(this) { retainCount++ }
+            val released = java.util.concurrent.atomic.AtomicBoolean(false)
+            return {
+                if (released.compareAndSet(false, true)) {
+                    val closeNow = synchronized(this) { retainCount--; retainCount == 0 && closePending }
+                    if (closeNow) close(key, this)
+                }
+            }
+        }
+        override fun replace(stream: ToolOutputStream, text: String) {
+            synchronized(this) {
+                markActive()
+                buffer.clear()
+                val start = (text.length - limit).coerceAtLeast(0).let { if (it < text.length && text[it].isLowSurrogate()) it + 1 else it }
+                buffer.append(text.substring(start))
+                dropped = text.length > limit
+            }
+            bump()
+        }
         @Volatile private var stop: (() -> Unit)? = null
         @Volatile private var unsupportedBackend = false
         @Volatile var active = false

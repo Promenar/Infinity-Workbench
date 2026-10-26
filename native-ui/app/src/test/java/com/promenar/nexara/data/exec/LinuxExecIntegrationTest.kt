@@ -47,6 +47,25 @@ class LinuxExecIntegrationTest {
             shell = "/bin/sh",
             signaller = { group, signal -> ProcessBuilder("/bin/kill", "-$signal", "-$group").start().waitFor() },
             scratchDirectory = { File(root, "scratch") }, killGraceMillis = 50, pollMillis = 20,
+            terminalFactory = { argv, directory, environment ->
+                val process = ProcessBuilder(listOf("/usr/bin/perl", "-e", "setpgrp(0, 0); exec @ARGV or exit 127") + argv)
+                    .directory(directory).redirectErrorStream(true).apply { environment().clear(); environment().putAll(environment) }.start()
+                object : Process() {
+                    override fun getInputStream() = process.inputStream
+                    override fun getErrorStream() = process.errorStream
+                    override fun getOutputStream() = object : java.io.OutputStream() {
+                        override fun write(b: Int) { process.outputStream.write(if (b == 13) 10 else b) }
+                        override fun flush() = process.outputStream.flush()
+                        override fun close() = process.outputStream.close()
+                    }
+                    override fun waitFor() = process.waitFor()
+                    override fun waitFor(time: Long, unit: java.util.concurrent.TimeUnit) = process.waitFor(time, unit)
+                    override fun exitValue() = process.exitValue()
+                    override fun destroy() = process.destroy()
+                    override fun destroyForcibly(): Process = process.destroyForcibly()
+                    override fun isAlive() = process.isAlive
+                }
+            },
         )
     }
 
@@ -64,8 +83,8 @@ class LinuxExecIntegrationTest {
         }
     }
 
-    private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList()) = BuiltinExecService(
-        workspace = object : WorkspaceCommandHost {
+    private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null) = BuiltinExecService(
+        workspace = host ?: object : WorkspaceCommandHost {
             override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
                 val result = block(workspace)
                 reconciles++
@@ -81,6 +100,135 @@ class LinuxExecIntegrationTest {
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
         service.runShell("root", "s", command, null, timeout, live)
 
+
+    @Test fun `前台让出保留进程和对账直到输入完成且拒绝跨会话输入`() = runBlocking<Unit> {
+        val exec = service()
+        val jobs = manager(exec)
+        val store = ToolLiveOutputStore()
+        val live = store.open("step")
+        val context = object : SkillExecutionContext {
+            override val sessionId = "s"
+            override val agentId = "a"
+            override val workspaceRootUuid = "root"
+            override val workspacePath: String? = null
+            override val runMode = SessionRunMode.LINUX
+            override val liveOutput = live
+        }
+        val skill = ShellExecSkill(exec, jobs)
+        val result = skill.execute(buildJsonObject {
+            put("command", "printf '\u001b[32m请输入：\u001b[0m'; read answer; printf '回答=%s\n' \"\$answer\"; touch done")
+            put("yield_after_seconds", "1"); put("timeout_seconds", "2")
+        }, context)
+        assertThat(result.status).isEqualTo("success")
+        val json = Json.parseToJsonElement(result.content).jsonObject
+        assertThat(json.getValue("state").jsonPrimitive.content).isEqualTo("running")
+        assertThat(json.getValue("stdout").jsonPrimitive.content).isEqualTo("请输入：")
+        assertThat(json.getValue("argument_notes").jsonArray).hasSize(2)
+        val id = json.getValue("job_id").jsonPrimitive.content
+        assertThat(reconciles).isEqualTo(0)
+        store.close("step", live)
+        assertThat(store.snapshot("step")?.text).isEqualTo("请输入：")
+        assertThat((runCatching { jobs.input("other", id, "bad") }.exceptionOrNull() as? JobAccessException)?.code).isEqualTo("JOB_NOT_FOUND")
+        delay(1_200)
+        assertThat(jobs.status("s", id).record.running).isTrue()
+        val input = jobs.input("s", id, "yes")
+        assertThat(input.tail.text).contains("回答=yes")
+        val ended = jobs.waitFor("s", id, 5)
+        assertThat(ended.record.state).isEqualTo("EXITED")
+        assertThat(ended.record.commandResult?.get("workspace_changes")).isNotNull()
+        assertThat(reconciles).isEqualTo(1)
+        assertThat(File(workspace, "done").exists()).isTrue()
+        withTimeout(5_000) { while (store.snapshot("step") != null) delay(10) }
+        assertThat((runCatching { jobs.input("s", id, "bad") }.exceptionOrNull() as? JobAccessException)?.code).isEqualTo("JOB_NOT_RUNNING")
+    }
+
+    @Test fun `让出阈值等于超时且调用线程繁忙仍保留进程`() = runBlocking<Unit> {
+        val exec = service()
+        val jobs = manager(exec)
+        val task = async {
+            jobs.runLinuxForeground("s", "root", "touch started; sleep 30", 1, 120, BackgroundJobExitAction.NONE, ToolLiveOutputSink.None) { attachment, live ->
+                exec.runShell("root", "s", "touch started; sleep 30", null, 1, live, attachment = attachment)
+            }
+        }
+        withTimeout(5_000) { while (!File(workspace, "started").exists()) delay(10) }
+        // 调用线程繁忙不应让 runner 先把等值时限判成超时。
+        Thread.sleep(1_500)
+        val result = task.await()
+        assertThat(result.toJson()["state"]?.jsonPrimitive?.content).isEqualTo("running")
+        val id = result.toJson().getValue("job_id").jsonPrimitive.content
+        assertThat(jobs.status("s", id).record.running).isTrue()
+        jobs.stop("s", id)
+    }
+
+    @Test fun `预留落盘时取消不会遗留无执行者的运行记录`() = runBlocking<Unit> {
+        val exec = service()
+        var cancelOwner: Job? = null
+        val jobs = manager(exec, jobNow = { cancelOwner?.cancel(); cancelOwner = null; System.currentTimeMillis() })
+        jobs.initialize()
+        val task = launch {
+            cancelOwner = currentCoroutineContext()[Job]
+            jobs.runLinuxForeground("s", "root", "sleep 30", 1, 120, BackgroundJobExitAction.NONE, ToolLiveOutputSink.None) { attachment, live ->
+                exec.runShell("root", "s", "sleep 30", null, 30, live, attachment = attachment)
+            }
+        }
+        withTimeout(5_000) { task.join() }
+        assertThat(jobs.list("s").none { it.running }).isTrue()
+        withTimeout(2_000) { jobs.stopSession("s") }
+    }
+
+    @Test fun `等待原工作区锁时取消新调用不等待已有任务结束`() = runBlocking<Unit> {
+        val mutex = kotlinx.coroutines.sync.Mutex()
+        val exec = service(host = object : WorkspaceCommandHost {
+            override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
+                mutex.lock()
+                try { return WorkspaceCommandOutcome(block(workspace), null) } finally { mutex.unlock() }
+            }
+        })
+        val jobs = manager(exec)
+        suspend fun run(command: String) = jobs.runLinuxForeground("s", "root", command, 1, 120, BackgroundJobExitAction.NONE, ToolLiveOutputSink.None) { attachment, live ->
+            exec.runShell("root", "s", command, null, 30, live, attachment = attachment)
+        }
+        val first = run("sleep 30")
+        val id = first.toJson().getValue("job_id").jsonPrimitive.content
+        val waiting = launch { run("touch should_not_run") }
+        withTimeout(5_000) { while (jobs.list("s").count { it.running } < 2) delay(10) }
+        delay(100)
+        withTimeout(2_000) { waiting.cancelAndJoin() }
+        assertThat(jobs.status("s", id).record.running).isTrue()
+        assertThat(File(workspace, "should_not_run").exists()).isFalse()
+        jobs.stop("s", id)
+    }
+
+    @Test fun `任务输入支持空文本EOF且写入超时返回明确错误`() = runBlocking<Unit> {
+        val exec = service()
+        val jobs = manager(exec)
+        var slow = false
+        val inputs = mutableListOf<Pair<String, Boolean>>()
+        val running = jobs.runLinuxForeground("s", "root", "interactive", 1, 120, BackgroundJobExitAction.NONE, ToolLiveOutputSink.None) { attachment, _ ->
+            val control = attachment.control
+            control.input = { text, eof -> if (slow) Thread.sleep(30_000) else synchronized(inputs) { inputs += text to eof } }
+            control.started.complete(Unit); control.yielded.complete(Unit)
+            try { while (!control.stopRequested) delay(10) } finally { control.input = null }
+            CommandToolResult(exitCode = 0)
+        }
+        val id = running.toJson().getValue("job_id").jsonPrimitive.content
+        jobs.input("s", id, "", newline = false, eof = true)
+        assertThat(inputs).containsExactly("" to true)
+        slow = true
+        assertThat((runCatching { jobs.input("s", id, "a") }.exceptionOrNull() as? JobAccessException)?.code).isEqualTo("JOB_INPUT_TIMEOUT")
+        jobs.stop("s", id)
+    }
+
+    @Test fun `零让出阈值按原超时结束且返回前台结果`() = runBlocking<Unit> {
+        val exec = service()
+        val jobs = manager(exec)
+        val result = jobs.runLinuxForeground("s", "root", "sleep 30", 0, 120, BackgroundJobExitAction.NONE, ToolLiveOutputSink.None) { attachment, live ->
+            exec.runShell("root", "s", "sleep 30", null, 1, live, attachment = attachment)
+        }
+        assertThat(result.errorCode).isEqualTo("EXEC_TIMEOUT")
+        assertThat(result.toJson()).doesNotContainKey("job_id")
+        assertThat(reconciles).isEqualTo(1)
+    }
 
     @Test fun `隔离工作目录的前后台Linux命令均在生成启动规格前拒绝`() = runBlocking {
         val manager = com.promenar.nexara.startup.StartupIssueManager()
@@ -219,6 +367,7 @@ class LinuxExecIntegrationTest {
         val live = StringBuilder()
         val sink = object : ToolLiveOutputSink by ToolLiveOutputSink.None {
             override fun emit(stream: ToolOutputStream, text: String) { synchronized(live) { live.append(text) } }
+            override fun replace(stream: ToolOutputStream, text: String) { synchronized(live) { live.clear(); live.append(text) } }
         }
         val result = shell(service(), "printf '/workspace/out.txt\\n'; pwd", live = sink)
         assertThat(result.stdout).isEqualTo("/workspace/out.txt\n\$NEXARA_WORKSPACE\n")
@@ -318,12 +467,12 @@ class LinuxExecIntegrationTest {
         assertThat(linuxReachStatus(readyState(), false)).isEqualTo(ReachBackendStatus.DISABLED)
     }
 
-    private fun manager(exec: BuiltinExecService, beforePrepare: suspend () -> Unit = {}): BackgroundJobManager {
+    private fun manager(exec: BuiltinExecService, jobNow: () -> Long = System::currentTimeMillis, beforePrepare: suspend () -> Unit = {}): BackgroundJobManager {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { scopes += it }
         return BackgroundJobManager(scope, BackgroundJobStore(File(root,"store")), File(root,"runs"), runner,
             prepareWorkspace = { BackgroundJobLocation(workspace, workspace, false, false) },
             prepareCommand = { kind, source, stdin, location, minutes -> beforePrepare(); exec.prepareBackgroundCommand(kind, source, stdin, location, minutes, location.sessionId) },
-            keepAlive = keepAlive, linuxRuntime = runtime, sessionMode = { mode },
+            keepAlive = keepAlive, linuxRuntime = runtime, sessionMode = { mode }, now = jobNow,
         )
     }
 

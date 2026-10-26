@@ -20,6 +20,7 @@ data class BuiltinCommandRequest(
     val environment: Map<String, String>,
     val stdin: String? = null,
     val timeoutSeconds: Int,
+    val terminal: Boolean = false,
 )
 
 data class BuiltinCommandOutput(
@@ -45,6 +46,18 @@ class BuiltinCommandControl {
     @Volatile
     var stopRequested: Boolean = false
         private set
+
+    val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+    @Volatile var timeoutSecondsOverride: Int? = null
+    @Volatile var yieldAfterSeconds: Int = 0
+    @Volatile var yieldedTimeoutSeconds: Int = 120 * 60
+    val yielded = kotlinx.coroutines.CompletableDeferred<Unit>()
+    @Volatile internal var terminalText: com.promenar.nexara.data.linux.LinuxExecTerminalText? = null
+    @Volatile internal var input: ((String, Boolean) -> Unit)? = null
+    val outputSnapshot: BuiltinCommandOutput? get() = terminalText?.snapshot()
+    internal fun writeInput(text: String, eof: Boolean) {
+        (input ?: throw java.io.IOException("任务没有可写的交互输入"))(text, eof)
+    }
 
     fun requestStop() {
         stopRequested = true
@@ -80,6 +93,7 @@ class BuiltinCommandRunner(
     private val bootIdentity: () -> String? = { runCatching { File("/proc/sys/kernel/random/boot_id").readText().trim() }.getOrNull() },
     private val requireBackgroundIdentity: Boolean = false,
     private val runtimeDataMonitor: RuntimeDataMonitor? = null,
+    private val terminalFactory: com.promenar.nexara.data.linux.LinuxExecPtyFactory = com.promenar.nexara.data.linux.LinuxExecNativePtyFactory,
 ) {
     suspend fun run(
         request: BuiltinCommandRequest,
@@ -87,6 +101,14 @@ class BuiltinCommandRunner(
         /** 读取线程每读到一块输出即回调，只用于展示；不影响结果中的尾部截断。 */
         onOutput: ((ToolOutputStream, String) -> Unit)? = null,
     ): BuiltinCommandOutput = runInternal(request, control, onOutput)
+
+    suspend fun runTerminal(
+        request: BuiltinCommandRequest,
+        control: BuiltinCommandControl,
+        onTerminalOutput: (String) -> Unit,
+        processGroupFile: File? = null,
+        terminalLog: File? = null,
+    ): BuiltinCommandOutput = runInternal(request, control, null, terminalLog, processGroupFile, onTerminalOutput = onTerminalOutput)
 
     /** 后台日志由单条合并管道流式写盘，调用方必须使用应用级作用域。 */
     suspend fun runBackground(
@@ -96,10 +118,11 @@ class BuiltinCommandRunner(
         processGroupFile: File,
         onStarted: () -> Unit = {},
         onOutput: ((ToolOutputStream, String) -> Unit)? = null,
+        onTerminalOutput: ((String) -> Unit)? = null,
     ): BuiltinCommandOutput {
         val before = runtimeDataMonitor?.capture()
         try {
-            return runInternal(request, control, onOutput, logFile, processGroupFile, onStarted)
+            return runInternal(request, control, onOutput, logFile, processGroupFile, onStarted, onTerminalOutput)
         } finally {
             if (before != null) withContext(NonCancellable) {
                 val fields = runtimeDataMonitor.changesSince(before)
@@ -133,6 +156,7 @@ class BuiltinCommandRunner(
         logFile: File? = null,
         processGroupFile: File? = null,
         onStarted: () -> Unit = {},
+        onTerminalOutput: ((String) -> Unit)? = null,
     ): BuiltinCommandOutput = withContext(Dispatchers.IO) {
         require(request.argv.isNotEmpty()) { "命令不能为空" }
         require(request.timeoutSeconds in 1..(if (logFile == null) MAX_TIMEOUT_SECONDS else 1440 * 60)) { "timeout_seconds 必须为 1–$MAX_TIMEOUT_SECONDS" }
@@ -153,7 +177,10 @@ class BuiltinCommandRunner(
                 .redirectErrorStream(logFile != null)
             builder.environment().clear()
             builder.environment().putAll(request.environment)
-            val process = builder.start()
+            val process = if (request.terminal) terminalFactory.start(
+                launchCommand(request, pidFile, logFile != null && requireBackgroundIdentity).drop(groupLauncher.size),
+                request.workingDirectory, request.environment + ("TERM" to "xterm-256color"),
+            ) else builder.start()
             var settled=false
             try {
             if (logFile != null) {
@@ -172,11 +199,35 @@ class BuiltinCommandRunner(
                     } }
                 }
             }
-            onStarted()
             val stdout = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDOUT, text) } })
             val stderr = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDERR, text) } })
             val logFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
-            val readers = if (logFile != null) listOf(daemon("nexara-job-output") {
+            val terminalText = if (request.terminal) com.promenar.nexara.data.linux.LinuxExecTerminalText(outputLimit).also { control.terminalText = it } else null
+            val readers = if (terminalText != null) listOf(daemon("nexara-pty-output") {
+                val log = logFile?.let { com.promenar.nexara.data.jobs.RotatingJobLog(it) }
+                try {
+                    InputStreamReader(process.inputStream, Charsets.UTF_8).use { reader ->
+                        val chunk = CharArray(8192)
+                        while (true) {
+                            val count = try { reader.read(chunk) } catch (failure: java.io.IOException) {
+                                // Linux PTY 在 slave 关闭后以 EIO 表示读取结束。
+                                if (failure.message?.contains("EIO") == true || failure.message?.contains("I/O error", ignoreCase = true) == true || !process.isAlive) -1 else throw failure
+                            }
+                            if (count < 0) break
+                            val committed = terminalText.accept(String(chunk, 0, count))
+                            log?.write(committed.toByteArray(Charsets.UTF_8))
+                            val snapshot = terminalText.snapshot().stdout
+                            if (onTerminalOutput != null) onTerminalOutput(snapshot)
+                            else if (committed.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, committed)
+                        }
+                    }
+                    val rest = terminalText.finish()
+                    log?.write(rest.toByteArray(Charsets.UTF_8))
+                    if (onTerminalOutput != null) onTerminalOutput(terminalText.snapshot().stdout)
+                    else if (rest.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, rest)
+                } catch (failure: Throwable) { logFailure.set(failure); control.requestStop() }
+                finally { log?.close() }
+            }) else if (logFile != null) listOf(daemon("nexara-job-output") {
                 try {
                 com.promenar.nexara.data.jobs.RotatingJobLog(logFile).use { log ->
                     InputStreamReader(process.inputStream, Charsets.UTF_8).use { reader ->
@@ -198,17 +249,32 @@ class BuiltinCommandRunner(
                 daemon("nexara-exec-stdout") { stdout.consume(process.inputStream) },
                 daemon("nexara-exec-stderr") { stderr.consume(process.errorStream) },
             )
-            daemon("nexara-exec-stdin") {
-                process.outputStream.use { output -> request.stdin?.let { output.write(it.toByteArray(Charsets.UTF_8)) } }
+            if (request.terminal && request.stdin == null) {
+                control.input = { text, eof ->
+                    synchronized(process.outputStream) {
+                        if (!process.isAlive) throw java.io.IOException("任务已经结束")
+                        process.outputStream.write(text.toByteArray(Charsets.UTF_8))
+                        if (eof) process.outputStream.write(byteArrayOf(4, 4))
+                        process.outputStream.flush()
+                    }
+                }
+            } else daemon("nexara-exec-stdin") {
+                process.outputStream.use { output ->
+                    request.stdin?.let { output.write(it.toByteArray(Charsets.UTF_8)) }
+                    if (request.terminal) { output.write(byteArrayOf(4, 4)); output.flush() }
+                }
             }
+            onStarted()
+            control.started.complete(Unit)
             val wait = try {
-                runInterruptible { await(process, request.timeoutSeconds, control, logFile == null) }
+                runInterruptible { await(process, request.timeoutSeconds, control, logFile == null || request.terminal) }
             } catch (cancelled: CancellationException) {
-                withContext(NonCancellable) { terminate(process, pidFile, logFile != null); settled=true }
+                withContext(NonCancellable) { if(request.terminal) process.destroy(); terminate(process, pidFile, logFile != null); settled=true }
                 throw cancelled
             }
             val signalled = wait.outcome != WaitOutcome.EXITED
             if (signalled) {
+                if (request.terminal) process.destroy()
                 terminate(process, pidFile, logFile != null)
             } else {
                 // 主进程已退出；同组后台进程不能跨过写锁继续运行。
@@ -223,22 +289,26 @@ class BuiltinCommandRunner(
             }
             logFailure.get()?.let { throw java.io.IOException("后台任务日志写入失败", it) }
             val exit = if (signalled) null else process.exitValue()
+            val terminalSnapshot = terminalText?.snapshot()
             BuiltinCommandOutput(
                 exitCode = exit,
                 timedOut = wait.outcome == WaitOutcome.TIMED_OUT,
-                stdout = stdout.text(),
-                stderr = stderr.text(),
-                stdoutOriginalLength = stdout.totalChars,
-                stderrOriginalLength = stderr.totalChars,
-                stdoutTruncated = stdout.truncated,
-                stderrTruncated = stderr.truncated,
+                stdout = terminalSnapshot?.stdout ?: stdout.text(),
+                stderr = terminalSnapshot?.stderr ?: stderr.text(),
+                stdoutOriginalLength = terminalSnapshot?.stdoutOriginalLength ?: stdout.totalChars,
+                stderrOriginalLength = terminalSnapshot?.stderrOriginalLength ?: stderr.totalChars,
+                stdoutTruncated = terminalSnapshot?.stdoutTruncated ?: stdout.truncated,
+                stderrTruncated = terminalSnapshot?.stderrTruncated ?: stderr.truncated,
                 killedExternally = exit == SIGNAL_EXIT_BASE + SIGKILL,
                 stoppedByUser = wait.outcome == WaitOutcome.STOPPED,
                 pausedMillis = wait.pausedNanos / 1_000_000,
             )
             } catch (failure:Throwable) {
-                if(!settled) withContext(NonCancellable) {terminate(process,pidFile,logFile!=null)}
+                if(!settled) withContext(NonCancellable) { if(request.terminal) process.destroy(); terminate(process,pidFile,logFile!=null) }
                 throw failure
+            } finally {
+                control.input = null
+                (process as? AutoCloseable)?.close()
             }
         } finally {
             scratch.deleteRecursively()
@@ -262,9 +332,13 @@ class BuiltinCommandRunner(
         val step = TimeUnit.MILLISECONDS.toNanos(pollMillis)
         val pauseThreshold = TimeUnit.MILLISECONDS.toNanos(pauseThresholdMillis)
         var remaining = TimeUnit.SECONDS.toNanos(timeoutSeconds.toLong())
+        var budget = timeoutSeconds
+        var consumed = 0L
         var paused = 0L
         var last = clockNanos()
         while (true) {
+            val desired = control.timeoutSecondsOverride ?: timeoutSeconds
+            if (desired != budget) { remaining += TimeUnit.SECONDS.toNanos((desired - budget).toLong()); budget = desired }
             if (control.stopRequested) return WaitResult(WaitOutcome.STOPPED, paused)
             if (process.waitFor(minOf(step, remaining.coerceAtLeast(1)), TimeUnit.NANOSECONDS)) {
                 return WaitResult(WaitOutcome.EXITED, paused)
@@ -273,11 +347,20 @@ class BuiltinCommandRunner(
             val elapsed = (now - last).coerceAtLeast(0)
             last = now
             val excess = elapsed - step
-            remaining -= if (excludePauses && excess > pauseThreshold) {
+            val charged = if (excludePauses && excess > pauseThreshold) {
                 paused += excess
                 step
-            } else {
-                elapsed
+            } else elapsed
+            consumed += charged
+            remaining -= charged
+            val threshold = control.yieldAfterSeconds
+            if (threshold > 0 && !control.yielded.isCompleted && consumed >= TimeUnit.SECONDS.toNanos(threshold.toLong())) {
+                // 先在同一计时循环中扩大预算，再唤醒前台等待者，等值边界不会先被判成超时。
+                val expanded = control.yieldedTimeoutSeconds
+                remaining += TimeUnit.SECONDS.toNanos((expanded - budget).toLong())
+                budget = expanded
+                control.timeoutSecondsOverride = expanded
+                control.yielded.complete(Unit)
             }
             if (remaining <= 0) {
                 return if (control.stopRequested) WaitResult(WaitOutcome.STOPPED, paused) else WaitResult(WaitOutcome.TIMED_OUT, paused)

@@ -82,6 +82,7 @@ class BackgroundJobManager(
     private class Active(val control: BuiltinCommandControl = BuiltinCommandControl()) {
         val terminal = CompletableDeferred<Unit>()
         var worker: Job? = null
+        val inputGate = Mutex()
         val completion = CompletableDeferred<Pair<BackgroundJobRecord, JobLogTail>>()
         var sink: ToolLiveOutputSink = ToolLiveOutputSink.None
         var lastTail: String = ""
@@ -202,7 +203,7 @@ class BackgroundJobManager(
                                 handle.control.requestStop()
                             } else null
                             try {
-                                runner.runBackground(prepared.request,handle.control,log,File(record.runDirectory,"pgid"),onStarted={started.complete(current)},onOutput=sink::emit)
+                                runner.runBackground(prepared.request,handle.control,log,File(record.runDirectory,"pgid"),onStarted={started.complete(current)},onOutput=sink::emit,onTerminalOutput={ sink.replace(ToolOutputStream.STDOUT, it) })
                             } finally {
                                 withContext(NonCancellable) { watcher?.cancelAndJoin(); prepared.afterRun() }
                             }
@@ -232,6 +233,139 @@ class BackgroundJobManager(
         }
         started.await()
     } }.await()
+
+    /** 应用级协程从启动起拥有命令；让出仅扩大时限并把控制柄暴露给 job_*。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun runLinuxForeground(
+        sessionId: String, root: String, source: String, yieldSeconds: Int, minutes: Int,
+        action: BackgroundJobExitAction, live: ToolLiveOutputSink,
+        block: suspend (LinuxExecAttachment, ToolLiveOutputSink) -> com.promenar.nexara.domain.tool.CommandToolResult,
+    ): com.promenar.nexara.domain.tool.CommandToolResult {
+        val result = CompletableDeferred<com.promenar.nexara.domain.tool.CommandToolResult>()
+        val yielded = java.util.concurrent.atomic.AtomicBoolean(false)
+        var ownedHandle: Active? = null
+        var ownedRecord: BackgroundJobRecord? = null
+        var directory: File? = null
+        try {
+            withContext(NonCancellable) {
+                initialize()
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.LINUX, source, minutes, action) }
+                    .copy(directWorkspace = true)
+                ownedRecord = record
+                val handle = active.getValue(record.id)
+                ownedHandle = handle
+                handle.control.yieldAfterSeconds = yieldSeconds
+                handle.control.yieldedTimeoutSeconds = minutes * 60
+                store.put(record)
+                val release = live.retain()
+                val sink = liveOutput.open("job:${record.id}")
+                sink.onStop(handle.control::requestStop)
+                val tee = object : ToolLiveOutputSink by live {
+                    override fun emit(stream: ToolOutputStream, text: String) { live.emit(stream, text); sink.emit(stream, text) }
+                    override fun replace(stream: ToolOutputStream, text: String) { live.replace(stream, text); sink.replace(stream, text) }
+                }
+                handle.worker = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+                    var runtimeRemoved = false
+                    try {
+                        val value = coroutineScope {
+                            val watcher = linuxRuntime?.let { runtime -> launch {
+                                runtime.state.first { it !is com.promenar.nexara.domain.linux.LinuxRuntimeState.Ready }
+                                runtimeRemoved = true; handle.control.requestStop()
+                            } }
+                            try { block(LinuxExecAttachment(handle.control, File(record.runDirectory, "pgid"), logFile(record)) { directory = it }, tee) }
+                            finally { withContext(NonCancellable) { watcher?.cancelAndJoin() } }
+                        }
+                        withContext(NonCancellable) {
+                            val terminal = record.copy(
+                                workspaceDirectory = directory?.path,
+                                state = when { runtimeRemoved -> "FAILED"; value.errorCode == "EXEC_STOPPED" -> "STOPPED"; value.timedOut -> "TIMED_OUT"; value.errorCode != null -> "FAILED"; else -> "EXITED" },
+                                exitCode = value.exitCode, endedAtMillis = now(), commandResult = value.toJson(),
+                                guidance = if (runtimeRemoved) messages(RunModeMessage.LINUX_UNAVAILABLE) else value.guidance,
+                            )
+                            store.put(terminal); publish(); handle.terminal.complete(Unit)
+                            result.complete(value)
+                            if (yielded.get() && sessionAllowed(record) && !handle.suppressCompletion) {
+                                try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
+                            }
+                        }
+                    } catch (failure: Throwable) {
+                        withContext(NonCancellable) {
+                            store.put(record.copy(workspaceDirectory = directory?.path, state = if (handle.control.stopRequested) "STOPPED" else if (failure is CancellationException) "INTERRUPTED" else "FAILED", endedAtMillis = now(), guidance = "命令执行失败（${failure.javaClass.simpleName}）。"))
+                            publish(); result.completeExceptionally(failure)
+                        }
+                    } finally {
+                        handle.terminal.complete(Unit); active.remove(record.id, handle)
+                        release(); liveOutput.close("job:${record.id}", sink)
+                    }
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            val record = checkNotNull(ownedRecord)
+            val handle = checkNotNull(ownedHandle)
+            // 环境准备与写锁等待不消耗前台运行阈值。
+            kotlinx.coroutines.selects.select<Unit> { result.onAwait { }; handle.control.started.onAwait { } }
+            val completed = if (yieldSeconds == 0) result.await() else kotlinx.coroutines.selects.select<com.promenar.nexara.domain.tool.CommandToolResult?> {
+                result.onAwait { it }
+                handle.control.yielded.onAwait { null }
+            }
+            currentCoroutineContext().ensureActive()
+            if (completed != null) return completed
+            // 无挂起区间先转移所有权，避免调用取消把已让出的进程停止。
+            yielded.set(true)
+            withContext(NonCancellable) { store.updateIfPresent(record.id) { it.copy(workspaceDirectory = directory?.path) } }
+            if (result.isCompleted) return result.await()
+            val output = handle.control.outputSnapshot
+            val fields = kotlinx.serialization.json.buildJsonObject {
+                put("runtime", kotlinx.serialization.json.JsonPrimitive("linux")); put("stderr_merged", kotlinx.serialization.json.JsonPrimitive(true))
+                put("state", kotlinx.serialization.json.JsonPrimitive("running")); put("job_id", kotlinx.serialization.json.JsonPrimitive(record.id))
+                put("yielded_after_seconds", kotlinx.serialization.json.JsonPrimitive(yieldSeconds))
+                put("workspace_mode", kotlinx.serialization.json.JsonPrimitive("direct_reconcile_on_exit"))
+            }
+            return com.promenar.nexara.domain.tool.CommandToolResult(
+                guidance = "命令仍在运行；用 job_status/job_wait 查看，用 job_input 回答提示，用 job_stop 结束。",
+                stdout = output?.stdout.orEmpty().let { text -> directory?.let { BuiltinExecService.virtualize(text, it) } ?: text },
+                stderr = output?.stderr.orEmpty(), stdoutOriginalLength = output?.stdoutOriginalLength ?: 0,
+                stderrOriginalLength = output?.stderrOriginalLength ?: 0, stdoutTruncated = output?.stdoutTruncated ?: false,
+                stderrTruncated = output?.stderrTruncated ?: false, backendFields = fields,
+            )
+        } catch (failure: Throwable) {
+            if (!yielded.get()) withContext(NonCancellable) {
+                ownedHandle?.let { handle ->
+                    handle.control.requestStop()
+                    if (handle.worker != null) handle.worker?.cancelAndJoin() else {
+                        ownedRecord?.let { record ->
+                            store.put(record.copy(state = "FAILED", endedAtMillis = now(), guidance = "任务启动未完成。"))
+                            active.remove(record.id, handle); publish()
+                        }
+                        handle.terminal.complete(Unit)
+                    }
+                }
+            }
+            throw failure
+        }
+    }
+
+    suspend fun input(sessionId: String, id: String, text: String, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus = withContext(Dispatchers.IO) {
+        require(text.length <= 32_000 && '\u0000' !in text) { "text 应为不含 NUL 的字符串，最多32000字符。" }
+        val record = owned(sessionId, id)
+        if (!record.running) throw JobAccessException("JOB_NOT_RUNNING", "任务已经结束，不能写入输入。")
+        val handle = active[id] ?: throw JobAccessException("JOB_INPUT_UNAVAILABLE", "任务输入不可用，请查询任务状态。")
+        if (handle.control.input == null) throw JobAccessException("JOB_INPUT_UNAVAILABLE", "该任务没有交互输入；需要交互的 Linux shell 命令不要传 stdin。")
+        handle.inputGate.withLock {
+            val before = status(sessionId, id).tail.text
+            try {
+                withTimeout(5_000) { runInterruptible { handle.control.writeInput(text + if (newline) "\r" else "", eof) } }
+            } catch (_: TimeoutCancellationException) {
+                throw JobAccessException("JOB_INPUT_TIMEOUT", "输入写入超时，请用 job_status 查看状态后再决定是否重试。")
+            } catch (failure: java.io.IOException) {
+                if (store.all().any { it.id == id && !it.running } || handle.control.input == null) throw JobAccessException("JOB_NOT_RUNNING", "任务已经结束，不能写入输入。")
+                throw JobAccessException("JOB_INPUT_FAILED", "输入写入失败，请用 job_status 查看状态。")
+            }
+            delay(1_000)
+            val after = status(sessionId, id)
+            after.copy(tail = after.tail.copy(text = if (after.tail.text.startsWith(before)) after.tail.text.drop(before.length) else after.tail.text))
+        }
+    }
 
     suspend fun startTermux(sessionId:String, workspaceRootUuid:String, source:String, workdir:String?, stdin:String?, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
@@ -362,7 +496,7 @@ class BackgroundJobManager(
     private suspend fun finish(record:BackgroundJobRecord,handle:Active) {
         var settled=record
         var reconciled=false
-        val warning=try {reconcile(record,true,false).also { reconciled=true }} catch(_:Exception){"工作区合入或日志发布失败，临时副本已保留；请检查工作区后处理任务产物。"}
+        val warning=try { (if (record.directWorkspace) null else reconcile(record,true,false)).also { reconciled=true }} catch(_:Exception){"工作区合入或日志发布失败，临时副本已保留；请检查工作区后处理任务产物。"}
         if(reconciled && record.isolatedWorkspace) {
             // 完成状态与日志仍可查询，完整工作区副本不再长期保留。
             val directory=File(runRoot,record.id)
@@ -396,10 +530,13 @@ class BackgroundJobManager(
         var record=owned(sessionId,id)
         var warning: String? = null
         val tail=if(record.runnerKind==BackgroundJobRunner.TERMUX) refreshTermux(record) else {
-            warning=reconcile(record,false,false)
+            warning=if (record.directWorkspace) null else reconcile(record,false,false)
             val migration = if (record.logMigrationDeferred) null else runCatching { BackgroundJobLogs.migrate(record, runRoot) }.exceptionOrNull()
             if (migration != null) warning = listOfNotNull(warning, "日志迁移未完成（${migration::class.java.simpleName}），旧日志已保留。").joinToString(" ")
-            readJobLogTail(logFile(record))
+            val snapshot = active[id]?.control?.outputSnapshot
+            val raw = snapshot?.let { JobLogTail(it.stdout.takeLast(8_000), it.stdoutTruncated || it.stdout.length > 8_000) } ?: readJobLogTail(logFile(record))
+            val directory = record.workspaceDirectory?.let(::File)
+            if (directory == null) raw else raw.copy(text = BuiltinExecService.virtualize(raw.text, directory))
         }
         record=owned(sessionId,id)
         BackgroundJobStatus(record.copy(guidance=listOfNotNull(record.guidance,warning).distinct().joinToString(" ").ifEmpty { null }),tail)
@@ -434,7 +571,10 @@ class BackgroundJobManager(
                     publish()
                 }
             }
-        } else handle?.control?.requestStop()
+        } else {
+            handle?.control?.requestStop()
+            if (record.directWorkspace && handle != null && !handle.control.started.isCompleted) handle.worker?.cancel()
+        }
         handle?.terminal?.await()
         true
     }

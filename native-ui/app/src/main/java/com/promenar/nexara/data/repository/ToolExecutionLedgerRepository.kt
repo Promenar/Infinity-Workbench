@@ -249,7 +249,7 @@ object ToolInvocationIdentityFactory {
                 (digest as ToolDefinitionDigestResolution.Invalid).message,
             )
         }
-        val schema = ToolSchemaValidator().validate(digest.canonicalSchema, arguments.arguments)
+        val schema = ToolSchemaValidator().validate(digest.canonicalSchema, if (tool.sourceId == "builtin" && com.promenar.nexara.domain.tool.ExecToolArguments.supports(toolName)) com.promenar.nexara.domain.tool.ExecToolArguments.normalize(arguments.arguments).arguments else arguments.arguments)
         if (schema is ToolSchemaValidation.Invalid) {
             return ToolInvocationIdentityResolution.Invalid(
                 ToolInvocationIdentityErrorCode.SCHEMA_MISMATCH,

@@ -20,7 +20,7 @@ class BackgroundJobSkillsTest {
             prepareWorkspace={BackgroundJobLocation(root,root,false,false)},prepareCommand={_,source,_,location,minutes->PreparedBackgroundCommand(BuiltinCommandRequest(listOf("/bin/sh","-c",source),location.commandDirectory,mapOf("PATH" to "/usr/bin:/bin"),timeoutSeconds=minutes*60))})
         try {
             val tools=backgroundJobTools(manager).associateBy{it.id}
-            assertThat(tools.values.map{it.risk}).containsExactly(ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE)
+            assertThat(tools.values.map{it.risk}).containsExactly(ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE,ToolRisk.SESSION_STATE,ToolRisk.PROCESS)
             val own=context("own");val other=context("other")
             val skill = File(root,"files/agent_skills/foo/SKILL.md").apply { parentFile.mkdirs(); writeText("before") }
             val result=runBackgroundExec("shell_exec","""{"type":"object","properties":{"command":{"type":"string"},$BACKGROUND_EXEC_SCHEMA},"required":["command"],"additionalProperties":false}""",buildJsonObject{put("command","printf changed >> '${skill.path}'");put("background",true)},own,manager,com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL,"command")
@@ -39,5 +39,26 @@ class BackgroundJobSkillsTest {
             assertThat(status.content).contains("runtime_changes")
         } finally{scope.cancel();root.deleteRecursively()}
     }
+    @Test fun `后台布尔字符串可转换且错误指出具体字段`() = runBlocking<Unit> {
+        val schema = """{"type":"object","properties":{"command":{"type":"string"},$BACKGROUND_EXEC_SCHEMA},"required":["command"],"additionalProperties":false}"""
+        val converted = runBackgroundExec("shell_exec", schema, buildJsonObject { put("command", "true"); put("background", "True") }, context("own"), null, com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL, "command")
+        assertThat(converted.content).contains("JOB_UNAVAILABLE")
+        val invalid = runBackgroundExec("shell_exec", schema, buildJsonObject { put("command", "true"); put("background", true); put("max_runtime_minutes", "bad") }, context("own"), null, com.promenar.nexara.domain.jobs.BackgroundJobRunner.SHELL, "command")
+        assertThat(invalid.content).contains("max_runtime_minutes")
+        assertThat(invalid.content).contains("整数")
+        assertThat(invalid.content).contains("字符串")
+    }
+
+    @Test fun `会话工具描述包含Linux终端交互契约`() {
+        val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction("shell_exec", "在本机用系统 /system/bin/sh 执行命令", "{}"),
+            sourceId = "builtin", runtimeToolId = "shell_exec",
+        )
+        val linux = com.promenar.nexara.data.generation.SessionRunModeToolDefinitions.forSession(tool, com.promenar.nexara.domain.model.SessionRunMode.LINUX).function.description
+        assertThat(linux).doesNotContain("/system/bin/sh")
+        listOf("伪终端", "15", "job_input", "apk add", "/workspace", "/mnt/<别名>").forEach { assertThat(linux).contains(it) }
+        assertThat(com.promenar.nexara.data.generation.SessionRunModeToolDefinitions.forSession(tool, com.promenar.nexara.domain.model.SessionRunMode.BUILTIN).function.description).contains("/system/bin/sh")
+    }
+
     private fun context(id:String)=object:SkillExecutionContext {override val sessionId=id;override val agentId="a";override val workspacePath:String?=null;override val workspaceRootUuid="root"}
 }

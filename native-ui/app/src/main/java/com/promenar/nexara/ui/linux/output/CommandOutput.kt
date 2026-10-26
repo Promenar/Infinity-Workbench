@@ -81,7 +81,7 @@ object CommandOutputParser {
 
     private val TRUNCATION_MARKER = Regex("""^…\(已截断，原始 (\d+) 字符\)""")
     private val SHELL_TOOLS = setOf("shell_exec")
-    private val COMMAND_TOOLS = setOf("shell_exec", "python_exec", "termux_exec", "ssh_exec", "job_status", "job_wait")
+    private val COMMAND_TOOLS = setOf("shell_exec", "python_exec", "termux_exec", "ssh_exec", "job_status", "job_wait", "job_input")
 
     fun isCommandTool(toolName: String?): Boolean = toolName in COMMAND_TOOLS
 

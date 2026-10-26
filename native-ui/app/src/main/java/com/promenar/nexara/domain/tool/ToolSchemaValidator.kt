@@ -174,11 +174,11 @@ class ToolSchemaValidator {
     ): ToolSchemaValidationError? {
         val types = schema["type"]?.let(::schemaTypes).orEmpty()
         if (types.isNotEmpty() && types.none { matchesType(it, value) }) {
-            return error(ToolSchemaErrorCode.TYPE_MISMATCH, path, "工具参数类型不符合 schema")
+            return error(ToolSchemaErrorCode.TYPE_MISMATCH, path, "应为 ${types.joinToString("或") { when (it) { "integer" -> "整数"; "boolean" -> "布尔值"; "string" -> "字符串"; else -> it } }}，收到${ExecToolArguments.typeOf(value)}")
         }
         (schema["enum"] as? JsonArray)?.let { allowed ->
             if (value !in allowed) {
-                return error(ToolSchemaErrorCode.ENUM_MISMATCH, path, "工具参数不在允许的枚举范围")
+                return error(ToolSchemaErrorCode.ENUM_MISMATCH, path, "应为枚举 ${allowed.joinToString()}，收到${ExecToolArguments.typeOf(value)}")
             }
         }
         if (value is JsonObject) {
