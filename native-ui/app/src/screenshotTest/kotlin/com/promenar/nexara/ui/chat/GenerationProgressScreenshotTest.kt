@@ -313,6 +313,7 @@ private fun WideRunPage(mode: NexaraThemeMode, english: Boolean, pages: List<Cha
                         stateBoard = sideBoard(english),
                         gitSummary = sideGit,
                         inspectorPages = pages,
+                        browserEntry = true,
                     ),
                     actions = ChatScreenActions(),
                 )
@@ -342,7 +343,7 @@ fun chatInspectorStripLightPreview() = WideRunPage(NexaraThemeMode.LIGHT, englis
 @Composable
 private fun InspectorAlone(mode: NexaraThemeMode, english: Boolean) {
     val plan = groupedPlan(english)
-    val badges = ChatInspectorBadges(running = true, pendingApprovals = 2, hasRunContent = true, gitAvailable = true, gitChanges = 3, canvases = 2)
+    val badges = ChatInspectorBadges(running = true, pendingApprovals = 2, hasRunContent = true, gitAvailable = true, gitChanges = 3, canvases = 2, browserEntry = true)
     NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
             Row(Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

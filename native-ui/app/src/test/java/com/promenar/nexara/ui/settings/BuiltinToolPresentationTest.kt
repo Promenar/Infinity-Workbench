@@ -36,6 +36,14 @@ class BuiltinToolPresentationTest {
     }
 
     @Test
+    fun `Agent 浏览器四个工具归入联网，排在网页抓取之后`() {
+        val ids = listOf("web_search", "web_fetch", "browser_open", "browser_snapshot", "browser_click", "browser_type")
+        val groups = ids.map(::tool).groupedByToolCategory()
+        assertThat(groups.map { it.first }).containsExactly(BuiltinToolCategory.WEB)
+        assertThat(groups.single().second.map { it.id }).containsExactlyElementsIn(ids).inOrder()
+    }
+
+    @Test
     fun `未知工具归入其它，空分组不出现`() {
         val groups = listOf(tool("web_fetch"), tool("future_tool")).groupedByToolCategory()
         assertThat(groups.map { it.first }).containsExactly(BuiltinToolCategory.WEB, BuiltinToolCategory.OTHER).inOrder()

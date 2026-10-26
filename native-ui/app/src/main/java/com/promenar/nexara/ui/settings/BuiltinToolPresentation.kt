@@ -22,12 +22,16 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.Javascript
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.PlaylistRemove
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.promenar.nexara.R
 
@@ -42,7 +46,7 @@ internal enum class BuiltinToolCategory(@StringRes val titleRes: Int) {
 }
 
 internal fun builtinToolCategory(id: String): BuiltinToolCategory = when (id) {
-    "web_search", "web_fetch" -> BuiltinToolCategory.WEB
+    "web_search", "web_fetch", "browser_open", "browser_snapshot", "browser_click", "browser_type" -> BuiltinToolCategory.WEB
     "file_read", "file_list", "file_search", "file_diff", "file_write", "file_patch",
     "create_file", "create_directory", "move_file", "delete_file" -> BuiltinToolCategory.FILES
     "exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox" -> BuiltinToolCategory.EXECUTION
@@ -61,6 +65,10 @@ internal fun List<SkillInfo>.groupedByToolCategory(): List<Pair<BuiltinToolCateg
 internal fun builtinToolIcon(id: String): ImageVector = when (id) {
     "web_search" -> Icons.Rounded.Search
     "web_fetch" -> Icons.Rounded.Language
+    "browser_open" -> Icons.Rounded.Public
+    "browser_snapshot" -> Icons.Rounded.Visibility
+    "browser_click" -> Icons.Rounded.TouchApp
+    "browser_type" -> Icons.Rounded.Keyboard
     "calculator" -> Icons.Rounded.Calculate
     "image_generation" -> Icons.Rounded.Image
     "view_media" -> Icons.Rounded.ImageSearch

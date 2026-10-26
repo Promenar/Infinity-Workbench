@@ -59,8 +59,11 @@ class BrowserToolPresentationTest {
         assertThat(toolSummaryAction("browser_type")).isEqualTo(ToolSummaryAction.BROWSER)
     }
 
-    @Test fun `浏览器页仅在会话打开过网页时出现在检视器`() {
+    @Test fun `浏览器页签随入口常驻，只有打开过网页才算检视器内容`() {
         assertThat(ChatInspectorBadges().pages()).doesNotContain(ChatPage.Browser)
+        val entryOnly = ChatInspectorBadges(browserEntry = true)
+        assertThat(entryOnly.pages()).contains(ChatPage.Browser)
+        assertThat(entryOnly.hasContent).isFalse()
         val badges = ChatInspectorBadges(browser = com.promenar.nexara.data.browser.BrowserMode.IDLE)
         assertThat(badges.pages()).contains(ChatPage.Browser)
         assertThat(badges.hasContent).isTrue()

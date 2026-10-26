@@ -72,14 +72,16 @@ internal data class ChatInspectorBadges(
     val gitAvailable: Boolean = false,
     val gitChanges: Int = 0,
     val canvases: Int = 0,
-    /** 本会话的 Agent 浏览器状态；为空表示还没有打开网页，不显示浏览器页签。 */
+    /** 本会话的 Agent 浏览器状态；为空表示还没有打开网页。 */
     val browser: com.promenar.nexara.data.browser.BrowserMode? = null,
+    /** 会话提供浏览器入口时浏览器页签常驻，未打开网页时显示空状态。 */
+    val browserEntry: Boolean = false,
 ) {
     /** 没有运行内容、改动与产物时检视器完全隐藏，只留顶栏入口。 */
     val hasContent: Boolean get() = running || pendingApprovals > 0 || hasRunContent || gitChanges > 0 || canvases > 0 || browser != null
 
     fun pages(): List<ChatPage> = ChatPage.entries.filter {
-        (it != ChatPage.Git || gitAvailable) && (it != ChatPage.Browser || browser != null)
+        (it != ChatPage.Git || gitAvailable) && (it != ChatPage.Browser || browserEntry || browser != null)
     }
 }
 
