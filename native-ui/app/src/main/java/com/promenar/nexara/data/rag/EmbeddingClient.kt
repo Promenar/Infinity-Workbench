@@ -22,6 +22,8 @@ class EmbeddingClient(
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
+            // 显式给出读超时，避免沿用 OkHttp 默认 10 秒，批量请求排队时被提前切断。
+            socketTimeoutMillis = 30_000
         }
     },
     private val localEngine: LocalInferenceEngine? = null,

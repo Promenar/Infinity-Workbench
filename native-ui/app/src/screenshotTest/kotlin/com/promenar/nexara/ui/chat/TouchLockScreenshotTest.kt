@@ -42,7 +42,7 @@ fun touchLockSlideRtlPreview() = CompositionLocalProvider(LocalLayoutDirection p
 @PreviewTest
 @Preview(name = "触摸锁 长按 已完成 深中360", widthDp = 360, heightDp = 780, locale = "zh-rCN")
 @Composable
-fun touchLockDonePreview() = TouchLockPreview(TouchLockUiState(TouchLockPhase.DONE, "计划已完成", meta = "2/2"), TouchLockUnlock.HOLD)
+fun touchLockDonePreview() = TouchLockPreview(TouchLockUiState(TouchLockPhase.DONE, "", meta = "2/2"), TouchLockUnlock.HOLD)
 
 @Composable
 private fun TouchLockPreview(state: TouchLockUiState, unlock: TouchLockUnlock) {

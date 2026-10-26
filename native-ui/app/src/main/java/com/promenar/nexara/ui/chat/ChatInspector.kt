@@ -205,6 +205,7 @@ internal fun ChatInspectorCard(
     onToggleWiden: () -> Unit,
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
+    onLockTouch: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val paneLabel = stringResource(R.string.chat_inspector_label)
@@ -225,6 +226,8 @@ internal fun ChatInspectorCard(
                     InspectorTab(page = page, selected = page == root, badges = badges, onClick = { onSelect(page) })
                 }
                 Spacer(Modifier.weight(1f))
+                // 宽窗口没有运行坞，生成中的触摸锁放在检视器顶栏。
+                onLockTouch?.let { TouchLockButton(onLock = it) }
                 IconButton(onClick = onToggleWiden, modifier = Modifier.testTag(ChatInspectorTags.WIDEN)) {
                     Icon(
                         if (widened) Icons.Rounded.CloseFullscreen else Icons.Rounded.OpenInFull,
@@ -290,6 +293,7 @@ internal fun ChatInspectorStrip(
     onOpen: (ChatPage) -> Unit,
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
+    onLockTouch: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier.testTag(NexaraPaneTags.INSPECTOR_STRIP),
@@ -322,6 +326,7 @@ internal fun ChatInspectorStrip(
                 modifier = Modifier.width(24.dp).padding(vertical = 2.dp),
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
+            onLockTouch?.let { TouchLockButton(onLock = it) }
             IconButton(onClick = onExpand, modifier = Modifier.testTag(ChatInspectorTags.EXPAND)) {
                 Icon(
                     Icons.Rounded.KeyboardDoubleArrowLeft,

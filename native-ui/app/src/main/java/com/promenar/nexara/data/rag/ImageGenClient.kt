@@ -27,6 +27,8 @@ class ImageGenClient(
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000  // 图像生成可能较慢
             connectTimeoutMillis = 15_000
+            // 上游出图前长时间不回包；不设时沿用 OkHttp 默认 10 秒读超时，十几秒的生图会被切断。
+            socketTimeoutMillis = 120_000
         }
     },
     private val responseBodyReader: suspend (HttpResponse) -> String = { response ->

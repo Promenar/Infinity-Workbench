@@ -55,6 +55,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.chat.components.RunDockLabel
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTouchLockAccent
@@ -100,9 +101,16 @@ internal fun touchLockPhase(isGenerating: Boolean, pendingApprovals: Int): Touch
 /** 滑块拖到轨道九成以上才算解锁，避免口袋里的误触滑到一半就解开。 */
 internal fun slideUnlockReached(offset: Float, max: Float): Boolean = max > 0f && offset >= max * 0.9f
 
+/** 锁屏第二行只放具体步骤；“执行中”“需要你批准”这类通用状态已在状态行，不重复显示。 */
+internal fun touchLockStepTitle(label: RunDockLabel?): String? = when (label) {
+    is RunDockLabel.Step -> label.title
+    is RunDockLabel.Paused -> label.step
+    else -> null
+}?.takeIf { it.isNotBlank() }
+
 internal data class TouchLockUiState(
     val phase: TouchLockPhase,
-    /** 当前步骤或运行状态，与运行坞同一文案。 */
+    /** 当前计划步骤；没有具体步骤时为空串，只显示状态行。 */
     val label: String,
     /** 计划进度与已用时长；没有时为空串。 */
     val meta: String = "",
@@ -157,7 +165,7 @@ internal fun TouchLockContent(
                 style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum"),
                 color = if (state.phase == TouchLockPhase.APPROVAL) NexaraTouchLockWarning else NexaraTouchLockContent.copy(alpha = 0.7f),
             )
-            Text(
+            if (state.label.isNotBlank()) Text(
                 text = state.label,
                 style = NexaraTypography.titleMedium,
                 color = NexaraTouchLockContent,

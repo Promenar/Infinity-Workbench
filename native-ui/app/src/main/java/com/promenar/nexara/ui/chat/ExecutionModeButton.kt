@@ -1,14 +1,14 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GppGood
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GppMaybe
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.ExecutionMode
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -53,21 +54,24 @@ internal fun ExecutionModeButton(
                 modifier = Modifier.size(20.dp),
             )
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             ExecutionMode.entries.forEach { option ->
                 DropdownMenuItem(
                     text = {
-                        Column(Modifier.widthIn(max = 240.dp)) {
-                            Text(stringResource(option.labelRes), style = NexaraTypography.bodyMedium)
+                        // 浮层只放标题和一行短说明，完整解释在“Agent 可达范围”面板。
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(stringResource(option.labelRes), style = NexaraTypography.labelLarge, maxLines = 1)
                             Text(
-                                stringResource(option.descriptionRes),
+                                stringResource(option.hintRes()),
                                 style = NexaraTypography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                             )
                         }
                     },
                     leadingIcon = { Icon(option.icon(), contentDescription = null, tint = option.tint()) },
                     trailingIcon = if (option == mode) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     onClick = {
                         expanded = false
                         if (option != mode) onSelect(option)
@@ -77,6 +81,11 @@ internal fun ExecutionModeButton(
             }
         }
     }
+}
+
+private fun ExecutionMode.hintRes(): Int = when (this) {
+    ExecutionMode.WORKSPACE -> R.string.chat_execution_mode_workspace_hint
+    ExecutionMode.FULL_ACCESS -> R.string.chat_execution_mode_full_access_hint
 }
 
 private fun ExecutionMode.icon(): ImageVector = when (this) {

@@ -755,8 +755,7 @@ fun ChatScreenContent(
                 com.promenar.nexara.ui.chat.TouchLockDialog(
                     state = com.promenar.nexara.ui.chat.TouchLockUiState(
                         phase = com.promenar.nexara.ui.chat.touchLockPhase(uiState.isGenerating, pendingApprovals),
-                        label = lockDock?.let { com.promenar.nexara.ui.chat.components.runDockLabelText(it.label) }
-                            ?: stringResource(R.string.touch_lock_running),
+                        label = com.promenar.nexara.ui.chat.touchLockStepTitle(lockDock?.label).orEmpty(),
                         meta = lockDock?.let { com.promenar.nexara.ui.chat.components.runDockMetaText(it) }.orEmpty(),
                         progress = lockDock?.progress,
                     ),
@@ -1277,6 +1276,7 @@ fun ChatScreenContent(
                             onSelect = { page -> actions.onSetInspectorPages(openChatPageRoot(page)) },
                             onToggleWiden = { inspectorWidened = !inspectorWidened },
                             onCollapse = { actions.onSetInspectorPages(emptyList()) },
+                            onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
                         ) {
                             when (shownRoot) {
                                 ChatPage.Run -> ChatInspectorRunTab(
@@ -1335,6 +1335,7 @@ fun ChatScreenContent(
                                     openChatPageRoot(defaultChatInspectorRoot(lastInspectorRoot?.let { restoreChatPages(it).firstOrNull() }, hasRunContent)),
                                 )
                             },
+                            onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
                         )
                     }
                 }
