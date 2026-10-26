@@ -18,6 +18,8 @@ internal data class TurnProcessSummary(
     val durationMs: Long?,
     /** 内置命令报告的关键数据变化；收起后仍在摘要下方提示。 */
     val runtimeChanges: List<String> = emptyList(),
+    /** 长期记忆的写入与删除；收起后仍在摘要下方显示，保留撤销入口。 */
+    val memoryChanges: List<MemoryChange> = emptyList(),
 )
 
 /** 完成态渲染计划：过程步骤保持原顺序，最终正文单独显示且不在过程里重复。 */
@@ -73,6 +75,7 @@ internal fun buildCollapsedTurnPlan(
             changedFileCount = toolGroupFileChanges(invocations).map { it.path }.distinct().size,
             durationMs = summarizeGenerationStats(messages).endToEndMs?.takeIf { it > 0 },
             runtimeChanges = toolGroupRuntimeChanges(invocations),
+            memoryChanges = invocations.mapNotNull(::memoryChange),
         ),
     )
 }

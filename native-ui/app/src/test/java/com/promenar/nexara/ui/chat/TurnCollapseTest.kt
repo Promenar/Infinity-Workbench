@@ -89,6 +89,21 @@ class TurnCollapseTest {
     }
 
     @Test
+    fun `长期记忆改动进入收起摘要以便收起后仍能撤销`() {
+        val steps = toolCall("m1", "memory_save", 1_000).let { (call, result) ->
+            listOf(call, result.copy(content = "{\"id\":\"mem\",\"action\":\"created\",\"kind\":\"user\",\"title\":\"称呼\",\"content\":\"叫我小冷\"}"))
+        }
+        val messages = listOf(
+            Message("a1", MessageRole.ASSISTANT, "", executionSteps = steps, toolCalls = listOf(ToolCall("m1", "memory_save", "{}"))),
+            Message("tool-1", MessageRole.TOOL, "结果", toolCallId = "m1", name = "memory_save"),
+            Message("final", MessageRole.ASSISTANT, "记住了"),
+        )
+        val changes = requireNotNull(plan(messages)).summary.memoryChanges
+        assertThat(changes.map { it.id to it.written.title }).containsExactly("mem" to "称呼")
+        assertThat(requireNotNull(plan(agentTurn())).summary.memoryChanges).isEmpty()
+    }
+
+    @Test
     fun `只有思考的回复也收起且不计工具步数`() {
         val messages = listOf(Message("only", MessageRole.ASSISTANT, "答案", reasoning = "推理过程"))
         val plan = requireNotNull(plan(messages))

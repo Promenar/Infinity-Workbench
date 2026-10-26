@@ -260,6 +260,9 @@ fun PipelineBubble(
             if (!processExpanded && collapsePlan.summary.runtimeChanges.isNotEmpty()) {
                 RuntimeChangesNotice(collapsePlan.summary.runtimeChanges, Modifier.padding(top = 4.dp))
             }
+            if (!processExpanded && collapsePlan.summary.memoryChanges.isNotEmpty()) {
+                MemoryChangeRows(collapsePlan.summary.memoryChanges)
+            }
         }
         visibleSteps.forEachIndexed { index, step ->
             val isLastInGroup = index == visibleSteps.lastIndex
