@@ -51,9 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,7 +80,9 @@ import com.promenar.nexara.data.rag.KgEntitySources
 import com.promenar.nexara.data.rag.KgNode
 import com.promenar.nexara.data.rag.KgSessionOption
 import com.promenar.nexara.data.rag.KgSessionTurn
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
 import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.common.NexaraTabItem
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.rag.canvas.KgEntityKind
 import com.promenar.nexara.ui.rag.canvas.kgEntityPalette
@@ -108,7 +107,6 @@ internal fun KgEntityAvatar(kind: KgEntityKind, size: Dp, modifier: Modifier = M
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun KnowledgeGraphModeSelector(
     viewMode: KgViewMode,
@@ -120,22 +118,12 @@ internal fun KnowledgeGraphModeSelector(
         KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
         KgViewMode.SESSION to stringResource(R.string.kg_view_session),
     )
-    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
-        modes.forEachIndexed { index, (mode, label) ->
-            SegmentedButton(
-                selected = viewMode == mode,
-                onClick = { onModeSelected(mode) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                modifier = Modifier
-                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                    .testTag(UiTags.kgMode(mode.name)),
-                // 三段等分宽度有限，选中态只靠底色表示，不再占用对勾的位置。
-                icon = {},
-            ) {
-                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
+    NexaraCapsuleTabRow(
+        tabs = modes.map { (mode, label) -> NexaraTabItem(title = label, testTag = UiTags.kgMode(mode.name)) },
+        selectedIndex = modes.indexOfFirst { it.first == viewMode },
+        onTabSelected = { index -> onModeSelected(modes[index].first) },
+        modifier = modifier.fillMaxWidth(),
+    )
 }
 
 /** 范围行：当前文档或会话的选择入口与规模说明；全局视角只显示说明。 */
