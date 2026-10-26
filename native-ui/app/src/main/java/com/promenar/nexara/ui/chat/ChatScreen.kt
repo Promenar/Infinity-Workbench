@@ -433,7 +433,7 @@ fun ChatScreenContent(
     // ═══════════════════════════════════════════════════════════
     //  智能视角追踪 — Pin to Bottom
     //  新消息发送 → 滚到底部开启追踪 → 流式输出时跟随最新行 →
-    //  用户触摸介入 → 切断追踪 → FAB 点击恢复追踪
+    //  用户往回看 → 切断追踪 → 推到底、滑回尾部停下或点 FAB → 恢复追踪
     // ═══════════════════════════════════════════════════════════
 
     var autoFollowEnabled by remember { mutableStateOf(true) }
@@ -441,8 +441,15 @@ fun ChatScreenContent(
     val userScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && available.y != 0f) {
-                    autoFollowEnabled = false
+                if (source == NestedScrollSource.UserInput) {
+                    autoFollowEnabled = ChatAutoFollowPolicy.afterUserDrag(autoFollowEnabled, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && ChatAutoFollowPolicy.resumesOnOverscroll(available.y)) {
+                    autoFollowEnabled = true
                 }
                 return Offset.Zero
             }
@@ -555,6 +562,28 @@ fun ChatScreenContent(
         }.collectLatest { geometry ->
             if (geometry[0] <= 0 || geometry[2] <= 0 || geometry[4] == 0) return@collectLatest
             scrollItemAboveComposer(followTargetIndex)
+        }
+    }
+
+    // 用户滑回尾部（含惯性）停下时恢复追踪；程序滚动只在追踪开启时发生，不会误触发。
+    LaunchedEffect(followTargetIndex) {
+        if (followTargetIndex < 0) return@LaunchedEffect
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling || autoFollowEnabled) return@collect
+            val layout = listState.layoutInfo
+            val overlapPx = with(density) {
+                chatComposerInsets(currentComposerHeightPx.toDp()).streamingOverlap.roundToPx()
+            }
+            val tailOverflow = layout.visibleItemsInfo.firstOrNull { it.index == followTargetIndex }
+                ?.let { it.offset + it.size - (layout.viewportEndOffset - overlapPx) }
+            if (ChatAutoFollowPolicy.resumesWhenSettled(
+                    tailOverflowPx = tailOverflow,
+                    canScrollForward = listState.canScrollForward,
+                    tolerancePx = with(density) { ChatAutoFollowResumeTolerance.roundToPx() },
+                )
+            ) {
+                autoFollowEnabled = true
+            }
         }
     }
 
