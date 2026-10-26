@@ -4,13 +4,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -114,4 +119,31 @@ class ChatLayoutTest {
         rule.onNodeWithTag("chat_top_title").performClick()
         rule.runOnIdle { assertThat(renamed).isTrue() }
     }
+
+    @Test fun wideTopBarKeepsOnlyInspectorToggleAndMenuWhileNarrowKeepsFiles() {
+        val resources = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val files = resources.getString(com.promenar.nexara.R.string.chat_cd_workspace)
+        val canvas = resources.getString(com.promenar.nexara.R.string.canvas_title)
+        var wide by mutableStateOf(true)
+        rule.setContent {
+            NexaraTheme {
+                Box(Modifier.width(if (wide) 814.dp else 411.dp)) {
+                    ChatTopBar(
+                        "会话", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
+                        onCanvases = {},
+                        inspector = if (wide) ChatTopBarInspector(open = false, onToggle = {}) else null,
+                    )
+                }
+            }
+        }
+        rule.onNodeWithTag(ChatInspectorTags.TOGGLE).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_OPTIONS).assertIsDisplayed()
+        rule.onAllNodesWithContentDescription(files).assertCountEquals(0)
+        rule.onAllNodesWithContentDescription(canvas).assertCountEquals(0)
+
+        wide = false
+        rule.onNodeWithContentDescription(files).assertIsDisplayed()
+        rule.onAllNodesWithTag(ChatInspectorTags.TOGGLE).assertCountEquals(0)
+    }
 }
+

@@ -4,7 +4,6 @@ import com.promenar.nexara.ui.chat.runmode.labelRes
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.material.icons.outlined.ViewSidebar
-import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.ui.semantics.selected
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.SideEffect
@@ -656,7 +655,7 @@ fun ChatScreenContent(
                     title = sessionTitle,
                     showDivider = showTopBarDivider,
                     onBack = actions.onNavigateBack,
-                    onWorkspace = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Explorer) }) else actions.onOpenWorkspace,
+                    onWorkspace = actions.onOpenWorkspace,
                     onSettings = actions.onOpenSettings,
                     onSessionPrompt = actions.onOpenPromptEditor,
                     onClearHistory = actions.onOpenClearDialog,
@@ -667,9 +666,6 @@ fun ChatScreenContent(
                     onOpenGit = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Git) }) else actions.onOpenGit,
                     inspector = if (inspectorMode) ChatTopBarInspector(
                         open = inspectorRoot != null,
-                        filesOpen = inspectorRoot == ChatPage.Explorer,
-                        canvasOpen = inspectorRoot == ChatPage.Canvas,
-                        showCanvas = !com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.canvases.isNullOrEmpty(),
                         onToggle = {
                             actions.onSetInspectorPages(
                                 if (inspectorRoot != null) emptyList()
@@ -1837,7 +1833,7 @@ fun ChatTopBar(
     /** 状态行中运行模式之后的会话工作区；为 null 时不显示。 */
     workspace: com.promenar.nexara.ui.workspace.SessionWorkspaceUi? = null,
     onWorkspaceStatus: () -> Unit = {},
-    /** 宽窗口：文件、画布与检视器开合直接放在顶栏；为 null 时（窄窗口）只有文件入口与菜单。 */
+    /** 宽窗口：顶栏只有检视器开合与菜单，文件、画布与浏览器在侧栏页签；为 null 时（窄窗口）显示文件入口。 */
     inspector: ChatTopBarInspector? = null,
     /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
     browser: ChatTopBarBrowser? = null,
@@ -1990,19 +1986,16 @@ fun ChatTopBar(
                     modifier = Modifier.testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY),
                 ) { BrowserTopBarIcon(entry.mode) }
             }
-            ChatTopBarAction(selected = inspector?.filesOpen == true, onClick = onWorkspace) {
-                Icon(
-                    Icons.Outlined.Folder,
-                    stringResource(R.string.chat_cd_workspace),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            if (inspector != null) {
-                if (inspector.showCanvas && onCanvases != null) {
-                    ChatTopBarAction(selected = inspector.canvasOpen, onClick = onCanvases) {
-                        Icon(Icons.Rounded.Dashboard, stringResource(R.string.canvas_title), modifier = Modifier.size(22.dp))
-                    }
+            // 宽窗口的文件、画布与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单。
+            if (inspector == null) {
+                ChatTopBarAction(selected = false, onClick = onWorkspace) {
+                    Icon(
+                        Icons.Outlined.Folder,
+                        stringResource(R.string.chat_cd_workspace),
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
+            } else {
                 ChatTopBarAction(
                     selected = inspector.open,
                     onClick = inspector.onToggle,
@@ -2157,9 +2150,6 @@ fun ChatTopBar(
 @Immutable
 data class ChatTopBarInspector(
     val open: Boolean,
-    val filesOpen: Boolean,
-    val canvasOpen: Boolean,
-    val showCanvas: Boolean,
     val onToggle: () -> Unit,
 )
 
