@@ -25,6 +25,8 @@ import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
 import com.promenar.nexara.data.local.db.MIGRATION_22_23
+import com.promenar.nexara.data.memory.isEnabledForToolAdvertisement
+import com.promenar.nexara.data.local.db.MIGRATION_27_28
 import com.promenar.nexara.data.local.db.MIGRATION_26_27
 import com.promenar.nexara.data.local.db.MIGRATION_25_26
 import com.promenar.nexara.data.local.db.SessionMountNormalizationCallback
@@ -295,7 +297,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
             .addCallback(SessionMountNormalizationCallback { NexaraLogger.logError("SessionMountNormalization", it) })
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
@@ -949,6 +951,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             kgProvider = kgProvider,
             taskRepository = taskRepository,
             stateBoardRepository = stateBoardRepository,
+            longTermMemoryRepository = longTermMemoryRepository,
+            longTermMemoryAccess = longTermMemoryAccess,
             onEmbeddingNotConfigured = embeddingSetupHint::onEmbeddingNotConfigured,
         )
     }
@@ -1362,6 +1366,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    val longTermMemoryRepository: com.promenar.nexara.data.memory.LongTermMemoryRepository by lazy {
+        com.promenar.nexara.data.memory.RoomLongTermMemoryRepository(database)
+    }
+    val longTermMemoryAccess: com.promenar.nexara.data.memory.LongTermMemoryAccess by lazy {
+        com.promenar.nexara.data.memory.RoomLongTermMemoryAccess(
+            database, getSharedPreferences("nexara_settings", MODE_PRIVATE), chatStore::getSession,
+        )
+    }
     val stateBoardRepository by lazy { com.promenar.nexara.data.repository.StateBoardRepository(database) }
 
     val taskRepository: com.promenar.nexara.domain.repository.ITaskRepository by lazy {
@@ -1421,6 +1433,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     sessionRunModes::modeFor, linuxSessionFiles, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator,
                 )
             startupDiagnosticTools(startupIssueManager).forEach(::register)
+            com.promenar.nexara.ui.chat.manager.skills.longTermMemoryTools(longTermMemoryRepository, longTermMemoryAccess).forEach(::register)
             register(CalculatorSkill())
             register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
@@ -1528,6 +1541,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 com.promenar.nexara.data.generation.DefaultSessionToolResolver(
                     getSharedPreferences("nexara_settings", MODE_PRIVATE),
                     createSkillRegistry(session.id),
+                    longTermMemoryAllowed = longTermMemoryAccess::isEnabledForToolAdvertisement,
                 ) { current ->
                     com.promenar.nexara.data.generation.MediaViewTarget.capabilities(
                         ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == current.modelId },

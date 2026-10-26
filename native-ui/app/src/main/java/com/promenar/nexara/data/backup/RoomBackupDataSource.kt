@@ -6,6 +6,8 @@ import androidx.room.withTransaction
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.resetSessionSamplingJson
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
+import com.promenar.nexara.data.memory.LongTermMemoryKind
+import com.promenar.nexara.data.memory.LongTermMemoryValidation
 import com.promenar.nexara.data.repository.PersistentFileIdentity
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
@@ -42,6 +44,7 @@ internal const val ROOM_SCHEMA_V20_IDENTITY_HASH = "4cbc9d57e418ec09a3469f1fcdc6
 internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V26_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V26_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V27_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V27_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V28_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V28_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
@@ -314,7 +317,7 @@ class RoomBackupDataSource(
         val tables = INSERT_ORDER.associateWith { table ->
             sqlite.query("SELECT * FROM `$table`").use { cursor -> cursorRows(cursor, budget) }
         }
-        return DatabaseBackupPayload(DATABASE_SCHEMA_VERSION, tables)
+        return DatabaseBackupPayload(DATABASE_SCHEMA_VERSION, tables).also(::validateLongTermMemories)
     }
 
     private fun cursorRows(cursor: Cursor, budget: MaterializationBudget): List<JsonObject> = buildList {
@@ -508,7 +511,8 @@ class RoomBackupDataSource(
         }
         val upgraded = when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> return decoded
-            7 -> return upgradeV7Payload(decoded)
+            8 -> return upgradeV8Payload(decoded)
+            7 -> return upgradeV8Payload(upgradeV7Payload(decoded))
             1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
             2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
             3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
@@ -518,14 +522,19 @@ class RoomBackupDataSource(
             else -> return decoded
         }
         if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
-        return upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList())))
+        return upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList()))))
     }
 
     /** 历史包没有运行模式，恢复为未确定状态，首次进入会话时再检查。 */
     private fun upgradeV7Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
         val sessions = payload.tables["sessions"] ?: throw BackupValidationException("数据库 payload 缺少表: sessions")
-        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables +
+        return payload.copy(schemaVersion = 8, tables = payload.tables +
             ("sessions" to sessions.map { row -> JsonObject(row + ("run_mode" to (row["run_mode"] ?: JsonNull))) }))
+    }
+
+    private fun upgradeV8Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        if (LONG_TERM_MEMORY_TABLE in payload.tables) throw BackupValidationException("历史备份不应包含长期记忆表")
+        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables + (LONG_TERM_MEMORY_TABLE to emptyList()))
     }
 
     /**
@@ -694,6 +703,8 @@ class RoomBackupDataSource(
         validateCompositeUnique(payload, "document_tags", listOf("doc_id", "tag_id"))
         validateUnique(payload, "task_nodes", "id")
         validateUnique(payload, "state_board_versions", "id")
+        validateUnique(payload, LONG_TERM_MEMORY_TABLE, "id")
+        validateLongTermMemories(payload)
         validateUnique(payload, "custom_skills", "id")
         validateUnique(payload, "mcp_servers", "id")
         validateUnique(payload, FILE_TABLE, "uuid")
@@ -824,13 +835,30 @@ class RoomBackupDataSource(
         }
     }
 
+    private fun validateLongTermMemories(payload: DatabaseBackupPayload) {
+        val memories = payload.rows(LONG_TERM_MEMORY_TABLE)
+        if (memories.size > MAX_LONG_TERM_MEMORIES) throw BackupValidationException("长期记忆数量超过上限")
+        memories.forEach { row ->
+            try {
+                LongTermMemoryValidation.validateId(row.requiredString("id"))
+                LongTermMemoryKind.fromStorage(row.requiredString("kind"))
+                val title = row.requiredString("title")
+                val content = row.requiredString("content")
+                val (cleanTitle, cleanContent) = LongTermMemoryValidation.validate(title, content)
+                if (title != cleanTitle || content != cleanContent) throw BackupValidationException("长期记忆字段未规范化")
+            } catch (_: IllegalArgumentException) {
+                throw BackupValidationException("长期记忆记录无效")
+            }
+        }
+    }
+
     private fun validateRowsAgainstRoomSchema(payload: DatabaseBackupPayload) {
         val sqlite = database.openHelper.writableDatabase
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 27 || identityHash != ROOM_SCHEMA_V27_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v27")
+        if (sqlite.version != 28 || identityHash != ROOM_SCHEMA_V28_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v28")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1631,7 +1659,9 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 8
+        const val DATABASE_SCHEMA_VERSION = 9
+        const val LONG_TERM_MEMORY_TABLE = "long_term_memories"
+        const val MAX_LONG_TERM_MEMORIES = LongTermMemoryValidation.MAX_MEMORIES
         const val PARAMETER_SCHEME_TABLE = "parameter_schemes"
         const val FILE_TABLE = "workspace_files"
         const val WORKSPACE_TABLE = "workspaces"
@@ -1661,6 +1691,7 @@ class RoomBackupDataSource(
             "document_tags",
             "task_nodes",
             "state_board_versions",
+            LONG_TERM_MEMORY_TABLE,
             "custom_skills",
             "mcp_servers",
             PARAMETER_SCHEME_TABLE,

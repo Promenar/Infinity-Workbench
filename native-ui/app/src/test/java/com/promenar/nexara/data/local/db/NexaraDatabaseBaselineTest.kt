@@ -28,6 +28,9 @@ import java.security.MessageDigest
 class NexaraDatabaseBaselineTest {
     @Test
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
+        assertThat(NEXARA_SCHEMA_V28_IDENTITY_HASH).isEqualTo(exportedSchema(28).identityHash)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V28_IDENTITY_HASH).isEqualTo(exportedSchema(28).identityHash)
+        assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V28_IDENTITY).isEqualTo(exportedSchema(28).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V27_IDENTITY_HASH).isEqualTo(exportedSchema(27).identityHash)
         assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V27_IDENTITY).isEqualTo(exportedSchema(27).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V26_IDENTITY_HASH).isEqualTo(exportedSchema(26).identityHash)
@@ -168,7 +171,7 @@ class NexaraDatabaseBaselineTest {
             "MIGRATION_1_2", "MIGRATION_2_3", "MIGRATION_3_4", "MIGRATION_4_5",
             "MIGRATION_5_18", "MIGRATION_17_18", "MIGRATION_18_19", "MIGRATION_19_20", "MIGRATION_20_21", "MIGRATION_21_22",
             "MIGRATION_22_23",
-            "MIGRATION_23_24",
+            "MIGRATION_23_24", "MIGRATION_24_25", "MIGRATION_25_26", "MIGRATION_26_27", "MIGRATION_27_28",
         )
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
@@ -178,7 +181,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 27): ExportedSchema {
+    private fun exportedSchema(version: Int = 28): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -221,8 +224,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(27)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(27L)
+        assertThat(schema.version).isEqualTo(28)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(28L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(
@@ -237,6 +240,7 @@ class NexaraDatabaseBaselineTest {
         assertThat(runtimeTables).containsExactlyElementsIn(expectedTables)
         assertThat(runtimeTables).containsAtLeast(
             "tool_execution_ledger",
+            "long_term_memories",
             "file_versions",
             "room_master_table",
         )

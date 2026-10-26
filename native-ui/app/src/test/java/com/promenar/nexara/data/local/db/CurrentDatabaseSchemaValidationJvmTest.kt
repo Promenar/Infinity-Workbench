@@ -38,25 +38,33 @@ class CurrentDatabaseSchemaValidationJvmTest {
     fun tearDown() = deleteDatabases()
 
     @Test
-    fun completeExportedV18ThroughV21DatabasesPassBothProductionGates() = verify(Mutation.NONE)
+    fun completeExportedV18ThroughV28DatabasesPassBothProductionGates() = verify(Mutation.NONE)
 
     @Test
     fun productionMigrationChainFromV18PassesBothProductionGatesAtEveryVersion() {
         createLegacyDatabase()
         createCurrentDatabase(18, Mutation.NONE)
-        for (version in 18..21) {
+        for (version in 18..28) {
             for (gate in Gate.entries) {
                 val source = context.getDatabasePath("nexara_v2.db")
                 val originalBytes = source.readBytes()
                 validate(gate, version)
                 assertThat(source.readBytes()).isEqualTo(originalBytes)
             }
-            if (version < 21) migrateCurrentDatabase(version + 1)
+            if (version < 28) migrateCurrentDatabase(version + 1)
         }
     }
 
     @Test
     fun matchingIdentityWithMissingTaskNodesTableFailsBothProductionGates() = verify(Mutation.MISSING_TABLE)
+
+    @Test
+    fun matchingV28IdentityWithMissingLongTermMemoryTableFailsBothProductionGates() =
+        verify(Mutation.MISSING_LONG_TERM_MEMORY_TABLE, 28..28)
+
+    @Test
+    fun matchingV28IdentityWithMissingLongTermMemoryIndexFailsBothProductionGates() =
+        verify(Mutation.MISSING_LONG_TERM_MEMORY_INDEX, 28..28)
 
     @Test
     fun matchingIdentityWithMissingTaskNodesColumnFailsBothProductionGates() = verify(Mutation.MISSING_COLUMN)
@@ -100,9 +108,9 @@ class CurrentDatabaseSchemaValidationJvmTest {
     @Test
     fun matchingIdentityWithWrongFtsDeclarationFailsBothProductionGates() = verify(Mutation.FTS_DECLARATION)
 
-    private fun verify(mutation: Mutation) {
+    private fun verify(mutation: Mutation, versions: IntRange = 18..28) {
         val failures = mutableListOf<String>()
-        for (version in 18..21) {
+        for (version in versions) {
             for (gate in Gate.entries) {
                 deleteDatabases()
                 createLegacyDatabase()
@@ -151,6 +159,7 @@ class CurrentDatabaseSchemaValidationJvmTest {
                 val entity = element.jsonObject
                 val table = entity.getValue("tableName").jsonPrimitive.content
                 if (table == "task_nodes" && mutation == Mutation.MISSING_TABLE) return@forEach
+                if (table == "long_term_memories" && mutation == Mutation.MISSING_LONG_TERM_MEMORY_TABLE) return@forEach
                 var sql = entity.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table)
                 if (table == "task_nodes") {
                     sql = when (mutation) {
@@ -184,6 +193,10 @@ class CurrentDatabaseSchemaValidationJvmTest {
             22 -> MIGRATION_21_22
             23 -> MIGRATION_22_23
             24 -> MIGRATION_23_24
+            25 -> MIGRATION_24_25
+            26 -> MIGRATION_25_26
+            27 -> MIGRATION_26_27
+            28 -> MIGRATION_27_28
             else -> error("数据库测试没有对应的生产迁移")
         }
         val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
@@ -223,6 +236,7 @@ class CurrentDatabaseSchemaValidationJvmTest {
         entity["indices"]?.jsonArray?.forEach { element ->
             val index = element.jsonObject
             val name = index.getValue("name").jsonPrimitive.content
+            if (name == "index_long_term_memories_updated_at" && mutation == Mutation.MISSING_LONG_TERM_MEMORY_INDEX) return@forEach
             var sql = index.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table)
             if (name == "index_task_nodes_status") {
                 sql = when (mutation) {
@@ -262,7 +276,8 @@ class CurrentDatabaseSchemaValidationJvmTest {
     private enum class Gate { PROMOTER, SOURCE_PROBE }
 
     private enum class Mutation {
-        NONE, MISSING_TABLE, MISSING_COLUMN, RENAMED_COLUMN, COLUMN_TYPE, NULLABILITY, PRIMARY_KEY,
+        NONE, MISSING_TABLE, MISSING_LONG_TERM_MEMORY_TABLE, MISSING_LONG_TERM_MEMORY_INDEX,
+        MISSING_COLUMN, RENAMED_COLUMN, COLUMN_TYPE, NULLABILITY, PRIMARY_KEY,
         DEFAULT_VALUE, MISSING_INDEX, RENAMED_INDEX, INDEX_UNIQUENESS, INDEX_COLUMN_ORDER, INDEX_SORT_ORDER,
         PARTIAL_INDEX, FOREIGN_KEY, FTS_DECLARATION,
     }
