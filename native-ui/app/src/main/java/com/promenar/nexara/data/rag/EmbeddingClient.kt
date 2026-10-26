@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.remote.ResolvedProviderModel
 import com.promenar.nexara.data.remote.requireOpenAiModelRoute
@@ -18,7 +21,7 @@ class EmbeddingClient(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String = "text-embedding-3-small",
-    private val httpClient: HttpClient = ModelHttp.client {
+    httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
@@ -31,6 +34,7 @@ class EmbeddingClient(
     /** 长期持有的应用入口按次取得当前配置，子客户端共享 HTTP 传输。 */
     private val clientResolver: ((HttpClient) -> EmbeddingClient)? = null,
 ) {
+    private val httpClient = httpClient.withModelTimeoutSupport()
     private val json = Json { ignoreUnknownKeys = true }
 
     /** 远程 Embedding 是否已配置（baseUrl 和 apiKey 均非空） */
@@ -172,6 +176,7 @@ class EmbeddingClient(
         }
 
         val response: HttpResponse = httpClient.post(endpoint) {
+            applyModelTimeout(ModelTimeoutKind.EMBEDDING)
             contentType(ContentType.Application.Json)
             header("Authorization", "Bearer $cleanApiKey")
             setBody(json.encodeToString(JsonObject.serializer(), requestBody))

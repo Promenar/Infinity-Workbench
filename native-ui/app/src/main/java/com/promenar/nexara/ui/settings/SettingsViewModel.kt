@@ -4,6 +4,8 @@ import android.app.Application
 import com.promenar.nexara.data.generation.BuiltinToolPreferences
 import android.content.Intent
 import android.content.SharedPreferences
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.ModelTimeoutSettings
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -359,6 +361,8 @@ class SettingsViewModel(
     fun cancelModelTest(modelId: String) = modelTestCoordinator.cancel(modelId)
 
     val summaryModelId: StateFlow<String> = pm.summaryModelId
+    val modelTimeouts: StateFlow<ModelTimeoutSettings> = pm.modelTimeouts
+    fun setModelTimeout(kind: ModelTimeoutKind, seconds: Int) = pm.setModelTimeout(kind, seconds)
     val imageModelId: StateFlow<String> = pm.imageModelId
     val embeddingModelId: StateFlow<String> = pm.embeddingModelId
     val rerankModelId: StateFlow<String> = pm.rerankModelId

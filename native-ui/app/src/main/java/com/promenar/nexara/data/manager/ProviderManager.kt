@@ -22,6 +22,9 @@ import com.promenar.nexara.data.model.catalog.ModelWorkload
 import com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.stableModelId
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.ModelTimeoutPreferenceStore
+import com.promenar.nexara.data.remote.ModelRequestTimeouts
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
@@ -63,6 +66,11 @@ class ProviderManager private constructor(
         app.getSharedPreferences("nexara_provider", 0)
     private val settingsPrefs: SharedPreferences =
         app.getSharedPreferences("nexara_settings", 0)
+
+    private val modelTimeoutStore = ModelTimeoutPreferenceStore(settingsPrefs)
+    val modelTimeouts = modelTimeoutStore.settings
+
+    fun setModelTimeout(kind: ModelTimeoutKind, seconds: Int) = modelTimeoutStore.set(kind, seconds)
 
     // ── StateFlow: 提供商列表 ────────────────────────────────────────
     private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
@@ -1243,6 +1251,7 @@ class ProviderManager private constructor(
         fun init(app: Application, secretStore: SecretStore): ProviderManager {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: ProviderManager(app.applicationContext as Application, secretStore).also {
+                    ModelRequestTimeouts.install { it.modelTimeouts.value }
                     INSTANCE = it
                 }
             }

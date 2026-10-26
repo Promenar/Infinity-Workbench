@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.remote.ModelHttp
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.applyModelTimeout
+import com.promenar.nexara.data.remote.withModelTimeoutSupport
 import com.promenar.nexara.data.remote.ResolvedProviderModel
 import com.promenar.nexara.data.remote.requireOpenAiModelRoute
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
@@ -33,7 +36,7 @@ class RerankClient(
     private val llmModelId: String? = null,
     private val maxPerCall: Int = 100,  // P1: 单次最多重排文档数，超过分批
     private val modelRouteResolver: (() -> ResolvedProviderModel)? = null,
-    private val httpClient: HttpClient = ModelHttp.client {
+    httpClient: HttpClient = ModelHttp.client {
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
@@ -42,6 +45,7 @@ class RerankClient(
         }
     },
 ) {
+    private val httpClient = httpClient.withModelTimeoutSupport()
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun rerank(
@@ -118,6 +122,7 @@ class RerankClient(
         }
 
         val response: HttpResponse = httpClient.post(endpoint) {
+            applyModelTimeout(ModelTimeoutKind.RERANK)
             contentType(ContentType.Application.Json)
             header("Authorization", "Bearer $apiKey")
             setBody(json.encodeToString(JsonObject.serializer(), requestBody))
