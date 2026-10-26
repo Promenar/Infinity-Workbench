@@ -259,7 +259,8 @@ fun UnifiedPromptEditor(
     when (mode) {
         EditorMode.DIALOG -> Dialog(
             onDismissRequest = requestDismiss,
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            // 窗口铺到系统栏下方，背景覆盖整屏；状态栏、导航栏与键盘的留白由内容自己处理。
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
             BoxWithConstraints(
                 modifier = Modifier
