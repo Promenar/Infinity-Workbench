@@ -435,6 +435,7 @@ class ChatViewModel(
 
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
+    private val workspaceErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     private val _generationNotice = MutableStateFlow<UiStatusNotice?>(null)
     private val _generationFailureSurface = MutableStateFlow<
         com.promenar.nexara.data.generation.GenerationFailureSurface?
@@ -577,6 +578,7 @@ class ChatViewModel(
         _backgroundWarning,
         _isApprovalSubmitting,
         _replacingMessageIds,
+        workspaceErrors,
     ) { args: Array<Any?> ->
         val state = args[0] as com.promenar.nexara.ui.chat.ChatState
         val sessionId = args[1] as String?
@@ -585,7 +587,7 @@ class ChatViewModel(
         val isLoading = args[4] as Boolean
         val status = args[5] as GenerationStatus
         val streamingContent = args[6] as String
-        val error = args[7] as String?
+        val error = (args[7] as String?) ?: (args[14] as Map<String, String>)[sessionId]
         val generationNotice = args[8] as UiStatusNotice?
         val generationFailureSurface = args[9] as com.promenar.nexara.data.generation.GenerationFailureSurface?
         val backgroundServiceStoppedError = args[10] as BackgroundServiceStoppedError?
@@ -1875,17 +1877,12 @@ class ChatViewModel(
                         sessionManager.updateSession(sessionId, mapOf("ragOptions" to defaultOptions))
                     }
                     if (hydrated.workspaceRootUuid.isNullOrBlank()) {
-                        // 会话被启动自检隔离时不建根，仍可只读打开查看内容。
-                        val root = try {
-                            (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
-                        } catch (_: com.promenar.nexara.startup.StartupIsolationException) {
-                            null
-                        }
+                        val root = resolveSessionWorkspace(sessionId)
                         if (root != null) {
-                            hydrated = hydrated.copy(workspaceRootUuid = root.uuid, workspacePath = root.physicalRootPath)
+                            hydrated = hydrated.copy(workspaceRootUuid = root.first, workspacePath = root.second)
                             sessionManager.updateSession(
                                 sessionId,
-                                mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+                                mapOf("workspaceRootUuid" to root.first, "workspacePath" to root.second),
                             )
                         }
                     }
@@ -1914,6 +1911,8 @@ class ChatViewModel(
                 } else {
                     _error.update { "Session not found: $sessionId" }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _error.update { "Failed to load session: ${e.message}" }
             } finally {
@@ -2005,20 +2004,28 @@ class ChatViewModel(
             ragOptions = defaultOptions
         )
         sessionManager.addSession(session)
-        val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
-        sessionManager.updateSession(
-            sessionId,
-            mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
-        )
+        ensureSessionWorkspace(sessionId)
         return sessionId
     }
 
     private suspend fun ensureSessionWorkspace(sessionId: String) {
-        val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
+        val (rootUuid, rootPath) = resolveSessionWorkspace(sessionId) ?: return
         sessionManager.updateSession(
             sessionId,
             mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
         )
+    }
+
+    /** 身份失败只阻断文件访问；已持久化的会话仍可打开并对话，取消继续向上传播。 */
+    private suspend fun resolveSessionWorkspace(sessionId: String): Pair<String, String>? = try {
+        sessionWorkspaceRoot(sessionId).also { workspaceErrors.update { errors -> errors - sessionId } }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        NexaraLogger.logError("ChatViewModel.resolveSessionWorkspace", failure)
+        val message = stringResourceResolver(R.string.legacy_root_marker_workspace_unavailable)
+        workspaceErrors.update { it + (sessionId to message) }
+        null
     }
 
     private fun resolveDefaultModelId(): String? {
@@ -2171,6 +2178,7 @@ class ChatViewModel(
             return
         }
         _currentSessionId.value?.let { sessionId ->
+            workspaceErrors.update { it - sessionId }
             generationCoordinator.observe(sessionId).value
                 ?.takeIf {
                     it.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED

@@ -13,6 +13,7 @@ import java.util.UUID
 object PersistentFileIdentity {
     private val uuid = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
     private val identity = Regex("nx1:(${uuid.pattern})[|][0-9a-f]{64}")
+    private val legacyFileKey = Regex("\\(dev=[0-9a-fA-F]+,ino=[0-9]+\\)")
     private const val ATTRIBUTE = "nexara_persistent_identity"
 
     fun inode(fileKey: Any?): String {
@@ -40,6 +41,7 @@ object PersistentFileIdentity {
     }
 
     fun parseMarker(value: String): Pair<String, String> {
+        parseLegacyMarker(value)?.let { return it.first to inode(it.second) }
         val parts = value.split('\n')
         if (parts.size != 2 || !parts[0].startsWith("nx1:")) throw SecurityException("持久身份标记格式无效")
         val nonce = parts[0].removePrefix("nx1:")
@@ -47,6 +49,14 @@ object PersistentFileIdentity {
         val key = inode(parts[1])
         if (key != parts[1]) throw SecurityException("持久身份 inode 编码无效")
         return nonce to key
+    }
+
+    /** 保留旧标记的完整 fileKey 原文，供旧数据库摘要核验；持久目录比较只使用 inode。 */
+    internal fun parseLegacyMarker(value: String): Pair<String, String>? {
+        val parts = value.split('\n')
+        if (parts.size != 2 || !uuid.matches(parts[0]) || !legacyFileKey.matches(parts[1])) return null
+        try { inode(parts[1]) } catch (_: SecurityException) { return null }
+        return parts[0] to parts[1]
     }
 
     fun verifyMarker(value: String, fileKey: Any?): String {

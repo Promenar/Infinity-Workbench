@@ -287,7 +287,7 @@ class BuiltinExecService(
         val settled = if (directory != null) "自选工作区不做对账，可用 git status 查看改动。" else "工作区已按当前磁盘状态对账。"
         val (errorCode, guidance) = when {
             output.stoppedByUser -> "EXEC_STOPPED" to
-                "用户停止了命令（通知栏或聊天界面），已结束整个进程组；${settled}不要自动重试，先询问用户。"
+                "命令已被停止（job_stop、通知栏或聊天界面的停止），已结束整个进程组；${settled}若不是你调用 job_stop 停止的，不要自动重试，先询问用户。"
             output.timedOut -> "EXEC_TIMEOUT" to
                 "命令在 $timeoutSeconds 秒内未结束，已结束整个进程组；${settled}可增大 timeout_seconds（最多 600）或拆分任务。"
             output.killedExternally -> "EXEC_PROCESS_KILLED" to

@@ -50,7 +50,6 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -64,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -87,6 +87,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.security.SshCredential
 import com.promenar.nexara.data.ssh.SshAuthType
 import com.promenar.nexara.data.ssh.SshAgentPreferences
@@ -259,39 +260,57 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     }
 
     deleting?.let { host ->
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { if (!busy) deleting = null },
-            title = { Text(stringResource(R.string.ssh_delete_title)) },
-            text = { Text(stringResource(R.string.ssh_delete_message, host.alias)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    perform {
-                        withContext(Dispatchers.IO) {
-                            runtime.stopForward(host.alias)
-                            store.delete(host.alias)
-                        }
-                        deleting = null
+            title = stringResource(R.string.ssh_delete_title),
+            message = stringResource(R.string.ssh_delete_message, host.alias),
+            confirmText = stringResource(R.string.ssh_delete),
+            cancelText = stringResource(R.string.ssh_cancel),
+            onConfirm = {
+                perform {
+                    withContext(Dispatchers.IO) {
+                        runtime.stopForward(host.alias)
+                        store.delete(host.alias)
                     }
-                }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.ssh_delete))
+                    deleting = null
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { deleting = null }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.ssh_cancel))
-                }
-            },
+            // 忙碌时取消按钮原为禁用；统一对话框无禁用态，改为忙碌期间忽略点击。
+            onCancel = { deleting = null },
+            cancelEnabled = !busy,
+            isDestructive = true,
+            confirmEnabled = !busy,
+            confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+            cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
         )
     }
 
     trustPrompt?.let { prompt ->
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { if (!busy) trustPrompt = null },
-            title = {
-                Text(stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust_title else R.string.ssh_changed_title))
+            title = stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust_title else R.string.ssh_changed_title),
+            message = "",
+            confirmText = stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust else R.string.ssh_replace_trust),
+            cancelText = stringResource(R.string.ssh_cancel),
+            onConfirm = {
+                perform {
+                    val accepted = withContext(Dispatchers.IO) {
+                        store.trust(prompt.host.alias, prompt.host.trustedFingerprint, prompt.key, prompt.host)
+                    }
+                    if (!accepted) throw SshInputException("SSH_HOST_CHANGED_RETRY")
+                    trustPrompt = null
+                    finishAction(prompt.host, prompt.action)
+                }
             },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
+            // 忙碌时取消按钮原为禁用；统一对话框无禁用态，改为忙碌期间忽略点击。
+            onCancel = { trustPrompt = null },
+            cancelEnabled = !busy,
+            confirmEnabled = !busy,
+            confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+            cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+            content = {
+                // 统一对话框正文不自带滚动与高度上限，长指纹在此限高滚动，避免挤掉按钮。
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
                     Text(stringResource(R.string.ssh_compare_fingerprint))
                     prompt.host.trustedFingerprint?.let { previous ->
                         Text(stringResource(R.string.ssh_previous_fingerprint), style = MaterialTheme.typography.labelLarge)
@@ -304,25 +323,6 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                         Text("${prompt.key.type}\n${prompt.key.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                     }
                     status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    perform {
-                        val accepted = withContext(Dispatchers.IO) {
-                            store.trust(prompt.host.alias, prompt.host.trustedFingerprint, prompt.key, prompt.host)
-                        }
-                        if (!accepted) throw SshInputException("SSH_HOST_CHANGED_RETRY")
-                        trustPrompt = null
-                        finishAction(prompt.host, prompt.action)
-                    }
-                }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust else R.string.ssh_replace_trust))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { trustPrompt = null }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.ssh_cancel))
                 }
             },
         )

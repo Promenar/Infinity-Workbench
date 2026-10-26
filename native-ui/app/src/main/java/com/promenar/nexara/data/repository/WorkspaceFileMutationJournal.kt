@@ -193,7 +193,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
     }
 
     /**
-     * nx1 格式之前认领的根在数据库中保存 `nonce|sha256(完整fileKey)`。文件端口按旧算法逐字核验当前目录后，
+     * nx1 格式之前认领的根在数据库中保存 `nonce|sha256(完整fileKey)`。文件端口核验旧认领与当前目录后，
      * 才把私有区、引用该认领的未完成 journal 与根认领一起改写为等价现行身份；无法核验时全部保持原样。
      */
     suspend fun adoptLegacyRootIdentityOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
@@ -208,13 +208,13 @@ class WorkspaceFileMutationRecoveryCoordinator(
         val identity = adoptableIdentity(rootPath, legacy)
         WorkspaceMutationCoordinator.withBoundRoot(rootPath, identity) {
             if (adoptableIdentity(rootPath, legacy) != identity) conflict(LEGACY_ROOT_UNVERIFIED)
-            fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
             // 私有区先于数据库迁移：中断后数据库仍为旧认领，下次启动重新核验并继续；反序会遗留按旧键寻址的私有区。
             fileOps.adoptLegacyRootPrivateData(legacy, identity)
             database.withTransaction {
                 if (database.fileEntryDao().getAnyStateByUuidForLifecycle(root.workspaceRootUuid, root.uuid) != root) {
                     conflict("工作区根在身份格式迁移前发生变化")
                 }
+                if (adoptableIdentity(rootPath, legacy) != identity) conflict(LEGACY_ROOT_UNVERIFIED)
                 database.workspaceMutationDao().getUnfinished().filter { it.workspaceRootUuid == root.uuid }.forEach { row ->
                     if (Sha256Utils.hash(row.payload) != row.payloadDigest) return@forEach
                     val payload = (WorkspaceMutationPayloadCodec.decode(row.payloadVersion, row.payload)
@@ -227,6 +227,8 @@ class WorkspaceFileMutationRecoveryCoordinator(
                 }
                 database.fileEntryDao().update(root.copy(hash = identity))
             }
+            // 事务提交前保留旧标记中的完整 fileKey，避免中断后丢失旧摘要的核验证据。
+            fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
         }
     }
 

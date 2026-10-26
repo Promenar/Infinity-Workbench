@@ -33,7 +33,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.linux.LinuxFileEntry
 import com.promenar.nexara.domain.linux.LinuxFileErrorCode
@@ -122,32 +121,31 @@ internal fun LinuxChmodDialog(
     onDismiss: () -> Unit,
 ) {
     var mode by remember(entry.path, entry.mode) { mutableIntStateOf(entry.mode) }
-    Dialog(onDismissRequest = onDismiss) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.linux_files_chmod),
-            message = entry.name,
-            confirmText = stringResource(R.string.linux_files_chmod_apply),
-            onConfirm = { onConfirm(mode) },
-            onCancel = onDismiss,
-            confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILES_CHMOD_APPLY),
-        ) {
-            LinuxPermissionGrid(mode = mode, onToggle = { group, permission -> mode = toggleLinuxPermission(mode, group, permission) })
+    NexaraConfirmDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(R.string.linux_files_chmod),
+        message = entry.name,
+        confirmText = stringResource(R.string.linux_files_chmod_apply),
+        onConfirm = { onConfirm(mode) },
+        onCancel = onDismiss,
+        confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILES_CHMOD_APPLY),
+    ) {
+        LinuxPermissionGrid(mode = mode, onToggle = { group, permission -> mode = toggleLinuxPermission(mode, group, permission) })
+        Text(
+            "${formatLinuxPermissions(entry.type, mode)} (${formatLinuxOctalMode(mode)})",
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = NexaraSpacing.Medium),
+        )
+        if (error != null) {
             Text(
-                "${formatLinuxPermissions(entry.type, mode)} (${formatLinuxOctalMode(mode)})",
-                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = NexaraSpacing.Medium),
+                linuxErrorText(error),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .padding(top = NexaraSpacing.Small)
+                    .semantics { liveRegion = LiveRegionMode.Assertive },
             )
-            if (error != null) {
-                Text(
-                    linuxErrorText(error),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .padding(top = NexaraSpacing.Small)
-                        .semantics { liveRegion = LiveRegionMode.Assertive },
-                )
-            }
         }
     }
 }

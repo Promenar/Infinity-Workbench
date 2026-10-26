@@ -104,20 +104,32 @@ class LinuxFilesViewModelTest {
     }
 
     @Test
-    fun `navigate up stops at root and switch toggles home and root`() = runTest(dispatcher) {
+    fun `navigate up stops at root and go home returns to the home folder`() = runTest(dispatcher) {
         val vm = viewModel("/root")
         assertThat(vm.state.value.atHome).isTrue()
-        vm.switchRoot()
+        assertThat(vm.navigateUp()).isTrue()
         advanceUntilIdle()
         assertThat(vm.state.value.path).isEqualTo("/")
         assertThat(vm.state.value.atHome).isFalse()
         assertThat(vm.state.value.entries.map { it.name }).containsAtLeast("root", "etc")
         assertThat(vm.navigateUp()).isFalse()
-        vm.switchRoot()
+        vm.goHome()
         advanceUntilIdle()
         assertThat(vm.state.value.path).isEqualTo("/root")
-        assertThat(vm.navigateUp()).isTrue()
-        assertThat(vm.state.value.path).isEqualTo("/")
+    }
+
+    @Test
+    fun `query filters the current folder and clears when navigating`() = runTest(dispatcher) {
+        val vm = viewModel()
+        vm.setQuery("DAT")
+        assertThat(vm.state.value.visibleEntries.map { it.name }).containsExactly("data")
+        vm.selectAll()
+        assertThat(vm.state.value.selection).containsExactly("/root/projects/data")
+        vm.clearSelection()
+        vm.navigate("/root")
+        advanceUntilIdle()
+        assertThat(vm.state.value.query).isEmpty()
+        assertThat(vm.state.value.visibleEntries.map { it.name }).contains("projects")
     }
 
     @Test

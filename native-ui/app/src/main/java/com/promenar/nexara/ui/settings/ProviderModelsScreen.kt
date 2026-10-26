@@ -377,22 +377,20 @@ internal fun ProviderModelsScreenContent(
     }
 
     if (showDeleteAllDialog) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteAllDialog = false }) {
-            Box(modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_DIALOG)) {
-                NexaraConfirmDialog(
-                    title = stringResource(R.string.provider_models_delete_all_title),
-                    message = stringResource(R.string.provider_models_delete_all_message),
-                    confirmText = stringResource(R.string.shared_btn_delete),
-                    confirmButtonModifier = Modifier.testTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_BUTTON),
-                    isDestructive = true,
-                    onConfirm = {
-                        actions.onDeleteAll()
-                        showDeleteAllDialog = false
-                    },
-                    onCancel = { showDeleteAllDialog = false },
-                )
-            }
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_DIALOG),
+            title = stringResource(R.string.provider_models_delete_all_title),
+            message = stringResource(R.string.provider_models_delete_all_message),
+            confirmText = stringResource(R.string.shared_btn_delete),
+            confirmButtonModifier = Modifier.testTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_BUTTON),
+            isDestructive = true,
+            onConfirm = {
+                actions.onDeleteAll()
+                showDeleteAllDialog = false
+            },
+            onCancel = { showDeleteAllDialog = false },
+        )
     }
 
     if (showAddDialog) {

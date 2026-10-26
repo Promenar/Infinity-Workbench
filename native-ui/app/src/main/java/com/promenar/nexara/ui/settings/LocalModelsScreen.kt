@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.rounded.SdCard
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.inference.StoredModel
@@ -323,13 +324,18 @@ private fun ModelPickerDialog(
     onDismiss: () -> Unit,
     onSelect: (StoredModel) -> Unit
 ) {
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(R.string.common_model_picker_title), style = MaterialTheme.typography.titleLarge)
-        },
-        text = {
+        title = stringResource(R.string.common_model_picker_title),
+        message = "",
+        confirmText = stringResource(R.string.common_btn_cancel),
+        cancelText = null,
+        onConfirm = onDismiss,
+        onCancel = onDismiss,
+        content = {
             LazyColumn(
+                // 统一对话框正文不限高，模型很多时限高滚动，避免挤掉按钮。
+                modifier = Modifier.heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(models) { model ->
@@ -359,11 +365,6 @@ private fun ModelPickerDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_btn_cancel))
-            }
-        }
     )
 }
 

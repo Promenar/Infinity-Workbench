@@ -41,14 +41,12 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.subagent.SubagentApproval
 import com.promenar.nexara.data.subagent.SubagentApprovalBroker
 import com.promenar.nexara.data.subagent.SubagentBatch
@@ -272,32 +271,23 @@ fun SubagentApprovalDialog(
     val title = sessionTitle(request.sessionId)?.takeIf(String::isNotBlank)
     val haptics = LocalNexaraHaptics.current
     LaunchedEffect(request.id) { haptics.perform(NexaraHapticEvent.ATTENTION) }
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = {},
-        title = { Text(stringResource(R.string.subagent_approval_title, subagentName(request.subagentPreset, request.subagentIndex))) },
-        text = { SubagentApprovalContent(request, title) },
-        confirmButton = {
-            TextButton(
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("SUBAGENT_APPROVAL_ALLOW"),
-                onClick = {
-                    haptics.perform(NexaraHapticEvent.CONFIRM)
-                    broker.resolve(request.id, true)
-                },
-            ) {
-                Text(stringResource(R.string.subagent_approval_allow))
-            }
+        title = stringResource(R.string.subagent_approval_title, subagentName(request.subagentPreset, request.subagentIndex)),
+        message = "",
+        confirmText = stringResource(R.string.subagent_approval_allow),
+        cancelText = stringResource(R.string.subagent_approval_deny),
+        onConfirm = {
+            haptics.perform(NexaraHapticEvent.CONFIRM)
+            broker.resolve(request.id, true)
         },
-        dismissButton = {
-            TextButton(
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("SUBAGENT_APPROVAL_DENY"),
-                onClick = {
-                    haptics.perform(NexaraHapticEvent.REJECT)
-                    broker.resolve(request.id, false)
-                },
-            ) {
-                Text(stringResource(R.string.subagent_approval_deny))
-            }
+        onCancel = {
+            haptics.perform(NexaraHapticEvent.REJECT)
+            broker.resolve(request.id, false)
         },
+        confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("SUBAGENT_APPROVAL_ALLOW"),
+        cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("SUBAGENT_APPROVAL_DENY"),
+        content = { SubagentApprovalContent(request, title) },
     )
 }
 

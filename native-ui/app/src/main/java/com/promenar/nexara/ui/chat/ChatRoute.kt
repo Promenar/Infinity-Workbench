@@ -61,7 +61,6 @@ import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.testing.UiTags
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.res.pluralStringResource
 import com.promenar.nexara.data.model.turnMemory
 import kotlinx.coroutines.launch
@@ -255,22 +254,16 @@ fun ChatRoute(
     }.collectAsStateWithLifecycle()
     interaction?.takeIf { it.sessionId == sessionId }?.let { prompt ->
         val unlimited = prompt.kind == com.promenar.nexara.data.generation.GenerationInteractionKind.UNLIMITED_AUTO
-        androidx.compose.material3.AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { application.generationInteractions.respond(prompt.id, false) },
-            title = { Text(stringResource(if (unlimited) R.string.p0_auto_confirm_title else R.string.p0_loop_title)) },
-            text = { Text(stringResource(if (unlimited) R.string.p0_auto_confirm_body else R.string.p0_loop_body)) },
-            confirmButton = {
-                TextButton(
-                    onClick = { application.generationInteractions.respond(prompt.id, true) },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.p0_continue)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { application.generationInteractions.respond(prompt.id, false) },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.generation_notification_stop)) }
-            },
+            title = stringResource(if (unlimited) R.string.p0_auto_confirm_title else R.string.p0_loop_title),
+            message = stringResource(if (unlimited) R.string.p0_auto_confirm_body else R.string.p0_loop_body),
+            confirmText = stringResource(R.string.p0_continue),
+            cancelText = stringResource(R.string.generation_notification_stop),
+            onConfirm = { application.generationInteractions.respond(prompt.id, true) },
+            onCancel = { application.generationInteractions.respond(prompt.id, false) },
+            confirmButtonModifier = Modifier.heightIn(min = 48.dp),
+            cancelButtonModifier = Modifier.heightIn(min = 48.dp),
         )
     }
     val activeTaskTree by remember(sessionId, resolvedDependencies.taskRepository) {
@@ -911,48 +904,41 @@ fun ChatRoute(
     }
 
     pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
-        androidx.compose.material3.AlertDialog(
+        NexaraConfirmDialog(
             modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_DIALOG),
             onDismissRequest = {
                 permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
                 chatViewModel.onNotificationPermissionResult(request.taskId, false)
                 permissionExplanationTaskId = null
             },
-            title = { Text(stringResource(R.string.generation_notification_permission_title)) },
-            text = { Text(stringResource(R.string.generation_notification_permission_explanation)) },
-            confirmButton = {
-                TextButton(
-                    modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_CONTINUE),
-                    onClick = {
-                        permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
-                        permissionInFlightTaskId = request.taskId
-                        permissionExplanationTaskId = null
-                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    },
-                ) { Text(stringResource(R.string.generation_notification_permission_continue)) }
+            title = stringResource(R.string.generation_notification_permission_title),
+            message = stringResource(R.string.generation_notification_permission_explanation),
+            confirmText = stringResource(R.string.generation_notification_permission_continue),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
+                permissionInFlightTaskId = request.taskId
+                permissionExplanationTaskId = null
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
-            dismissButton = {
-                TextButton(
-                    modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_FOREGROUND_ONLY),
-                    onClick = {
-                        permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
-                        chatViewModel.onNotificationPermissionResult(request.taskId, false)
-                        permissionExplanationTaskId = null
-                    },
-                ) { Text(stringResource(R.string.common_btn_cancel)) }
+            onCancel = {
+                permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
+                chatViewModel.onNotificationPermissionResult(request.taskId, false)
+                permissionExplanationTaskId = null
             },
+            confirmButtonModifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_CONTINUE),
+            cancelButtonModifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_FOREGROUND_ONLY),
         )
     }
     if (activeOverlay == ChatOverlay.ClearHistory) {
-        Dialog(onDismissRequest = { activeOverlayToken = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.chat_dialog_clear_history_title),
-                message = stringResource(R.string.chat_dialog_clear_history_msg),
-                confirmText = stringResource(R.string.common_btn_confirm),
-                onConfirm = { chatViewModel.clearHistory(); activeOverlayToken = null },
-                onCancel = { activeOverlayToken = null },
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { activeOverlayToken = null },
+            title = stringResource(R.string.chat_dialog_clear_history_title),
+            message = stringResource(R.string.chat_dialog_clear_history_msg),
+            confirmText = stringResource(R.string.common_btn_confirm),
+            onConfirm = { chatViewModel.clearHistory(); activeOverlayToken = null },
+            onCancel = { activeOverlayToken = null },
+        )
     }
     if (activeOverlay == ChatOverlay.DeleteSession) {
         com.promenar.nexara.ui.workspace.DeleteSessionDialog(
@@ -998,19 +984,18 @@ fun ChatRoute(
         }
     }
     (activeOverlay as? ChatOverlay.Truncate)?.let { truncate ->
-        Dialog(onDismissRequest = { activeOverlayToken = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.chat_confirm_truncate_title),
-                message = stringResource(R.string.chat_confirm_truncate_message),
-                confirmText = stringResource(R.string.common_btn_confirm),
-                onConfirm = {
-                    chatViewModel.regenerateMessage(truncate.messageId)
-                    activeOverlayToken = null
-                },
-                onCancel = { activeOverlayToken = null },
-                isDestructive = true,
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { activeOverlayToken = null },
+            title = stringResource(R.string.chat_confirm_truncate_title),
+            message = stringResource(R.string.chat_confirm_truncate_message),
+            confirmText = stringResource(R.string.common_btn_confirm),
+            onConfirm = {
+                chatViewModel.regenerateMessage(truncate.messageId)
+                activeOverlayToken = null
+            },
+            onCancel = { activeOverlayToken = null },
+            isDestructive = true,
+        )
     }
     if (showStartupIssues) {
         com.promenar.nexara.ui.startup.StartupIssuesSheet(

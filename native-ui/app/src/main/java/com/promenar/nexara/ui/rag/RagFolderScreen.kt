@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Deselect
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
@@ -70,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.share.core.SharedFileImporter
@@ -550,29 +550,26 @@ internal fun RagFolderScreenContent(
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        NexaraConfirmDialog(
             modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_DIALOG),
             onDismissRequest = { if (!state.isDeletingDocuments) showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.rag_folder_delete_confirm_title, state.selectedIds.size)) },
-            text = { Text(stringResource(R.string.shared_action_move_to_recycle_bin)) },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }, enabled = !state.isDeletingDocuments) {
-                    Text(stringResource(R.string.common_btn_cancel))
+            title = stringResource(R.string.rag_folder_delete_confirm_title, state.selectedIds.size),
+            message = stringResource(R.string.shared_action_move_to_recycle_bin),
+            confirmText = stringResource(R.string.shared_btn_move_to_recycle_bin),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                val deletingIds = state.selectedIds.toList()
+                actions.onDelete(deletingIds) { succeeded, failedIds ->
+                    applyMoveSelectionResult(state.selectedIds, deletingIds.toSet(), failedIds.toSet(), succeeded)
+                    if (succeeded && failedIds.isEmpty()) showDeleteConfirm = false
                 }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val deletingIds = state.selectedIds.toList()
-                        actions.onDelete(deletingIds) { succeeded, failedIds ->
-                            applyMoveSelectionResult(state.selectedIds, deletingIds.toSet(), failedIds.toSet(), succeeded)
-                            if (succeeded && failedIds.isEmpty()) showDeleteConfirm = false
-                        }
-                    },
-                    enabled = !state.isDeletingDocuments,
-                    modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_BUTTON),
-                ) { Text(stringResource(R.string.shared_btn_move_to_recycle_bin), color = MaterialTheme.colorScheme.error) }
-            },
+            // 删除中取消按钮原为禁用；统一对话框无禁用态，改为删除期间忽略点击。
+            onCancel = { showDeleteConfirm = false },
+            cancelEnabled = !state.isDeletingDocuments,
+            isDestructive = true,
+            confirmEnabled = !state.isDeletingDocuments,
+            confirmButtonModifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_BUTTON),
         )
     }
 }

@@ -110,19 +110,18 @@ fun ProviderListScreen(
     )
 
     if (showDeleteDialog != null) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteDialog = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.settings_delete_provider_title),
-                message = stringResource(R.string.settings_delete_provider_message),
-                confirmText = stringResource(R.string.settings_btn_delete),
-                isDestructive = true,
-                onConfirm = {
-                    showDeleteDialog?.let { viewModel.deleteProvider(it) }
-                    showDeleteDialog = null
-                },
-                onCancel = { showDeleteDialog = null }
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { showDeleteDialog = null },
+            title = stringResource(R.string.settings_delete_provider_title),
+            message = stringResource(R.string.settings_delete_provider_message),
+            confirmText = stringResource(R.string.settings_btn_delete),
+            isDestructive = true,
+            onConfirm = {
+                showDeleteDialog?.let { viewModel.deleteProvider(it) }
+                showDeleteDialog = null
+            },
+            onCancel = { showDeleteDialog = null }
+        )
     }
 }
 

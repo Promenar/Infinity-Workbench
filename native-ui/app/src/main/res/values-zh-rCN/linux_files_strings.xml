@@ -5,9 +5,10 @@
     <string name="linux_files_subtitle_home">主目录 · 不进备份，重置时清空</string>
     <string name="linux_files_subtitle_root">根目录 · 重置时恢复为内置系统</string>
     <string name="linux_files_up">上一级</string>
-    <string name="linux_files_switch">切换</string>
     <string name="linux_files_switch_to_root">切换到整个根目录</string>
     <string name="linux_files_switch_to_home">切换到 Linux 主目录</string>
+    <string name="linux_files_search_hint">在当前文件夹中搜索</string>
+    <string name="linux_files_open_terminal_here">在此处打开终端</string>
     <string name="linux_files_sort_cd">排序：%1$s</string>
     <string name="linux_files_sort_name">名称</string>
     <string name="linux_files_sort_modified">修改时间</string>

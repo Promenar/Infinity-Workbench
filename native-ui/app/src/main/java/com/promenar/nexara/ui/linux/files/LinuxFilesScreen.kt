@@ -7,7 +7,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,42 +18,35 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreateNewFolder
-import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.SubdirectoryArrowLeft
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -71,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -80,16 +71,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -99,10 +86,16 @@ import com.promenar.nexara.domain.linux.LinuxFileEntry
 import com.promenar.nexara.domain.linux.LinuxFileType
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.ui.chat.components.DirectoryPasteBar
+import com.promenar.nexara.ui.chat.components.DirectorySelectionAction
+import com.promenar.nexara.ui.chat.components.DirectorySelectionBar
+import com.promenar.nexara.ui.common.FilePathRoot
+import com.promenar.nexara.ui.common.FilePathRow
+import com.promenar.nexara.ui.common.FolderCrumb
 import com.promenar.nexara.ui.common.FolderStatusMessage
-import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.common.NexaraPageSearch
+import com.promenar.nexara.ui.common.NexaraSearchTopBar
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraMonospace
@@ -163,7 +156,8 @@ fun LinuxFilesScreen(
                 actions = LinuxFilesActions(
                     onBack = onBack,
                     onNavigate = viewModel::navigate,
-                    onSwitchRoot = viewModel::switchRoot,
+                    onGoHome = viewModel::goHome,
+                    onQueryChange = viewModel::setQuery,
                     onRefresh = viewModel::refresh,
                     onSort = viewModel::setSort,
                     onToggleHidden = viewModel::toggleShowHidden,
@@ -204,7 +198,8 @@ fun LinuxFilesScreen(
 internal data class LinuxFilesActions(
     val onBack: () -> Unit = {},
     val onNavigate: (String) -> Unit = {},
-    val onSwitchRoot: () -> Unit = {},
+    val onGoHome: () -> Unit = {},
+    val onQueryChange: (String) -> Unit = {},
     val onRefresh: () -> Unit = {},
     val onSort: (LinuxFileSort) -> Unit = {},
     val onToggleHidden: () -> Unit = {},
@@ -237,15 +232,36 @@ internal fun LinuxFilesContent(
     actions: LinuxFilesActions,
     modifier: Modifier = Modifier,
 ) {
+    var searchActive by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
     Surface(color = MaterialTheme.colorScheme.background, modifier = modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
-            LinuxFilesHeader(state, actions)
+            NexaraSearchTopBar(
+                title = stringResource(R.string.linux_files_title),
+                search = if (state.ready) {
+                    NexaraPageSearch(
+                        query = state.query,
+                        active = searchActive,
+                        onQueryChange = actions.onQueryChange,
+                        onActiveChange = { searchActive = it },
+                        placeholder = stringResource(R.string.linux_files_search_hint),
+                        fieldTag = UiTags.LINUX_FILES_SEARCH,
+                    )
+                } else {
+                    null
+                },
+                onBack = actions.onBack,
+                actions = {
+                    if (state.ready) {
+                        LinuxCreateButton(enabled = !state.selecting && !state.operating && state.error == null, onCreate = actions.onCreate)
+                        LinuxMoreMenu(state, actions)
+                    }
+                },
+            )
             if (!state.ready) {
                 LinuxNotReady(state.runtime, actions.onOpenEnvironment)
                 return@Column
             }
-            LinuxPathBar(state, actions)
-            LinuxStatusRow(state, actions)
+            LinuxPathRow(state, actions)
             LinuxFilesMessages(state, actions)
             LinuxEntriesList(state, actions, Modifier.weight(1f))
             AnimatedVisibility(visible = state.operating, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
@@ -255,61 +271,6 @@ internal fun LinuxFilesContent(
         }
     }
     LinuxFilesDialogs(state, actions)
-}
-
-@Composable
-private fun LinuxFilesHeader(state: LinuxFilesUiState, actions: LinuxFilesActions) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = NexaraSpacing.XSmall, end = NexaraSpacing.Large, top = NexaraSpacing.XSmall, bottom = NexaraSpacing.Small)
-            .testTag(UiTags.LINUX_FILES_HEADER),
-    ) {
-        NexaraBackButton(onClick = actions.onBack)
-        Box(
-            Modifier
-                .padding(start = NexaraSpacing.XSmall, end = NexaraSpacing.Medium)
-                .size(36.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Rounded.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.linux_files_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                stringResource(if (state.atHome) R.string.linux_files_subtitle_home else R.string.linux_files_subtitle_root),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // 进出目录时顶栏高度不变，下方路径与列表不随文案长短漂移。
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (state.ready) {
-            val switchDescription = stringResource(if (state.atHome) R.string.linux_files_switch_to_root else R.string.linux_files_switch_to_home)
-            FilledTonalButton(
-                onClick = actions.onSwitchRoot,
-                enabled = !state.selecting,
-                contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium),
-                modifier = Modifier
-                    .padding(start = NexaraSpacing.Small)
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                    .semantics { contentDescription = switchDescription }
-                    .testTag(UiTags.LINUX_FILES_ROOT_SWITCH),
-            ) { Text(stringResource(R.string.linux_files_switch)) }
-        }
-    }
 }
 
 @Composable
@@ -337,80 +298,50 @@ private fun LinuxNotReady(runtime: LinuxRuntimeState?, onOpenEnvironment: () -> 
     }
 }
 
+/** 路径行：`~` 与 `/` 两个起点片段加相对起点的各级目录；下方一行说明当前范围的重置行为并放排序。 */
 @Composable
-private fun LinuxPathBar(state: LinuxFilesUiState, actions: LinuxFilesActions) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-        modifier = Modifier.fillMaxWidth().padding(start = NexaraSpacing.Small, end = NexaraSpacing.Small),
-    ) {
-        FilledTonalIconButton(
-            onClick = { linuxParentPath(state.path)?.let(actions.onNavigate) },
-            enabled = !state.selecting && linuxParentPath(state.path) != null,
-            modifier = Modifier.size(40.dp).testTag(UiTags.LINUX_FILES_UP),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        ) {
-            Icon(Icons.Rounded.ArrowUpward, contentDescription = stringResource(R.string.linux_files_up), modifier = Modifier.size(20.dp))
-        }
-        LinuxBreadcrumbs(state.path, enabled = !state.selecting, onNavigate = actions.onNavigate, modifier = Modifier.weight(1f))
-        LinuxSortButton(state.sort, actions.onSort)
-        val hiddenLabel = stringResource(R.string.linux_files_show_hidden)
-        val hiddenState = stringResource(if (state.showHidden) R.string.linux_files_state_on else R.string.linux_files_state_off)
-        FilledTonalIconToggleButton(
-            checked = state.showHidden,
-            onCheckedChange = { actions.onToggleHidden() },
-            modifier = Modifier
-                .size(40.dp)
-                .semantics { stateDescription = hiddenState }
-                .testTag(UiTags.LINUX_FILES_HIDDEN_TOGGLE),
-            colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+private fun LinuxPathRow(state: LinuxFilesUiState, actions: LinuxFilesActions) {
+    val crumbs = remember(state.path) { linuxCrumbs(state.path) }
+    val pathDescription = stringResource(R.string.linux_files_path_cd, state.path)
+    FilePathRow(
+        roots = listOf(
+            FilePathRoot(
+                label = "~",
+                contentDescription = stringResource(R.string.linux_files_switch_to_home),
+                selected = crumbs.underHome,
+                onClick = actions.onGoHome,
+                tag = UiTags.LINUX_FILES_ROOT_HOME,
             ),
-        ) {
-            Icon(if (state.showHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, contentDescription = hiddenLabel, modifier = Modifier.size(20.dp))
-        }
-        LinuxCreateButton(enabled = !state.selecting && !state.operating && state.error == null, onCreate = actions.onCreate)
-    }
-}
-
-/** 路径首段为根 `/`，其余逐级；当前目录不可点，路径过长时横向滚动并停在末尾。 */
-@Composable
-private fun LinuxBreadcrumbs(path: String, enabled: Boolean, onNavigate: (String) -> Unit, modifier: Modifier) {
-    val segments = remember(path) { linuxPathSegments(path) }
-    val scrollState = rememberScrollState()
-    LaunchedEffect(path) { scrollState.animateScrollTo(scrollState.maxValue) }
-    val pathDescription = stringResource(R.string.linux_files_path_cd, path)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .horizontalScroll(scrollState)
+            FilePathRoot(
+                label = "/",
+                contentDescription = stringResource(R.string.linux_files_switch_to_root),
+                selected = !crumbs.underHome,
+                onClick = { actions.onNavigate("/") },
+                tag = UiTags.LINUX_FILES_ROOT_SYSTEM,
+            ),
+        ),
+        trail = remember(crumbs) { crumbs.trail.map { FolderCrumb(id = it.path, name = it.name) } },
+        onNavigateToCrumb = { index -> actions.onNavigate(crumbs.trail[index].path) },
+        enabled = !state.selecting,
+        crumbStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
+        modifier = Modifier
+            .padding(horizontal = NexaraSpacing.Small)
             .semantics { contentDescription = pathDescription }
             .testTag(UiTags.LINUX_FILES_PATH),
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(start = NexaraSpacing.Large, end = NexaraSpacing.XSmall),
     ) {
-        segments.forEachIndexed { index, segment ->
-            if (index > 1) {
-                Text("/", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace), color = MaterialTheme.colorScheme.outline)
-            }
-            val current = index == segments.lastIndex
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .sizeIn(minWidth = if (current) 0.dp else NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
-                    .clip(RoundedCornerShape(8.dp))
-                    .then(if (!current && enabled) Modifier.clickable(role = Role.Button) { onNavigate(segment.path) } else Modifier)
-                    .padding(horizontal = NexaraSpacing.XSmall),
-            ) {
-                Text(
-                    segment.name,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace),
-                    color = if (current) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (current) FontWeight.SemiBold else null,
-                    maxLines = 1,
-                )
-            }
-        }
+        Text(
+            stringResource(if (state.atHome) R.string.linux_files_subtitle_home else R.string.linux_files_subtitle_root),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        LinuxSortButton(state.sort, actions.onSort)
     }
 }
 
@@ -418,13 +349,19 @@ private fun LinuxBreadcrumbs(path: String, enabled: Boolean, onNavigate: (String
 private fun LinuxSortButton(sort: LinuxFileSort, onSort: (LinuxFileSort) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val label = sortLabel(sort)
+    val description = stringResource(R.string.linux_files_sort_cd, label)
     Box {
-        FilledTonalIconButton(
+        TextButton(
             onClick = { expanded = true },
-            modifier = Modifier.size(40.dp).testTag(UiTags.LINUX_FILES_SORT),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium),
+            modifier = Modifier
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .semantics { contentDescription = description }
+                .testTag(UiTags.LINUX_FILES_SORT),
         ) {
-            Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = stringResource(R.string.linux_files_sort_cd, label), modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(NexaraSpacing.XSmall))
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             LinuxFileSort.entries.forEach { option ->
@@ -455,13 +392,12 @@ private fun sortLabel(sort: LinuxFileSort): String = stringResource(
 private fun LinuxCreateButton(enabled: Boolean, onCreate: (folder: Boolean) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        FilledTonalIconButton(
+        IconButton(
             onClick = { expanded = true },
             enabled = enabled,
-            modifier = Modifier.size(40.dp).testTag(UiTags.LINUX_FILES_NEW),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget).testTag(UiTags.LINUX_FILES_NEW),
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.linux_files_new), modifier = Modifier.size(20.dp))
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.linux_files_new))
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
@@ -484,72 +420,36 @@ private fun LinuxCreateButton(enabled: Boolean, onCreate: (folder: Boolean) -> U
     }
 }
 
+/** 顶栏更多：显示隐藏文件、在当前目录打开终端。 */
 @Composable
-private fun LinuxStatusRow(state: LinuxFilesUiState, actions: LinuxFilesActions) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-            .padding(start = NexaraSpacing.Large, end = NexaraSpacing.Small),
-    ) {
-        if (state.selecting) {
-            Text(
-                pluralStringResource(R.plurals.directory_selected_count, state.selection.size, state.selection.size),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-            LinuxSelectionMenu(state, actions)
-        }
-        Spacer(Modifier.weight(1f))
-        val sortedBy = stringResource(
-            when (state.sort) {
-                LinuxFileSort.NAME -> R.string.linux_files_sorted_by_name
-                LinuxFileSort.MODIFIED -> R.string.linux_files_sorted_by_modified
-                LinuxFileSort.SIZE -> R.string.linux_files_sorted_by_size
-            },
-        )
-        val count = state.visibleEntries.size
-        Text(
-            pluralStringResource(R.plurals.linux_files_count, count, count) + " · " + sortedBy,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            maxLines = 2,
-            modifier = Modifier.padding(start = NexaraSpacing.Small, end = NexaraSpacing.Small),
-        )
-    }
-}
-
-/** 选择期间的更多操作：全选、重命名与修改权限（单项）、取消选择。 */
-@Composable
-private fun LinuxSelectionMenu(state: LinuxFilesUiState, actions: LinuxFilesActions) {
+private fun LinuxMoreMenu(state: LinuxFilesUiState, actions: LinuxFilesActions) {
     var expanded by remember { mutableStateOf(false) }
-    val single = state.selectedEntries.singleOrNull()
+    val hiddenState = stringResource(if (state.showHidden) R.string.linux_files_state_on else R.string.linux_files_state_off)
     Box {
-        IconButton(onClick = { expanded = true }, modifier = Modifier.testTag(UiTags.LINUX_FILES_SELECTION_MORE)) {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget).testTag(UiTags.LINUX_FILES_MORE),
+        ) {
             Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.linux_files_more))
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.linux_files_select_all)) },
-                enabled = state.selection.size < state.visibleEntries.size,
-                onClick = { expanded = false; actions.onSelectAll() },
+                text = { Text(stringResource(R.string.linux_files_show_hidden)) },
+                leadingIcon = { Icon(if (state.showHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, contentDescription = null) },
+                trailingIcon = { Checkbox(checked = state.showHidden, onCheckedChange = null) },
+                onClick = { actions.onToggleHidden() },
+                modifier = Modifier
+                    .semantics { stateDescription = hiddenState }
+                    .testTag(UiTags.LINUX_FILES_HIDDEN_TOGGLE),
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.directory_action_rename)) },
-                enabled = single != null && !state.operating,
-                onClick = { expanded = false; actions.onRename() },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.linux_files_chmod)) },
-                enabled = single != null && single.type != LinuxFileType.SYMLINK && !state.operating,
-                onClick = { expanded = false; actions.onChmod() },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.linux_files_clear_selection)) },
-                onClick = { expanded = false; actions.onClearSelection() },
+                text = { Text(stringResource(R.string.linux_files_open_terminal_here)) },
+                leadingIcon = { Icon(Icons.Rounded.Terminal, contentDescription = null) },
+                enabled = !state.selecting,
+                onClick = {
+                    expanded = false
+                    actions.onOpenTerminal()
+                },
             )
         }
     }
@@ -600,6 +500,8 @@ private fun LinuxEntriesList(state: LinuxFilesUiState, actions: LinuxFilesAction
         }
         val error = state.error
         val entries = state.visibleEntries
+        // 主目录与根目录本身由路径行的起点片段到达，不再显示“上一级”。
+        val showUp = state.path != LINUX_HOME_PATH && linuxParentPath(state.path) != null
         when {
             error != null -> FolderStatusMessage(
                 text = stringResource(R.string.linux_files_load_failed, linuxErrorText(error)),
@@ -610,10 +512,13 @@ private fun LinuxEntriesList(state: LinuxFilesUiState, actions: LinuxFilesAction
                     Text(stringResource(R.string.shared_btn_retry))
                 }
             }
-            entries.isEmpty() && !state.loading -> FolderStatusMessage(
-                text = stringResource(R.string.linux_files_empty),
-                modifier = Modifier.testTag(UiTags.LINUX_FILES_STATUS),
-            )
+            entries.isEmpty() && !state.loading -> Column {
+                if (showUp) LinuxUpRow(enabled = !state.selecting) { linuxParentPath(state.path)?.let(actions.onNavigate) }
+                FolderStatusMessage(
+                    text = stringResource(if (state.query.isBlank()) R.string.linux_files_empty else R.string.common_search_no_results),
+                    modifier = Modifier.testTag(UiTags.LINUX_FILES_STATUS),
+                )
+            }
             entries.isEmpty() -> Unit
             else -> LazyColumn(
                 modifier = Modifier
@@ -622,6 +527,11 @@ private fun LinuxEntriesList(state: LinuxFilesUiState, actions: LinuxFilesAction
                     .testTag(UiTags.LINUX_FILES_LIST),
                 contentPadding = PaddingValues(vertical = NexaraSpacing.XSmall),
             ) {
+                if (showUp) {
+                    item(key = "..") {
+                        LinuxUpRow(enabled = !state.selecting) { linuxParentPath(state.path)?.let(actions.onNavigate) }
+                    }
+                }
                 items(entries, key = { it.path }) { entry ->
                     LinuxFileRow(
                         entry = entry,
@@ -634,6 +544,24 @@ private fun LinuxEntriesList(state: LinuxFilesUiState, actions: LinuxFilesAction
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LinuxUpRow(enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = NexaraSpacing.Large, vertical = 6.dp)
+            .testTag(UiTags.LINUX_FILES_UP),
+    ) {
+        Icon(Icons.Rounded.SubdirectoryArrowLeft, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Text(stringResource(R.string.linux_files_up), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -737,7 +665,7 @@ private fun LinuxBottomBar(state: LinuxFilesUiState, actions: LinuxFilesActions)
     ) { bar ->
         Box(Modifier.padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small)) {
             when (bar) {
-                1 -> LinuxSelectionBar(busy = state.operating, actions = actions)
+                1 -> LinuxSelectionBar(state, actions)
                 2 -> clipboard?.let {
                     DirectoryPasteBar(
                         clipboard = it,
@@ -753,70 +681,41 @@ private fun LinuxBottomBar(state: LinuxFilesUiState, actions: LinuxFilesActions)
     }
 }
 
-/** 选择期间的底部操作栏：复制、移动、压缩、在终端打开、删除。 */
+/** 选择期间的底部操作栏：共用目录选择栏，补充全选、修改权限、压缩与在终端打开。 */
 @Composable
-private fun LinuxSelectionBar(busy: Boolean, actions: LinuxFilesActions) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth().testTag(UiTags.LINUX_FILES_SELECTION_BAR),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.XSmall, vertical = 6.dp)) {
-            SelectionAction(Icons.Rounded.ContentCopy, R.string.directory_action_copy, !busy, UiTags.LINUX_FILES_ACTION_COPY) { actions.onCopy(false) }
-            SelectionAction(Icons.AutoMirrored.Rounded.DriveFileMove, R.string.directory_action_move, !busy, UiTags.LINUX_FILES_ACTION_MOVE) { actions.onCopy(true) }
-            SelectionAction(Icons.Rounded.FolderZip, R.string.linux_files_action_compress, !busy, UiTags.LINUX_FILES_ACTION_COMPRESS, onClick = actions.onCompress)
-            SelectionAction(
-                Icons.Rounded.Terminal,
-                R.string.linux_files_action_terminal,
-                true,
-                UiTags.LINUX_FILES_ACTION_TERMINAL,
-                tint = MaterialTheme.colorScheme.primary,
-                onClick = actions.onOpenTerminal,
-            )
-            SelectionAction(
-                Icons.Rounded.DeleteOutline,
-                R.string.directory_action_delete,
-                !busy,
-                UiTags.LINUX_FILES_ACTION_DELETE,
-                tint = MaterialTheme.colorScheme.error,
-                labelColor = MaterialTheme.colorScheme.error,
-                onClick = actions.onDelete,
-            )
-        }
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.SelectionAction(
-    icon: ImageVector,
-    label: Int,
-    enabled: Boolean,
-    tag: String,
-    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
-    labelColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
-    onClick: () -> Unit,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall, Alignment.CenterVertically),
-        modifier = Modifier
-            .weight(1f)
-            .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .alpha(if (enabled) 1f else 0.38f)
-            .padding(horizontal = 2.dp, vertical = 6.dp)
-            .testTag(tag),
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Text(
-            stringResource(label),
-            style = MaterialTheme.typography.labelSmall,
-            color = labelColor,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
-    }
+private fun LinuxSelectionBar(state: LinuxFilesUiState, actions: LinuxFilesActions) {
+    val busy = state.operating
+    val single = state.selectedEntries.singleOrNull()
+    DirectorySelectionBar(
+        count = state.selection.size,
+        busy = busy,
+        onCopy = { actions.onCopy(false) },
+        onMove = { actions.onCopy(true) },
+        onRename = actions.onRename,
+        onDelete = actions.onDelete,
+        onClear = actions.onClearSelection,
+        modifier = Modifier.testTag(UiTags.LINUX_FILES_SELECTION_BAR),
+        topActions = {
+            IconButton(
+                onClick = actions.onSelectAll,
+                enabled = state.selection.size < state.visibleEntries.size,
+                modifier = Modifier.testTag(UiTags.LINUX_FILES_SELECT_ALL),
+            ) {
+                Icon(Icons.Rounded.SelectAll, contentDescription = stringResource(R.string.linux_files_select_all))
+            }
+            IconButton(
+                onClick = actions.onChmod,
+                enabled = single != null && single.type != LinuxFileType.SYMLINK && !busy,
+                modifier = Modifier.testTag(UiTags.LINUX_FILES_ACTION_CHMOD),
+            ) {
+                Icon(Icons.Rounded.Lock, contentDescription = stringResource(R.string.linux_files_chmod))
+            }
+        },
+        extraActions = {
+            DirectorySelectionAction(Icons.Rounded.FolderZip, R.string.linux_files_action_compress, !busy, actions.onCompress, UiTags.LINUX_FILES_ACTION_COMPRESS)
+            DirectorySelectionAction(Icons.Rounded.Terminal, R.string.linux_files_action_terminal, true, actions.onOpenTerminal, UiTags.LINUX_FILES_ACTION_TERMINAL)
+        },
+    )
 }
 
 @Composable
@@ -864,17 +763,16 @@ private fun LinuxFilesDialogs(state: LinuxFilesUiState, actions: LinuxFilesActio
                 onConfirm = actions.onConfirmChmod,
                 onDismiss = actions.onDismissDialog,
             )
-            is LinuxFilesDialog.ConfirmDelete -> Dialog(onDismissRequest = actions.onDismissDialog) {
-                NexaraConfirmDialog(
-                    title = pluralStringResource(R.plurals.directory_delete_title, dialog.paths.size, dialog.paths.size),
-                    message = stringResource(R.string.linux_files_delete_message),
-                    confirmText = stringResource(R.string.directory_action_delete),
-                    onConfirm = actions.onConfirmDelete,
-                    onCancel = actions.onDismissDialog,
-                    isDestructive = true,
-                    confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILES_DELETE_CONFIRM),
-                )
-            }
+            is LinuxFilesDialog.ConfirmDelete -> NexaraConfirmDialog(
+                onDismissRequest = actions.onDismissDialog,
+                title = pluralStringResource(R.plurals.directory_delete_title, dialog.paths.size, dialog.paths.size),
+                message = stringResource(R.string.linux_files_delete_message),
+                confirmText = stringResource(R.string.directory_action_delete),
+                onConfirm = actions.onConfirmDelete,
+                onCancel = actions.onDismissDialog,
+                isDestructive = true,
+                confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILES_DELETE_CONFIRM),
+            )
         }
     }
 }

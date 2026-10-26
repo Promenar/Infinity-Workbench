@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -17,6 +15,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.backup.SkillBackupSummary
 import com.promenar.nexara.data.backup.SkippedSkillGitRepository
 
@@ -29,10 +28,15 @@ internal fun SkippedSkillGitRepository.shortCommit(): String? = commit?.take(12)
 
 @Composable
 fun SkillRestoreNoticeDialog(summary: SkillBackupSummary, onDismiss: () -> Unit) {
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.skills_restore_notice_title)) },
-        text = {
+        title = stringResource(R.string.skills_restore_notice_title),
+        message = "",
+        confirmText = stringResource(R.string.skills_restore_notice_dismiss),
+        cancelText = null,
+        onConfirm = onDismiss,
+        onCancel = onDismiss,
+        content = {
             SelectionContainer {
                 Column(
                     Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()).testTag("skill_restore_notice"),
@@ -48,7 +52,6 @@ fun SkillRestoreNoticeDialog(summary: SkillBackupSummary, onDismiss: () -> Unit)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.skills_restore_notice_dismiss)) } },
     )
 }
 

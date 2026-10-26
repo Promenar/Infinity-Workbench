@@ -2,182 +2,208 @@ package com.promenar.nexara.ui.common
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.forInput
+
+/** 二级页顶栏搜索的状态；查询与开关由调用方持有。 */
+data class NexaraPageSearch(
+    val query: String,
+    val active: Boolean,
+    val onQueryChange: (String) -> Unit,
+    val onActiveChange: (Boolean) -> Unit,
+    val placeholder: String? = null,
+    val fieldTag: String? = null,
+)
 
 /**
- * 管理列表共用的顶栏搜索状态。
+ * 二级页与检视器页签的顶栏搜索：点放大镜后标题位换成紧凑搜索框，返回先退出搜索。
  *
- * 查询和搜索开关均由调用方持有；此组件只提供输入、焦点和导航语义。
+ * 退出搜索时清空查询，回到页面完整内容。[search] 为 null（例如内容尚未就绪）时只显示标题与操作。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NexaraSearchTopBar(
     title: String? = null,
-    query: String,
-    searchActive: Boolean,
-    onQueryChange: (String) -> Unit,
-    onSearchActiveChange: (Boolean) -> Unit,
+    search: NexaraPageSearch?,
     onBack: (() -> Unit)? = null,
+    containerColor: Color = MaterialTheme.colorScheme.background,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val searchDescription = stringResource(R.string.common_search_placeholder)
-    val navigateBack: () -> Unit = {
-        if (searchActive) {
-            focusManager.clearFocus()
-            onSearchActiveChange(false)
-        } else {
-            onBack?.invoke()
-        }
-        Unit
+    val placeholder = search?.placeholder ?: stringResource(R.string.common_search_placeholder)
+    val searching = search?.active == true
+    val exitSearch: () -> Unit = {
+        focusManager.clearFocus()
+        search?.onQueryChange?.invoke("")
+        search?.onActiveChange?.invoke(false)
     }
 
-    BackHandler(enabled = searchActive || onBack != null) {
-        navigateBack()
-    }
+    BackHandler(enabled = searching) { exitSearch() }
 
-    LaunchedEffect(searchActive) {
-        if (searchActive) {
-            focusRequester.requestFocus()
-        }
+    LaunchedEffect(searching) {
+        if (searching) focusRequester.requestFocus()
     }
 
     TopAppBar(
         title = {
             AnimatedContent(
-                targetState = searchActive,
-                transitionSpec = {
-                    fadeIn(tween(durationMillis = 180)) togetherWith
-                        fadeOut(tween(durationMillis = 120))
-                },
+                targetState = searching,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
                 label = "nexara-search-top-bar",
             ) { active ->
-                if (active) {
-                    TextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .semantics { contentDescription = searchDescription },
-                        placeholder = {
-                            Text(
-                                text = searchDescription,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ).forInput(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(
-                            onSearch = { focusManager.clearFocus() },
-                        ),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            disabledContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
-                            cursorColor = MaterialTheme.colorScheme.primary,
-                        ),
+                if (active && search != null) {
+                    NexaraSearchBar(
+                        value = search.query,
+                        onValueChange = search.onQueryChange,
+                        placeholder = placeholder,
+                        onSearch = { focusManager.clearFocus() },
+                        modifier = Modifier.padding(end = NexaraSpacing.Small)
+                            .then(search.fieldTag?.let { Modifier.testTag(it) } ?: Modifier),
+                        fieldModifier = Modifier.focusRequester(focusRequester),
                     )
                 } else {
                     title?.takeIf(String::isNotBlank)?.let {
                         Text(
                             text = it,
                             style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
             }
         },
         navigationIcon = {
-            if (searchActive || onBack != null) {
-                IconButton(
-                    onClick = navigateBack,
-                    modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.common_cd_back),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+            when {
+                searching -> NexaraBackButton(onClick = exitSearch)
+                onBack != null && !LocalNexaraSettingsPaneRoot.current -> NexaraBackButton(onClick = onBack)
             }
         },
         actions = {
-            if (searchActive) {
-                IconButton(
-                    onClick = { onQueryChange("") },
-                    modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Clear,
-                        contentDescription = stringResource(R.string.common_cd_clear),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
+            if (!searching) {
+                if (search != null) {
+                    IconButton(
+                        onClick = { search.onActiveChange(true) },
+                        modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget),
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = placeholder)
+                    }
                 }
-            } else {
                 actions()
-                IconButton(
-                    onClick = { onSearchActiveChange(true) },
-                    modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = searchDescription,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = containerColor,
+            scrolledContainerColor = containerColor,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     )
+}
+
+/**
+ * 没有顶栏的面板（如检视器页签）里的工具行搜索：平时显示 [title] 与操作按钮，
+ * 点放大镜后整行换成搜索框；关闭按钮或系统返回退出搜索并清空查询。
+ */
+@Composable
+fun NexaraToolbarSearch(
+    search: NexaraPageSearch,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    openButtonTag: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val placeholder = search.placeholder ?: stringResource(R.string.common_search_placeholder)
+    val exitSearch: () -> Unit = {
+        focusManager.clearFocus()
+        search.onQueryChange("")
+        search.onActiveChange(false)
+    }
+
+    BackHandler(enabled = search.active) { exitSearch() }
+
+    LaunchedEffect(search.active) {
+        if (search.active) focusRequester.requestFocus()
+    }
+
+    AnimatedContent(
+        targetState = search.active,
+        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+        modifier = modifier.fillMaxWidth(),
+        label = "nexara-toolbar-search",
+    ) { active ->
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (active) {
+                NexaraSearchBar(
+                    value = search.query,
+                    onValueChange = search.onQueryChange,
+                    placeholder = placeholder,
+                    onSearch = { focusManager.clearFocus() },
+                    modifier = Modifier.weight(1f)
+                        .then(search.fieldTag?.let { Modifier.testTag(it) } ?: Modifier),
+                    fieldModifier = Modifier.focusRequester(focusRequester),
+                )
+                IconButton(onClick = exitSearch, modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)) {
+                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_btn_cancel))
+                }
+            } else {
+                Text(
+                    text = title.orEmpty(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = { search.onActiveChange(true) },
+                    modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)
+                        .then(openButtonTag?.let { Modifier.testTag(it) } ?: Modifier),
+                ) {
+                    Icon(Icons.Rounded.Search, contentDescription = placeholder)
+                }
+                actions()
+            }
+        }
+    }
 }

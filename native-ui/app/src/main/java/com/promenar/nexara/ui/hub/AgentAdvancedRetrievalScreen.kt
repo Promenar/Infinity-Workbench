@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.ui.common.NexaraNumericSetting
@@ -93,27 +92,20 @@ internal fun AgentAdvancedRetrievalScreenContent(
     var showResetConfirm by remember { mutableStateOf(false) }
 
     if (showResetConfirm) {
-        AlertDialog(
+        NexaraConfirmDialog(
             modifier = Modifier.testTag("agent_retrieval_reset_dialog"),
             onDismissRequest = { showResetConfirm = false },
-            title = { Text(stringResource(R.string.agent_rag_reset_title)) },
-            text = { Text(stringResource(R.string.agent_rag_reset_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        actions.onResetToGlobal()
-                        showResetConfirm = false
-                    },
-                    modifier = Modifier.testTag("agent_retrieval_reset_confirm"),
-                ) {
-                    Text(stringResource(R.string.shared_btn_reset), color = MaterialTheme.colorScheme.error)
-                }
+            title = stringResource(R.string.agent_rag_reset_title),
+            message = stringResource(R.string.agent_rag_reset_message),
+            confirmText = stringResource(R.string.shared_btn_reset),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                actions.onResetToGlobal()
+                showResetConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) {
-                    Text(stringResource(R.string.common_btn_cancel))
-                }
-            },
+            onCancel = { showResetConfirm = false },
+            isDestructive = true,
+            confirmButtonModifier = Modifier.testTag("agent_retrieval_reset_confirm"),
         )
     }
 

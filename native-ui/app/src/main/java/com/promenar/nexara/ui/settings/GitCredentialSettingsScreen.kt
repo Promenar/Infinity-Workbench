@@ -15,7 +15,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +39,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.git.remote.GitCredential
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -205,24 +205,20 @@ internal fun GitCredentialSettingsContent(
         }
     }
     deleting?.let { credential ->
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { deleting = null },
-            title = { Text(stringResource(R.string.git_credentials_delete_title)) },
-            text = { Text(stringResource(R.string.git_credentials_delete_message, credential.host)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        actions.onDelete(credential.host)
-                        deleting = null
-                    },
-                    modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("git_credential_delete_confirm"),
-                ) { Text(stringResource(R.string.git_credentials_delete_confirm), color = MaterialTheme.colorScheme.error) }
+            title = stringResource(R.string.git_credentials_delete_title),
+            message = stringResource(R.string.git_credentials_delete_message, credential.host),
+            confirmText = stringResource(R.string.git_credentials_delete_confirm),
+            cancelText = stringResource(R.string.common_cancel),
+            onConfirm = {
+                actions.onDelete(credential.host)
+                deleting = null
             },
-            dismissButton = {
-                TextButton(onClick = { deleting = null }, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
+            onCancel = { deleting = null },
+            isDestructive = true,
+            confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("git_credential_delete_confirm"),
+            cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
         )
     }
 }

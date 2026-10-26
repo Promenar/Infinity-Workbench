@@ -33,7 +33,7 @@ import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.data.session.SessionDeletionResult
 import com.promenar.nexara.domain.workspace.PrivateWorkspaceSummary
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraConfirmDialogCard
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.CancellationException
@@ -81,7 +81,7 @@ internal fun DeleteSessionDialogContent(
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
-    NexaraConfirmDialog(
+    NexaraConfirmDialogCard(
         title = stringResource(R.string.chat_dialog_delete_session_title),
         message = if (summary == null) {
             stringResource(R.string.chat_dialog_delete_session_msg)

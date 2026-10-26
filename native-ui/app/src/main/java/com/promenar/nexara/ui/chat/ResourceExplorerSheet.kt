@@ -88,7 +88,8 @@ import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraNavigationHeader
 import com.promenar.nexara.ui.theme.hierarchicalTransition
-import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.common.NexaraPageSearch
+import com.promenar.nexara.ui.common.NexaraToolbarSearch
 import com.promenar.nexara.ui.git.GitEntrySummary
 import com.promenar.nexara.ui.git.GitWorkspaceEntry
 import com.promenar.nexara.ui.testing.UiTags
@@ -138,6 +139,7 @@ fun ResourceExplorerPage(
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
     val directory by viewModel.directory.collectAsStateWithLifecycle()
     var showRecycle by rememberSaveable(sessionId) { mutableStateOf(false) }
+    var searchActive by rememberSaveable(sessionId) { mutableStateOf(searchQuery.isNotEmpty()) }
     var showReach by rememberSaveable(sessionId) { mutableStateOf(false) }
     val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
     // 与执行层一致：生成进行中或有待审批的操作时不允许切换工作区。
@@ -174,6 +176,7 @@ fun ResourceExplorerPage(
             state = ResourceExplorerSheetState(
                 showRecycle = showRecycle,
                 searchQuery = searchQuery,
+                searchActive = searchActive,
                 recycleBinCount = recycleBinCount,
                 workspaceReady = workspaceRootUuid != null,
                 importItems = importItems,
@@ -190,6 +193,7 @@ fun ResourceExplorerPage(
                 onOpenReach = { showReach = true },
                 onChooseWorkspace = { pickingWorkspace = true },
                 onSearchQueryChanged = viewModel::updateSearchQuery,
+                onSearchActiveChange = { searchActive = it },
                 onImportFiles = {
                     filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray())
                 },
@@ -251,7 +255,10 @@ fun ResourceExplorerPage(
                     isLoading = isLoading,
                     hasLoadError = loadError != null,
                     onRetryLoad = viewModel::retryLoadSession,
-                    onClearSearch = { viewModel.updateSearchQuery("") },
+                    onClearSearch = {
+                        viewModel.updateSearchQuery("")
+                        searchActive = false
+                    },
                     initialFolderPath = initialFolderPath,
                     onImport = { filePicker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) }
                         .takeIf { workspaceRootUuid != null && !isImporting },
@@ -304,6 +311,8 @@ internal data class ResourceExplorerSheetState(
     /** 回收站是当前工作区的子页，从文件页工具栏进入。 */
     val showRecycle: Boolean = false,
     val searchQuery: String = "",
+    /** 工具行是否展开为搜索框；有查询时保持展开。 */
+    val searchActive: Boolean = false,
     val recycleBinCount: Int = 0,
     val workspaceReady: Boolean = false,
     val importItems: List<ShareImportItem> = emptyList(),
@@ -321,6 +330,7 @@ internal data class ResourceExplorerSheetState(
 
 internal data class ResourceExplorerSheetActions(
     val onSearchQueryChanged: (String) -> Unit = {},
+    val onSearchActiveChange: (Boolean) -> Unit = {},
     val onImportFiles: () -> Unit = {},
     val onRetryImport: (android.net.Uri) -> Unit = {},
     val onClearImportResults: () -> Unit = {},
@@ -544,15 +554,7 @@ private fun ResourceExplorerPrivateFilesPage(
     Column(modifier = Modifier.fillMaxSize()) {
         ResourceExplorerWorkspaceBar(state, actions)
         Spacer(modifier = Modifier.height(NexaraSpacing.Small))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-        ) {
-            ResourceExplorerSearch(state, actions, Modifier.weight(1f))
-            ResourceExplorerImportAction(state, actions)
-            ResourceExplorerRecycleAction(count = state.recycleBinCount, onClick = actions.onOpenRecycle)
-        }
+        ResourceExplorerToolbar(state, actions)
 
         val shownImports = remember { arrayOfNulls<List<ShareImportItem>>(1) }
         if (state.importItems.isNotEmpty()) shownImports[0] = state.importItems
@@ -577,18 +579,28 @@ private fun ResourceExplorerPrivateFilesPage(
     }
 }
 
+/** 文件工具行：标题与导入、回收站；点放大镜后整行换成搜索框。 */
 @Composable
-private fun ResourceExplorerSearch(
+private fun ResourceExplorerToolbar(
     state: ResourceExplorerSheetState,
     actions: ResourceExplorerSheetActions,
-    modifier: Modifier,
 ) {
-    NexaraSearchBar(
-        value = state.searchQuery,
-        onValueChange = actions.onSearchQueryChanged,
-        placeholder = stringResource(R.string.resource_explorer_search_placeholder),
-        modifier = modifier.testTag(UiTags.RESOURCE_EXPLORER_SEARCH),
-    )
+    NexaraToolbarSearch(
+        search = NexaraPageSearch(
+            query = state.searchQuery,
+            active = state.searchActive || state.searchQuery.isNotEmpty(),
+            onQueryChange = actions.onSearchQueryChanged,
+            onActiveChange = actions.onSearchActiveChange,
+            placeholder = stringResource(R.string.resource_explorer_search_placeholder),
+            fieldTag = UiTags.RESOURCE_EXPLORER_SEARCH,
+        ),
+        title = stringResource(R.string.resource_explorer_files_heading),
+        openButtonTag = UiTags.RESOURCE_EXPLORER_SEARCH_OPEN,
+        modifier = Modifier.padding(start = NexaraSpacing.Small),
+    ) {
+        ResourceExplorerImportAction(state, actions)
+        ResourceExplorerRecycleAction(count = state.recycleBinCount, onClick = actions.onOpenRecycle)
+    }
 }
 
 @Composable

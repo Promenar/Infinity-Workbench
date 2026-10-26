@@ -94,6 +94,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
@@ -526,30 +527,27 @@ fun SkillsScreen(
     }
 
     when (val event = agentSkillEvent) {
-        is AgentSkillEvent.Conflict -> androidx.compose.material3.AlertDialog(
+        is AgentSkillEvent.Conflict -> NexaraConfirmDialog(
             onDismissRequest = agentSkillsViewModel::consumeEvent,
-            title = { Text(stringResource(R.string.agent_skills_conflict_title)) },
-            text = { Text(stringResource(R.string.agent_skills_conflict_message, event.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    agentSkillsViewModel.consumeEvent()
-                    event.retry()
-                }) { Text(stringResource(R.string.agent_skills_replace)) }
+            title = stringResource(R.string.agent_skills_conflict_title),
+            message = stringResource(R.string.agent_skills_conflict_message, event.name),
+            confirmText = stringResource(R.string.agent_skills_replace),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                agentSkillsViewModel.consumeEvent()
+                event.retry()
             },
-            dismissButton = {
-                TextButton(onClick = agentSkillsViewModel::consumeEvent) {
-                    Text(stringResource(R.string.common_btn_cancel))
-                }
-            },
+            onCancel = agentSkillsViewModel::consumeEvent,
         )
-        is AgentSkillEvent.Failed -> androidx.compose.material3.AlertDialog(
+        // 无独立标题的纯提示：错误文案作标题，正文留空。
+        is AgentSkillEvent.Failed -> NexaraConfirmDialog(
             onDismissRequest = agentSkillsViewModel::consumeEvent,
-            text = { Text(stringResource(R.string.agent_skills_import_failed, event.message)) },
-            confirmButton = {
-                TextButton(onClick = agentSkillsViewModel::consumeEvent) {
-                    Text(stringResource(R.string.shared_btn_close))
-                }
-            },
+            title = "",
+            message = stringResource(R.string.agent_skills_import_failed, event.message),
+            confirmText = stringResource(R.string.shared_btn_close),
+            cancelText = null,
+            onConfirm = agentSkillsViewModel::consumeEvent,
+            onCancel = agentSkillsViewModel::consumeEvent,
         )
         is AgentSkillEvent.Installed -> androidx.compose.runtime.LaunchedEffect(event) {
             agentSkillsViewModel.consumeEvent()
@@ -560,12 +558,14 @@ fun SkillsScreen(
     }
 
     skillCatalogError?.let { message ->
-        androidx.compose.material3.AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = skillCatalogViewModel::consumeError,
-            text = { Text(stringResource(R.string.skills_runtime_error, message)) },
-            confirmButton = {
-                TextButton(onClick = skillCatalogViewModel::consumeError) { Text(stringResource(R.string.shared_btn_close)) }
-            },
+            title = "",
+            message = stringResource(R.string.skills_runtime_error, message),
+            confirmText = stringResource(R.string.shared_btn_close),
+            cancelText = null,
+            onConfirm = skillCatalogViewModel::consumeError,
+            onCancel = skillCatalogViewModel::consumeError,
         )
     }
 

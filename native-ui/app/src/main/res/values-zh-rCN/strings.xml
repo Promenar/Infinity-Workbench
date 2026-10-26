@@ -220,6 +220,7 @@
     <string name="share_import_reason_index">索引任务无法持久化，文件未导入</string>
     <string name="resource_explorer_title">资源管理器</string>
     <string name="resource_explorer_search_placeholder">搜索文件…</string>
+    <string name="resource_explorer_files_heading">文件</string>
     <string name="resource_explorer_importing">正在导入</string>
     <string name="resource_explorer_import_files">导入文件</string>
     <string name="resource_explorer_workspace_root">工作区</string>

@@ -44,7 +44,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.linux.LinuxRecoveryAction
@@ -367,16 +366,15 @@ fun RunModeCheckpointSheet(
         )
     }
     if (confirmReset) {
-        Dialog(onDismissRequest = { confirmReset = false }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.run_mode_reset_confirm_title),
-                message = stringResource(R.string.run_mode_reset_confirm_message),
-                confirmText = stringResource(R.string.run_mode_action_reset),
-                isDestructive = true,
-                onConfirm = { confirmReset = false; reset() },
-                onCancel = { confirmReset = false },
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { confirmReset = false },
+            title = stringResource(R.string.run_mode_reset_confirm_title),
+            message = stringResource(R.string.run_mode_reset_confirm_message),
+            confirmText = stringResource(R.string.run_mode_action_reset),
+            isDestructive = true,
+            onConfirm = { confirmReset = false; reset() },
+            onCancel = { confirmReset = false },
+        )
     }
 }
 

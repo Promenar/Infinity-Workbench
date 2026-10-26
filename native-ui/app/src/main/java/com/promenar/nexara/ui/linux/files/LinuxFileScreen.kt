@@ -69,7 +69,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
@@ -138,23 +137,22 @@ fun LinuxFileScreen(
         showPreviewTab = text?.kind == LinuxFileKind.MARKDOWN,
     )
     if (state.conflict != null) {
-        Dialog(onDismissRequest = viewModel::dismissConflict) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.linux_file_conflict_title),
-                message = stringResource(R.string.linux_file_conflict_message),
-                confirmText = stringResource(R.string.linux_file_conflict_reload),
-                cancelText = stringResource(R.string.linux_file_conflict_keep_editing),
-                onConfirm = viewModel::reloadAfterConflict,
-                onCancel = viewModel::dismissConflict,
-                confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILE_CONFLICT_RELOAD),
-            ) {
-                TextButton(
-                    onClick = viewModel::overwriteAfterConflict,
-                    modifier = Modifier
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .testTag(UiTags.LINUX_FILE_CONFLICT_OVERWRITE),
-                ) { Text(stringResource(R.string.linux_file_conflict_overwrite), color = MaterialTheme.colorScheme.error) }
-            }
+        NexaraConfirmDialog(
+            onDismissRequest = viewModel::dismissConflict,
+            title = stringResource(R.string.linux_file_conflict_title),
+            message = stringResource(R.string.linux_file_conflict_message),
+            confirmText = stringResource(R.string.linux_file_conflict_reload),
+            cancelText = stringResource(R.string.linux_file_conflict_keep_editing),
+            onConfirm = viewModel::reloadAfterConflict,
+            onCancel = viewModel::dismissConflict,
+            confirmButtonModifier = Modifier.testTag(UiTags.LINUX_FILE_CONFLICT_RELOAD),
+        ) {
+            TextButton(
+                onClick = viewModel::overwriteAfterConflict,
+                modifier = Modifier
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .testTag(UiTags.LINUX_FILE_CONFLICT_OVERWRITE),
+            ) { Text(stringResource(R.string.linux_file_conflict_overwrite), color = MaterialTheme.colorScheme.error) }
         }
     }
     val entry = state.entry

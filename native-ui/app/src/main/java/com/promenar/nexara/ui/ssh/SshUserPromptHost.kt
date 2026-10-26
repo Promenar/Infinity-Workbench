@@ -8,12 +8,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +26,7 @@ import com.promenar.nexara.ui.common.SecretKeyboardOptions
 import com.promenar.nexara.ui.common.SecretTextInput
 import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.ssh.SshUserPrompt
 import com.promenar.nexara.data.ssh.SshUserPromptBroker
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -45,12 +45,23 @@ fun SshUserPromptHost(broker: SshUserPromptBroker) {
 @Composable
 internal fun SshPasswordPromptDialog(prompt: SshUserPrompt.Password) {
     var password by remember(prompt) { mutableStateOf("") }
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = { prompt.submit(null) },
         properties = DialogProperties(dismissOnClickOutside = false),
         modifier = Modifier.testTag(SSH_PROMPT_PASSWORD_DIALOG),
-        title = { Text(stringResource(R.string.ssh_agent_password_title, prompt.alias)) },
-        text = {
+        title = stringResource(R.string.ssh_agent_password_title, prompt.alias),
+        message = "",
+        confirmText = stringResource(R.string.ssh_save),
+        cancelText = stringResource(R.string.ssh_cancel),
+        onConfirm = {
+            prompt.submit(password.toByteArray(Charsets.UTF_8))
+            password = ""
+        },
+        onCancel = { password = ""; prompt.submit(null) },
+        confirmEnabled = password.isNotEmpty(),
+        confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CONFIRM),
+        cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CANCEL),
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
                 Text(
                     stringResource(R.string.ssh_agent_password_message, "${prompt.username}@${prompt.hostname}:${prompt.port}"),
@@ -69,36 +80,26 @@ internal fun SshPasswordPromptDialog(prompt: SshUserPrompt.Password) {
                 }
             }
         },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    prompt.submit(password.toByteArray(Charsets.UTF_8))
-                    password = ""
-                },
-                enabled = password.isNotEmpty(),
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CONFIRM),
-            ) { Text(stringResource(R.string.ssh_save)) }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = { password = ""; prompt.submit(null) },
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CANCEL),
-            ) { Text(stringResource(R.string.ssh_cancel)) }
-        },
     )
 }
 
 @Composable
 internal fun SshHostKeyPromptDialog(prompt: SshUserPrompt.HostKey) {
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = { prompt.answer(false) },
         properties = DialogProperties(dismissOnClickOutside = false),
         modifier = Modifier.testTag(SSH_PROMPT_HOST_KEY_DIALOG),
-        title = {
-            Text(stringResource(if (prompt.previous == null) R.string.ssh_trust_title else R.string.ssh_changed_title))
-        },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
+        title = stringResource(if (prompt.previous == null) R.string.ssh_trust_title else R.string.ssh_changed_title),
+        message = "",
+        confirmText = stringResource(if (prompt.previous == null) R.string.ssh_trust else R.string.ssh_replace_trust),
+        cancelText = stringResource(R.string.ssh_cancel),
+        onConfirm = { prompt.answer(true) },
+        onCancel = { prompt.answer(false) },
+        confirmButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CONFIRM),
+        cancelButtonModifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CANCEL),
+        content = {
+            // 统一对话框正文不自带滚动与高度上限，长指纹在此限高滚动，避免挤掉按钮。
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
                 Text(
                     stringResource(R.string.ssh_agent_host_key_message, prompt.alias, "${prompt.hostname}:${prompt.port}"),
                     style = MaterialTheme.typography.bodyMedium,
@@ -115,18 +116,6 @@ internal fun SshHostKeyPromptDialog(prompt: SshUserPrompt.HostKey) {
                     Text("${prompt.presented.type}\n${prompt.presented.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = NexaraMonospace))
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { prompt.answer(true) },
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CONFIRM),
-            ) { Text(stringResource(if (prompt.previous == null) R.string.ssh_trust else R.string.ssh_replace_trust)) }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = { prompt.answer(false) },
-                modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(SSH_PROMPT_CANCEL),
-            ) { Text(stringResource(R.string.ssh_cancel)) }
         },
     )
 }

@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderSpecial
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -36,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillScope
 import com.promenar.nexara.data.skills.SkillStatus
@@ -171,12 +171,14 @@ private fun skillStatusNote(skill: DiscoveredSkill): String? = when {
 
 @Composable
 private fun SkillTrustDialog(skill: DiscoveredSkill, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.skills_runtime_trust_title, skill.displayName ?: skill.name)) },
-        text = { Text(stringResource(R.string.skills_runtime_trust_message, skill.virtualDir)) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.skills_runtime_trust)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_btn_cancel)) } },
+        title = stringResource(R.string.skills_runtime_trust_title, skill.displayName ?: skill.name),
+        message = stringResource(R.string.skills_runtime_trust_message, skill.virtualDir),
+        confirmText = stringResource(R.string.skills_runtime_trust),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = onConfirm,
+        onCancel = onDismiss,
     )
 }
 
@@ -280,21 +282,19 @@ private fun SkillDetailSheet(
         }
     }
     if (confirmDelete) {
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text(stringResource(R.string.skills_runtime_delete_title, skill.displayName ?: skill.name)) },
-            text = { Text(stringResource(R.string.skills_runtime_delete_message, skill.virtualDir)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        actions.onDelete(skill)
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.shared_btn_delete)) }
+            title = stringResource(R.string.skills_runtime_delete_title, skill.displayName ?: skill.name),
+            message = stringResource(R.string.skills_runtime_delete_message, skill.virtualDir),
+            confirmText = stringResource(R.string.shared_btn_delete),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                confirmDelete = false
+                actions.onDelete(skill)
+                onDismiss()
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.common_btn_cancel)) } },
+            onCancel = { confirmDelete = false },
+            isDestructive = true,
         )
     }
 }

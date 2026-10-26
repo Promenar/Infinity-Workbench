@@ -226,6 +226,7 @@
     <string name="share_import_reason_index">The file was not imported because its indexing task could not be saved</string>
     <string name="resource_explorer_title">Resource Explorer</string>
     <string name="resource_explorer_search_placeholder">Search files…</string>
+    <string name="resource_explorer_files_heading">Files</string>
     <string name="resource_explorer_importing">Importing</string>
     <string name="resource_explorer_import_files">Import Files</string>
     <string name="resource_explorer_workspace_root">Workspace</string>

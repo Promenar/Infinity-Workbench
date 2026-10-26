@@ -160,22 +160,21 @@ fun RecycleBinPanel(
     }
 
     if (showEmptyConfirm) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showEmptyConfirm = false }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.recycle_bin_empty_title),
-                message = stringResource(R.string.recycle_bin_empty_message),
-                confirmText = stringResource(R.string.recycle_bin_empty_confirm),
-                onConfirm = {
-                    onEmptyRecycleBin()
-                    showEmptyConfirm = false
-                },
-                onCancel = { showEmptyConfirm = false },
-                isDestructive = true,
-                confirmButtonModifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_EMPTY_CONFIRM),
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { showEmptyConfirm = false },
+            title = stringResource(R.string.recycle_bin_empty_title),
+            message = stringResource(R.string.recycle_bin_empty_message),
+            confirmText = stringResource(R.string.recycle_bin_empty_confirm),
+            onConfirm = {
+                onEmptyRecycleBin()
+                showEmptyConfirm = false
+            },
+            onCancel = { showEmptyConfirm = false },
+            isDestructive = true,
+            confirmButtonModifier = Modifier
+                .heightIn(min = 48.dp)
+                .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_EMPTY_CONFIRM),
+        )
     }
 }
 
@@ -185,19 +184,18 @@ internal fun RecycleBinPermanentDeleteDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        NexaraConfirmDialog(
-            title = stringResource(R.string.recycle_bin_permanent_delete_title),
-            message = stringResource(R.string.recycle_bin_permanent_delete_message, target.name),
-            confirmText = stringResource(R.string.recycle_bin_permanent_delete_title),
-            onConfirm = onConfirm,
-            onCancel = onDismiss,
-            isDestructive = true,
-            confirmButtonModifier = Modifier
-                .heightIn(min = 48.dp)
-                .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_DELETE_CONFIRM),
-        )
-    }
+    NexaraConfirmDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(R.string.recycle_bin_permanent_delete_title),
+        message = stringResource(R.string.recycle_bin_permanent_delete_message, target.name),
+        confirmText = stringResource(R.string.recycle_bin_permanent_delete_title),
+        onConfirm = onConfirm,
+        onCancel = onDismiss,
+        isDestructive = true,
+        confirmButtonModifier = Modifier
+            .heightIn(min = 48.dp)
+            .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_DELETE_CONFIRM),
+    )
 }
 
 @Composable

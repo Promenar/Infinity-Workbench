@@ -59,8 +59,8 @@ class RagSettingsMaterialContractTest {
         assertThat(screen).contains("NexaraSettingsSection(")
         assertThat(screen).contains("NexaraNumericSetting(")
         assertThat(screen).doesNotContain("NexaraSlider(")
-        assertThat(screen).contains("AlertDialog(")
-        assertThat(screen).contains("TextButton(")
+        assertThat(screen).contains("NexaraConfirmDialog(")
+        assertThat(screen).doesNotContain("AlertDialog(")
     }
 
     @Test
@@ -84,7 +84,8 @@ class RagSettingsMaterialContractTest {
         assertThat(screen).contains("RetrievalStrategySetting(")
         assertThat(screen).contains("NexaraNumericSetting(")
         assertThat(screen).doesNotContain("NexaraSlider(")
-        assertThat(screen).contains("AlertDialog(")
+        assertThat(screen).contains("NexaraConfirmDialog(")
+        assertThat(screen).doesNotContain("AlertDialog(")
     }
 
     private fun source(relativePath: String): String = Files.readAllBytes(

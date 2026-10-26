@@ -42,7 +42,6 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -54,7 +53,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -91,7 +89,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.params.MODEL_DEFAULT_SCHEME_ID
 import com.promenar.nexara.data.model.params.ModelParameterProfile
@@ -367,20 +364,19 @@ fun ParameterSchemeSection(
         }
     }
     deleting?.let { scheme ->
-        Dialog(onDismissRequest = { deleting = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.params_scheme_delete_title, scheme.name),
-                message = stringResource(R.string.params_scheme_delete_message),
-                confirmText = stringResource(R.string.params_scheme_delete),
-                isDestructive = true,
-                onConfirm = {
-                    deleting = null
-                    own { actions.onDeleteScheme(scheme) }
-                },
-                onCancel = { deleting = null },
-                confirmButtonModifier = Modifier.testTag("params_scheme_delete_confirm"),
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { deleting = null },
+            title = stringResource(R.string.params_scheme_delete_title, scheme.name),
+            message = stringResource(R.string.params_scheme_delete_message),
+            confirmText = stringResource(R.string.params_scheme_delete),
+            isDestructive = true,
+            onConfirm = {
+                deleting = null
+                own { actions.onDeleteScheme(scheme) }
+            },
+            onCancel = { deleting = null },
+            confirmButtonModifier = Modifier.testTag("params_scheme_delete_confirm"),
+        )
     }
     naming?.let { current ->
         SchemeNameDialog(
@@ -441,10 +437,17 @@ private fun SchemeChip(
 @Composable
 private fun SchemeNameDialog(initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(initial) }
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.params_scheme_name_title)) },
-        text = {
+        title = stringResource(R.string.params_scheme_name_title),
+        message = "",
+        confirmText = stringResource(R.string.common_btn_confirm),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = { onConfirm(text.trim()) },
+        onCancel = onDismiss,
+        confirmEnabled = text.isNotBlank(),
+        confirmButtonModifier = Modifier.testTag("params_scheme_name_confirm"),
+        content = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it.take(SCHEME_NAME_MAX_LENGTH) },
@@ -453,14 +456,6 @@ private fun SchemeNameDialog(initial: String, onDismiss: () -> Unit, onConfirm: 
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("params_scheme_name_input"),
             )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank(), modifier = Modifier.testTag("params_scheme_name_confirm")) {
-                Text(stringResource(R.string.common_btn_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_btn_cancel)) }
         },
     )
 }

@@ -373,6 +373,9 @@ class ChatViewModelTest {
         }
     }
 
+    private var workspaceRootFailure: Exception? = null
+    private var workspaceRootGate: CompletableDeferred<Unit>? = null
+
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
     // 斜杠技能命令：生成运行时从这里扫描并预加载技能。
     private val slashSkillCatalog = com.promenar.nexara.ui.chat.command.StaticSkillCatalog()
@@ -401,6 +404,133 @@ class ChatViewModelTest {
         assertThat(created.executionMode).isEqualTo("workspace")
         assertThat(created.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
         assertThat(created.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
+    }
+
+    @Test
+    fun `新建会话身份异常展示错误并保留会话且可发送消息`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        workspaceRootFailure = SecurityException("持久身份标记格式无效")
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("回复"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+
+        viewModel.createNewSession("a1")
+        advanceUntilIdle()
+
+        val session = savedSessions.single()
+        assertThat(viewModel.uiState.value.session?.id).isEqualTo(session.id)
+        assertThat(viewModel.uiState.value.error).isNotEmpty()
+        assertThat(session.workspaceRootUuid).isNull()
+        viewModel.sendMessage("你好")
+        advanceUntilIdle()
+        assertThat(savedMessages.map { it.first.content }).containsAtLeast("你好", "回复")
+    }
+
+    @Test
+    fun `打开缓存会话身份异常展示错误且会话仍被选中`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        val session = Session(id = "cached-no-root", agentId = "a1", createdAt = 1, updatedAt = 1)
+        savedSessions.add(session)
+        ApplicationProvider.getApplicationContext<NexaraApplication>().chatStore.upsertSession(session)
+        workspaceRootFailure = SecurityException("工作区根身份与数据库认领不一致")
+
+        viewModel.loadSession(session.id)
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.session?.id).isEqualTo(session.id)
+        assertThat(viewModel.uiState.value.error).isNotEmpty()
+        assertThat(viewModel.uiState.value.session?.workspaceRootUuid).isNull()
+    }
+
+    @Test
+    fun `打开未缓存会话身份异常展示错误且会话仍被选中`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        val session = Session(id = "persisted-no-root", agentId = "a1", createdAt = 1, updatedAt = 1)
+        savedSessions.add(session)
+        workspaceRootFailure = SecurityException("工作区根身份与数据库认领不一致")
+
+        viewModel.loadSession(session.id)
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.session?.id).isEqualTo(session.id)
+        assertThat(viewModel.uiState.value.error).isNotEmpty()
+        assertThat(viewModel.uiState.value.isLoading).isFalse()
+    }
+
+    @Test
+    fun `新建会话工作区初始化取消保持取消语义且不显示身份错误`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        workspaceRootFailure = kotlinx.coroutines.CancellationException("取消初始化")
+        viewModel.createNewSession("a1")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.session).isNull()
+    }
+
+    @Test
+    fun `冷加载会话工作区初始化取消不会变成可见错误`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        savedSessions.add(Session(id = "cancelled-load", agentId = "a1", createdAt = 1, updatedAt = 1))
+        workspaceRootFailure = kotlinx.coroutines.CancellationException("取消初始化")
+
+        viewModel.loadSession("cancelled-load")
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.session).isNull()
+        assertThat(viewModel.uiState.value.isLoading).isFalse()
+    }
+
+    @Test
+    fun `旧会话延迟身份失败不会污染当前会话且关闭提示可清除`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        val session = Session(id = "late-workspace", agentId = "a1", createdAt = 1, updatedAt = 1)
+        savedSessions.add(session)
+        ApplicationProvider.getApplicationContext<NexaraApplication>().chatStore.upsertSession(session)
+        workspaceRootFailure = SecurityException("身份不符")
+        val gate = CompletableDeferred<Unit>()
+        workspaceRootGate = gate
+        viewModel.loadSession(session.id)
+        advanceUntilIdle()
+        seedSession("healthy-session")
+        advanceUntilIdle()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.session?.id).isEqualTo("healthy-session")
+        assertThat(viewModel.uiState.value.error).isNull()
+
+        viewModel.loadSession(session.id)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNotEmpty()
+        viewModel.clearError()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNull()
+
+        workspaceRootFailure = null
+        viewModel.loadSession(session.id)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.session?.workspaceRootUuid).isEqualTo("test-workspace-root")
+        assertThat(viewModel.uiState.value.error).isNull()
+    }
+
+    @Test
+    fun `切换健康会话的每次状态发布均不携带上一会话工作区错误`() = runTest {
+        val observed = mutableListOf<Pair<String?, String?>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { observed += it.session?.id to it.error }
+        }
+        workspaceRootFailure = SecurityException("身份不符")
+        viewModel.createNewSession("a1")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNotEmpty()
+
+        workspaceRootFailure = null
+        seedSession("healthy-after-failure")
+        advanceUntilIdle()
+
+        val healthy = observed.filter { it.first == "healthy-after-failure" }
+        assertThat(healthy).isNotEmpty()
+        assertThat(healthy.all { it.second == null }).isTrue()
     }
 
     @Test
@@ -499,6 +629,8 @@ class ChatViewModelTest {
             e.printStackTrace()
         }
 
+        workspaceRootFailure = null
+        workspaceRootGate = null
         app.chatStore.clear()
         streamGate = null
         claimFailure = null; editGate = null; queueEnqueueGate = null; beforeQueueImageOpen = {}
@@ -700,10 +832,15 @@ class ChatViewModelTest {
                     com.promenar.nexara.R.string.chat_context_compaction_failed -> "compaction failed"
                     com.promenar.nexara.R.string.chat_context_compress_unavailable_generating -> "generating"
                     com.promenar.nexara.R.string.chat_message_edit_failed -> "message edit failed"
+                    com.promenar.nexara.R.string.legacy_root_marker_workspace_unavailable -> "工作区不可用，可继续对话"
                     else -> error("unexpected string resource: $resourceId")
                 }
             },
-            sessionWorkspaceRootOverride = { "test-workspace-root" to "/test/workspace" },
+            sessionWorkspaceRootOverride = {
+                workspaceRootGate?.await()
+                workspaceRootFailure?.let { throw it }
+                "test-workspace-root" to "/test/workspace"
+            },
             sshOwnerCloser = { owner -> beforeSshClose(); sshLeases.remove(owner); Unit },
             sshOwnerPauser = { owner -> if (owner in sshLeases) pausedSshOwners.add(owner); Unit },
             sshOwnerResumer = { owner -> pausedSshOwners.remove(owner); Unit },

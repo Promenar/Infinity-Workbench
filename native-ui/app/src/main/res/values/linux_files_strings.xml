@@ -5,9 +5,10 @@
     <string name="linux_files_subtitle_home">Home · Not backed up, cleared on reset</string>
     <string name="linux_files_subtitle_root">Root · Restored to built-in system on reset</string>
     <string name="linux_files_up">Up one level</string>
-    <string name="linux_files_switch">Switch</string>
     <string name="linux_files_switch_to_root">Switch to the whole file system</string>
     <string name="linux_files_switch_to_home">Switch to the Linux home</string>
+    <string name="linux_files_search_hint">Search this folder</string>
+    <string name="linux_files_open_terminal_here">Open terminal here</string>
     <string name="linux_files_sort_cd">Sort: %1$s</string>
     <string name="linux_files_sort_name">Name</string>
     <string name="linux_files_sort_modified">Date modified</string>

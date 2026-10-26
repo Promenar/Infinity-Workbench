@@ -40,7 +40,6 @@ import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,7 +49,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -71,6 +69,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsToggle
@@ -631,11 +630,18 @@ internal fun BackupPasswordDialog(
 ) {
     val mismatch = requireConfirmation && passwordConfirmation.isNotEmpty() && password != passwordConfirmation
     val valid = !requireConfirmation || (password.isNotEmpty() && password == passwordConfirmation)
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) },
-        text = {
+        title = title,
+        message = "",
+        confirmText = stringResource(R.string.common_btn_confirm),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = onConfirm,
+        onCancel = onDismiss,
+        confirmEnabled = valid,
+        confirmButtonModifier = Modifier.height(48.dp),
+        cancelButtonModifier = Modifier.height(48.dp),
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.backup_password_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SecretField(
@@ -660,16 +666,6 @@ internal fun BackupPasswordDialog(
                 } else {
                     Text(stringResource(R.string.backup_restore_password_optional), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = valid, onClick = onConfirm, modifier = Modifier.height(48.dp)) {
-                Text(stringResource(R.string.common_btn_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) {
-                Text(stringResource(R.string.common_btn_cancel))
             }
         },
     )

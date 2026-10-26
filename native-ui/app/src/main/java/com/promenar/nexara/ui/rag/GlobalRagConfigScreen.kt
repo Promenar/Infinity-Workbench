@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.OfflineBolt
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +30,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,6 +45,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -226,28 +225,26 @@ internal fun GlobalRagConfigScreenContent(
     }
 
     if (showClearDialog) {
-        AlertDialog(
+        NexaraConfirmDialog(
             modifier = Modifier.testTag("rag_global_clear_dialog"),
             onDismissRequest = { showClearDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.rag_config_clear_vectors),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+            title = stringResource(R.string.rag_config_clear_vectors),
+            message = stringResource(R.string.rag_config_clear_message),
+            confirmText = stringResource(R.string.rag_config_clear_all),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                actions.onClearVectors(clearWithGraph)
+                showClearDialog = false
             },
-            text = {
+            onCancel = { showClearDialog = false },
+            isDestructive = true,
+            confirmButtonModifier = Modifier.testTag("rag_global_clear_confirm"),
+            content = {
                 Column(
                     modifier = Modifier
                         .heightIn(max = 200.dp)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        text = stringResource(R.string.rag_config_clear_message),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         // 仅清理向量。
                         Row(
@@ -302,25 +299,6 @@ internal fun GlobalRagConfigScreenContent(
                     }
                 }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        actions.onClearVectors(clearWithGraph)
-                        showClearDialog = false
-                    },
-                    modifier = Modifier.testTag("rag_global_clear_confirm"),
-                ) {
-                    Text(
-                        text = stringResource(R.string.rag_config_clear_all),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text(text = stringResource(R.string.common_btn_cancel))
-                }
-            }
         )
     }
 

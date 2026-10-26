@@ -12,7 +12,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Linux 主目录；浏览页可在它与整个根目录之间切换。 */
+/** Linux 主目录；浏览页路径行以它（`~`）或整个根目录（`/`）为起点。 */
 const val LINUX_HOME_PATH = "/root"
 
 // ── 路径 ──
@@ -59,6 +59,22 @@ internal fun linuxPathSegments(path: String): List<LinuxPathSegment> {
 
 internal fun isUnderLinuxHome(path: String): Boolean =
     path == LINUX_HOME_PATH || path.startsWith("$LINUX_HOME_PATH/")
+
+/** 路径行：主目录内相对 `~`，其余相对 `/`；[trail] 不含起点本身。 */
+internal data class LinuxCrumbs(val underHome: Boolean, val trail: List<LinuxPathSegment>)
+
+internal fun linuxCrumbs(path: String): LinuxCrumbs {
+    val normalized = normalizeLinuxPath(path)
+    val underHome = isUnderLinuxHome(normalized)
+    val rootDepth = if (underHome) linuxPathSegments(LINUX_HOME_PATH).size else 1
+    return LinuxCrumbs(underHome, linuxPathSegments(normalized).drop(rootDepth))
+}
+
+/** 当前目录内按名称筛选，不区分大小写；空白查询保留全部条目。 */
+internal fun filterLinuxEntriesByName(entries: List<LinuxFileEntry>, query: String): List<LinuxFileEntry> {
+    val needle = query.trim()
+    return if (needle.isEmpty()) entries else entries.filter { it.name.contains(needle, ignoreCase = true) }
+}
 
 /** 供 `sh -c` 使用的单引号转义；纯安全字符原样返回。 */
 internal fun shellQuote(value: String): String =

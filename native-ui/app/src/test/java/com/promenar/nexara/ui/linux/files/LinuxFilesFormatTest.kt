@@ -168,6 +168,31 @@ class LinuxFilesFormatTest {
     }
 
     @Test
+    fun `crumbs are relative to home inside it and to root elsewhere`() {
+        assertThat(linuxCrumbs("/root")).isEqualTo(LinuxCrumbs(underHome = true, trail = emptyList()))
+        assertThat(linuxCrumbs("/root/projects/cli")).isEqualTo(
+            LinuxCrumbs(
+                underHome = true,
+                trail = listOf(LinuxPathSegment("projects", "/root/projects"), LinuxPathSegment("cli", "/root/projects/cli")),
+            ),
+        )
+        assertThat(linuxCrumbs("/")).isEqualTo(LinuxCrumbs(underHome = false, trail = emptyList()))
+        assertThat(linuxCrumbs("/etc/apk")).isEqualTo(
+            LinuxCrumbs(underHome = false, trail = listOf(LinuxPathSegment("etc", "/etc"), LinuxPathSegment("apk", "/etc/apk"))),
+        )
+        // 名字以 root 开头的同级目录不算主目录。
+        assertThat(linuxCrumbs("/rootfs").underHome).isFalse()
+    }
+
+    @Test
+    fun `name filter ignores case and keeps everything for a blank query`() {
+        val entries = listOf(entry("/root/Notes.md"), entry("/root/install.sh"), entry("/root/notebook", type = LinuxFileType.DIRECTORY))
+        assertThat(filterLinuxEntriesByName(entries, "note").map { it.name }).containsExactly("Notes.md", "notebook").inOrder()
+        assertThat(filterLinuxEntriesByName(entries, "  ")).isEqualTo(entries)
+        assertThat(filterLinuxEntriesByName(entries, " SH ").map { it.name }).containsExactly("install.sh")
+    }
+
+    @Test
     fun `shell quoting leaves safe names and escapes the rest`() {
         assertThat(shellQuote("run.sh")).isEqualTo("run.sh")
         assertThat(shellQuote("my file.sh")).isEqualTo("'my file.sh'")

@@ -43,6 +43,8 @@ fun NexaraSettingsPageLayout(
     actions: @Composable RowScope.() -> Unit = {},
     // 主标签页用自定义页头（如 [NexaraTabHeader]）替换标准顶栏；页头自行处理状态栏内边距。
     header: (@Composable () -> Unit)? = null,
+    // 二级页顶栏搜索：给出时顶栏右侧出现放大镜，点开后标题位换成搜索框。
+    search: NexaraPageSearch? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -50,7 +52,12 @@ fun NexaraSettingsPageLayout(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
-            if (header != null) header() else if (showTopBar) TopAppBar(
+            if (header != null) header() else if (showTopBar && search != null) NexaraSearchTopBar(
+                title = title,
+                search = search,
+                onBack = onBack,
+                actions = actions,
+            ) else if (showTopBar) TopAppBar(
                 title = {
                     Text(
                         text = title,

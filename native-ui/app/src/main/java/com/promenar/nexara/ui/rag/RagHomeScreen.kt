@@ -89,7 +89,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -145,6 +144,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
@@ -1066,17 +1066,21 @@ internal fun RagHomeScreenContent(
 
     if (showNewFolderDialog) {
         var folderName by remember { mutableStateOf("") }
-        AlertDialog(
+        NexaraConfirmDialog(
+            // 测试标签原挂在标题容器上，现挂在整个对话框卡片上。
+            modifier = Modifier.testTag(UiTags.RAG_HOME_NEW_FOLDER_DIALOG),
             onDismissRequest = { showNewFolderDialog = false },
-            title = {
-                Box(modifier = Modifier.testTag(UiTags.RAG_HOME_NEW_FOLDER_DIALOG)) {
-                    Text(
-                        stringResource(R.string.rag_home_new_folder_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                }
+            title = stringResource(R.string.rag_home_new_folder_title),
+            message = "",
+            confirmText = stringResource(R.string.shared_btn_add),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                if (folderName.isNotBlank()) actions.onCreateFolder(folderName.trim())
+                showNewFolderDialog = false
             },
-            text = {
+            onCancel = { showNewFolderDialog = false },
+            confirmEnabled = folderName.isNotBlank(),
+            content = {
                 OutlinedTextField(
                     textStyle = LocalTextStyle.current.forInput(),
                     value = folderName,
@@ -1085,23 +1089,6 @@ internal fun RagHomeScreenContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (folderName.isNotBlank()) actions.onCreateFolder(folderName.trim())
-                        showNewFolderDialog = false
-                    },
-                    enabled = folderName.isNotBlank(),
-                ) { Text(stringResource(R.string.shared_btn_add)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewFolderDialog = false }) {
-                    Text(stringResource(R.string.common_btn_cancel))
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
@@ -1191,106 +1178,69 @@ internal fun RagHomeScreenContent(
             )
             pendingDocumentDelete = null
         }
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { if (!isDeletingSelection) dismissDeleteConfirmation() },
             modifier = Modifier.testTag(UiTags.RAG_HOME_DELETE_CONFIRM_DIALOG),
-            title = {
-                Text(
-                    stringResource(R.string.rag_home_delete_confirm_title, pendingDelete.ids.size),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (pendingDelete.ids.isNotEmpty()) {
-                            isDeletingSelection = true
-                            actions.onDeleteDocuments(pendingDelete.ids) { succeeded, failedIds ->
-                                val normalizedFailedIds = if (!succeeded && failedIds.isEmpty()) {
-                                    pendingDelete.ids
-                                } else {
-                                    failedIds
-                                }
-                                pendingDelete.completion(
-                                    FileBatchOperationResult(
-                                        attemptedIds = pendingDelete.ids,
-                                        failedIds = normalizedFailedIds,
-                                    ),
-                                )
-                                isDeletingSelection = false
-                                pendingDocumentDelete = if (normalizedFailedIds.isEmpty()) {
-                                    null
-                                } else {
-                                    pendingDelete.copy(ids = normalizedFailedIds.distinct())
-                                }
-                            }
+            title = stringResource(R.string.rag_home_delete_confirm_title, pendingDelete.ids.size),
+            message = "",
+            confirmText = stringResource(R.string.shared_btn_move_to_recycle_bin),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                if (pendingDelete.ids.isNotEmpty()) {
+                    isDeletingSelection = true
+                    actions.onDeleteDocuments(pendingDelete.ids) { succeeded, failedIds ->
+                        val normalizedFailedIds = if (!succeeded && failedIds.isEmpty()) {
+                            pendingDelete.ids
+                        } else {
+                            failedIds
                         }
-                    },
-                    enabled = pendingDelete.ids.isNotEmpty() && !isDeletingSelection,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                        .testTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON),
-                ) {
-                    Text(stringResource(R.string.shared_btn_move_to_recycle_bin))
+                        pendingDelete.completion(
+                            FileBatchOperationResult(
+                                attemptedIds = pendingDelete.ids,
+                                failedIds = normalizedFailedIds,
+                            ),
+                        )
+                        isDeletingSelection = false
+                        pendingDocumentDelete = if (normalizedFailedIds.isEmpty()) {
+                            null
+                        } else {
+                            pendingDelete.copy(ids = normalizedFailedIds.distinct())
+                        }
+                    }
                 }
             },
-            dismissButton = {
-                TextButton(
-                    onClick = dismissDeleteConfirmation,
-                    enabled = !isDeletingSelection,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                ) {
-                    Text(stringResource(R.string.common_btn_cancel))
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 删除中取消按钮原为禁用；统一对话框无禁用态，改为删除期间忽略点击。
+            onCancel = { dismissDeleteConfirmation() },
+            cancelEnabled = !isDeletingSelection,
+            isDestructive = true,
+            confirmEnabled = pendingDelete.ids.isNotEmpty() && !isDeletingSelection,
+            confirmButtonModifier = Modifier
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                .testTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON),
+            cancelButtonModifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
         )
     }
 
     if (memoryDeleteTargetId != null) {
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { memoryDeleteTargetId = null },
             modifier = Modifier.testTag("memory-delete-dialog"),
-            title = {
-                Text(
-                    stringResource(R.string.rag_home_memory_delete_confirm_title),
-                    style = MaterialTheme.typography.headlineSmall,
+            title = stringResource(R.string.rag_home_memory_delete_confirm_title),
+            message = stringResource(R.string.rag_home_memory_delete_confirm_msg),
+            confirmText = stringResource(R.string.shared_btn_delete),
+            cancelText = stringResource(R.string.common_btn_cancel),
+            onConfirm = {
+                memoryDeleteTargetId?.let(actions.onDeleteMemory)
+                memoryDeleteTargetId = null
+            },
+            onCancel = { memoryDeleteTargetId = null },
+            isDestructive = true,
+            confirmButtonModifier = Modifier
+                .sizeIn(
+                    minWidth = NexaraSpacing.MinimumTouchTarget,
+                    minHeight = NexaraSpacing.MinimumTouchTarget,
                 )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.rag_home_memory_delete_confirm_msg),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        memoryDeleteTargetId?.let(actions.onDeleteMemory)
-                        memoryDeleteTargetId = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .sizeIn(
-                            minWidth = NexaraSpacing.MinimumTouchTarget,
-                            minHeight = NexaraSpacing.MinimumTouchTarget,
-                        )
-                        .testTag("memory-delete-confirm"),
-                ) {
-                    Text(stringResource(R.string.shared_btn_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { memoryDeleteTargetId = null }) {
-                    Text(stringResource(R.string.common_btn_cancel))
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                .testTag("memory-delete-confirm"),
         )
     }
 }

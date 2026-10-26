@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -56,6 +55,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.domain.jobs.BackgroundJob
 import com.promenar.nexara.domain.jobs.BackgroundJobRunner
 import com.promenar.nexara.domain.jobs.BackgroundJobState
@@ -270,14 +270,15 @@ internal fun ScheduledTasksContent(
         }
     }
     deleting?.let { task ->
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { deleting = null },
-            title = { Text(stringResource(R.string.agent_schedules_delete_title)) },
-            text = { Text(stringResource(R.string.agent_schedules_delete_body, task.name)) },
-            confirmButton = {
-                TextButton(onClick = { deleting = null; onDelete(task.id) }) { Text(stringResource(R.string.agent_schedules_delete_confirm)) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(android.R.string.cancel)) } },
+            title = stringResource(R.string.agent_schedules_delete_title),
+            message = stringResource(R.string.agent_schedules_delete_body, task.name),
+            confirmText = stringResource(R.string.agent_schedules_delete_confirm),
+            cancelText = stringResource(android.R.string.cancel),
+            onConfirm = { deleting = null; onDelete(task.id) },
+            onCancel = { deleting = null },
+            isDestructive = true,
         )
     }
 }

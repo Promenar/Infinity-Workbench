@@ -3,7 +3,9 @@ package com.promenar.nexara.ui.chat.components
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,9 +48,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.storage.ExternalRecycleItem
 import com.promenar.nexara.domain.storage.IExternalFolderManager
@@ -104,7 +106,11 @@ internal fun directoryOutcomeText(outcome: DirectoryOpOutcome): String {
     return if (outcome.succeeded == 0) failed else "$done · $failed"
 }
 
-/** 选择期间的底部操作栏；重命名只对单个条目可用。 */
+/**
+ * 选择期间的底部操作栏；重命名只对单个条目可用。
+ *
+ * 各来源在 [topActions]（计数行右侧，如全选、权限）与 [extraActions]（删除前，如压缩、在终端打开）补充自身能力。
+ */
 @Composable
 internal fun DirectorySelectionBar(
     count: Int,
@@ -114,40 +120,54 @@ internal fun DirectorySelectionBar(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onClear: () -> Unit,
-) = Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+    modifier: Modifier = Modifier,
+    topActions: @Composable RowScope.() -> Unit = {},
+    extraActions: @Composable RowScope.() -> Unit = {},
+) = Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.large, modifier = modifier.fillMaxWidth()) {
     Column(Modifier.padding(vertical = NexaraSpacing.XSmall)) {
         Row(Modifier.fillMaxWidth().padding(start = NexaraSpacing.Large, end = NexaraSpacing.XSmall), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 pluralStringResource(R.plurals.directory_selected_count, count, count),
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
             )
+            topActions()
             IconButton(onClick = onClear, modifier = Modifier.testTag("directory_selection_clear")) {
                 Icon(Icons.Rounded.Close, stringResource(R.string.common_btn_cancel))
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            BarAction(Icons.Rounded.ContentCopy, R.string.directory_action_copy, !busy, onCopy, "directory_action_copy")
-            BarAction(Icons.AutoMirrored.Rounded.DriveFileMove, R.string.directory_action_move, !busy, onMove, "directory_action_move")
-            BarAction(Icons.Rounded.DriveFileRenameOutline, R.string.directory_action_rename, !busy && count == 1, onRename, "directory_action_rename")
-            BarAction(Icons.Rounded.DeleteOutline, R.string.directory_action_delete, !busy, onDelete, "directory_action_delete", danger = true)
+        Row(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.XSmall)) {
+            DirectorySelectionAction(Icons.Rounded.ContentCopy, R.string.directory_action_copy, !busy, onCopy, "directory_action_copy")
+            DirectorySelectionAction(Icons.AutoMirrored.Rounded.DriveFileMove, R.string.directory_action_move, !busy, onMove, "directory_action_move")
+            DirectorySelectionAction(Icons.Rounded.DriveFileRenameOutline, R.string.directory_action_rename, !busy && count == 1, onRename, "directory_action_rename")
+            extraActions()
+            DirectorySelectionAction(Icons.Rounded.DeleteOutline, R.string.directory_action_delete, !busy, onDelete, "directory_action_delete", danger = true)
         }
     }
 }
 
+/** 选择栏中的一项操作：各项等宽，长标签最多两行。 */
 @Composable
-private fun BarAction(icon: ImageVector, label: Int, enabled: Boolean, onClick: () -> Unit, tag: String, danger: Boolean = false) {
+internal fun RowScope.DirectorySelectionAction(
+    icon: ImageVector,
+    label: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    tag: String,
+    danger: Boolean = false,
+) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(
             contentColor = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         ),
-        modifier = Modifier.heightIn(min = 56.dp).testTag(tag),
+        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
+        modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag(tag),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, null, modifier = Modifier.size(20.dp))
-            Text(stringResource(label), style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(label), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2)
         }
     }
 }
@@ -202,33 +222,31 @@ internal fun DirectoryOutcomeLine(outcome: DirectoryOpOutcome) {
 
 @Composable
 internal fun DirectoryDeleteDialog(count: Int, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    Dialog(onDismissRequest = onCancel) {
-        NexaraConfirmDialog(
-            title = pluralStringResource(R.plurals.directory_delete_title, count, count),
-            message = stringResource(R.string.directory_delete_message),
-            confirmText = stringResource(R.string.directory_action_delete),
-            onConfirm = onConfirm,
-            onCancel = onCancel,
-            isDestructive = true,
-            confirmButtonModifier = Modifier.testTag("directory_delete_confirm"),
-        )
-    }
+    NexaraConfirmDialog(
+        onDismissRequest = onCancel,
+        title = pluralStringResource(R.plurals.directory_delete_title, count, count),
+        message = stringResource(R.string.directory_delete_message),
+        confirmText = stringResource(R.string.directory_action_delete),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        isDestructive = true,
+        confirmButtonModifier = Modifier.testTag("directory_delete_confirm"),
+    )
 }
 
 /** 超出回收站容量的条目无法备份，只能永久删除或保留。 */
 @Composable
 internal fun DirectoryPermanentDeleteDialog(count: Int, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    Dialog(onDismissRequest = onCancel) {
-        NexaraConfirmDialog(
-            title = pluralStringResource(R.plurals.directory_permanent_delete_title, count, count),
-            message = stringResource(R.string.directory_permanent_delete_message),
-            confirmText = stringResource(R.string.directory_permanent_delete_confirm),
-            onConfirm = onConfirm,
-            onCancel = onCancel,
-            isDestructive = true,
-            confirmButtonModifier = Modifier.testTag("directory_permanent_delete_confirm"),
-        )
-    }
+    NexaraConfirmDialog(
+        onDismissRequest = onCancel,
+        title = pluralStringResource(R.plurals.directory_permanent_delete_title, count, count),
+        message = stringResource(R.string.directory_permanent_delete_message),
+        confirmText = stringResource(R.string.directory_permanent_delete_confirm),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        isDestructive = true,
+        confirmButtonModifier = Modifier.testTag("directory_permanent_delete_confirm"),
+    )
 }
 
 /** 目录工作区的回收站：列出本会话挂载回收区中的删除副本，可逐项恢复回原位置。 */

@@ -20,11 +20,11 @@ class PersistentFileIdentityTest {
         assertThat(identity).doesNotContain("dev=")
     }
 
-    @Test fun `拒绝无法解析的inode与旧格式身份且不猜测缺失信息`() {
+    @Test fun `拒绝无法解析的inode与无版本认领且不猜测缺失信息`() {
         listOf("", "(dev=1)", "ino=0", "ino=-1", "ino=18446744073709551616", "path/name").forEach {
             assertThrows(SecurityException::class.java) { PersistentFileIdentity.inode(it) }
         }
-        assertThrows(SecurityException::class.java) { PersistentFileIdentity.parseMarker("$nonce\n(dev=1,ino=42)") }
+        assertThat(PersistentFileIdentity.parseMarker("$nonce\n(dev=1,ino=42)")).isEqualTo(nonce to "ino=42")
         assertThat(PersistentFileIdentity.isValid("$nonce|${"a".repeat(64)}")).isFalse()
     }
 

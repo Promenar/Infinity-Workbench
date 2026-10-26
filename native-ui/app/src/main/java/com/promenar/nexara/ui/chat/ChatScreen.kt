@@ -101,7 +101,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -173,6 +172,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
@@ -2055,10 +2055,16 @@ fun RenameDialog(
 ) {
     var text by remember { mutableStateOf(currentName) }
 
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.chat_dialog_rename_title)) },
-        text = {
+        title = stringResource(R.string.chat_dialog_rename_title),
+        message = "",
+        confirmText = stringResource(R.string.common_btn_confirm),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = { onConfirm(text) },
+        onCancel = onDismiss,
+        confirmEnabled = text.isNotBlank(),
+        content = {
             OutlinedTextField(
                 textStyle = LocalTextStyle.current.forInput(),
                 value = text,
@@ -2069,19 +2075,6 @@ fun RenameDialog(
                 },
                 singleLine = true,
             )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(text) },
-                enabled = text.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.common_btn_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_btn_cancel))
-            }
         },
     )
 }

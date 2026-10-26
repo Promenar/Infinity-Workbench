@@ -85,7 +85,7 @@ internal class IdentityTestDirectory(private val root: Path) : java.nio.file.Sec
     override fun deleteFile(path: Path) { Files.delete(resolve(path)) }
     override fun deleteDirectory(path: Path) { Files.delete(resolve(path)) }
     override fun move(source: Path, targetDirectory: java.nio.file.SecureDirectoryStream<Path>, target: Path) {
-        Files.move(resolve(source), (targetDirectory as IdentityTestDirectory).resolve(target))
+        Files.move(resolve(source), (targetDirectory as IdentityTestDirectory).resolve(target), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
     }
     override fun <V : java.nio.file.attribute.FileAttributeView> getFileAttributeView(type: Class<V>): V =
         Files.getFileAttributeView(root, type, java.nio.file.LinkOption.NOFOLLOW_LINKS)

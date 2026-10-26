@@ -60,6 +60,8 @@ internal data class LinuxFilesUiState(
     val entries: List<LinuxFileEntry> = emptyList(),
     val sort: LinuxFileSort = LinuxFileSort.MODIFIED,
     val showHidden: Boolean = true,
+    /** 当前目录内的名称筛选；进入其它目录时清空。 */
+    val query: String = "",
     val loading: Boolean = false,
     val error: LinuxFileErrorCode? = null,
     val selection: Set<String> = emptySet(),
@@ -73,10 +75,10 @@ internal data class LinuxFilesUiState(
 ) {
     val ready: Boolean get() = runtime is LinuxRuntimeState.Ready
 
-    /** 浏览范围：主目录内显示“Linux 主目录”，否则为整个根目录。 */
+    /** 浏览范围：主目录内路径行以 `~` 为起点，否则以 `/` 为起点。 */
     val atHome: Boolean get() = isUnderLinuxHome(path)
 
-    val visibleEntries: List<LinuxFileEntry> by lazy { sortLinuxEntries(entries, sort, showHidden) }
+    val visibleEntries: List<LinuxFileEntry> by lazy { filterLinuxEntriesByName(sortLinuxEntries(entries, sort, showHidden), query) }
 
     val selecting: Boolean get() = selection.isNotEmpty()
 
@@ -120,7 +122,7 @@ internal class LinuxFilesViewModel(
 
     fun navigate(path: String) {
         val target = normalizeLinuxPath(path)
-        _state.update { it.copy(path = target, entries = emptyList(), selection = emptySet(), error = null, notice = null) }
+        _state.update { it.copy(path = target, entries = emptyList(), query = "", selection = emptySet(), error = null, notice = null) }
         load()
     }
 
@@ -131,8 +133,9 @@ internal class LinuxFilesViewModel(
         return true
     }
 
-    /** 在主目录与整个根目录之间切换。 */
-    fun switchRoot() = navigate(if (_state.value.atHome) "/" else LINUX_HOME_PATH)
+    fun goHome() = navigate(LINUX_HOME_PATH)
+
+    fun setQuery(query: String) = _state.update { it.copy(query = query) }
 
     fun refresh() = load(keepEntries = true)
 

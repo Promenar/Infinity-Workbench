@@ -34,8 +34,6 @@ class DocEditorMaterialContractTest {
             "NexaraGlassCard",
             "GlassSurface",
             "GlassBorder",
-            // 该遗留封装内部仍使用 GlassBorder，保留调用会绕过本页的 Glass 字面量扫描。
-            "NexaraConfirmDialog",
         ).forEach { forbidden ->
             assertThat(screenSource).doesNotContain(forbidden)
         }

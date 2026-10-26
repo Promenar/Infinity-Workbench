@@ -52,9 +52,7 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.VerticalSplit
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -111,6 +109,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -1584,76 +1583,54 @@ private fun DocEditorConfirmationDialog(
 ) {
     if (confirmation == null) return
     val isDiscard = confirmation == DocEditorConfirmation.DiscardChanges
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = actions.onDismissConfirmation,
         modifier = Modifier.testTagCompat(
             if (isDiscard) UiTags.DOC_EDITOR_DISCARD_DIALOG else UiTags.DOC_EDITOR_RELOAD_DIALOG,
         ),
-        title = {
-            Text(
-                stringResource(
-                    if (isDiscard) {
-                        R.string.doc_editor_discard_title
-                    } else {
-                        R.string.doc_editor_reload_title
-                    },
-                ),
-            )
-        },
-        text = {
-            Text(
-                stringResource(
-                    if (isDiscard) {
-                        R.string.doc_editor_discard_description
-                    } else {
-                        R.string.doc_editor_reload_description
-                    },
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = if (isDiscard) actions.onConfirmDiscard else actions.onConfirmReload,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
-                modifier = Modifier
-                    .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
-                    .testTagCompat(
-                        if (isDiscard) {
-                            UiTags.DOC_EDITOR_DISCARD_CONFIRM
-                        } else {
-                            UiTags.DOC_EDITOR_RELOAD_CONFIRM
-                        },
-                    ),
-            ) {
-                Text(
-                    stringResource(
-                        if (isDiscard) {
-                            R.string.doc_editor_discard_confirm
-                        } else {
-                            R.string.doc_editor_reload_confirm
-                        },
-                    ),
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = actions.onDismissConfirmation,
-                modifier = Modifier
-                    .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
-                    .testTagCompat(
-                        if (isDiscard) {
-                            UiTags.DOC_EDITOR_DISCARD_CANCEL
-                        } else {
-                            UiTags.DOC_EDITOR_RELOAD_CANCEL
-                        },
-                    ),
-            ) {
-                Text(stringResource(R.string.common_btn_cancel))
-            }
-        },
+        title = stringResource(
+            if (isDiscard) {
+                R.string.doc_editor_discard_title
+            } else {
+                R.string.doc_editor_reload_title
+            },
+        ),
+        message = stringResource(
+            if (isDiscard) {
+                R.string.doc_editor_discard_description
+            } else {
+                R.string.doc_editor_reload_description
+            },
+        ),
+        confirmText = stringResource(
+            if (isDiscard) {
+                R.string.doc_editor_discard_confirm
+            } else {
+                R.string.doc_editor_reload_confirm
+            },
+        ),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = if (isDiscard) actions.onConfirmDiscard else actions.onConfirmReload,
+        onCancel = actions.onDismissConfirmation,
+        isDestructive = true,
+        confirmButtonModifier = Modifier
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .testTagCompat(
+                if (isDiscard) {
+                    UiTags.DOC_EDITOR_DISCARD_CONFIRM
+                } else {
+                    UiTags.DOC_EDITOR_RELOAD_CONFIRM
+                },
+            ),
+        cancelButtonModifier = Modifier
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .testTagCompat(
+                if (isDiscard) {
+                    UiTags.DOC_EDITOR_DISCARD_CANCEL
+                } else {
+                    UiTags.DOC_EDITOR_RELOAD_CANCEL
+                },
+            ),
     )
 }
 

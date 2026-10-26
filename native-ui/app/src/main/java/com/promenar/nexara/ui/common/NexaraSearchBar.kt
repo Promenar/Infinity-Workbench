@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -49,6 +51,7 @@ fun NexaraSearchBar(
     fieldModifier: Modifier = Modifier,
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     val borderColor = if (isFocused) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -80,9 +83,11 @@ fun NexaraSearchBar(
             Box(
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
+                // 输入区占满整条搜索框高度，点框内任意位置都能聚焦。
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -91,11 +96,14 @@ fun NexaraSearchBar(
                         color = MaterialTheme.colorScheme.onSurface,
                     ).forInput(),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(
-                        onSearch = { onSearch?.invoke() }
+                        onSearch = { onSearch?.invoke() ?: focusManager.clearFocus() }
                     ),
+                    decorationBox = { inner -> Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterStart) { inner() } },
                     modifier = fieldModifier
                         .fillMaxWidth()
+                        .fillMaxHeight()
                         .onFocusChanged { isFocused = it.isFocused }
                         .semantics { contentDescription = placeholder }
                 )

@@ -17,10 +17,8 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WorkHistory
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,6 +37,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.background.schedule.canScheduleExact
 import com.promenar.nexara.background.schedule.exactAlarmPermissionIntent
 import com.promenar.nexara.distribution.DistributionCapabilities
@@ -257,16 +256,15 @@ internal fun BackgroundActivitySettingsContent(
         }
     }
     deleting?.let { task ->
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { deleting = null },
-            title = { Text(stringResource(R.string.agent_schedules_delete_title)) },
-            text = { Text(stringResource(R.string.agent_schedules_delete_body, task.name)) },
-            confirmButton = {
-                TextButton(onClick = { deleting = null; actions.onDeleteSchedule(task.id) }) {
-                    Text(stringResource(R.string.agent_schedules_delete_confirm))
-                }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(android.R.string.cancel)) } },
+            title = stringResource(R.string.agent_schedules_delete_title),
+            message = stringResource(R.string.agent_schedules_delete_body, task.name),
+            confirmText = stringResource(R.string.agent_schedules_delete_confirm),
+            cancelText = stringResource(android.R.string.cancel),
+            onConfirm = { deleting = null; actions.onDeleteSchedule(task.id) },
+            onCancel = { deleting = null },
+            isDestructive = true,
         )
     }
 }

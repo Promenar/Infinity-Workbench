@@ -245,10 +245,12 @@ class UserSettingsAccessibilityTest {
                 NexaraTheme {
                     NexaraSearchTopBar(
                         title = longTitle,
-                        query = query,
-                        searchActive = searchActive,
-                        onQueryChange = { query = it },
-                        onSearchActiveChange = { searchActive = it },
+                        search = com.promenar.nexara.ui.common.NexaraPageSearch(
+                            query = query,
+                            active = searchActive,
+                            onQueryChange = { query = it },
+                            onActiveChange = { searchActive = it },
+                        ),
                         onBack = { backPressed.set(true) },
                         actions = {
                             IconButton(
@@ -312,7 +314,8 @@ class UserSettingsAccessibilityTest {
         com.google.common.truth.Truth.assertThat(searchActive).isFalse()
         com.google.common.truth.Truth.assertThat(backPressed.get()).isFalse()
 
-        Espresso.pressBack()
+        // 退出搜索后，系统返回交给页面导航；顶栏返回按钮调用 onBack。
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_back)).performClick()
         rule.waitForIdle()
         com.google.common.truth.Truth.assertThat(backPressed.get()).isTrue()
     }

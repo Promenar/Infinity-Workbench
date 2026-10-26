@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 
 @Composable
@@ -20,14 +19,13 @@ fun ConfirmDialog(
 ) {
     if (!show) return
 
-    Dialog(onDismissRequest = onDismiss) {
-        NexaraConfirmDialog(
-            title = title,
-            message = description,
-            confirmText = confirmLabel,
-            onConfirm = onConfirm,
-            onCancel = onDismiss,
-            isDestructive = destructive
-        )
-    }
+    NexaraConfirmDialog(
+        onDismissRequest = onDismiss,
+        title = title,
+        message = description,
+        confirmText = confirmLabel,
+        onConfirm = onConfirm,
+        onCancel = onDismiss,
+        isDestructive = destructive
+    )
 }

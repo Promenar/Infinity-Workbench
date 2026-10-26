@@ -580,15 +580,14 @@ fun UnifiedPromptEditor(
     }
 
     if (showDiscardConfirmation) {
-        Dialog(onDismissRequest = { showDiscardConfirmation = false }) {
-            NexaraConfirmDialog(
-                title = resolvedTitle,
-                message = stringResource(R.string.shared_action_cannot_undo),
-                confirmText = stringResource(R.string.shared_btn_close),
-                onConfirm = onDismiss,
-                onCancel = { showDiscardConfirmation = false },
-                isDestructive = true,
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = resolvedTitle,
+            message = stringResource(R.string.shared_action_cannot_undo),
+            confirmText = stringResource(R.string.shared_btn_close),
+            onConfirm = onDismiss,
+            onCancel = { showDiscardConfirmation = false },
+            isDestructive = true,
+        )
     }
 }

@@ -50,16 +50,17 @@ class Md3ConvergencePrimitivesContractTest {
         val source = sourceFile("NexaraSearchTopBar").readText()
         assertThat(source).contains("fun NexaraSearchTopBar(")
         assertThat(source).contains("onBack: (() -> Unit)?")
-        assertThat(source).contains("onQueryChange: (String) -> Unit")
-        assertThat(source).contains("onSearchActiveChange: (Boolean) -> Unit")
-        assertThat(source).contains("searchActive: Boolean")
+        assertThat(source).contains("search: NexaraPageSearch")
+        assertThat(source).contains("val onQueryChange: (String) -> Unit")
+        assertThat(source).contains("val onActiveChange: (Boolean) -> Unit")
         assertThat(source).contains("title: String")
         assertThat(source).contains("actions: @Composable RowScope.() -> Unit = {}")
         assertThat(source).contains("Modifier.size(NexaraSpacing.MinimumTouchTarget)")
-        assertThat(source).contains("KeyboardActions(")
-        assertThat(source).contains("ImeAction.Search")
         assertThat(source).contains("FocusRequester")
-        assertThat(source).doesNotContain("NexaraSearchBar(")
+        assertThat(source).contains("BackHandler(enabled = searching)")
+        // 顶栏内的输入框复用主页同一个搜索框原子，外观一致。
+        assertThat(source).contains("NexaraSearchBar(")
+        assertThat(sourceFile("NexaraSearchBar").readText()).contains("ImeAction.Search")
     }
 
     @Test

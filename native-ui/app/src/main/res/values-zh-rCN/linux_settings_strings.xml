@@ -174,5 +174,7 @@
     <string name="linux_packages_remove_confirm_body">依赖它的软件包可能无法继续使用。</string>
     <string name="linux_packages_refresh">刷新索引</string>
     <string name="linux_packages_operation_failed">%1$s失败</string>
+    <string name="linux_packages_view_output">查看输出</string>
+    <string name="linux_packages_output_title">最近一次操作输出</string>
     <string name="linux_packages_progress">(%1$d/%2$d)</string>
 </resources>

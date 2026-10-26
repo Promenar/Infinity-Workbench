@@ -158,6 +158,153 @@ class LegacyRootIdentityAdoptionTest {
         } finally { base.toFile().deleteRecursively() }
     }
 
+    @Test
+    fun `带标记的旧认领与未完成journal在同一事务迁移且设备号变化可接受`() = runTest {
+        root.resolve(".nexara_root_identity").toFile().writeText("$nonce\n$rawKey")
+        device = "abcdef"
+        insertJournal(WorkspaceMutationType.CREATE, "created.txt", "created.txt", legacyIdentity(nonce, rawKey))
+
+        coordinator().adoptLegacyRootIdentityOrThrow("root")
+
+        val identity = PersistentFileIdentity.encode(nonce, rawKey)
+        assertThat(rootHash()).isEqualTo(identity)
+        val journal = requireNotNull(database.workspaceMutationDao().get("op-1"))
+        assertThat(payload(journal).expectedSha256).isEqualTo(identity)
+        assertThat(journal.payloadDigest).isEqualTo(Sha256Utils.hash(journal.payload))
+        assertThat(root.resolve(".nexara_root_identity").toFile().readText())
+            .isEqualTo(PersistentFileIdentity.marker(nonce, rawKey))
+        coordinator().adoptLegacyRootIdentityOrThrow("root")
+    }
+
+    @Test
+    fun `旧标记摘要不符时数据库journal和文件均不改写`() = runTest {
+        val value = "$nonce\n" + rawKey.replace(Regex("dev=[^,)]+"), "dev=abcdef")
+        root.resolve(".nexara_root_identity").toFile().writeText(value)
+        insertJournal(WorkspaceMutationType.CREATE, "created.txt", "created.txt", legacyIdentity(nonce, rawKey))
+        val before = database.workspaceMutationDao().get("op-1")
+
+        val failure = assertThrows(WorkspaceMutationRecoveryException::class.java) {
+            kotlinx.coroutines.runBlocking { coordinator().adoptLegacyRootIdentityOrThrow("root") }
+        }
+
+        assertThat(failure.message).contains("旧版身份格式")
+        assertThat(rootHash()).isEqualTo(legacyIdentity(nonce, rawKey))
+        assertThat(database.workspaceMutationDao().get("op-1")).isEqualTo(before)
+        assertThat(root.resolve(".nexara_root_identity").toFile().readText()).isEqualTo(value)
+    }
+
+    @Test
+    fun `私有区迁移中断保留旧标记证据并可重试`() = runTest {
+        val marker = root.resolve(".nexara_root_identity")
+        val value = "$nonce\n$rawKey"
+        marker.toFile().writeText(value)
+        device = "abcdef"
+        val ops = object : WorkspaceFileOps by fileOps {
+            override fun adoptLegacyRootPrivateData(legacyIdentity: String, identity: String) {
+                assertThat(marker.toFile().readText()).isEqualTo(value)
+                throw java.io.IOException("模拟中断")
+            }
+        }
+        assertThrows(java.io.IOException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                WorkspaceFileMutationRecoveryCoordinator(database, ops).adoptLegacyRootIdentityOrThrow("root")
+            }
+        }
+        assertThat(rootHash()).isEqualTo(legacyIdentity(nonce, rawKey))
+        assertThat(marker.toFile().readText()).isEqualTo(value)
+
+        coordinator().adoptLegacyRootIdentityOrThrow("root")
+        assertThat(rootHash()).isEqualTo(PersistentFileIdentity.encode(nonce, rawKey))
+    }
+
+    @Test
+    fun `带旧标记会话的私有文件迁移后可按新身份定位且标记被删除`() = runTest {
+        val base = Files.createTempDirectory("legacy-marker-private-root").toFile().canonicalFile.toPath()
+        val storage = WorkspaceInternalStorage(base, { IdentityTestDirectory(it) }, { directory, source, target, _ ->
+            Files.move(directory.resolve(source), directory.resolve(target)); Unit
+        })
+        val ops = PrivateWorkspaceFileOps(storage, SecureWorkspaceFileOps(identityStorage = storage,
+            directoryOpener = { IdentityTestDirectory(it) }, rootNonceReader = { _, _ -> nonce }))
+        val legacy = legacyIdentity(nonce, rawKey)
+        val identity = PersistentFileIdentity.encode(nonce, rawKey)
+        try {
+            root.resolve(".nexara_root_identity").toFile().writeText("$nonce\n$rawKey")
+            storage.area(legacy).resolve("proof").toFile().writeText("私有内容")
+
+            WorkspaceFileMutationRecoveryCoordinator(database, ops).adoptLegacyRootIdentityOrThrow("root")
+
+            assertThat(rootHash()).isEqualTo(identity)
+            assertThat(storage.existingArea(legacy)).isNull()
+            assertThat(requireNotNull(storage.existingArea(identity)).resolve("proof").toFile().readText()).isEqualTo("私有内容")
+            assertThat(Files.exists(root.resolve(".nexara_root_identity"))).isFalse()
+            assertThat(storage.readIdentity(identity)).isEqualTo(PersistentFileIdentity.marker(nonce, rawKey))
+        } finally { base.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `私有区改名后数据库事务失败保留旧认领journal和标记并能重试`() = runTest {
+        val base = Files.createTempDirectory("legacy-marker-db-interruption").toFile().canonicalFile.toPath()
+        val storage = WorkspaceInternalStorage(base, { IdentityTestDirectory(it) }, { directory, source, target, _ ->
+            Files.move(directory.resolve(source), directory.resolve(target)); Unit
+        })
+        val ops = object : WorkspaceFileOps by fileOps {
+            override fun adoptLegacyRootPrivateData(legacyIdentity: String, identity: String) = storage.renameArea(legacyIdentity, identity)
+        }
+        val marker = root.resolve(".nexara_root_identity")
+        val value = "$nonce\n$rawKey"
+        val legacy = legacyIdentity(nonce, rawKey)
+        val identity = PersistentFileIdentity.encode(nonce, rawKey)
+        marker.toFile().writeText(value)
+        storage.area(legacy).resolve("proof").toFile().writeText("私有内容")
+        insertJournal(WorkspaceMutationType.CREATE, "created.txt", "created.txt", legacy)
+        val before = database.workspaceMutationDao().get("op-1")
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER fail_legacy_root_update BEFORE UPDATE OF hash ON workspace_files BEGIN SELECT RAISE(ABORT, '模拟事务中断'); END",
+        )
+        try {
+            assertThrows(android.database.sqlite.SQLiteException::class.java) {
+                kotlinx.coroutines.runBlocking {
+                    WorkspaceFileMutationRecoveryCoordinator(database, ops).adoptLegacyRootIdentityOrThrow("root")
+                }
+            }
+            assertThat(rootHash()).isEqualTo(legacy)
+            assertThat(database.workspaceMutationDao().get("op-1")).isEqualTo(before)
+            assertThat(marker.toFile().readText()).isEqualTo(value)
+            assertThat(storage.existingArea(legacy)).isNull()
+            assertThat(requireNotNull(storage.existingArea(identity)).resolve("proof").toFile().readText()).isEqualTo("私有内容")
+
+            database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_legacy_root_update")
+            WorkspaceFileMutationRecoveryCoordinator(database, ops).adoptLegacyRootIdentityOrThrow("root")
+            assertThat(rootHash()).isEqualTo(identity)
+            assertThat(payload(requireNotNull(database.workspaceMutationDao().get("op-1"))).expectedSha256).isEqualTo(identity)
+        } finally { base.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `数据库提交后标记转换失败时现行认领仍能重试完成迁移`() = runTest {
+        val marker = root.resolve(".nexara_root_identity")
+        val value = "$nonce\n$rawKey"
+        marker.toFile().writeText(value)
+        val ops = object : WorkspaceFileOps by fileOps {
+            override fun ensureRoot(root: Path, initializeIdentity: Boolean, expectedIdentity: String?, allowUnboundParent: Boolean): String {
+                throw java.io.IOException("模拟提交后中断")
+            }
+        }
+
+        assertThrows(java.io.IOException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                WorkspaceFileMutationRecoveryCoordinator(database, ops).adoptLegacyRootIdentityOrThrow("root")
+            }
+        }
+        val identity = PersistentFileIdentity.encode(nonce, rawKey)
+        assertThat(rootHash()).isEqualTo(identity)
+        assertThat(marker.toFile().readText()).isEqualTo(value)
+
+        coordinator().recoverRootOrThrow("root")
+        assertThat(rootHash()).isEqualTo(identity)
+        assertThat(marker.toFile().readText()).isEqualTo(PersistentFileIdentity.marker(nonce, rawKey))
+    }
+
     private fun coordinator() = WorkspaceFileMutationRecoveryCoordinator(database, fileOps)
 
     private suspend fun rootHash(): String = requireNotNull(database.fileEntryDao().getAnyStateByUuidForLifecycle("root", "root")).hash

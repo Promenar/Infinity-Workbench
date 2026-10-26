@@ -2,12 +2,10 @@ package com.promenar.nexara.ui.workspace
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.workspace.FolderNameError
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
@@ -36,10 +35,19 @@ internal fun WorkspaceNameDialog(
     onValueChange: () -> Unit = {},
 ) {
     var value by rememberSaveable { mutableStateOf(initialValue) }
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(title, style = NexaraTypography.headlineSmall) },
-        text = {
+        title = title,
+        message = "",
+        confirmText = confirmLabel,
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = { onConfirm(value.trim()) },
+        // 忙碌时取消按钮原为禁用；统一对话框无禁用态，改为忙碌期间忽略点击。
+        onCancel = onDismiss,
+        cancelEnabled = !busy,
+        confirmEnabled = !busy && value.isNotBlank(),
+        confirmButtonModifier = Modifier.testTag("workspace_name_confirm"),
+        content = {
             Column {
                 OutlinedTextField(
                     value = value,
@@ -54,18 +62,6 @@ internal fun WorkspaceNameDialog(
                     supportingText = (error ?: hint)?.let { message -> { Text(message) } },
                     modifier = Modifier.fillMaxWidth().testTag("workspace_name_input"),
                 )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(value.trim()) },
-                enabled = !busy && value.isNotBlank(),
-                modifier = Modifier.testTag("workspace_name_confirm"),
-            ) { Text(confirmLabel) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
-                Text(stringResource(R.string.common_btn_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )

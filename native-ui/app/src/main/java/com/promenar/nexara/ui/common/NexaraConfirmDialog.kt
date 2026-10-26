@@ -22,11 +22,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 
+/**
+ * 全站唯一的对话框：确认、提示与单字段输入都用它，自带窗口，不再外包 `Dialog`。
+ *
+ * 点外部与返回调用 [onDismissRequest]（默认同取消）；[content] 放在正文与按钮之间，用于输入框或补充说明。
+ * [cancelText] 为 null 时只有确认按钮（纯提示）；[title] 为空时只显示正文。
+ */
 @Composable
 fun NexaraConfirmDialog(
     title: String,
@@ -37,10 +45,52 @@ fun NexaraConfirmDialog(
     onCancel: () -> Unit,
     isDestructive: Boolean = false,
     confirmButtonModifier: Modifier = Modifier,
+    cancelButtonModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier,
+    confirmEnabled: Boolean = true,
+    cancelEnabled: Boolean = true,
+    onDismissRequest: () -> Unit = onCancel,
+    properties: DialogProperties = DialogProperties(),
+    content: @Composable (() -> Unit)? = null,
+) {
+    Dialog(onDismissRequest = onDismissRequest, properties = properties) {
+        NexaraConfirmDialogCard(
+            title = title,
+            message = message,
+            confirmText = confirmText,
+            cancelText = cancelText,
+            onConfirm = onConfirm,
+            onCancel = onCancel,
+            isDestructive = isDestructive,
+            confirmButtonModifier = confirmButtonModifier,
+            cancelButtonModifier = cancelButtonModifier,
+            modifier = modifier,
+            confirmEnabled = confirmEnabled,
+            cancelEnabled = cancelEnabled,
+            content = content,
+        )
+    }
+}
+
+/** 对话框卡片本身，不含窗口；截图测试与预览直接渲染它。 */
+@Composable
+internal fun NexaraConfirmDialogCard(
+    title: String,
+    message: String,
+    confirmText: String,
+    cancelText: String? = stringResource(R.string.common_btn_cancel),
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    isDestructive: Boolean = false,
+    confirmButtonModifier: Modifier = Modifier,
+    cancelButtonModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier,
+    confirmEnabled: Boolean = true,
+    cancelEnabled: Boolean = true,
     content: @Composable (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .clip(NexaraShapes.extraLarge)
             .border(
                 0.5.dp,
@@ -55,14 +105,17 @@ fun NexaraConfirmDialog(
                 .fillMaxWidth()
                 .padding(24.dp)
         ) {
-            Text(
-                text = title,
-                style = NexaraTypography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            // 纯提示可以没有标题，此时正文直接在顶部。
+            if (title.isNotBlank()) {
+                Text(
+                    text = title,
+                    style = NexaraTypography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             if (message.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
+                if (title.isNotBlank()) Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = message,
                     style = NexaraTypography.bodyMedium,
@@ -83,6 +136,8 @@ fun NexaraConfirmDialog(
                 if (cancelText != null) {
                     TextButton(
                         onClick = onCancel,
+                        enabled = cancelEnabled,
+                        modifier = cancelButtonModifier,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -99,6 +154,7 @@ fun NexaraConfirmDialog(
 
                 Button(
                     onClick = onConfirm,
+                    enabled = confirmEnabled,
                     modifier = confirmButtonModifier,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isDestructive) {
@@ -128,7 +184,7 @@ fun NexaraConfirmDialog(
 @Composable
 private fun NexaraConfirmDialogPreview() {
     NexaraTheme {
-        NexaraConfirmDialog(
+        NexaraConfirmDialogCard(
             title = "Delete Session",
             message = "Are you sure you want to delete this session? This action cannot be undone.",
             confirmText = "Delete",
@@ -143,7 +199,7 @@ private fun NexaraConfirmDialogPreview() {
 @Composable
 private fun NexaraConfirmDialogNormalPreview() {
     NexaraTheme {
-        NexaraConfirmDialog(
+        NexaraConfirmDialogCard(
             title = "Clear Cache",
             message = "This will clear all cached data. Your sessions will not be affected.",
             confirmText = "Clear",

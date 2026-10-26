@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.state.*
 import com.promenar.nexara.ui.chat.progress
 import com.promenar.nexara.ui.chat.stateValueText
@@ -79,23 +80,29 @@ fun StateBoardContent(
     }
     if (confirmingRemove) {
         val revision = remember { snapshot.revision }
-        AlertDialog(
+        NexaraConfirmDialog(
             onDismissRequest = { if (!removing) confirmingRemove = false },
-            title = { Text(stringResource(R.string.state_remove_title)) },
-            text = { Text(stringResource(R.string.state_remove_body)) },
-            confirmButton = {
-                TextButton(enabled = !removing, onClick = {
-                    removing = true
-                    scope.launch {
-                        try {
-                            removalError = onRemove(revision)
-                            confirmingRemove = false
-                            if (removalError == null) onRemoved()
-                        } finally { removing = false }
-                    }
-                }, modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_REMOVE_CONFIRM)) { Text(stringResource(R.string.state_remove)) }
+            title = stringResource(R.string.state_remove_title),
+            message = stringResource(R.string.state_remove_body),
+            confirmText = stringResource(R.string.state_remove),
+            cancelText = stringResource(R.string.state_cancel),
+            onConfirm = {
+                removing = true
+                scope.launch {
+                    try {
+                        removalError = onRemove(revision)
+                        confirmingRemove = false
+                        if (removalError == null) onRemoved()
+                    } finally { removing = false }
+                }
             },
-            dismissButton = { TextButton(enabled = !removing, onClick = { confirmingRemove = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.state_cancel)) } },
+            // 删除中取消按钮原为禁用；统一对话框无禁用态，改为删除期间忽略点击。
+            onCancel = { confirmingRemove = false },
+            cancelEnabled = !removing,
+            isDestructive = true,
+            confirmEnabled = !removing,
+            confirmButtonModifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_REMOVE_CONFIRM),
+            cancelButtonModifier = Modifier.heightIn(min = 48.dp),
         )
     }
 }
@@ -339,11 +346,31 @@ private fun StateFieldEditor(snapshot: StateBoardSnapshot, field: StateField, on
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val invalidValue = stringResource(R.string.state_invalid_value)
-    AlertDialog(
+    NexaraConfirmDialog(
         modifier = Modifier.testTag(UiTags.CHAT_STATE_EDITOR),
         onDismissRequest = { if (!saving) onDismiss() },
-        title = { Text(stringResource(R.string.state_edit, field.label)) },
-        text = {
+        title = stringResource(R.string.state_edit, field.label),
+        message = "",
+        confirmText = stringResource(R.string.state_save),
+        cancelText = stringResource(R.string.state_cancel),
+        onConfirm = confirm@{
+            val operation = try { com.promenar.nexara.ui.chat.stateFieldEdit(field, text, max, items) }
+                catch (_: IllegalArgumentException) { error = invalidValue; return@confirm }
+            saving = true
+            scope.launch {
+                try {
+                    error = onSave(snapshot.revision, operation)
+                    if (error == null) onDismiss()
+                } finally { saving = false }
+            }
+        },
+        // 保存中取消按钮原为禁用；统一对话框无禁用态，改为保存期间忽略点击。
+        onCancel = onDismiss,
+        cancelEnabled = !saving,
+        confirmEnabled = !saving,
+        confirmButtonModifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_SAVE),
+        cancelButtonModifier = Modifier.heightIn(min = 48.dp),
+        content = {
             Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                 if (field.type == "list") {
                     items.forEachIndexed { index, value ->
@@ -368,19 +395,5 @@ private fun StateFieldEditor(snapshot: StateBoardSnapshot, field: StateField, on
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
-        confirmButton = {
-            TextButton(enabled = !saving, modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_STATE_SAVE), onClick = {
-                val operation = try { com.promenar.nexara.ui.chat.stateFieldEdit(field, text, max, items) }
-                    catch (_: IllegalArgumentException) { error = invalidValue; return@TextButton }
-                saving = true
-                scope.launch {
-                    try {
-                        error = onSave(snapshot.revision, operation)
-                        if (error == null) onDismiss()
-                    } finally { saving = false }
-                }
-            }) { Text(stringResource(R.string.state_save)) }
-        },
-        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.state_cancel)) } },
     )
 }

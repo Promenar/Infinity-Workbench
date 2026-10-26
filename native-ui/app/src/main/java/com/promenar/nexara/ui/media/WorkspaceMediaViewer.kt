@@ -8,15 +8,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.promenar.nexara.ui.common.NexaraModalSheet
+import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.domain.media.MediaKind
 import com.promenar.nexara.domain.media.MediaResolution
@@ -111,15 +111,13 @@ private fun MediaPanelActions(available: MediaResolution.Available) {
     }
 }
 
+/** 音频、普通文件与不可用占位的面板；与全站上滑面板同一外壳，宽窗口居中显示。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MediaPanelSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val hostState = remember { SnackbarHostState() }
     val messenger = rememberSnackbarMediaMessenger(hostState)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    NexaraModalSheet(onDismissRequest = onDismiss, height = NexaraSheetHeight.Content) {
         CompositionLocalProvider(LocalMediaMessenger provides messenger) {
             Box {
                 Column(

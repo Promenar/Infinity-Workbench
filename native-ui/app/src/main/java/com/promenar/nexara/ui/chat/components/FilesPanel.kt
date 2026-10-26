@@ -61,7 +61,6 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SmartToy
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -106,6 +105,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -1053,10 +1053,17 @@ private fun RenameDialog(
     onConfirm: (String) -> Unit
 ) {
     var name by rememberSaveable { mutableStateOf(currentName) }
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.files_rename), style = NexaraTypography.headlineSmall) },
-        text = {
+        title = stringResource(R.string.files_rename),
+        message = "",
+        confirmText = stringResource(R.string.files_confirm),
+        cancelText = stringResource(R.string.files_cancel),
+        onConfirm = { if (name.isNotBlank()) onConfirm(name.trim()) },
+        onCancel = onDismiss,
+        confirmEnabled = name.isNotBlank(),
+        confirmButtonModifier = Modifier.testTag("files_panel_rename_confirm_$fileUuid"),
+        content = {
             OutlinedTextField(
                 textStyle = LocalTextStyle.current.forInput(),
                 value = name,
@@ -1067,18 +1074,6 @@ private fun RenameDialog(
                     .testTag("files_panel_rename_input_$fileUuid"),
             )
         },
-        confirmButton = {
-            TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
-                enabled = name.isNotBlank(),
-                modifier = Modifier.testTag("files_panel_rename_confirm_$fileUuid"),
-            ) {
-                Text(stringResource(R.string.files_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.files_cancel)) }
-        }
     )
 }
 

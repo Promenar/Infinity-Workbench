@@ -254,10 +254,16 @@ private fun AddAgentDialog(
         currentModelId = model
     )
 
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.hub_dialog_add_title), style = NexaraTypography.headlineSmall) },
-        text = {
+        title = stringResource(R.string.hub_dialog_add_title),
+        message = "",
+        confirmText = stringResource(R.string.shared_btn_add),
+        cancelText = stringResource(R.string.common_btn_cancel),
+        onConfirm = { onConfirm(name, description, model, systemPrompt) },
+        onCancel = onDismiss,
+        confirmEnabled = name.isNotBlank(),
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     textStyle = LocalTextStyle.current.forInput(),
@@ -343,23 +349,6 @@ private fun AddAgentDialog(
                 }
             }
         },
-
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(name, description, model, systemPrompt) },
-                enabled = name.isNotBlank()
-            ) {
-                Text(stringResource(R.string.shared_btn_add))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_btn_cancel))
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
 }
 

@@ -403,26 +403,22 @@ internal fun ModelEditorSheet(
     }
 
     if (showDeleteConfirmation) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteConfirmation = false }) {
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier.testTag(UiTags.providerModelsEditorDeleteConfirmDialog(model.id)),
-            ) {
-                NexaraConfirmDialog(
-                    title = stringResource(R.string.shared_btn_delete),
-                    message = model.name,
-                    confirmText = stringResource(R.string.shared_btn_delete),
-                    confirmButtonModifier = Modifier.testTag(
-                        UiTags.providerModelsEditorDeleteConfirmButton(model.id),
-                    ),
-                    isDestructive = true,
-                    onConfirm = {
-                        showDeleteConfirmation = false
-                        onDelete()
-                    },
-                    onCancel = { showDeleteConfirmation = false },
-                )
-            }
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            modifier = Modifier.testTag(UiTags.providerModelsEditorDeleteConfirmDialog(model.id)),
+            title = stringResource(R.string.shared_btn_delete),
+            message = model.name,
+            confirmText = stringResource(R.string.shared_btn_delete),
+            confirmButtonModifier = Modifier.testTag(
+                UiTags.providerModelsEditorDeleteConfirmButton(model.id),
+            ),
+            isDestructive = true,
+            onConfirm = {
+                showDeleteConfirmation = false
+                onDelete()
+            },
+            onCancel = { showDeleteConfirmation = false },
+        )
     }
 }
 

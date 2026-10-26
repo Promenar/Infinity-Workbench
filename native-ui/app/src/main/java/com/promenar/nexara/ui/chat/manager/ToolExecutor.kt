@@ -106,7 +106,7 @@ class ToolExecutor internal constructor(
                 persistedIdentity = activeLedger.invocationIdentity(key),
                 feedback = reason,
             )
-            finishInvalidCall(activeLedger, key, targetMsg, preflight)
+            finishInvalidCall(activeLedger, key, targetMsg, tc, preflight)
         }
     }
 
@@ -167,7 +167,7 @@ class ToolExecutor internal constructor(
             )
             if (preflight is ToolPreflight.Invalid) {
                 try {
-                    finishInvalidCall(activeLedger, key, targetMsg, preflight)
+                    finishInvalidCall(activeLedger, key, targetMsg, tc, preflight)
                 } catch (cancelled: CancellationException) {
                     terminalizeInvocationCancellation(
                         activeLedger = activeLedger,
@@ -462,6 +462,7 @@ class ToolExecutor internal constructor(
         activeLedger: ToolExecutionLedger,
         key: ToolExecutionKey,
         targetMessage: Message,
+        call: ToolCall,
         preflight: ToolPreflight.Invalid,
     ) {
         preflight.persistedIdentity?.let { persistedIdentity ->
@@ -476,6 +477,24 @@ class ToolExecutor internal constructor(
         val registration = activeLedger.register(key, identity)
         if (registration == ToolRegistrationResult.Conflict) return
         if (!activeLedger.claim(key, identity)) return
+        // 界面只按助手消息的执行步骤展示工具卡片；预检失败也要留下调用与错误两步，否则这次调用在会话里不可见。
+        val now = System.currentTimeMillis()
+        appendStep(key.sessionId, key.assistantMessageId, ExecutionStep(
+            id = "step_${now}_${call.id}",
+            type = "tool_call",
+            toolName = call.name,
+            toolArgs = call.arguments,
+            toolCallId = call.id,
+            timestamp = now,
+        ))
+        appendStep(key.sessionId, key.assistantMessageId, ExecutionStep(
+            id = "res_step_${now}_${call.id}",
+            type = "error",
+            toolName = call.name,
+            toolCallId = call.id,
+            content = preflight.feedback,
+            timestamp = now,
+        ))
         val terminal = activeLedger.finishWithResult(
             key = key,
             toolName = "invalid_tool",

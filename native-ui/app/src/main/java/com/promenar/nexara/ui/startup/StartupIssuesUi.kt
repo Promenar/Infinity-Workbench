@@ -61,7 +61,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.startup.StartupIssue
@@ -466,16 +465,15 @@ fun StartupIssuesSheet(
         )
     }
     confirmAbandon?.let { issue ->
-        Dialog(onDismissRequest = { confirmAbandon = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.startup_issues_abandon_title),
-                message = stringResource(R.string.startup_issues_abandon_message),
-                confirmText = stringResource(R.string.startup_issues_abandon),
-                onConfirm = { confirmAbandon = null; resolve(issue, StartupIssueAction.ABANDON, confirmed = true) },
-                onCancel = { confirmAbandon = null },
-                isDestructive = true,
-            )
-        }
+        NexaraConfirmDialog(
+            onDismissRequest = { confirmAbandon = null },
+            title = stringResource(R.string.startup_issues_abandon_title),
+            message = stringResource(R.string.startup_issues_abandon_message),
+            confirmText = stringResource(R.string.startup_issues_abandon),
+            onConfirm = { confirmAbandon = null; resolve(issue, StartupIssueAction.ABANDON, confirmed = true) },
+            onCancel = { confirmAbandon = null },
+            isDestructive = true,
+        )
     }
     records?.let { text -> DiagnosticRecordsDialog(text, onDismiss = { records = null }) }
 }

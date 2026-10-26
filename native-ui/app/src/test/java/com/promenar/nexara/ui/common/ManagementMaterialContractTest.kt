@@ -45,13 +45,13 @@ class ManagementMaterialContractTest {
 
         assertThat(source).contains("IconButton(")
         assertThat(source).contains("fun NexaraSearchTopBar(")
-        assertThat(source).contains("onSearchActiveChange: (Boolean) -> Unit")
-        assertThat(source).contains("onQueryChange: (String) -> Unit")
-        assertThat(source).contains("searchActive: Boolean")
+        assertThat(source).contains("val onActiveChange: (Boolean) -> Unit")
+        assertThat(source).contains("val onQueryChange: (String) -> Unit")
+        assertThat(source).contains("val active: Boolean")
         assertThat(source).contains("actions: @Composable RowScope.() -> Unit")
         assertThat(source).contains("NexaraSpacing.MinimumTouchTarget")
         assertThat(source).doesNotContain("Modifier.size(24.dp)")
-        assertThat(source).doesNotContain("NexaraSearchBar(")
+        assertThat(source).contains("NexaraSearchBar(")
         assertThat(source).contains("MaterialTheme.colorScheme")
     }
 

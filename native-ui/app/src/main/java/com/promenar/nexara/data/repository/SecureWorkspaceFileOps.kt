@@ -998,6 +998,15 @@ class SecureWorkspaceFileOps(
         if (stored != null && stored != record) throw SecurityException("工作区根目录FD身份与私有索引冲突")
         if (identityStorage == null) {
             if (marker == null && persistentNonce == null) writeNew(root, Paths.get(ROOT_IDENTITY_FILE), record.toByteArray(Charsets.UTF_8))
+            else if (marker != null && PersistentFileIdentity.parseLegacyMarker(marker) != null) {
+                val temporary = Paths.get(".root-identity-${UUID.randomUUID()}")
+                try {
+                    writeNew(root, temporary, record.toByteArray(Charsets.UTF_8))
+                    verifyDirectoryBinding(path, emptyList(), directoryKey(root), requireIdentity = false)
+                    if (readLegacyIdentity(root) != marker) throw SecurityException("工作区根身份标记在迁移期间发生变化")
+                    root.move(temporary, root, Paths.get(ROOT_IDENTITY_FILE))
+                } finally { runCatching { root.deleteFile(temporary) } }
+            }
         } else {
             var durableNonce = persistentNonce != null
             try {
@@ -1053,14 +1062,23 @@ class SecureWorkspaceFileOps(
     }
 
     /**
-     * 旧认领为 `nonce|sha256(完整fileKey字符串)`。只接受目录属性 nonce 与当前完整 fileKey 按旧算法逐字吻合的情形；
-     * 存在根标记文件、属性缺失或设备号已变时无法证明是同一目录，返回 null。
+     * 旧认领为 `nonce|sha256(完整fileKey字符串)`。旧标记提供签发摘要的原始 fileKey，需与当前 inode 相同；
+     * 没有标记时仍要求目录属性 nonce 与当前完整 fileKey 按旧算法逐字吻合。此处只核验，不改写证据。
      */
     override fun adoptLegacyRootIdentity(root: Path, legacyIdentity: String): String? {
         if (!LEGACY_ROOT_IDENTITY.matches(legacyIdentity)) return null
         return openSecure(root, requireIdentity = false).use { secure ->
-            if (readLegacyIdentity(secure) != null) return@use null
             val operationKey = directoryKey(secure).toString()
+            val marker = readLegacyIdentity(secure)
+            if (marker != null) {
+                val proof = PersistentFileIdentity.parseLegacyMarker(marker) ?: return@use null
+                val reportedKey = identityFileKey(operationKey)
+                if (PersistentFileIdentity.inode(proof.second) != PersistentFileIdentity.inode(reportedKey) ||
+                    "${proof.first}|${sha256(proof.second.toByteArray(Charsets.UTF_8))}" != legacyIdentity) return@use null
+                val attributeNonce = try { rootNonceReader(root, operationKey) } catch (_: UnsupportedOperationException) { null }
+                if (attributeNonce != null && attributeNonce != proof.first) return@use null
+                return@use PersistentFileIdentity.encode(proof.first, reportedKey)
+            }
             val nonce = try { rootNonceReader(root, operationKey) } catch (_: UnsupportedOperationException) { null }
                 ?: return@use null
             val reportedKey = identityFileKey(operationKey).toString()

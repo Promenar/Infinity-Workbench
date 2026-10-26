@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
@@ -538,11 +538,15 @@ private fun NameEditDialog(
 ) {
     var name by remember { mutableStateOf(currentName) }
 
-    AlertDialog(
+    NexaraConfirmDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(stringResource(R.string.settings_edit_name), style = MaterialTheme.typography.titleMedium) },
-        text = {
+        title = stringResource(R.string.settings_edit_name),
+        message = "",
+        confirmText = stringResource(R.string.settings_btn_save),
+        cancelText = stringResource(R.string.settings_btn_cancel),
+        onConfirm = { onSave(name) },
+        onCancel = onDismiss,
+        content = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -551,16 +555,6 @@ private fun NameEditDialog(
                 singleLine = true
             )
         },
-        confirmButton = {
-            TextButton(onClick = { onSave(name) }) {
-                Text(stringResource(R.string.settings_btn_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.settings_btn_cancel))
-            }
-        }
     )
 }
 

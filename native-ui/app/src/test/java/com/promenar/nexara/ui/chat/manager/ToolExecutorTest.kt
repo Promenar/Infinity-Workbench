@@ -912,6 +912,32 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `预检失败的调用也在助手消息里留下调用与错误步骤供界面展示`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val skill = testSkill(
+            name = "safe_tool",
+            schema = """{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}""",
+        ) { ToolResult("unexpected", "unexpected") }
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+        val calls = listOf(
+            ToolCall("schema", "safe_tool", """{"value":1}"""),
+            ToolCall("unknown", "unknown_tool", "{}"),
+        )
+
+        executor.executeTools("s1", "m1", calls, preparedTools = listOf(skill.toPreparedTool()))
+        advanceUntilIdle()
+
+        val steps = store.getSession("s1")!!.messages.first { it.id == "m1" }.executionSteps.orEmpty()
+        calls.forEach { call ->
+            val forCall = steps.filter { it.toolCallId == call.id }
+            assertThat(forCall.map { it.type }).containsExactly("tool_call", "error").inOrder()
+            assertThat(forCall.map { it.toolName }.distinct()).containsExactly(call.name)
+            assertThat(forCall.last().content).startsWith("工具调用校验失败：")
+        }
+    }
+
+    @Test
     fun concurrentInvalidInvocationHasOneTerminalAndModifiedSameKeyConflicts() = testScope.runTest {
         seedSessionWithAssistant()
         val skill = testSkill(

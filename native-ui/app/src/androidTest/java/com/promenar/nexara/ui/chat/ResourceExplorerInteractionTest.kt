@@ -80,19 +80,19 @@ class ResourceExplorerInteractionTest {
             }
         }
 
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH_OPEN).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_ENTRY).performClick()
         rule.waitForIdle()
 
         assertThat(showRecycle).isTrue()
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH_OPEN).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_PAGE).assertIsDisplayed()
 
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_RECYCLE_BACK).performClick()
         rule.waitForIdle()
 
         assertThat(showRecycle).isFalse()
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH_OPEN).assertIsDisplayed()
     }
 
     @Test
@@ -219,7 +219,7 @@ class ResourceExplorerInteractionTest {
             }
         }
 
-        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_SEARCH_OPEN).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_IMPORT).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.RESOURCE_EXPLORER_IMPORT_RESULTS).assertDoesNotExist()
     }
@@ -385,7 +385,7 @@ class ResourceExplorerInteractionTest {
         }
 
         listOf(
-            UiTags.RESOURCE_EXPLORER_SEARCH,
+            UiTags.RESOURCE_EXPLORER_SEARCH_OPEN,
             UiTags.RESOURCE_EXPLORER_IMPORT,
             UiTags.RESOURCE_EXPLORER_RECYCLE_ENTRY,
         ).forEach { tag ->
@@ -403,7 +403,7 @@ class ResourceExplorerInteractionTest {
             NexaraTheme(dynamicColor = false) {
                 Box(Modifier.requiredSize(width = 360.dp, height = height)) {
                     ResourceExplorerSheetContent(
-                        state = state(),
+                        state = state(searchActive = true),
                         actions = ResourceExplorerSheetActions(),
                         filesContent = {},
                         recycleBinContent = {},
@@ -428,9 +428,11 @@ class ResourceExplorerInteractionTest {
         importItems: List<ShareImportItem> = emptyList(),
         isLoading: Boolean = false,
         hasLoadError: Boolean = false,
+        searchActive: Boolean = false,
     ) = ResourceExplorerSheetState(
         showRecycle = showRecycle,
         searchQuery = "",
+        searchActive = searchActive,
         recycleBinCount = 2,
         workspaceReady = true,
         importItems = importItems,
