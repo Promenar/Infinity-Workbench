@@ -531,4 +531,6 @@ object UiTags {
     const val LINUX_OUTPUT_RERUN = "linux_output_rerun"
     const val LINUX_OUTPUT_SHARE = "linux_output_share"
     fun linuxOutputSegment(segment: String) = "linux_output_segment:$segment"
+    // 资源管理器私有工作区文件操作
+    const val RESOURCE_EXPLORER_PRIVATE_SELECTION_BAR = "resource_explorer_private_selection_bar"
 }

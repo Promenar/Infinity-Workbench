@@ -18,6 +18,7 @@ import com.promenar.nexara.domain.workspace.DirectoryBatchResult
 import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
 import com.promenar.nexara.domain.workspace.DirectoryFileOpException
 import com.promenar.nexara.domain.workspace.DirectoryWorkspaceFiles
+import com.promenar.nexara.domain.workspace.PrivateWorkspaceFiles
 import com.promenar.nexara.share.core.AndroidSafContentSource
 import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.ShareImportItem
@@ -77,6 +78,7 @@ class ResourceExplorerViewModel(
     injectedGitChanges: GitChangesService? = null,
     injectedWorkspaceAccess: ResourceExplorerWorkspaceAccess? = null,
     injectedDirectoryFiles: DirectoryWorkspaceFiles? = null,
+    injectedPrivateFiles: PrivateWorkspaceFiles? = null,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -112,6 +114,16 @@ class ResourceExplorerViewModel(
             null
         }
     }
+    private val privateFileService: PrivateWorkspaceFiles? by lazy {
+        injectedPrivateFiles ?: if (injectedWorkspaceRepository == null) {
+            (application as? NexaraApplication)?.privateWorkspaceFiles
+        } else {
+            null
+        }
+    }
+
+    /** 私有工作区是否支持长按改名、移动与删除；不支持时文件页保持只读。 */
+    val privateFileOpsAvailable: Boolean get() = privateFileService != null
     private val contentResolver = application.contentResolver
     private val requestFactory = AndroidSafImportRequestFactory(contentResolver)
 
@@ -159,6 +171,9 @@ class ResourceExplorerViewModel(
 
     private val _directory = MutableStateFlow(DirectoryBrowserState())
     internal val directory: StateFlow<DirectoryBrowserState> = _directory.asStateFlow()
+
+    private val _privateFiles = MutableStateFlow(PrivateFileOpsState())
+    internal val privateFiles: StateFlow<PrivateFileOpsState> = _privateFiles.asStateFlow()
 
     private var workspaceEpoch = 0L
     private var resolveJob: Job? = null
@@ -496,6 +511,113 @@ class ResourceExplorerViewModel(
                 },
             )
             refreshDirectory()
+        }
+    }
+
+    fun togglePrivateSelection(entry: FileEntry) {
+        val current = _privateFiles.value
+        _privateFiles.value = current.copy(
+            selection = if (entry.uuid in current.selection) current.selection - entry.uuid else current.selection + (entry.uuid to entry),
+            outcome = null,
+        )
+    }
+
+    fun clearPrivateSelection() {
+        if (_privateFiles.value.selection.isNotEmpty()) _privateFiles.value = _privateFiles.value.copy(selection = emptyMap())
+    }
+
+    /** 把选中条目放入剪贴板；进入目标目录后粘贴即移动。 */
+    fun cutPrivateSelection() {
+        val current = _privateFiles.value
+        if (current.selection.isEmpty()) return
+        val entries = current.selection.values.toList()
+        _privateFiles.value = current.copy(
+            clipboard = PrivateFileClipboard(entries.map(FileEntry::uuid), entries.map(FileEntry::materializedPath)),
+            selection = emptyMap(),
+            outcome = null,
+        )
+    }
+
+    fun clearPrivateClipboard() {
+        _privateFiles.value = _privateFiles.value.copy(clipboard = null)
+    }
+
+    fun dismissPrivateOutcome() {
+        _privateFiles.value = _privateFiles.value.copy(outcome = null)
+    }
+
+    /** 把剪贴板中的条目移动到 [targetParentUuid]；部分失败时剪贴板只留下失败的条目。 */
+    fun pastePrivateClipboard(targetParentUuid: String) {
+        val clipboard = _privateFiles.value.clipboard ?: return
+        runPrivateBatch(DirectoryOp.MOVE) { files, sessionId -> files.move(sessionId, clipboard.uuids, targetParentUuid) }
+    }
+
+    fun deletePrivateSelection() {
+        val uuids = _privateFiles.value.selection.keys.toList()
+        if (uuids.isEmpty()) return
+        runPrivateBatch(DirectoryOp.DELETE) { files, sessionId -> files.delete(sessionId, uuids) }
+    }
+
+    /** 改名；[onResult] 收到 null 表示成功，否则为失败原因，由对话框就地显示。 */
+    fun renamePrivateEntry(uuid: String, name: String, onResult: (DirectoryFileOpCode?) -> Unit) {
+        val files = privateFileService ?: return onResult(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
+        val sessionId = currentSessionId ?: return onResult(DirectoryFileOpCode.WORKSPACE_UNAVAILABLE)
+        if (_privateFiles.value.operating) return
+        val generation = loadGeneration
+        _privateFiles.value = _privateFiles.value.copy(operating = true, outcome = null)
+        viewModelScope.launch {
+            val code = try {
+                withContext(io) { files.rename(sessionId, uuid, name) }
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: DirectoryFileOpException) {
+                failure.code
+            } catch (_: Exception) {
+                DirectoryFileOpCode.IO
+            }
+            // 会话已切换时旧结果不写入新会话的状态。
+            if (generation != loadGeneration) return@launch
+            val current = _privateFiles.value
+            _privateFiles.value = current.copy(operating = false, selection = if (code == null) emptyMap() else current.selection)
+            onResult(code)
+        }
+    }
+
+    private fun runPrivateBatch(
+        op: DirectoryOp,
+        action: suspend (PrivateWorkspaceFiles, String) -> DirectoryBatchResult,
+    ) {
+        val files = privateFileService ?: return
+        val sessionId = currentSessionId ?: return
+        if (_privateFiles.value.operating) return
+        val generation = loadGeneration
+        _privateFiles.value = _privateFiles.value.copy(operating = true, outcome = null)
+        viewModelScope.launch {
+            var failure: DirectoryFileOpCode? = null
+            val batch = try {
+                withContext(io) { action(files, sessionId) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: DirectoryFileOpException) {
+                failure = error.code
+                null
+            } catch (_: Exception) {
+                failure = DirectoryFileOpCode.IO
+                null
+            }
+            if (generation != loadGeneration) return@launch
+            val current = _privateFiles.value
+            val clipboard = if (op != DirectoryOp.MOVE) current.clipboard else current.clipboard?.let { board ->
+                val keep = board.uuids.indices.filter { batch == null || board.uuids[it] in batch.failed }
+                keep.takeIf { it.isNotEmpty() }?.let { PrivateFileClipboard(it.map(board.uuids::get), it.map(board.paths::get)) }
+            }
+            _privateFiles.value = current.copy(
+                operating = false,
+                selection = emptyMap(),
+                clipboard = clipboard,
+                outcome = batch?.toOutcome(op) ?: DirectoryOpOutcome(op, 0, 1, failure),
+            )
         }
     }
 
@@ -909,6 +1031,7 @@ class ResourceExplorerViewModel(
         _recycleOperationState.value = RecycleOperationState.Idle
         recycleRetryPlan = null
         importRequests.clear()
+        _privateFiles.value = PrivateFileOpsState()
     }
 
     private data class RecycleRetryPlan(

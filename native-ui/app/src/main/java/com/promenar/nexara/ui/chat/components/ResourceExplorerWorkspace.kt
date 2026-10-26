@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.workspace.DirectoryBatchResult
 import com.promenar.nexara.domain.workspace.DirectoryFileOpCode
 import com.promenar.nexara.data.workspace.SessionWorkspace
@@ -84,6 +85,25 @@ internal fun DirectoryBatchResult.toOutcome(op: DirectoryOp) =
 /** 粘贴目标不能是条目自身或其子目录；剪切到原目录没有意义，复制到原目录由后端自动改名。 */
 internal fun DirectoryClipboard.canPasteInto(directory: String): Boolean =
     paths.none { directory == it || directory.startsWith(it.trimEnd('/') + "/") || (cut && parentDirectoryPath(it) == directory) }
+
+/**
+ * 私有工作区文件页的长按多选、剪切与操作结果。[selection] 以 UUID 为键并保留条目快照，
+ * 供改名对话框取当前名称、剪切时记下物化路径。
+ */
+internal data class PrivateFileOpsState(
+    val selection: Map<String, FileEntry> = emptyMap(),
+    val clipboard: PrivateFileClipboard? = null,
+    val operating: Boolean = false,
+    val outcome: DirectoryOpOutcome? = null,
+)
+
+/** 剪切后等待粘贴的私有工作区条目：按 UUID 移动，按物化路径判定粘贴目标。 */
+internal data class PrivateFileClipboard(val uuids: List<String>, val paths: List<String>) {
+    /** 粘贴栏沿用目录工作区的剪切剪贴板载体。 */
+    val board: DirectoryClipboard get() = DirectoryClipboard(paths, cut = true)
+
+    fun canPasteInto(directoryPath: String): Boolean = board.canPasteInto(directoryPath)
+}
 
 /** 上一级目录；根目录返回 null。 */
 internal fun parentDirectoryPath(path: String): String? =

@@ -312,7 +312,8 @@ private sealed interface DirectoryNaming {
     data class Rename(val path: String, val name: String) : DirectoryNaming
 }
 
-private const val OUTCOME_VISIBLE_MS = 4_000L
+/** 操作结果提示的停留时长，私有工作区文件页共用。 */
+internal const val OUTCOME_VISIBLE_MS = 4_000L
 
 @Composable
 private fun DirectoryFileView(
