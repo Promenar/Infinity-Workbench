@@ -8,6 +8,13 @@ import java.nio.file.Path
 
 class BackupPreferenceInventoryTest {
     @Test
+    fun `长期记忆开关作为用户偏好参与备份且不放宽凭据限制`() {
+        assertThat(BackupPreferencePolicy.isKnown("nexara_settings", "long_term_memory_enabled")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "long_term_memory_enabled")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "long_term_memory_api_key")).isFalse()
+    }
+
+    @Test
     fun `工具上下文旧偏好只读识别且快速模型偏好继续参与备份`() {
         for (key in listOf("tool_context_ratio_percent", "tool_context_keep_rounds")) {
             assertWithMessage(key).that(BackupPreferencePolicy.isKnown("nexara_settings", key)).isTrue()
@@ -39,6 +46,7 @@ class BackupPreferenceInventoryTest {
                 "\\(\\s*\"([^\"]+)\""
         )
         val injectedNamespaces = mapOf(
+            "data/memory/LongTermMemoryAccess.kt#settings" to "nexara_settings",
             "data/remote/mcp/McpConnectionSettings.kt#preferences" to "nexara_settings",
             "data/termux/TermuxRuntime.kt#settings" to "nexara_settings",
             "domain/usecase/AgentConfigResolver.kt#globalPrefs" to "nexara_settings",

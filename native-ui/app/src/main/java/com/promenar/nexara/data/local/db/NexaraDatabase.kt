@@ -69,6 +69,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
     entities = [
         com.promenar.nexara.data.local.db.entity.ScheduledTaskEntity::class,
         AgentEntity::class,
+        com.promenar.nexara.data.memory.LongTermMemoryEntity::class,
         SessionEntity::class,
         MessageEntity::class,
         AttachmentEntity::class,
@@ -102,11 +103,12 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         ParameterSchemeEntity::class,
         com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class NexaraDatabase : RoomDatabase() {
+    abstract fun longTermMemoryDao(): com.promenar.nexara.data.memory.LongTermMemoryDao
     abstract fun scheduledTaskDao(): com.promenar.nexara.data.local.db.dao.ScheduledTaskDao
     abstract fun agentDao(): AgentDao
     abstract fun sessionDao(): SessionDao
@@ -210,3 +212,5 @@ val MIGRATION_25_26 = object : androidx.room.migration.Migration(25, 26) {
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_scheduled_tasks_job_id` ON `scheduled_tasks` (`job_id`)")
     }
 }
+
+internal const val NEXARA_SCHEMA_V28_IDENTITY_HASH = "3ecd53e343d156d2165df7963419da0c"

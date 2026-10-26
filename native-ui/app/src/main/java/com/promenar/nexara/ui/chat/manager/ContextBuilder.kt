@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.chat.manager
 import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.memory.LongTermMemoryAccess
+import com.promenar.nexara.data.memory.LongTermMemoryRepository
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.data.model.RagUsage
@@ -141,6 +143,8 @@ class ContextBuilder(
     /** 记忆或文档检索已开启但未配置嵌入模型时调用，用于给出一次性配置引导。 */
     private val onEmbeddingNotConfigured: () -> Unit = {},
     private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
+    private val longTermMemoryRepository: LongTermMemoryRepository? = null,
+    private val longTermMemoryAccess: LongTermMemoryAccess? = null,
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val retrieval = params.cachedRetrieval ?: retrieve(params)
@@ -162,6 +166,21 @@ class ContextBuilder(
         } ?: false
         val stateSnapshot = stateBoardRepository?.get(params.sessionId, params.stateExcludedMessageIds)
         stateBoardRepository?.recordContextRead(params.sessionId, params.assistantMsgId, stateSnapshot?.revision ?: 0)
+        val memoryContext = if (params.session.options.toolsEnabled && longTermMemoryRepository != null && longTermMemoryAccess != null) {
+            try {
+                if (longTermMemoryAccess.isEnabled(params.session)) {
+                    longTermMemoryContext(
+                        longTermMemoryRepository.getAll(),
+                        canReadFullContent = params.availableToolNames?.contains("memory_read") == true,
+                    )
+                } else ""
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // 读取失败时跳过记忆，异常中可能包含私有内容，不输出日志正文。
+                ""
+            }
+        } else ""
         val systemPrompt = buildSystemPrompt(
             params = params,
             ragContext = retrieval.ragContext,
@@ -170,6 +189,7 @@ class ContextBuilder(
             kgContext = retrieval.kgContext,
             activePlan = activePlan,
             workspaceSkillsShadowed = workspaceSkillsShadowed,
+            memoryContext = memoryContext,
         ) + stateBoardContext(
             stateSnapshot?.board,
             params.session.options.toolsEnabled && (params.availableToolNames == null || "state_update" in params.availableToolNames),
@@ -434,6 +454,7 @@ class ContextBuilder(
         kgContext: String = "",
         activePlan: TaskState? = null,
         workspaceSkillsShadowed: Boolean = false,
+        memoryContext: String = "",
     ): String {
         val sb = StringBuilder()
         val session = params.session
@@ -490,10 +511,13 @@ class ContextBuilder(
 
         // 5. 外部检索数据：只作为资料，不作为指令。
         val references = buildString {
+            if (memoryContext.isNotEmpty()) append(memoryContext)
             if (ragContext.isNotBlank()) {
+                if (isNotEmpty()) appendLine()
                 appendLine("### Retrieved Context")
                 appendLine(ragContext.trim())
             } else if (ragReferences.isNotEmpty()) {
+                if (isNotEmpty()) appendLine()
                 appendLine("### Retrieved Context")
                 ragReferences.forEach { ref -> appendLine("- [${ref.source}] ${ref.content.take(400)}") }
             }

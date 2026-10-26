@@ -35,9 +35,11 @@ class AndroidDualDatabaseSourceContractTest {
     }
 
     @Test
-    fun `v18到v21拒绝任意交叉版本身份和未知身份`() {
+    fun `v18到v28拒绝任意交叉版本身份和未知身份`() {
         val identities = mapOf(18 to CURRENT_V18_IDENTITY, 19 to CURRENT_V19_IDENTITY,
-            20 to CURRENT_V20_IDENTITY, 21 to CURRENT_V21_IDENTITY)
+            20 to CURRENT_V20_IDENTITY, 21 to CURRENT_V21_IDENTITY, 22 to CURRENT_V22_IDENTITY,
+            23 to CURRENT_V23_IDENTITY, 24 to CURRENT_V24_IDENTITY, 25 to CURRENT_V25_IDENTITY,
+            26 to CURRENT_V26_IDENTITY, 27 to CURRENT_V27_IDENTITY, 28 to CURRENT_V28_IDENTITY)
         identities.forEach { (version, identity) ->
             assertThat(requiresDualDatabaseRecovery(source(version, identity))).isFalse()
             identities.filterKeys { it != version }.values.forEach { other ->

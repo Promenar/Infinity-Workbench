@@ -69,6 +69,24 @@ import kotlinx.serialization.json.jsonPrimitive
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
+    @Test fun `恢复拒绝超长空白标题和无界id并保持原数据`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("sentinel")
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val original = tables.getValue("long_term_memories").jsonArray.single().jsonObject
+        for ((field, value) in listOf("title" to (" ".repeat(100000) + "偏好"), "id" to "x".repeat(100000))) {
+            val row = JsonObject(original + (field to JsonPrimitive(value)))
+            val malformed = JsonObject(root + ("tables" to JsonObject(tables +
+                ("long_term_memories" to JsonArray(listOf(row)))))).toString().toByteArray()
+            val error = runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull()
+            assertThat(error).isInstanceOf(BackupValidationException::class.java)
+            assertThat(rowCount("long_term_memories")).isEqualTo(1)
+            assertThat(db.messageDao().getById("message-1")).isNotNull()
+        }
+    }
+
     @Test
     fun `备份恢复保留固定模式且v6和v7缺字段按旧会话恢复`() = runBlocking {
         seedCompleteGraph()
@@ -80,7 +98,7 @@ class RoomBackupDataSourceTest {
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val tables = root.getValue("tables").jsonObject
         for (version in listOf(6, 7)) {
-            val legacyTables = (if (version == 6) tables - "state_board_versions" else tables) +
+            val legacyTables = ((if (version == 6) tables - "state_board_versions" else tables) - "long_term_memories") +
                 ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map {
                     JsonObject(it.jsonObject - "run_mode")
                 }))
@@ -94,18 +112,165 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v8备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
+    fun `v8和v9备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val tables = root.getValue("tables").jsonObject
-        val missingMode = JsonObject(root + ("tables" to JsonObject(tables +
-            ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map {
-                JsonObject(it.jsonObject - "run_mode")
-            }))))).toString().toByteArray()
-        assertThat(runCatching { newDataSource().restore(validated(snapshot, database = missingMode)) }.exceptionOrNull())
-            .isInstanceOf(BackupValidationException::class.java)
+        for (version in 8..9) {
+            val legacyTables = if (version == 8) tables - "long_term_memories" else tables
+            val missingMode = JsonObject(root + mapOf(
+                "schemaVersion" to JsonPrimitive(version),
+                "tables" to JsonObject(legacyTables + ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map {
+                    JsonObject(it.jsonObject - "run_mode")
+                }))),
+            )).toString().toByteArray()
+            assertThat(runCatching { newDataSource().restore(validated(snapshot, database = missingMode)) }.exceptionOrNull())
+                .isInstanceOf(BackupValidationException::class.java)
+        }
         assertThat(db.messageDao().getById("message-1")).isNotNull()
+    }
+
+    @Test
+    fun `v9备份恢复保留长期记忆全部字段且来源缺失不影响恢复`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("memory-1", sourceSessionId = "deleted-session")
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.databaseSchemaVersion).isEqualTo(9)
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot))
+        db.openHelper.writableDatabase.query("SELECT * FROM long_term_memories WHERE id=?", arrayOf(memoryId("memory-1"))).use {
+            check(it.moveToFirst())
+            assertThat(it.getString(it.getColumnIndexOrThrow("kind"))).isEqualTo("user")
+            assertThat(it.getString(it.getColumnIndexOrThrow("title"))).isEqualTo("长期偏好")
+            assertThat(it.getString(it.getColumnIndexOrThrow("content"))).isEqualTo("使用简体中文")
+            assertThat(it.getString(it.getColumnIndexOrThrow("source_agent_id"))).isEqualTo("deleted-agent")
+            assertThat(it.getString(it.getColumnIndexOrThrow("source_session_id"))).isEqualTo("deleted-session")
+            assertThat(it.getString(it.getColumnIndexOrThrow("source_message_id"))).isEqualTo("deleted-message")
+            assertThat(it.getLong(it.getColumnIndexOrThrow("created_at"))).isEqualTo(10L)
+            assertThat(it.getLong(it.getColumnIndexOrThrow("updated_at"))).isEqualTo(20L)
+        }
+        db.sessionDao().deleteById("session-1")
+        assertThat(rowCount("long_term_memories")).isEqualTo(1)
+    }
+
+    @Test
+    fun `v6至v8历史备份恢复补空长期记忆并清除现有记忆`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject - "long_term_memories"
+        for (version in 6..8) {
+            val historical = JsonObject(root + mapOf(
+                "schemaVersion" to JsonPrimitive(version),
+                "tables" to JsonObject(if (version == 6) tables - "state_board_versions" else tables),
+            )).toString().toByteArray()
+            insertMemory("to-clear-$version")
+            newDataSource().restore(validated(snapshot, database = historical))
+            assertThat(rowCount("long_term_memories")).isEqualTo(0)
+            assertThat(db.messageDao().getById("message-1")).isNotNull()
+        }
+    }
+
+    @Test
+    fun `v9备份缺长期记忆表时拒绝且保留当前数据`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("sentinel")
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val malformed = JsonObject(root + ("tables" to JsonObject(root.getValue("tables").jsonObject - "long_term_memories")))
+            .toString().toByteArray()
+        assertThat(runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull())
+            .isInstanceOf(BackupValidationException::class.java)
+        assertThat(rowCount("long_term_memories")).isEqualTo(1)
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+    }
+
+    @Test
+    fun `长期记忆恢复允许200条且拒绝超过上限的载荷`() = runBlocking {
+        seedCompleteGraph()
+        repeat(200) { insertMemory("memory-$it") }
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot))
+        assertThat(rowCount("long_term_memories")).isEqualTo(200)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val memories = tables.getValue("long_term_memories").jsonArray
+        val extra = JsonObject(memories.first().jsonObject + ("id" to JsonPrimitive("over-limit")))
+        val malformed = JsonObject(root + ("tables" to JsonObject(tables +
+            ("long_term_memories" to JsonArray(memories + extra))))).toString().toByteArray()
+        assertThat(runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull())
+            .isInstanceOf(BackupValidationException::class.java)
+        assertThat(rowCount("long_term_memories")).isEqualTo(200)
+    }
+
+    @Test
+    fun `长期记忆恢复拒绝无效种类长度和凭据且错误不回显输入`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("sentinel")
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val original = tables.getValue("long_term_memories").jsonArray.single().jsonObject
+        val invalidFields = listOf(
+            "kind" to "unknown-private-kind",
+            "title" to "   ",
+            "content" to "\n\t",
+            "title" to "长".repeat(81),
+            "content" to "长".repeat(2001),
+            "content" to "api_key=synthetic-memory-secret-1234567890",
+        )
+        for ((field, value) in invalidFields) {
+            val row = JsonObject(original + (field to JsonPrimitive(value)))
+            val malformed = JsonObject(root + ("tables" to JsonObject(tables +
+                ("long_term_memories" to JsonArray(listOf(row)))))).toString().toByteArray()
+            val error = runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull()
+            assertThat(error).isInstanceOf(BackupValidationException::class.java)
+            assertThat(error!!.message).doesNotContain(value)
+            generateSequence(error) { it.cause }.take(8).forEach { cause -> assertThat(cause.message).doesNotContain(value) }
+            assertThat(rowCount("long_term_memories")).isEqualTo(1)
+            assertThat(db.messageDao().getById("message-1")).isNotNull()
+        }
+    }
+
+    @Test
+    fun `备份拒绝非规范化记忆字段且允许规范化长度边界`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("trim-boundary", title = "  " + "题".repeat(80) + "  ", content = "\n" + "文".repeat(2000) + "\n")
+        assertThat(runCatching { newDataSource().snapshot(CANONICAL_CONTENT) }.exceptionOrNull()).isInstanceOf(BackupValidationException::class.java)
+        db.openHelper.writableDatabase.execSQL("DELETE FROM long_term_memories")
+        insertMemory("canonical-boundary", title = "题".repeat(80), content = "文".repeat(2000))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot))
+        assertThat(rowCount("long_term_memories")).isEqualTo(1)
+    }
+
+    @Test
+    fun `备份拒绝数据库中绕过仓库写入的无效长期记忆`() = runBlocking {
+        seedCompleteGraph()
+        insertMemory("invalid-memory", content = "api_key=synthetic-memory-secret-1234567890")
+        val error = runCatching { newDataSource().snapshot(CANONICAL_CONTENT) }.exceptionOrNull()
+        assertThat(error).isInstanceOf(BackupValidationException::class.java)
+        assertThat(error!!.message).doesNotContain("synthetic-memory-secret")
+        generateSequence(error) { it.cause }.take(8).forEach { cause -> assertThat(cause.message).doesNotContain("synthetic-memory-secret") }
+    }
+
+    private fun memoryId(label: String) = java.util.UUID.nameUUIDFromBytes(label.toByteArray()).toString()
+
+    private fun insertMemory(
+        id: String,
+        title: String = "长期偏好",
+        content: String = "使用简体中文",
+        sourceSessionId: String? = null,
+    ) {
+        db.openHelper.writableDatabase.execSQL(
+            "INSERT INTO long_term_memories " +
+                "(id,kind,title,content,source_agent_id,source_session_id,source_message_id,created_at,updated_at) " +
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(memoryId(id), "user", title, content, "deleted-agent", sourceSessionId, "deleted-message", 10L, 20L),
+        )
     }
 
     @Test
@@ -571,13 +736,13 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(8)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("8")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(9)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("9")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
-                "workspace_files", "workspace_seq", "parameter_schemes",
+                "workspace_files", "workspace_seq", "parameter_schemes", "long_term_memories",
             ).forEach { assertThat(text).contains("\"$it\"") }
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
@@ -637,6 +802,7 @@ class RoomBackupDataSourceTest {
             "tables" to JsonObject(tables + ("workspace_files" to oldFiles)))).toString().toByteArray()
         db.clearAllTables()
         newDataSource().restore(validated(snapshot, database = oldDatabase))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0)
         assertThat(db.messageDao().getById("message-1")).isNotNull()
         val file = db.fileEntryDao().getByUuid("root-1", "file-1")!!
         assertThat(file.kgStrategy).isNull()
@@ -663,6 +829,7 @@ class RoomBackupDataSourceTest {
 
         db.clearAllTables()
         newDataSource().restore(validated(current, database = legacyDatabase))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0)
 
         assertThat(db.agentDao().getById("agent-1")!!.executionMode).isEqualTo("semi")
         assertThat(db.agentDao().getById("agent-1")!!.skillIds).isEqualTo("[]")
@@ -688,6 +855,7 @@ class RoomBackupDataSourceTest {
 
         db.clearAllTables()
         newDataSource().restore(validated(current, database = immutableV2))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0)
 
         val restored = db.agentDao().getById("agent-1")!!
         assertThat(restored.executionMode).isEqualTo("manual")
@@ -1119,11 +1287,13 @@ class RoomBackupDataSourceTest {
                 preferences.snapshot = BackupPreferenceSnapshot(
                     listOf(BackupPreferenceEntry("settings", "language", "zh")), setOf("p1")
                 )
+                insertMemory("new-memory", content = "恢复后的偏好")
                 val backup = newDataSource().snapshot(CANONICAL_CONTENT)
 
                 db.clearAllTables()
                 val sentinel = AgentEntity("sentinel", "old", createdAt = 1)
                 db.agentDao().insert(sentinel)
+                insertMemory("old-memory", content = "恢复前的偏好")
                 preferences.snapshot = BackupPreferenceSnapshot(
                     listOf(BackupPreferenceEntry("settings", "language", "en")), emptySet()
                 )
@@ -1149,6 +1319,12 @@ class RoomBackupDataSourceTest {
                 } else {
                     assertThat(db.agentDao().getAll()).containsExactly(sentinel)
                     assertThat(preferences.snapshot.entries.single().value).isEqualTo("en")
+                }
+                db.openHelper.writableDatabase.query("SELECT id,content FROM long_term_memories").use { cursor ->
+                    assertThat(cursor.count).isEqualTo(1)
+                    check(cursor.moveToFirst())
+                    assertThat(cursor.getString(0)).isEqualTo(memoryId(if (committed) "new-memory" else "old-memory"))
+                    assertThat(cursor.getString(1)).isEqualTo(if (committed) "恢复后的偏好" else "恢复前的偏好")
                 }
                 assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
             }
@@ -1857,7 +2033,7 @@ class RoomBackupDataSourceTest {
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val historical = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(6),
-            "tables" to JsonObject(root.getValue("tables").jsonObject - "state_board_versions"))).toString().toByteArray()
+            "tables" to JsonObject(root.getValue("tables").jsonObject - "state_board_versions" - "long_term_memories"))).toString().toByteArray()
         db.clearAllTables()
         newDataSource().restore(validated(snapshot, database = historical))
         assertThat(db.messageDao().getById("message-1")).isNotNull()
@@ -1893,6 +2069,7 @@ class RoomBackupDataSourceTest {
 
         db.clearAllTables()
         newDataSource().restore(validated(current, database = v4))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0)
 
         val agent = db.agentDao().getById("agent-1")!!
         assertThat(agent.userRules).isEmpty()
@@ -1917,6 +2094,7 @@ class RoomBackupDataSourceTest {
 
         db.clearAllTables()
         newDataSource().restore(validated(current, database = v5))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0)
 
         val agent = db.agentDao().getById("agent-1")!!
         assertThat(listOf(agent.temperature, agent.topK?.toDouble(), agent.reasoningEffort)).containsExactly(null, null, null)
@@ -1936,7 +2114,8 @@ class RoomBackupDataSourceTest {
             "tables" to JsonObject(historicalV4Tables(tables) + ("workspaces" to tables.getValue("workspaces"))),
         )).toString().toByteArray()
 
-        assertFails { newDataSource().restore(validated(current, database = v4)) }
+        assertFails { newDataSource().restore(validated(current, database = v4))
+        assertThat(rowCount("long_term_memories")).isEqualTo(0) }
         assertThat(db.agentDao().getById("agent-1")!!.userRules).isEqualTo("先读 AGENTS.md😀")
     }
 
@@ -1983,7 +2162,7 @@ class RoomBackupDataSourceTest {
 
     /** 真实 v5 备份没有参数方案表和助手的扩展采样、推理强度列。 */
     private fun historicalV5Tables(tables: JsonObject): JsonObject = JsonObject(
-        (tables - "parameter_schemes" - "state_board_versions") + (
+        (tables - "parameter_schemes" - "state_board_versions" - "long_term_memories") + (
             "agents" to JsonArray(tables.getValue("agents").jsonArray.map {
                 JsonObject(it.jsonObject - "top_k" - "frequency_penalty" - "presence_penalty" - "repetition_penalty" - "reasoning_effort")
             })
