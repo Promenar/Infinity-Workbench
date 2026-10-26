@@ -420,7 +420,6 @@ private fun ParamsPanel(
         editor = editor,
         modelName = modelKey?.let { resolveModelDisplayName(it, providerModels) },
         actions = actions,
-        onParamsChange = chatViewModel::updateInferenceParams,
     )
 }
 
@@ -445,7 +444,6 @@ internal fun SessionParamsContent(
     editor: SamplingEditorState = sessionSamplingEditorState(params, null, SamplingParamLayout(SAMPLING_PARAM_ORDER), emptyList()),
     modelName: String? = null,
     actions: SamplingEditorActions = SamplingEditorActions(),
-    onParamsChange: (com.promenar.nexara.data.model.InferenceParams) -> Unit = {},
     initialExpanded: com.promenar.nexara.data.model.params.SamplingParam? = null,
 ) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -459,26 +457,8 @@ internal fun SessionParamsContent(
                 SamplingParamRows(editor, actions, ownLabel = stringResource(R.string.params_source_session), initialExpanded = initialExpanded)
             }
         }
-        item {
-            val timeout = params.streamTimeout ?: STREAM_TIMEOUT_DEFAULT_SECONDS
-            NexaraSettingsSection(title = stringResource(R.string.params_section_request)) {
-                NexaraStepperSetting(
-                    title = stringResource(R.string.sheet_settings_stream_timeout),
-                    value = stringResource(R.string.session_numeric_seconds_value, timeout),
-                    onDecrease = { onParamsChange(params.copy(streamTimeout = (timeout - STREAM_TIMEOUT_STEP_SECONDS).coerceAtLeast(STREAM_TIMEOUT_MIN_SECONDS))) },
-                    onIncrease = { onParamsChange(params.copy(streamTimeout = (timeout + STREAM_TIMEOUT_STEP_SECONDS).coerceAtMost(STREAM_TIMEOUT_MAX_SECONDS))) },
-                    canDecrease = timeout > STREAM_TIMEOUT_MIN_SECONDS,
-                    canIncrease = timeout < STREAM_TIMEOUT_MAX_SECONDS,
-                )
-            }
-        }
     }
 }
-
-private const val STREAM_TIMEOUT_DEFAULT_SECONDS = 120
-private const val STREAM_TIMEOUT_MIN_SECONDS = 30
-private const val STREAM_TIMEOUT_MAX_SECONDS = 300
-private const val STREAM_TIMEOUT_STEP_SECONDS = 10
 
 @Composable
 private fun ToolsPanel(chatViewModel: ChatViewModel, session: com.promenar.nexara.data.model.Session?) {

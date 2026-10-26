@@ -1,6 +1,5 @@
 <resources>
     <string name="session_numeric_seconds">s</string>
-    <string name="session_numeric_seconds_value">%1$d s</string>
     <string name="session_retrieval_section">Retrieval</string>
     <string name="session_compaction_running">Compaction in progress</string>
     <string name="session_compaction_generating">Available after response</string>

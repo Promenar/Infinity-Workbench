@@ -65,7 +65,6 @@
     <string name="common_state_collapsed">Collapsed</string>
     <string name="common_state_expanded">Expanded</string>
     <string name="common_state_selected">Selected</string>
-    <string name="params_section_request">Request</string>
     <string name="params_section_reasoning">Reasoning</string>
     <string name="params_section_sampling">Sampling</string>
     <string name="params_temperature">Temperature</string>
@@ -670,7 +669,6 @@
     <string name="sheet_settings_turns_value">%1$d turns</string>
     <string name="sheet_settings_compact_now_description">Fold earlier tool results and summarize history while retaining the most recent %1$d turns.</string>
     <string name="sheet_settings_context_description">Past the threshold, older turns are compacted and the latest %1$d are kept. Chat history is unaffected.</string>
-    <string name="sheet_settings_stream_timeout">Request Timeout</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">Max Tokens</string>
     <string name="sheet_settings_unlimited">Unlimited</string>

@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.settings
 
 import com.promenar.nexara.R
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.ModelTimeoutSettings
 import com.promenar.nexara.ui.common.NumericSettingSpec
 
 /** 数值入口与弹层预览共用的取值契约，偏好读写由页面回调承担。 */
@@ -46,3 +48,18 @@ internal val InterfaceTextScaleSpec = NumericSettingSpec(
     defaultValue = 100.0,
     unit = "%",
 )
+
+/** 等待响应超时（秒）：对话与生图按分钟级预设，向量与重排按十秒级预设；默认值与 [ModelTimeoutSettings] 一致。 */
+internal fun modelTimeoutSpec(kind: ModelTimeoutKind, unit: String): NumericSettingSpec {
+    val presets = when (kind) {
+        ModelTimeoutKind.LLM, ModelTimeoutKind.IMAGE -> listOf(60, 120, 300, 600)
+        ModelTimeoutKind.EMBEDDING, ModelTimeoutKind.RERANK -> listOf(15, 30, 60, 120)
+    }
+    return NumericSettingSpec(
+        min = ModelTimeoutSettings.MIN_SECONDS.toDouble(),
+        max = ModelTimeoutSettings.MAX_SECONDS.toDouble(),
+        presets = presets.map { NumericSettingSpec.Preset(it.toDouble()) },
+        defaultValue = ModelTimeoutSettings().seconds(kind).toDouble(),
+        unit = unit,
+    )
+}

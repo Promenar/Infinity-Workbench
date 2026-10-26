@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
 
 /** 与预设模型共用 nexara_settings；写入先更新内存，磁盘由 SharedPreferences 异步保存。 */
 internal class ModelTimeoutPreferenceStore(private val prefs: SharedPreferences) {
@@ -38,5 +37,11 @@ internal class ModelTimeoutPreferenceStore(private val prefs: SharedPreferences)
         )
     }
 
-    private fun key(kind: ModelTimeoutKind) = "model_timeout_${kind.name.lowercase(Locale.ROOT)}_seconds"
+    // 键写成字面量，备份偏好清单测试才能逐个核对其备份策略。
+    private fun key(kind: ModelTimeoutKind) = when (kind) {
+        ModelTimeoutKind.LLM -> "model_timeout_llm_seconds"
+        ModelTimeoutKind.IMAGE -> "model_timeout_image_seconds"
+        ModelTimeoutKind.EMBEDDING -> "model_timeout_embedding_seconds"
+        ModelTimeoutKind.RERANK -> "model_timeout_rerank_seconds"
+    }
 }

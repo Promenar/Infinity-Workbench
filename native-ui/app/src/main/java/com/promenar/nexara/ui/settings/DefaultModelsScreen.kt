@@ -20,8 +20,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.data.remote.ModelTimeoutKind
+import com.promenar.nexara.data.remote.ModelTimeoutSettings
 import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
+import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
@@ -51,6 +54,7 @@ fun DefaultModelsScreen(
     val imageModelId by viewModel.imageModelId.collectAsState()
     val embeddingModelId by viewModel.embeddingModelId.collectAsState()
     val rerankModelId by viewModel.rerankModelId.collectAsState()
+    val timeouts by viewModel.modelTimeouts.collectAsState()
 
     var activePickerRole by remember { mutableStateOf<DefaultModelRole?>(null) }
 
@@ -64,12 +68,13 @@ fun DefaultModelsScreen(
         }
     }
 
-    val state = remember(resolvedModels, summaryModelId, imageModelId, embeddingModelId, rerankModelId) {
+    val state = remember(resolvedModels, summaryModelId, imageModelId, embeddingModelId, rerankModelId, timeouts) {
         DefaultModelsScreenState(
             summaryModelName = resolveDefaultModelName(resolvedModels, summaryModelId),
             imageModelName = resolveDefaultModelName(resolvedModels, imageModelId),
             embeddingModelName = resolveDefaultModelName(resolvedModels, embeddingModelId),
-            rerankModelName = resolveDefaultModelName(resolvedModels, rerankModelId)
+            rerankModelName = resolveDefaultModelName(resolvedModels, rerankModelId),
+            timeouts = timeouts,
         )
     }
 
@@ -80,6 +85,7 @@ fun DefaultModelsScreen(
                 activePickerRole = role
             },
             onClearModel = { role -> viewModel.setPresetModel(role.type, "") },
+            onTimeoutChange = viewModel::setModelTimeout,
         )
     }
 
@@ -121,13 +127,15 @@ internal data class DefaultModelsScreenState(
     val summaryModelName: String = "",
     val imageModelName: String = "",
     val embeddingModelName: String = "",
-    val rerankModelName: String = ""
+    val rerankModelName: String = "",
+    val timeouts: ModelTimeoutSettings = ModelTimeoutSettings(),
 )
 
 internal data class DefaultModelsScreenActions(
     val onNavigateBack: () -> Unit = {},
     val onShowModelPicker: (DefaultModelRole) -> Unit = {},
     val onClearModel: (DefaultModelRole) -> Unit = {},
+    val onTimeoutChange: (ModelTimeoutKind, Int) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -162,9 +170,46 @@ internal fun DefaultModelsScreenContent(
                     }
                 }
             }
+            item("timeouts") {
+                ModelTimeoutSection(timeouts = state.timeouts, onTimeoutChange = actions.onTimeoutChange)
+            }
         }
     }
 }
+
+/** 四类模型各一行“等待响应超时”，点开为预设加自定义的数值弹层；改动立即写入设置。 */
+@Composable
+private fun ModelTimeoutSection(
+    timeouts: ModelTimeoutSettings,
+    onTimeoutChange: (ModelTimeoutKind, Int) -> Unit,
+) {
+    val unit = stringResource(R.string.settings_model_timeout_unit)
+    val description = stringResource(R.string.settings_model_timeout_desc)
+    NexaraSettingsSection(
+        title = stringResource(R.string.settings_model_timeout_section),
+        footer = stringResource(R.string.settings_model_timeout_footer),
+    ) {
+        ModelTimeoutKind.entries.forEach { kind ->
+            val spec = remember(kind, unit) { modelTimeoutSpec(kind, unit) }
+            NexaraNumericSetting(
+                title = stringResource(kind.labelRes),
+                value = timeouts.seconds(kind),
+                spec = spec,
+                description = description,
+                onValueChange = { onTimeoutChange(kind, it.toInt()) },
+                modifier = Modifier.testTag("model_timeout:${kind.name.lowercase()}"),
+            )
+        }
+    }
+}
+
+private val ModelTimeoutKind.labelRes: Int
+    get() = when (this) {
+        ModelTimeoutKind.LLM -> R.string.settings_model_timeout_llm
+        ModelTimeoutKind.IMAGE -> R.string.settings_model_image
+        ModelTimeoutKind.EMBEDDING -> R.string.settings_model_embedding
+        ModelTimeoutKind.RERANK -> R.string.settings_model_rerank
+    }
 
 @Composable
 internal fun DefaultModelSettingItem(

@@ -25,6 +25,8 @@ internal object BackupPreferencePolicy {
             "long_term_memory_enabled",
             "suppressed_provider_models",
             "default_model", "default_temperature", "default_top_p", "default_max_tokens",
+            "model_timeout_llm_seconds", "model_timeout_image_seconds",
+            "model_timeout_embedding_seconds", "model_timeout_rerank_seconds",
         ),
         "search" to setOf(
             "web_search_enabled", "search_engine", "searxng_url", "search_depth", "result_count",

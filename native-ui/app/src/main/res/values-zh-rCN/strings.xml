@@ -61,7 +61,6 @@
     <string name="common_state_collapsed">已折叠</string>
     <string name="common_state_expanded">已展开</string>
     <string name="common_state_selected">已选中</string>
-    <string name="params_section_request">请求</string>
     <string name="params_section_reasoning">推理</string>
     <string name="params_section_sampling">采样参数</string>
     <string name="params_temperature">温度</string>
@@ -666,7 +665,6 @@
     <string name="sheet_settings_turns_value">%1$d 轮</string>
     <string name="sheet_settings_compact_now_description">折叠较早的工具结果并总结历史，保留最近 %1$d 轮。</string>
     <string name="sheet_settings_context_description">超过阈值时压缩较早的对话，保留最近 %1$d 轮，聊天记录不受影响。</string>
-    <string name="sheet_settings_stream_timeout">请求超时</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">最大 Token 数</string>
     <string name="sheet_settings_memory">对话记忆</string>
