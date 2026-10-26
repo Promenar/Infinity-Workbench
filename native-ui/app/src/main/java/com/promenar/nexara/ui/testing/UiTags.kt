@@ -545,4 +545,15 @@ object UiTags {
     fun linuxOutputSegment(segment: String) = "linux_output_segment:$segment"
     // 资源管理器私有工作区文件操作
     const val RESOURCE_EXPLORER_PRIVATE_SELECTION_BAR = "resource_explorer_private_selection_bar"
+    // 长期记忆管理页与会话记忆步骤
+    const val LTM_LIST = "ltm_list"
+    const val LTM_ENABLED = "ltm_enabled"
+    const val LTM_EDIT_TITLE = "ltm_edit_title"
+    const val LTM_EDIT_CONTENT = "ltm_edit_content"
+    const val LTM_EDIT_DELETE = "ltm_edit_delete"
+    const val LTM_EDIT_SAVE = "ltm_edit_save"
+    const val CHAT_MEMORY_CHANGES = "chat_memory_changes"
+    fun ltmItem(id: String) = "ltm_item:$id"
+    fun ltmKind(kind: String) = "ltm_kind:$kind"
+    fun chatMemoryUndo(callId: String) = "chat_memory_undo:$callId"
 }

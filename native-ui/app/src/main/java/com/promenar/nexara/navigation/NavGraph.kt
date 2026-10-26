@@ -73,6 +73,7 @@ object NavDestinations {
     const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
     const val RAG_GLOBAL_CONFIG = "rag_global_config"
+    const val LONG_TERM_MEMORY = "long_term_memory"
     const val RAG_FOLDER = "rag_folder/{folderId}"
     const val RAG_DEBUG = "rag_debug"
     const val TOKEN_USAGE = "token_usage"
@@ -598,6 +599,12 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator, 
                 onNavigateToAdvanced = { navigator.open(NavDestinations.RAG_ADVANCED_KG) },
                 onNavigateToDebug = { navigator.open(NavDestinations.RAG_DEBUG) }
             )
+        }
+    }
+
+    composable(NavDestinations.LONG_TERM_MEMORY) { entry ->
+        navigator.Page(entry) {
+            com.promenar.nexara.ui.memory.LongTermMemoryScreen(onNavigateBack = { navigator.back() })
         }
     }
 

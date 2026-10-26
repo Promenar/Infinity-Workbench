@@ -27,8 +27,8 @@
     <string name="document_scope_all_desc">Includes files in other sessions\' workspaces</string>
     <string name="agent_memory_section">Memory and knowledge</string>
     <string name="agent_memory_section_footer">The right side is the widest scope a chat can pick. Defaults only affect new chats.</string>
-    <string name="agent_memory_share">Let other assistants read this assistant\'s memory</string>
-    <string name="agent_memory_share_short">Turn off to make this assistant private</string>
+    <string name="agent_memory_private">Private assistant</string>
+    <string name="agent_memory_private_desc">Keeps chat memory to itself; no long-term memory</string>
     <string name="agent_memory_default_heading">New session default</string>
     <string name="agent_memory_cap_heading">Session limit</string>
     <string name="agent_memory_default_value">New sessions: %1$s</string>

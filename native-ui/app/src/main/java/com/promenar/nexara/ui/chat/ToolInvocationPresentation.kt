@@ -145,6 +145,7 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     FILE_EDIT(ToolSummaryCategory.FILE_EDIT),
     KNOWLEDGE_SEARCH(ToolSummaryCategory.RETRIEVAL),
     MEMORY_SEARCH(ToolSummaryCategory.RETRIEVAL),
+    MEMORY_WRITE(ToolSummaryCategory.UTILITY),
     IMAGE(ToolSummaryCategory.MEDIA),
     MEDIA_VIEW(ToolSummaryCategory.MEDIA),
     MEDIA_FETCH(ToolSummaryCategory.MEDIA),
@@ -186,7 +187,8 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file",
     "create_directory" -> ToolSummaryAction.FILE_EDIT
     "knowledge_search" -> ToolSummaryAction.KNOWLEDGE_SEARCH
-    "memory_search" -> ToolSummaryAction.MEMORY_SEARCH
+    "memory_search", "memory_read" -> ToolSummaryAction.MEMORY_SEARCH
+    "memory_save", "memory_forget" -> ToolSummaryAction.MEMORY_WRITE
     "generate_image", "image_generation" -> ToolSummaryAction.IMAGE
     "view_media" -> ToolSummaryAction.MEDIA_VIEW
     "media_fetch" -> ToolSummaryAction.MEDIA_FETCH

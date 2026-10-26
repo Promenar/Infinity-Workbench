@@ -1011,6 +1011,7 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.FILE_EDIT -> R.plurals.chat_step_file_edit_done
         ToolSummaryAction.KNOWLEDGE_SEARCH -> R.plurals.chat_step_knowledge_done
         ToolSummaryAction.MEMORY_SEARCH -> R.plurals.chat_step_memory_done
+        ToolSummaryAction.MEMORY_WRITE -> R.plurals.chat_step_memory_write_done
         ToolSummaryAction.IMAGE -> R.plurals.chat_step_image_done
         ToolSummaryAction.MEDIA_VIEW -> R.plurals.chat_step_media_view_done
         ToolSummaryAction.MEDIA_FETCH -> R.plurals.chat_step_media_fetch_done
@@ -1034,6 +1035,7 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_name
     ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_name
     ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_name
+    ToolSummaryAction.MEMORY_WRITE -> R.string.chat_step_memory_write_name
     ToolSummaryAction.IMAGE -> R.string.chat_step_image_name
     ToolSummaryAction.MEDIA_VIEW -> R.string.chat_step_media_view_name
     ToolSummaryAction.MEDIA_FETCH -> R.string.chat_step_media_fetch_name
@@ -1060,6 +1062,7 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_running
             ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_running
             ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_running
+            ToolSummaryAction.MEMORY_WRITE -> R.string.chat_step_memory_write_running
             ToolSummaryAction.IMAGE -> R.string.chat_step_image_running
             ToolSummaryAction.MEDIA_VIEW -> R.string.chat_step_media_view_running
             ToolSummaryAction.MEDIA_FETCH -> R.string.chat_step_media_fetch_running
@@ -1121,6 +1124,9 @@ internal fun InlineToolRow(
     val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
     val stateSummaries = invocations.mapNotNull(::stateToolSummary).map { stateToolSummaryText(it) }
     val stateOnly = stateSummaries.size == invocations.size && stateSummaries.isNotEmpty()
+    val memoryChanges = remember(invocations) { invocations.mapNotNull(::memoryChange) }
+    // 只有记忆写入时用逐条“已记住”行代替摘要，混合工具时追加在摘要下方。
+    val memoryOnly = memoryChanges.isNotEmpty() && memoryChanges.size == invocations.size
     val segments = buildList<CharSequence> {
         if (stateSummaries.isNotEmpty()) add(stateSummaries.joinToString("，"))
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
@@ -1132,7 +1138,7 @@ internal fun InlineToolRow(
         com.promenar.nexara.ui.chat.diff.FileChangeDiffSheet(change, onDismissRequest = { openedChange = null })
     }
     Column(modifier = Modifier.fillMaxWidth()) {
-        CompactStepRow(
+        if (memoryOnly) MemoryChangeRows(memoryChanges) else CompactStepRow(
             segments = segments,
             icon = Icons.Rounded.CheckCircle,
             active = summary.status == ToolSummaryStatus.RUNNING,
@@ -1146,6 +1152,7 @@ internal fun InlineToolRow(
         )
         // 关键数据变化不随详情折叠，避免用户错过。
         if (runtimeChanges.isNotEmpty()) RuntimeChangesNotice(runtimeChanges)
+        if (!memoryOnly && memoryChanges.isNotEmpty()) MemoryChangeRows(memoryChanges)
         // 子代理分组卡始终跟在摘要下方，随轮次一起折叠。
         invocations.filter { it.name == com.promenar.nexara.data.subagent.SubagentLimits.TOOL_NAME }.forEach { invocation ->
             invocation.call?.id?.let { stepId -> key("subagent", stepId) { SubagentGroupCard(unscopedStepId(stepId)) } }

@@ -734,6 +734,7 @@ fun ChatRoute(
     androidx.compose.runtime.CompositionLocalProvider(
         LocalChatPopoverAnchors provides popoverAnchors,
         LocalToolLiveOutput provides application.toolLiveOutputStore,
+        LocalMemoryChangeHost provides rememberMemoryChangeHost(application.longTermMemoryRepository),
         LocalSubagentRuns provides subagentRuns,
         com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
     ) {

@@ -43,6 +43,7 @@ internal val SettingsPaneRoots: List<String> = listOf(
     NavDestinations.LOCAL_MODELS,
     NavDestinations.RAG_GLOBAL_CONFIG,
     NavDestinations.RAG_ADVANCED,
+    NavDestinations.LONG_TERM_MEMORY,
     NavDestinations.SKILLS_CONFIG,
     NavDestinations.TOKEN_USAGE,
     NavDestinations.BACKUP_SETTINGS,

@@ -55,23 +55,12 @@ private class LongTermMemorySkill(
             "memory_forget" -> {
                 val memoryId = requiredId(args)
                 val previous = repository.delete(memoryId)
-                if (previous == null) notFound() else success(buildJsonObject {
-                    put("id", previous.id)
-                    putMemoryContent(previous)
-                })
+                if (previous == null) notFound() else success(buildJsonObject { putFullMemory(previous) })
             }
             else -> {
                 val memoryId = requiredId(args)
                 val memory = repository.get(memoryId)
-                if (memory == null) notFound() else success(buildJsonObject {
-                    put("id", memory.id)
-                    putMemoryContent(memory)
-                    put("source_agent_id", memory.sourceAgentId?.let(::JsonPrimitive) ?: JsonNull)
-                    put("source_session_id", memory.sourceSessionId?.let(::JsonPrimitive) ?: JsonNull)
-                    put("source_message_id", memory.sourceMessageId?.let(::JsonPrimitive) ?: JsonNull)
-                    put("created_at", memory.createdAt)
-                    put("updated_at", memory.updatedAt)
-                })
+                if (memory == null) notFound() else success(buildJsonObject { putFullMemory(memory) })
             }
         }
     } catch (cancelled: CancellationException) {
@@ -108,7 +97,8 @@ private class LongTermMemorySkill(
         return success(buildJsonObject {
             put("id", write.memory.id)
             put("action", if (write.previous == null) "created" else "updated")
-            put("title", write.memory.title)
+            // 写入后的完整内容供界面判断撤销是否仍然适用。
+            putMemoryContent(write.memory)
             write.previous?.let { previous -> put("previous", buildJsonObject { putMemoryContent(previous) }) }
         })
     }
@@ -138,6 +128,17 @@ private class LongTermMemorySkill(
 }
 
 private class InvalidMemoryArguments(val reason: String) : IllegalArgumentException()
+
+/** 删除与读取返回完整记录；删除时界面据此按原来源与时间撤销。 */
+private fun kotlinx.serialization.json.JsonObjectBuilder.putFullMemory(memory: LongTermMemory) {
+    put("id", memory.id)
+    putMemoryContent(memory)
+    put("source_agent_id", memory.sourceAgentId?.let(::JsonPrimitive) ?: JsonNull)
+    put("source_session_id", memory.sourceSessionId?.let(::JsonPrimitive) ?: JsonNull)
+    put("source_message_id", memory.sourceMessageId?.let(::JsonPrimitive) ?: JsonNull)
+    put("created_at", memory.createdAt)
+    put("updated_at", memory.updatedAt)
+}
 
 private fun kotlinx.serialization.json.JsonObjectBuilder.putMemoryContent(memory: LongTermMemory) {
     put("kind", memory.kind.name.lowercase(Locale.ROOT))

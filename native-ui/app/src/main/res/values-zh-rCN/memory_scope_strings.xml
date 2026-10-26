@@ -27,8 +27,8 @@
     <string name="document_scope_all_desc">包括其他会话工作区中的文件</string>
     <string name="agent_memory_section">记忆与知识</string>
     <string name="agent_memory_section_footer">右侧是会话可选的最大范围。默认值只影响之后新建的会话。</string>
-    <string name="agent_memory_share">允许其他助手读取本助手的记忆</string>
-    <string name="agent_memory_share_short">关闭即为私密助手</string>
+    <string name="agent_memory_private">私密助手</string>
+    <string name="agent_memory_private_desc">不共享对话记忆，也不读写长期记忆</string>
     <string name="agent_memory_default_heading">新会话默认</string>
     <string name="agent_memory_cap_heading">会话上限</string>
     <string name="agent_memory_default_value">新会话默认：%1$s</string>

@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Info
@@ -343,6 +344,13 @@ internal fun UserSettingsHomeScreenContent(
                         subtitle = stringResource(R.string.settings_batch1_home_retrieval_summary),
                         onClick = { actions.onNavigateToSecondary("rag_advanced") },
                         selected = state.selectedRoute == "rag_advanced",
+                    )
+                    UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Bookmarks,
+                        title = stringResource(R.string.ltm_title),
+                        subtitle = stringResource(R.string.settings_long_term_memory_summary),
+                        onClick = { actions.onNavigateToSecondary("long_term_memory") },
+                        selected = state.selectedRoute == "long_term_memory",
                     )
                 }
             }

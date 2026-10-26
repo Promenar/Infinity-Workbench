@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ltm_title">长期记忆</string>
+    <string name="settings_long_term_memory_summary">助手跨会话记住的信息</string>
+    <string name="ltm_search_placeholder">搜索记忆</string>
+    <string name="ltm_section_switch">记忆</string>
+    <string name="ltm_enabled">允许助手主动记忆</string>
+    <string name="ltm_enabled_desc">非私密助手共享，每轮放进提示词</string>
+    <string name="ltm_switch_footer">助手会记下值得跨会话保留的信息，比如你的偏好和项目事实。私密助手不读也不写这些记忆。</string>
+    <string name="ltm_empty">还没有记忆。助手遇到值得长期记住的内容时会记在这里。</string>
+    <string name="ltm_search_empty">没有匹配的记忆。</string>
+    <string name="ltm_group_title">%1$s · %2$d</string>
+    <plurals name="ltm_count">
+        <item quantity="other">共 %1$d 条，上限 %2$d</item>
+    </plurals>
+    <string name="ltm_kind_user">用户偏好</string>
+    <string name="ltm_kind_feedback">协作反馈</string>
+    <string name="ltm_kind_project">项目</string>
+    <string name="ltm_kind_reference">外部引用</string>
+    <string name="ltm_kind_user_short">用户</string>
+    <string name="ltm_kind_feedback_short">反馈</string>
+    <string name="ltm_kind_project_short">项目</string>
+    <string name="ltm_kind_reference_short">引用</string>
+    <string name="ltm_edit_title">编辑记忆</string>
+    <string name="ltm_field_title">标题</string>
+    <string name="ltm_field_content">内容</string>
+    <string name="ltm_source">来自 %1$s</string>
+    <string name="ltm_source_session">「%1$s」</string>
+    <string name="ltm_delete">删除</string>
+    <string name="ltm_save">保存</string>
+    <string name="ltm_deleted">已删除记忆</string>
+    <string name="ltm_undo">撤销</string>
+    <string name="ltm_save_failed">记忆没有保存成功。</string>
+    <string name="chat_memory_saved">已记住 %1$s</string>
+    <string name="chat_memory_updated">已更新记忆 %1$s</string>
+    <string name="chat_memory_forgotten">已忘记 %1$s</string>
+    <string name="chat_memory_undo">撤销</string>
+    <string name="chat_memory_undone">已撤销</string>
+    <string name="chat_memory_undo_cd">撤销记忆改动：%1$s</string>
+    <plurals name="chat_step_memory_write_done"><item quantity="other">更新了长期记忆</item></plurals>
+    <string name="chat_step_memory_write_running">正在更新长期记忆…</string>
+    <string name="chat_step_memory_write_name">长期记忆</string>
+</resources>

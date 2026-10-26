@@ -2,7 +2,7 @@ package com.promenar.nexara.ui.hub
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,7 +27,7 @@ import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.scopeLabelRes
 
 /**
- * 助手级记忆权限：是否向其他助手共享，以及三类资源的会话上限与新会话默认档位。
+ * 助手级记忆权限：是否为私密助手，以及三类资源的会话上限与新会话默认档位。
  * 每类资源一行，值显示上限、副标题显示默认；点开在同一面板里先选上限、再选默认。
  */
 @Composable
@@ -40,13 +40,14 @@ internal fun AgentMemoryPolicySection(
         title = stringResource(R.string.agent_memory_section),
         footer = stringResource(R.string.agent_memory_section_footer),
     ) {
+        // 私密助手即不向其他助手共享对话记忆，同时不读写用户级长期记忆。
         SettingsToggle(
-            title = stringResource(R.string.agent_memory_share),
-            description = stringResource(R.string.agent_memory_share_short),
-            checked = policy.shareWithOtherAgents,
-            icon = Icons.Rounded.Share,
-            onCheckedChange = { shared -> onPolicyChange { it.copy(shareWithOtherAgents = shared) } },
-            modifier = Modifier.testTag("agent_memory_share"),
+            title = stringResource(R.string.agent_memory_private),
+            description = stringResource(R.string.agent_memory_private_desc),
+            checked = !policy.shareWithOtherAgents,
+            icon = Icons.Rounded.Lock,
+            onCheckedChange = { private -> onPolicyChange { it.copy(shareWithOtherAgents = !private) } },
+            modifier = Modifier.testTag("agent_memory_private"),
         )
         ScopeResource.entries.forEach { resource ->
             val (default, cap) = policy.ordinals(resource)

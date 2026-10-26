@@ -57,6 +57,9 @@ class LongTermMemorySkillsTest {
         assertThat(result.body()["action"]!!.jsonPrimitive.content).isEqualTo("created")
         assertThat(result.body()["title"]!!.jsonPrimitive.content).isEqualTo("偏好")
         assertThat(result.body()["previous"]).isNull()
+        // 界面据写入后的类型与正文判断记忆是否仍是这次写入的结果，才提供撤销。
+        assertThat(result.body()["kind"]!!.jsonPrimitive.content).isEqualTo("user")
+        assertThat(result.body()["content"]!!.jsonPrimitive.content).isEqualTo("使用简体中文")
         assertThat(repository.savedKind).isEqualTo(LongTermMemoryKind.USER)
         assertThat(repository.savedTitle).isEqualTo("偏好")
         assertThat(repository.savedContent).isEqualTo("使用简体中文")
@@ -90,6 +93,10 @@ class LongTermMemorySkillsTest {
         assertThat(removed.body()["title"]!!.jsonPrimitive.content).isEqualTo("偏好")
         assertThat(removed.body()["kind"]!!.jsonPrimitive.content).isEqualTo("user")
         assertThat(removed.body()["content"]!!.jsonPrimitive.content).isEqualTo("完整内容")
+        // 撤销删除按原来源与时间写回。
+        assertThat(removed.body()["source_session_id"]!!.jsonPrimitive.content).isEqualTo("session")
+        assertThat(removed.body()["created_at"]!!.jsonPrimitive.content).isEqualTo("1")
+        assertThat(removed.body()).containsKey("updated_at")
         assertError(tool("memory_read", repository).execute(args("""{"id":"memory-id"}"""), context), "MEMORY_NOT_FOUND")
         assertError(tool("memory_forget", repository).execute(args("""{"id":"memory-id"}"""), context), "MEMORY_NOT_FOUND")
     }
