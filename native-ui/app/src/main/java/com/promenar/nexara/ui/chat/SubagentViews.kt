@@ -39,9 +39,16 @@ import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.CallMade
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +92,13 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.contentDescription
 
 /** 当前会话的子代理记录与查看入口；预览与测试中为空，此时不显示分组卡。 */
 class SubagentRunsAccess(
@@ -94,6 +108,9 @@ class SubagentRunsAccess(
 )
 
 val LocalSubagentRuns = staticCompositionLocalOf<SubagentRunsAccess?> { null }
+
+/** 子代理卡片与查看页上的“转入后台”“停止”；预览与测试中为空，此时不显示这两个按钮。 */
+val LocalSubagentControls = staticCompositionLocalOf<com.promenar.nexara.data.subagent.SubagentControls?> { null }
 
 @Composable
 internal fun subagentName(preset: String?, index: Int): String = when (SubagentPreset.parse(preset)) {
@@ -108,7 +125,17 @@ internal fun SubagentGroupCard(stepId: String, modifier: Modifier = Modifier) {
     val access = LocalSubagentRuns.current ?: return
     val initial = remember(access, stepId) { access.snapshot(stepId) }
     val batch by remember(access, stepId) { access.observe(stepId) }.collectAsState(initial = initial)
-    batch?.let { SubagentGroupCardContent(it, onOpen = { index -> access.onOpen(stepId, index) }, modifier = modifier) }
+    val controls = LocalSubagentControls.current
+    val scope = rememberCoroutineScope()
+    batch?.let { current ->
+        SubagentGroupCardContent(
+            current,
+            onOpen = { index -> access.onOpen(stepId, index) },
+            modifier = modifier,
+            onDetach = controls?.let { { it.releaseWait(current.sessionId, stepId) } },
+            onStop = controls?.let { { run: SubagentRun -> scope.launch { it.stop(current.sessionId, run.id) } } },
+        )
+    }
 }
 
 @Composable
@@ -117,6 +144,8 @@ internal fun SubagentGroupCardContent(
     onOpen: (Int) -> Unit,
     modifier: Modifier = Modifier,
     now: Long? = null,
+    onDetach: (() -> Unit)? = null,
+    onStop: ((SubagentRun) -> Unit)? = null,
 ) {
     val active = batch.runs.any { it.status.isActive }
     var clock by remember { mutableLongStateOf(now ?: System.currentTimeMillis()) }
@@ -132,7 +161,18 @@ internal fun SubagentGroupCardContent(
         modifier = modifier.fillMaxWidth().padding(bottom = ExpandedStepBottomPadding).testTag("CHAT_SUBAGENT_GROUP"),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val wait = batch.wait?.takeIf { active }
+        // 主会话在等这批子代理时显示剩余时间；不等时（后台派生、转入后台或超时）说明仍在后台运行。
+        val waitText = when {
+            wait != null -> stringResource(R.string.subagent_wait_remaining, subagentCountdown((wait.deadline - (now ?: clock)).coerceAtLeast(0)))
+            active -> stringResource(R.string.subagent_running_background)
+            else -> null
+        }
+        Row(
+            modifier = Modifier.heightIn(min = 32.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Icon(Icons.Rounded.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
                 text = if (batch.runs.size == 1) stringResource(R.string.subagent_group_single)
@@ -140,15 +180,54 @@ internal fun SubagentGroupCardContent(
                 style = NexaraTypography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 有“转入后台”按钮时状态文字换到下一行，不和按钮抢宽度。
+            waitText?.takeUnless { wait != null && onDetach != null }?.let {
+                Text(
+                    text = "· $it",
+                    style = NexaraTypography.labelMedium,
+                    color = if (wait != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+            if (wait != null && onDetach != null) {
+                Spacer(Modifier.weight(1f))
+                val detachLabel = stringResource(R.string.subagent_detach_cd)
+                FilledTonalButton(
+                    onClick = onDetach,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.height(32.dp).semantics { contentDescription = detachLabel }.testTag("CHAT_SUBAGENT_DETACH"),
+                ) {
+                    Icon(Icons.Rounded.CallMade, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.subagent_detach), style = NexaraTypography.labelLarge)
+                }
+            }
+        }
+        if (wait != null && onDetach != null && waitText != null) {
+            Text(
+                text = waitText,
+                style = NexaraTypography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 22.dp),
+            )
         }
         batch.runs.forEach { run ->
-            key(run.index) { SubagentRunRow(run, now ?: clock, onClick = { onOpen(run.index) }) }
+            key(run.index) {
+                SubagentRunRow(
+                    run,
+                    now ?: clock,
+                    onClick = { onOpen(run.index) },
+                    onStop = onStop?.takeIf { run.status.isActive && run.id.isNotEmpty() }?.let { stop -> { stop(run) } },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit) {
+private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit, onStop: (() -> Unit)? = null) {
     val name = subagentName(run.preset, run.index)
     val openLabel = stringResource(R.string.subagent_open_cd)
     Column(
@@ -180,6 +259,12 @@ private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            if (onStop != null) {
+                val stopLabel = stringResource(R.string.subagent_stop_cd, name)
+                IconButton(onClick = onStop, modifier = Modifier.size(40.dp).testTag("CHAT_SUBAGENT_STOP")) {
+                    Icon(Icons.Rounded.StopCircle, contentDescription = stopLabel, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
@@ -227,30 +312,46 @@ private val INLINE_MARKUP = Regex("""\*\*|__|`|~~""")
 @Composable
 private fun SubagentStatusIcon(status: SubagentStatus) {
     when (status) {
-        SubagentStatus.RUNNING, SubagentStatus.WAITING_APPROVAL -> CircularProgressIndicator(
+        SubagentStatus.RUNNING, SubagentStatus.WAITING_APPROVAL, SubagentStatus.WRAPPING_UP -> CircularProgressIndicator(
             modifier = Modifier.size(16.dp),
             strokeWidth = 2.dp,
             color = MaterialTheme.colorScheme.primary,
         )
         SubagentStatus.COMPLETED -> Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        SubagentStatus.QUEUED -> Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        SubagentStatus.STOPPED, SubagentStatus.CANCELLED -> Icon(Icons.Rounded.StopCircle, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         else -> Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (status == SubagentStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 internal fun subagentStatusText(run: SubagentRun, now: Long): String = when (run.status) {
-    SubagentStatus.RUNNING -> when {
-        run.step == 0 -> stringResource(R.string.subagent_status_starting)
-        run.currentTool != null -> stringResource(R.string.subagent_status_tool, toolFriendlyName(run.currentTool), run.step, run.maxSteps)
-        else -> stringResource(R.string.subagent_status_thinking, run.step, run.maxSteps)
-    } + " · " + subagentElapsed((now - run.startedAt).coerceAtLeast(0))
+    SubagentStatus.RUNNING -> {
+        // 旧记录有固定步数上限，新记录只在主 Agent 设了轮数上限时显示“第 N/M 步”。
+        val limit = run.maxTurns ?: run.maxSteps.takeIf { it > 0 }
+        when {
+            run.step == 0 -> stringResource(R.string.subagent_status_starting)
+            run.currentTool != null && limit != null -> stringResource(R.string.subagent_status_tool, toolFriendlyName(run.currentTool), run.step, limit)
+            run.currentTool != null -> stringResource(R.string.subagent_status_tool_open, toolFriendlyName(run.currentTool), run.step)
+            limit != null -> stringResource(R.string.subagent_status_thinking, run.step, limit)
+            else -> stringResource(R.string.subagent_status_thinking_open, run.step)
+        } + " · " + subagentElapsed((now - run.startedAt).coerceAtLeast(0))
+    }
     SubagentStatus.WAITING_APPROVAL -> stringResource(R.string.subagent_status_waiting, toolFriendlyName(run.currentTool))
     SubagentStatus.COMPLETED -> stringResource(R.string.subagent_status_done, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
     SubagentStatus.FAILED -> stringResource(R.string.subagent_status_failed, run.error.orEmpty())
-    SubagentStatus.CANCELLED, SubagentStatus.STOPPED -> stringResource(R.string.subagent_status_cancelled)
+    SubagentStatus.STOPPED -> stringResource(R.string.subagent_status_stopped, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
+    SubagentStatus.CANCELLED -> stringResource(R.string.subagent_status_cancelled)
     SubagentStatus.INTERRUPTED -> stringResource(R.string.subagent_status_interrupted)
     SubagentStatus.QUEUED -> stringResource(R.string.subagent_status_queued)
-    SubagentStatus.WRAPPING_UP -> stringResource(R.string.subagent_status_wrapping_up)
+    SubagentStatus.WRAPPING_UP -> stringResource(R.string.subagent_status_wrapping_up_step, run.step) +
+        " · " + subagentElapsed((now - run.startedAt).coerceAtLeast(0))
+}
+
+/** 等待倒计时：分:秒。 */
+internal fun subagentCountdown(ms: Long): String {
+    val seconds = (ms + 999) / 1_000
+    return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 @Composable
@@ -464,6 +565,7 @@ fun SubagentViewerScreen(
     modelName: (String) -> String,
     onBack: () -> Unit,
     loading: Boolean = false,
+    onStop: ((SubagentRun) -> Unit)? = null,
 ) {
     val run = batch?.runs?.getOrNull(index)
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -489,7 +591,7 @@ fun SubagentViewerScreen(
         Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             SubagentViewerContent(run, modelName(run.modelId), now = clock)
         }
-        SubagentViewerFooter()
+        if (onStop != null && run.status.isActive && run.id.isNotEmpty()) SubagentViewerFooter(onStop = { onStop(run) })
     }
 }
 
@@ -516,7 +618,10 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
             if (run.toolProfile == SubagentToolProfile.READ_ONLY) R.string.subagent_profile_read_only else R.string.subagent_profile_inherit,
         ))
         SubagentFact(stringResource(R.string.subagent_viewer_model), modelName)
-        SubagentFact(stringResource(R.string.subagent_viewer_step_limit), run.maxSteps.toString())
+        SubagentFact(
+            stringResource(R.string.subagent_viewer_turn_limit),
+            (run.maxTurns ?: run.maxSteps.takeIf { it > 0 })?.toString() ?: stringResource(R.string.subagent_viewer_unlimited),
+        )
         if (run.totalTokens > 0) {
             val tokens = remember(run.totalTokens) { NumberFormat.getIntegerInstance().format(run.totalTokens) }
             SubagentFact(stringResource(R.string.subagent_viewer_usage), stringResource(R.string.subagent_tokens, tokens) + if (run.tokensEstimated) stringResource(R.string.p0_estimated) else "")
@@ -535,12 +640,7 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
                     )
                     is SubagentTimelineItem.Tool -> SubagentToolStep(item, running = run.status.isActive)
                     is SubagentTimelineItem.Failure -> ToolErrorBlock(item.text)
-                    // 干预事件行的正式样式随 P4 界面落地，契约阶段先以说明文字占位。
-                    is SubagentTimelineItem.Intervention -> if (item.event.text.isNotBlank()) Text(
-                        item.event.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    is SubagentTimelineItem.Intervention -> SubagentInterventionRow(item.event, run.startedAt)
                 }
             }
             run.liveOutputKey?.takeIf { run.status.isActive }?.let { RunningToolLiveOutput(it) }
@@ -622,26 +722,82 @@ private fun SubagentToolStep(step: SubagentTimelineItem.Tool, running: Boolean) 
     }
 }
 
+/** 查看页底部：子代理运行中时只给一个停止按钮。 */
 @Composable
-internal fun SubagentViewerFooter() {
-    val title = stringResource(R.string.subagent_viewer_footer_title)
-    val body = stringResource(R.string.subagent_viewer_footer)
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.Medium).semantics(mergeDescendants = true) {}.testTag("SUBAGENT_VIEWER_FOOTER"),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Row(
-            Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).padding(horizontal = NexaraSpacing.Large, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+internal fun SubagentViewerFooter(onStop: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Medium).testTag("SUBAGENT_VIEWER_FOOTER"), horizontalArrangement = Arrangement.End) {
+        OutlinedButton(
+            onClick = onStop,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
         ) {
-            Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Rounded.StopCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.subagent_viewer_stop))
+        }
+    }
+}
+
+/**
+ * 时间线上主会话一侧的事件：追加指令、请收尾、继续以“来自主会话”卡片显示正文；
+ * 转入后台与停止是中性的分隔行，说明是谁做的。时间为相对子代理开始的用时。
+ */
+@Composable
+private fun SubagentInterventionRow(event: SubagentEvent, startedAt: Long) {
+    val elapsed = subagentElapsed((event.at - startedAt).coerceAtLeast(0))
+    val fromParent = when (event.kind) {
+        SubagentEvent.Kind.PARENT_MESSAGE -> R.string.subagent_event_parent_message
+        SubagentEvent.Kind.WRAP_UP -> R.string.subagent_event_wrap_up
+        SubagentEvent.Kind.RESUME -> R.string.subagent_event_resume
+        else -> null
+    }
+    if (fromParent != null) {
+        val accent = MaterialTheme.colorScheme.primary
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {}
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp, topStart = 4.dp, bottomStart = 4.dp))
+                .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                .padding(start = 15.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+                .testTag("SUBAGENT_EVENT_PARENT"),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(stringResource(fromParent, elapsed), style = NexaraTypography.labelMedium, color = accent)
+            if (event.text.isNotBlank()) {
+                Text(event.text.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             }
         }
+        return
+    }
+    val label = when (event.kind) {
+        SubagentEvent.Kind.DETACH -> when (event.by) {
+            SubagentEvent.Actor.USER -> R.string.subagent_event_detach_user
+            SubagentEvent.Actor.TIMEOUT -> R.string.subagent_event_detach_timeout
+            else -> R.string.subagent_event_detach_parent
+        }
+        else -> if (event.by == SubagentEvent.Actor.USER) R.string.subagent_event_stop_user else R.string.subagent_event_stop_parent
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}.testTag("SUBAGENT_EVENT_MARKER"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+        Icon(
+            if (event.kind == SubagentEvent.Kind.DETACH) Icons.Rounded.CallMade else Icons.Rounded.StopCircle,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(label, elapsed),
+            style = NexaraTypography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

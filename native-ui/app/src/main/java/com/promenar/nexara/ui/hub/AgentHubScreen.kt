@@ -829,7 +829,6 @@ private fun HubSessionRow(
     onRequestDelete: () -> Unit,
     selected: Boolean = false,
     tag: String = UiTags.hubSession(session.id),
-    startIndent: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val menuTouch = rememberNexaraMenuTouch()
@@ -863,8 +862,7 @@ private fun HubSessionRow(
                     onClick = onOpen,
                     onLongClick = { menuExpanded = true },
                     onLongClickLabel = stringResource(R.string.hub_cd_session_actions),
-                )
-                .padding(start = startIndent),
+                ),
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (session.isPinned) {
@@ -1043,9 +1041,6 @@ private fun HubAgentRow(
     }
 }
 
-/** 头像宽度加间距：展开区的会话与助手标题左对齐。 */
-private val HubNestedIndent = 40.dp + NexaraSpacing.Medium
-
 /** 助手展开区：该助手的全部会话（长按置顶/删除）与“新建会话”。 */
 @Composable
 private fun HubAgentSessions(
@@ -1062,7 +1057,7 @@ private fun HubAgentSessions(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(
-                    start = NexaraSpacing.RowHorizontal + HubNestedIndent,
+                    start = NexaraSpacing.RowHorizontal,
                     end = NexaraSpacing.RowHorizontal,
                     top = NexaraSpacing.Small,
                     bottom = NexaraSpacing.Small,
@@ -1079,7 +1074,6 @@ private fun HubAgentSessions(
                 onTogglePin = { actions.onToggleSessionPin(session.id) },
                 onRequestDelete = { actions.onRequestDeleteSession(session.id) },
                 tag = UiTags.hubAgentSession(session.id),
-                startIndent = HubNestedIndent,
             )
         }
         NexaraSettingsRowLayout(
@@ -1088,8 +1082,8 @@ private fun HubAgentSessions(
             modifier = Modifier
                 .testTag(UiTags.hubAgentNewSession(agentId))
                 .clickable(role = androidx.compose.ui.semantics.Role.Button) { actions.onCreateSession(agentId) }
-                // 加号放进缩进区，文字与上方会话标题对齐。
-                .padding(start = HubNestedIndent - NexaraSpacing.RowIconSize - NexaraSpacing.RowIconGap),
+                // 加号与下方“添加助手”的加号竖向对齐（后者居中在 40dp 头像位里）。
+                .padding(start = (40.dp - NexaraSpacing.RowIconSize) / 2),
             leadingContent = {
                 Icon(
                     imageVector = Icons.Rounded.Add,

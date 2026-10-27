@@ -805,6 +805,11 @@ fun ChatScreenContent(
             // 让位后会话仍有足够宽度（平板横屏）时整体让位；否则（折叠屏内屏）浮在会话右缘之上，会话不动。
             val inspectorFloats = com.promenar.nexara.ui.common.nexaraInspectorPlacement(maxWidth, inspectorWidth) ==
                 com.promenar.nexara.ui.common.NexaraInspectorPlacement.Float
+            // 浮在会话之上时右缘与输入区浮岛对齐：输入区限宽居中，检视器右边距随之加上两侧留白。
+            val inspectorEnd = 12.dp + if (inspectorFloats && inspectorWidth <= com.promenar.nexara.ui.common.NexaraInspectorWideWidth) {
+                // 左侧至少给会话留 48dp 可见边缘。
+                minOf((maxWidth - NexaraSpacing.ChatMaxWidth) / 2, maxWidth - inspectorWidth - 12.dp - 48.dp).coerceAtLeast(0.dp)
+            } else 0.dp
             // 审批卡在会话列底部；检视器浮在会话之上时会盖住它，新审批到来时先收为边缘条（角标仍提示待批准）。
             val hasPendingApproval = pendingApprovals > 0
             LaunchedEffect(hasPendingApproval, inspectorFloats) {
@@ -1307,7 +1312,7 @@ fun ChatScreenContent(
                             fadeOut(tween(NexaraMotion.DurationShort)),
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 8.dp, end = 12.dp, bottom = inspectorBottom)
+                            .padding(top = 8.dp, end = inspectorEnd, bottom = inspectorBottom)
                             .width(animatedInspectorWidth)
                             .fillMaxHeight(),
                     ) {

@@ -18,6 +18,7 @@ import com.promenar.nexara.data.subagent.SubagentRun
 import com.promenar.nexara.data.subagent.SubagentRunner
 import com.promenar.nexara.data.subagent.SubagentStatus
 import com.promenar.nexara.data.subagent.SubagentToolProfile
+import com.promenar.nexara.data.subagent.SubagentWait
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
@@ -45,7 +46,6 @@ fun subagentViewerDarkPreview() = SubagentFrame {
     Column(modifier = Modifier.weight(1f)) {
         SubagentViewerContent(viewerRun(), modelName = "DeepSeek V3.2", now = NOW)
     }
-    SubagentViewerFooter()
 }
 
 @PreviewTest
@@ -71,7 +71,6 @@ fun subagentViewerFailedEnglishPreview() = SubagentFrame(dark = false) {
             now = NOW,
         )
     }
-    SubagentViewerFooter()
 }
 
 @PreviewTest
@@ -98,7 +97,31 @@ fun subagentViewerWaitingLightPreview() = SubagentFrame(dark = false) {
             now = NOW,
         )
     }
-    SubagentViewerFooter()
+    SubagentViewerFooter(onStop = {})
+}
+
+@PreviewTest
+@Preview(name = "子代理分组卡 主会话等待中 深色", widthDp = 411, heightDp = 520, locale = "zh-rCN")
+@Composable
+fun subagentGroupCardWaitingDarkPreview() = SubagentFrame {
+    SubagentGroupCardContent(backgroundBatch(zh = true), onOpen = {}, now = NOW, onDetach = {}, onStop = {})
+}
+
+@PreviewTest
+@Preview(name = "Subagent group card background English 360dp font130", widthDp = 360, heightDp = 760, locale = "en", fontScale = 1.3f)
+@Composable
+fun subagentGroupCardBackgroundEnglishPreview() = SubagentFrame(dark = false) {
+    SubagentGroupCardContent(backgroundBatch(zh = false).copy(wait = null), onOpen = {}, now = NOW, onDetach = {}, onStop = {})
+}
+
+@PreviewTest
+@Preview(name = "子代理查看页 主会话干预 深色", widthDp = 411, heightDp = 1300, locale = "zh-rCN")
+@Composable
+fun subagentViewerInterventionDarkPreview() = SubagentFrame {
+    Column(modifier = Modifier.weight(1f)) {
+        SubagentViewerContent(interventionRun(), modelName = "DeepSeek V4 Flash", now = NOW)
+    }
+    SubagentViewerFooter(onStop = {})
 }
 
 @PreviewTest
@@ -134,6 +157,41 @@ private fun groupBatch(zh: Boolean) = SubagentBatch(
             error = if (zh) SubagentRunner.APPROVAL_TIMEOUT else "The approval was not handled within 10 minutes; the subagent stopped.",
         ),
     ),
+)
+
+private fun backgroundBatch(zh: Boolean) = SubagentBatch(
+    sessionId = "session",
+    stepId = "step",
+    wait = SubagentWait(startedAt = NOW - 78_000, deadline = NOW + 522_000),
+    runs = listOf(
+        run(0, SubagentStatus.RUNNING, if (zh) "对比三家 SDK 退款接口" else "Compare refund APIs of three SDKs")
+            .copy(id = "sa_a1b2c3", maxSteps = 0, step = 7, currentTool = "web_fetch", startedAt = NOW - 133_000),
+        run(1, SubagentStatus.WRAPPING_UP, if (zh) "梳理现有退款流程" else "Map the current refund flow")
+            .copy(id = "sa_d4e5f6", maxSteps = 0, step = 9, startedAt = NOW - 182_000),
+        run(2, SubagentStatus.QUEUED, if (zh) "检查退款相关测试" else "Check refund tests").copy(id = "sa_g7h8i9", maxSteps = 0),
+        run(3, SubagentStatus.STOPPED, if (zh) "查找旧版 SDK 文档" else "Find legacy SDK docs")
+            .copy(id = "sa_j0k1l2", maxSteps = 0, step = 3, endedAt = NOW - 20_000),
+    ),
+)
+
+private fun interventionRun() = run(1, SubagentStatus.WRAPPING_UP, "梳理现有退款流程").copy(
+    id = "sa_d4e5f6",
+    prompt = "找出所有调用旧支付 SDK 退款接口的位置，标出改造点。",
+    maxSteps = 0,
+    step = 9,
+    startedAt = NOW - 182_000,
+    totalTokens = 182_400,
+    events = listOf(
+        SubagentEvent(SubagentEvent.Kind.TOOL_CALL, text = "{\"pattern\":\"refund(\"}", toolName = "grep_files", at = NOW - 170_000),
+        SubagentEvent(SubagentEvent.Kind.TOOL_RESULT, text = "app/RefundService.kt:42", toolName = "grep_files", at = NOW - 168_000),
+        SubagentEvent(SubagentEvent.Kind.DETACH, by = SubagentEvent.Actor.USER, at = NOW - 117_000),
+        SubagentEvent(SubagentEvent.Kind.PARENT_MESSAGE, text = "只看 app/ 和 billing/ 两个模块，测试代码不用列。", by = SubagentEvent.Actor.PARENT, at = NOW - 82_000),
+        SubagentEvent(SubagentEvent.Kind.TOOL_CALL, text = "{\"path\":\"billing/BillingRefundGateway.kt\"}", toolName = "read_file", at = NOW - 60_000),
+        SubagentEvent(SubagentEvent.Kind.TOOL_RESULT, text = "class BillingRefundGateway", toolName = "read_file", at = NOW - 59_000),
+        SubagentEvent(SubagentEvent.Kind.WRAP_UP, text = "够用了，交回目前找到的改造点。", by = SubagentEvent.Actor.PARENT, at = NOW - 12_000),
+        SubagentEvent(SubagentEvent.Kind.STOP, by = SubagentEvent.Actor.USER, at = NOW - 1_000),
+    ),
+    result = null,
 )
 
 private fun viewerRun() = run(0, SubagentStatus.COMPLETED, "梳理网络层调用链").copy(

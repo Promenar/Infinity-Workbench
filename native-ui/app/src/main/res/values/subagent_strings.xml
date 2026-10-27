@@ -26,13 +26,12 @@
     <string name="subagent_profile_read_only">Read only</string>
     <string name="subagent_profile_inherit">Session tools</string>
     <string name="subagent_viewer_model">Model</string>
-    <string name="subagent_viewer_step_limit">Step limit</string>
+    <string name="subagent_viewer_turn_limit">Turn limit</string>
     <string name="subagent_viewer_usage">Usage</string>
     <string name="subagent_viewer_timeline">Process</string>
     <string name="subagent_viewer_timeline_empty">No steps yet</string>
     <string name="subagent_viewer_result">Result returned to the main agent</string>
     <string name="subagent_viewer_no_result">No result yet</string>
-    <string name="subagent_viewer_footer">Subagents report only to the main agent and don’t take your input.</string>
     <string name="subagent_viewer_missing">This subagent record is no longer available.</string>
     <string name="chat_step_subagent_name">Subagent</string>
     <string name="chat_step_subagent_running">Running subagents…</string>
@@ -45,7 +44,6 @@
     <string name="subagent_approval_session_label">Session</string>
     <string name="subagent_approval_task_label">Task</string>
     <string name="subagent_status_failed_elapsed">Failed · %1$s</string>
-    <string name="subagent_viewer_footer_title">View only</string>
     <string name="subagent_event_waiting_approval">Waiting for your approval</string>
     <string name="subagent_event_needed_approval">Needed approval</string>
     <string name="subagent_approval_waiting">Waiting for you</string>
@@ -53,4 +51,23 @@
     <string name="subagent_approval_deny_a11y">Reject %1$s, risk %2$s</string>
     <string name="subagent_status_queued">Queued</string>
     <string name="subagent_status_wrapping_up">Wrapping up</string>
+    <string name="subagent_status_thinking_open">Thinking · step %1$d</string>
+    <string name="subagent_status_tool_open">Calling %1$s · step %2$d</string>
+    <string name="subagent_status_wrapping_up_step">Wrapping up · step %1$d</string>
+    <string name="subagent_status_stopped">Stopped · %1$s</string>
+    <string name="subagent_wait_remaining">Main session waiting · %1$s left</string>
+    <string name="subagent_running_background">Running in background</string>
+    <string name="subagent_detach">Background</string>
+    <string name="subagent_detach_cd">Move to background and let the main session continue</string>
+    <string name="subagent_stop_cd">Stop %1$s</string>
+    <string name="subagent_viewer_stop">Stop</string>
+    <string name="subagent_viewer_unlimited">Unlimited</string>
+    <string name="subagent_event_parent_message">From main session · New instruction · %1$s</string>
+    <string name="subagent_event_wrap_up">From main session · Wrap up · %1$s</string>
+    <string name="subagent_event_resume">From main session · Continue · %1$s</string>
+    <string name="subagent_event_detach_user">You moved it to the background · %1$s</string>
+    <string name="subagent_event_detach_timeout">Wait timed out · main session continued · %1$s</string>
+    <string name="subagent_event_detach_parent">Main session turn ended · subagent continues · %1$s</string>
+    <string name="subagent_event_stop_user">You stopped the subagent · %1$s</string>
+    <string name="subagent_event_stop_parent">Main session stopped the subagent · %1$s</string>
 </resources>
