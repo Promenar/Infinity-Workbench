@@ -108,7 +108,9 @@ data class PipelineGroup(
         get() = messages.filter { it.role == MessageRole.ASSISTANT }
 }
 
-fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
+fun buildPipelineGroups(allMessages: List<Message>): List<PipelineGroup> {
+    // 送达回执、唤醒与 worktree 授权等内部记录不显示。
+    val messages = allMessages.filterNot { com.promenar.nexara.data.branch.SessionMessageStore.isInternal(it.name) }
     val groups = mutableListOf<PipelineGroup>()
     var i = 0
     while (i < messages.size) {
@@ -116,14 +118,16 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
         if (msg.isWorkspaceSwitchNotice) {
             groups.add(PipelineGroup(listOf(msg), isUser = false, isNotice = true))
             i++
-        } else if (msg.role == MessageRole.USER) {
+        } else if (msg.role == MessageRole.USER && !msg.isSessionTimelineRecord) {
             // USER 消息：每个独立成组（与后续 AI 回复分离以保持锚定语义）
             groups.add(PipelineGroup(listOf(msg), isUser = true))
             i++
         } else {
             // ASSISTANT / TOOL：视作同一轮 AI 响应，全部合并到一组
             val groupMsgs = mutableListOf<Message>()
-            while (i < messages.size && messages[i].role != MessageRole.USER && !messages[i].isWorkspaceSwitchNotice) {
+            // 会话消息发送副本写在工具调用与结果之间，留在本轮内，不切分。
+            while (i < messages.size && (messages[i].role != MessageRole.USER || messages[i].isSessionTimelineRecord) &&
+                !messages[i].isWorkspaceSwitchNotice) {
                 val candidate = messages[i]
                 val candidateIsError = candidate.isError || candidate.errorMessage != null
                 if (candidateIsError && groupMsgs.isNotEmpty()) break
@@ -136,6 +140,10 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
     }
     return groups
 }
+
+/** 只在会话记录中显示的会话消息条目与暂停标记。 */
+internal val Message.isSessionTimelineRecord: Boolean
+    get() = com.promenar.nexara.data.branch.SessionMessageStore.isTimelineRecord(name)
 
 internal fun messageCopyOverride(
     onCopy: ((String) -> Unit)?,
@@ -205,7 +213,18 @@ fun PipelineBubble(
     if (group.isUser) {
         val msg = group.messages.first()
         msg.systemTrigger?.let { trigger ->
-            SystemTriggerRow(trigger = trigger, modifier = modifier)
+            if (trigger.kind == com.promenar.nexara.domain.trigger.SystemTurnKind.SESSION_MESSAGE) SessionRecordRows(msg, modifier)
+            else SystemTriggerRow(trigger = trigger, modifier = modifier)
+            return
+        }
+        if (msg.name == com.promenar.nexara.data.branch.BranchPlanLedger.PLAN_MESSAGE_NAME) {
+            val access = LocalBranchAccess.current
+            BranchOriginCard(
+                parentTitle = access?.parentTitle,
+                goal = access?.branchPlanTitle.orEmpty(),
+                modifier = modifier,
+                onOpenParent = access?.parentSessionId?.let { parent -> { access.onOpenSession(parent) } },
+            )
             return
         }
         UserMessageBubble(
@@ -280,6 +299,7 @@ fun PipelineBubble(
                 is PipelineStep.ToolExec -> "tools:${step.steps.firstOrNull()?.id}"
                 // 最终正文在收起与展开之间位置会变，使用固定键避免重建正文。
                 is PipelineStep.Content -> if (collapsePlan != null && step === collapsePlan.finalContent) "content:final" else "content:$index"
+                is PipelineStep.SessionRecord -> "record:${step.message.id}"
             }) {
                 when (step) {
                     is PipelineStep.Thinking -> ThinkingTrace(
@@ -293,7 +313,7 @@ fun PipelineBubble(
                         val asks = remember(step.steps) { askUserSteps(step.steps) }
                         // 分支方案同理：已处理的显示为分支卡片或选择摘要，待处理时方案卡在会话流底部。
                         val branches = remember(step.steps) { branchPlanSteps(step.steps) }
-                        val hidden = asks.hidden + branches.hidden
+                        val hidden = asks.hidden + branches.hidden + remember(step.steps) { sessionSendHiddenSteps(step.steps) }
                         val toolSteps = if (hidden.isEmpty()) step.steps else step.steps.filterNot { it.id in hidden }
                         if (toolSteps.isNotEmpty()) InlineToolRow(
                             steps = toolSteps, isExecuting = step.isExecuting, fontSize = fontSize,
@@ -319,6 +339,7 @@ fun PipelineBubble(
                             } ?: onContentChange,
                         )
                     }
+                    is PipelineStep.SessionRecord -> SessionRecordRows(step.message)
                 }
             }
         }
@@ -524,6 +545,9 @@ internal sealed class PipelineStep {
         val content: String,
         val messageId: String = "",
     ) : PipelineStep()
+
+    /** 会话消息发送记录或自动处理暂停标记，按写入位置显示在本轮中。 */
+    data class SessionRecord(val message: Message) : PipelineStep()
 }
 
 /** 正文的展示来源由消息 ID 定位，缺失来源时不猜测其它消息。 */
@@ -655,7 +679,9 @@ private fun scopedToolSteps(messageId: String, steps: List<ExecutionStep>): List
 private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
     val steps = mutableListOf<PipelineStep>()
     for ((messageIndex, msg) in messages.withIndex()) {
-        val followingTools = messages.subList(messageIndex + 1, messages.size).takeWhile { it.role == MessageRole.TOOL }
+        val followingTools = messages.subList(messageIndex + 1, messages.size)
+            .takeWhile { it.role == MessageRole.TOOL || it.isSessionTimelineRecord }
+            .filter { it.role == MessageRole.TOOL }
         val knownToolNames = buildMap {
             followingTools.forEach { tool ->
                 if (!tool.toolCallId.isNullOrBlank() && !tool.name.isNullOrBlank()) put(tool.toolCallId, tool.name)
@@ -664,6 +690,10 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
                 if (!execution.toolCallId.isNullOrBlank()) inferredToolName(execution)?.let { put(execution.toolCallId, it) }
             }
             msg.toolCalls.orEmpty().forEach { put(it.id, it.name) }
+        }
+        if (msg.isSessionTimelineRecord) {
+            steps.add(PipelineStep.SessionRecord(msg))
+            continue
         }
         if (msg.role == MessageRole.ASSISTANT) {
             // 1. 推理 → Thinking step

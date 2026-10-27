@@ -93,6 +93,11 @@ class BranchAccess(
     val sessionId: String,
     val controls: BranchControls,
     val onOpenSession: (sessionId: String) -> Unit,
+    /** 当前会话是分支时的主会话；主会话已删除时为空。 */
+    val parentSessionId: String? = null,
+    val parentTitle: String? = null,
+    /** 当前会话是分支时的方案标题，显示在会话开头的方案入口上。 */
+    val branchPlanTitle: String? = null,
 )
 
 val LocalBranchAccess = staticCompositionLocalOf<BranchAccess?> { null }
@@ -143,11 +148,28 @@ internal fun branchPlanResolved(invocation: ToolInvocationPresentation): BranchP
         ?.get("title")?.let { (it as? JsonPrimitive)?.content }
         ?.takeIf(String::isNotBlank)
         ?: return null
-    val answer = invocation.results.firstNotNullOfOrNull { result ->
-        result.content?.let { runCatching { branchJson.decodeFromString(BranchPlanAnswer.serializer(), it) }.getOrNull() }
-    } ?: return null
+    val answer = invocation.results.firstNotNullOfOrNull { result -> result.content?.let(::branchPlanAnswerOf) } ?: return null
     return BranchPlanResolved(title, answer)
 }
+
+/** 分支会话持久化的方案 JSON 中的标题。 */
+internal fun branchPlanTitleOf(planJson: String): String? = runCatching {
+    ((branchJson.parseToJsonElement(planJson) as? JsonObject)?.get("title") as? JsonPrimitive)?.content?.takeIf(String::isNotBlank)
+}.getOrNull()
+
+/** 工具结果为 `{"status", "answer", "plan", "message"}`，也兼容直接是 [BranchPlanAnswer] 的结果。 */
+internal fun branchPlanAnswerOf(result: String): BranchPlanAnswer? = runCatching {
+    val root = branchJson.parseToJsonElement(result) as? JsonObject ?: return null
+    branchJson.decodeFromJsonElement(BranchPlanAnswer.serializer(), root["answer"] as? JsonObject ?: root)
+}.getOrNull()
+
+/** 已成功的 `session_send` 由会话记录里的“已发给「…」”呈现，不再重复为工具行；失败与进行中的照常显示。 */
+internal fun sessionSendHiddenSteps(steps: List<com.promenar.nexara.data.model.ExecutionStep>): Set<String> =
+    toolInvocations(steps)
+        .filter { it.name == SESSION_SEND_TOOL && it.complete && !it.failed }
+        .flatMapTo(mutableSetOf()) { invocation -> invocation.steps.map { it.id } }
+
+private const val SESSION_SEND_TOOL = "session_send"
 
 /** 一组工具步骤中的方案：[resolved] 渲染为分支卡片或选择摘要，[hidden] 是不再显示为工具行的步骤 ID。 */
 internal data class BranchPlanSteps(val resolved: List<BranchPlanResolved>, val hidden: Set<String>)
@@ -672,6 +694,25 @@ internal fun SessionMessageRow(entry: SessionMessageEntry, modifier: Modifier = 
                     )
                 }
             }
+        }
+    }
+}
+
+/** 会话记录条目：发送副本、发给子代理的记录、收到的会话消息，以及自动处理暂停标记。 */
+@Composable
+internal fun SessionRecordRows(message: com.promenar.nexara.data.model.Message, modifier: Modifier = Modifier) {
+    if (message.name == com.promenar.nexara.data.branch.SessionMessageStore.PAUSED_MESSAGE_NAME) {
+        BranchAutoWakePausedNotice(modifier)
+        return
+    }
+    val access = LocalBranchAccess.current
+    val entries = remember(message.id, message.content) { com.promenar.nexara.data.branch.SessionMessageProtocol.entries(message) }
+    Column(modifier.fillMaxWidth()) {
+        entries.forEach { entry ->
+            // 子代理没有独立会话页，只有主会话与分支可以跳转。
+            val open = access?.takeIf { entry.peerRelation != SessionMessageEntry.PeerRelation.SUBAGENT }
+                ?.let { target -> { target.onOpenSession(entry.peerId) } }
+            SessionMessageRow(entry, onOpenPeer = open)
         }
     }
 }

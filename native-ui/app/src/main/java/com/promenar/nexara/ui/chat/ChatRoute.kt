@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.map
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ui.startup.affectsSession
@@ -791,12 +792,28 @@ fun ChatRoute(
     ) {
     val hostInspector = com.promenar.nexara.ui.common.LocalNexaraInspectorLayout.current
     SideEffect { paneInspector = hostInspector }
+    val branchParentId = uiState.session?.parentSessionId
+    val branchParentTitle = remember(branchParentId) {
+        branchParentId?.let { id -> application.database.sessionDao().observeById(id).map { it?.title } } ?: kotlinx.coroutines.flow.flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null).value
+    val branchPlanJson = uiState.session?.branchPlanJson
+    val branchAccess = remember(sessionId, branchParentId, branchParentTitle, branchPlanJson) {
+        BranchAccess(
+            sessionId = sessionId,
+            controls = application.branchControls,
+            onOpenSession = onNavigateToSession,
+            parentSessionId = branchParentId,
+            parentTitle = branchParentTitle,
+            branchPlanTitle = branchPlanJson?.let(::branchPlanTitleOf),
+        )
+    }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalChatPopoverAnchors provides popoverAnchors,
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalMemoryChangeHost provides rememberMemoryChangeHost(application.longTermMemoryRepository),
         LocalSubagentRuns provides subagentRuns,
         LocalSubagentControls provides application.subagentControls,
+        LocalBranchAccess provides branchAccess,
         com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
         LocalChatBrowser provides ChatBrowserAccess(browserState) { openChatPage(ChatPage.Browser) },
     ) {

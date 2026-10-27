@@ -68,4 +68,39 @@ class BranchViewsLogicTest {
         assertThat(parsed.resolved).isEmpty()
         assertThat(parsed.hidden).isEmpty()
     }
+
+    @Test fun `后端带外层包装的方案结果也能还原`() {
+        val plan = BranchPlan("补测试", "g", approvalMode = "workspace")
+        val answer = com.promenar.nexara.domain.branch.BranchPlanAnswer(BranchDecision.DISPATCH, BranchWorkMode.SHARED, BranchContextMode.FRESH, "workspace", "s-b")
+        val content = com.promenar.nexara.data.branch.BranchPlanProtocol.result(plan, answer).toString()
+        val resolved = branchPlanSteps(listOf(call(), result(content))).resolved.single()
+        assertThat(resolved.answer).isEqualTo(answer)
+        assertThat(branchPlanTitleOf(com.promenar.nexara.data.branch.BranchPlanProtocol.encode(plan))).isEqualTo("补测试")
+    }
+
+    @Test fun `成功的 session_send 工具行隐藏，失败与进行中的保留`() {
+        fun send(id: String) = ExecutionStep(id = "$id-c", type = "tool_call", toolName = "session_send", toolArgs = "{}", toolCallId = id)
+        fun done(id: String, type: String = "tool_result") = ExecutionStep(id = "$id-r", type = type, toolName = "session_send", toolCallId = id, content = "{}")
+        val hidden = sessionSendHiddenSteps(listOf(send("ok"), done("ok"), send("bad"), done("bad", "error"), send("running")))
+        assertThat(hidden).containsExactly("ok-c", "ok-r")
+    }
+
+    @Test fun `发送副本留在本轮内按位置成为记录步骤，内部回执不显示`() {
+        val sendCall = com.promenar.nexara.data.model.ToolCall("call-s", "session_send", "{}")
+        val messages = listOf(
+            com.promenar.nexara.data.model.Message("u1", com.promenar.nexara.data.model.MessageRole.USER, "派去做"),
+            com.promenar.nexara.data.model.Message("a1", com.promenar.nexara.data.model.MessageRole.ASSISTANT, "", toolCalls = listOf(sendCall),
+                executionSteps = listOf(ExecutionStep("a1-c", "tool_call", toolName = "session_send", toolArgs = "{}", toolCallId = "call-s"))),
+            com.promenar.nexara.data.model.Message("mail", com.promenar.nexara.data.model.MessageRole.SYSTEM, "{}",
+                name = com.promenar.nexara.data.branch.SessionMessageStore.SENT_MESSAGE_NAME),
+            com.promenar.nexara.data.model.Message("t1", com.promenar.nexara.data.model.MessageRole.TOOL, "ok", toolCallId = "call-s", name = "session_send"),
+            com.promenar.nexara.data.model.Message("ack", com.promenar.nexara.data.model.MessageRole.SYSTEM, "{}",
+                name = com.promenar.nexara.data.branch.SessionMessageStore.DELIVERY_MESSAGE_NAME),
+            com.promenar.nexara.data.model.Message("a2", com.promenar.nexara.data.model.MessageRole.ASSISTANT, "已发出"),
+        )
+        val groups = buildPipelineGroups(messages)
+        assertThat(groups.map { group -> group.messages.map { it.id } }).containsExactly(listOf("u1"), listOf("a1", "mail", "t1", "a2")).inOrder()
+        val steps = buildPipelineRenderPlan(groups[1].messages, isGenerating = false, hasStreamingContent = false).steps
+        assertThat(steps.map { it::class.simpleName }).containsExactly("ToolExec", "SessionRecord", "Content").inOrder()
+    }
 }

@@ -123,6 +123,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -432,6 +433,12 @@ fun ChatScreenContent(
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
+    val branchAccess = LocalBranchAccess.current
+    val pendingBranchPlan = branchAccess?.let { access ->
+        remember(access) { access.controls.observePendingPlan(access.sessionId) }.collectAsState(initial = null).value
+    }
+    var resolvingBranchPlan by remember { mutableStateOf<String?>(null) }
+    val branchScope = rememberCoroutineScope()
     val collapseFinishedTurns = state.collapseFinishedTurns
 
     val density = LocalDensity.current
@@ -978,6 +985,28 @@ fun ChatScreenContent(
                                 stateKey = question.toolCallId,
                                 onSubmit = { answer -> actions.onAnswerQuestion(question, answer) },
                                 onSkip = { actions.onAnswerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true)) },
+                            )
+                        }
+                    }
+                }
+                pendingBranchPlan?.let { pending ->
+                    item(key = "branch_plan") {
+                        ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
+                            BranchPlanCard(
+                                pending = pending,
+                                enabled = resolvingBranchPlan != pending.toolCallId,
+                                onResolve = { answer ->
+                                    val controls = branchAccess?.controls ?: return@BranchPlanCard
+                                    resolvingBranchPlan = pending.toolCallId
+                                    branchScope.launch {
+                                        // 离开页面也要把选择落盘，否则这一轮会一直停在待处理。
+                                        try {
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { controls.resolvePlan(pending, answer) }
+                                        } finally {
+                                            resolvingBranchPlan = null
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
