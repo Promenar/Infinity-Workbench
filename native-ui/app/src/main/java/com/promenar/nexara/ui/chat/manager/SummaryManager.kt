@@ -24,6 +24,7 @@ class SummaryManager(
         currentModelId: String,
         onProgress: ((String) -> Unit)? = null,
         onUsage: ((TokenUsage) -> Unit)? = null,
+        sessionId: String? = null,
     ): String? = withContext(Dispatchers.IO) {
         if (overflowMessages.isEmpty()) return@withContext oldSummary.orEmpty()
         if (currentModelId.isBlank()) return@withContext null
@@ -42,6 +43,7 @@ class SummaryManager(
             stream = false,
             webSearch = false,
             enableGeminiSearch = false,
+            sessionId = sessionId,
         )
         var reported: TokenUsage? = null
         var response: PromptResponse? = null

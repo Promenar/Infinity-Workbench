@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -294,7 +295,23 @@ class SettingsViewModel(
         viewModelScope.launch { app.modelCatalogUpdater.refresh(force = true) }
     }
 
-    val providerModels: StateFlow<List<ModelInfo>> = pm.providerModels
+    private val sessionHeaderPreferences = com.promenar.nexara.data.local.SessionHeaderPreferences(prefs)
+    private val sessionHeaderRevision = MutableStateFlow(0L)
+    private val sessionHeaderEdits = com.promenar.nexara.data.local.SessionHeaderModelEdits(sessionHeaderPreferences) { id ->
+        pm.providerModels.value.any { it.id == id }
+    }
+    val providerModels: StateFlow<List<ModelInfo>> = kotlinx.coroutines.flow.combine(pm.providerModels, sessionHeaderRevision) { models, _ ->
+        models.map { it.copy(sessionHeaderMode = sessionHeaderPreferences.model(it.id)) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
+        pm.providerModels.value.map { it.copy(sessionHeaderMode = sessionHeaderPreferences.model(it.id)) })
+
+    fun getProviderSessionHeaders(providerId: String) = sessionHeaderPreferences.provider(providerId)
+
+    suspend fun saveProviderSessionHeaders(providerId: String, enabled: Boolean, name: String) = withContext(Dispatchers.IO) {
+        com.promenar.nexara.data.manager.ProviderConfigurationRevision.publishMutation {
+            sessionHeaderPreferences.saveProvider(providerId, enabled, name)
+        }
+    }
 
     private val _settingsError = MutableStateFlow<SettingsAsyncErrorCode?>(null)
     val settingsError: StateFlow<SettingsAsyncErrorCode?> = _settingsError.asStateFlow()
@@ -768,7 +785,12 @@ class SettingsViewModel(
         app.hapticEnabled = enabled
     }
 
-    fun deleteProvider(providerId: String) = pm.deleteProvider(providerId)
+    fun deleteProvider(providerId: String) {
+        val ids = pm.providerModels.value.filter { it.providerId == providerId }.map { it.id }
+        sessionHeaderEdits.remove(ids) { pm.deleteProvider(providerId) }
+        sessionHeaderPreferences.removeProvider(providerId)
+        sessionHeaderRevision.update { it + 1 }
+    }
 
     fun updateExtraProvider(id: String, item: ProviderListItem) {
         pm.updateExtraProvider(id, item)
@@ -782,7 +804,12 @@ class SettingsViewModel(
         pm.replaceModelFromInternalFlow(updatedModel)
     }
 
-    fun updateUserModel(updatedModel: ModelInfo) = pm.applyUserModelUpdate(updatedModel)
+    fun updateUserModel(updatedModel: ModelInfo) {
+        sessionHeaderEdits.update(updatedModel.id, updatedModel.sessionHeaderMode) {
+            pm.applyUserModelUpdate(updatedModel)
+        }
+        sessionHeaderRevision.update { it + 1 }
+    }
 
     fun toggleModel(id: String) = pm.toggleModel(id)
 
@@ -790,7 +817,11 @@ class SettingsViewModel(
 
     fun disableAllModels(providerId: String) = pm.disableAllModels(providerId)
 
-    fun deleteAllModels(providerId: String) = pm.deleteAllModels(providerId)
+    fun deleteAllModels(providerId: String) {
+        val ids = pm.providerModels.value.filter { it.providerId == providerId }.map { it.id }
+        sessionHeaderEdits.remove(ids) { pm.deleteAllModels(providerId) }
+        sessionHeaderRevision.update { it + 1 }
+    }
 
     fun addCustomModel(providerId: String, id: String, name: String): Boolean =
         pm.addCustomModel(providerId, id, name)
@@ -997,7 +1028,10 @@ class SettingsViewModel(
         loadAll()
     }
 
-    fun deleteModel(id: String) = pm.deleteModel(id)
+    fun deleteModel(id: String) {
+        sessionHeaderEdits.remove(listOf(id)) { pm.deleteModel(id) }
+        sessionHeaderRevision.update { it + 1 }
+    }
 
     fun setPresetModel(type: String, modelId: String) = pm.setPresetModel(type, modelId)
 

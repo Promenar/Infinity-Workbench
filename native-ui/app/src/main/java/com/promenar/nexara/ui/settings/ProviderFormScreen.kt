@@ -121,6 +121,9 @@ internal data class ProviderFormUiState(
     val connectionTestFailureMessage: String? = null,
     val isSaving: Boolean = false,
     val saveFailed: Boolean = false,
+    val sessionHeadersEnabled: Boolean = false,
+    val sessionHeaderName: String = com.promenar.nexara.data.model.SessionHeaderPolicy.DEFAULT_NAME,
+    val sessionHeaderNameValid: Boolean = true,
     /** 云端提供商的 API 源（公网或 Tailscale 内网）；本地推理为 null。 */
     val apiSource: ProviderApiSourceState? = null,
     val tailnetInfo: ProviderTailnetInfo = ProviderTailnetInfo(),
@@ -139,6 +142,8 @@ internal data class ProviderFormActions(
     val onProtocolMenuExpandedChange: (Boolean) -> Unit = {},
     val onTestConnection: () -> Unit = {},
     val onSave: () -> Unit = {},
+    val onSessionHeadersEnabled: (Boolean) -> Unit = {},
+    val onSessionHeaderName: (String) -> Unit = {},
     val onLocalPrimaryAction: () -> Unit = {},
     val onApiSourceSelected: (ProviderApiSource) -> Unit = {},
     val onTailnetPeerSelected: (com.promenar.nexara.data.tailnet.TailnetPeer) -> Unit = {},
@@ -222,6 +227,8 @@ fun ProviderFormScreen(
             PROVIDER_PRESETS.filterNot { it.protocolType is ProtocolType.Local }
         }
     }
+    var sessionHeadersEnabled by remember { mutableStateOf(false) }
+    var sessionHeaderName by remember { mutableStateOf(com.promenar.nexara.data.model.SessionHeaderPolicy.DEFAULT_NAME) }
     var name by remember { mutableStateOf("") }
     var selectedPreset by remember { mutableStateOf(availableProviderPresets.first()) }
     var presetMenuExpanded by remember { mutableStateOf(false) }
@@ -247,6 +254,9 @@ fun ProviderFormScreen(
 
     LaunchedEffect(providerId) {
         if (providerId != null) {
+            val headerSettings = viewModel.getProviderSessionHeaders(providerId)
+            sessionHeadersEnabled = headerSettings.enabled
+            sessionHeaderName = headerSettings.name
             val config = viewModel.getProviderSummary(providerId)
             if (config != null) {
                 unavailableLocalConfiguration =
@@ -320,15 +330,25 @@ fun ProviderFormScreen(
     val credentialKindMismatch = hasCredential && credentialUpdate is CredentialUpdate.Preserve &&
         originalUsesVertex != null && originalUsesVertex != selectedUsesVertex
 
+    val sessionHeaderNameValid = (!sessionHeadersEnabled && sessionHeaderName.isEmpty()) ||
+        com.promenar.nexara.data.model.SessionHeaderPolicy.isValidName(sessionHeaderName)
+    val saveWithSessionHeaders: suspend (ProtocolType, String, CredentialUpdate, String, String?) -> String = { protocol, url, credential, model, providerName ->
+        check(sessionHeaderNameValid) { "会话请求头名称无效" }
+        val savedEnabled = sessionHeadersEnabled
+        val savedName = sessionHeaderName
+        val savedId = onSave(protocol, url, credential, model, providerName)
+        viewModel.saveProviderSessionHeaders(savedId, savedEnabled, savedName)
+        savedId
+    }
     val launchSave: () -> Unit = {
         if (!isSaving && connectionTestState != ProviderConnectionTestState.Testing &&
-            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch
+            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch && sessionHeaderNameValid
         ) {
             isSaving = true
             saveFailed = false
             scope.launch {
                 try {
-                    onSave(
+                    saveWithSessionHeaders(
                         effectiveProtocol,
                         baseUrl,
                         credentialUpdate,
@@ -353,7 +373,7 @@ fun ProviderFormScreen(
 
     val launchConnectionTest: () -> Unit = {
         if (connectionTestState != ProviderConnectionTestState.Testing && !isSaving &&
-            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch
+            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch && sessionHeaderNameValid
         ) {
             connectionTestState = ProviderConnectionTestState.Testing
             connectionTestFailureMessage = null
@@ -439,7 +459,7 @@ fun ProviderFormScreen(
                             credential = credentialUpdate,
                             model = "",
                             name = name.ifBlank { null },
-                            onSave = onSave,
+                            onSave = saveWithSessionHeaders,
                             readSummary = viewModel::getProviderSummary,
                         )
                     } catch (cancelled: CancellationException) {
@@ -504,6 +524,9 @@ fun ProviderFormScreen(
             connectionTestFailureMessage = connectionTestFailureMessage,
             isSaving = isSaving,
             saveFailed = saveFailed,
+            sessionHeadersEnabled = sessionHeadersEnabled,
+            sessionHeaderName = sessionHeaderName,
+            sessionHeaderNameValid = sessionHeaderNameValid,
             apiSource = apiSource,
             tailnetInfo = ProviderTailnetInfo(
                 selfName = tailnetState.summary?.selfName,
@@ -561,6 +584,8 @@ fun ProviderFormScreen(
             onProtocolMenuExpandedChange = { protocolMenuExpanded = it },
             onTestConnection = launchConnectionTest,
             onSave = launchSave,
+            onSessionHeadersEnabled = { sessionHeadersEnabled = it },
+            onSessionHeaderName = { sessionHeaderName = it },
             onLocalPrimaryAction = launchLocalPrimary,
             onApiSourceSelected = { manualApiSource = it },
             onTailnetPeerSelected = { peer ->
@@ -835,6 +860,12 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             },
         )
         ProviderAddressHint(hint = state.apiSource?.hint, onSourceSelected = actions.onApiSourceSelected)
+        ProviderSessionHeaderFields(
+            enabled = state.sessionHeadersEnabled,
+            name = state.sessionHeaderName,
+            onEnabled = actions.onSessionHeadersEnabled,
+            onName = actions.onSessionHeaderName,
+        )
         SecretField(
             value = state.secretInput,
             onValueChange = actions.onSecretChange,
@@ -889,7 +920,7 @@ private fun ProviderFormActionsSection(
             onClick = actions.onTestConnection,
             enabled = !testing && !state.isSaving && state.endpointValid &&
                 !state.protocolUnsupported && !state.legacyMigrationBlocked &&
-                !state.credentialKindMismatch,
+                !state.credentialKindMismatch && state.sessionHeaderNameValid,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -911,7 +942,7 @@ private fun ProviderFormActionsSection(
         Button(
             onClick = actions.onSave,
             enabled = state.endpointValid && !state.protocolUnsupported &&
-                !state.legacyMigrationBlocked && !state.credentialKindMismatch && !state.isSaving &&
+                !state.legacyMigrationBlocked && !state.credentialKindMismatch && state.sessionHeaderNameValid && !state.isSaving &&
                 state.connectionTestState != ProviderConnectionTestState.Testing,
             modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
         ) {

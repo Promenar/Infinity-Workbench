@@ -123,6 +123,7 @@ internal fun ModelEditorSheet(
     var editName by remember(model.id) { mutableStateOf(model.name) }
     var editRemoteModelId by remember(model.id) { mutableStateOf(model.remoteModelId) }
     var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
+    var sessionHeaderMode by remember(model.id) { mutableStateOf(model.sessionHeaderMode) }
     var activeCaps by remember(model.id) { mutableStateOf(model.capabilities.toSet()) }
 
     LaunchedEffect(
@@ -132,21 +133,24 @@ internal fun ModelEditorSheet(
         model.remoteModelId,
         model.contextLength,
         model.capabilities,
+        model.sessionHeaderMode,
     ) {
         selectedType = model.type
         editName = model.name
         editRemoteModelId = model.remoteModelId
         editContext = model.contextLength.toString()
         activeCaps = model.capabilities.toSet()
+        sessionHeaderMode = model.sessionHeaderMode
     }
 
-    LaunchedEffect(selectedType, editName, editRemoteModelId, editContext, activeCaps) {
+    LaunchedEffect(selectedType, editName, editRemoteModelId, editContext, activeCaps, sessionHeaderMode) {
         val updated = model.copy(
             remoteModelId = editRemoteModelId.trim(),
             type = selectedType,
             name = editName,
             contextLength = editContext.toIntOrNull() ?: model.contextLength,
             capabilities = activeCaps.toList(),
+            sessionHeaderMode = sessionHeaderMode,
         )
         if (updated != model) {
             onUpdate(updated.withRecordedUserEdits(model))
@@ -267,6 +271,9 @@ internal fun ModelEditorSheet(
                         modifier = Modifier.nexaraPopoverAnchor(typePickerAnchor).testTag("model_editor_type_picker"),
                     )
                 }
+            }
+            item("session-headers") {
+                ModelSessionHeaderSetting(mode = sessionHeaderMode, onMode = { sessionHeaderMode = it })
             }
             item("capabilities") {
                 NexaraSettingsSection(title = stringResource(R.string.provider_models_editor_capabilities)) {

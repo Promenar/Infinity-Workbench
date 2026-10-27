@@ -28,6 +28,7 @@ internal class RoutedSubagentModelClient(
         tools: List<ProtocolTool>,
         maxOutputTokens: Int,
         reasoningEffort: ReasoningEffort?,
+        sessionId: String,
     ): Flow<StreamChunk> {
         val prepared = routeGate.prepareWithRoute(modelId) { it }
         if (prepared !is ChatRoutePreparation.Success) throw SubagentModelUnavailable("会话模型当前不可用")
@@ -48,6 +49,7 @@ internal class RoutedSubagentModelClient(
                 stream = true,
                 webSearch = false,
                 enableGeminiSearch = false,
+                sessionId = sessionId,
             )
             return flow { localInference.withLock { emitAll(provider.sendPrompt(request)) } }
         }
@@ -63,7 +65,7 @@ internal class RoutedSubagentModelClient(
                 enableWebSearch = false,
                 enableGeminiSearch = false,
             ),
-            StreamConfig(),
+            StreamConfig(sessionId = sessionId),
         )
     }
 

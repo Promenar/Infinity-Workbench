@@ -313,7 +313,7 @@ internal class DefaultChatGenerationRuntime(
         try {
             result = kotlinx.coroutines.withTimeoutOrNull(12_000) {
                 RoutedToolResultSummarizer(routeGate, localProviderFactory).summarizeWithUsage(
-                    text, preparedRoute?.modelId ?: prompt.model, onUsage = { reported = it },
+                    text, preparedRoute?.modelId ?: prompt.model, sessionId = request.sessionId, onUsage = { reported = it },
                 )
             }
             return result?.content
@@ -654,7 +654,7 @@ internal class DefaultChatGenerationRuntime(
                     toolChoice = prompt.toolChoice,
                     enableWebSearch = prompt.webSearch == true,
                 ),
-                StreamConfig(enableWebSearch = prompt.webSearch == true),
+                StreamConfig(enableWebSearch = prompt.webSearch == true, sessionId = request.sessionId),
             )
         }
         return source.mapNotNull(::toGenerationChunk)
@@ -1285,6 +1285,7 @@ internal class DefaultChatGenerationRuntime(
                     preparedRoute?.modelId ?: preparedPrompt?.model ?: session.modelId.orEmpty(),
                     onProgress = { ui.updatePostProcessTask(taskId, progress = 0.5f) },
                     onUsage = { usage = it },
+                    sessionId = request.sessionId,
                 )
             } finally {
                 usage?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { recordSummaryUsage(request, it) } }

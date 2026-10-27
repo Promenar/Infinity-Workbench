@@ -25,6 +25,41 @@ import org.junit.Test
 
 /** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
+    @Test
+    fun `生产子代理以父会话步骤和索引派生稳定身份并覆盖工具续轮`() = kotlinx.coroutines.runBlocking {
+        com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint().use { endpoint ->
+            val models = RoutedSubagentModelClient(com.promenar.nexara.data.generation.ChatProviderRouteGate(endpoint.router)) { error("cloud") }
+            val host = FakeHost(listOf(read))
+            suspend fun execute(step: String, index: Int, parentId: String = "parent"): List<String?> {
+                var round = 0
+                endpoint.requests.clear()
+                endpoint.reply = {
+                    io.ktor.http.HttpStatusCode.OK to if (round++ == 0)
+                        com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.toolStream()
+                    else com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.textStream("done")
+                }
+                val context = object : SkillExecutionContext by parent() { override val sessionId = parentId }
+                val result = runner(models, host).run(context, { sessionOf("auto").copy(id = parentId) }, step,
+                    run().copy(index = index, modelId = com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.MODEL), null) { _, _ -> }
+                assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+                assertThat(endpoint.requests).hasSize(2)
+                return endpoint.requests.map { it.headers["x-opencode-session"] }
+            }
+            val first = execute("step-1", 0)
+            val firstBodies = endpoint.requests.map { com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.body(it) }
+            assertThat(first).containsExactly(endpoint.identifier("subagent:parent:step-1:0"), endpoint.identifier("subagent:parent:step-1:0"))
+            assertThat(first.first()).isNotEqualTo(endpoint.identifier("parent"))
+            assertThat(execute("step-1", 0)).isEqualTo(first)
+            assertThat(execute("step-2", 0).first()).isNotEqualTo(first.first())
+            assertThat(execute("step-1", 1).first()).isNotEqualTo(first.first())
+            assertThat(execute("step-1", 0, "other-parent").first()).isNotEqualTo(first.first())
+            endpoint.enabled = false
+            assertThat(execute("step-1", 0)).containsExactly(null, null)
+            assertThat(endpoint.requests.map { com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.body(it) }).isEqualTo(firstBodies)
+            assertThat(endpoint.requests.none { it.headers["User-Agent"]?.startsWith("Nexara/") == true }).isTrue()
+        }
+    }
+
     private val read = tool("read_file", ToolRisk.SAFE_READ)
     private val shell = tool("shell_exec", ToolRisk.PROCESS)
     private val plan = tool("update_plan", ToolRisk.SESSION_STATE)
@@ -168,7 +203,7 @@ class SubagentRunnerTest {
     @Test
     fun `父轮取消时停止模型请求并记录为已停止`() = runTest {
         val started = CompletableDeferred<Unit>()
-        val models = SubagentModelClient { _, _, _, _, _ -> flow { started.complete(Unit); awaitCancellation() } }
+        val models = SubagentModelClient { _, _, _, _, _, _ -> flow { started.complete(Unit); awaitCancellation() } }
         val published = mutableListOf<SubagentRun>()
         val job = launch { runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(), null) { run, _ -> published += run } }
         started.await()
@@ -199,7 +234,7 @@ class SubagentRunnerTest {
 
     @Test
     fun `模型请求失败或没有结论时以失败交回且不暴露异常原文`() = runTest {
-        val failing = SubagentModelClient { _, _, _, _, _ -> flow { throw java.io.IOException("https://secret.example/token=abc") } }
+        val failing = SubagentModelClient { _, _, _, _, _, _ -> flow { throw java.io.IOException("https://secret.example/token=abc") } }
         val failed = runner(failing, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
         assertThat(failed.status).isEqualTo(SubagentStatus.FAILED)
         assertThat(failed.error).doesNotContain("secret")
@@ -337,6 +372,7 @@ class SubagentRunnerTest {
             tools: List<ProtocolTool>,
             maxOutputTokens: Int,
             reasoningEffort: com.promenar.nexara.data.model.params.ReasoningEffort?,
+            sessionId: String,
         ): Flow<StreamChunk> {
             requests += Request(messages.toList(), tools)
             val round = pending.removeFirstOrNull() ?: listOf(StreamChunk.TextDelta("（脚本结束）"))

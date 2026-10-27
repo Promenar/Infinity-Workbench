@@ -46,6 +46,7 @@ class BackupPreferenceInventoryTest {
                 "\\(\\s*\"([^\"]+)\""
         )
         val injectedNamespaces = mapOf(
+            "data/local/SessionHeaderPreferences.kt#preferences" to "nexara_settings",
             "data/memory/LongTermMemoryAccess.kt#settings" to "nexara_settings",
             "data/remote/mcp/McpConnectionSettings.kt#preferences" to "nexara_settings",
             "data/termux/TermuxRuntime.kt#settings" to "nexara_settings",

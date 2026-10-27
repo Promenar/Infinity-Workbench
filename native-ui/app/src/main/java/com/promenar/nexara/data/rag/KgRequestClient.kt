@@ -37,6 +37,7 @@ class KgRequestClient(
     suspend fun extract(
         modelId: String?, systemPrompt: String, text: String, timeoutMs: Long,
         maxOutputTokens: Int = defaultMaxOutputTokens,
+        sessionId: String? = null,
         responseParser: (String) -> ExtractionResult = KgGraphValidation::parse,
     ): ExtractionResult =
         withContext(dispatcher) {
@@ -66,6 +67,8 @@ class KgRequestClient(
                         temperature = 0.0,
                         maxTokens = maxOutputTokens,
                         stream = false,
+                        sessionId = sessionId,
+                        sessionHeaders = router.sessionHeaders(resolved, sessionId),
                     ))
                     reportedUsage = response.usage?.let {
                         KgTokenUsage(it.input.coerceAtLeast(0).toLong(), it.output.coerceAtLeast(0).toLong())

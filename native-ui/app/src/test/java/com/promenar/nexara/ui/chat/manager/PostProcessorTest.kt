@@ -14,6 +14,17 @@ import com.promenar.nexara.data.remote.protocol.PromptRequest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PostProcessorTest {
+    @Test
+    fun `标题快速模型与降级模型均传递会话身份`() = runTest {
+        val requests = mutableListOf<PromptRequest>()
+        PostProcessor.generateTitleWithFallback(
+            PostProcessorParams("conversation", "assistant", "user", "问题", "回答", Agent("agent", "代理"), Session("conversation", "agent"), false, modelId = "provider::chat"),
+            "provider::quick",
+        ) { prompt -> requests += prompt; null }
+        assertThat(requests.map { it.sessionId }).containsExactly("conversation", "conversation")
+        assertThat(requests.map { it.model }).containsExactly("provider::quick", "provider::chat").inOrder()
+    }
+
     private val testScope = TestScope()
 
     private val stubSessionRepo = object : ISessionRepository {

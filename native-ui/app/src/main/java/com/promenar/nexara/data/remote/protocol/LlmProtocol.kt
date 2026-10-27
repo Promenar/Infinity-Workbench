@@ -134,7 +134,9 @@ data class PromptRequest(
     val streamTimeout: Long? = null,
     val images: List<ImageInput>? = null,
     val audio: List<AudioInput>? = null,
-    val documents: List<DocumentInput>? = null
+    val documents: List<DocumentInput>? = null,
+    @Transient val sessionId: String? = null,
+    @Transient val sessionHeaders: com.promenar.nexara.data.remote.SessionRequestHeaders? = null,
 )
 
 @Serializable

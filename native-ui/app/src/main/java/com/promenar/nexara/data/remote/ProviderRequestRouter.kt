@@ -53,6 +53,7 @@ sealed interface ProviderResolution {
 interface ProviderRequestRouter {
     fun resolve(modelId: String): ProviderResolution
     fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient
+    suspend fun sessionHeaders(resolved: ResolvedProviderModel, sessionId: String?): SessionRequestHeaders? = null
 }
 
 fun stableModelId(providerId: String, remoteModelId: String): String =
@@ -64,8 +65,9 @@ class DefaultProviderRequestRouter(
     private val configResolver: (String) -> ProviderConfig?,
     private val unsupportedPersistedProtocolResolver: (String) -> Boolean = { false },
     private val localInferenceAvailable: () -> Boolean = { BuildConfig.LOCAL_INFERENCE_AVAILABLE },
+    private val sessionIdentifier: suspend (String) -> String? = { null },
     private val clientFactory: (UnifiedProviderConfig) -> UnifiedLlmClient = { config ->
-        UnifiedLlmClient(providerConfigResolver = { config })
+        UnifiedLlmClient(providerConfigResolver = { config }, sessionIdentifier = sessionIdentifier)
     },
     /** 仅可调试构建开启：允许回环地址上的明文 HTTP，用于本机网关联调；正式版始终只接受 HTTPS。 */
     private val allowLoopbackHttp: Boolean = false,
@@ -75,12 +77,21 @@ class DefaultProviderRequestRouter(
         providerManager: ProviderManager,
         middlewares: List<LlmMiddleware> = emptyList(),
         allowLoopbackHttp: Boolean = false,
+        sessionIdentifier: suspend (String) -> String? = { null },
+        sessionHeaderPreferences: com.promenar.nexara.data.local.SessionHeaderPreferences? = null,
     ) : this(
-        modelResolver = { id -> providerManager.providerModels.value.firstOrNull { it.id == id } },
+        modelResolver = { id -> providerManager.providerModels.value.firstOrNull { it.id == id }?.let { model ->
+            sessionHeaderPreferences?.let { model.copy(sessionHeaderMode = it.model(id)) } ?: model
+        } },
         providerResolver = { id -> providerManager.providers.value.firstOrNull { it.id == id } },
-        configResolver = providerManager::getProviderConfig,
+        configResolver = { id -> providerManager.getProviderConfig(id)?.let { config ->
+            sessionHeaderPreferences?.provider(id)?.let { headers ->
+                config.copy(sessionHeadersEnabled = headers.enabled, sessionHeaderName = headers.name)
+            } ?: config
+        } },
         unsupportedPersistedProtocolResolver = providerManager::isPersistedProtocolUnsupported,
-        clientFactory = { config -> UnifiedLlmClient({ config }, middlewares) },
+        sessionIdentifier = sessionIdentifier,
+        clientFactory = { config -> UnifiedLlmClient({ config }, middlewares, sessionIdentifier = sessionIdentifier) },
         allowLoopbackHttp = allowLoopbackHttp,
     )
 
@@ -171,6 +182,9 @@ class DefaultProviderRequestRouter(
             serviceAccountJson = raw.vertexServiceAccountJson,
             projectId = vertexProjectId,
             location = VERTEX_DEFAULT_LOCATION,
+            sessionHeaderName = com.promenar.nexara.data.model.SessionHeaderPolicy.resolveName(
+                raw.sessionHeadersEnabled, raw.sessionHeaderName, model.sessionHeaderMode,
+            ),
         )
         return ProviderResolution.Success(
             ResolvedProviderModel(
@@ -185,6 +199,9 @@ class DefaultProviderRequestRouter(
 
     override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient =
         clientFactory(resolved.config)
+
+    override suspend fun sessionHeaders(resolved: ResolvedProviderModel, sessionId: String?): SessionRequestHeaders? =
+        resolveSessionRequestHeaders(resolved.config.sessionHeaderName, sessionId, sessionIdentifier)
 
     private fun failure(
         reason: ProviderResolutionError,

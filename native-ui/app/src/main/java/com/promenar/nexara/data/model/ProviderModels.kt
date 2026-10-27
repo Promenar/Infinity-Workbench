@@ -79,4 +79,6 @@ data class ProviderConfig(
     val model: String = "",
     val name: String? = null,
     val vertexServiceAccountJson: String = "",
+    val sessionHeadersEnabled: Boolean = false,
+    val sessionHeaderName: String = SessionHeaderPolicy.DEFAULT_NAME,
 )

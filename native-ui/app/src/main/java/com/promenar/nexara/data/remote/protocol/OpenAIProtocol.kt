@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.applySessionRequestHeaders
+
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.applyModelTimeout
@@ -51,6 +53,7 @@ class OpenAIProtocol(
 
         try {
             httpClient.preparePost(inferenceUrl()) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")
@@ -172,6 +175,7 @@ class OpenAIProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(inferenceUrl()) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")

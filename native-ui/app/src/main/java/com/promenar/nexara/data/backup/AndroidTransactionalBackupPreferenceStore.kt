@@ -219,6 +219,10 @@ internal class AndroidTransactionalBackupPreferenceStore(
     private fun validateEntryType(entry: BackupPreferenceEntry) {
         val expected = expectedType(entry.namespace, entry.key)
         if (entry.type != expected) throw BackupValidationException("偏好值类型与策略不一致: ${entry.namespace}.${entry.key}")
+        if (entry.namespace == "settings" && entry.key.startsWith("session_header_model_") &&
+            com.promenar.nexara.data.model.SessionHeaderMode.entries.none { it.name == entry.value }) {
+            throw BackupValidationException("会话请求头模型模式无效")
+        }
         when (entry.type) {
             PreferenceValueType.STRING -> Unit
             PreferenceValueType.STRING_SET -> {
@@ -241,6 +245,7 @@ internal class AndroidTransactionalBackupPreferenceStore(
     }
 
     private fun expectedType(namespace: String, key: String): PreferenceValueType {
+        BackupPreferencePolicy.sessionHeaderType(namespace, key)?.let { return it }
         if (namespace == "settings" && key.startsWith("model_info_")) {
             return when {
                 key.endsWith("_caps") || key.endsWith("_user_edited_fields") ||

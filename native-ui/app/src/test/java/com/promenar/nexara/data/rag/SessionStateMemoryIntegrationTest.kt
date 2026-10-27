@@ -42,6 +42,25 @@ import java.nio.ByteBuffer
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class SessionStateMemoryIntegrationTest {
+    @Test
+    fun `生产状态记忆抽取带当前会话标识且关闭设置时保留原请求体`() = runTest {
+        seedTurn()
+        com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint().use { endpoint ->
+            endpoint.reply = { io.ktor.http.HttpStatusCode.OK to com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.sync("{\"event\":null,\"states\":[]}") }
+            val client = KgRequestClient(endpoint.router, { endpoint.protocol })
+            val processor = RoomSessionStateProcessor({ database }, { client }, { error("没有记忆条目不应嵌入") },
+                { KgExtractionSettings(com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.MODEL, "") })
+            processor.processPersisted(task())
+            assertThat(endpoint.requests.single().headers["x-opencode-session"]).isEqualTo(endpoint.identifier("s1"))
+            endpoint.enabled = false
+            processor.processPersisted(task())
+            assertThat(endpoint.requests.last().headers["x-opencode-session"]).isNull()
+            assertThat(endpoint.requests.last().headers["User-Agent"]?.startsWith("Nexara/") == true).isFalse()
+            assertThat(com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.body(endpoint.requests.last()))
+                .isEqualTo(com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint.body(endpoint.requests.first()))
+        }
+    }
+
     private lateinit var database: NexaraDatabase
     private val queues = mutableListOf<VectorizationQueue>()
 

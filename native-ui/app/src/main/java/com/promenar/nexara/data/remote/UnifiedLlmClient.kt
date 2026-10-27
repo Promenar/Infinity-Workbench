@@ -26,7 +26,8 @@ data class UnifiedProviderConfig(
     val defaultModel: String,
     val serviceAccountJson: String = "",
     val projectId: String = "",
-    val location: String = VERTEX_DEFAULT_LOCATION
+    val location: String = VERTEX_DEFAULT_LOCATION,
+    val sessionHeaderName: String? = null,
 ) {
     override fun toString(): String =
         "UnifiedProviderConfig(protocolType=$protocolType, " +
@@ -43,7 +44,8 @@ data class StreamConfig(
     val knowledgeBaseIds: List<String> = emptyList(),
     val enableMemory: Boolean = false,
     val assistantId: String = "",
-    val topicId: String = ""
+    val topicId: String = "",
+    val sessionId: String? = null,
 )
 
 class UnifiedLlmClient(
@@ -60,6 +62,7 @@ class UnifiedLlmClient(
             location = config.location,
         )
     },
+    private val sessionIdentifier: suspend (String) -> String? = { null },
 ) {
     suspend fun sendStream(
         params: StreamTextParams,
@@ -92,7 +95,8 @@ class UnifiedLlmClient(
             stream = true,
             webSearch = finalParams.enableWebSearch || config.enableWebSearch,
             enableGeminiSearch = finalParams.enableGeminiSearch,
-            streamTimeout = finalParams.streamTimeout
+            streamTimeout = finalParams.streamTimeout,
+            sessionHeaders = resolveSessionRequestHeaders(providerConfig.sessionHeaderName, config.sessionId, sessionIdentifier),
         )
 
         val lifecycleHandler = ToolCallLifecycleHandler(

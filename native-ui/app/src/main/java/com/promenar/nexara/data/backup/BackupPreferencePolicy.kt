@@ -102,9 +102,21 @@ internal object BackupPreferencePolicy {
     fun isAllowed(namespace: String, key: String): Boolean {
         val normalizedNamespace = normalizeNamespace(namespace)
         val normalizedKey = normalize(key)
+        if (sessionHeaderType(namespace, key) != null) return true
         if (isDenied(normalizedKey)) return false
         return normalizedKey in exactAllowed[normalizedNamespace].orEmpty() ||
             dynamicAllowed[normalizedNamespace].orEmpty().any { it.matches(normalizedKey) }
+    }
+
+    /** 稳定 ID 可以包含标点或 token 等字样，仅按完整键形状识别这三类配置。 */
+    fun sessionHeaderType(namespace: String, key: String): PreferenceValueType? {
+        if (normalizeNamespace(namespace) != "settings") return null
+        return when {
+            Regex("session_header_provider_.+_enabled").matches(key) -> PreferenceValueType.BOOLEAN
+            Regex("session_header_provider_.+_name").matches(key) -> PreferenceValueType.STRING
+            Regex("session_header_model_.+").matches(key) -> PreferenceValueType.STRING
+            else -> null
+        }
     }
 
     fun isKnown(namespace: String, key: String): Boolean {

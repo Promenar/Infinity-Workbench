@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.applySessionRequestHeaders
+
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.applyModelTimeout
@@ -76,6 +78,7 @@ class OpenAIResponsesProtocol(
         activeChannel = null
         try {
             httpClient.preparePost(inferenceUrl()) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
@@ -141,6 +144,7 @@ class OpenAIResponsesProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val response: HttpResponse = try {
             httpClient.post(inferenceUrl()) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer $apiKey")

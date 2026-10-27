@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.applySessionRequestHeaders
+
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.applyModelTimeout
@@ -65,6 +67,7 @@ class GeminiProtocol(
         }
         try {
             httpClient.preparePost(endpoint) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header(API_KEY_HEADER, apiKey)
@@ -98,6 +101,7 @@ class GeminiProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val endpoint = inferenceUrl(request, streaming = false)
         return httpClient.preparePost(endpoint) {
+            applySessionRequestHeaders(request.sessionHeaders)
             applyModelTimeout(ModelTimeoutKind.LLM)
             contentType(ContentType.Application.Json)
             header(API_KEY_HEADER, apiKey)

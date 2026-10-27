@@ -812,7 +812,7 @@ class DefaultChatGenerationRuntimeTest {
         )
         val cancellation = CancellationException("summary-cancel")
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
-        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) } throws cancellation
+        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any(), any()) } throws cancellation
 
         val result = runCatching {
             fixture.runtime.postProcess(
@@ -838,7 +838,7 @@ class DefaultChatGenerationRuntimeTest {
 
         fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
 
-        coVerify(exactly = 0) { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { fixture.messageManager.updateMessage(any(), any(), any()) }
     }
 
@@ -852,7 +852,7 @@ class DefaultChatGenerationRuntimeTest {
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
         val overflow = slot<List<Message>>()
         coEvery {
-            fixture.summaryManager.summarizeOrNull(any(), capture(overflow), any(), any(), any())
+            fixture.summaryManager.summarizeOrNull(any(), capture(overflow), any(), any(), any(), "session")
         } returns "summary"
 
         fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
@@ -875,7 +875,7 @@ class DefaultChatGenerationRuntimeTest {
             messageCount = 6,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
-        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) } returns null
+        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any(), any()) } returns null
 
         fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
 

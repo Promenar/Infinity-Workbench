@@ -33,6 +33,7 @@ fun interface SubagentModelClient {
         tools: List<ProtocolTool>,
         maxOutputTokens: Int,
         reasoningEffort: ReasoningEffort?,
+        sessionId: String,
     ): Flow<StreamChunk>
 }
 
@@ -72,6 +73,7 @@ class SubagentRunner(
         publish: suspend (SubagentRun, Boolean) -> Unit,
     ): SubagentRun {
         var run = initial
+        val modelSessionId = "subagent:${parent.sessionId}:$stepId:${initial.index}"
         suspend fun update(next: SubagentRun, persist: Boolean = true) {
             run = next.copy(events = next.events.takeLast(SubagentLimits.MAX_EVENTS))
             publish(run, persist)
@@ -100,7 +102,7 @@ class SubagentRunner(
                 val finalRound = round > run.maxSteps || tokens >= run.maxTokens
                 if (finalRound) messages += ProtocolMessage("user", FINAL_ANSWER_PROMPT)
                 update(run.copy(step = round.coerceAtMost(run.maxSteps), currentTool = null, liveOutputKey = null), persist = false)
-                val response = streamRound(run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), messages, if (finalRound) emptyList() else tools)
+                val response = streamRound(modelSessionId, run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), messages, if (finalRound) emptyList() else tools)
                 tokens += response.input + response.output
                 input += response.input
                 output += response.output
@@ -270,6 +272,7 @@ class SubagentRunner(
     )
 
     private suspend fun streamRound(
+        sessionId: String,
         modelId: String,
         reasoningEffort: ReasoningEffort?,
         messages: List<ProtocolMessage>,
@@ -285,7 +288,7 @@ class SubagentRunner(
         var completed = false
         var failure: String? = null
         try {
-            models.stream(modelId, messages, tools, SubagentLimits.MAX_OUTPUT_TOKENS, reasoningEffort).collect { chunk ->
+            models.stream(modelId, messages, tools, SubagentLimits.MAX_OUTPUT_TOKENS, reasoningEffort, sessionId).collect { chunk ->
                 when (chunk) {
                     is StreamChunk.TextDelta -> {
                         content.append(chunk.content)

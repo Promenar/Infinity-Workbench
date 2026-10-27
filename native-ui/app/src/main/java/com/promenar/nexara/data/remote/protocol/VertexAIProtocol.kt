@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.applySessionRequestHeaders
+
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.applyModelTimeout
@@ -103,6 +105,7 @@ class VertexAIProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(endpoint) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
@@ -180,6 +183,7 @@ class VertexAIProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(endpoint) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")

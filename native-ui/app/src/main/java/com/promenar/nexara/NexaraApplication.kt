@@ -1611,6 +1611,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val unifiedLlmClient: com.promenar.nexara.data.remote.UnifiedLlmClient?
         get() = _unifiedLlmClient ?: buildUnifiedLlmClient().also { _unifiedLlmClient = it }
 
+    private val sessionHeaderIdentity by lazy {
+        com.promenar.nexara.data.local.SessionHeaderIdentityStore(java.io.File(noBackupFilesDir, "session_headers"))
+    }
+
     /** 聊天主路径按每次请求的稳定模型归属解析，不复用 default Provider 客户端。 */
     val providerRequestRouter: ProviderRequestRouter by lazy {
         val middlewares = if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -1622,6 +1626,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             ProviderManager.getInstance(),
             middlewares,
             allowLoopbackHttp = com.promenar.nexara.BuildConfig.DEBUG,
+            sessionIdentifier = sessionHeaderIdentity::identifier,
+            sessionHeaderPreferences = com.promenar.nexara.data.local.SessionHeaderPreferences(getSharedPreferences("nexara_settings", MODE_PRIVATE)),
         )
     }
 

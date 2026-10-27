@@ -35,6 +35,7 @@ internal class RoutedToolResultSummarizer(
     suspend fun summarizeWithUsage(
         text: String,
         currentModelId: String,
+        sessionId: String? = null,
         onUsage: ((TokenUsage) -> Unit)? = null,
     ): RoutedToolSummary? = summarizePrompt(
         PromptRequest(
@@ -42,6 +43,7 @@ internal class RoutedToolResultSummarizer(
             model = currentModelId,
             maxTokens = 256,
             stream = false,
+            sessionId = sessionId,
         ),
         onUsage,
     )
@@ -94,7 +96,7 @@ internal class RoutedToolResultSummarizer(
                         enableWebSearch = false,
                         enableGeminiSearch = false,
                     ),
-                    StreamConfig(tools = emptyMap(), maxToolCalls = 0),
+                    StreamConfig(tools = emptyMap(), maxToolCalls = 0, sessionId = prompt.sessionId),
                 ).collect { chunk ->
                     when (chunk) {
                         is StreamChunk.TextDelta -> {

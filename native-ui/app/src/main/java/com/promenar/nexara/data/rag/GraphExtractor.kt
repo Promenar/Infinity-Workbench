@@ -40,6 +40,7 @@ class GraphExtractor(
         text: String, docId: String? = null, contentHash: String = kgSha256(text),
         onProgress: suspend (KgExtractionProgress) -> Unit = {},
         retainCompletedCheckpoints: Boolean = false,
+        sessionId: String? = null,
     ): ExtractionResult =
         withContext(dispatcher) {
             val identity = checkpointIdentity(text, contentHash)
@@ -102,7 +103,7 @@ class GraphExtractor(
                         state = state.copy(calls = state.calls + 1, outputTokens = state.outputTokens + requestLimit)
                         // 在途请求先预留超时时长，硬终止进程也不会获得新的时长额度。
                         persistBudget(minOf(timeoutMs, remainingMs))
-                        val response = requestClient.extract(modelId, systemPrompt, chunk, minOf(timeoutMs, remainingMs), requestLimit)
+                        val response = requestClient.extract(modelId, systemPrompt, chunk, minOf(timeoutMs, remainingMs), requestLimit, sessionId = sessionId)
                         currentCoroutineContext().ensureActive()
                         val hasResponse = response.isSuccess || response.status == KgExtractionStatus.PARSE_FAILURE
                         val chargedOutput = if (hasResponse) {

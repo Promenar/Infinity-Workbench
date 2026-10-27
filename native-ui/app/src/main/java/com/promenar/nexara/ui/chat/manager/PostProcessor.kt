@@ -214,7 +214,7 @@ class PostProcessor(
                 ?: params.session.modelId?.takeIf { it.isNotBlank() }
             // 优先使用设置中的“快速模型”，没有标题时降级为当前会话模型。
             return listOfNotNull(quickModel, sessionModel.takeIf { it != quickModel }).firstNotNullOfOrNull { model ->
-                callTitleLlm(model, prompt, send)
+                callTitleLlm(model, prompt, send, params.sessionId)
             }
         }
 
@@ -222,6 +222,7 @@ class PostProcessor(
             modelId: String,
             prompt: String,
             send: suspend (PromptRequest) -> String?,
+            sessionId: String,
         ): String? = try {
             withTimeout(TITLE_TIMEOUT_MS) {
                 cleanTitle(
@@ -232,6 +233,7 @@ class PostProcessor(
                             // 思考型模型的推理也计入输出上限。
                             maxTokens = 2048,
                             stream = false,
+                            sessionId = sessionId,
                         )
                     )
                 )

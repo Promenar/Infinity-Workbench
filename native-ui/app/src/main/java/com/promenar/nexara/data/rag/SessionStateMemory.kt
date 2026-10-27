@@ -200,7 +200,7 @@ class RoomSessionStateProcessor(
         var extracted: SessionStateExtraction? = null
         val response = requestClient().extract(model, SESSION_STATE_SYSTEM_PROMPT,
             "Known current states (reuse subject and attribute spelling when updating):\n$known\n\nConversation turn:\n$text",
-            timeoutMs(), maxOutputTokens = 1024, responseParser = { output ->
+            timeoutMs(), maxOutputTokens = 1024, sessionId = sessionId, responseParser = { output ->
                 try {
                     extracted = parseSessionStateOutput(output)
                     ExtractionResult(emptyList(), emptyList())

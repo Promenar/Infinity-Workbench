@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.applySessionRequestHeaders
+
 import com.promenar.nexara.data.remote.ModelHttp
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.applyModelTimeout
@@ -86,6 +88,7 @@ class AnthropicProtocol(
             while (true) {
                 var retryWithoutThinking = false
                 httpClient.preparePost(inferenceUrl()) {
+                    applySessionRequestHeaders(request.sessionHeaders)
                     applyModelTimeout(ModelTimeoutKind.LLM)
                     contentType(ContentType.Application.Json)
                     header("x-api-key", apiKey)
@@ -208,6 +211,7 @@ class AnthropicProtocol(
         val response: HttpResponse
         try {
             response = httpClient.post(inferenceUrl()) {
+                applySessionRequestHeaders(request.sessionHeaders)
                 applyModelTimeout(ModelTimeoutKind.LLM)
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)

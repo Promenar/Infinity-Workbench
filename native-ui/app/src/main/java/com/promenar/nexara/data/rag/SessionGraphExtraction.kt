@@ -99,7 +99,7 @@ class RoomSessionGraphProcessor(
         val messageId = requireNotNull(task.assistantMessageId) { "会话图谱任务缺少助手消息" }
         val text = SessionGraphTurn.text(task.userContent.orEmpty(), task.aiContent.orEmpty()) ?: return null
         val contentHash = kgSha256(text)
-        val result = extractor().extractCandidate(text, contentHash = contentHash)
+        val result = extractor().extractCandidate(text, contentHash = contentHash, sessionId = sessionId)
         stats.record(calls = result.progress?.calls ?: 0)
         if (!result.isSuccess) error(result.error ?: "图谱抽取失败")
         GraphStore(databaseProvider()).replaceTurn(sessionId, messageId, contentHash, ValidatedGraph.from(result.nodes, result.edges))

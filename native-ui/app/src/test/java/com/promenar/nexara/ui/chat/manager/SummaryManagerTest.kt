@@ -31,10 +31,12 @@ class SummaryManagerTest {
             overflowMessages = messages(),
             currentModelId = "current-provider::current-remote",
             onProgress = progress::add,
+            sessionId = "session-id",
         )
 
         assertThat(result).isEqualTo("新的历史摘要")
         val request = protocol.requests.single()
+        assertThat(request.sessionId).isEqualTo("session-id")
         assertThat(request.model).isEqualTo("current-provider::current-remote")
         assertThat(request.stream).isFalse()
         assertThat(request.maxTokens).isEqualTo(1024)

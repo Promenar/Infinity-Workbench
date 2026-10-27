@@ -42,6 +42,7 @@ data class ModelInfo(
     val providerOwnedBy: String? = null,
     val sourceProviderId: String? = null,
     val providerMetadata: ModelMetadataOverride? = null,
+    val sessionHeaderMode: SessionHeaderMode = SessionHeaderMode.INHERIT,
 )
 
 internal fun ResolvedModelMetadata.toLegacyType(): String = when (workload) {
