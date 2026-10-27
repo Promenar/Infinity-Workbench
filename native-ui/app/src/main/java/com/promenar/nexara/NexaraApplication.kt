@@ -402,7 +402,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val contextCompactionService: com.promenar.nexara.data.generation.ContextCompactionService by lazy {
         com.promenar.nexara.data.generation.ContextCompactionService(
             isGenerating = { sessionId ->
-                generationCoordinator.active.value?.sessionId == sessionId
+                generationCoordinator.isSessionBusy(sessionId)
             },
             manualCompaction = { sessionId, progress ->
                 val taskId = "compaction-${java.util.UUID.randomUUID()}"
@@ -678,6 +678,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     deleteSubagents = { subagentRunStore.deleteSession(sessionId) },
                     deleteComposerQueue = {
                         composerDraftRecovery.deleteSession(sessionId)
+                        generationPresentationStore.discardSubmittedDraft(sessionId)
+                        generationPresentationStore.discardComposerAttachments(sessionId)
+                        generationPresentationStore.discardComposerText(sessionId)
                         composerQueueStore.deleteSession(sessionId)
                     },
                     deleteCanvases = { canvasStore.deleteSession(sessionId) },
@@ -787,12 +790,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             )
         }
     }
+    internal val generationLocalProviders by lazy {
+        com.promenar.nexara.data.generation.LocalGenerationProviderFactory { modelId ->
+            LlmProvider.local(localInferenceEngine, modelId)
+        }
+    }
     val subagentLauncher by lazy {
         com.promenar.nexara.data.subagent.SubagentLauncher(
             runner = com.promenar.nexara.data.subagent.SubagentRunner(
                 models = com.promenar.nexara.data.subagent.RoutedSubagentModelClient(
                     com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
-                ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) },
+                ) { modelId -> generationLocalProviders.create(modelId) },
                 host = subagentToolHost,
                 approvals = subagentApprovalBroker,
                 liveOutput = toolLiveOutputStore,
@@ -835,7 +843,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 startup = startupState, store = chatStore,
                 findSession = ::loadGenerationSession,
                 exists = { id -> database.sessionDao().getById(id) != null },
-                hasApproval = { database.sessionDao().hasPendingUserInteraction() },
+                hasApproval = { id -> database.sessionDao().hasPendingUserInteraction(id) },
                 messages = generationMessageManager, coordinator = generationCoordinator,
                 foreground = generationForegroundController, interactions = generationInteractions,
                 executionGate = sessionExecutionGate,
@@ -948,6 +956,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionRepository,
             generationScope,
             memoryLifecycle = conversationMemoryLifecycle,
+            isSessionGenerating = { sessionId -> generationCoordinator.isSessionBusy(sessionId) },
         )
     }
     val conversationMemoryLifecycle: com.promenar.nexara.data.rag.ConversationMemoryLifecycle by lazy {
@@ -994,7 +1003,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         // 快速模型与会话模型都是稳定模型 ID，必须按其所属提供商精确路由，不能发给默认提供商。
         val titleRouter = com.promenar.nexara.data.generation.RoutedToolResultSummarizer(
             com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
-        ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) }
+        ) { modelId -> generationLocalProviders.create(modelId) }
         com.promenar.nexara.ui.chat.manager.PostProcessor(
             chatStore,
             generationSessionManager,
@@ -1025,7 +1034,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             routeGate = com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
             contextBuilder = generationContextBuilder,
             messageManager = generationMessageManager,
-            localProviderFactory = { modelId -> LlmProvider.local(localInferenceEngine, modelId) },
+            localProviderFactory = { modelId -> generationLocalProviders.create(modelId) },
             provider = provider,
             toolLedger = toolExecutionLedger,
             toolExecutor = generationToolExecutor,
@@ -1033,7 +1042,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             memoryManager = memoryManager,
             summaryManager = com.promenar.nexara.data.generation.RoutedToolResultSummarizer(
                 com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
-            ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) }.historySummaryManager(provider),
+            ) { modelId -> generationLocalProviders.create(modelId) }.historySummaryManager(provider),
             sessionManager = generationSessionManager,
             skillRegistry = skillRegistry,
             toolResolver = sessionToolResolver,
@@ -1067,7 +1076,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             presentationStore = generationPresentationStore,
             executionGate = sessionExecutionGate,
             compactionService = contextCompactionService,
-        )
+        ).also { coordinator ->
+            com.promenar.nexara.data.generation.observeForegroundOnlyPolicy(
+                generationScope,
+                ProcessLifecycleOwner.get().lifecycle.currentStateFlow.map {
+                    it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                },
+                coordinator,
+            )
+        }
     }
 
     private var _vectorRepository: com.promenar.nexara.domain.repository.IVectorRepository? = null
@@ -2252,6 +2269,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     private fun createRoutedModelProtocol(resolved: com.promenar.nexara.data.remote.ResolvedProviderModel): com.promenar.nexara.data.remote.protocol.LlmProtocol {
         val config = resolved.config
+        if (config.protocolType == ProtocolType.Local) {
+            return generationLocalProviders.create(resolved.remoteModelId).protocol
+        }
         return com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
             type = config.protocolType,
             baseUrl = config.baseUrl,
@@ -2560,7 +2580,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private fun buildCredentialResolvingProvider(): LlmProvider {
         localProviderOverride?.let {
             return if (localInferenceRuntimeGate.isAvailable) {
-                LlmProvider.local(localInferenceEngine, it)
+                generationLocalProviders.create(it)
             } else {
                 buildUnavailableLocalPlaceholderProvider()
             }
@@ -2568,7 +2588,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         val summary = ProviderManager.getInstance().getProviderSummary("default")
         if (summary?.protocolType is ProtocolType.Local) {
             return if (localInferenceRuntimeGate.isAvailable) {
-                LlmProvider.local(localInferenceEngine, summary.model)
+                generationLocalProviders.create(summary.model)
             } else {
                 buildUnavailableLocalPlaceholderProvider()
             }
@@ -2586,7 +2606,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 )) {
             if (config.protocolType is ProtocolType.Local) {
                 if (localInferenceRuntimeGate.isAvailable) {
-                    LlmProvider.local(localInferenceEngine, config.model)
+                    generationLocalProviders.create(config.model)
                 } else {
                     buildUnavailableLocalPlaceholderProvider()
                 }

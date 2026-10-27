@@ -1,0 +1,11 @@
+<resources>
+    <plurals name="generation_concurrency_title">
+        <item quantity="one">%1$d session generating</item>
+        <item quantity="other">%1$d sessions generating</item>
+    </plurals>
+    <string name="generation_concurrency_details">Generation in progress</string>
+    <string name="generation_concurrency_queued">Queued</string>
+    <string name="generation_concurrency_untitled">Untitled chat</string>
+    <string name="generation_concurrency_line">%1$s · %2$s</string>
+    <string name="generation_concurrency_stop_all">Stop all</string>
+</resources>

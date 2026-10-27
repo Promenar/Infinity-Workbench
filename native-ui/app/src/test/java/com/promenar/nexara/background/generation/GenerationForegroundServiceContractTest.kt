@@ -28,7 +28,7 @@ class GenerationForegroundServiceContractTest {
     fun `TRACK先进入前台再观察且Service不承诺进程死亡恢复`() {
         val track = functionBody("private fun handleTrack(intent: Intent)")
         assertThat(track.indexOf("startImmediately(initial)")).isAtLeast(0)
-        assertThat(track.indexOf("activeCoordinator.observe(sessionId)"))
+        assertThat(track.indexOf("activeCoordinator.sessions.collect"))
             .isGreaterThan(track.indexOf("startImmediately(initial)"))
         assertThat(service).contains("return START_NOT_STICKY")
         assertThat(service).contains("stopSelfResult(latestStartId)")
@@ -61,9 +61,10 @@ class GenerationForegroundServiceContractTest {
     }
 
     @Test
-    fun `API35 timeout精确取消当前task后无条件停止`() {
+    fun `API35 timeout批量取消后台任务后无条件停止`() {
         val timeout = functionBody("override fun onTimeout(startId: Int, fgsType: Int)")
-        assertThat(timeout).contains("coordinator?.cancel(it, CancellationReason.TIMEOUT)")
+        assertThat(timeout).contains("GenerationRuntimePolicy.BACKGROUND_ALLOWED")
+        assertThat(timeout).contains("coordinator?.cancelForPolicy(GenerationRuntimePolicy.BACKGROUND_ALLOWED, CancellationReason.TIMEOUT)")
         assertThat(timeout).contains("stopUnconditionally()")
         assertThat(functionBody("private fun stopUnconditionally()" )).contains("stopSelf()")
     }
@@ -74,12 +75,11 @@ class GenerationForegroundServiceContractTest {
         val noTrackedTask = stop.indexOf(
             "if (trackedTaskId == null) {\n            stopSelfResult(latestStartId)\n            return\n        }",
         )
-        val guard = stop.indexOf("if (!shouldHandleGenerationStop(trackedTaskId, taskId)) return")
+        val guard = stop.indexOf("if (coordinator?.sessions?.value?.values?.none { it.taskId == taskId } != false) return")
         assertThat(noTrackedTask).isAtLeast(0)
         assertThat(guard).isGreaterThan(noTrackedTask)
         assertThat(guard).isAtLeast(0)
-        assertThat(stop.indexOf("coordinator?.cancel")).isGreaterThan(guard)
-        assertThat(stop.indexOf("stopTracking(taskId)")).isGreaterThan(guard)
+        assertThat(stop.substring(guard)).contains("coordinator?.cancel(taskId, CancellationReason.USER)")
     }
 
     @Test
@@ -113,15 +113,14 @@ class GenerationForegroundServiceContractTest {
         val failure = functionBody("private fun handlePromotionFailure(taskId: String)")
         assertThat(failure).contains("if (trackedTaskId != taskId) return")
         assertThat(failure).contains("ForegroundServiceFailureOutcome.GENERATION_STOPPED")
-        assertThat(failure).contains(
-            "coordinator?.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)",
-        )
+        assertThat(failure).contains("GenerationRuntimePolicy.BACKGROUND_ALLOWED")
+        assertThat(failure).contains("coordinator?.cancelForPolicy(GenerationRuntimePolicy.BACKGROUND_ALLOWED, CancellationReason.BACKGROUND_UNAVAILABLE)")
         assertThat(failure).contains("stopUnconditionally()")
 
-        val update = functionBody("private fun updateNotification(snapshot: GenerationTaskSnapshot)")
+        val update = functionBody("private fun updateNotification(snapshots: List<GenerationTaskSnapshot>)")
         assertThat(update).contains("catch (_: SecurityException)")
         assertThat(update).contains("catch (_: RuntimeException)")
-        assertThat(update).contains("handlePromotionFailure(snapshot.taskId)")
+        assertThat(update).contains("handlePromotionFailure(taskId)")
     }
 
     @Test

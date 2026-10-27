@@ -18,6 +18,114 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ApplicationSystemTurnRuntimeTest {
+    @Test fun `前台跟踪异常时已受理任务会取消并收尾`() = runTest {
+        val store = ChatStore()
+        val coordinator = DefaultGenerationCoordinator(backgroundScope, GenerationRunnerFactory { _, _ ->
+            GenerationRunner { _, _ -> awaitCancellation() }
+        })
+        val foreground = mockk<GenerationForegroundController> {
+            every { track(any()) } throws IllegalStateException("前台服务启动异常")
+        }
+        val notices = mutableListOf<SystemTurnOutcome>()
+        val runtime = runtime(store, messageManager(store), coordinator, foreground) { _, result, _ -> notices += result }
+        runtime.loadSession("s")
+        val result = async { runtime.run(request(), SystemTurnAdmissionTicket()) }
+        runCurrent()
+        assertThat(result.await()).isInstanceOf(SystemTurnOutcome.Failed::class.java)
+        assertThat(coordinator.isSessionBusy("s")).isFalse()
+        assertThat(notices).hasSize(1)
+    }
+
+    @Test fun `生成已受理但返回挂起时同来源新请求不能撤销原轮`() = runBlocking {
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val store = ChatStore()
+            val accepted = CompletableDeferred<Unit>()
+            val returnGate = CompletableDeferred<Unit>()
+            val finish = CompletableDeferred<Unit>()
+            val delegate = DefaultGenerationCoordinator(appScope, GenerationRunnerFactory { _, _ ->
+                GenerationRunner { _, emit ->
+                    finish.await()
+                    emit(GenerationEvent.PhaseChanged(GenerationPhase.COMPLETED))
+                }
+            })
+            val coordinator = object : GenerationCoordinator by delegate {
+                override suspend fun start(request: GenerationRequest, onAdmission: (String) -> Boolean): StartGenerationResult {
+                    val result = delegate.start(request, onAdmission)
+                    if (request.userContent.contains("旧内容")) {
+                        accepted.complete(Unit)
+                        returnGate.await()
+                    }
+                    return result
+                }
+            }
+            val foreground = mockk<GenerationForegroundController> { every { track(any()) } returns ForegroundStartResult.StartedWithNotifications }
+            val runtime = runtime(store, messageManager(store), coordinator, foreground) { _, _, _ -> }
+            val dispatcher = DefaultSystemTurnDispatcher(appScope, runtime, "未完成", "系统中断")
+            val old = async(start = CoroutineStart.UNDISPATCHED) {
+                dispatcher.request(SystemTurnRequest("s", SystemTurnKind.SCHEDULE, "same", "任务", "旧内容"))
+            }
+            withTimeout(5000) { accepted.await() }
+            val newer = async(start = CoroutineStart.UNDISPATCHED) {
+                dispatcher.request(SystemTurnRequest("s", SystemTurnKind.SCHEDULE, "same", "任务", "新内容"))
+            }
+            yield()
+            val completedBeforeReturn = old.isCompleted
+            returnGate.complete(Unit)
+            finish.complete(Unit)
+            val oldResult = withTimeout(5000) { old.await() }
+            val newResult = withTimeout(5000) { newer.await() }
+            assertThat(completedBeforeReturn).isFalse()
+            assertThat(oldResult).isEqualTo(SystemTurnOutcome.Completed)
+            assertThat(newResult).isEqualTo(SystemTurnOutcome.Completed)
+        } finally {
+            appScope.cancel()
+        }
+    }
+
+    @Test fun `系统轮只被目标会话的生成或排队阻挡`() = runTest {
+        val store = ChatStore()
+        val coordinator = DefaultGenerationCoordinator(backgroundScope, GenerationRunnerFactory { _, _ ->
+            GenerationRunner { _, _ -> awaitCancellation() }
+        })
+        for (id in listOf("one", "two", "three", "four", "queued")) {
+            coordinator.start(GenerationRequest(id, "a-$id", "u-$id", "", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED))
+        }
+        val runtime = runtime(store, messageManager(store), coordinator, mockk(relaxed = true)) { _, _, _ -> }
+        assertThat(runtime.isBusy("one")).isTrue()
+        assertThat(runtime.isBusy("queued")).isTrue()
+        assertThat(runtime.isBusy("unrelated")).isFalse()
+    }
+
+    @Test fun `取消旧系统轮只等待它的任务完成`() = runTest {
+        val store = ChatStore()
+        val coordinator = mockk<GenerationCoordinator>(relaxed = true)
+        val snapshot = GenerationTaskSnapshot("old-task", "s", "assistant", GenerationPhase.PREPARING, 0, 1)
+        val entered = CompletableDeferred<Unit>()
+        var taskWaits = 0
+        var sessionWaits = 0
+        coEvery { coordinator.start(any(), any()) } coAnswers {
+            check(secondArg<(String) -> Boolean>().invoke("old-task"))
+            StartGenerationResult.Started("old-task")
+        }
+        every { coordinator.observe("s") } returns MutableStateFlow(snapshot)
+        every { coordinator.cancel("old-task", any()) } returns false
+        coEvery { coordinator.awaitTaskCompletion("s", "old-task") } coAnswers {
+            taskWaits += 1
+            if (taskWaits == 1) { entered.complete(Unit); awaitCancellation() }
+            snapshot.copy(phase = GenerationPhase.CANCELLED)
+        }
+        coEvery { coordinator.awaitSessionIdle("s") } coAnswers { sessionWaits += 1 }
+        val foreground = mockk<GenerationForegroundController>(relaxed = true)
+        val runtime = runtime(store, messageManager(store), coordinator, foreground) { _, _, _ -> }
+        runtime.loadSession("s")
+        val job = launch { runtime.run(request(), SystemTurnAdmissionTicket()) }
+        entered.await()
+        job.cancelAndJoin()
+        assertThat(taskWaits).isEqualTo(2)
+        assertThat(sessionWaits).isEqualTo(0)
+    }
+
     @Test fun `未打开会话发起轮次服务被拒仍完成且消息带系统标记`() = runTest {
         val store = ChatStore()
         val messages = messageManager(store)
@@ -34,7 +142,7 @@ class ApplicationSystemTurnRuntimeTest {
         val notices = mutableListOf<SystemTurnOutcome>()
         val runtime = runtime(store, messages, coordinator, foreground) { _, result, _ -> notices += result }
         assertThat(runtime.loadSession("s")).isTrue()
-        val result = async { runtime.run(request()) {} }; runCurrent()
+        val result = async { runtime.run(request(), SystemTurnAdmissionTicket()) }; runCurrent()
         assertThat(result.await()).isEqualTo(SystemTurnOutcome.Completed)
         assertThat(generated!!.interactionMode).isEqualTo(GenerationInteractionMode.HEADLESS)
         val session = store.getSession("s")!!
@@ -59,7 +167,7 @@ class ApplicationSystemTurnRuntimeTest {
         val foreground = mockk<GenerationForegroundController> { every { track(any()) } returns ForegroundStartResult.StartedWithNotifications }
         val runtime = runtime(store, messages, coordinator, foreground) { _, _, _ -> }
         runtime.loadSession("s")
-        val result = async { runtime.run(request()) {} }; runCurrent()
+        val result = async { runtime.run(request(), SystemTurnAdmissionTicket()) }; runCurrent()
         assertThat(result.await()).isEqualTo(SystemTurnOutcome.NeedsUser)
         val hydrated = store.getSession("s")!!.copy()
         val continuation = generationResumption(hydrated)!!

@@ -1,0 +1,10 @@
+<resources>
+    <plurals name="generation_concurrency_title">
+        <item quantity="other">%1$d 个会话正在生成</item>
+    </plurals>
+    <string name="generation_concurrency_details">正在生成</string>
+    <string name="generation_concurrency_queued">排队中</string>
+    <string name="generation_concurrency_untitled">未命名会话</string>
+    <string name="generation_concurrency_line">%1$s · %2$s</string>
+    <string name="generation_concurrency_stop_all">全部停止</string>
+</resources>

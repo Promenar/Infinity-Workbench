@@ -214,12 +214,16 @@ class AskUserLedgerRepositoryTest {
         create()
         val stale = db.sessionDao().getById("s")!!
         assertThat(db.sessionDao().hasPendingUserInteraction()).isTrue()
+        // 系统轮按会话判断：其它会话不受这一会话的提问阻挡。
+        assertThat(db.sessionDao().hasPendingUserInteraction("s")).isTrue()
+        assertThat(db.sessionDao().hasPendingUserInteraction("other")).isFalse()
         val result = repository.answer(pending(), AskUserAnswer(skipped = true))!!
         assertThat(db.sessionDao().hasPendingUserInteraction()).isTrue()
         repository.consumeResumption("s", result.assistant.id)
         db.sessionDao().update(stale.copy(title = "陈旧快照的标题更新"))
         assertThat(db.sessionDao().getById("s")!!.loopStatus).isEqualTo("running")
         assertThat(db.sessionDao().hasPendingUserInteraction()).isFalse()
+        assertThat(db.sessionDao().hasPendingUserInteraction("s")).isFalse()
     }
 
     @Test fun `续跑终态持久化后的进程中断只补齐账本不重放模型`() = runBlocking {

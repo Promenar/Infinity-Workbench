@@ -94,7 +94,7 @@ class DefaultGenerationCoordinatorTest {
     }
 
     @Test
-    fun `同请求Existing不同会话Busy且只启动一个runner`() = runTest {
+    fun `同请求Existing不同会话独立启动`() = runTest {
         val entered = CompletableDeferred<Unit>()
         val coordinator = coordinator { _, emit ->
             emit(GenerationEvent.PhaseChanged(GenerationPhase.CONNECTING))
@@ -109,9 +109,9 @@ class DefaultGenerationCoordinatorTest {
 
         assertThat(first).isInstanceOf(StartGenerationResult.Started::class.java)
         assertThat(same).isInstanceOf(StartGenerationResult.Existing::class.java)
-        assertThat(other).isEqualTo(StartGenerationResult.Busy("s1"))
-        assertThat(coordinator.active.value?.sessionId).isEqualTo("s1")
-        assertThat(coordinator.observe("s2").value).isNull()
+        assertThat(other).isInstanceOf(StartGenerationResult.Started::class.java)
+        assertThat(coordinator.sessions.value.keys).containsExactly("s1", "s2")
+        assertThat(coordinator.observe("s2").value?.sessionId).isEqualTo("s2")
     }
 
     @Test

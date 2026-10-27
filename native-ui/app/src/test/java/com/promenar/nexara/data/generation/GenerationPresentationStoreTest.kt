@@ -9,6 +9,23 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class GenerationPresentationStoreTest {
+    @Test fun `交错的会话回写只改变各自展示状态`() {
+        val store = GenerationPresentationStore()
+        store.begin("first", "task-first")
+        store.begin("second", "task-second")
+        val first = store.port("first", "task-first")
+        val second = store.port("second", "task-second")
+        first.setGenerating(true)
+        second.setError(com.promenar.nexara.domain.generation.GenerationFailure.unknown(technical = "second"))
+        second.setFailureSurface(GenerationFailureSurface.OVERLAY)
+        first.setStreamingContent("first output")
+        assertThat(store.observe("first").value?.streamingContent).isEqualTo("first output")
+        assertThat(store.observe("first").value?.error).isNull()
+        assertThat(store.observe("first").value?.generating).isTrue()
+        assertThat(store.observe("second").value?.error?.technical).isEqualTo("second")
+        assertThat(store.observe("second").value?.failureSurface).isEqualTo(GenerationFailureSurface.OVERLAY)
+    }
+
     @Test
     fun `待回答保留流式展示但释放生成状态`() = runTest {
         val store = GenerationPresentationStore()

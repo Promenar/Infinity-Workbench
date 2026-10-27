@@ -62,10 +62,16 @@ data class GenerationTaskSnapshot(
     val startedAt: Long,
     val error: GenerationError? = null,
     val progress: GenerationProgress = GenerationProgress(),
+    val queuePosition: Int? = null,
+    val runtimePolicy: GenerationRuntimePolicy = GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+    val startedOrder: Long = 0,
 )
+
+const val MAX_CONCURRENT_GENERATIONS = 4
 
 sealed interface StartGenerationResult {
     data class Started(val taskId: String) : StartGenerationResult
+    data class Queued(val taskId: String, val position: Int) : StartGenerationResult
     data class Existing(val snapshot: GenerationTaskSnapshot) : StartGenerationResult
     data class Busy(val activeSessionId: String) : StartGenerationResult
     data class Rejected(val error: GenerationError) : StartGenerationResult
@@ -74,21 +80,41 @@ sealed interface StartGenerationResult {
 enum class CancellationReason { USER, TIMEOUT, REPLACED, SHUTDOWN, BACKGROUND_UNAVAILABLE }
 
 interface GenerationCoordinator {
+    val sessions: StateFlow<Map<String, GenerationTaskSnapshot>>
+    /** 最近发生状态变化的非终态任务，供旧调用方兼容。 */
     val active: StateFlow<GenerationTaskSnapshot?>
     fun observe(sessionId: String): StateFlow<GenerationTaskSnapshot?>
+    /** 包含排队及终态发布后的资源收尾，供会话级互斥闸门使用。 */
+    fun isSessionBusy(sessionId: String): Boolean = sessions.value[sessionId]?.phase?.let {
+        it !in setOf(GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED,
+            GenerationPhase.PERSISTENCE_FAILED, GenerationPhase.WAITING_APPROVAL, GenerationPhase.WAITING_INPUT)
+    } == true
     /** 等待本会话运行任务连同资源收尾完全退出，避免确认终态后的短暂 Busy。 */
-    suspend fun awaitSessionIdle(sessionId: String) { active.first { it?.sessionId != sessionId } }
+    suspend fun awaitSessionIdle(sessionId: String) {
+        sessions.first { sessionId !in it || it[sessionId]?.phase in setOf(
+            GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED,
+            GenerationPhase.PERSISTENCE_FAILED, GenerationPhase.WAITING_APPROVAL, GenerationPhase.WAITING_INPUT,
+        ) }
+    }
     /** 资源释放后的结果回执独立于界面对展示终态的确认。 */
     suspend fun awaitTaskCompletion(sessionId: String, taskId: String): GenerationTaskSnapshot? {
         awaitSessionIdle(sessionId)
         return observe(sessionId).value?.takeIf { it.taskId == taskId }
     }
     suspend fun start(request: GenerationRequest): StartGenerationResult
+    /** 登记任务前同步确认准入；回调只允许无阻塞原子操作，返回 false 时不登记新任务。 */
+    suspend fun start(request: GenerationRequest, onAdmission: (String) -> Boolean): StartGenerationResult
     fun cancel(taskId: String, reason: CancellationReason = CancellationReason.USER): Boolean
+    fun cancelAll(reason: CancellationReason = CancellationReason.USER): Int =
+        sessions.value.values.count { cancel(it.taskId, reason) }
+    fun cancelForPolicy(policy: GenerationRuntimePolicy, reason: CancellationReason): Int =
+        sessions.value.values.count { it.runtimePolicy == policy && cancel(it.taskId, reason) }
     suspend fun cancelAndJoinSession(
         sessionId: String,
         reason: CancellationReason = CancellationReason.SHUTDOWN,
     ): Boolean = false
     fun acknowledgeTerminal(taskId: String): Boolean
     fun release(sessionId: String, discardTerminal: Boolean = false)
+    /** 仅在当前快照仍属于预期任务时释放，避免旧任务清除新任务。 */
+    fun release(sessionId: String, expectedTaskId: String, discardTerminal: Boolean = false)
 }

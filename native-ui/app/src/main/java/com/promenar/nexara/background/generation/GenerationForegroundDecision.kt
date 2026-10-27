@@ -5,7 +5,14 @@ import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
 
 sealed interface GenerationForegroundDecision {
     data class Update(val snapshot: GenerationTaskSnapshot) : GenerationForegroundDecision
+    data class UpdateMany(val snapshots: List<GenerationTaskSnapshot>) : GenerationForegroundDecision
     data class Stop(val taskId: String) : GenerationForegroundDecision
+}
+
+fun reduceGenerationForeground(sessions: Map<String, GenerationTaskSnapshot>): GenerationForegroundDecision {
+    val snapshots = sessions.values.filter { it.phase !in STOPPING_PHASES }
+    return if (snapshots.isEmpty()) GenerationForegroundDecision.Stop("")
+    else GenerationForegroundDecision.UpdateMany(snapshots)
 }
 
 fun reduceGenerationForeground(

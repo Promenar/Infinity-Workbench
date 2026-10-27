@@ -28,7 +28,7 @@ class ApplicationSystemTurnRuntime(
     private val store: ChatStore,
     private val findSession: suspend (String) -> Session?,
     private val exists: suspend (String) -> Boolean,
-    private val hasApproval: suspend () -> Boolean,
+    private val hasApproval: suspend (String) -> Boolean,
     private val messages: MessageManager,
     private val coordinator: GenerationCoordinator,
     private val foreground: GenerationForegroundController,
@@ -47,35 +47,38 @@ class ApplicationSystemTurnRuntime(
         }
         true
     }
-    override suspend fun isBusy(): Boolean = coordinator.active.value != null ||
-        interactions.pending.value != null || withContext(Dispatchers.IO) { hasApproval() }
+    override suspend fun isBusy(sessionId: String): Boolean =
+        coordinator.isSessionBusy(sessionId) ||
+            interactions.pendingBySession.value.containsKey(sessionId) || withContext(Dispatchers.IO) { hasApproval(sessionId) }
 
-    private val tasksBySource = java.util.concurrent.ConcurrentHashMap<String, String>()
-
-    override suspend fun run(request: SystemTurnRequest, onStarted: () -> Unit): SystemTurnOutcome? = try {
-        runTurn(request, onStarted)
+    override suspend fun run(request: SystemTurnRequest, ticket: SystemTurnAdmissionTicket): SystemTurnOutcome? = try {
+        runTurn(request, ticket)
     } catch (cancelled: CancellationException) {
-        tasksBySource[request.sourceId]?.let { taskId ->
+        ticket.acceptedTaskId?.let { taskId ->
             coordinator.cancel(taskId, CancellationReason.TIMEOUT)
-            withContext(NonCancellable) { coordinator.awaitSessionIdle(request.sessionId) }
+            withContext(NonCancellable) { coordinator.awaitTaskCompletion(request.sessionId, taskId) }
         }
         throw cancelled
     } catch (_: Exception) {
+        ticket.acceptedTaskId?.let { taskId ->
+            coordinator.cancel(taskId, CancellationReason.SHUTDOWN)
+            withContext(NonCancellable) { coordinator.awaitTaskCompletion(request.sessionId, taskId) }
+        }
         SystemTurnOutcome.Failed(failureText(null)).also { notify(request, it, null) }
-    } finally { tasksBySource.remove(request.sourceId) }
+    }
 
-    private suspend fun runTurn(request: SystemTurnRequest, onStarted: () -> Unit): SystemTurnOutcome? {
+    private suspend fun runTurn(request: SystemTurnRequest, ticket: SystemTurnAdmissionTicket): SystemTurnOutcome? {
         var startedTaskId: String? = null
         var immediate: SystemTurnOutcome? = null
         var busy = false
         try {
-            store.turnAdmission.withLock {
+            store.turnAdmission.withLock(request.sessionId) {
                 executionGate.withNewSessionAdmission(request.sessionId) {
                     if (!sessionExists(request.sessionId)) {
                         immediate = SystemTurnOutcome.Skipped(SystemTurnSkipReason.SESSION_MISSING)
                         return@withNewSessionAdmission
                     }
-                    if (isBusy()) { busy = true; return@withNewSessionAdmission }
+                    if (isBusy(request.sessionId)) { busy = true; return@withNewSessionAdmission }
                     val session = store.getSession(request.sessionId) ?: run { busy = true; return@withNewSessionAdmission }
                     val text = SystemTriggerMessage.compose(request, OffsetDateTime.now())
                     val userId = "user_${UUID.randomUUID()}"
@@ -95,16 +98,15 @@ class ApplicationSystemTurnRuntime(
                             userMessageId = userId, userContent = text, imageDataUrls = emptyList(),
                             runtimePolicy = GenerationRuntimePolicy.BACKGROUND_ALLOWED,
                             interactionMode = GenerationInteractionMode.HEADLESS,
-                        ))) {
+                        ), ticket::tryAccept)) {
                             is StartGenerationResult.Started -> {
                                 startedTaskId = start.taskId
-                                tasksBySource[request.sourceId] = start.taskId
-                                onStarted()
+                            }
+                            is StartGenerationResult.Queued -> {
+                                startedTaskId = start.taskId
                             }
                             is StartGenerationResult.Existing -> {
                                 startedTaskId = start.snapshot.taskId
-                                tasksBySource[request.sourceId] = start.snapshot.taskId
-                                onStarted()
                             }
                             is StartGenerationResult.Busy -> {
                                 messages.discardPreparedMessages(request.sessionId, prepared)
@@ -120,7 +122,7 @@ class ApplicationSystemTurnRuntime(
                             }
                         }
                     } catch (failure: Throwable) {
-                        if (startedTaskId == null) withContext(NonCancellable) {
+                        if (ticket.acceptedTaskId == null) withContext(NonCancellable) {
                             messages.discardPreparedMessages(request.sessionId, prepared)
                         }
                         throw failure
@@ -139,14 +141,15 @@ class ApplicationSystemTurnRuntime(
         }
         val terminal = coordinator.awaitTaskCompletion(request.sessionId, taskId)
         val outcome = when {
-            terminal?.phase == GenerationPhase.WAITING_APPROVAL -> SystemTurnOutcome.NeedsUser
+            terminal?.phase == GenerationPhase.WAITING_APPROVAL || terminal?.phase == GenerationPhase.WAITING_INPUT -> SystemTurnOutcome.NeedsUser
             terminal?.phase == GenerationPhase.COMPLETED -> SystemTurnOutcome.Completed
             else -> SystemTurnOutcome.Failed(failureText(terminal?.error))
         }
         if (terminal?.phase != GenerationPhase.PERSISTENCE_FAILED) coordinator.acknowledgeTerminal(taskId)
-        coordinator.release(request.sessionId)
+        coordinator.release(request.sessionId, taskId)
         val reply = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == terminal?.assistantMessageId }?.content
         notify(request, outcome, reply)
         return outcome
     }
+
 }

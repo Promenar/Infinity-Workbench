@@ -3,6 +3,7 @@ package com.promenar.nexara.data.generation
 import com.promenar.nexara.data.model.PostProcessStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.PostProcessType
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.domain.generation.GenerationEvent
@@ -14,11 +15,31 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class GenerationFailureSurface {
     INLINE_MESSAGE,
     OVERLAY,
 }
+
+/** 草稿在生成接受前由应用级状态持有，避免导航销毁页面后无法回滚。 */
+internal data class SubmittedGenerationDraft(
+    val sessionId: String,
+    val text: String,
+    val documents: List<MessageDocumentAttachment>,
+    val imageUris: List<String>,
+    val submissionId: String = UUID.randomUUID().toString(),
+    val userMessageId: String? = null,
+    val taskId: String? = null,
+    val recoveryReady: Boolean = false,
+    val recoveryApplied: Boolean = false,
+)
+
+internal data class SessionComposerAttachments(
+    val documents: List<MessageDocumentAttachment>,
+    val imageUris: List<String>,
+)
 
 data class GenerationPresentationState(
     val taskId: String,
@@ -59,6 +80,34 @@ private val RETRY_PENDING_PHASES = setOf(
 /** 应用级、按会话隔离的生成展示状态；导航不会改变正在生成任务的写入目标。 */
 class GenerationPresentationStore {
     private val entries = ConcurrentHashMap<String, MutableStateFlow<GenerationPresentationState?>>()
+    private val submittedDrafts = ConcurrentHashMap<String, MutableStateFlow<SubmittedGenerationDraft?>>()
+    private val draftRecoveryLocks = ConcurrentHashMap<String, Mutex>()
+    private val composerAttachments = ConcurrentHashMap<String, SessionComposerAttachments>()
+    private val composerTexts = ConcurrentHashMap<String, String>()
+
+    private fun submittedDraftEntry(sessionId: String) =
+        submittedDrafts.getOrPut(sessionId) { MutableStateFlow(null) }
+    internal fun observeSubmittedDraft(sessionId: String): StateFlow<SubmittedGenerationDraft?> = submittedDraftEntry(sessionId)
+    internal fun retainSubmittedDraft(draft: SubmittedGenerationDraft) { submittedDraftEntry(draft.sessionId).value = draft }
+    internal fun submittedDraft(sessionId: String): SubmittedGenerationDraft? = submittedDrafts[sessionId]?.value
+    internal fun markSubmittedDraftRecoverable(sessionId: String) {
+        submittedDraftEntry(sessionId).update { current -> current?.copy(recoveryReady = true) }
+    }
+    internal fun discardSubmittedDraft(draft: SubmittedGenerationDraft) {
+        submittedDraftEntry(draft.sessionId).update { current -> if (current == draft) null else current }
+    }
+    internal fun discardSubmittedDraft(sessionId: String) { submittedDrafts[sessionId]?.value = null }
+    internal suspend fun <T> withDraftRecovery(sessionId: String, block: suspend () -> T): T =
+        draftRecoveryLocks.getOrPut(sessionId) { Mutex() }.withLock { block() }
+    internal fun retainComposerAttachments(sessionId: String, value: SessionComposerAttachments) {
+        if (value.documents.isEmpty() && value.imageUris.isEmpty()) composerAttachments.remove(sessionId)
+        else composerAttachments[sessionId] = value
+    }
+    internal fun composerAttachments(sessionId: String): SessionComposerAttachments? = composerAttachments[sessionId]
+    internal fun discardComposerAttachments(sessionId: String) { composerAttachments.remove(sessionId) }
+    internal fun retainComposerText(sessionId: String, text: String) { composerTexts[sessionId] = text }
+    internal fun composerText(sessionId: String): String? = composerTexts[sessionId]
+    internal fun discardComposerText(sessionId: String) { composerTexts.remove(sessionId) }
 
     fun observe(sessionId: String): StateFlow<GenerationPresentationState?> = entry(sessionId)
 
@@ -68,6 +117,10 @@ class GenerationPresentationStore {
                 flow.value = GenerationPresentationState(taskId = taskId, sessionId = sessionId)
             }
         }
+    }
+
+    fun queued(sessionId: String, taskId: String) = update(sessionId, taskId) {
+        it.copy(phase = GenerationPhase.QUEUED, generating = true)
     }
 
     fun finish(sessionId: String, taskId: String) {

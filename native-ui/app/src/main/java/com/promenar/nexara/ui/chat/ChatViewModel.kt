@@ -113,6 +113,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -279,7 +280,7 @@ class ChatViewModel(
     private val configResolver: AgentConfigResolver,
     providerResolutionDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val localLlmProviderFactory: (String) -> LlmProvider = { modelId ->
-        LlmProvider.local((application as NexaraApplication).localInferenceEngine, modelId)
+        (application as NexaraApplication).generationLocalProviders.create(modelId)
     },
     private val embeddingClient: EmbeddingClient? = null,
     private val vectorStore: VectorStore? = null,
@@ -336,17 +337,19 @@ class ChatViewModel(
     private val composerDraftRecovery = composerDraftRecoveryOverride ?: (application as NexaraApplication).composerDraftRecovery
     private val _composerQueue = MutableStateFlow(ComposerQueueUiState())
     val composerQueue: StateFlow<ComposerQueueUiState> = _composerQueue
-    private val queueMutex = Mutex()
+    private val queueMutexes = ConcurrentHashMap<String, Mutex>()
+    private fun queueMutex(sessionId: String) = queueMutexes.getOrPut(sessionId) { Mutex() }
     private val queueSubmissions = mutableMapOf<String, QueuedMessage>()
     private val queueUserMessageIds = mutableMapOf<String, String>()
     private val pendingQueueWrites = mutableMapOf<String, Int>()
     private val queueTerminalPhases = mutableMapOf<String, GenerationPhase>()
     private val queuePauseOverrides = mutableMapOf<String, QueuePauseReason>()
     /** “停止并立即发送”的会话：本轮以取消收尾时不暂停队列，直接发出排在队首的草稿。 */
-    private val stopAndSendSessions = mutableSetOf<String>()
-    private var preparingSessionId: String? = null
-    private var queueDispatchJob: Job? = null
-    private var queueDispatchRequested: String? = null
+    private val stopAndSendSessions = ConcurrentHashMap.newKeySet<String>()
+    private val preparingSessions = ConcurrentHashMap.newKeySet<String>()
+    private val queueDispatchJobs = ConcurrentHashMap<String, Job>()
+    private val queueDispatchRequested = ConcurrentHashMap.newKeySet<String>()
+    private val draftRecoveryRetries = ConcurrentHashMap.newKeySet<String>()
     private var editingQueueItem = false
     private var composerImages: List<Uri> = emptyList()
     private val generationCoordinator = generationCoordinatorOverride
@@ -383,6 +386,7 @@ class ChatViewModel(
         sessionRepository,
         memoryLifecycle = (application as NexaraApplication).conversationMemoryLifecycle,
         stateBoardRepository = (application as NexaraApplication).stateBoardRepository,
+        isSessionGenerating = generationCoordinator::isSessionBusy,
     )
     private val toolLedger = (application as NexaraApplication).toolExecutionLedger
     private val toolExecutor = ToolExecutor(
@@ -425,7 +429,7 @@ class ChatViewModel(
     private val _draftConsumptionEpoch = MutableStateFlow(0L)
     val draftConsumptionEpoch: StateFlow<Long> = _draftConsumptionEpoch
     /** 发送时已从输入框移走、尚未被生成接受的草稿；用户消息被回滚时还原。 */
-    private var submittedDraft: SubmittedDraft? = null
+    private var submittedDraft: com.promenar.nexara.data.generation.SubmittedGenerationDraft? = null
     private val _restoredDraftImages = MutableStateFlow<List<String>?>(null)
     /** 待还原到输入框的图片 URI；界面取用后调用 [consumeRestoredDraftImages]。 */
     val restoredDraftImages: StateFlow<List<String>?> = _restoredDraftImages
@@ -536,11 +540,13 @@ class ChatViewModel(
         }
     }
 
-    private var generationJob: Job? = null
-    private var approvalJob: Job? = null
+    private val generationJobs = ConcurrentHashMap<String, Job>()
+    private val approvalJobs = ConcurrentHashMap<String, Job>()
     private var fontSizePersistenceJob: Job? = null
-    private val sendPreparationMutex = Mutex()
-    private val approvalSubmissionMutex = Mutex()
+    private val sendPreparationMutexes = ConcurrentHashMap<String, Mutex>()
+    private fun sendPreparationMutex(sessionId: String) = sendPreparationMutexes.getOrPut(sessionId) { Mutex() }
+    private val approvalSubmissionMutexes = ConcurrentHashMap<String, Mutex>()
+    private fun approvalSubmissionMutex(sessionId: String) = approvalSubmissionMutexes.getOrPut(sessionId) { Mutex() }
     /** 重新生成期间被替换、暂不展示的旧回复；成功后由运行时删除，失败或取消后恢复展示。 */
     private val _replacingMessageIds = MutableStateFlow<Set<String>>(emptySet())
     private val stateBoardRepository = (application as NexaraApplication).stateBoardRepository
@@ -638,8 +644,9 @@ class ChatViewModel(
             val resumptions = _currentSessionId.flatMapLatest { sessionId ->
                 if (sessionId != null) questionResumptionAttempts.remove(sessionId)
                 if (sessionId == null) flowOf(null)
-                else combine(askUserLedger.observeResumption(sessionId), generationCoordinator.active) { resumption, active ->
-                    sessionId.takeIf { resumption != null && (active == null || active.sessionId == sessionId) }
+                // 并发上限由协调器排队处理，这里只等本会话的提问任务退出。
+                else combine(askUserLedger.observeResumption(sessionId), generationCoordinator.observe(sessionId)) { resumption, _ ->
+                    sessionId.takeIf { resumption != null }
                 }
             }
             resumptions.collect { sessionId ->
@@ -661,7 +668,7 @@ class ChatViewModel(
                         composerQueueStore.pause(sessionId, QueuePauseReason.INTERRUPTED)
                     }
                     var settledTask: String? = null
-                    combine(queue, generationPresentationStore.observe(sessionId), generationCoordinator.active) { state, presentation, active ->
+                    combine(queue, generationPresentationStore.observe(sessionId), generationCoordinator.observe(sessionId)) { state, presentation, active ->
                         Triple(state, presentation, active)
                     }.collect { (state, presentation, active) ->
                         _composerQueue.value = ComposerQueueUiState(
@@ -674,7 +681,7 @@ class ChatViewModel(
                             val reason = terminalQueuePauseReason(sessionId, presentation?.phase)
                             if (state.pauseReason == null && !dispatchesAfterTerminal(sessionId, presentation?.phase)) composerQueueStore.pause(sessionId, reason)
                         }
-                        if (dispatchesAfterTerminal(sessionId, queueTerminalPhases[sessionId]) && active?.sessionId != sessionId &&
+                        if (dispatchesAfterTerminal(sessionId, queueTerminalPhases[sessionId]) && (active == null || active.phase in QUEUE_INACTIVE_PHASES) &&
                             state.pauseReason == null && state.items.isNotEmpty() && pendingQueueWrites[sessionId] == null
                         ) dispatchComposerQueue(sessionId)
                     }
@@ -709,12 +716,33 @@ class ChatViewModel(
             _currentSessionId.collectLatest { sessionId ->
                 if (sessionId == null) return@collectLatest
                 resetSessionTransientState()
+                _isApprovalSubmitting.value = approvalJobs[sessionId]?.isActive == true
+                submittedDraft = generationPresentationStore.submittedDraft(sessionId)
+                pendingDraftClearTaskId = submittedDraft?.taskId
                 restoreFailedComposerDraft(sessionId)
                 restoreHistoricalRagProjection(sessionId)
                 try {
-                    generationPresentationStore.observe(sessionId).collect { presentation ->
+                    combine(
+                        generationPresentationStore.observe(sessionId),
+                        generationPresentationStore.observeSubmittedDraft(sessionId),
+                    ) { presentation, draft -> presentation to draft }.collect { (presentation, draft) ->
+                        if (draft != null) {
+                            submittedDraft = draft
+                            if (draft.recoveryReady) {
+                                restoreSubmittedDraftFromPresentation(sessionId)
+                                return@collect
+                            }
+                            if (draft.taskId != null && pendingDraftClearTaskId == null) pendingDraftClearTaskId = draft.taskId
+                        }
                         if (presentation == null) {
-                            pendingDraftClearTaskId = null
+                            if (draft?.taskId != null && pendingDraftClearTaskId == draft.taskId &&
+                                generationCoordinator.observe(sessionId).value == null
+                            ) {
+                                pendingDraftClearTaskId = null
+                                if (submittedUserMessageRolledBack(sessionId)) restoreSubmittedDraftFromPresentation(sessionId)
+                                else consumeAcceptedDraft(sessionId)
+                            }
+                            if (pendingDraftClearTaskId != DRAFT_PENDING_START) pendingDraftClearTaskId = null
                             _streamingContent.value = ""
                             _postProcessTasks.value = emptyList()
                             _generationRetry.value = null
@@ -749,7 +777,7 @@ class ChatViewModel(
                             // 准备阶段就结束：用户消息被回滚（如全文文档超出预算）才还原草稿，否则消息已在历史中可重试。
                             pendingDraftClearTaskId = null
                             if (submittedUserMessageRolledBack(sessionId)) {
-                                restoreSubmittedDraft(sessionId)
+                                restoreSubmittedDraftFromPresentation(sessionId)
                             } else {
                                 consumeAcceptedDraft(sessionId)
                             }
@@ -799,7 +827,7 @@ class ChatViewModel(
             _currentSessionId.collectLatest { sessionId ->
                 if (sessionId == null) return@collectLatest
                 var observedTaskId: String? = null
-                try {
+                run {
                     combine(
                         generationCoordinator.observe(sessionId),
                         generationPresentationStore.observe(sessionId),
@@ -896,8 +924,6 @@ class ChatViewModel(
                             }
                         }
                         }
-                } finally {
-                    generationCoordinator.release(sessionId)
                 }
             }
         }
@@ -1006,25 +1032,55 @@ class ChatViewModel(
 
         if (store.getSession(sessionId) == null) return
 
-        if (isSessionGenerating(sessionId) && store.getSession(sessionId)?.approvalRequest == null) {
+        if (generationPresentationStore.submittedDraft(sessionId)?.recoveryReady == true) {
+            if (!draftRecoveryRetries.add(sessionId)) return
+            val inputAtClick = _inputText.value
+            val textAtClick = inputAtClick.ifBlank { text }
+            val documentsAtClick = documents.toList()
+            val composerImagesAtClick = composerImages.toList()
+            val imagesAtClick = (imageUris + composerImagesAtClick).distinct()
+            viewModelScope.launch {
+                try {
+                    restoreSubmittedDraftFromPresentation(sessionId)
+                    if (_currentSessionId.value == sessionId && generationPresentationStore.submittedDraft(sessionId) == null) {
+                        if (_inputText.value == inputAtClick && _draftDocuments.value == documentsAtClick && composerImages == composerImagesAtClick) {
+                            sendMessage(text, imageUris)
+                        } else {
+                            if (textAtClick.isNotBlank() && !_inputText.value.contains(textAtClick)) {
+                                _inputText.value = listOf(textAtClick, _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
+                            }
+                            _draftDocuments.value = (documentsAtClick + _draftDocuments.value).distinctBy { it.id }
+                            composerImages = (imagesAtClick + composerImages).distinct()
+                            _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
+                        }
+                    }
+                } finally {
+                    draftRecoveryRetries.remove(sessionId)
+                }
+            }
+            return
+        }
+        if (isSessionGenerating(sessionId)) {
             enqueueComposerDraft(sessionId, text, imageUris, documents)
             return
         }
-        cancelPendingPreparation()
-        preparingSessionId = sessionId
-        takeDraftForSending(sessionId, text, imageUris)
-        generationJob = viewModelScope.launch {
+        cancelPendingPreparation(sessionId)
+        preparingSessions.add(sessionId)
+        val submissionId = takeDraftForSending(sessionId, text, imageUris)
+        generationJobs[sessionId] = viewModelScope.launch {
             try {
-                sendPreparationMutex.withLock {
+                sendPreparationMutex(sessionId).withLock {
                     closePendingApprovalBeforeNewTurn(sessionId)
                     val session = store.getSession(sessionId) ?: return@withLock
-                    _generationStatus.update { GenerationStatus.UPLOADING }
-                    _isGenerating.update { true }
-                    _error.update { null }
-                    _generationNotice.value = null
-                    _backgroundServiceStoppedError.value = null
-                    _backgroundWarning.value = null
-                    _providerResolutionFailure.value = null
+                    if (_currentSessionId.value == sessionId) {
+                        _generationStatus.update { GenerationStatus.UPLOADING }
+                        _isGenerating.update { true }
+                        _error.update { null }
+                        _generationNotice.value = null
+                        _backgroundServiceStoppedError.value = null
+                        _backgroundWarning.value = null
+                        _providerResolutionFailure.value = null
+                    }
 
                     val imageDataUrls = if (imageUris.isNotEmpty()) {
                         val converted = withContext(Dispatchers.IO) {
@@ -1032,9 +1088,11 @@ class ChatViewModel(
                         }
                         if (converted.any { it == null }) {
                             restoreSubmittedDraft(sessionId)
-                            _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
-                            _generationStatus.update { GenerationStatus.ERROR }
-                            _isGenerating.update { false }
+                            if (_currentSessionId.value == sessionId) {
+                                _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
+                                _generationStatus.update { GenerationStatus.ERROR }
+                                _isGenerating.update { false }
+                            }
                             return@withLock
                         }
                         converted.filterNotNull()
@@ -1045,25 +1103,34 @@ class ChatViewModel(
                     applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents)
                 }
             } finally {
-                if (preparingSessionId == sessionId) preparingSessionId = null
-                if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+                try {
+                    val draft = generationPresentationStore.submittedDraft(sessionId)
+                    if (draft?.submissionId == submissionId && draft.taskId == null && pendingPermissionTurn?.sessionId != sessionId) {
+                        withContext(NonCancellable) { restoreSubmittedDraft(sessionId, expectedSubmissionId = submissionId) }
+                    }
+                } finally {
+                    preparingSessions.remove(sessionId)
+                    if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+                }
             }
         }
     }
 
 
     private fun isSessionGenerating(sessionId: String): Boolean {
+        if (sessionId in preparingSessions || pendingPermissionTurn?.sessionId == sessionId ||
+            generationPresentationStore.submittedDraft(sessionId) != null
+        ) return true
         if (store.getSession(sessionId)?.approvalRequest != null) return false
-        val active = generationCoordinator.active.value
-        return preparingSessionId == sessionId || pendingPermissionTurn?.sessionId == sessionId ||
-            (active?.sessionId == sessionId && active.phase !in QUEUE_INACTIVE_PHASES) ||
+        val active = generationCoordinator.observe(sessionId).value
+        return (active?.sessionId == sessionId && active.phase !in QUEUE_INACTIVE_PHASES) ||
             generationPresentationStore.observe(sessionId).value?.generating == true ||
-            (_currentSessionId.value == sessionId && generationJob?.isActive == true && _generationStatus.value == GenerationStatus.UPLOADING)
+            (_currentSessionId.value == sessionId && generationJobs[sessionId]?.isActive == true && _generationStatus.value == GenerationStatus.UPLOADING)
     }
 
     private suspend fun ComposerQueueStore.pauseIfRunningAway(sessionId: String) {
         var state = snapshot(sessionId)
-        if (state.sending != null && generationCoordinator.active.value?.sessionId != sessionId && preparingSessionId != sessionId) {
+        if (state.sending != null && generationCoordinator.observe(sessionId).value?.phase.let { it == null || it in QUEUE_INACTIVE_PHASES } && sessionId !in preparingSessions) {
             generationCoordinator.awaitSessionIdle(sessionId)
             state = snapshot(sessionId)
             state.sending?.let { sending ->
@@ -1079,6 +1146,7 @@ class ChatViewModel(
     }
 
     private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>, steer: Boolean = false) {
+        generationPresentationStore.discardComposerAttachments(sessionId)
         _inputText.value = ""
         _draftDocuments.value = emptyList()
         _restoredDraftImages.value = null
@@ -1173,7 +1241,7 @@ class ChatViewModel(
         enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, steer = true)
         cancelCurrentSessionGeneration()
         viewModelScope.launch {
-            sendPreparationMutex.withLock { terminateSessionWork(sessionId) }
+            sendPreparationMutex(sessionId).withLock { terminateSessionWork(sessionId) }
         }
     }
 
@@ -1202,7 +1270,7 @@ class ChatViewModel(
         editingQueueItem = true
         queueAction {
             withContext(NonCancellable) {
-                queueMutex.withLock {
+                queueMutex(sessionId).withLock {
                     var prepared: QueuedMessage? = null
                     var committed = false
                     try {
@@ -1267,13 +1335,14 @@ class ChatViewModel(
 
     private fun dispatchComposerQueue(sessionId: String) {
         if (!viewModelScope.isActive) return
-        if (queueDispatchJob?.isActive == true) {
-            queueDispatchRequested = sessionId
+        if (queueDispatchJobs[sessionId]?.isActive == true) {
+            queueDispatchRequested.add(sessionId)
             return
         }
-        val dispatch = viewModelScope.launch(start = CoroutineStart.LAZY) {
+        lateinit var dispatch: Job
+        dispatch = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
-                queueMutex.withLock queue@ {
+                queueMutex(sessionId).withLock queue@ {
                     if (_currentSessionId.value != sessionId || isSessionGenerating(sessionId) ||
                         pendingQueueWrites[sessionId] != null || queueSubmissions.containsKey(sessionId) || pendingDraftClearTaskId != null || submittedDraft?.sessionId == sessionId
                     ) return@queue
@@ -1281,18 +1350,14 @@ class ChatViewModel(
                     if (_currentSessionId.value != sessionId || isSessionGenerating(sessionId) || pendingQueueWrites[sessionId] != null) return@queue
                     val state = composerQueueStore.snapshot(sessionId)
                     if (state.pauseReason != null || state.items.isEmpty()) return@queue
-                    if (generationCoordinator.active.value != null) {
-                        composerQueueStore.pause(sessionId, QueuePauseReason.BUSY)
-                        return@queue
-                    }
                     val item = composerQueueStore.claimNext(sessionId) ?: return@queue
                     queueTerminalPhases.remove(sessionId)
                     stopAndSendSessions.remove(sessionId)
                     queuePauseOverrides.remove(sessionId)
                     queueSubmissions[sessionId] = item
-                    preparingSessionId = sessionId
+                    preparingSessions.add(sessionId)
                     try {
-                        sendPreparationMutex.withLock preparation@ {
+                        sendPreparationMutex(sessionId).withLock preparation@ {
                             if (_currentSessionId.value != sessionId) {
                                 restoreSubmittedDraft(sessionId, queueReason = QueuePauseReason.INTERRUPTED)
                                 return@preparation
@@ -1315,34 +1380,36 @@ class ChatViewModel(
                             restoreSubmittedDraft(sessionId, queueReason = if (failure is CancellationException) QueuePauseReason.INTERRUPTED else QueuePauseReason.FAILED)
                         }
                         if (failure is kotlinx.coroutines.CancellationException) throw failure
-                        _error.value = stringResourceResolver(R.string.chat_queue_error_send)
-                        _isGenerating.value = false
+                        if (_currentSessionId.value == sessionId) {
+                            _error.value = stringResourceResolver(R.string.chat_queue_error_send)
+                            _isGenerating.value = false
+                        }
                     } finally {
-                        if (preparingSessionId == sessionId) preparingSessionId = null
+                        preparingSessions.remove(sessionId)
                     }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 queueTerminalPhases[sessionId] = GenerationPhase.FAILED
-                _error.value = stringResourceResolver(R.string.chat_queue_error_send)
+                if (_currentSessionId.value == sessionId) _error.value = stringResourceResolver(R.string.chat_queue_error_send)
                 runCatching { composerQueueStore.pause(sessionId, QueuePauseReason.FAILED) }
                 if (_currentSessionId.value == sessionId) _composerQueue.value = _composerQueue.value.copy(pauseReason = ComposerQueuePauseReason.FAILED)
             } finally {
-                queueDispatchJob = null
-                val requested = queueDispatchRequested
-                queueDispatchRequested = null
-                if (requested != null) dispatchComposerQueue(requested)
-                else if (viewModelScope.isActive && _currentSessionId.value == sessionId &&
-                    queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED &&
-                    !isSessionGenerating(sessionId) && !queueSubmissions.containsKey(sessionId) && pendingQueueWrites[sessionId] == null
-                ) {
-                    val remaining = composerQueueStore.snapshot(sessionId)
-                    if (remaining.items.isNotEmpty() && remaining.pauseReason == null) dispatchComposerQueue(sessionId)
+                if (queueDispatchJobs.remove(sessionId, dispatch)) {
+                    val requested = queueDispatchRequested.remove(sessionId)
+                    if (requested) dispatchComposerQueue(sessionId)
+                    else if (viewModelScope.isActive && _currentSessionId.value == sessionId &&
+                        queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED &&
+                        !isSessionGenerating(sessionId) && !queueSubmissions.containsKey(sessionId) && pendingQueueWrites[sessionId] == null
+                    ) {
+                        val remaining = composerQueueStore.snapshot(sessionId)
+                        if (remaining.items.isNotEmpty() && remaining.pauseReason == null) dispatchComposerQueue(sessionId)
+                    }
                 }
             }
         }
-        queueDispatchJob = dispatch
+        queueDispatchJobs[sessionId] = dispatch
         dispatch.start()
     }
 
@@ -1394,6 +1461,10 @@ class ChatViewModel(
                     reuseUserMessageId = reuseUserMessageId,
                 )
             com.promenar.nexara.background.generation.BackgroundGenerationPolicy.REQUIRES_PERMISSION -> {
+                if (_currentSessionId.value != sessionId) {
+                    restoreSubmittedDraft(sessionId)
+                    return
+                }
                 val token = IdGenerator.message("perm")
                 pendingPermissionTurn = PendingPermissionTurn(
                     token,
@@ -1416,36 +1487,51 @@ class ChatViewModel(
         if (pending.token != token) return
         pendingPermissionTurn = null
         clearNotificationPermissionRequestForTask(token)
-        generationJob = viewModelScope.launch {
-            sendPreparationMutex.withLock {
-                if (_currentSessionId.value != pending.sessionId) return@withLock
-                _generationStatus.update { GenerationStatus.UPLOADING }
-                _isGenerating.update { true }
-                _error.update { null }
-                _generationNotice.value = null
-                _backgroundServiceStoppedError.value = null
-                _backgroundWarning.value = null
-                _providerResolutionFailure.value = null
-                val session = store.getSession(pending.sessionId)
-                if (session == null) {
-                    _isGenerating.update { false }
-                    return@withLock
+        generationJobs[pending.sessionId] = viewModelScope.launch {
+            try {
+                sendPreparationMutex(pending.sessionId).withLock {
+                    if (_currentSessionId.value != pending.sessionId) {
+                        restoreSubmittedDraft(pending.sessionId, queueReason = QueuePauseReason.INTERRUPTED)
+                        return@withLock
+                    }
+                    _generationStatus.update { GenerationStatus.UPLOADING }
+                    _isGenerating.update { true }
+                    _error.update { null }
+                    _generationNotice.value = null
+                    _backgroundServiceStoppedError.value = null
+                    _backgroundWarning.value = null
+                    _providerResolutionFailure.value = null
+                    val session = store.getSession(pending.sessionId)
+                    if (session == null) {
+                        _isGenerating.update { false }
+                        return@withLock
+                    }
+                    try {
+                        enqueuePreparedUserTurnAfterReplacement(
+                            pending.sessionId,
+                            session,
+                            pending.text,
+                            pending.imageDataUrls,
+                            pending.documents,
+                            backgroundAllowed = granted,
+                            assistantMessageIdsToReplace = pending.assistantMessageIdsToReplace,
+                            reuseUserMessageId = pending.reuseUserMessageId,
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        if (_currentSessionId.value == pending.sessionId) {
+                            _error.update { "无法安全删除旧回复，已取消重试。" }
+                            _generationStatus.update { GenerationStatus.ERROR }
+                            _isGenerating.update { false }
+                        }
+                    }
                 }
-                try {
-                    enqueuePreparedUserTurnAfterReplacement(
-                        pending.sessionId,
-                        session,
-                        pending.text,
-                        pending.imageDataUrls,
-                        pending.documents,
-                        backgroundAllowed = granted,
-                        assistantMessageIdsToReplace = pending.assistantMessageIdsToReplace,
-                        reuseUserMessageId = pending.reuseUserMessageId,
-                    )
-                } catch (_: Exception) {
-                    _error.update { "无法安全删除旧回复，已取消重试。" }
-                    _generationStatus.update { GenerationStatus.ERROR }
-                    _isGenerating.update { false }
+            } finally {
+                if (generationPresentationStore.submittedDraft(pending.sessionId)?.taskId == null) {
+                    withContext(NonCancellable) {
+                        restoreSubmittedDraftFromPresentation(pending.sessionId)
+                    }
                 }
             }
         }
@@ -1482,7 +1568,7 @@ class ChatViewModel(
         text: String,
         backgroundAllowed: Boolean,
         assistantMessageIdsToReplace: Set<String>,
-    ): Boolean = store.turnAdmission.withLock {
+    ): Boolean = store.turnAdmission.withLock(sessionId) {
         val assistantMessageId = IdGenerator.message("ai")
         messageManager.addMessage(
             sessionId,
@@ -1517,7 +1603,11 @@ class ChatViewModel(
             }
             throw failure
         }
-        replacingTaskId = (start as? com.promenar.nexara.domain.generation.StartGenerationResult.Started)?.taskId
+        replacingTaskId = when (start) {
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> start.taskId
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Queued -> start.taskId
+            else -> null
+        }
         if (replacingTaskId == null) _replacingMessageIds.value = emptySet()
         if (
             start is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ||
@@ -1542,11 +1632,16 @@ class ChatViewModel(
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
-    ) = store.turnAdmission.withLock {
+    ) = store.turnAdmission.withLock(sessionId) {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
         val queuedSubmission = queueSubmissions[sessionId]
-        if (queuedSubmission == null) submittedDraft = submittedDraft?.takeIf { it.sessionId == sessionId }?.copy(userMessageId = userMsgId)
+        if (queuedSubmission == null) {
+            generationPresentationStore.submittedDraft(sessionId)?.copy(userMessageId = userMsgId)?.let { draft ->
+                if (_currentSessionId.value == sessionId) submittedDraft = draft
+                generationPresentationStore.retainSubmittedDraft(draft)
+            }
+        }
         queuedSubmission?.let { item ->
             queueUserMessageIds[sessionId] = userMsgId
             composerQueueStore.bindSending(sessionId, item.id, userMsgId)
@@ -1587,6 +1682,7 @@ class ChatViewModel(
                 )
             ) {
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
+                is com.promenar.nexara.domain.generation.StartGenerationResult.Queued,
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
                     if (queuedSubmission != null) {
                         viewModelScope.launch {
@@ -1598,6 +1694,7 @@ class ChatViewModel(
                             if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
                         }
                     } else if (
+                        _currentSessionId.value == sessionId &&
                         pendingDraftClearTaskId != null &&
                         generationPresentationStore.observe(sessionId).value == null &&
                         generationCoordinator.observe(sessionId).value == null &&
@@ -1614,12 +1711,13 @@ class ChatViewModel(
                         sessionId,
                         listOf(assistantMsgId, userMsgId),
                     )
-                    pendingDraftClearTaskId = null
+                    if (_currentSessionId.value == sessionId) pendingDraftClearTaskId = null
                     restoreSubmittedDraft(sessionId, fallbackText = text,
                         queueReason = if (start is com.promenar.nexara.domain.generation.StartGenerationResult.Busy) QueuePauseReason.BUSY else QueuePauseReason.FAILED)
-                    _isGenerating.value = false
-                    _generationStatus.value = GenerationStatus.ERROR
-                    _generationNotice.value = when (start) {
+                    if (_currentSessionId.value == sessionId) {
+                        _isGenerating.value = false
+                        _generationStatus.value = GenerationStatus.ERROR
+                        _generationNotice.value = when (start) {
                         is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ->
                             GenerationFailureNotice.from(
                                 com.promenar.nexara.domain.generation.GenerationFailure.busy(),
@@ -1631,6 +1729,7 @@ class ChatViewModel(
                                 technical = "generation request did not start",
                             ),
                         )
+                        }
                     }
                 }
             }
@@ -1645,7 +1744,7 @@ class ChatViewModel(
                     .exceptionOrNull()?.let(failure::addSuppressed)
                 runCatching { restoreSubmittedDraft(sessionId, fallbackText = text) }
                     .exceptionOrNull()?.let(failure::addSuppressed)
-                _isGenerating.value = false
+                if (_currentSessionId.value == sessionId) _isGenerating.value = false
             }
             throw failure
         }
@@ -1771,7 +1870,7 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             try {
-                sendPreparationMutex.withLock {
+                sendPreparationMutex(expected.sessionId).withLock {
                     val result = askUserLedger.answer(expected, frozenAnswer) ?: return@launch
                     synchronized(questionSubmissionLock) { lastAnsweredQuestion = expected }
                     messageManager.mirrorPersistedMessage(expected.sessionId, result.result)
@@ -1796,7 +1895,7 @@ class ChatViewModel(
         if (task?.assistantMessageId == continuation.assistant.id && task.phase !in TERMINAL_GENERATION_PHASES) return@withLock
         if (task?.phase == GenerationPhase.WAITING_INPUT) generationCoordinator.awaitSessionIdle(sessionId)
         else if (task != null && task.phase !in TERMINAL_GENERATION_PHASES) return@withLock
-        sendPreparationMutex.withLock questionStart@ {
+        sendPreparationMutex(sessionId).withLock questionStart@ {
             // 等待旧任务释放期间可能已经停止、删除或被其它操作处理，不能使用此前读出的对象启动。
             val current = askUserLedger.resumption(sessionId) ?: return@questionStart
             if (current.assistant.id != continuation.assistant.id || questionResumptionAttempts[sessionId] == current.assistant.id) return@questionStart
@@ -1857,42 +1956,46 @@ class ChatViewModel(
             messageIdsToReplace = assistantMessageIdsToReplace,
             requestId = generationRequestId ?: IdGenerator.message("generation"),
         )
-        if (clearDraftOnConnecting) {
+        if (clearDraftOnConnecting && _currentSessionId.value == sessionId) {
             pendingDraftClearTaskId = DRAFT_PENDING_START
         }
         return generationCoordinator.start(request).also { result ->
             if (clearDraftOnConnecting) {
-                if (pendingDraftClearTaskId == DRAFT_PENDING_START) {
-                    pendingDraftClearTaskId = when (result) {
-                        is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> result.taskId
-                        is com.promenar.nexara.domain.generation.StartGenerationResult.Existing ->
-                            result.snapshot.taskId
-                        else -> null
-                    }
+                val taskId = when (result) {
+                    is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> result.taskId
+                    is com.promenar.nexara.domain.generation.StartGenerationResult.Queued -> result.taskId
+                    is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> result.snapshot.taskId
+                    else -> null
                 }
-                val presentation = generationPresentationStore.observe(sessionId).value
-                if (
-                    presentation?.taskId == pendingDraftClearTaskId &&
-                    presentation?.promptAccepted == true
-                ) {
-                    pendingDraftClearTaskId = null
-                    consumeAcceptedDraft(sessionId)
-                } else if (
-                    presentation != null &&
-                    presentation.taskId == pendingDraftClearTaskId &&
-                    presentation.phase in DRAFT_SETTLING_PHASES
-                ) {
-                    // 任务在 start 返回前就已在准备阶段结束，订阅方当时还无法匹配任务。
-                    pendingDraftClearTaskId = null
-                    if (submittedUserMessageRolledBack(sessionId)) {
-                        restoreSubmittedDraft(sessionId)
-                    } else {
+                if (taskId != null) generationPresentationStore.submittedDraft(sessionId)?.copy(taskId = taskId)?.let { draft ->
+                    if (_currentSessionId.value == sessionId) submittedDraft = draft
+                    generationPresentationStore.retainSubmittedDraft(draft)
+                }
+                if (_currentSessionId.value == sessionId) {
+                    if (pendingDraftClearTaskId == DRAFT_PENDING_START) pendingDraftClearTaskId = taskId
+                    val presentation = generationPresentationStore.observe(sessionId).value
+                    if (presentation?.taskId == pendingDraftClearTaskId && presentation?.promptAccepted == true) {
+                        pendingDraftClearTaskId = null
                         consumeAcceptedDraft(sessionId)
+                    } else if (presentation != null && presentation.taskId == pendingDraftClearTaskId &&
+                        presentation.phase in DRAFT_SETTLING_PHASES
+                    ) {
+                        // 任务在 start 返回前就已在准备阶段结束，订阅方当时还无法匹配任务。
+                        pendingDraftClearTaskId = null
+                        if (submittedUserMessageRolledBack(sessionId)) restoreSubmittedDraft(sessionId)
+                        else consumeAcceptedDraft(sessionId)
                     }
                 }
             }
             when (result) {
             is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> {
+                if (backgroundAllowed) {
+                    generationCoordinator.observe(sessionId).value
+                        ?.takeIf { it.taskId == result.taskId }
+                        ?.let(::trackForegroundGeneration)
+                }
+            }
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Queued -> {
                 if (backgroundAllowed) {
                     generationCoordinator.observe(sessionId).value
                         ?.takeIf { it.taskId == result.taskId }
@@ -1905,13 +2008,15 @@ class ChatViewModel(
                 }
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Busy -> {
-                _generationNotice.value = GenerationFailureNotice.from(
+                if (_currentSessionId.value == sessionId) _generationNotice.value = GenerationFailureNotice.from(
                     com.promenar.nexara.domain.generation.GenerationFailure.busy(),
                 )
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected -> {
-                _generationNotice.value = GenerationFailureNotice.from(result.error.failure)
-                _generationStatus.value = GenerationStatus.ERROR
+                if (_currentSessionId.value == sessionId) {
+                    _generationNotice.value = GenerationFailureNotice.from(result.error.failure)
+                    _generationStatus.value = GenerationStatus.ERROR
+                }
             }
         }
         }
@@ -1922,8 +2027,10 @@ class ChatViewModel(
     ) {
         val current = generationCoordinator.observe(snapshot.sessionId).value
         if (current?.taskId != snapshot.taskId || current.phase in FOREGROUND_STOPPING_PHASES) return
+        val result = generationForegroundController.track(current)
+        if (_currentSessionId.value != current.sessionId) return
         foregroundTrackedTaskId = current.taskId
-        when (generationForegroundController.track(current)) {
+        when (result) {
             com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications -> {
                 clearBackgroundWarningForTask(current.taskId)
             }
@@ -1978,13 +2085,19 @@ class ChatViewModel(
     }
 
     fun loadSession(sessionId: String) {
+        (application as NexaraApplication).generationInteractions.selectSession(sessionId)
         viewModelScope.launch(Dispatchers.IO) { (application as NexaraApplication).checkSessionRunMode(sessionId) }
         // 折叠屏展开或旋转会让界面重建并重新载入同一会话：会话 id 不变时各收集器不会重启，
         // 输入、生成状态、提示与撤销都仍是最新的，不能清空后等待下一次事件再补回。
         val reattaching = _currentSessionId.value == sessionId
+        val abandonedPermissionSession = pendingPermissionTurn?.sessionId?.takeIf { it != sessionId }
         val liveInput = _inputText.value.takeIf { reattaching }
         if (!reattaching) {
+            saveCurrentDraft()
             _inputText.value = ""
+            _draftDocuments.value = emptyList()
+            _restoredDraftImages.value = null
+            composerImages = emptyList()
             resetSessionTransientState()
         }
         val existing = store.getSession(sessionId)
@@ -1992,8 +2105,10 @@ class ChatViewModel(
             if (existing.workspaceRootUuid.isNullOrBlank()) {
                 viewModelScope.launch { ensureSessionWorkspace(sessionId) }
             }
-            _inputText.value = liveInput ?: existing.draft.orEmpty()
+            _inputText.value = liveInput ?: generationPresentationStore.composerText(sessionId) ?: existing.draft.orEmpty()
+            if (!reattaching) restoreComposerAttachments(sessionId)
             _currentSessionId.update { sessionId }
+            abandonedPermissionSession?.let(generationPresentationStore::markSubmittedDraftRecoverable)
             updateAgentName(existing.agentId)
             viewModelScope.launch { messageManager.reconcileTurnMemory(sessionId) }
             // 同步当前会话的 ragOptions 到缓存
@@ -2037,7 +2152,8 @@ class ChatViewModel(
                         if (state.sessions.any { it.id == sessionId }) state
                         else state.copy(sessions = state.sessions + hydrated)
                     }
-                    _inputText.value = liveInput ?: hydrated.draft.orEmpty()
+                    _inputText.value = liveInput ?: generationPresentationStore.composerText(sessionId) ?: hydrated.draft.orEmpty()
+                    if (!reattaching) restoreComposerAttachments(sessionId)
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
                     messageManager.reconcileTurnMemory(sessionId)
@@ -2063,6 +2179,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 _error.update { "Failed to load session: ${e.message}" }
             } finally {
+                abandonedPermissionSession?.let(generationPresentationStore::markSubmittedDraftRecoverable)
                 _isLoading.update { false }
             }
         }
@@ -2070,7 +2187,6 @@ class ChatViewModel(
 
     private fun resetSessionTransientState() {
         submittedDraft = null
-        _restoredDraftImages.value = null
         replacingTaskId = null
         _replacingMessageIds.value = emptySet()
         _deletionUndo.value = null
@@ -2111,6 +2227,7 @@ class ChatViewModel(
         viewModelScope.launch {
             val sessionId = insertNewSession(agentId)
             _currentSessionId.update { sessionId }
+            (application as NexaraApplication).generationInteractions.selectSession(sessionId)
             updateAgentName(agentId)
         }
     }
@@ -2204,23 +2321,21 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value
         if (sessionId != null) {
             viewModelScope.launch {
-                sendPreparationMutex.withLock {
+                sendPreparationMutex(sessionId).withLock {
                     terminateSessionWork(sessionId)
                 }
             }
         }
     }
 
-    private fun cancelPendingPreparation() {
-        queueDispatchJob?.cancel()
-        generationJob?.cancel()
-        generationJob = null
-        approvalJob?.cancel()
-        approvalJob = null
-        if (pendingPermissionTurn != null) {
+    private fun cancelPendingPreparation(sessionId: String) {
+        queueDispatchJobs[sessionId]?.cancel()
+        generationJobs.remove(sessionId)?.cancel()
+        approvalJobs.remove(sessionId)?.cancel()
+        if (pendingPermissionTurn?.sessionId == sessionId) {
             val pendingSession = pendingPermissionTurn?.sessionId
             pendingPermissionTurn = null
-            if (pendingSession != null && queueSubmissions.containsKey(pendingSession)) {
+            if (pendingSession != null) {
                 queueAction { restoreSubmittedDraft(pendingSession, queueReason = QueuePauseReason.INTERRUPTED) }
             }
             mutableNotificationPermissionRequest.value = null
@@ -2230,8 +2345,8 @@ class ChatViewModel(
     }
 
     private fun cancelCurrentSessionGeneration() {
-        cancelPendingPreparation()
         val sessionId = _currentSessionId.value ?: return
+        cancelPendingPreparation(sessionId)
         generationCoordinator.observe(sessionId).value?.taskId?.let { taskId ->
             generationCoordinator.cancel(
                 taskId,
@@ -2257,20 +2372,21 @@ class ChatViewModel(
      */
     fun approveAllRequests(expectedRequest: ApprovalRequest) {
         val sessionId = _currentSessionId.value ?: return
-        if (!approvalSubmissionMutex.tryLock()) return
+        val approvalLock = approvalSubmissionMutex(sessionId)
+        if (!approvalLock.tryLock()) return
         _isApprovalSubmitting.value = true
         val expectedTaskId = generationCoordinator.observe(sessionId).value?.taskId
-        approvalJob = viewModelScope.launch {
+        approvalJobs[sessionId] = viewModelScope.launch {
             try {
                 approvalManager.approveAll(sessionId, expectedRequest)
             } finally {
                 try {
-                    sendPreparationMutex.withLock {
+                    sendPreparationMutex(sessionId).withLock {
                         settleApprovalSshOwner(sessionId, expectedTaskId)
                     }
                 } finally {
-                    _isApprovalSubmitting.value = false
-                    approvalSubmissionMutex.unlock()
+                    if (_currentSessionId.value == sessionId) _isApprovalSubmitting.value = false
+                    approvalLock.unlock()
                 }
             }
         }
@@ -2287,10 +2403,11 @@ class ChatViewModel(
         approved: Boolean,
         intervention: String?,
     ) {
-        if (!approvalSubmissionMutex.tryLock()) return
+        val approvalLock = approvalSubmissionMutex(sessionId)
+        if (!approvalLock.tryLock()) return
         _isApprovalSubmitting.value = true
         val expectedTaskId = generationCoordinator.observe(sessionId).value?.taskId
-        approvalJob = viewModelScope.launch {
+        approvalJobs[sessionId] = viewModelScope.launch {
             try {
                 approvalManager.resumeGeneration(
                     sessionId,
@@ -2300,12 +2417,12 @@ class ChatViewModel(
                 )
             } finally {
                 try {
-                    sendPreparationMutex.withLock {
+                    sendPreparationMutex(sessionId).withLock {
                         settleApprovalSshOwner(sessionId, expectedTaskId)
                     }
                 } finally {
-                    _isApprovalSubmitting.value = false
-                    approvalSubmissionMutex.unlock()
+                    if (_currentSessionId.value == sessionId) _isApprovalSubmitting.value = false
+                    approvalLock.unlock()
                 }
             }
         }
@@ -2833,26 +2950,48 @@ class ChatViewModel(
         }
     }
 
+    private fun retainComposerAttachments(sessionId: String) {
+        generationPresentationStore.retainComposerAttachments(
+            sessionId,
+            com.promenar.nexara.data.generation.SessionComposerAttachments(
+                documents = _draftDocuments.value,
+                imageUris = (composerImages.map(Uri::toString) + _restoredDraftImages.value.orEmpty()).distinct(),
+            ),
+        )
+    }
+
+    private fun restoreComposerAttachments(sessionId: String) {
+        val attachments = generationPresentationStore.composerAttachments(sessionId)
+        _draftDocuments.value = attachments?.documents.orEmpty()
+        composerImages = attachments?.imageUris.orEmpty().map(Uri::parse)
+        _restoredDraftImages.value = attachments?.imageUris?.takeIf { it.isNotEmpty() }
+    }
+
     /**
      * 离开会话时调用，ViewModel 随后就会被清理：先同步改内存会话（重新进入读的是它），
      * 再不可取消地落库；否则写库途中作用域被取消，手动删掉的草稿会在重新进入时复活。
      */
     fun saveCurrentDraft() {
         val sessionId = _currentSessionId.value ?: return
+        retainComposerAttachments(sessionId)
         val draft = _inputText.value.ifBlank { null }
+        generationPresentationStore.retainComposerText(sessionId, draft.orEmpty())
         store.updateSession(sessionId) { it.copy(draft = draft) }
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            withContext(NonCancellable) { sessionManager.updateSessionDraft(sessionId, draft) }
+            withContext(NonCancellable) {
+                generationPresentationStore.withDraftRecovery(sessionId) {
+                    sessionManager.updateSessionDraft(sessionId, draft)
+                }
+            }
         }
     }
 
     override fun onCleared() {
+        val abandonedPermissionSession = pendingPermissionTurn?.sessionId
+        _currentSessionId.value?.let(::retainComposerAttachments)
         directoryBusyRegistration?.close()
-        _currentSessionId.value?.let { sessionId ->
-            generationCoordinator.release(sessionId)
-            generationPresentationStore.release(sessionId)
-        }
         super.onCleared()
+        abandonedPermissionSession?.let(generationPresentationStore::markSubmittedDraftRecoverable)
         // 生成由应用级 owner 持有；ViewModel 销毁只移除观察者，不终止请求。
     }
 
@@ -2878,14 +3017,24 @@ class ChatViewModel(
             val questionTarget = askUserLedger.pending(sessionId)?.assistantMessageId
             val expanded = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(session.messages, it) }
             if ((approvalTarget != null && approvalTarget in expanded) || (questionTarget != null && questionTarget in expanded)) {
-                sendPreparationMutex.withLock {
+                sendPreparationMutex(sessionId).withLock {
                     closePendingApprovalBeforeNewTurn(sessionId)
                 }
             }
             val current = store.getSession(sessionId)?.messages.orEmpty()
             val removalIds = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(current, it) }
             val messagesToRestore = current.filter { it.id in removalIds }
-            val stateVersions = messageManager.deleteMessagesWithStateUndo(sessionId, targetIds) { stopGeneration() }
+            val stateVersions = messageManager.deleteMessagesWithStateUndo(sessionId, targetIds) { targetSession ->
+                if (_currentSessionId.value == targetSession) stopGeneration()
+                else {
+                    queuePauseOverrides[targetSession] = QueuePauseReason.STOPPED
+                    generationCoordinator.observe(targetSession).value?.taskId?.let { generationCoordinator.cancel(it) }
+                    viewModelScope.launch {
+                        composerQueueStore.pause(targetSession, QueuePauseReason.STOPPED)
+                        sendPreparationMutex(targetSession).withLock { terminateSessionWork(targetSession) }
+                    }
+                }
+            }
             lastDeletedStateVersions = stateVersions
             lastDeletedMessages.clear()
             messagesToRestore.forEach { lastDeletedMessages.add(sessionId to it) }
@@ -2934,8 +3083,8 @@ class ChatViewModel(
         val userMessage = initial.messages[userIndex]
 
         cancelCurrentSessionGeneration()
-        generationJob = viewModelScope.launch {
-            sendPreparationMutex.withLock {
+        generationJobs[sessionId] = viewModelScope.launch {
+            sendPreparationMutex(sessionId).withLock {
                 try {
                     closePendingApprovalBeforeNewTurn(sessionId)
                     val session = store.getSession(sessionId) ?: return@withLock
@@ -2968,7 +3117,7 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         cancelCurrentSessionGeneration()
         viewModelScope.launch {
-            sendPreparationMutex.withLock {
+            sendPreparationMutex(sessionId).withLock {
                 terminateSessionWork(sessionId)
                 messageManager.clearMessages(sessionId)
             }
@@ -3020,44 +3169,88 @@ class ChatViewModel(
     }
 
     /** 点击发送即清空输入框与附件，保留副本直到生成接受或回滚；持久化草稿在接受后才清除。 */
-    private fun takeDraftForSending(sessionId: String, text: String, imageUris: List<Uri>) {
+    private fun takeDraftForSending(sessionId: String, text: String, imageUris: List<Uri>): String {
         queueTerminalPhases.remove(sessionId)
         stopAndSendSessions.remove(sessionId)
         queuePauseOverrides.remove(sessionId)
-        submittedDraft = SubmittedDraft(
+        val draft = com.promenar.nexara.data.generation.SubmittedGenerationDraft(
             sessionId = sessionId,
             text = _inputText.value.ifBlank { text },
             documents = _draftDocuments.value,
             imageUris = imageUris.map(Uri::toString),
         )
+        submittedDraft = draft
+        generationPresentationStore.retainSubmittedDraft(draft)
+        generationPresentationStore.discardComposerAttachments(sessionId)
         _inputText.value = ""
         _draftDocuments.value = emptyList()
         _restoredDraftImages.value = null
         composerImages = emptyList()
         _draftConsumptionEpoch.value += 1
+        return draft.submissionId
     }
 
     private fun submittedUserMessageRolledBack(sessionId: String): Boolean {
-        val messageId = queueUserMessageIds[sessionId] ?: submittedDraft?.takeIf { it.sessionId == sessionId }?.userMessageId ?: return true
+        val messageId = queueUserMessageIds[sessionId] ?: generationPresentationStore.submittedDraft(sessionId)?.userMessageId ?: return true
         return store.getSession(sessionId)?.messages?.none { it.id == messageId } ?: true
     }
 
-    /** 只填回仍为空的部分，不覆盖用户在此期间新输入的内容。 */
-    private suspend fun restoreSubmittedDraft(sessionId: String, fallbackText: String = "", queueReason: QueuePauseReason = QueuePauseReason.FAILED) {
+    private suspend fun restoreSubmittedDraftFromPresentation(sessionId: String) {
+        try {
+            restoreSubmittedDraft(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (_currentSessionId.value == sessionId) _error.value = stringResourceResolver(R.string.chat_queue_error_draft_after_restore)
+        }
+    }
+
+    /** 与用户随后输入的内容合并，成功保存后才移除待恢复副本。 */
+    private suspend fun restoreSubmittedDraft(
+        sessionId: String,
+        fallbackText: String = "",
+        queueReason: QueuePauseReason = QueuePauseReason.FAILED,
+        expectedSubmissionId: String? = null,
+    ) = generationPresentationStore.withDraftRecovery(sessionId) {
         queueSubmissions[sessionId]?.let { item ->
             val reason = composerQueueStore.snapshot(sessionId).pauseReason ?: queueReason
             composerQueueStore.rollback(sessionId, item.id, reason)
             queueSubmissions.remove(sessionId)
             queueUserMessageIds.remove(sessionId)
-            return
+            return@withDraftRecovery
         }
-        val draft = submittedDraft?.takeIf { it.sessionId == sessionId }
-        submittedDraft = null
-        val text = draft?.text?.ifBlank { null } ?: fallbackText
-        if (_inputText.value.isBlank() && text.isNotBlank()) _inputText.value = text
-        if (draft != null && _draftDocuments.value.isEmpty()) _draftDocuments.value = draft.documents
-        if (draft != null && draft.imageUris.isNotEmpty()) _restoredDraftImages.value = draft.imageUris
-        sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
+        val draft = generationPresentationStore.submittedDraft(sessionId)
+            ?: return@withDraftRecovery
+        if (expectedSubmissionId != null && draft.submissionId != expectedSubmissionId) return@withDraftRecovery
+        if (_currentSessionId.value != sessionId || !viewModelScope.isActive) {
+            generationPresentationStore.markSubmittedDraftRecoverable(sessionId)
+            return@withDraftRecovery
+        }
+        if (!draft.recoveryApplied) {
+            val text = draft.text.ifBlank { fallbackText }
+            if (text.isNotBlank()) _inputText.value = listOf(text, _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
+            _draftDocuments.value = (draft.documents + _draftDocuments.value).distinctBy { it.id }
+            val images = (draft.imageUris + composerImages.map(Uri::toString) + _restoredDraftImages.value.orEmpty()).distinct()
+            if (images.isNotEmpty()) {
+                composerImages = images.map(Uri::parse)
+                _restoredDraftImages.value = images
+            }
+            generationPresentationStore.retainSubmittedDraft(draft.copy(recoveryApplied = true))
+        }
+        try {
+            sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
+        } catch (failure: Throwable) {
+            generationPresentationStore.markSubmittedDraftRecoverable(sessionId)
+            throw failure
+        }
+        if (_currentSessionId.value != sessionId || !viewModelScope.isActive) {
+            generationPresentationStore.markSubmittedDraftRecoverable(sessionId)
+            return@withDraftRecovery
+        }
+        retainComposerAttachments(sessionId)
+        generationPresentationStore.submittedDraft(sessionId)?.takeIf { it.submissionId == draft.submissionId }
+            ?.let(generationPresentationStore::discardSubmittedDraft)
+        if (submittedDraft?.submissionId == draft.submissionId) submittedDraft = null
     }
 
     fun consumeRestoredDraftImages() {
@@ -3079,6 +3272,7 @@ class ChatViewModel(
         val draftImages = submittedDraft?.takeIf { it.sessionId == sessionId }?.imageUris.orEmpty()
         composerQueueStore.releaseDraftImages(sessionId, draftImages.mapNotNull { Uri.parse(it).path })
         val clearedOnSend = submittedDraft?.sessionId == sessionId
+        submittedDraft?.takeIf { it.sessionId == sessionId }?.let(generationPresentationStore::discardSubmittedDraft)
         submittedDraft = null
         if (clearedOnSend) {
             sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null })
@@ -3091,19 +3285,10 @@ class ChatViewModel(
         sessionManager.updateSessionDraft(sessionId, null)
     }
 
-    private data class SubmittedDraft(
-        val sessionId: String,
-        val text: String,
-        val documents: List<MessageDocumentAttachment>,
-        val imageUris: List<String>,
-        val userMessageId: String? = null,
-    )
-
     companion object {
         private val QUEUE_INACTIVE_PHASES = setOf(
             GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.PERSISTENCE_FAILED,
-            GenerationPhase.CANCELLED, GenerationPhase.WAITING_APPROVAL,
-            GenerationPhase.WAITING_INPUT,
+            GenerationPhase.CANCELLED, GenerationPhase.WAITING_APPROVAL, GenerationPhase.WAITING_INPUT,
         )
         private val DRAFT_SETTLING_PHASES = setOf(
             com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
@@ -3131,8 +3316,7 @@ class ChatViewModel(
             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
         )
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
-            setOf(com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
-                com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT)
+            setOf(GenerationPhase.WAITING_APPROVAL, GenerationPhase.WAITING_INPUT)
         private const val FONT_SIZE_PERSISTENCE_DEBOUNCE_MS = 180L
         private const val DRAFT_PENDING_START = "__pending_generation_start__"
 
@@ -3155,7 +3339,7 @@ class ChatViewModel(
                         configResolver = app.configResolver,
                         providerResolutionDispatcher = Dispatchers.IO,
                         localLlmProviderFactory = { modelId ->
-                            LlmProvider.local(app.localInferenceEngine, modelId)
+                            app.generationLocalProviders.create(modelId)
                         },
                         embeddingClient = app.embeddingClient,
                         vectorStore = app.vectorStore,

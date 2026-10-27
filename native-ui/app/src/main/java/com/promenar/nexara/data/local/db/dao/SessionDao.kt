@@ -120,6 +120,10 @@ interface SessionDao {
     @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE (approval_request IS NOT NULL AND approval_request != '') OR loop_status IN ('waiting_for_input', 'input_answered'))")
     suspend fun hasPendingUserInteraction(): Boolean
 
+    /** 单个会话是否在等待批准、等待回答或已回答待续跑；系统轮按会话判断，不被其它会话阻挡。 */
+    @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = :sessionId AND ((approval_request IS NOT NULL AND approval_request != '') OR loop_status IN ('waiting_for_input', 'input_answered')))")
+    suspend fun hasPendingUserInteraction(sessionId: String): Boolean
+
     @Query("UPDATE sessions SET options = :options, rag_options = :ragOptions, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateOptions(sessionId: String, options: String?, ragOptions: String?, updatedAt: Long)
 

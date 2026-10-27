@@ -12,28 +12,129 @@ class SystemTurnDispatcherTest {
         val ready = CompletableDeferred<Unit>()
         var exists = true
         var busy = false
+        val busySessions = mutableSetOf<String>()
+        val brokenSessions = mutableSetOf<String>()
+        val sessionChecks = mutableMapOf<String, CompletableDeferred<Unit>>()
         var loads = 0
         var loadWait: CompletableDeferred<Unit>? = null
         var beforeStart: CompletableDeferred<Unit>? = null
         val calls = mutableListOf<SystemTurnRequest>()
         var finish: CompletableDeferred<Unit>? = null
+        val sessionFinishes = mutableMapOf<String, CompletableDeferred<Unit>>()
         var rejectedOnce = false
+        var rejectedSource: String? = null
+        var rejectionGate: CompletableDeferred<Unit>? = null
         var cancelled = false
         override suspend fun awaitReady() { ready.await() }
-        override suspend fun sessionExists(sessionId: String) = exists
+        override suspend fun sessionExists(sessionId: String): Boolean {
+            sessionChecks[sessionId]?.await()
+            check(sessionId !in brokenSessions) { "session query failed" }
+            return exists
+        }
         override suspend fun loadSession(sessionId: String): Boolean { loads++; loadWait?.await(); return exists }
-        override suspend fun isBusy() = busy
-        override suspend fun run(request: SystemTurnRequest, onStarted: () -> Unit): SystemTurnOutcome? {
+        override suspend fun isBusy(sessionId: String) = busy || sessionId in busySessions
+        override suspend fun run(request: SystemTurnRequest, ticket: SystemTurnAdmissionTicket): SystemTurnOutcome? {
             beforeStart?.await()
+            if (request.sourceId == rejectedSource) {
+                rejectionGate?.await()
+                rejectedSource = null
+                return null
+            }
             if (rejectedOnce) { rejectedOnce = false; busy = true; return null }
-            onStarted()
+            if (!ticket.tryAccept("test-${request.sourceId}")) return null
             calls += request
-            try { finish?.await() } catch (error: CancellationException) { cancelled = true; throw error }
+            try { (sessionFinishes[request.sessionId] ?: finish)?.await() } catch (error: CancellationException) { cancelled = true; throw error }
             return SystemTurnOutcome.Completed
         }
     }
-    private fun request(source: String = "a", body: String = "检查") =
-        SystemTurnRequest("session", SystemTurnKind.SCHEDULE, source, "检查", body)
+    private fun request(source: String = "a", body: String = "检查", session: String = "session") =
+        SystemTurnRequest(session, SystemTurnKind.SCHEDULE, source, "检查", body)
+
+    @Test fun `其它会话繁忙不阻挡空闲会话的系统轮`() = runTest {
+        val runtime = Runtime().apply { ready.complete(Unit); busySessions += "a" }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val first = async { dispatcher.request(request("first", session = "a")) }; runCurrent()
+        val second = async { dispatcher.request(request("second", session = "b")) }; runCurrent()
+        assertThat(second.isCompleted).isTrue()
+        assertThat(second.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(first.isCompleted).isFalse()
+        assertThat(runtime.calls.map { it.sessionId }).containsExactly("b")
+        first.cancel()
+    }
+
+    @Test fun `其它会话运行时空闲会话的系统轮仍可完成`() = runTest {
+        val runtime = Runtime().apply {
+            ready.complete(Unit)
+            sessionFinishes["a"] = CompletableDeferred()
+        }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val first = async { dispatcher.request(request("first", session = "a")) }; runCurrent()
+        val second = async { dispatcher.request(request("second", session = "b")) }; runCurrent()
+        assertThat(second.isCompleted).isTrue()
+        assertThat(second.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(first.isCompleted).isFalse()
+        runtime.sessionFinishes.getValue("a").complete(Unit); runCurrent()
+        assertThat(first.await()).isEqualTo(SystemTurnOutcome.Completed)
+    }
+
+    @Test fun `一个会话的准入查询挂起不阻挡其它会话`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val runtime = Runtime().apply { ready.complete(Unit); sessionChecks["a"] = gate }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val first = async { dispatcher.request(request("first", session = "a")) }; runCurrent()
+        val second = async { dispatcher.request(request("second", session = "b")) }; runCurrent()
+        val completedBeforeRelease = second.isCompleted
+        gate.complete(Unit); runCurrent()
+        assertThat(completedBeforeRelease).isTrue()
+        assertThat(second.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(first.await()).isEqualTo(SystemTurnOutcome.Completed)
+    }
+
+    @Test fun `查询挂起时超时会撤回且不会事后启动`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val runtime = Runtime().apply { ready.complete(Unit); sessionChecks["a"] = gate }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断", busyTimeoutMillis = 1000)
+        val waiting = async { dispatcher.request(request("first", session = "a")) }; runCurrent()
+        advanceTimeBy(1000); runCurrent()
+        assertThat(waiting.await()).isEqualTo(SystemTurnOutcome.Skipped(SystemTurnSkipReason.BUSY_TIMEOUT))
+        gate.complete(Unit); runCurrent()
+        assertThat(runtime.calls).isEmpty()
+    }
+
+    @Test fun `查询挂起时同来源新请求能够取代旧请求`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val runtime = Runtime().apply { ready.complete(Unit); sessionChecks["a"] = gate }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val old = async { dispatcher.request(request("same", body = "旧", session = "a")) }; runCurrent()
+        val latest = async { dispatcher.request(request("same", body = "新", session = "b")) }; runCurrent()
+        assertThat(old.await()).isEqualTo(SystemTurnOutcome.Skipped(SystemTurnSkipReason.SUPERSEDED))
+        assertThat(latest.await()).isEqualTo(SystemTurnOutcome.Completed)
+        gate.complete(Unit); runCurrent()
+        assertThat(runtime.calls.map { it.body }).containsExactly("新")
+    }
+
+    @Test fun `同会话较早请求被抢占重排后仍先于较晚请求`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val runtime = Runtime().apply { ready.complete(Unit); rejectedSource = "first"; rejectionGate = gate }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val first = async { dispatcher.request(request("first", session = "s")) }; runCurrent()
+        val second = async { dispatcher.request(request("second", session = "s")) }; runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertThat(first.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(second.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(runtime.calls.map { it.sourceId }).containsExactly("first", "second").inOrder()
+    }
+
+    @Test fun `单个会话准入查询失败不影响其它系统轮`() = runTest {
+        val runtime = Runtime().apply { ready.complete(Unit); brokenSessions += "broken" }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val broken = async { dispatcher.request(request("bad", session = "broken")) }
+        val healthy = async { dispatcher.request(request("good", session = "healthy")) }
+        runCurrent()
+        assertThat(broken.await()).isEqualTo(SystemTurnOutcome.Failed("未完成"))
+        assertThat(healthy.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(runtime.calls.map { it.sessionId }).containsExactly("healthy")
+    }
 
     @Test fun `数据未就绪不能读取会话或发出生成`() = runTest {
         val runtime = Runtime()
@@ -107,6 +208,17 @@ class SystemTurnDispatcherTest {
         dispatcher.stopSource("a"); runCurrent()
         assertThat(runtime.cancelled).isTrue()
         assertThat(outcome.await()).isInstanceOf(SystemTurnOutcome.Failed::class.java)
+    }
+
+    @Test fun `撤回未受理来源后不能重新入队或事后启动`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val runtime = Runtime().apply { ready.complete(Unit); beforeStart = gate }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val outcome = async { dispatcher.request(request()) }; runCurrent()
+        dispatcher.stopSource("a"); runCurrent()
+        assertThat(outcome.await()).isEqualTo(SystemTurnOutcome.Failed("系统中断"))
+        gate.complete(Unit); advanceTimeBy(1000); runCurrent()
+        assertThat(runtime.calls).isEmpty()
     }
 
     @Test fun `载入尚未打开的会话期间取消不会发出生成`() = runTest {

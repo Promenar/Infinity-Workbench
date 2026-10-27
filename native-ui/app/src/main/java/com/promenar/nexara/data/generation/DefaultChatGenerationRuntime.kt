@@ -1183,7 +1183,18 @@ internal class DefaultChatGenerationRuntime(
         }
     }
 
-    override fun cancelProvider() = provider.cancel()
+    override suspend fun cancelBeforeStart(request: GenerationRequest) {
+        if (request.messageIdsToReplace.isNotEmpty()) {
+            messageManager.discardPreparedMessages(request.sessionId, listOf(request.assistantMessageId))
+        } else {
+            messageManager.markGenerationTerminal(request.sessionId, request.assistantMessageId, "", "cancelled")
+            messageManager.flushGenerationTerminal(request.sessionId, request.assistantMessageId)
+        }
+        composerQueueStore?.acceptForUser(request.sessionId, request.userMessageId)
+    }
+
+    // 网络流与本地推理由任务自身的协程取消；共享 Provider 的取消入口会影响其它会话。
+    override fun cancelProvider() = Unit
 
     /** 删除被本次生成替换的旧回复；只执行一次，删除失败向上抛出以保留旧回复并走持久化失败路径。 */
     private suspend fun commitReplacement(request: GenerationRequest) {

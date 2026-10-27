@@ -43,31 +43,57 @@ class HeadlessInteractionRequired(val interaction: GenerationInteraction) : Exce
 interface HeadlessInteractionPersistence {
     suspend fun read(): GenerationInteraction?
     suspend fun write(interaction: GenerationInteraction?)
+    suspend fun readAll(): List<GenerationInteraction> = listOfNotNull(read())
+    suspend fun writeAll(interactions: List<GenerationInteraction>) {
+        require(interactions.size <= 1) { "持久化实现不支持多个确认" }
+        write(interactions.singleOrNull())
+    }
 }
 
-/** 应用级等待点，页面重建不会丢失决定；任务取消会清除卡片并取消等待。 */
+/** 应用级等待点按会话隔离，页面重建不会丢失决定。 */
 class GenerationInteractionStore(private val persistence: HeadlessInteractionPersistence? = null) {
-    private val mutex = Mutex()
-    private val mutablePending = MutableStateFlow<GenerationInteraction?>(null)
-    val pending = mutablePending.asStateFlow()
-    private var decision: CompletableDeferred<Boolean>? = null
-    var onHeadlessDecision: ((GenerationInteraction, Boolean) -> Unit)? = null
-    private var headless = false
-    private var respondingId: String? = null
+    private class Entry(
+        val prompt: GenerationInteraction,
+        val decision: CompletableDeferred<Boolean>?,
+        val headless: Boolean,
+        var visible: Boolean = true,
+        var responding: Boolean = false,
+    )
 
-    suspend fun restoreHeadless() = mutex.withLock {
-        if (mutablePending.value == null) persistence?.read()?.let {
-            headless = true
-            mutablePending.value = it
+    private val lock = Any()
+    private val persistenceMutex = Mutex()
+    private val entries = linkedMapOf<String, Entry>()
+    private val mutablePending = MutableStateFlow<GenerationInteraction?>(null)
+    private val mutablePendingBySession = MutableStateFlow<Map<String, GenerationInteraction>>(emptyMap())
+    val pending = mutablePending.asStateFlow()
+    val pendingBySession = mutablePendingBySession.asStateFlow()
+    var onHeadlessDecision: ((GenerationInteraction, Boolean) -> Unit)? = null
+    private var selectedSessionId: String? = null
+
+    fun selectSession(sessionId: String?) = synchronized(lock) {
+        selectedSessionId = sessionId
+        publishLocked()
+    }
+
+    suspend fun restoreHeadless() = persistenceMutex.withLock {
+        val saved = persistence?.readAll().orEmpty()
+        synchronized(lock) {
+            saved.forEach { prompt ->
+                if (entries[prompt.sessionId] == null) entries[prompt.sessionId] = Entry(prompt, null, true)
+            }
+            publishLocked()
         }
     }
 
-    suspend fun clearHeadless(sessionId: String) = mutex.withLock {
-        if (headless && mutablePending.value?.sessionId == sessionId) {
-            persistence?.write(null)
-            headless = false
-            respondingId = null
-            mutablePending.value = null
+    suspend fun clearHeadless(sessionId: String) = persistenceMutex.withLock {
+        val entry = synchronized(lock) { entries[sessionId]?.takeIf { it.headless } } ?: return@withLock
+        val remaining = synchronized(lock) {
+            entries.values.filter { it.headless && it !== entry }.map { it.prompt }
+        }
+        persistence?.writeAll(remaining)
+        synchronized(lock) {
+            if (entries[sessionId] === entry) entries.remove(sessionId)
+            publishLocked()
         }
     }
 
@@ -75,48 +101,71 @@ class GenerationInteractionStore(private val persistence: HeadlessInteractionPer
         sessionId: String,
         kind: GenerationInteractionKind,
         mode: GenerationInteractionMode = GenerationInteractionMode.INTERACTIVE,
-    ): Boolean = mutex.withLock {
-        check(mutablePending.value == null) { "已有等待用户处理的确认" }
+    ): Boolean {
         val prompt = GenerationInteraction(UUID.randomUUID().toString(), sessionId, kind)
         if (mode == GenerationInteractionMode.HEADLESS) {
-            check(mutablePending.value == null) { "已有等待用户处理的确认" }
-            try { persistence?.write(prompt) }
-            catch (failure: Throwable) {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { persistence?.write(null) }
-                throw failure
+            persistenceMutex.withLock {
+                val entry = Entry(prompt, null, true, visible = false)
+                val previous = synchronized(lock) {
+                    check(entries[sessionId] == null) { "该会话已有等待用户处理的确认" }
+                    val saved = entries.values.filter { it.headless }.map { it.prompt }
+                    entries[sessionId] = entry
+                    saved
+                }
+                try {
+                    persistence?.writeAll(previous + prompt)
+                    synchronized(lock) { entry.visible = true; publishLocked() }
+                } catch (failure: Throwable) {
+                    synchronized(lock) { if (entries[sessionId] === entry) entries.remove(sessionId); publishLocked() }
+                    withContext(kotlinx.coroutines.NonCancellable) { persistence?.writeAll(previous) }
+                    throw failure
+                }
             }
-            headless = true
-            mutablePending.value = prompt
             throw HeadlessInteractionRequired(prompt)
         }
         val deferred = CompletableDeferred<Boolean>()
-        decision = deferred
-        mutablePending.value = prompt
+        val entry = Entry(prompt, deferred, false)
+        synchronized(lock) {
+            check(entries[sessionId] == null) { "该会话已有等待用户处理的确认" }
+            entries[sessionId] = entry
+            publishLocked()
+        }
         try {
-            deferred.await()
+            return deferred.await()
         } finally {
-            mutablePending.value = null
-            decision = null
+            synchronized(lock) {
+                if (entries[sessionId] === entry) entries.remove(sessionId)
+                publishLocked()
+            }
             deferred.cancel()
         }
     }
 
     fun respond(id: String, allowed: Boolean): Boolean {
-        if (mutablePending.value?.id != id) return false
-        if (headless) {
-            val prompt = mutablePending.value ?: return false
-            val responder = onHeadlessDecision ?: return false
-            synchronized(this) {
-                if (respondingId != null) return false
-                respondingId = id
+        val entry = synchronized(lock) {
+            val found = entries.values.firstOrNull { it.visible && it.prompt.id == id } ?: return false
+            if (found.headless) {
+                if (found.responding || onHeadlessDecision == null) return false
+                found.responding = true
             }
-            responder(prompt, allowed)
+            found
+        }
+        if (entry.headless) {
+            onHeadlessDecision?.invoke(entry.prompt, allowed)
             return true
         }
-        return decision?.complete(allowed) ?: false
+        return entry.decision?.complete(allowed) ?: false
     }
 
-    fun retryHeadlessResponse() { synchronized(this) { respondingId = null } }
+    fun retryHeadlessResponse(id: String? = null) = synchronized(lock) {
+        entries.values.filter { it.headless && (id == null || it.prompt.id == id) }.forEach { it.responding = false }
+    }
+
+    private fun publishLocked() {
+        val visible = entries.values.filter { it.visible }.associate { it.prompt.sessionId to it.prompt }
+        mutablePendingBySession.value = visible
+        mutablePending.value = selectedSessionId?.let(visible::get) ?: if (selectedSessionId == null) visible.values.firstOrNull() else null
+    }
 }
 
 /** 危险组合的接受状态独立于审批授权，不随备份传播到其它设备。 */

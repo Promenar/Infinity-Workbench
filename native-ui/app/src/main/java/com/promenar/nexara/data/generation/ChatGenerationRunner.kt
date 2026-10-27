@@ -31,6 +31,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 interface ChatGenerationRuntime {
+    suspend fun cancelBeforeStart(request: GenerationRequest) = Unit
     suspend fun prepare(request: GenerationRequest)
     suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome
     suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk>
@@ -86,7 +87,9 @@ class ChatGenerationRunner(
     private val runtime: ChatGenerationRuntime,
     /** 记录每轮请求时间点所用的时钟（epoch 毫秒），测试可注入。 */
     private val clock: () -> Long = System::currentTimeMillis,
-) : GenerationRunner {
+) : GenerationRunner, QueuedGenerationCancellation {
+    override suspend fun cancelBeforeStart(request: GenerationRequest) = runtime.cancelBeforeStart(request)
+
     override suspend fun run(request: GenerationRequest, emit: suspend (GenerationEvent) -> Unit) {
         var snapshot = GenerationSnapshot()
         var flushed = false

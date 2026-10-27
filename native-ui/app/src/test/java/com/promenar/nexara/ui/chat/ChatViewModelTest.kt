@@ -36,6 +36,7 @@ import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
@@ -146,9 +147,11 @@ class ChatViewModelTest {
             Message("ask_resume_test", MessageRole.ASSISTANT, "", parentMessageId = "resume-user"),
         ))
         advanceUntilIdle()
-        val preparation = ChatViewModel::class.java.getDeclaredField("sendPreparationMutex").run {
+        val preparation = ChatViewModel::class.java.getDeclaredField("sendPreparationMutexes").run {
             isAccessible = true
-            get(viewModel) as kotlinx.coroutines.sync.Mutex
+            @Suppress("UNCHECKED_CAST")
+            (get(viewModel) as java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>)
+                .getOrPut("s1") { kotlinx.coroutines.sync.Mutex() }
         }
         val cleaned = CompletableDeferred<Unit>()
         beforeSshClose = { cleaned.complete(Unit) }
@@ -171,7 +174,9 @@ class ChatViewModelTest {
         awaitReal { cleaned.isCompleted && generationCoordinator.active.value == null }
 
         assertThat(cleaned.isCompleted).isTrue()
-        assertThat(providerCancelled).isTrue()
+        // 并发后取消经各自协程传播，不再调用共享 Provider 的全局取消；以本会话任务的终态为准。
+        assertThat(generationCoordinator.observe("s1").value?.phase)
+            .isAnyOf(null, com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED)
         assertThat(generationCoordinator.active.value).isNull()
     }
 
@@ -363,6 +368,8 @@ class ChatViewModelTest {
     private val pausedSshOwners = linkedSetOf<String>()
     private var beforeSshClose: suspend () -> Unit = {}
     private var holdSessionUpdates: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    private var holdDraftUpdates: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    private var beforeDraftUpdate: suspend (String, String?) -> Unit = { _, _ -> }
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {
@@ -371,6 +378,10 @@ class ChatViewModelTest {
 
         override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
             failSessionUpdate?.let { throw it }
+            if (updates.containsKey("draft")) {
+                beforeDraftUpdate(id, updates["draft"] as String?)
+                holdDraftUpdates?.await()
+            }
             // 真实 Room 写入会挂起；测试用闸门模拟写入途中 ViewModel 被清理。
             holdSessionUpdates?.await()
             val index = savedSessions.indexOfFirst { it.id == id }
@@ -812,6 +823,8 @@ class ChatViewModelTest {
         failScopedDelete = false
         failSessionUpdate = null
         failQuestionMessageUpdate = false
+        holdDraftUpdates = null
+        beforeDraftUpdate = { _, _ -> }
         afterInsert = { _, _ -> }
         sshLeases.clear()
         pausedSshOwners.clear()
@@ -1388,6 +1401,224 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `排队后准备失败时合并已提交草稿与之后输入的新草稿`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "queued-large", name = "large.txt", mimeType = "text/plain",
+            content = "中".repeat(200_000), sizeBytes = 600_000,
+            sha256 = "queued-large-hash", estimatedTokens = 200_000,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0).edit()
+            .putInt("model_info_gpt-4o_context", 128_000).commit()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("正在运行"))
+        holdStreamOpen = true
+        (1..4).forEach { index ->
+            seedSession("occupied-$index")
+            advanceUntilIdle()
+            viewModel.sendMessage("占用 $index")
+            advanceUntilIdle()
+        }
+        seedSession("queued-document")
+        advanceUntilIdle()
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/queued-large"))
+        advanceUntilIdle()
+        viewModel.sendMessage("请分析排队文档")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        viewModel.updateInputText("之后输入的新草稿")
+        viewModel.saveCurrentDraft()
+        viewModel.loadSession("occupied-1")
+        advanceUntilIdle()
+        viewModel.stopGeneration()
+        viewModel.loadSession("occupied-2")
+        advanceUntilIdle()
+        assertThat(savedMessages.filter { it.second == "queued-document" }).isEmpty()
+        viewModel.loadSession("queued-document")
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("请分析排队文档\n\n之后输入的新草稿")
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+        viewModel.saveCurrentDraft()
+        seedSession("attachment-isolation"); advanceUntilIdle()
+        assertThat(viewModel.draftDocuments.value).isEmpty()
+        viewModel.sendMessage("只发送这个会话的文字"); advanceUntilIdle()
+        assertThat(savedMessages.last { it.second == "attachment-isolation" && it.first.role == MessageRole.USER }.first.userDocuments).isNull()
+        viewModel.stopGeneration(); advanceUntilIdle()
+        viewModel.loadSession("queued-document"); advanceUntilIdle()
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+    }
+
+    @Test
+    fun `并发恢复同一草稿时只合并一次`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "recovery-lock", name = "large.txt", mimeType = "text/plain",
+            content = "中".repeat(200_000), sizeBytes = 600_000,
+            sha256 = "recovery-lock-hash", estimatedTokens = 200_000,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0).edit().putInt("model_info_gpt-4o_context", 128_000).commit()
+        seedSession("recovery-lock"); advanceUntilIdle()
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/recovery-lock")); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        holdDraftUpdates = gate
+        viewModel.sendMessage("只恢复一次")
+        runCurrent()
+        assertThat(viewModel.inputText.value).isEqualTo("只恢复一次")
+        holdDraftUpdates = null
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("只恢复一次")
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+    }
+
+    @Test
+    fun `恢复旧草稿写盘挂起时切页保存的新输入不被覆盖`() = runTest {
+        seedSession("draft-race-b"); advanceUntilIdle()
+        seedSession("draft-race-a"); advanceUntilIdle()
+        val document = MessageDocumentAttachment(
+            id = "race-large", name = "large.txt", mimeType = "text/plain",
+            content = "中".repeat(200_000), sizeBytes = 600_000,
+            sha256 = "race-large-hash", estimatedTokens = 200_000,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0).edit().putInt("model_info_gpt-4o_context", 128_000).commit()
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/race-large")); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<Unit>()
+        beforeDraftUpdate = { id, text ->
+            if (id == "draft-race-a" && text == "旧草稿" && !entered.isCompleted) {
+                entered.complete(Unit)
+                gate.await()
+            }
+        }
+        viewModel.sendMessage("旧草稿")
+        runCurrent()
+        assertThat(entered.isCompleted).isTrue()
+        viewModel.updateInputText("旧草稿和新输入")
+        viewModel.loadSession("draft-race-b")
+        runCurrent()
+        viewModel.loadSession("draft-race-a")
+        runCurrent()
+        val immediate = viewModel.inputText.value
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(immediate).isEqualTo("旧草稿和新输入")
+        assertThat(viewModel.inputText.value).isEqualTo("旧草稿和新输入")
+        assertThat(savedSessions.single { it.id == "draft-race-a" }.draft).isEqualTo("旧草稿和新输入")
+    }
+
+    @Test
+    fun `草稿恢复写盘失败后重试发送会恢复并继续发送`() = runTest {
+        seedSession("draft-retry"); advanceUntilIdle()
+        beforeDraftUpdate = { _, _ -> throw IllegalStateException("暂时无法写盘") }
+        presentationStore.retainSubmittedDraft(com.promenar.nexara.data.generation.SubmittedGenerationDraft(
+            sessionId = "draft-retry", text = "原始草稿", documents = emptyList(), imageUris = emptyList(), recoveryReady = true,
+        ))
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("原始草稿")
+        beforeDraftUpdate = { _, _ -> }
+        viewModel.updateInputText("恢复后的新输入")
+        viewModel.sendMessage("恢复后的新输入")
+        advanceUntilIdle()
+        assertThat(savedMessages.any { it.second == "draft-retry" && it.first.role == MessageRole.USER && it.first.content == "恢复后的新输入" }).isTrue()
+    }
+
+    @Test
+    fun `恢复重试写盘时再次编辑不得误发送新输入`() = runTest {
+        seedSession("draft-retry-edit"); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        beforeDraftUpdate = { _, _ -> gate.await() }
+        viewModel.updateInputText("第一条")
+        presentationStore.retainSubmittedDraft(com.promenar.nexara.data.generation.SubmittedGenerationDraft(
+            sessionId = "draft-retry-edit", text = "第一条", documents = emptyList(), imageUris = emptyList(),
+            recoveryReady = true, recoveryApplied = true,
+        ))
+        runCurrent()
+        viewModel.sendMessage("第一条")
+        runCurrent()
+        viewModel.updateInputText("第二条")
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(savedMessages.filter { it.second == "draft-retry-edit" && it.first.role == MessageRole.USER }).isEmpty()
+        assertThat(viewModel.inputText.value).contains("第一条")
+        assertThat(viewModel.inputText.value).contains("第二条")
+    }
+
+    @Test
+    fun `发送受理前切页后失败仍能恢复原会话草稿`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "preparing-large", name = "large.txt", mimeType = "text/plain",
+            content = "中".repeat(200_000), sizeBytes = 600_000,
+            sha256 = "preparing-large-hash", estimatedTokens = 200_000,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0).edit()
+            .putInt("model_info_gpt-4o_context", 128_000).commit()
+        seedSession("preparing-b"); advanceUntilIdle()
+        seedSession("preparing-a"); advanceUntilIdle()
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/preparing-large"))
+        advanceUntilIdle()
+        val entered = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+        afterInsert = { message, session ->
+            if (session == "preparing-a" && message.role == MessageRole.USER) {
+                entered.complete(Unit); resume.await()
+            }
+        }
+        viewModel.sendMessage("准备中的草稿")
+        entered.await()
+        viewModel.saveCurrentDraft()
+        viewModel.loadSession("preparing-b"); runCurrent()
+        resume.complete(Unit); advanceUntilIdle()
+        viewModel.loadSession("preparing-a"); advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("准备中的草稿")
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+    }
+
+    @Test
+    fun `发送受理前页面销毁后草稿保留在会话恢复状态`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "preparing-doc", name = "small.txt", mimeType = "text/plain",
+            content = "内容", sizeBytes = 6, sha256 = "preparing-hash", estimatedTokens = 2,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        seedSession("preparing-destroy"); advanceUntilIdle()
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/preparing-doc"))
+        advanceUntilIdle()
+        val entered = CompletableDeferred<Unit>()
+        afterInsert = { message, session ->
+            if (session == "preparing-destroy" && message.role == MessageRole.USER) {
+                entered.complete(Unit); kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        viewModel.sendMessage("销毁前草稿")
+        entered.await()
+        viewModel.saveCurrentDraft()
+        ViewModelStore().also { it.put("chat", viewModel) }.clear()
+        advanceUntilIdle()
+        val recovered = presentationStore.submittedDraft("preparing-destroy")
+        assertThat(recovered?.recoveryReady).isTrue()
+        assertThat(recovered?.text).isEqualTo("销毁前草稿")
+        assertThat(recovered?.documents).containsExactly(document)
+    }
+
+    @Test
+    fun `返回已载入的会话时重新选择该会话的确认`() = runTest {
+        val interactions = ApplicationProvider.getApplicationContext<TestNexaraApplication>().generationInteractions
+        val first = async { interactions.awaitDecision("selection-a", com.promenar.nexara.data.generation.GenerationInteractionKind.REPEATED_TOOL) }
+        val second = async { interactions.awaitDecision("selection-b", com.promenar.nexara.data.generation.GenerationInteractionKind.REPEATED_TOOL) }
+        runCurrent()
+        seedSession("selection-a"); advanceUntilIdle()
+        seedSession("selection-b"); advanceUntilIdle()
+        assertThat(interactions.pending.value?.sessionId).isEqualTo("selection-b")
+        viewModel.loadSession("selection-a")
+        assertThat(interactions.pending.value?.sessionId).isEqualTo("selection-a")
+        interactions.pendingBySession.value.values.toList().forEach { interactions.respond(it.id, false) }
+        assertThat(first.await()).isFalse()
+        assertThat(second.await()).isFalse()
+    }
+
+    @Test
     fun `点击发送立即清空输入框且生成期间的新输入不被接受后清掉`() = runTest {
         seedSession()
         advanceUntilIdle()
@@ -1589,6 +1820,64 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `待审批取消挂起期间连续发送保留第一份草稿并将第二份入队`() = runTest {
+        seedSession("approval-race", approvalRequest = ApprovalRequest(toolName = "write_file", args = "{}"))
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        holdSessionUpdates = gate
+        viewModel.sendMessage("第一份")
+        runCurrent()
+        viewModel.sendMessage("第二份")
+        runCurrent()
+        val firstDraft = presentationStore.submittedDraft("approval-race")?.text
+        val queued = queueStore.snapshot("approval-race").items.map { it.text }
+        holdSessionUpdates = null
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(firstDraft).isEqualTo("第一份")
+        assertThat(queued).containsExactly("第二份")
+    }
+
+    @Test
+    fun `一个会话的发送准备挂起不阻止或取消另一会话`() = runTest {
+        seedSession("preparation-b"); advanceUntilIdle()
+        seedSession("preparation-a", approvalRequest = ApprovalRequest(toolName = "write_file", args = "{}")); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<Unit>()
+        beforeSshClose = { if (!entered.isCompleted) { entered.complete(Unit); gate.await() } }
+        viewModel.sendMessage("会话 A")
+        runCurrent()
+        assertThat(entered.isCompleted).isTrue()
+        viewModel.loadSession("preparation-b"); advanceUntilIdle()
+        viewModel.sendMessage("会话 B"); advanceUntilIdle()
+        val sentB = savedMessages.any { it.second == "preparation-b" && it.first.role == MessageRole.USER && it.first.content == "会话 B" }
+        val retainedA = presentationStore.submittedDraft("preparation-a")?.text
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(sentB).isTrue()
+        assertThat(retainedA).isEqualTo("会话 A")
+    }
+
+    @Test
+    fun `一个会话的消息入库挂起不阻止另一会话入库`() = runTest {
+        seedSession("admission-b"); advanceUntilIdle()
+        seedSession("admission-a"); advanceUntilIdle()
+        val gate = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<Unit>()
+        afterInsert = { message, sessionId ->
+            if (sessionId == "admission-a" && message.role == MessageRole.USER && !entered.isCompleted) {
+                entered.complete(Unit)
+                gate.await()
+            }
+        }
+        viewModel.sendMessage("入库 A"); runCurrent()
+        assertThat(entered.isCompleted).isTrue()
+        viewModel.loadSession("admission-b"); advanceUntilIdle()
+        viewModel.sendMessage("入库 B"); advanceUntilIdle()
+        val sentB = savedMessages.any { it.second == "admission-b" && it.first.role == MessageRole.USER && it.first.content == "入库 B" }
+        gate.complete(Unit); advanceUntilIdle()
+        assertThat(sentB).isTrue()
+    }
+
+    @Test
     fun `清空历史终止待审批任务并释放SSH租约`() = runTest {
         seedSession("ssh-clear", approvalRequest = ApprovalRequest(toolName = "ssh_session_send", args = "{}"))
         advanceUntilIdle()
@@ -1758,7 +2047,7 @@ class ChatViewModelTest {
 
         viewModel.stopGeneration()
         advanceUntilIdle()
-        assertThat(providerCancelled).isTrue()
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
     }
 
     @Test
@@ -1898,6 +2187,26 @@ class ChatViewModelTest {
         assertThat(viewModel.notificationPermissionRequests.value).isNull()
         assertThat(savedMessages).isEmpty()
         assertThat(protocolRequestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `权限回调排队后切页仍可恢复原会话草稿`() = runTest {
+        notificationPermissionState = com.promenar.nexara.background.generation.NotificationPermissionPromptState(35, false, false)
+        seedSession("permission-race-b"); advanceUntilIdle()
+        seedSession("permission-race-a"); advanceUntilIdle()
+        viewModel.sendMessage("待授权草稿"); advanceUntilIdle()
+        val token = requireNotNull(viewModel.notificationPermissionRequests.value).taskId
+        @Suppress("UNCHECKED_CAST")
+        val locks = ChatViewModel::class.java.getDeclaredField("sendPreparationMutexes").apply { isAccessible = true }
+            .get(viewModel) as java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>
+        val lock = requireNotNull(locks["permission-race-a"])
+        lock.lock()
+        viewModel.onNotificationPermissionResult(token, granted = true)
+        viewModel.loadSession("permission-race-b")
+        lock.unlock()
+        advanceUntilIdle()
+        viewModel.loadSession("permission-race-a"); advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("待授权草稿")
     }
 
     @Test
@@ -2047,7 +2356,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `A生成时B发送返回Busy且不留幽灵消息并且B停止不取消A`() = runTest {
+    fun `A和B同时生成且切换与停止只影响当前会话`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("A")
         advanceUntilIdle()
@@ -2060,21 +2369,17 @@ class ChatViewModelTest {
 
         seedSession("B")
         advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial-B"))
         viewModel.updateInputText("from B")
         viewModel.sendMessage("from B")
         advanceUntilIdle()
 
         val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
-        assertThat(app.chatStore.getSession("B")!!.messages).isEmpty()
-        assertThat(viewModel.inputText.value).isEqualTo("from B")
-        assertThat(viewModel.uiState.value.isGenerating).isFalse()
-        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
-        assertThat(viewModel.uiState.value.error).isNull()
-        assertThat(viewModel.uiState.value.generationNotice?.code)
-            .isEqualTo("generation.failure.busy")
-        assertThat(viewModel.uiState.value.generationNotice?.formatArgs).isEmpty()
-        assertThat(protocolRequestCount).isEqualTo(1)
-        assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("A")
+        assertThat(app.chatStore.getSession("B")!!.messages).isNotEmpty()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        assertThat(viewModel.uiState.value.streamingContent).isEqualTo("partial-B")
+        assertThat(protocolRequestCount).isEqualTo(2)
+        assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("A", "B")
         assertThat(providerCancelled).isFalse()
 
         viewModel.stopGeneration()
@@ -2083,9 +2388,12 @@ class ChatViewModelTest {
 
         viewModel.loadSession("A")
         advanceUntilIdle()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        assertThat(viewModel.uiState.value.streamingContent).isEqualTo("partial-A")
         viewModel.stopGeneration()
         advanceUntilIdle()
-        assertThat(providerCancelled).isTrue()
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(providerCancelled).isFalse()
     }
 
     @Test
@@ -2219,15 +2527,15 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `另一会话生成时继续队列暂停BUSY且不写入幽灵消息`() = runTest {
+    fun `另一会话生成时仍可继续当前会话的队列`() = runTest {
         seedSession("A"); advanceUntilIdle()
         fakeStreamChunks = listOf(StreamChunk.TextDelta("partial")); holdStreamOpen = true
         viewModel.sendMessage("running"); advanceUntilIdle()
         seedSession("B"); advanceUntilIdle()
         queueStore.enqueue("B", "queued")
         viewModel.resumeComposerQueue(); advanceUntilIdle()
-        assertThat(viewModel.composerQueue.value.pauseReason).isEqualTo(ComposerQueuePauseReason.BUSY)
-        assertThat(savedMessages.none { it.second == "B" }).isTrue()
+        assertThat(viewModel.composerQueue.value.pauseReason).isNull()
+        assertThat(savedMessages.any { it.second == "B" && it.first.role == MessageRole.USER }).isTrue()
     }
 
     @Test
@@ -2762,7 +3070,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `重试遇到全局Busy时恢复旧回复且不留下新占位`() = runTest {
+    fun `其它会话运行时仍可重试且停止互不影响`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("retry-target")
         advanceUntilIdle()
@@ -2786,21 +3094,36 @@ class ChatViewModelTest {
         viewModel.retryLastMessage()
         advanceUntilIdle()
 
-        val retryMessages = savedMessages
-            .filter { it.second == "retry-target" }
-            .map { it.first }
-        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry)
-        assertThat(retryMessages.map { it.content })
-            .containsExactly("hello", "existing reply")
-            .inOrder()
-        assertThat(retryMessages.count { it.role == MessageRole.ASSISTANT }).isEqualTo(1)
-        assertThat(viewModel.uiState.value.generationNotice?.code)
-            .isEqualTo("generation.failure.busy")
+        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry + 1)
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        assertThat(viewModel.uiState.value.generationNotice?.code).isNotEqualTo("generation.failure.busy")
+        viewModel.stopGeneration()
+        advanceUntilIdle()
 
         viewModel.loadSession("active")
         advanceUntilIdle()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
         viewModel.stopGeneration()
         advanceUntilIdle()
+    }
+
+    @Test
+    fun `删除生成中的回复只停止该会话`() = runTest {
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        holdStreamOpen = true
+        seedSession("delete-a"); advanceUntilIdle()
+        viewModel.sendMessage("a"); advanceUntilIdle()
+        seedSession("delete-b"); advanceUntilIdle()
+        viewModel.sendMessage("b"); advanceUntilIdle()
+        val app = ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+        val assistant = app.chatStore.getSession("delete-b")!!.messages.last { it.role == MessageRole.ASSISTANT }
+        viewModel.deleteMessage(assistant.id)
+        // 删除前先在 IO 线程核对该会话是否有待回答的提问，需等真实线程完成。
+        awaitReal { !viewModel.uiState.value.isGenerating }
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        viewModel.loadSession("delete-a"); advanceUntilIdle()
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+        viewModel.stopGeneration(); advanceUntilIdle()
     }
 
     @Test

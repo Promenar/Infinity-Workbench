@@ -17,6 +17,7 @@ import com.promenar.nexara.navigation.AppIntentRouter
 class GenerationNotificationFactory(
     context: Context,
     private val appIntentRouter: AppIntentRouter,
+    private val sessionTitle: (String) -> String? = { null },
 ) {
     private val applicationContext = context.applicationContext
     private val notificationManager = applicationContext
@@ -62,6 +63,54 @@ class GenerationNotificationFactory(
                 stopPendingIntent,
             )
             .build()
+    }
+
+    fun create(snapshots: List<GenerationTaskSnapshot>): Notification {
+        require(snapshots.isNotEmpty())
+        if (snapshots.size == 1) return create(snapshots.single())
+        ensureChannel()
+        val latest = snapshots.maxWithOrNull(compareBy<GenerationTaskSnapshot> { it.startedOrder }.thenBy { it.startedAt })!!
+        val openPendingIntent = PendingIntent.getActivity(
+            applicationContext, latest.taskId.hashCode(), openIntent(latest),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stopAll = PendingIntent.getService(
+            applicationContext, 0, stopAllIntent(),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT,
+        )
+        val title = applicationContext.resources.getQuantityString(
+            R.plurals.generation_concurrency_title, snapshots.size, snapshots.size,
+        )
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(title)
+        snapshots.forEach { snapshot ->
+            val name = sessionTitle(snapshot.sessionId)?.takeIf(String::isNotBlank)
+                ?: applicationContext.getString(R.string.generation_concurrency_untitled)
+            val phase = if (snapshot.phase == GenerationPhase.QUEUED) {
+                applicationContext.getString(R.string.generation_concurrency_queued)
+            } else applicationContext.getString(snapshot.phase.notificationTextRes())
+            style.addLine(applicationContext.getString(R.string.generation_concurrency_line, name, phase))
+        }
+        return NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(applicationContext.getString(R.string.generation_concurrency_details))
+            .setStyle(style)
+            .setContentIntent(openPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .addAction(0, applicationContext.getString(R.string.generation_concurrency_stop_all), stopAll)
+            .build()
+    }
+
+    internal fun stopAllIntent() = Intent(applicationContext, GenerationForegroundService::class.java).apply {
+        action = GenerationForegroundService.ACTION_STOP
+        putExtra(GenerationForegroundService.EXTRA_STOP_ALL, true)
+        data = Uri.parse("nexara://generation/stop-all")
     }
 
     internal fun openIntent(snapshot: GenerationTaskSnapshot) =

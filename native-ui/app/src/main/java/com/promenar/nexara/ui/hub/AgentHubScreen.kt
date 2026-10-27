@@ -108,7 +108,7 @@ fun AgentHubScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val allSessions by sessionListViewModel.sessions.collectAsState()
     val activeGeneration by (context.applicationContext as com.promenar.nexara.NexaraApplication)
-        .generationCoordinator.active.collectAsState()
+        .generationCoordinator.sessions.collectAsState()
     val sessionsByAgent = remember(allSessions) {
         allSessions.groupBy { it.agentId }
     }
@@ -386,24 +386,25 @@ internal data class AgentHubScreenState(
 internal enum class HubSessionActivity { GENERATING, QUEUED, AWAITING_APPROVAL, AWAITING_ANSWER }
 
 /**
- * 应用级生成任务投影到会话列表：进行中标为生成中，等待批准单独标出，已结束的不标。
+ * 应用级生成任务投影到会话列表：进行中标为生成中，排队、等待批准与待回答各自标出，已结束的不标。
  * 待回答以会话持久化的 [LoopStatus.WAITING_FOR_INPUT] 为准，生成任务退出后仍保留。
  */
 internal fun hubSessionActivities(
-    active: GenerationTaskSnapshot?,
+    active: Map<String, GenerationTaskSnapshot>,
     sessions: List<Session> = emptyList(),
 ): Map<String, HubSessionActivity> {
     val waiting = sessions.filter { it.loopStatus == LoopStatus.WAITING_FOR_INPUT }
         .associate { it.id to HubSessionActivity.AWAITING_ANSWER }
-    val phase = active?.phase ?: return waiting
-    val activity = when (phase) {
-        GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> return waiting
-        GenerationPhase.WAITING_APPROVAL -> HubSessionActivity.AWAITING_APPROVAL
-        GenerationPhase.WAITING_INPUT -> HubSessionActivity.AWAITING_ANSWER
-        GenerationPhase.QUEUED -> HubSessionActivity.QUEUED
-        else -> HubSessionActivity.GENERATING
+    return waiting + active.mapNotNull { (sessionId, snapshot) ->
+        val activity = when (snapshot.phase) {
+            GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> null
+            GenerationPhase.WAITING_APPROVAL -> HubSessionActivity.AWAITING_APPROVAL
+            GenerationPhase.WAITING_INPUT -> HubSessionActivity.AWAITING_ANSWER
+            GenerationPhase.QUEUED -> HubSessionActivity.QUEUED
+            else -> HubSessionActivity.GENERATING
+        }
+        activity?.let { sessionId to it }
     }
-    return waiting + (active.sessionId to activity)
 }
 
 internal data class AgentHubScreenActions(

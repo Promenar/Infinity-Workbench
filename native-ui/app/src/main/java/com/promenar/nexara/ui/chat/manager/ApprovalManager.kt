@@ -85,7 +85,7 @@ class ApprovalManager(
         rememberTarget: Boolean = false,
     ) {
         val action: suspend () -> Unit = {
-            store.turnAdmission.withLock {
+            store.turnAdmission.withLock(sessionId) {
                 approvalLock(sessionId).withLock {
                     resumeGenerationLocked(sessionId, expectedRequest, approved, intervention, rememberTarget)
                 }

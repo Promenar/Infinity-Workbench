@@ -17,6 +17,7 @@ import com.promenar.nexara.domain.generation.CancellationReason
 import com.promenar.nexara.domain.generation.GenerationCoordinator
 import com.promenar.nexara.domain.generation.GenerationPhase
 import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
+import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,7 +39,7 @@ class GenerationForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         app = application as NexaraApplication
-        notificationFactory = GenerationNotificationFactory(this, app.appIntentRouter)
+        notificationFactory = GenerationNotificationFactory(this, app.appIntentRouter) { id -> app.chatStore.getSession(id)?.title }
         failureReporter = app.generationForegroundController as? ForegroundServiceFailureReporter
     }
 
@@ -53,7 +54,7 @@ class GenerationForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        trackedTaskId?.let { coordinator?.cancel(it, CancellationReason.TIMEOUT) }
+        coordinator?.cancelForPolicy(GenerationRuntimePolicy.BACKGROUND_ALLOWED, CancellationReason.TIMEOUT)
         stopUnconditionally()
     }
 
@@ -91,10 +92,11 @@ class GenerationForegroundService : Service() {
         if (!startImmediately(initial)) return
         observerJob?.cancel()
         observerJob = serviceScope.launch {
-            activeCoordinator.observe(sessionId).collect { snapshot ->
-                when (val decision = reduceGenerationForeground(taskId, snapshot)) {
-                    is GenerationForegroundDecision.Update -> updateNotification(decision.snapshot)
-                    is GenerationForegroundDecision.Stop -> stopTracking(decision.taskId)
+            activeCoordinator.sessions.collect { snapshots ->
+                when (val decision = reduceGenerationForeground(snapshots)) {
+                    is GenerationForegroundDecision.Update -> updateNotification(listOf(decision.snapshot))
+                    is GenerationForegroundDecision.UpdateMany -> updateNotification(decision.snapshots)
+                    is GenerationForegroundDecision.Stop -> stopTracking(null)
                 }
             }
         }
@@ -106,6 +108,12 @@ class GenerationForegroundService : Service() {
             return
         }
         val taskId = intent.getStringExtra(EXTRA_TASK_ID)?.takeIf(String::isNotBlank)
+        if (intent.getBooleanExtra(EXTRA_STOP_ALL, false)) {
+            val snapshots = coordinator?.sessions?.value.orEmpty().values.toList()
+            coordinator?.cancelAll(CancellationReason.USER)
+            if (snapshots.isEmpty()) stopTracking(null)
+            return
+        }
         if (taskId == null) {
             if (trackedTaskId == null) stopSelfResult(latestStartId)
             return
@@ -114,9 +122,8 @@ class GenerationForegroundService : Service() {
             stopSelfResult(latestStartId)
             return
         }
-        if (!shouldHandleGenerationStop(trackedTaskId, taskId)) return
+        if (coordinator?.sessions?.value?.values?.none { it.taskId == taskId } != false) return
         coordinator?.cancel(taskId, CancellationReason.USER)
-        stopTracking(taskId)
     }
 
     private fun promoteForCommand(): Boolean = try {
@@ -175,11 +182,12 @@ class GenerationForegroundService : Service() {
         false
     }
 
-    private fun updateNotification(snapshot: GenerationTaskSnapshot) {
+    private fun updateNotification(snapshots: List<GenerationTaskSnapshot>) {
+        val taskId = trackedTaskId ?: return
         val notification = try {
-            notificationFactory.create(snapshot)
+            notificationFactory.create(snapshots)
         } catch (_: RuntimeException) {
-            handlePromotionFailure(snapshot.taskId)
+            handlePromotionFailure(taskId)
             return
         }
         try {
@@ -190,17 +198,18 @@ class GenerationForegroundService : Service() {
         } catch (_: SecurityException) {
             // Android 13+ 拒绝通知权限不影响已启动的前台生成任务。
         } catch (_: RuntimeException) {
-            handlePromotionFailure(snapshot.taskId)
+            handlePromotionFailure(taskId)
         }
     }
 
     private fun handlePromotionFailure(taskId: String) {
         if (trackedTaskId != taskId) return
-        failureReporter?.reportFailure(
-            taskId,
-            ForegroundServiceFailureOutcome.GENERATION_STOPPED,
-        )
-        coordinator?.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)
+        val affected = coordinator?.sessions?.value?.values.orEmpty()
+            .filter { it.runtimePolicy == GenerationRuntimePolicy.BACKGROUND_ALLOWED }
+        affected.forEach { snapshot ->
+            failureReporter?.reportFailure(snapshot.taskId, ForegroundServiceFailureOutcome.GENERATION_STOPPED)
+        }
+        coordinator?.cancelForPolicy(GenerationRuntimePolicy.BACKGROUND_ALLOWED, CancellationReason.BACKGROUND_UNAVAILABLE)
         stopUnconditionally()
     }
 
@@ -228,6 +237,7 @@ class GenerationForegroundService : Service() {
         const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_ASSISTANT_MESSAGE_ID = "assistant_message_id"
         const val EXTRA_STARTED_AT = "started_at"
+        const val EXTRA_STOP_ALL = "stop_all"
 
         fun trackIntent(context: Context, snapshot: GenerationTaskSnapshot) =
             Intent(context, GenerationForegroundService::class.java).apply {

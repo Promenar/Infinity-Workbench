@@ -44,6 +44,19 @@ class GenerationForegroundDecisionTest {
     }
 
     @Test
+    fun `部分任务完成后仍更新通知，全部暂停或结束后停止`() {
+        val active = snapshot(GenerationPhase.STREAMING)
+        val queued = snapshot(GenerationPhase.QUEUED).copy(taskId = "task2", sessionId = "other")
+        val done = snapshot(GenerationPhase.COMPLETED).copy(taskId = "done", sessionId = "done")
+        assertThat(reduceGenerationForeground(mapOf("session" to active, "other" to queued, "done" to done)))
+            .isEqualTo(GenerationForegroundDecision.UpdateMany(listOf(active, queued)))
+        assertThat(reduceGenerationForeground(mapOf("other" to queued, "done" to done)))
+            .isEqualTo(GenerationForegroundDecision.UpdateMany(listOf(queued)))
+        assertThat(reduceGenerationForeground(mapOf("done" to done)))
+            .isEqualTo(GenerationForegroundDecision.Stop(""))
+    }
+
+    @Test
     fun `陈旧STOP既不能取消也不能停止当前新task`() {
         assertThat(shouldHandleGenerationStop("new-task", "old-task")).isFalse()
         assertThat(shouldHandleGenerationStop("new-task", "new-task")).isTrue()

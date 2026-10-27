@@ -5,6 +5,7 @@ import com.promenar.nexara.domain.generation.GenerationToolCall
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Test
 
 class P0RuntimeControlsTest {
@@ -35,5 +36,26 @@ class P0RuntimeControlsTest {
         cancelled.cancel()
         cancelled.join()
         assertThat(interactions.pending.value).isNull()
+    }
+
+    @Test
+    fun `两个会话交错确认并切换页面时互不覆盖`() = runTest {
+        val interactions = GenerationInteractionStore()
+        val first = async { interactions.awaitDecision("first", GenerationInteractionKind.REPEATED_TOOL) }
+        val second = async { interactions.awaitDecision("second", GenerationInteractionKind.UNLIMITED_AUTO) }
+        runCurrent()
+        val firstPrompt = interactions.pendingBySession.value.getValue("first")
+        val secondPrompt = interactions.pendingBySession.value.getValue("second")
+        interactions.selectSession("second")
+        assertThat(interactions.pending.value).isEqualTo(secondPrompt)
+        assertThat(interactions.respond(firstPrompt.id, false)).isTrue()
+        assertThat(first.await()).isFalse()
+        assertThat(interactions.pending.value).isEqualTo(secondPrompt)
+        interactions.selectSession("first")
+        assertThat(interactions.pending.value).isNull()
+        interactions.selectSession("second")
+        assertThat(interactions.respond(secondPrompt.id, true)).isTrue()
+        assertThat(second.await()).isTrue()
+        assertThat(interactions.pendingBySession.value).isEmpty()
     }
 }

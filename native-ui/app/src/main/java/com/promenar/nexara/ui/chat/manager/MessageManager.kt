@@ -84,6 +84,7 @@ class MessageManager(
     /** 聊天记录删除、恢复、编辑后同步对话记忆；为空时不维护记忆。 */
     private val memoryLifecycle: ConversationMemoryLifecycle? = null,
     private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
+    private val isSessionGenerating: (String) -> Boolean = { id -> store.get().currentGeneratingSessionId == id },
 ) {
     private data class PendingUpdate(
         val epoch: Long,
@@ -821,9 +822,8 @@ class MessageManager(
             val persistedMessages = messageRepository.getBySession(sessionId)
             val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
             val removalIds = messageIds.flatMapTo(linkedSetOf()) { messageRemovalIds(allMessages, it) }.toList()
-            val state = store.get()
             if (
-                state.currentGeneratingSessionId == sessionId &&
+                isSessionGenerating(sessionId) &&
                 store.getSession(sessionId)?.messages?.lastOrNull()?.id in removalIds
             ) {
                 onAbortGeneration?.invoke(sessionId)
@@ -912,8 +912,7 @@ class MessageManager(
         onAbortGeneration: ((String) -> Unit)? = null
     ) {
         withContextMutation(sessionId) {
-            val state = store.get()
-            if (state.currentGeneratingSessionId == sessionId) {
+            if (isSessionGenerating(sessionId)) {
                 onAbortGeneration?.invoke(sessionId)
             }
 
