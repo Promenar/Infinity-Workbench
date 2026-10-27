@@ -2110,7 +2110,7 @@ fun ChatTopBar(
             }
         },
         navigationIcon = {
-            NexaraBackButton(onClick = onBack)
+            LocalChatNavigationIcon.current?.invoke() ?: NexaraBackButton(onClick = onBack)
         },
         actions = {
             browser?.let { entry ->

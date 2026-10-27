@@ -201,6 +201,17 @@ fun NexaraNavGraph(
         mainTabs.settingsStack = pages
         mainTabs.settingsLastRoot = pages.first()
     }
+    val hubThreePane = com.promenar.nexara.ui.hub.hubThreePaneAvailable(configuration.screenWidthDp, configuration.screenHeightDp)
+    // 窗口变宽（展开折叠屏）：对话页打开的整页会话收进首页会话列，主导航回到主标签页。
+    LaunchedEffect(hubThreePane) {
+        if (!hubThreePane || mainTabs.selectedTab != com.promenar.nexara.ui.AppTab.CHAT) return@LaunchedEffect
+        val pages = NavControllerSettingsBackStack(navController).takeHubPagesAboveMainTabs() ?: return@LaunchedEffect
+        mainTabs.restoreHubStack(pages)
+    }
+    // 首页会话列：会话与子代理查看页在列内切换，其余页面（默认模型、知识图谱、Linux 等）仍由主导航整页打开。
+    val hubPaneGraph: NavGraphBuilder.(HubPaneNavigator) -> Unit = remember(navController, chatDestination, app) {
+        { navigator -> hubPaneDestinations(navigator, navController, chatDestination, app) }
+    }
 
     NavHost(
         navController = navController,
@@ -234,6 +245,7 @@ fun NexaraNavGraph(
                 },
                 state = mainTabs,
                 settingsPaneGraph = { navigator -> settingsDestinations(navigator) },
+                hubPaneGraph = hubPaneGraph,
             )
         }
 
@@ -242,65 +254,25 @@ fun NexaraNavGraph(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-            val linuxNavigation = remember(navController, sessionId) {
-                com.promenar.nexara.ui.linux.LinuxNavigation(
-                    openEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) { launchSingleTop = true } },
-                    openCommandOutput = { messageId, toolCallId ->
-                        navController.navigate(NavDestinations.commandOutput(sessionId, messageId, toolCallId))
-                    },
-                )
-            }
-            CompositionLocalProvider(com.promenar.nexara.ui.linux.LocalLinuxNavigation provides linuxNavigation) {
-                chatDestination(
-                    sessionId,
-                    { navController.popBackStack() },
-                    { branchedSessionId ->
-                        if (branchedSessionId != sessionId) {
-                            navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
-                                launchSingleTop = true
-                            }
-                        }
-                    },
-                    {
-                        navController.navigate(NavDestinations.DEFAULT_MODELS) {
-                            launchSingleTop = true
-                        }
-                    },
-                    { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
-                    { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
-                    { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
-                )
-            }
+            ChatHeroDestination(
+                sessionId = sessionId,
+                navController = navController,
+                chatDestination = chatDestination,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToSession = { branchedSessionId ->
+                    navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenSubagent = { owner, stepId, index -> navController.navigate(NavDestinations.subagentViewer(owner, stepId, index)) },
+            )
         }
 
         composable(
             route = NavDestinations.SUBAGENT_VIEWER_ROUTE,
-            arguments = listOf(
-                navArgument("sessionId") { type = NavType.StringType },
-                navArgument("stepId") { type = NavType.StringType },
-                navArgument("index") { type = NavType.IntType },
-            ),
+            arguments = SubagentViewerArguments,
         ) { backStackEntry ->
-            val owner = backStackEntry.arguments?.getString("sessionId").orEmpty()
-            val stepId = backStackEntry.arguments?.getString("stepId").orEmpty()
-            val index = backStackEntry.arguments?.getInt("index") ?: 0
-            val initial = remember(owner, stepId) { app.subagentRunStore.snapshot(owner, stepId) }
-            // 已结束的记录要从磁盘读取，读完之前不显示“记录不存在”。
-            var loaded by remember(owner, stepId) { mutableStateOf(initial != null) }
-            val batch by remember(owner, stepId) { app.subagentRunStore.observe(owner, stepId).onEach { loaded = true } }
-                .collectAsState(initial = initial)
-            val providerModels by com.promenar.nexara.data.manager.ProviderManager.getInstance().providerModels.collectAsState()
-            CompositionLocalProvider(com.promenar.nexara.ui.chat.LocalToolLiveOutput provides app.toolLiveOutputStore) {
-                com.promenar.nexara.ui.chat.SubagentViewerScreen(
-                    batch = batch,
-                    loading = !loaded,
-                    index = index,
-                    modelName = { modelId ->
-                        com.promenar.nexara.ui.chat.resolveModelDisplayNames(modelId, emptyList(), providerModels)[modelId] ?: modelId
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+            SubagentViewerDestination(app, backStackEntry, onBack = { navController.popBackStack() })
         }
 
         composable(
@@ -449,6 +421,97 @@ fun NexaraNavGraph(
     }
 }
 
+
+/** 会话页：整页与首页会话列共用，差别只在返回、打开别的会话与子代理查看页的去向。 */
+@Composable
+private fun ChatHeroDestination(
+    sessionId: String,
+    navController: NavHostController,
+    chatDestination: ChatDestination,
+    onNavigateBack: () -> Unit,
+    onNavigateToSession: (String) -> Unit,
+    onOpenSubagent: (sessionId: String, stepId: String, index: Int) -> Unit,
+) {
+    val linuxNavigation = remember(navController, sessionId) {
+        com.promenar.nexara.ui.linux.LinuxNavigation(
+            openEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) { launchSingleTop = true } },
+            openCommandOutput = { messageId, toolCallId ->
+                navController.navigate(NavDestinations.commandOutput(sessionId, messageId, toolCallId))
+            },
+        )
+    }
+    CompositionLocalProvider(com.promenar.nexara.ui.linux.LocalLinuxNavigation provides linuxNavigation) {
+        chatDestination(
+            sessionId,
+            onNavigateBack,
+            { branchedSessionId -> if (branchedSessionId != sessionId) onNavigateToSession(branchedSessionId) },
+            {
+                navController.navigate(NavDestinations.DEFAULT_MODELS) {
+                    launchSingleTop = true
+                }
+            },
+            { query -> navController.navigate(NavDestinations.knowledgeGraph(query)) },
+            onOpenSubagent,
+            { navController.navigate(NavDestinations.TAILSCALE_CONFIG) { launchSingleTop = true } },
+        )
+    }
+}
+
+private val SubagentViewerArguments = listOf(
+    navArgument("sessionId") { type = NavType.StringType },
+    navArgument("stepId") { type = NavType.StringType },
+    navArgument("index") { type = NavType.IntType },
+)
+
+@Composable
+private fun SubagentViewerDestination(app: NexaraApplication, backStackEntry: androidx.navigation.NavBackStackEntry, onBack: () -> Unit) {
+    val owner = backStackEntry.arguments?.getString("sessionId").orEmpty()
+    val stepId = backStackEntry.arguments?.getString("stepId").orEmpty()
+    val index = backStackEntry.arguments?.getInt("index") ?: 0
+    val initial = remember(owner, stepId) { app.subagentRunStore.snapshot(owner, stepId) }
+    // 已结束的记录要从磁盘读取，读完之前不显示“记录不存在”。
+    var loaded by remember(owner, stepId) { mutableStateOf(initial != null) }
+    val batch by remember(owner, stepId) { app.subagentRunStore.observe(owner, stepId).onEach { loaded = true } }
+        .collectAsState(initial = initial)
+    val providerModels by com.promenar.nexara.data.manager.ProviderManager.getInstance().providerModels.collectAsState()
+    CompositionLocalProvider(com.promenar.nexara.ui.chat.LocalToolLiveOutput provides app.toolLiveOutputStore) {
+        com.promenar.nexara.ui.chat.SubagentViewerScreen(
+            batch = batch,
+            loading = !loaded,
+            index = index,
+            modelName = { modelId ->
+                com.promenar.nexara.ui.chat.resolveModelDisplayNames(modelId, emptyList(), providerModels)[modelId] ?: modelId
+            },
+            onBack = onBack,
+        )
+    }
+}
+
+/** 首页会话列（内屏三列右列）的页面：会话打开别的会话换掉整列，子代理查看页压在会话之上。 */
+private fun NavGraphBuilder.hubPaneDestinations(
+    navigator: HubPaneNavigator,
+    navController: NavHostController,
+    chatDestination: ChatDestination,
+    app: NexaraApplication,
+) {
+    composable(
+        route = NavDestinations.CHAT_HERO,
+        arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        ChatHeroDestination(
+            sessionId = backStackEntry.arguments?.getString("sessionId") ?: "",
+            navController = navController,
+            chatDestination = chatDestination,
+            // 会话列的会话没有返回键；删除会话等收尾回到新建入口。
+            onNavigateBack = navigator::clear,
+            onNavigateToSession = navigator::openSession,
+            onOpenSubagent = { owner, stepId, index -> navigator.open(NavDestinations.subagentViewer(owner, stepId, index)) },
+        )
+    }
+    composable(route = NavDestinations.SUBAGENT_VIEWER_ROUTE, arguments = SubagentViewerArguments) { backStackEntry ->
+        SubagentViewerDestination(app, backStackEntry, onBack = navigator::back)
+    }
+}
 
 /**
  * 设置子页的注册：主导航（整页）与宽屏设置右列（[SettingsNavigator] 带 outside）共用。
