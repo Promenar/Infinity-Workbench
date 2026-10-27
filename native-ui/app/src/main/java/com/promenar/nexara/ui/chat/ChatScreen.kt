@@ -1644,21 +1644,26 @@ private fun TokenIndicator(
             }
             .semantics { contentDescription = description }
             .testTag(UiTags.CHAT_TOKEN_INDICATOR)
+            .widthIn(min = 40.dp)
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        // 只有圆环时与工具行其它按钮同为 40dp 宽，圆环居中。
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
         ContextCircularIndicator(
             progress = progress,
             color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp),
         )
-        Text(
-            text = stringResource(R.string.chat_context_percentage, percentage),
-            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
+        // 窄窗口工具行放不下数字，只留圆环；读屏与弹出面板仍给出具体数值。
+        if (com.promenar.nexara.ui.common.LocalNexaraInspectorLayout.current) {
+            Text(
+                text = stringResource(R.string.chat_context_percentage, percentage),
+                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
     }
     // 贴着圆环向上弹出，从圆环处长出；不再用下拉菜单承载面板。
     NexaraPopover(
@@ -1763,15 +1768,10 @@ internal fun ContextUsagePanel(
                 }
             }
         }
-        // 折叠与保留各占一行，窄面板里也不会在词中间断行。
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // 只在确有工具结果被折叠时说明；保留轮数是固定配置，在会话设置里调整。
+        if (state.foldedToolResults > 0) {
             Text(
                 text = stringResource(R.string.chat_context_folded, state.foldedToolResults),
-                style = NexaraTypography.bodySmall,
-                color = scheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(R.string.chat_context_keep_recent, state.keepRecentTurns),
                 style = NexaraTypography.bodySmall,
                 color = scheme.onSurfaceVariant,
             )
@@ -2504,7 +2504,6 @@ fun ChatInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .composerIslandGlow(glow, material.topHighlight)
-            .animateContentSize()
             .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
         shape = RoundedCornerShape(ComposerIslandCorner),
         color = material.container,
@@ -2514,7 +2513,8 @@ fun ChatInputBar(
     ) {
         // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
         val hasAttachments = hasImages || hasDocuments || isImportingDocument
-        Column {
+        // 尺寸动画会按矩形裁剪，放在容器内部；放在外层会把圆角投影切成直角。
+        Column(Modifier.animateContentSize()) {
         topContent()
         Column(Modifier.padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp)) {
             attachmentContent()

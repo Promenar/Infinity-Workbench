@@ -171,7 +171,8 @@ fun RagDetailsSheet(
     openLink: ((String) -> Unit)? = null,
     trace: RagRetrievalTrace? = null,
 ) {
-    NexaraModalSheet(onDismissRequest = onDismissRequest, height = NexaraSheetHeight.Full) {
+    // 外框与内容同为 surfaceContainerLow，顶部拖动条一带不会露出另一层底色。
+    NexaraModalSheet(onDismissRequest = onDismissRequest, height = NexaraSheetHeight.Full, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         RagDetailsSheetContent(
             references = references.orEmpty(),
             citations = citations.orEmpty(),
