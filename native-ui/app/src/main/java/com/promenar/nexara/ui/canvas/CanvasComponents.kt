@@ -56,6 +56,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import com.promenar.nexara.data.artifact.ArtifactKind
+import com.promenar.nexara.data.canvas.CanvasKind
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -145,7 +148,7 @@ fun CanvasCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Dashboard,
+                        imageVector = if (metadata.kind == CanvasKind.PROTOTYPE) ArtifactKind.PROTOTYPE.icon else Icons.Rounded.Dashboard,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -168,7 +171,7 @@ fun CanvasCard(
                                 )
                             }
                             Text(
-                                text = when {
+                                text = prototypeCardMeta(metadata, version) ?: when {
                                     workspaceWarning -> stringResource(R.string.canvas_card_not_synced_version, version)
                                     workspacePath != null -> stringResource(R.string.canvas_card_version_path, version, workspacePath)
                                     else -> stringResource(R.string.canvas_version, version)
@@ -251,7 +254,7 @@ fun CanvasInlineCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = stringResource(R.string.canvas_card_inline_version, version),
+                    text = prototypeCardMeta(metadata, version) ?: stringResource(R.string.canvas_card_inline_version, version),
                     style = NexaraTypography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -321,6 +324,17 @@ private fun CanvasNewerTag(currentVersion: Int) {
             modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 3.dp),
         )
     }
+}
+
+/** 原型卡片写明类别与屏数，与产物页一致；页面返回 null，沿用原有版本文案。 */
+@Composable
+private fun prototypeCardMeta(metadata: CanvasMetadata, version: Int): String? {
+    if (metadata.kind != CanvasKind.PROTOTYPE) return null
+    return listOf(
+        stringResource(R.string.artifact_kind_prototype),
+        pluralStringResource(R.plurals.artifact_screen_count, metadata.screens.size, metadata.screens.size),
+        stringResource(R.string.artifact_meta_version, version),
+    ).joinToString(" · ")
 }
 
 @Composable

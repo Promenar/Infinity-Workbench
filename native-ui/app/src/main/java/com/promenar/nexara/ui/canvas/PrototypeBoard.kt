@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -214,7 +215,9 @@ private fun PrototypeCanvas(screens: List<CanvasScreenSource>, onOpenScreen: (St
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            // 缩放与平移后的屏幕不得画到画板外的标题栏上。
+            .clipToBounds(),
     ) {
         Canvas(Modifier.matchParentSize()) {
             val step = 18.dp.toPx()
