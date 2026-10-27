@@ -2,6 +2,9 @@ package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.domain.ask.AskUserOption
 import com.promenar.nexara.domain.ask.AskUserQuestion
 import com.promenar.nexara.domain.ask.AskUserRequest
@@ -74,5 +77,28 @@ class AskUserCardLogicTest {
     @Test fun `其它工具不受影响`() {
         val other = ExecutionStep(id = "x", type = "tool_call", toolName = "file_read", toolArgs = "{}", toolCallId = "call-x")
         assertThat(askUserSteps(listOf(other)).hidden).isEmpty()
+    }
+
+    @Test fun `提问调用与随后的回答消息补成执行步骤，再换成摘要卡`() {
+        val args = """{"questions":[{"header":"框架","question":"用哪个？","options":[{"label":"甲"},{"label":"乙"}]}]}"""
+        val assistant = Message(id = "a1", role = MessageRole.ASSISTANT, content = "",
+            toolCalls = listOf(ToolCall("call-1", "ask_user", args), ToolCall("call-2", "ask_user", args)))
+        val answered = Message(id = "r1", role = MessageRole.TOOL, content = """{"answers":{"框架":["甲"]}}""", toolCallId = "call-1", name = "ask_user")
+        val failed = Message(id = "r2", role = MessageRole.TOOL, content = """{"status":"error","error":"ASK_USER_MULTIPLE_CALLS","message":"一次只能提一个问题。"}""", toolCallId = "call-2", name = "ask_user")
+
+        val steps = askUserSyntheticSteps(assistant, listOf(answered, failed))
+        assertThat(steps.map { it.type }).containsExactly("tool_call", "tool_result", "tool_call", "error")
+        val asks = askUserSteps(steps)
+        assertThat(asks.answered.single().answer.answers).containsExactly("框架", listOf("甲"))
+        // 失败的那次留作工具行展示错误。
+        assertThat(asks.hidden).containsExactly("ask-call-1", "ask-call-1-result")
+
+        // 尚未回答：只有调用步骤，且被隐藏（由提问卡承担）。
+        val pending = askUserSyntheticSteps(assistant.copy(toolCalls = assistant.toolCalls!!.take(1)), emptyList())
+        assertThat(askUserSteps(pending).hidden).containsExactly("ask-call-1")
+
+        // 已有执行步骤记录的调用不重复补。
+        val recorded = assistant.copy(executionSteps = listOf(ExecutionStep("s", "tool_call", toolCallId = "call-1")))
+        assertThat(askUserSyntheticSteps(recorded, listOf(answered)).map { it.id }).containsExactly("ask-call-2")
     }
 }

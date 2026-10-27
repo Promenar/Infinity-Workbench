@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.hub
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.model.LoopStatus
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.domain.generation.GenerationPhase
 import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
 import org.junit.Test
@@ -38,5 +40,14 @@ class HubSessionActivityTest {
         listOf(GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED).forEach { phase ->
             assertThat(hubSessionActivities(task(phase))).isEmpty()
         }
+    }
+
+    @Test fun `生成任务退出后仍按会话持久状态标出待回答`() {
+        val waiting = Session(id = "s2", agentId = "a", title = "问", modelId = "p/m", loopStatus = LoopStatus.WAITING_FOR_INPUT)
+        val answered = Session(id = "s3", agentId = "a", title = "答", modelId = "p/m", loopStatus = LoopStatus.INPUT_ANSWERED)
+        assertThat(hubSessionActivities(null, listOf(waiting, answered)))
+            .containsExactly("s2", HubSessionActivity.AWAITING_ANSWER)
+        assertThat(hubSessionActivities(task(GenerationPhase.STREAMING), listOf(waiting)))
+            .containsExactly("s2", HubSessionActivity.AWAITING_ANSWER, "s1", HubSessionActivity.GENERATING)
     }
 }

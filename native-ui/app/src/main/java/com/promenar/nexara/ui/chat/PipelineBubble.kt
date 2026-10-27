@@ -651,8 +651,9 @@ private fun scopedToolSteps(messageId: String, steps: List<ExecutionStep>): List
 private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
     val steps = mutableListOf<PipelineStep>()
     for ((messageIndex, msg) in messages.withIndex()) {
+        val followingTools = messages.subList(messageIndex + 1, messages.size).takeWhile { it.role == MessageRole.TOOL }
         val knownToolNames = buildMap {
-            messages.subList(messageIndex + 1, messages.size).takeWhile { it.role == MessageRole.TOOL }.forEach { tool ->
+            followingTools.forEach { tool ->
                 if (!tool.toolCallId.isNullOrBlank() && !tool.name.isNullOrBlank()) put(tool.toolCallId, tool.name)
             }
             msg.executionSteps.orEmpty().forEach { execution ->
@@ -667,8 +668,9 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
             }
 
             // 2. 工具执行 → ToolExec step
-            if (!msg.executionSteps.isNullOrEmpty()) {
-                val namedSteps = msg.executionSteps!!.map { execution ->
+            val executionSteps = msg.executionSteps.orEmpty() + askUserSyntheticSteps(msg, followingTools)
+            if (executionSteps.isNotEmpty()) {
+                val namedSteps = executionSteps.map { execution ->
                     execution.copy(toolName = execution.toolName?.takeIf(String::isNotBlank)
                         ?: knownToolNames[execution.toolCallId] ?: inferredToolName(execution))
                 }

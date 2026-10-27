@@ -304,6 +304,7 @@ fun ChatRoute(
     val subagentApprovals by application.subagentApprovalBroker.pending.collectAsStateWithLifecycle()
     val sessionSubagentApprovals = remember(subagentApprovals, sessionId) { subagentApprovals.filter { it.sessionId == sessionId } }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
+    val pendingQuestion by chatViewModel.pendingQuestion.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
@@ -798,6 +799,7 @@ fun ChatRoute(
             state = ChatScreenState(
                 uiState = uiState,
                 inputText = inputText,
+                pendingQuestion = pendingQuestion,
                 tokenState = tokenState,
                 ragPhases = ragPhases,
                 compressionState = compressionState,
@@ -959,6 +961,7 @@ fun ChatRoute(
                 onStopAndSend = { text, images ->
                     slashCommands.submit(text) { chatViewModel.stopAndSendNow(text, images) }
                 },
+                onAnswerQuestion = { question, answer -> chatViewModel.answerQuestion(question, answer) },
                 onEditQueued = { id ->
                     if (!chatViewModel.editQueuedMessage(id)) {
                         snackbarAction = null

@@ -351,7 +351,8 @@ data class ChatScreenActions(
     val onEditState: suspend (Long, com.promenar.nexara.data.state.StateOperation) -> String? = { _, _ -> null },
     val onRemoveState: suspend (Long) -> String? = { null },
     val onSteerQueued: (String) -> Unit = {},
-    val onAnswerQuestion: (com.promenar.nexara.domain.ask.PendingQuestion, com.promenar.nexara.domain.ask.AskUserAnswer) -> Unit = { _, _ -> },
+    /** 返回是否受理；未受理（提问已过期或重复提交）时输入栏保留文字。 */
+    val onAnswerQuestion: (com.promenar.nexara.domain.ask.PendingQuestion, com.promenar.nexara.domain.ask.AskUserAnswer) -> Boolean = { _, _ -> false },
     val onSendSteering: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStopAndSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onEditQueued: (String) -> Unit = {},
@@ -1128,8 +1129,9 @@ fun ChatScreenContent(
                                 val question = state.pendingQuestion
                                 // 待回答时输入栏的文字就是“其他回答”，不另起一轮。
                                 if (question != null && inputText.isNotBlank()) {
-                                    actions.onAnswerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(other = inputText.trim()))
-                                    actions.onTextChange("")
+                                    if (actions.onAnswerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(other = inputText.trim()))) {
+                                        actions.onTextChange("")
+                                    }
                                 } else {
                                     submitDraft(actions.onSend)
                                 }

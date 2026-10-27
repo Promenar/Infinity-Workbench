@@ -111,6 +111,40 @@ internal fun askUserAnswered(invocation: ToolInvocationPresentation): AskUserAns
     return AskUserAnswered(request, answer)
 }
 
+/**
+ * 提问不经工具执行器，助手消息里只有工具调用、回答是随后的 TOOL 消息；这里补成执行步骤，
+ * 让提问与普通工具一样进入工具步骤，再由 [askUserSteps] 换成摘要卡。已有执行步骤的调用不重复补。
+ */
+internal fun askUserSyntheticSteps(
+    message: com.promenar.nexara.data.model.Message,
+    followingTools: List<com.promenar.nexara.data.model.Message>,
+): List<com.promenar.nexara.data.model.ExecutionStep> {
+    val recorded = message.executionSteps.orEmpty().mapNotNullTo(mutableSetOf()) { it.toolCallId }
+    return message.toolCalls.orEmpty()
+        .filter { it.name == AskUserLimits.TOOL_NAME && it.id !in recorded }
+        .flatMap { call ->
+            val result = followingTools.firstOrNull { it.toolCallId == call.id }
+            listOfNotNull(
+                com.promenar.nexara.data.model.ExecutionStep(
+                    id = "ask-${call.id}", type = "tool_call", toolName = AskUserLimits.TOOL_NAME,
+                    toolArgs = call.arguments, toolCallId = call.id, timestamp = message.createdAt,
+                ),
+                result?.let {
+                    com.promenar.nexara.data.model.ExecutionStep(
+                        id = "ask-${call.id}-result", type = if (isAskUserFailure(it.content)) "error" else "tool_result",
+                        toolName = AskUserLimits.TOOL_NAME, toolCallId = call.id, content = it.content, timestamp = it.createdAt,
+                    )
+                },
+            )
+        }
+}
+
+/** 失败结果是 `{"status":"error",…}`；回答 JSON 没有 status 字段。 */
+private fun isAskUserFailure(content: String): Boolean = runCatching {
+    (askJson.parseToJsonElement(content) as? kotlinx.serialization.json.JsonObject)
+        ?.get("status")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } == "error"
+}.getOrDefault(false)
+
 /** 一组工具步骤中的提问：[answered] 渲染为摘要卡，[hidden] 是不再显示为工具行的步骤 ID（已答或仍待回答）。 */
 internal data class AskUserSteps(val answered: List<AskUserAnswered>, val hidden: Set<String>)
 

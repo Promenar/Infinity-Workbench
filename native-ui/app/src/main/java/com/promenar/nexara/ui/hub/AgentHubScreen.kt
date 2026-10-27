@@ -51,6 +51,7 @@ import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgentDisplay
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
@@ -129,7 +130,7 @@ fun AgentHubScreen(
         pendingDeleteAgentId = agentToDelete,
         pendingDeleteSessionId = pendingDeleteSessionId,
         sessionsByAgent = sessionsByAgent,
-        sessionActivity = hubSessionActivities(activeGeneration),
+        sessionActivity = hubSessionActivities(activeGeneration, allSessions),
     )
     val actions = AgentHubScreenActions(
         onSearch = viewModel::updateSearchQuery,
@@ -384,17 +385,25 @@ internal data class AgentHubScreenState(
 
 internal enum class HubSessionActivity { GENERATING, QUEUED, AWAITING_APPROVAL, AWAITING_ANSWER }
 
-/** 应用级生成任务投影到会话列表：进行中标为生成中，等待批准单独标出，已结束的不标。 */
-internal fun hubSessionActivities(active: GenerationTaskSnapshot?): Map<String, HubSessionActivity> {
-    val phase = active?.phase ?: return emptyMap()
+/**
+ * 应用级生成任务投影到会话列表：进行中标为生成中，等待批准单独标出，已结束的不标。
+ * 待回答以会话持久化的 [LoopStatus.WAITING_FOR_INPUT] 为准，生成任务退出后仍保留。
+ */
+internal fun hubSessionActivities(
+    active: GenerationTaskSnapshot?,
+    sessions: List<Session> = emptyList(),
+): Map<String, HubSessionActivity> {
+    val waiting = sessions.filter { it.loopStatus == LoopStatus.WAITING_FOR_INPUT }
+        .associate { it.id to HubSessionActivity.AWAITING_ANSWER }
+    val phase = active?.phase ?: return waiting
     val activity = when (phase) {
-        GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> return emptyMap()
+        GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> return waiting
         GenerationPhase.WAITING_APPROVAL -> HubSessionActivity.AWAITING_APPROVAL
         GenerationPhase.WAITING_INPUT -> HubSessionActivity.AWAITING_ANSWER
         GenerationPhase.QUEUED -> HubSessionActivity.QUEUED
         else -> HubSessionActivity.GENERATING
     }
-    return mapOf(active.sessionId to activity)
+    return waiting + (active.sessionId to activity)
 }
 
 internal data class AgentHubScreenActions(
