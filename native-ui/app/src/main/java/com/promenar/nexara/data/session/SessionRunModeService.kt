@@ -86,7 +86,7 @@ class SessionRunModeService(
         var session = sessionDao.getById(sessionId) ?: return@withLock SessionRunModeCheck.SessionMissing
         if (session.runMode == null && linuxAvailable(runtime.state.value)) {
             // 只初始化仍为空的行，避免覆盖其它服务实例或显式切换写入的模式。
-            if (sessionDao.initializeRunMode(sessionId, SessionRunMode.LINUX.name, now()) == 1) {
+            if (sessionDao.initializeRunMode(sessionId, SessionRunMode.LINUX.name) == 1) {
                 onModeChanged(sessionId, SessionRunMode.LINUX)
             }
             session = sessionDao.getById(sessionId) ?: return@withLock SessionRunModeCheck.SessionMissing

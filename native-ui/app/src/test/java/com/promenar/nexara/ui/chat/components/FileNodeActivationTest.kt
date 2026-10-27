@@ -115,4 +115,21 @@ class FileNodeActivationTest {
             ),
         ).isFalse()
     }
+
+    @Test
+    fun `选择由外部接管时面板不再叠出自己的批量栏`() {
+        // 工作区浏览器自带选择栏；面板自身的批量栏读的是内部空选择集，会多出一条“已选 0 项”。
+        assertThat(
+            showsFilesPanelBatchBar(showSelectionOverlay = true, selectionOwnedExternally = true, isMultiSelectMode = true),
+        ).isFalse()
+        assertThat(
+            showsFilesPanelBatchBar(showSelectionOverlay = true, selectionOwnedExternally = false, isMultiSelectMode = true),
+        ).isTrue()
+        assertThat(
+            showsFilesPanelBatchBar(showSelectionOverlay = false, selectionOwnedExternally = false, isMultiSelectMode = true),
+        ).isFalse()
+        assertThat(
+            showsFilesPanelBatchBar(showSelectionOverlay = true, selectionOwnedExternally = false, isMultiSelectMode = false),
+        ).isFalse()
+    }
 }

@@ -312,6 +312,21 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `认领与复核会话根目录不推进会话的最近消息时间`() = runBlocking<Unit> {
+        // 首页按 updatedAt 排序；打开文件面板会复核根目录，不能把只是被打开过的会话顶到最前。
+        val activity = 1_000L
+        db.sessionDao().insert(
+            SessionEntity(id = "quiet", agentId = "agent", workspacePath = rootA.absolutePath, createdAt = activity, updatedAt = activity),
+        )
+
+        repo.ensureSessionRoot("quiet")
+        assertThat(db.sessionDao().getById("quiet")!!.updatedAt).isEqualTo(activity)
+
+        repo.ensureSessionRoot("quiet")
+        assertThat(db.sessionDao().getById("quiet")!!.updatedAt).isEqualTo(activity)
+    }
+
+    @Test
     fun `ensureSessionRoot is concurrent idempotent and backfills session`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
 

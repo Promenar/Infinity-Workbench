@@ -185,7 +185,7 @@ class WorkspaceRepository(
                 )
                 dao.update(existing)
             }
-            dao.canonicalizeSessionRootClaim(sessionId, existingUuid, physicalRoot.path, System.currentTimeMillis())
+            dao.canonicalizeSessionRootClaim(sessionId, existingUuid, physicalRoot.path)
             return@action existing
         }
 

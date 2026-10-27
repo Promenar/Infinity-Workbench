@@ -156,18 +156,17 @@ interface FileEntryDao {
     """)
     suspend fun countOtherSessionsForPhysicalRoot(canonicalPath: String, sessionId: String): Int
 
+    // 认领与复核会话根目录是元数据维护，不推进首页排序用的 updated_at。
     @Query("""
         UPDATE sessions
         SET workspace_root_uuid = :workspaceRootUuid,
-            workspace_path = :physicalRootPath,
-            updated_at = :updatedAt
+            workspace_path = :physicalRootPath
         WHERE id = :sessionId
     """)
     suspend fun canonicalizeSessionRootClaim(
         sessionId: String,
         workspaceRootUuid: String,
         physicalRootPath: String,
-        updatedAt: Long,
     )
 
     @Query("""
@@ -185,15 +184,13 @@ interface FileEntryDao {
     @Query("""
         UPDATE sessions
         SET workspace_root_uuid = :workspaceRootUuid,
-            workspace_path = :physicalRootPath,
-            updated_at = :updatedAt
+            workspace_path = :physicalRootPath
         WHERE id = :sessionId AND workspace_root_uuid IS NULL
     """)
     suspend fun claimSessionRoot(
         sessionId: String,
         workspaceRootUuid: String,
         physicalRootPath: String,
-        updatedAt: Long,
     ): Int
 
     @Transaction
@@ -209,7 +206,7 @@ interface FileEntryDao {
             if (countOtherSessionsForPhysicalRoot(existing.physicalRootPath, sessionId) != 0) {
                 throw SecurityException("Workspace physical root is referenced by another session")
             }
-            canonicalizeSessionRootClaim(sessionId, existingUuid, existing.physicalRootPath, System.currentTimeMillis())
+            canonicalizeSessionRootClaim(sessionId, existingUuid, existing.physicalRootPath)
             return existing
         }
 
@@ -218,7 +215,7 @@ interface FileEntryDao {
         }
 
         insertAbort(candidate)
-        if (claimSessionRoot(sessionId, candidate.uuid, candidate.physicalRootPath, candidate.updatedAt) == 1) return candidate
+        if (claimSessionRoot(sessionId, candidate.uuid, candidate.physicalRootPath) == 1) return candidate
 
         deleteByUuid(candidate.workspaceRootUuid, candidate.uuid)
         val winnerUuid = getSessionForRoot(sessionId)?.workspaceRootUuid

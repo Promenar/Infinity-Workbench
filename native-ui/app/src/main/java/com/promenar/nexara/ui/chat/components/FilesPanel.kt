@@ -150,6 +150,13 @@ internal fun supportsFileMultiSelect(
     hasDelete: Boolean,
 ): Boolean = hasReindex || hasDelete
 
+/** 选择由调用方接管（工作区浏览器自带选择栏）时，面板不再叠出读内部选择集的批量栏。 */
+internal fun showsFilesPanelBatchBar(
+    showSelectionOverlay: Boolean,
+    selectionOwnedExternally: Boolean,
+    isMultiSelectMode: Boolean,
+): Boolean = showSelectionOverlay && !selectionOwnedExternally && isMultiSelectMode
+
 internal fun hasFileNodeMenuActions(
     isDirectory: Boolean,
     hasReindex: Boolean,
@@ -314,6 +321,11 @@ internal fun FilesPanel(
         hasDelete = onDelete != null,
     )
     val isMultiSelectMode = if (onToggleSelection != null) selectionKeys.isNotEmpty() else selectedIds.isNotEmpty() && supportsMultiSelect
+    val showBatchBar = showsFilesPanelBatchBar(
+        showSelectionOverlay = showSelectionOverlay,
+        selectionOwnedExternally = onToggleSelection != null,
+        isMultiSelectMode = isMultiSelectMode,
+    )
     var deleteFailure by remember { mutableStateOf<FileBatchOperationResult?>(null) }
     var isDeleting by remember { mutableStateOf(false) }
     val requestDelete: (Collection<String>) -> Unit = request@{ ids ->
@@ -395,7 +407,7 @@ internal fun FilesPanel(
     Box(modifier = if (useScroll) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
         Column(
             modifier = (if (useScroll) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
-                .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
+                .padding(bottom = if (showBatchBar) 88.dp else 0.dp),
         ) {
             val bodyModifier = if (useScroll) Modifier.weight(1f) else Modifier.fillMaxWidth()
             externalFolderManager?.let { manager ->
@@ -487,7 +499,7 @@ internal fun FilesPanel(
 
         // 底部批量操作栏：统一在真实屏幕底部居中，正文已预留空间。
         FilesPanelSelectionOverlay(
-            visible = showSelectionOverlay && isMultiSelectMode,
+            visible = showBatchBar,
             selectedCount = selectedIds.size,
             onClear = { selectedIds.clear() },
             onReindexAll = onReindex?.let { reindexFn ->

@@ -62,9 +62,12 @@ class SessionRunModeMigrationTest {
                 assertThat(room.openHelper.writableDatabase.version).isEqualTo(28)
                 assertThat(room.sessionDao().getById("s")!!.title).isEqualTo("保留旧会话😀")
                 assertThat(room.sessionDao().getById("s")!!.runMode).isNull()
-                assertThat(room.sessionDao().initializeRunMode("s", "LINUX", 2)).isEqualTo(1)
-                assertThat(room.sessionDao().initializeRunMode("s", "BUILTIN", 3)).isEqualTo(0)
+                val activity = room.sessionDao().getById("s")!!.updatedAt
+                assertThat(room.sessionDao().initializeRunMode("s", "LINUX")).isEqualTo(1)
+                assertThat(room.sessionDao().initializeRunMode("s", "BUILTIN")).isEqualTo(0)
                 assertThat(room.sessionDao().getById("s")!!.runMode).isEqualTo("LINUX")
+                // 进入旧会话时补写运行模式属于元数据，不推进首页排序用的最近消息时间。
+                assertThat(room.sessionDao().getById("s")!!.updatedAt).isEqualTo(activity)
                 assertThat(room.sessionDao().countLinuxSessions()).isEqualTo(1)
                 assertThat(SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use {
                     it.hasCompleteCurrentRoomSchema(28, NEXARA_SCHEMA_V28_IDENTITY_HASH)

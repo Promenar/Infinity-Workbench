@@ -275,7 +275,8 @@ class RagHomeScreenContractTest {
         )
 
         assertThat(filesPanelSource).contains("showSelectionOverlay: Boolean = true")
-        assertThat(filesPanelSource).contains("showSelectionOverlay && isMultiSelectMode")
+        assertThat(filesPanelSource).contains("showSelectionOverlay && !selectionOwnedExternally && isMultiSelectMode")
+        assertThat(filesPanelSource).contains("visible = showBatchBar")
         assertThat(screenSource).contains("showSelectionOverlay = false")
     }
 

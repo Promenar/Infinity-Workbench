@@ -54,8 +54,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET run_mode = :runMode, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateRunMode(sessionId: String, runMode: String, updatedAt: Long): Int
 
-    @Query("UPDATE sessions SET run_mode = :runMode, updated_at = :updatedAt WHERE id = :sessionId AND run_mode IS NULL")
-    suspend fun initializeRunMode(sessionId: String, runMode: String, updatedAt: Long): Int
+    /** 首次补写运行模式只是元数据，不推进首页排序用的 updated_at。 */
+    @Query("UPDATE sessions SET run_mode = :runMode WHERE id = :sessionId AND run_mode IS NULL")
+    suspend fun initializeRunMode(sessionId: String, runMode: String): Int
 
     @Query("SELECT COUNT(*) FROM sessions WHERE run_mode = 'LINUX'")
     suspend fun countLinuxSessions(): Int
