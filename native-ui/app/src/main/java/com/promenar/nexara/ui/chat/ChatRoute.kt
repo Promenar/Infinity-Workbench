@@ -1048,14 +1048,25 @@ fun ChatRoute(
         )
     }
     if (activeOverlay == ChatOverlay.DeleteSession) {
+        val deleteContext = LocalContext.current
         com.promenar.nexara.ui.workspace.DeleteSessionDialog(
             sessionId = sessionId,
             loadSummary = (LocalContext.current.applicationContext as? NexaraApplication)?.let { app -> app::privateWorkspaceSummary },
-            onConfirm = { keep ->
+            onConfirm = { keep, removeWorktree ->
                 activeOverlayToken = null
-                chatViewModel.deleteSession(onNavigateBack, keepFiles = keep)
+                if (removeWorktree) {
+                    scope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            com.promenar.nexara.ui.workspace.removeBranchWorktree(deleteContext, application.branchControls, sessionId)
+                        }
+                        chatViewModel.deleteSession(onNavigateBack, keepFiles = keep)
+                    }
+                } else {
+                    chatViewModel.deleteSession(onNavigateBack, keepFiles = keep)
+                }
             },
             onCancel = { activeOverlayToken = null },
+            loadWorktreeBranch = com.promenar.nexara.ui.workspace.worktreeBranchLoader(application),
         )
     }
     if (activeOverlay == ChatOverlay.RenameSession) {

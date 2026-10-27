@@ -48,11 +48,15 @@ import kotlinx.coroutines.CancellationException
 fun DeleteSessionDialog(
     sessionId: String,
     loadSummary: (suspend (String) -> PrivateWorkspaceSummary?)?,
-    onConfirm: (keepFiles: Boolean) -> Unit,
+    onConfirm: (keepFiles: Boolean, removeWorktree: Boolean) -> Unit,
     onCancel: () -> Unit,
+    /** 分支会话绑定的 worktree 分支名；有绑定时对话框询问是否一并移除。 */
+    loadWorktreeBranch: (suspend (String) -> String?)? = null,
 ) {
     var summary by remember(sessionId) { mutableStateOf<PrivateWorkspaceSummary?>(null) }
+    var worktreeBranch by remember(sessionId) { mutableStateOf<String?>(null) }
     var keep by rememberSaveable(sessionId) { mutableStateOf(true) }
+    var removeWorktree by rememberSaveable(sessionId) { mutableStateOf(false) }
     LaunchedEffect(sessionId, loadSummary) {
         summary = try {
             loadSummary?.invoke(sessionId)
@@ -62,8 +66,35 @@ fun DeleteSessionDialog(
             null
         }
     }
+    LaunchedEffect(sessionId, loadWorktreeBranch) {
+        worktreeBranch = try {
+            loadWorktreeBranch?.invoke(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
     Dialog(onDismissRequest = onCancel) {
-        DeleteSessionDialogContent(summary, keep, onKeepChange = { keep = it }, onConfirm = { onConfirm(keep) }, onCancel = onCancel)
+        DeleteSessionDialogContent(
+            summary, keep, onKeepChange = { keep = it },
+            onConfirm = { onConfirm(keep, removeWorktree && worktreeBranch != null) }, onCancel = onCancel,
+            worktreeBranch = worktreeBranch, removeWorktree = removeWorktree, onRemoveWorktreeChange = { removeWorktree = it },
+        )
+    }
+}
+
+/** 读取会话已绑定的 worktree 分支名；没有绑定时为 null，对话框不显示移除选项。 */
+fun worktreeBranchLoader(app: com.promenar.nexara.NexaraApplication): suspend (String) -> String? = { id ->
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        app.database.sessionDao().getById(id)?.takeIf { it.worktreeDirectory != null }?.worktreeBranch
+    }
+}
+
+/** 删除分支会话前移除它的 worktree：Git 拒绝（例如有未提交改动）时只提示原因，会话照常删除。 */
+suspend fun removeBranchWorktree(context: Context, controls: com.promenar.nexara.domain.branch.BranchControls, sessionId: String) {
+    controls.removeWorktree(sessionId).onFailure { failure ->
+        Toast.makeText(context, context.getString(R.string.delete_session_worktree_failed, failure.message.orEmpty()), Toast.LENGTH_LONG).show()
     }
 }
 

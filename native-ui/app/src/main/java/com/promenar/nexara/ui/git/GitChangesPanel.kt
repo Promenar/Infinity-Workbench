@@ -138,7 +138,7 @@ fun GitChangesPage(
     val application = LocalContext.current.applicationContext as NexaraApplication
     val viewModel: GitPanelViewModel = viewModel(
         key = "git-panel-$sessionId",
-        factory = GitPanelViewModel.factory(sessionId, application.gitChangesService),
+        factory = GitPanelViewModel.factory(sessionId, application.gitChangesService, application.branchControls::listWorktrees),
     )
     LaunchedEffect(viewModel) { viewModel.open() }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -220,7 +220,7 @@ fun GitChangesPanel(
                         when (tabState.tab) {
                             GitPanelTab.CHANGES -> ChangesContent(tabState.status, actions)
                             GitPanelTab.COMMITS -> CommitsContent(tabState.log ?: GitLoad.Loading, actions)
-                            GitPanelTab.BRANCHES -> BranchesContent(tabState.branches ?: GitLoad.Loading, actions)
+                            GitPanelTab.BRANCHES -> BranchesContent(tabState.branches ?: GitLoad.Loading, actions, tabState.worktrees, tabState.currentWorktreePath)
                         }
                     }
                 }
@@ -720,7 +720,12 @@ private fun ChangeKindBadge(kind: GitChangeKind, untracked: Boolean = false) {
 // —— 本地分支 ——
 
 @Composable
-private fun BranchesContent(load: GitLoad<GitBranchList>, actions: GitPanelActions) = GitLoadContent(load, "git_branches_state") { branches ->
+private fun BranchesContent(
+    load: GitLoad<GitBranchList>,
+    actions: GitPanelActions,
+    worktrees: List<com.promenar.nexara.domain.branch.WorktreeEntry> = emptyList(),
+    currentWorktreePath: String? = null,
+) = GitLoadContent(load, "git_branches_state") { branches ->
     when (branches) {
         GitLoad.Loading -> GitPanelStateMessage(loading = true)
         is GitLoad.Failed -> GitPanelStateMessage(problem = branches.problem, onRetry = actions.onRefresh)
@@ -739,6 +744,7 @@ private fun BranchesContent(load: GitLoad<GitBranchList>, actions: GitPanelActio
                             FooterNote(pluralStringResource(R.plurals.git_panel_branches_truncated, value.branches.size, value.branches.size))
                         }
                     }
+                    worktreeSection(entries = worktrees, currentPath = currentWorktreePath, onSelect = null)
                 }
             }
         }

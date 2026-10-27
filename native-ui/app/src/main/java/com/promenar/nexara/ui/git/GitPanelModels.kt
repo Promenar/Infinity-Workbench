@@ -123,6 +123,10 @@ data class GitPanelUiState(
     val log: GitLoad<GitCommitLog>? = null,
     /** 为空表示尚未请求本地分支（切到“分支”时才加载）。 */
     val branches: GitLoad<GitBranchList>? = null,
+    /** 仓库的全部 worktree，随分支页加载；读取失败或只有主目录时不显示。 */
+    val worktrees: List<com.promenar.nexara.domain.branch.WorktreeEntry> = emptyList(),
+    /** 当前会话所在的 worktree：在用它的会话是本会话，否则为主目录。 */
+    val currentWorktreePath: String? = null,
     val detail: GitPanelDetail? = null,
     /** 已有内容时的后台刷新。 */
     val refreshing: Boolean = false,

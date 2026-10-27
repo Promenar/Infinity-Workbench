@@ -712,6 +712,8 @@ fun ChatScreenContent(
                         open = inspectorRoot == ChatPage.Browser,
                         onOpen = actions.onOpenBrowser,
                     ),
+                    isBranch = uiState.session?.parentSessionId != null || uiState.session?.parentSessionDeleted == true,
+                    branchOpenParent = branchAccess?.parentSessionId?.let { parent -> { branchAccess.onOpenSession(parent) } },
                 )
                 if (state.startupWritePaused) {
                     com.promenar.nexara.ui.startup.StartupWritePausedBanner(onOpen = actions.onOpenStartupIssues)
@@ -2006,6 +2008,9 @@ fun ChatTopBar(
     inspector: ChatTopBarInspector? = null,
     /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
     browser: ChatTopBarBrowser? = null,
+    /** 分支会话：标题前显示分支标记；主会话仍在时点按回到主会话。 */
+    branchOpenParent: (() -> Unit)? = null,
+    isBranch: Boolean = false,
 ) {
     val haptics = LocalNexaraHaptics.current
     var showMenu by remember { mutableStateOf(false) }
@@ -2027,6 +2032,27 @@ fun ChatTopBar(
             // 标题独占首行；运行模式、工作区与 Git 合并为其下的状态行，标题再长也不挤动模式标识。
             val statusLine = git != null || runMode != null || workspace != null
             Column {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isBranch) {
+                    val branchLabel = stringResource(R.string.branch_label)
+                    Icon(
+                        Icons.Rounded.AccountTree,
+                        contentDescription = branchLabel,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .heightIn(min = if (statusLine) 32.dp else 48.dp)
+                            .then(
+                                if (branchOpenParent != null) Modifier.clickable(
+                                    role = Role.Button,
+                                    onClickLabel = stringResource(R.string.session_message_open_parent),
+                                    onClick = branchOpenParent,
+                                ) else Modifier,
+                            )
+                            .padding(end = 6.dp)
+                            .size(18.dp)
+                            .testTag("chat_top_branch"),
+                    )
+                }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
@@ -2039,6 +2065,7 @@ fun ChatTopBar(
                         .wrapContentHeight(Alignment.CenterVertically)
                         .testTag("chat_top_title"),
                 )
+              }
                 if (statusLine) BoxWithConstraints {
                     val style = NexaraTypography.labelMedium.copy(fontFeatureSettings = "tnum")
                     val chipStyle = NexaraTypography.labelMedium

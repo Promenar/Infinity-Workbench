@@ -52,5 +52,5 @@
     <string name="git_worktree_unused">no session uses it</string>
     <string name="git_worktree_current">Viewing</string>
     <string name="git_worktree_open_cd">View this worktree</string>
-    <string name="git_worktree_note">Tap a row to view its changes and commits. Agents propose merges and removals as ordinary commands for approval; deleting a branch session asks whether to remove its worktree.</string>
+    <string name="git_worktree_note">Agents propose merges and removals as ordinary commands for approval; deleting a branch session asks whether to remove its worktree.</string>
 </resources>

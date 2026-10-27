@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +90,7 @@ fun AgentHubScreen(
     threePane: HubThreePaneHost? = null,
 ) {
     val context = LocalContext.current
+    val deleteScope = rememberCoroutineScope()
     val viewModel: AgentHubViewModel = viewModel(
         factory = AgentHubViewModel.factory(context.applicationContext as android.app.Application),
     )
@@ -172,13 +174,25 @@ fun AgentHubScreen(
             onCancelDeleteSession = {
                 pendingDeleteSessionId = null
             },
-            onDeleteSession = { sessionId, keepFiles ->
+            onDeleteSession = { sessionId, keepFiles, removeWorktree ->
                 closeSessions(setOf(sessionId))
-                sessionListViewModel.deleteSession(sessionId, keepFiles)
                 pendingDeleteSessionId = null
+                val branchApp = context.applicationContext as? com.promenar.nexara.NexaraApplication
+                if (removeWorktree && branchApp != null) {
+                    deleteScope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            com.promenar.nexara.ui.workspace.removeBranchWorktree(context, branchApp.branchControls, sessionId)
+                        }
+                        sessionListViewModel.deleteSession(sessionId, keepFiles)
+                    }
+                } else {
+                    sessionListViewModel.deleteSession(sessionId, keepFiles)
+                }
             },
             loadWorkspaceSummary = (LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication)
                 ?.let { app -> app::privateWorkspaceSummary },
+            loadWorktreeBranch = (LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication)
+                ?.let { app -> com.promenar.nexara.ui.workspace.worktreeBranchLoader(app) },
         )
 
         // 启动自检问题：照常进入，列表顶部提示受影响的范围，点开处置或交给 Agent 诊断。
@@ -455,11 +469,29 @@ internal data class AgentHubScreenActions(
     val onToggleSessionPin: (String) -> Unit = {},
     val onRequestDeleteSession: (String) -> Unit = {},
     val onCancelDeleteSession: () -> Unit = {},
-    val onDeleteSession: (sessionId: String, keepFiles: Boolean) -> Unit = { _, _ -> },
+    val onDeleteSession: (sessionId: String, keepFiles: Boolean, removeWorktree: Boolean) -> Unit = { _, _, _ -> },
     val loadWorkspaceSummary: (suspend (String) -> com.promenar.nexara.domain.workspace.PrivateWorkspaceSummary?)? = null,
+    val loadWorktreeBranch: (suspend (String) -> String?)? = null,
 )
 
 internal data class HubSessionEntry(val session: Session, val agentTitle: String)
+
+/**
+ * 分支紧跟在同一列表里的主会话之后，按创建先后排列，标为嵌套；主会话不在列表中（已删除、未置顶或不匹配搜索）时分支留在原位。
+ */
+internal fun <T> nestBranchSessions(items: List<T>, session: (T) -> Session): List<Pair<T, Boolean>> {
+    val ids = items.mapTo(mutableSetOf()) { session(it).id }
+    val children = items.filter { session(it).parentSessionId?.let(ids::contains) == true }
+        .groupBy { session(it).parentSessionId }
+        .mapValues { (_, branches) -> branches.sortedBy { session(it).createdAt } }
+    return buildList {
+        items.forEach { item ->
+            if (session(item).parentSessionId?.let(ids::contains) == true) return@forEach
+            add(item to false)
+            children[session(item).id]?.forEach { add(it to true) }
+        }
+    }
+}
 
 internal data class HubAgentEntry(val item: AgentDisplayItem, val sessionCount: Int)
 
@@ -589,7 +621,8 @@ internal fun AgentHubScreenContent(
             com.promenar.nexara.ui.workspace.DeleteSessionDialog(
                 sessionId = sessionId,
                 loadSummary = actions.loadWorkspaceSummary,
-                onConfirm = { keepFiles -> actions.onDeleteSession(sessionId, keepFiles) },
+                onConfirm = { keepFiles, removeWorktree -> actions.onDeleteSession(sessionId, keepFiles, removeWorktree) },
+                loadWorktreeBranch = actions.loadWorktreeBranch,
                 onCancel = actions.onCancelDeleteSession,
             )
         }
@@ -706,11 +739,13 @@ private fun HubSessionSection(
     ) {
         // 置顶、删除或新会话进入时，分组高度平滑变化而不是整块跳动。
         Column(Modifier.animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))) {
-            entries.forEach { entry ->
+            val nestedEntries = remember(entries) { nestBranchSessions(entries) { it.session } }
+            nestedEntries.forEach { (entry, nested) ->
                 val sessionId = entry.session.id
                 key(sessionId) {
                     HubSessionRow(
                         session = entry.session,
+                        nested = nested,
                         subtitle = entry.agentTitle,
                         activity = activity[sessionId],
                         selected = sessionId == selectedSessionId,
@@ -829,7 +864,11 @@ private fun HubSessionRow(
     onRequestDelete: () -> Unit,
     selected: Boolean = false,
     tag: String = UiTags.hubSession(session.id),
+    /** 分支排在主会话之下时缩进。 */
+    nested: Boolean = false,
 ) {
+    val isBranch = session.parentSessionId != null
+    val branchState = stringResource(R.string.branch_label)
     var menuExpanded by remember { mutableStateOf(false) }
     val menuTouch = rememberNexaraMenuTouch()
     val pinLabel = stringResource(if (session.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin)
@@ -849,7 +888,7 @@ private fun HubSessionRow(
                 .then(if (selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
                 .semantics {
                     if (selected) this.selected = true
-                    listOfNotNull(pinnedState.takeIf { session.isPinned }, activityState)
+                    listOfNotNull(branchState.takeIf { isBranch }, pinnedState.takeIf { session.isPinned }, activityState)
                         .takeIf { it.isNotEmpty() }?.let { stateDescription = it.joinToString("，") }
                     customActions = listOf(
                         CustomAccessibilityAction(pinLabel) { onTogglePin(); true },
@@ -863,6 +902,19 @@ private fun HubSessionRow(
                     onLongClick = { menuExpanded = true },
                     onLongClickLabel = stringResource(R.string.hub_cd_session_actions),
                 ),
+            leadingContent = if (!isBranch) null else {
+                {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (nested) Spacer(Modifier.width(NexaraSpacing.Medium))
+                        Icon(
+                            imageVector = Icons.Rounded.AccountTree,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (session.isPinned) {
@@ -1064,9 +1116,11 @@ private fun HubAgentSessions(
                 ),
             )
         }
-        sessions.forEach { session ->
+        val nestedSessions = remember(sessions) { nestBranchSessions(sessions) { it } }
+        nestedSessions.forEach { (session, nested) ->
             HubSessionRow(
                 session = session,
+                nested = nested,
                 subtitle = null,
                 activity = activity[session.id],
                 selected = session.id == selectedSessionId,

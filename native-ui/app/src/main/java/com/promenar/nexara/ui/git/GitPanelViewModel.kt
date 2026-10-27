@@ -29,6 +29,7 @@ class GitPanelViewModel(
     private val sessionId: String,
     private val service: GitChangesService,
     private val diffDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val listWorktrees: (suspend (String) -> Result<List<com.promenar.nexara.domain.branch.WorktreeEntry>>)? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(GitPanelUiState())
     val state: StateFlow<GitPanelUiState> = _state.asStateFlow()
@@ -168,6 +169,9 @@ class GitPanelViewModel(
         branchesJob = viewModelScope.launch {
             val branches = service.branches(sessionId).toLoad()
             _state.update { it.copy(branches = branches) }
+            val worktrees = listWorktrees?.invoke(sessionId)?.getOrNull() ?: return@launch
+            val current = (worktrees.firstOrNull { it.sessionId == sessionId } ?: worktrees.firstOrNull { it.isMain })?.path
+            _state.update { it.copy(worktrees = worktrees, currentWorktreePath = current) }
         }
     }
 
@@ -177,10 +181,15 @@ class GitPanelViewModel(
     }
 
     companion object {
-        fun factory(sessionId: String, service: GitChangesService): ViewModelProvider.Factory =
+        fun factory(
+            sessionId: String,
+            service: GitChangesService,
+            listWorktrees: (suspend (String) -> Result<List<com.promenar.nexara.domain.branch.WorktreeEntry>>)? = null,
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = GitPanelViewModel(sessionId, service) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    GitPanelViewModel(sessionId, service, listWorktrees = listWorktrees) as T
             }
     }
 }
