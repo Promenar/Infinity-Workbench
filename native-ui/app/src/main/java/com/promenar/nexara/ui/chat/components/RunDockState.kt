@@ -12,6 +12,7 @@ internal sealed interface RunDockLabel {
     data class Step(val title: String) : RunDockLabel
     data object Running : RunDockLabel
     data object WaitingApproval : RunDockLabel
+    data object WaitingAnswer : RunDockLabel
     data object PlanCompleted : RunDockLabel
     data class Paused(val step: String) : RunDockLabel
     data object BackgroundOnly : RunDockLabel
@@ -54,11 +55,14 @@ internal fun runDockState(
     enabledSchedules: Int,
     boardTitle: String?,
     elapsedMillis: Long?,
+    /** 本轮因提问暂停、等待用户回答。 */
+    awaitingAnswer: Boolean = false,
 ): RunDockUiState? {
     val hasBoard = boardTitle != null
-    if (plan == null && !isGenerating && pendingApprovals == 0 && runningJobs == 0 && enabledSchedules == 0 && !hasBoard) return null
+    if (plan == null && !isGenerating && pendingApprovals == 0 && !awaitingAnswer && runningJobs == 0 && enabledSchedules == 0 && !hasBoard) return null
     val (tone, label) = when {
         pendingApprovals > 0 -> RunDockTone.WAITING to RunDockLabel.WaitingApproval
+        awaitingAnswer -> RunDockTone.WAITING to RunDockLabel.WaitingAnswer
         isGenerating && plan != null && !plan.isCompleted && plan.currentStepTitle.isNotBlank() ->
             RunDockTone.RUNNING to RunDockLabel.Step(plan.currentStepTitle)
         isGenerating -> RunDockTone.RUNNING to RunDockLabel.Running

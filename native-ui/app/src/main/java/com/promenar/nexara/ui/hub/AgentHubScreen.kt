@@ -58,6 +58,7 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
@@ -381,7 +382,7 @@ internal data class AgentHubScreenState(
     val sessionActivity: Map<String, HubSessionActivity> = emptyMap(),
 )
 
-internal enum class HubSessionActivity { GENERATING, AWAITING_APPROVAL }
+internal enum class HubSessionActivity { GENERATING, QUEUED, AWAITING_APPROVAL, AWAITING_ANSWER }
 
 /** 应用级生成任务投影到会话列表：进行中标为生成中，等待批准单独标出，已结束的不标。 */
 internal fun hubSessionActivities(active: GenerationTaskSnapshot?): Map<String, HubSessionActivity> {
@@ -389,6 +390,8 @@ internal fun hubSessionActivities(active: GenerationTaskSnapshot?): Map<String, 
     val activity = when (phase) {
         GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> return emptyMap()
         GenerationPhase.WAITING_APPROVAL -> HubSessionActivity.AWAITING_APPROVAL
+        GenerationPhase.WAITING_INPUT -> HubSessionActivity.AWAITING_ANSWER
+        GenerationPhase.QUEUED -> HubSessionActivity.QUEUED
         else -> HubSessionActivity.GENERATING
     }
     return mapOf(active.sessionId to activity)
@@ -815,6 +818,21 @@ private fun HubSessionRow(
                                 text = stringResource(R.string.hub_session_awaiting_approval),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.tertiary,
+                                maxLines = 1,
+                            )
+                            // 待回答与提问卡同用琥珀色；排队用中性色，表示尚未开始。
+                            HubSessionActivity.AWAITING_ANSWER -> Text(
+                                text = stringResource(R.string.ask_card_status_waiting),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                color = MaterialTheme.nexaraDomainColors.warning,
+                                maxLines = 1,
+                                modifier = Modifier.testTag(UiTags.hubSessionAwaitingAnswer(tag)),
+                            )
+                            HubSessionActivity.QUEUED -> Text(
+                                text = stringResource(R.string.ask_card_status_queued),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                             )
                             null -> Text(

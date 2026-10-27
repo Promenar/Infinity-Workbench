@@ -48,6 +48,13 @@ object UiTags {
     const val CHAT_QUEUE_MENU_QUEUE = "chat_queue_menu_queue"
     const val CHAT_QUEUE_MENU_STEER = "chat_queue_menu_steer"
     const val CHAT_QUEUE_MENU_NOW = "chat_queue_menu_now"
+    // 提问工具：待回答提问卡、页签、选项、跳过与提交、已答摘要
+    const val CHAT_ASK_CARD = "chat_ask_card"
+    const val CHAT_ASK_TAB_PREFIX = "chat_ask_tab_"
+    const val CHAT_ASK_OPTION_PREFIX = "chat_ask_option_"
+    const val CHAT_ASK_SKIP = "chat_ask_skip"
+    const val CHAT_ASK_SUBMIT = "chat_ask_submit"
+    const val CHAT_ASK_ANSWERED = "chat_ask_answered"
     const val CHAT_QUEUE_TRAY = "chat_queue_tray"
     const val CHAT_QUEUE_ITEM_PREFIX = "chat_queue_item_"
     const val CHAT_QUEUE_STEER = "chat_queue_steer"
@@ -131,6 +138,7 @@ object UiTags {
     fun hubAgentSession(sessionId: String): String = "hub_agent_session:$sessionId"
     /** 会话行内的生成中标记，按所在行的标签区分同一会话出现在“最近”与助手展开列表中的两处。 */
     fun hubSessionGenerating(rowTag: String): String = "$rowTag:generating"
+    fun hubSessionAwaitingAnswer(rowTag: String): String = "$rowTag:awaiting_answer"
     fun hubAgentNewSession(agentId: String): String = "hub_agent_new_session:$agentId"
     const val AGENT_AVATAR_ACTION = "agent_avatar_action"
 

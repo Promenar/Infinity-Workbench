@@ -289,10 +289,14 @@ fun PipelineBubble(
                         clockKey = step.messageId,
                     )
                     is PipelineStep.ToolExec -> Column {
-                        InlineToolRow(
-                            steps = step.steps, isExecuting = step.isExecuting, fontSize = fontSize,
+                        // 已答的提问以摘要卡呈现，其余调用照常显示为工具行；待回答时提问卡在会话流底部，这里不重复。
+                        val asks = remember(step.steps) { askUserSteps(step.steps) }
+                        val toolSteps = if (asks.hidden.isEmpty()) step.steps else step.steps.filterNot { it.id in asks.hidden }
+                        if (toolSteps.isNotEmpty()) InlineToolRow(
+                            steps = toolSteps, isExecuting = step.isExecuting, fontSize = fontSize,
                             commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
                         )
+                        asks.answered.forEach { AskUserAnsweredCard(it) }
                         // 生成中画布卡紧跟创建它的步骤；结束后改由正文下方的本轮产物区展示。
                         if (isGenerating) CanvasInvocationCards(step.steps, inline = true)
                     }

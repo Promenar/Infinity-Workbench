@@ -27,6 +27,13 @@ class HubSessionActivityTest {
             .containsExactly("s1", HubSessionActivity.AWAITING_APPROVAL)
     }
 
+    @Test fun `等待回答与排队各自标出`() {
+        assertThat(hubSessionActivities(task(GenerationPhase.WAITING_INPUT)))
+            .containsExactly("s1", HubSessionActivity.AWAITING_ANSWER)
+        assertThat(hubSessionActivities(task(GenerationPhase.QUEUED)))
+            .containsExactly("s1", HubSessionActivity.QUEUED)
+    }
+
     @Test fun `已结束的任务不标记`() {
         listOf(GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED).forEach { phase ->
             assertThat(hubSessionActivities(task(phase))).isEmpty()

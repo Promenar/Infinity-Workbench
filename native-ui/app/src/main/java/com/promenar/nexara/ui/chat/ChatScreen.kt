@@ -206,6 +206,7 @@ import com.promenar.nexara.ui.common.NexaraPopoverSide
 import com.promenar.nexara.ui.common.NexaraPopoverAlign
 import androidx.compose.material3.FilledTonalButton
 import com.promenar.nexara.ui.theme.nexaraDomainColors
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.rounded.Compress
 
 /** 未配置嵌入模型或无检索范围的历史轨迹表示检索未执行，不单独构成检索步骤。 */
@@ -271,6 +272,8 @@ data class ChatScreenState(
     val stateBoard: com.promenar.nexara.data.state.StateBoardSnapshot? = null,
     /** 当前会话中等待用户决定的子代理审批，按请求时间排列，在会话流底部以卡片呈现。 */
     val subagentApprovals: List<com.promenar.nexara.data.subagent.SubagentApproval> = emptyList(),
+    /** 本轮因 `ask_user` 暂停、等待回答的提问；卡片在会话流底部，输入栏写下的文字作为其他回答提交。 */
+    val pendingQuestion: com.promenar.nexara.domain.ask.PendingQuestion? = null,
     /** 会话工作区是 Git 仓库时的分支与改动摘要，显示在顶栏标题下方；否则为 null。 */
     val gitSummary: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
     /** 本会话或其工作区因启动自检问题暂停写入，顶栏下方显示提示条。 */
@@ -348,6 +351,7 @@ data class ChatScreenActions(
     val onEditState: suspend (Long, com.promenar.nexara.data.state.StateOperation) -> String? = { _, _ -> null },
     val onRemoveState: suspend (Long) -> String? = { null },
     val onSteerQueued: (String) -> Unit = {},
+    val onAnswerQuestion: (com.promenar.nexara.domain.ask.PendingQuestion, com.promenar.nexara.domain.ask.AskUserAnswer) -> Unit = { _, _ -> },
     val onSendSteering: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStopAndSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onEditQueued: (String) -> Unit = {},
@@ -758,6 +762,7 @@ fun ChatScreenContent(
                 runningJobs = activitySummary?.runningJobs ?: 0,
                 enabledSchedules = activitySummary?.enabledSchedules ?: 0,
                 boardTitle = boardTitle,
+                awaitingAnswer = state.pendingQuestion != null,
                 elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
             )
             var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
@@ -813,7 +818,7 @@ fun ChatScreenContent(
                 scope.launch {
                     // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
                     val pendingItems = (if (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting } != null) 1 else 0) +
-                        subagentApprovalGroups.size
+                        (if (state.pendingQuestion != null) 1 else 0) + subagentApprovalGroups.size
                     val target = listState.layoutInfo.totalItemsCount - 1 - pendingItems
                     listState.animateScrollToItem(target.coerceAtLeast(0))
                 }
@@ -959,6 +964,18 @@ fun ChatScreenContent(
 
                 // 决定提交后批准的工具在审批流程内同步执行，请求要到执行结束才清除；
                 // 期间收起卡片，由工具行与实时输出显示进度。提交未生效时请求仍在，卡片随即恢复。
+                state.pendingQuestion?.let { question ->
+                    item(key = "ask_question") {
+                        ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
+                            AskUserCard(
+                                request = question.request,
+                                stateKey = question.toolCallId,
+                                onSubmit = { answer -> actions.onAnswerQuestion(question, answer) },
+                                onSkip = { actions.onAnswerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true)) },
+                            )
+                        }
+                    }
+                }
                 uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.let { request ->
                     item(key = "approval_request") {
                         ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
@@ -1107,7 +1124,17 @@ fun ChatScreenContent(
                                 }
                                 actions.onTextChange(next)
                             },
-                            onSend = { submitDraft(actions.onSend) },
+                            onSend = {
+                                val question = state.pendingQuestion
+                                // 待回答时输入栏的文字就是“其他回答”，不另起一轮。
+                                if (question != null && inputText.isNotBlank()) {
+                                    actions.onAnswerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(other = inputText.trim()))
+                                    actions.onTextChange("")
+                                } else {
+                                    submitDraft(actions.onSend)
+                                }
+                            },
+                            answeringQuestion = state.pendingQuestion != null,
                             status = uiState.status,
                             isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
@@ -2471,6 +2498,8 @@ fun ChatInputBar(
     onSendSteering: () -> Unit = {},
     /** 停止本轮并立即发出草稿（长按菜单）。 */
     onStopAndSend: () -> Unit = {},
+    /** 有待回答的提问：输入栏写的是其他回答，浮岛描边转为琥珀色。 */
+    answeringQuestion: Boolean = false,
     onDismissError: () -> Unit = {},
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
@@ -2496,7 +2525,11 @@ fun ChatInputBar(
     topContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val haptics = LocalNexaraHaptics.current
-    val shownPlaceholder = if (isGenerating) stringResource(R.string.chat_input_placeholder_generating) else placeholder
+    val shownPlaceholder = when {
+        answeringQuestion -> stringResource(R.string.ask_card_input_placeholder)
+        isGenerating -> stringResource(R.string.chat_input_placeholder_generating)
+        else -> placeholder
+    }
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
     } else {
@@ -2536,7 +2569,7 @@ fun ChatInputBar(
             .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
         shape = RoundedCornerShape(ComposerIslandCorner),
         color = material.container,
-        border = material.border,
+        border = if (answeringQuestion) BorderStroke(1.5.dp, MaterialTheme.nexaraDomainColors.warning) else material.border,
         tonalElevation = 0.dp,
         shadowElevation = 6.dp,
     ) {
@@ -2614,6 +2647,7 @@ fun ChatInputBar(
                     onDismissError = onDismissError,
                     enabled = hasDraft && !isImportingDocument,
                     isModelSelected = isModelSelected,
+                    idleDescription = if (answeringQuestion) stringResource(R.string.ask_card_send_other_cd) else null,
                     queueActions = if (queueing && isModelSelected) {
                         QueueSendActions(onQueue = onSend, onSteer = onSendSteering, onStopAndSend = onStopAndSend, onStop = onStop)
                     } else {
@@ -2661,6 +2695,8 @@ private fun GenerationStatusButton(
     isModelSelected: Boolean = true,
     /** 生成中已有草稿时的排队操作；非空时按钮外圈转动，长按弹出发送方式菜单。 */
     queueActions: QueueSendActions? = null,
+    /** 空闲时发送键的读屏描述；为 null 时为普通“发送”。 */
+    idleDescription: String? = null,
 ) {
     val active = status == GenerationStatus.UPLOADING || status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING
     val canSend = enabled && isModelSelected
@@ -2693,7 +2729,10 @@ private fun GenerationStatusButton(
         }
     )
     val actionDescription = when (status) {
-        GenerationStatus.IDLE -> if (queueActions != null) stringResource(R.string.chat_queue_send_cd) else stringResource(R.string.chat_cd_send)
+        GenerationStatus.IDLE -> when {
+            queueActions != null -> stringResource(R.string.chat_queue_send_cd)
+            else -> idleDescription ?: stringResource(R.string.chat_cd_send)
+        }
         GenerationStatus.UPLOADING,
         GenerationStatus.THINKING,
         GenerationStatus.RECEIVING -> stringResource(R.string.chat_cd_stop)

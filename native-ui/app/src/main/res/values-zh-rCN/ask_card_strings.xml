@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ask_card_title">需要你回答</string>
+    <plurals name="ask_card_title_many">
+        <item quantity="other">需要你回答 · %d 个问题</item>
+    </plurals>
+    <string name="ask_card_tab_done">已回答</string>
+    <string name="ask_card_single_hint">单选</string>
+    <string name="ask_card_multi_hint">可多选</string>
+    <string name="ask_card_other_hint">都不合适？在下方输入框写下你的回答</string>
+    <string name="ask_card_skip">跳过提问</string>
+    <string name="ask_card_next">下一题</string>
+    <string name="ask_card_submit">提交回答</string>
+    <string name="ask_card_answer_separator">、</string>
+    <string name="ask_card_answered_title">你的回答</string>
+    <string name="ask_card_answered_title_skipped">未回答</string>
+    <string name="ask_card_answered_other">其他回答</string>
+    <string name="ask_card_answered_skipped_head">提问</string>
+    <string name="ask_card_answered_skipped">你跳过了，Agent 按自己的判断继续</string>
+    <string name="ask_card_input_placeholder">输入其他回答…</string>
+    <string name="ask_card_send_other_cd">作为其他回答发送</string>
+    <string name="ask_card_status_waiting">待回答</string>
+    <string name="ask_card_status_queued">排队中</string>
+    <string name="run_dock_waiting_answer">等待你的回答</string>
+</resources>

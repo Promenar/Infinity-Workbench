@@ -30,7 +30,8 @@ class RunDockStateTest {
         schedules: Int = 0,
         board: String? = null,
         elapsed: Long? = null,
-    ) = runDockState(plan, generating, approvals, jobs, schedules, board, elapsed)
+        answering: Boolean = false,
+    ) = runDockState(plan, generating, approvals, jobs, schedules, board, elapsed, awaitingAnswer = answering)
 
     @Test fun `没有计划、生成、审批、后台与状态面板时不占位`() {
         assertThat(dock()).isNull()
@@ -56,6 +57,14 @@ class RunDockStateTest {
         assertThat(state.tone).isEqualTo(RunDockTone.WAITING)
         assertThat(state.label).isEqualTo(RunDockLabel.WaitingApproval)
         assertThat(state.pendingApprovals).isEqualTo(2)
+    }
+
+    @Test fun `等待回答单独占位，待审批优先`() {
+        val answering = dock(plan = plan(3, 5), answering = true)!!
+        assertThat(answering.tone).isEqualTo(RunDockTone.WAITING)
+        assertThat(answering.label).isEqualTo(RunDockLabel.WaitingAnswer)
+        assertThat(dock(answering = true)!!.label).isEqualTo(RunDockLabel.WaitingAnswer)
+        assertThat(dock(approvals = 1, answering = true)!!.label).isEqualTo(RunDockLabel.WaitingApproval)
     }
 
     @Test fun `生成结束后计划完成显示完成，未完成显示暂停与当前步骤`() {

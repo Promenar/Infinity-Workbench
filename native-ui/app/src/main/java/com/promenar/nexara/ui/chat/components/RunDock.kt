@@ -235,6 +235,7 @@ internal fun runDockLabelText(label: RunDockLabel): String = when (label) {
     is RunDockLabel.Step -> label.title
     RunDockLabel.Running -> stringResource(R.string.chat_progress_running)
     RunDockLabel.WaitingApproval -> stringResource(R.string.run_dock_waiting_approval)
+    RunDockLabel.WaitingAnswer -> stringResource(R.string.run_dock_waiting_answer)
     RunDockLabel.PlanCompleted -> stringResource(R.string.run_dock_plan_completed)
     is RunDockLabel.Paused -> if (label.step.isBlank()) stringResource(R.string.run_dock_paused)
         else stringResource(R.string.run_dock_paused_step, label.step)

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ask_card_title">Needs your answer</string>
+    <plurals name="ask_card_title_many">
+        <item quantity="one">Needs your answer · %d question</item>
+        <item quantity="other">Needs your answer · %d questions</item>
+    </plurals>
+    <string name="ask_card_tab_done">Answered</string>
+    <string name="ask_card_single_hint">Pick one</string>
+    <string name="ask_card_multi_hint">Pick any</string>
+    <string name="ask_card_other_hint">None fit? Write your own answer in the box below</string>
+    <string name="ask_card_skip">Skip</string>
+    <string name="ask_card_next">Next</string>
+    <string name="ask_card_submit">Submit</string>
+    <string name="ask_card_answer_separator">, </string>
+    <string name="ask_card_answered_title">Your answer</string>
+    <string name="ask_card_answered_title_skipped">Not answered</string>
+    <string name="ask_card_answered_other">Your reply</string>
+    <string name="ask_card_answered_skipped_head">Question</string>
+    <string name="ask_card_answered_skipped">You skipped it; the agent continued on its own judgment</string>
+    <string name="ask_card_input_placeholder">Write another answer…</string>
+    <string name="ask_card_send_other_cd">Send as your answer</string>
+    <string name="ask_card_status_waiting">Awaiting answer</string>
+    <string name="ask_card_status_queued">Queued</string>
+    <string name="run_dock_waiting_answer">Waiting for your answer</string>
+</resources>
