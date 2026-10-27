@@ -325,8 +325,15 @@ class AccessibilitySmokeTest {
 
         val english = resourcesFor("en")
         val chinesePattern = Regex("[\\u4E00-\\u9FFF]")
+        // 引导页语言选择在用户选语言之前出现，标签有意中英并列；例外仍须带完整英文，不能退化成漏翻。
+        val intentionallyBilingual = mapOf(R.string.onboarding_choose_language to "Choose language")
+        intentionallyBilingual.forEach { (id, englishPart) ->
+            assertTrue("Bilingual label lost its English part", english.getString(id).contains(englishPart))
+        }
         R.string::class.java.fields.forEach { field ->
-            val value = english.getText(field.getInt(null)).toString()
+            val id = field.getInt(null)
+            if (id in intentionallyBilingual) return@forEach
+            val value = english.getText(id).toString()
             assertTrue("Default English resource contains Chinese: ${field.name}", !chinesePattern.containsMatchIn(value))
         }
 
