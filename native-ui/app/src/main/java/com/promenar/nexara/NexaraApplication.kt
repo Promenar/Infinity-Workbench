@@ -718,6 +718,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             ),
         )
     }
+    /** 会话产物：画布与文件快照合并后的列表，产物页与本轮产物卡读取。 */
+    val sessionArtifacts: com.promenar.nexara.data.artifact.SessionArtifactRepository by lazy {
+        com.promenar.nexara.data.artifact.CanvasOnlySessionArtifacts(canvasStore)
+    }
     val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore by lazy {
         com.promenar.nexara.data.chat.queue.FileComposerQueueStore(
             java.io.File(filesDir, "composer_queue"),
