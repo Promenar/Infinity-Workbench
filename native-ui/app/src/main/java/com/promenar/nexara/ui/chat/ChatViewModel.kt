@@ -1838,6 +1838,8 @@ class ChatViewModel(
 
     fun loadSession(sessionId: String) {
         viewModelScope.launch(Dispatchers.IO) { (application as NexaraApplication).checkSessionRunMode(sessionId) }
+        // 折叠屏展开或旋转会让界面重建并重新载入同一会话，此时输入框里未发送的文字比落库草稿新。
+        val liveInput = _inputText.value.takeIf { _currentSessionId.value == sessionId }
         _inputText.value = ""
         resetSessionTransientState()
         val existing = store.getSession(sessionId)
@@ -1845,7 +1847,7 @@ class ChatViewModel(
             if (existing.workspaceRootUuid.isNullOrBlank()) {
                 viewModelScope.launch { ensureSessionWorkspace(sessionId) }
             }
-            _inputText.value = existing.draft.orEmpty()
+            _inputText.value = liveInput ?: existing.draft.orEmpty()
             _currentSessionId.update { sessionId }
             updateAgentName(existing.agentId)
             viewModelScope.launch { messageManager.reconcileTurnMemory(sessionId) }
@@ -1890,7 +1892,7 @@ class ChatViewModel(
                         if (state.sessions.any { it.id == sessionId }) state
                         else state.copy(sessions = state.sessions + hydrated)
                     }
-                    _inputText.value = hydrated.draft.orEmpty()
+                    _inputText.value = liveInput ?: hydrated.draft.orEmpty()
                     _currentSessionId.update { sessionId }
                     updateAgentName(hydrated.agentId)
                     messageManager.reconcileTurnMemory(sessionId)

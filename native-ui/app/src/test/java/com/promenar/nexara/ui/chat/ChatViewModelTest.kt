@@ -1849,6 +1849,21 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `界面重建后重新载入同一会话保留未发送的输入`() = runTest {
+        seedSession("A")
+        advanceUntilIdle()
+        viewModel.updateInputText("还没发送的话")
+
+        viewModel.loadSession("A")
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEqualTo("还没发送的话")
+
+        seedSession("B")
+        advanceUntilIdle()
+        assertThat(viewModel.inputText.value).isEmpty()
+    }
+
+    @Test
     fun `A生成时B发送返回Busy且不留幽灵消息并且B停止不取消A`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("A")
