@@ -5,6 +5,8 @@ import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -79,6 +81,10 @@ internal fun DeleteSessionDialogContent(
     onKeepChange: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
+    /** 分支会话绑定的 worktree 分支名；为空时不显示移除选项。 */
+    worktreeBranch: String? = null,
+    removeWorktree: Boolean = false,
+    onRemoveWorktreeChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     NexaraConfirmDialogCard(
@@ -111,6 +117,27 @@ internal fun DeleteSessionDialogContent(
                     onClick = { onKeepChange(false) },
                     tag = "delete_session_drop",
                 )
+            }
+        }
+        if (worktreeBranch != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .toggleable(value = removeWorktree, onValueChange = onRemoveWorktreeChange, role = Role.Checkbox)
+                    .testTag("delete_session_remove_worktree"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = removeWorktree, onCheckedChange = null)
+                Spacer(Modifier.size(NexaraSpacing.Small))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.delete_session_remove_worktree, worktreeBranch), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(R.string.delete_session_remove_worktree_detail),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

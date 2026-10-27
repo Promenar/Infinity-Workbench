@@ -291,12 +291,16 @@ fun PipelineBubble(
                     is PipelineStep.ToolExec -> Column {
                         // 已答的提问以摘要卡呈现，其余调用照常显示为工具行；待回答时提问卡在会话流底部，这里不重复。
                         val asks = remember(step.steps) { askUserSteps(step.steps) }
-                        val toolSteps = if (asks.hidden.isEmpty()) step.steps else step.steps.filterNot { it.id in asks.hidden }
+                        // 分支方案同理：已处理的显示为分支卡片或选择摘要，待处理时方案卡在会话流底部。
+                        val branches = remember(step.steps) { branchPlanSteps(step.steps) }
+                        val hidden = asks.hidden + branches.hidden
+                        val toolSteps = if (hidden.isEmpty()) step.steps else step.steps.filterNot { it.id in hidden }
                         if (toolSteps.isNotEmpty()) InlineToolRow(
                             steps = toolSteps, isExecuting = step.isExecuting, fontSize = fontSize,
                             commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
                         )
                         asks.answered.forEach { AskUserAnsweredCard(it) }
+                        branches.resolved.forEach { BranchPlanResolvedView(it) }
                         // 生成中画布卡紧跟创建它的步骤；结束后改由正文下方的本轮产物区展示。
                         if (isGenerating) CanvasInvocationCards(step.steps, inline = true)
                     }
