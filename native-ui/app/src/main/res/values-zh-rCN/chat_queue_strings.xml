@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chat_queue_send_cd">排队发送</string>
-    <string name="chat_queue_stop_cd">停止生成</string>
+    <string name="chat_queue_send_more">更多发送方式</string>
+    <string name="chat_queue_hint">轻点排队 · 长按更多</string>
+    <string name="chat_queue_menu_queue">排队发送</string>
+    <string name="chat_queue_menu_steer">当前步骤后插队</string>
+    <string name="chat_queue_menu_now">停止并立即发送</string>
+    <string name="chat_queue_menu_stop">只停止，保留草稿</string>
     <string name="chat_queue_steer">插队</string>
     <string name="chat_queue_steer_cd">插队：当前步骤结束后立即发送</string>
     <string name="chat_queue_steering">当前步骤后发送</string>

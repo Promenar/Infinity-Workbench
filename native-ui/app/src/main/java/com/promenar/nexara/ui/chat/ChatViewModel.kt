@@ -342,6 +342,8 @@ class ChatViewModel(
     private val pendingQueueWrites = mutableMapOf<String, Int>()
     private val queueTerminalPhases = mutableMapOf<String, GenerationPhase>()
     private val queuePauseOverrides = mutableMapOf<String, QueuePauseReason>()
+    /** “停止并立即发送”的会话：本轮以取消收尾时不暂停队列，直接发出排在队首的草稿。 */
+    private val stopAndSendSessions = mutableSetOf<String>()
     private var preparingSessionId: String? = null
     private var queueDispatchJob: Job? = null
     private var queueDispatchRequested: String? = null
@@ -647,9 +649,9 @@ class ChatViewModel(
                         if (presentation?.phase in DRAFT_SETTLING_PHASES && settledTask != presentation?.taskId) {
                             settledTask = presentation?.taskId
                             val reason = terminalQueuePauseReason(sessionId, presentation?.phase)
-                            if (state.pauseReason == null) composerQueueStore.pause(sessionId, reason)
+                            if (state.pauseReason == null && !dispatchesAfterTerminal(sessionId, presentation?.phase)) composerQueueStore.pause(sessionId, reason)
                         }
-                        if (queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED && active?.sessionId != sessionId &&
+                        if (dispatchesAfterTerminal(sessionId, queueTerminalPhases[sessionId]) && active?.sessionId != sessionId &&
                             state.pauseReason == null && state.items.isNotEmpty() && pendingQueueWrites[sessionId] == null
                         ) dispatchComposerQueue(sessionId)
                     }
@@ -843,7 +845,10 @@ class ChatViewModel(
                             if (lastOutcomeTaskId != task.taskId) {
                                 lastOutcomeTaskId = task.taskId
                                 queueTerminalPhases[sessionId] = task.phase
-                                if (task.phase == GenerationPhase.COMPLETED && !terminalPresentation.handledFailure) {
+                                if (
+                                    (task.phase == GenerationPhase.COMPLETED && !terminalPresentation.handledFailure) ||
+                                    (task.phase == GenerationPhase.CANCELLED && sessionId in stopAndSendSessions)
+                                ) {
                                     dispatchComposerQueue(sessionId)
                                 } else {
                                     queueAction {
@@ -1050,7 +1055,7 @@ class ChatViewModel(
         }
     }
 
-    private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>) {
+    private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>, steer: Boolean = false) {
         _inputText.value = ""
         _draftDocuments.value = emptyList()
         _restoredDraftImages.value = null
@@ -1060,11 +1065,12 @@ class ChatViewModel(
         viewModelScope.launch {
             var stored = false
             try {
-                composerQueueStore.enqueue(sessionId, text, imageUris.map(Uri::toString), documents)
+                val item = composerQueueStore.enqueue(sessionId, text, imageUris.map(Uri::toString), documents)
                 stored = true
+                if (steer && composerQueueStore.steer(sessionId, item.id)) queuePauseOverrides.remove(sessionId)
                 composerQueueStore.releaseDraftImages(sessionId, imageUris.mapNotNull { it.path })
                 if (_currentSessionId.value != sessionId || !viewModelScope.isActive) composerQueueStore.pause(sessionId, queuePauseOverrides[sessionId] ?: QueuePauseReason.INTERRUPTED)
-                else if (queueTerminalPhases[sessionId] in DRAFT_SETTLING_PHASES) {
+                else if (queueTerminalPhases[sessionId] in DRAFT_SETTLING_PHASES && sessionId !in stopAndSendSessions) {
                     val state = composerQueueStore.snapshot(sessionId)
                     if (state.pauseReason == null) composerQueueStore.pause(sessionId, queuePauseOverrides[sessionId] ?: QueuePauseReason.FAILED)
                 }
@@ -1085,10 +1091,14 @@ class ChatViewModel(
             } finally {
                 val remaining = (pendingQueueWrites[sessionId] ?: 1) - 1
                 if (remaining == 0) pendingQueueWrites.remove(sessionId) else pendingQueueWrites[sessionId] = remaining
-                if (viewModelScope.isActive && queueTerminalPhases[sessionId] == GenerationPhase.COMPLETED) dispatchComposerQueue(sessionId)
+                if (viewModelScope.isActive && dispatchesAfterTerminal(sessionId, queueTerminalPhases[sessionId])) dispatchComposerQueue(sessionId)
             }
         }
     }
+
+    /** 本轮终态后是否继续发出队列：正常完成，或“停止并立即发送”触发的取消。 */
+    private fun dispatchesAfterTerminal(sessionId: String, phase: GenerationPhase?): Boolean =
+        phase == GenerationPhase.COMPLETED || (phase == GenerationPhase.CANCELLED && sessionId in stopAndSendSessions)
 
     private suspend fun restoreFailedComposerDraft(sessionId: String) {
         if (_currentSessionId.value != sessionId || !viewModelScope.isActive) return
@@ -1124,6 +1134,31 @@ class ChatViewModel(
             }
         }
     }
+
+    /** 生成中把草稿排到队首，当前步骤结束后发出；不在生成时等同普通发送。 */
+    fun sendMessageSteering(text: String, imageUris: List<Uri> = emptyList()) {
+        val sessionId = _currentSessionId.value ?: return
+        if (!queuesDraft(sessionId, text, imageUris)) return sendMessage(text, imageUris)
+        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, steer = true)
+    }
+
+    /** 停止本轮，草稿排到队首并在停止落定后立即发出；不在生成时等同普通发送。 */
+    fun stopAndSendNow(text: String, imageUris: List<Uri> = emptyList()) {
+        val sessionId = _currentSessionId.value ?: return
+        if (!queuesDraft(sessionId, text, imageUris)) return sendMessage(text, imageUris)
+        stopAndSendSessions += sessionId
+        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, steer = true)
+        cancelCurrentSessionGeneration()
+        viewModelScope.launch {
+            sendPreparationMutex.withLock { terminateSessionWork(sessionId) }
+        }
+    }
+
+    /** 与 [sendMessage] 的排队判定一致：只有生成中且没有待审批时，草稿才进入队列。 */
+    private fun queuesDraft(sessionId: String, text: String, imageUris: List<Uri>): Boolean =
+        !_isImportingDocument.value &&
+            (text.isNotBlank() || imageUris.isNotEmpty() || _draftDocuments.value.isNotEmpty()) &&
+            store.getSession(sessionId)?.approvalRequest == null && isSessionGenerating(sessionId)
 
     fun removeQueuedMessage(id: String) {
         val sessionId = _currentSessionId.value ?: return
@@ -1229,6 +1264,7 @@ class ChatViewModel(
                     }
                     val item = composerQueueStore.claimNext(sessionId) ?: return@queue
                     queueTerminalPhases.remove(sessionId)
+                    stopAndSendSessions.remove(sessionId)
                     queuePauseOverrides.remove(sessionId)
                     queueSubmissions[sessionId] = item
                     preparingSessionId = sessionId
@@ -2058,6 +2094,7 @@ class ChatViewModel(
 
     fun stopGeneration() {
         _currentSessionId.value?.let { id ->
+            stopAndSendSessions.remove(id)
             queuePauseOverrides[id] = QueuePauseReason.STOPPED
             viewModelScope.launch { composerQueueStore.pause(id, QueuePauseReason.STOPPED) }
         }
@@ -2882,6 +2919,7 @@ class ChatViewModel(
     /** 点击发送即清空输入框与附件，保留副本直到生成接受或回滚；持久化草稿在接受后才清除。 */
     private fun takeDraftForSending(sessionId: String, text: String, imageUris: List<Uri>) {
         queueTerminalPhases.remove(sessionId)
+        stopAndSendSessions.remove(sessionId)
         queuePauseOverrides.remove(sessionId)
         submittedDraft = SubmittedDraft(
             sessionId = sessionId,

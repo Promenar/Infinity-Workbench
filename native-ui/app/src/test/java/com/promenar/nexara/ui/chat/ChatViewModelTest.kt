@@ -2169,6 +2169,44 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `生成中插队发送把草稿排到队首并标记当前步骤后发送`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("普通队列"); advanceUntilIdle()
+        viewModel.sendMessageSteering("优先指令"); advanceUntilIdle()
+        val items = viewModel.composerQueue.value.items
+        assertThat(items.map { it.text }).containsExactly("优先指令", "普通队列").inOrder()
+        assertThat(items.first().steering).isTrue()
+        assertThat(viewModel.inputText.value).isEmpty()
+    }
+
+    @Test
+    fun `停止并立即发送取消本轮后先发草稿再继续原队列`() = runTest {
+        seedSession(); advanceUntilIdle()
+        holdStreamOpen = true; fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        viewModel.sendMessage("first"); advanceUntilIdle()
+        viewModel.sendMessage("普通队列"); advanceUntilIdle()
+        holdStreamOpen = false
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.stopAndSendNow("立即发送")
+        awaitReal { viewModel.composerQueue.value.items.isEmpty() && savedMessages.count { it.first.role == MessageRole.USER } >= 3 }
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content })
+            .containsExactly("first", "立即发送", "普通队列").inOrder()
+        assertThat(viewModel.composerQueue.value.pauseReason).isNull()
+    }
+
+    @Test
+    fun `未在生成时停止并立即发送等同普通发送`() = runTest {
+        seedSession(); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.stopAndSendNow("直接发送")
+        awaitReal { savedMessages.any { it.first.role == MessageRole.USER } }
+        assertThat(savedMessages.filter { it.first.role == MessageRole.USER }.map { it.first.content }).containsExactly("直接发送")
+        assertThat(viewModel.composerQueue.value.items).isEmpty()
+    }
+
+    @Test
     fun `等待审批时插队立即关闭审批并发送`() = runTest {
         val pending = approvedToolTurn().dropLast(1).map {
             if (it.role == MessageRole.ASSISTANT) it.copy(pendingApprovalToolIds = listOf("call-1")) else it

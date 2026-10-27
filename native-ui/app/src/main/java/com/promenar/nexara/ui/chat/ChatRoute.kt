@@ -953,6 +953,12 @@ fun ChatRoute(
                 onEditState = chatViewModel::editStateField,
                 onRemoveState = chatViewModel::removeStateBoard,
                 onSteerQueued = chatViewModel::steerQueuedMessage,
+                onSendSteering = { text, images ->
+                    slashCommands.submit(text) { chatViewModel.sendMessageSteering(text, images) }
+                },
+                onStopAndSend = { text, images ->
+                    slashCommands.submit(text) { chatViewModel.stopAndSendNow(text, images) }
+                },
                 onEditQueued = { id ->
                     if (!chatViewModel.editQueuedMessage(id)) {
                         snackbarAction = null

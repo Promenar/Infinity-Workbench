@@ -42,6 +42,12 @@ object UiTags {
     const val CHAT_INPUT_BAR_SURFACE = "chat_input_bar_surface"
     const val CHAT_OPTIONS = "chat_options"
     const val CHAT_GENERATION_STOP = "chat_generation_stop"
+    // 停止与发送合一：排队外圈、提示与长按菜单项（只停止沿用 CHAT_GENERATION_STOP）
+    const val CHAT_QUEUE_RING = "chat_queue_ring"
+    const val CHAT_QUEUE_HINT = "chat_queue_hint"
+    const val CHAT_QUEUE_MENU_QUEUE = "chat_queue_menu_queue"
+    const val CHAT_QUEUE_MENU_STEER = "chat_queue_menu_steer"
+    const val CHAT_QUEUE_MENU_NOW = "chat_queue_menu_now"
     const val CHAT_QUEUE_TRAY = "chat_queue_tray"
     const val CHAT_QUEUE_ITEM_PREFIX = "chat_queue_item_"
     const val CHAT_QUEUE_STEER = "chat_queue_steer"

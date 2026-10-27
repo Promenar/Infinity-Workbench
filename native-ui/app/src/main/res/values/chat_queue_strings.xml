@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chat_queue_send_cd">Queue message</string>
-    <string name="chat_queue_stop_cd">Stop generating</string>
+    <string name="chat_queue_send_more">More send options</string>
+    <string name="chat_queue_hint">Tap to queue · Hold for more</string>
+    <string name="chat_queue_menu_queue">Queue</string>
+    <string name="chat_queue_menu_steer">Send after current step</string>
+    <string name="chat_queue_menu_now">Stop and send now</string>
+    <string name="chat_queue_menu_stop">Stop only, keep draft</string>
     <string name="chat_queue_steer">Interject</string>
     <string name="chat_queue_steer_cd">Interject: send after the current step</string>
     <string name="chat_queue_steering">After this step</string>

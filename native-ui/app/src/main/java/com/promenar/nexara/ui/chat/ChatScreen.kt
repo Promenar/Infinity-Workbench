@@ -27,9 +27,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
@@ -159,6 +157,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Schedule
+import com.promenar.nexara.ui.common.NexaraMenuDivider
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -343,6 +348,8 @@ data class ChatScreenActions(
     val onEditState: suspend (Long, com.promenar.nexara.data.state.StateOperation) -> String? = { _, _ -> null },
     val onRemoveState: suspend (Long) -> String? = { null },
     val onSteerQueued: (String) -> Unit = {},
+    val onSendSteering: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
+    val onStopAndSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onEditQueued: (String) -> Unit = {},
     val onMoveQueuedToFront: (String) -> Unit = {},
     val onRemoveQueued: (String) -> Unit = {},
@@ -1071,6 +1078,21 @@ fun ChatScreenContent(
                     onRemovePostProcessTask = actions.onRemovePostProcessTask,
                     onTaskClick = { hiddenPlanSignature = null },
                 )
+                    // 三种发送方式共用：纯附件时补默认提示词。
+                    val submitDraft: ((String, List<android.net.Uri>) -> Unit) -> Unit = { send ->
+                        if (
+                            inputText.isNotBlank() ||
+                            selectedImageUris.isNotEmpty() ||
+                            draftDocuments.isNotEmpty()
+                        ) {
+                            val fallback = if (draftDocuments.isNotEmpty()) {
+                                documentOnlyPrompt
+                            } else {
+                                describeImagePrompt
+                            }
+                            send(inputText.ifBlank { fallback }, selectedImageUris)
+                        }
+                    }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
                             text = inputText,
@@ -1085,24 +1107,12 @@ fun ChatScreenContent(
                                 }
                                 actions.onTextChange(next)
                             },
-                            onSend = {
-                                if (
-                                    inputText.isNotBlank() ||
-                                    selectedImageUris.isNotEmpty() ||
-                                    draftDocuments.isNotEmpty()
-                                ) {
-                                    val fallback = if (draftDocuments.isNotEmpty()) {
-                                        documentOnlyPrompt
-                                    } else {
-                                        describeImagePrompt
-                                    }
-                                    val textToSend = inputText.ifBlank { fallback }
-                                    actions.onSend(textToSend, selectedImageUris)
-                                }
-                            },
+                            onSend = { submitDraft(actions.onSend) },
                             status = uiState.status,
                             isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
+                            onSendSteering = { submitDraft(actions.onSendSteering) },
+                            onStopAndSend = { submitDraft(actions.onStopAndSend) },
                             onDismissError = actions.onDismissGenerationError,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
@@ -2457,6 +2467,10 @@ fun ChatInputBar(
     isGenerating: Boolean = status == GenerationStatus.UPLOADING ||
         status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING,
     onStop: () -> Unit = {},
+    /** 生成中把草稿排到队首，当前步骤结束后发出（长按菜单）。 */
+    onSendSteering: () -> Unit = {},
+    /** 停止本轮并立即发出草稿（长按菜单）。 */
+    onStopAndSend: () -> Unit = {},
     onDismissError: () -> Unit = {},
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
@@ -2511,6 +2525,10 @@ fun ChatInputBar(
     // 浮岛与底部导航栏同一套材质：抬升底色、半透明描边与投影；生成时外圈流光环绕，出错时整圈泛红。
     val material = composerIslandMaterial()
     val glow = rememberComposerGlowState(generating = isGenerating, error = status == GenerationStatus.ERROR)
+    // 生成中写好了下一条：主按钮变为排队发送，外圈转动表示本轮仍在进行；长按展开插队、停止并发送与只停止。
+    val hasDraft = text.isNotBlank() || hasImages || hasDocuments
+    val queueing = isGenerating && hasDraft && status in QueueableStatuses
+    Column(horizontalAlignment = Alignment.End) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -2589,17 +2607,6 @@ fun ChatInputBar(
                 }
                 TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
                 Spacer(Modifier.width(4.dp))
-                // 生成中写好了下一条：本该显示停止的主按钮变为排队发送，停止退到左侧的次级按钮；完成与出错状态照常播报。
-                val hasDraft = text.isNotBlank() || hasImages || hasDocuments
-                val queueing = isGenerating && hasDraft && status in QueueableStatuses
-                AnimatedVisibility(
-                    visible = queueing,
-                    enter = expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) +
-                        fadeIn(tween(NexaraMotion.DurationMedium)),
-                    exit = shrinkHorizontally(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
-                ) {
-                    QueueStopButton(onStop = onStop, modifier = Modifier.padding(end = 6.dp))
-                }
                 GenerationStatusButton(
                     status = if (queueing) GenerationStatus.IDLE else effectiveStatus,
                     onSend = { if (isModelSelected) onSend() else onModelHint() },
@@ -2607,13 +2614,39 @@ fun ChatInputBar(
                     onDismissError = onDismissError,
                     enabled = hasDraft && !isImportingDocument,
                     isModelSelected = isModelSelected,
-                    sendDescription = if (queueing) stringResource(R.string.chat_queue_send_cd) else null,
+                    queueActions = if (queueing && isModelSelected) {
+                        QueueSendActions(onQueue = onSend, onSteer = onSendSteering, onStopAndSend = onStopAndSend, onStop = onStop)
+                    } else {
+                        null
+                    },
                 )
             }
         }
         }
     }
+    AnimatedVisibility(
+        visible = queueing,
+        enter = expandVertically(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) +
+            fadeIn(tween(NexaraMotion.DurationMedium)),
+        exit = shrinkVertically(tween(NexaraMotion.DurationShort)) + fadeOut(tween(NexaraMotion.DurationShort)),
+    ) {
+        Text(
+            text = stringResource(R.string.chat_queue_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, end = 12.dp).testTag(UiTags.CHAT_QUEUE_HINT),
+        )
+    }
+    }
 }
+
+/** 排队时主按钮的四种发送方式；轻点即 [onQueue]，其余在长按菜单与无障碍操作里。 */
+private class QueueSendActions(
+    val onQueue: () -> Unit,
+    val onSteer: () -> Unit,
+    val onStopAndSend: () -> Unit,
+    val onStop: () -> Unit,
+)
 
 private val ReasoningChipCompactBelow = 200.dp
 private val QueueableStatuses = setOf(GenerationStatus.UPLOADING, GenerationStatus.THINKING, GenerationStatus.RECEIVING)
@@ -2626,8 +2659,8 @@ private fun GenerationStatusButton(
     onDismissError: () -> Unit,
     enabled: Boolean,
     isModelSelected: Boolean = true,
-    /** 生成中排队时发送键的读屏描述；为 null 时为普通“发送”。 */
-    sendDescription: String? = null,
+    /** 生成中已有草稿时的排队操作；非空时按钮外圈转动，长按弹出发送方式菜单。 */
+    queueActions: QueueSendActions? = null,
 ) {
     val active = status == GenerationStatus.UPLOADING || status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING
     val canSend = enabled && isModelSelected
@@ -2660,7 +2693,7 @@ private fun GenerationStatusButton(
         }
     )
     val actionDescription = when (status) {
-        GenerationStatus.IDLE -> sendDescription ?: stringResource(R.string.chat_cd_send)
+        GenerationStatus.IDLE -> if (queueActions != null) stringResource(R.string.chat_queue_send_cd) else stringResource(R.string.chat_cd_send)
         GenerationStatus.UPLOADING,
         GenerationStatus.THINKING,
         GenerationStatus.RECEIVING -> stringResource(R.string.chat_cd_stop)
@@ -2669,8 +2702,45 @@ private fun GenerationStatusButton(
     }
 
     val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
-    ChatCompactIconButton(
-        onClick = {
+    var menuOpen by remember { mutableStateOf(false) }
+    if (queueActions == null) menuOpen = false
+    val queueLabels = queueActions?.let {
+        listOf(
+            stringResource(R.string.chat_queue_menu_steer) to it.onSteer,
+            stringResource(R.string.chat_queue_menu_now) to it.onStopAndSend,
+            stringResource(R.string.chat_queue_menu_stop) to it.onStop,
+        )
+    }
+    val moreLabel = stringResource(R.string.chat_queue_send_more)
+    val ringTrack = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+    // 排队时外圈转动：本轮仍在进行，草稿会在它之后发出。
+    AnimatedVisibility(
+        visible = queueActions != null,
+        enter = fadeIn(tween(NexaraMotion.DurationMedium)) + scaleIn(tween(NexaraMotion.DurationMedium), initialScale = 0.85f),
+        exit = fadeOut(tween(NexaraMotion.DurationShort)),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.requiredSize(46.dp).testTag(UiTags.CHAT_QUEUE_RING),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = ringTrack,
+            strokeWidth = 2.dp,
+        )
+    }
+    Box(
+        modifier = Modifier.size(40.dp).clip(CircleShape).background(containerColor)
+            .combinedClickable(
+                enabled = status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING ||
+                    status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING ||
+                    status == GenerationStatus.ERROR,
+                role = Role.Button,
+                onLongClickLabel = if (queueActions != null) moreLabel else null,
+                onLongClick = if (queueActions != null) {
+                    { menuOpen = true }
+                } else {
+                    null
+                },
+                onClick = {
             when (status) {
                 GenerationStatus.IDLE -> {
                     if (canSend) haptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.CONFIRM)
@@ -2683,8 +2753,8 @@ private fun GenerationStatusButton(
                     onStop()
                 }
             }
-        },
-        modifier = Modifier
+                },
+            )
             .semantics {
                 contentDescription = actionDescription
                 stateDescription = statusDescription
@@ -2693,10 +2763,13 @@ private fun GenerationStatusButton(
                 } else {
                     LiveRegionMode.Polite
                 }
+                // 读屏用户不必长按：菜单里的三种方式直接作为自定义操作提供。
+                queueLabels?.let { actions ->
+                    customActions = actions.map { (label, run) -> CustomAccessibilityAction(label) { run(); true } }
+                }
             }
             .testTag(UiTags.CHAT_GENERATION_ACTION),
-        containerColor = containerColor,
-        enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING || status == GenerationStatus.ERROR)
+        contentAlignment = Alignment.Center,
     ) {
         // 发送、停止与错误三种图标之间缩放交叉切换；读屏描述挂在按钮上，不随图标动画重复播报。
         AnimatedContent(
@@ -2727,25 +2800,41 @@ private fun GenerationStatusButton(
             }
         }
     }
+    queueActions?.let { actions ->
+        NexaraDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, minWidth = 220.dp) {
+            QueueMenuItem(R.string.chat_queue_menu_queue, UiTags.CHAT_QUEUE_MENU_QUEUE, { menuOpen = false; actions.onQueue() }) {
+                Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            QueueMenuItem(R.string.chat_queue_menu_steer, UiTags.CHAT_QUEUE_MENU_STEER, { menuOpen = false; actions.onSteer() }) {
+                Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            QueueMenuItem(R.string.chat_queue_menu_now, UiTags.CHAT_QUEUE_MENU_NOW, { menuOpen = false; actions.onStopAndSend() }) {
+                Icon(Icons.Rounded.ArrowUpward, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            NexaraMenuDivider()
+            QueueMenuItem(R.string.chat_queue_menu_stop, UiTags.CHAT_GENERATION_STOP, { menuOpen = false; actions.onStop() }, destructive = true) {
+                Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.error))
+            }
+        }
+    }
+    }
 }
 
-/** 排队时的次级停止键：中性底色，与主按钮区分主次。 */
 @Composable
-private fun QueueStopButton(onStop: () -> Unit, modifier: Modifier = Modifier) {
-    val haptics = com.promenar.nexara.ui.common.LocalNexaraHaptics.current
-    val description = stringResource(R.string.chat_queue_stop_cd)
-    ChatCompactIconButton(
-        onClick = {
-            haptics.perform(com.promenar.nexara.ui.common.NexaraHapticEvent.SELECTION)
-            onStop()
-        },
-        modifier = modifier
-            .semantics { contentDescription = description }
-            .testTag(UiTags.CHAT_GENERATION_STOP),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-    ) {
-        Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurface))
-    }
+private fun QueueMenuItem(
+    label: Int,
+    tag: String,
+    onClick: () -> Unit,
+    destructive: Boolean = false,
+    icon: @Composable () -> Unit,
+) {
+    NexaraMenuItem(
+        text = { Text(stringResource(label)) },
+        onClick = onClick,
+        leadingIcon = { Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { icon() } },
+        destructive = destructive,
+        modifier = Modifier.testTag(tag),
+    )
 }
 
 @Composable

@@ -15,6 +15,12 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
@@ -24,7 +30,7 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import org.junit.Rule
 import org.junit.Test
 
-/** 生成中排队：发送键与次级停止键的分工，以及排队托盘的插队、编辑、移到最前、删除、继续与折叠。 */
+/** 生成中排队：停止与发送合一的主按钮（轻点排队、长按更多），以及排队托盘的插队、编辑、移到最前、删除、继续与折叠。 */
 class ComposerQueueTrayTest {
     @get:Rule
     val rule = createComposeRule()
@@ -33,39 +39,64 @@ class ComposerQueueTrayTest {
     private val generating = ChatUiState(session = session, isGenerating = true, status = GenerationStatus.RECEIVING)
 
     @Test
-    fun generatingWithDraft_primaryQueuesAndSecondaryStops() {
-        var sent: String? = null
-        var stopped = false
+    fun generatingWithDraft_singleButtonQueuesAndLongPressOffersOtherWays() {
+        val calls = mutableListOf<String>()
         render(
             uiState = generating,
             inputText = "下一条",
-            actions = ChatScreenActions(onSend = { text, _ -> sent = text }, onStop = { stopped = true }),
+            actions = ChatScreenActions(
+                onSend = { text, _ -> calls += "queue:$text" },
+                onSendSteering = { text, _ -> calls += "steer:$text" },
+                onStopAndSend = { text, _ -> calls += "now:$text" },
+                onStop = { calls += "stop" },
+            ),
         )
 
+        // 只有一个按钮：轻点排队，外圈与提示表明本轮仍在进行。
+        rule.onNodeWithTag(UiTags.CHAT_QUEUE_RING).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_QUEUE_HINT).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION)
             .assertContentDescriptionEquals(resource(R.string.chat_queue_send_cd))
             .performClick()
-        rule.runOnIdle { assertThat(sent).isEqualTo("下一条") }
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_STOP)
-            .assertContentDescriptionEquals(resource(R.string.chat_queue_stop_cd))
-            .performClick()
-        rule.runOnIdle { assertThat(stopped).isTrue() }
+        rule.runOnIdle { assertThat(calls).containsExactly("queue:下一条") }
+
+        // 长按弹出四种方式，各自回调到对应操作。
+        listOf(
+            UiTags.CHAT_QUEUE_MENU_STEER to "steer:下一条",
+            UiTags.CHAT_QUEUE_MENU_NOW to "now:下一条",
+            UiTags.CHAT_GENERATION_STOP to "stop",
+        ).forEach { (tag, expected) ->
+            rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION).performTouchInput { longClick() }
+            rule.onNodeWithTag(tag).performClick()
+            rule.runOnIdle { assertThat(calls.last()).isEqualTo(expected) }
+        }
+        // 读屏用户不必长按：三种方式作为自定义操作提供。
+        rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION).assert(
+            SemanticsMatcher("has three custom actions") {
+                it.config.getOrNull(SemanticsActions.CustomActions)?.size == 3
+            },
+        )
         // 生成中可以继续添加附件，随排队消息一起发出。
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).assertIsEnabled()
     }
 
     @Test
-    fun generatingWithoutDraft_keepsSingleStopButton() {
+    fun generatingWithoutDraft_buttonStopsAndQueueAffordancesHide() {
         var input by mutableStateOf("")
-        render(uiState = generating, inputTextProvider = { input })
+        var stopped = false
+        render(uiState = generating, inputTextProvider = { input }, actions = ChatScreenActions(onStop = { stopped = true }))
 
         rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION)
             .assertContentDescriptionEquals(resource(R.string.chat_cd_stop))
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_STOP).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_QUEUE_RING).assertDoesNotExist()
         rule.runOnIdle { input = "写好了" }
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_STOP).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_QUEUE_RING).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION)
+            .assertContentDescriptionEquals(resource(R.string.chat_queue_send_cd))
         rule.runOnIdle { input = "" }
-        rule.onNodeWithTag(UiTags.CHAT_GENERATION_STOP).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_QUEUE_RING).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION).performClick()
+        rule.runOnIdle { assertThat(stopped).isTrue() }
     }
 
     @Test
