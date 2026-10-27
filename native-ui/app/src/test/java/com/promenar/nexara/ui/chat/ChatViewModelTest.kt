@@ -41,6 +41,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
@@ -71,6 +72,177 @@ private const val BACKGROUND_SERVICE_STOPPED_MESSAGE = "background service stopp
 @RunWith(RobolectricTestRunner::class)
 @Config(application = TestNexaraApplication::class, sdk = [33])
 class ChatViewModelTest {
+    @Test fun `已受理的回答续跑快照不会重复派发账本查询`() = runTest {
+        val question = seedAskUser("active-question")
+        seedSession("active-question-idle")
+        awaitReal { viewModel.uiState.value.session?.id == "active-question-idle" }
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val continuation = app.askUserLedger.answer(question,
+            com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))!!
+        val observed = CompletableDeferred<Unit>()
+        val releaseQuery = CompletableDeferred<Unit>()
+        val queries = java.util.concurrent.atomic.AtomicInteger()
+        val resumptions = app.askUserLedger.observeResumption(question.sessionId).onEach { observed.complete(Unit) }
+        val ledger = io.mockk.spyk(app.askUserLedger)
+        io.mockk.every { ledger.observeResumption(question.sessionId) } returns resumptions
+        io.mockk.coEvery { ledger.resumption(question.sessionId) } coAnswers {
+            queries.incrementAndGet()
+            releaseQuery.await()
+            continuation
+        }
+        ChatViewModel::class.java.getDeclaredField("askUserLedger").apply {
+            isAccessible = true
+            set(viewModel, ledger)
+        }
+        val states = kotlinx.coroutines.flow.MutableStateFlow<com.promenar.nexara.domain.generation.GenerationTaskSnapshot?>(
+            com.promenar.nexara.domain.generation.GenerationTaskSnapshot("active-resumption", question.sessionId,
+                continuation.assistant.id, com.promenar.nexara.domain.generation.GenerationPhase.STREAMING, 0, 0),
+        )
+        val coordinator = object : com.promenar.nexara.domain.generation.GenerationCoordinator by generationCoordinator {
+            override fun observe(sessionId: String) = if (sessionId == question.sessionId) states else generationCoordinator.observe(sessionId)
+        }
+        ChatViewModel::class.java.getDeclaredField("generationCoordinator").apply {
+            isAccessible = true
+            set(viewModel, coordinator)
+        }
+        try {
+            viewModel.loadSession(question.sessionId)
+            awaitReal { observed.isCompleted }
+            assertThat(observed.isCompleted).isTrue()
+            repeat(20) { index ->
+                states.value = states.value!!.copy(generatedChars = index + 1)
+                runCurrent()
+            }
+            assertThat(queries.get()).isEqualTo(0)
+        } finally {
+            releaseQuery.complete(Unit)
+        }
+    }
+
+    @Test fun `切页自动续跑不等待其它已回答会话的资源收尾`() = runTest {
+        val first = seedAskUser("auto-cleanup-a")
+        val second = seedAskUser("auto-cleanup-b")
+        seedSession("auto-cleanup-idle")
+        awaitReal { viewModel.uiState.value.session?.id == "auto-cleanup-idle" }
+        val delegate = generationCoordinator
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val cleanup = CompletableDeferred<Unit>()
+        val waiting = kotlinx.coroutines.flow.MutableStateFlow<com.promenar.nexara.domain.generation.GenerationTaskSnapshot?>(
+            com.promenar.nexara.domain.generation.GenerationTaskSnapshot("auto-cleanup-task", first.sessionId,
+                first.assistantMessageId, com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT, 0, 0),
+        )
+        val coordinator = object : com.promenar.nexara.domain.generation.GenerationCoordinator by delegate {
+            override fun observe(sessionId: String) = if (sessionId == first.sessionId) waiting else delegate.observe(sessionId)
+            override suspend fun awaitSessionIdle(sessionId: String) {
+                if (sessionId == first.sessionId) {
+                    cleanupStarted.complete(Unit)
+                    cleanup.await()
+                } else delegate.awaitSessionIdle(sessionId)
+            }
+        }
+        ChatViewModel::class.java.getDeclaredField("generationCoordinator").apply {
+            isAccessible = true
+            set(viewModel, coordinator)
+        }
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        assertThat(app.askUserLedger.answer(first, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isNotNull()
+        assertThat(app.askUserLedger.answer(second, com.promenar.nexara.domain.ask.AskUserAnswer(other = "自动恢复回答"))).isNotNull()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("自动完成"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.loadSession(first.sessionId)
+        try {
+            awaitReal { cleanupStarted.isCompleted }
+            assertThat(cleanupStarted.isCompleted).isTrue()
+            viewModel.loadSession(second.sessionId)
+            awaitReal { protocolRequestCount == 1 }
+            assertThat(protocolRequestCount).isEqualTo(1)
+            assertThat(lastPromptRequest!!.messages.first { it.role == "tool" && it.toolCallId == second.toolCallId }.content)
+                .contains("自动恢复回答")
+        } finally {
+            waiting.value = null
+            cleanup.complete(Unit)
+        }
+    }
+
+    @Test fun `回答续跑不等待其它会话的提问资源收尾`() = runTest {
+        val first = seedAskUser("question-cleanup-a")
+        val second = seedAskUser("question-cleanup-b")
+        val delegate = generationCoordinator
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val cleanup = CompletableDeferred<Unit>()
+        val waiting = kotlinx.coroutines.flow.MutableStateFlow<com.promenar.nexara.domain.generation.GenerationTaskSnapshot?>(
+            com.promenar.nexara.domain.generation.GenerationTaskSnapshot("cleanup-task", first.sessionId,
+                first.assistantMessageId, com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT, 0, 0),
+        )
+        val coordinator = object : com.promenar.nexara.domain.generation.GenerationCoordinator by delegate {
+            override fun observe(sessionId: String) = if (sessionId == first.sessionId) waiting else delegate.observe(sessionId)
+            override suspend fun awaitSessionIdle(sessionId: String) {
+                if (sessionId == first.sessionId) {
+                    cleanupStarted.complete(Unit)
+                    cleanup.await()
+                } else delegate.awaitSessionIdle(sessionId)
+            }
+        }
+        ChatViewModel::class.java.getDeclaredField("generationCoordinator").apply {
+            isAccessible = true
+            set(viewModel, coordinator)
+        }
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("回答完成"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        viewModel.loadSession(first.sessionId)
+        awaitReal { viewModel.pendingQuestion.value == first }
+        try {
+            assertThat(viewModel.answerQuestion(first, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isTrue()
+            awaitReal { cleanupStarted.isCompleted }
+            assertThat(cleanupStarted.isCompleted).isTrue()
+            viewModel.loadSession(second.sessionId)
+            awaitReal { viewModel.pendingQuestion.value == second }
+            assertThat(viewModel.answerQuestion(second, com.promenar.nexara.domain.ask.AskUserAnswer(other = "独立回答"))).isTrue()
+            awaitReal { protocolRequestCount == 1 }
+            assertThat(protocolRequestCount).isEqualTo(1)
+            assertThat(lastPromptRequest!!.messages.first { it.role == "tool" && it.toolCallId == second.toolCallId }.content)
+                .contains("独立回答")
+        } finally {
+            waiting.value = null
+            cleanup.complete(Unit)
+        }
+    }
+
+    @Test fun `四会话占满时回答提问只排队一次且空位后续跑`() = runTest {
+        holdStreamOpen = true
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("处理中"))
+        repeat(4) { index ->
+            val id = "question-busy-$index"
+            seedSession(id, messages = listOf(
+                Message("u-$id", MessageRole.USER, "占用名额"),
+                Message("a-$id", MessageRole.ASSISTANT, ""),
+            ))
+            generationCoordinator.start(com.promenar.nexara.domain.generation.GenerationRequest(
+                id, "a-$id", "u-$id", "占用名额", emptyList(),
+                com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            ))
+        }
+        awaitReal { protocolRequestCount == 4 }
+        val question = seedAskUser("question-queued")
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(other = "采用甲方案"))).isTrue()
+        awaitReal { generationCoordinator.observe(question.sessionId).value?.phase == com.promenar.nexara.domain.generation.GenerationPhase.QUEUED }
+        val queued = generationCoordinator.observe(question.sessionId).value!!
+        assertThat(protocolRequestCount).isEqualTo(4)
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isFalse()
+        viewModel.loadSession("question-busy-1")
+        viewModel.loadSession(question.sessionId)
+        runCurrent()
+        assertThat(generationCoordinator.observe(question.sessionId).value?.taskId).isEqualTo(queued.taskId)
+        assertThat(generationCoordinator.sessions.value.values.count { it.sessionId == question.sessionId }).isEqualTo(1)
+        generationCoordinator.cancel(generationCoordinator.observe("question-busy-0").value!!.taskId)
+        awaitReal { protocolRequestCount == 5 }
+        assertThat(generationCoordinator.observe(question.sessionId).value?.phase)
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.STREAMING)
+        assertThat(lastPromptRequest!!.messages.first { it.role == "tool" && it.toolCallId == question.toolCallId }.content)
+            .contains("采用甲方案")
+        assertThat(viewModel.uiState.value.error).isNull()
+    }
+
     private suspend fun TestScope.seedAskUser(id: String = "ask-vm"): com.promenar.nexara.domain.ask.PendingQuestion {
         val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
         val call = ToolCall("$id-call", "ask_user", """{"questions":[{"header":"方案","question":"选哪个？","options":[{"label":"甲"},{"label":"乙"}]}]}""")

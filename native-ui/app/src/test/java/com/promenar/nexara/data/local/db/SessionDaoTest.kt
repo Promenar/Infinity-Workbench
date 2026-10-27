@@ -20,6 +20,23 @@ class SessionDaoTest {
     private lateinit var db: NexaraDatabase
     private lateinit var dao: SessionDao
 
+    @Test fun `待批准待回答及已回答仅阻挡目标会话系统轮`() = runBlocking {
+        dao.insert(SessionEntity(id = "busy", agentId = "a", createdAt = 1, updatedAt = 1))
+        dao.insert(SessionEntity(id = "other", agentId = "a", createdAt = 1, updatedAt = 1))
+        val original = dao.getById("busy")!!
+        for (waiting in listOf(
+            original.copy(approvalRequest = "{\"id\":\"approval\"}"),
+            original.copy(loopStatus = "waiting_for_input"),
+            original.copy(loopStatus = "input_answered"),
+        )) {
+            dao.update(waiting)
+            assertThat(dao.hasPendingUserInteraction("busy")).isTrue()
+            assertThat(dao.hasPendingUserInteraction("other")).isFalse()
+        }
+        dao.update(original.copy(loopStatus = "running"))
+        assertThat(dao.hasPendingUserInteraction("busy")).isFalse()
+    }
+
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()

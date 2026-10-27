@@ -4,12 +4,57 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GenerationTurnAdmissionTest {
+    @Test fun `子协程不能继承同会话重入租约且父体退出后可以进入`() = runTest {
+        val admission = GenerationTurnAdmission()
+        val parentBody = CompletableDeferred<Unit>()
+        var childEntered = false
+        val parent = async {
+            admission.withLock("a") {
+                CoroutineScope(currentCoroutineContext()).launch {
+                    admission.withLock("a") { childEntered = true }
+                }
+                parentBody.await()
+            }
+        }
+        runCurrent()
+        try { assertThat(childEntered).isFalse() }
+        finally { parentBody.complete(Unit) }
+        parent.await()
+        assertThat(childEntered).isTrue()
+    }
+
+    @Test fun `全局租约的子协程必须重新等待而其它会话子协程可独立准入`() = runTest {
+        val admission = GenerationTurnAdmission()
+        val parentBody = CompletableDeferred<Unit>()
+        var childEntered = false
+        val parent = async {
+            admission.withLock {
+                CoroutineScope(currentCoroutineContext()).launch {
+                    admission.withLock("a") { childEntered = true }
+                }
+                parentBody.await()
+            }
+        }
+        runCurrent()
+        try { assertThat(childEntered).isFalse() }
+        finally { parentBody.complete(Unit) }
+        parent.await()
+        assertThat(childEntered).isTrue()
+        admission.withLock("a") {
+            val child = CoroutineScope(currentCoroutineContext()).async { admission.withLock("b") { "b" } }
+            assertThat(child.await()).isEqualTo("b")
+        }
+    }
+
     @Test fun `不同会话可并行且同一会话保持排他`() = runTest {
         val admission = GenerationTurnAdmission()
         val gate = CompletableDeferred<Unit>()

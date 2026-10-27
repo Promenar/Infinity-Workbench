@@ -24,6 +24,36 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GenerationConcurrencyTest {
+    @Test fun `等待提问释放名额且回答续跑服从FIFO队列`() = runTest {
+        val pause = CompletableDeferred<Unit>()
+        val entered = mutableListOf<String>()
+        val coordinator = DefaultGenerationCoordinator(backgroundScope, GenerationRunnerFactory { _, _ ->
+            GenerationRunner { request, emit ->
+                entered += request.assistantMessageId
+                if (request.sessionId == "question" && request.requestId != "answer") {
+                    pause.await()
+                    emit(GenerationEvent.PhaseChanged(GenerationPhase.WAITING_INPUT))
+                } else awaitCancellation()
+            }
+        })
+        coordinator.start(request("question"))
+        (1..4).forEach { coordinator.start(request("running-$it")) }
+        runCurrent()
+        assertThat(entered).hasSize(4)
+        pause.complete(Unit)
+        runCurrent()
+        assertThat(entered).hasSize(5)
+        assertThat(coordinator.isSessionBusy("question")).isFalse()
+        val continuation = request("question").copy(assistantMessageId = "answer-assistant", requestId = "answer")
+        val queued = coordinator.start(continuation) as StartGenerationResult.Queued
+        assertThat(coordinator.start(continuation)).isInstanceOf(StartGenerationResult.Existing::class.java)
+        assertThat(entered).doesNotContain("answer-assistant")
+        coordinator.cancel(coordinator.observe("running-1").value!!.taskId)
+        runCurrent()
+        assertThat(entered.last()).isEqualTo("answer-assistant")
+        assertThat(coordinator.observe("question").value?.taskId).isEqualTo(queued.taskId)
+    }
+
     @Test
     fun `旧任务收尾不得释放同会话的新审批任务`() = runTest {
         val coordinator = DefaultGenerationCoordinator(backgroundScope, GenerationRunnerFactory { _, _ ->

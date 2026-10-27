@@ -464,9 +464,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     try { resumeHeadlessInteraction(prompt, allowed) }
                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (failure: Exception) {
-                        interactions.retryHeadlessResponse()
+                        interactions.retryHeadlessResponse(prompt.id)
                         NexaraLogger.logError("SystemTriggerResume", failure)
-                        systemTriggerNotifications.failed(prompt.sessionId, "", getString(R.string.schedule_notification_failed_reason))
+                        if (interactions.pendingBySession.value[prompt.sessionId]?.id == prompt.id) {
+                            systemTriggerNotifications.failed(prompt.sessionId, "", getString(R.string.schedule_notification_failed_reason))
+                        }
                     }
                 }
             }
@@ -901,49 +903,27 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         session.copy(ragOptions = options)
     }
 
+    private val headlessGenerationResumer by lazy {
+        com.promenar.nexara.data.generation.HeadlessGenerationResumer(
+            store = chatStore, interactions = generationInteractions,
+            coordinator = generationCoordinator, messages = generationMessageManager,
+            awaitReady = { startupState.first { it == BackupStartupState.Ready } },
+            loadSession = ::loadGenerationSession,
+            updateSession = { id, updates -> generationSessionManager.updateSession(id, updates) },
+            confirmUnlimited = {
+                com.promenar.nexara.data.generation.UnlimitedAutomationConsent(getSharedPreferences("nexara_settings", MODE_PRIVATE)).confirm()
+            },
+            track = { generationForegroundController.track(it) },
+            executionGate = sessionExecutionGate,
+        )
+    }
+
     /** 无界面确认恢复通过应用级端口接续，不要求先创建 ChatViewModel。 */
     private suspend fun resumeHeadlessInteraction(
         prompt: com.promenar.nexara.data.generation.GenerationInteraction,
         allowed: Boolean,
     ) {
-        startupState.first { it == BackupStartupState.Ready }
-        generationCoordinator.awaitSessionIdle(prompt.sessionId)
-        chatStore.turnAdmission.withLock {
-            if (generationInteractions.pending.value?.id != prompt.id) return@withLock
-            if (!allowed) {
-                generationInteractions.clearHeadless(prompt.sessionId)
-                generationSessionManager.updateSession(prompt.sessionId, mapOf("loopStatus" to com.promenar.nexara.data.model.LoopStatus.COMPLETED))
-                return@withLock
-            }
-            check(generationCoordinator.active.value == null) { "生成器正在处理其它会话" }
-            var session = chatStore.getOrLoadSession(prompt.sessionId) { loadGenerationSession(prompt.sessionId) }
-            if (session?.ragOptions == null && session != null) {
-                val options = loadGenerationSession(prompt.sessionId)?.ragOptions
-                chatStore.updateSession(prompt.sessionId) { it.copy(ragOptions = options) }
-                session = chatStore.getSession(prompt.sessionId)
-            }
-            if (session == null) { generationInteractions.clearHeadless(prompt.sessionId); return@withLock }
-            val user = com.promenar.nexara.data.generation.generationResumption(session)?.user ?: return@withLock
-            if (prompt.kind == com.promenar.nexara.data.generation.GenerationInteractionKind.UNLIMITED_AUTO) {
-                com.promenar.nexara.data.generation.UnlimitedAutomationConsent(getSharedPreferences("nexara_settings", MODE_PRIVATE)).confirm()
-            }
-            val assistantId = com.promenar.nexara.domain.usecase.IdGenerator.message("ai")
-            generationMessageManager.addMessage(prompt.sessionId, com.promenar.nexara.data.model.Message(
-                id = assistantId, role = com.promenar.nexara.data.model.MessageRole.ASSISTANT, content = "",
-                modelId = session.modelId, parentMessageId = user.id,
-            ))
-            val start = generationCoordinator.start(com.promenar.nexara.domain.generation.GenerationRequest(
-                sessionId = session.id, assistantMessageId = assistantId, userMessageId = user.id,
-                userContent = user.content, imageDataUrls = user.userImages.orEmpty(),
-                runtimePolicy = com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
-            ))
-            if (start !is com.promenar.nexara.domain.generation.StartGenerationResult.Started) {
-                generationMessageManager.discardPreparedMessages(session.id, listOf(assistantId))
-                error("生成器未接受恢复请求")
-            }
-            generationInteractions.clearHeadless(prompt.sessionId)
-            generationCoordinator.observe(session.id).value?.let(generationForegroundController::track)
-        }
+        headlessGenerationResumer.resume(prompt, allowed)
     }
 
     private val generationSessionManager by lazy {
@@ -1853,9 +1833,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 if (runtime.restoreNotApplied.value) _restoreNotAppliedNotice.value = true
                 startupIssueManager.recover(StartupStep.BACKGROUND_JOBS, StartupIssueScope.subsystem(StartupSubsystem.BACKGROUND_JOBS)) { backgroundJobs.initialize() }
                 startupIssueManager.recover(StartupStep.HEADLESS_INTERACTIONS, StartupIssueScope.subsystem(StartupSubsystem.HEADLESS_INTERACTIONS)) {
-                    generationInteractions.restoreHeadless()
-                    generationInteractions.pending.value?.let { pending ->
-                        if (withContext(Dispatchers.IO) { database.sessionDao().getById(pending.sessionId) } == null) generationInteractions.clearHeadless(pending.sessionId)
+                    generationInteractions.restoreHeadless { sessionId ->
+                        withContext(Dispatchers.IO) { database.sessionDao().getById(sessionId) != null }
                     }
                 }
                 startupIssueManager.recover(StartupStep.SCHEDULED_TASKS, StartupIssueScope.subsystem(StartupSubsystem.SCHEDULED_TASKS)) {

@@ -442,7 +442,8 @@ class ChatViewModel(
     private val questionSubmissions = mutableSetOf<com.promenar.nexara.domain.ask.PendingQuestion>()
     private var lastAnsweredQuestion: com.promenar.nexara.domain.ask.PendingQuestion? = null
     private val questionResumptionAttempts = mutableMapOf<String, String>()
-    private val questionResumeMutex = Mutex()
+    private val questionResumeMutexes = ConcurrentHashMap<String, Mutex>()
+    private fun questionResumeMutex(sessionId: String) = questionResumeMutexes.getOrPut(sessionId) { Mutex() }
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val pendingQuestion: StateFlow<com.promenar.nexara.domain.ask.PendingQuestion?> = _currentSessionId
         .flatMapLatest { sessionId -> if (sessionId == null) flowOf(null) else askUserLedger.observePending(sessionId) }
@@ -645,12 +646,24 @@ class ChatViewModel(
                 if (sessionId != null) questionResumptionAttempts.remove(sessionId)
                 if (sessionId == null) flowOf(null)
                 // 并发上限由协调器排队处理，这里只等本会话的提问任务退出。
-                else combine(askUserLedger.observeResumption(sessionId), generationCoordinator.observe(sessionId)) { resumption, _ ->
-                    sessionId.takeIf { resumption != null }
+                else combine(askUserLedger.observeResumption(sessionId), generationCoordinator.observe(sessionId)) { resumption, task ->
+                    sessionId.takeIf {
+                        resumption != null && (task == null || task.assistantMessageId != resumption.assistant.id ||
+                            task.phase in TERMINAL_GENERATION_PHASES)
+                    }
                 }
             }
             resumptions.collect { sessionId ->
-                if (sessionId != null) resumeAfterQuestion(sessionId)
+                // 页面观察器只派发恢复；同会话由恢复锁去重，其它会话不等待旧任务收尾。
+                if (sessionId != null) viewModelScope.launch {
+                    try {
+                        resumeAfterQuestion(sessionId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        _error.value = stringResourceResolver(R.string.ask_user_resume_failed)
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -1889,7 +1902,7 @@ class ChatViewModel(
         return true
     }
 
-    private suspend fun resumeAfterQuestion(sessionId: String) = questionResumeMutex.withLock {
+    private suspend fun resumeAfterQuestion(sessionId: String) = questionResumeMutex(sessionId).withLock {
         val continuation = askUserLedger.resumption(sessionId) ?: return@withLock
         val task = generationCoordinator.observe(sessionId).value
         if (task?.assistantMessageId == continuation.assistant.id && task.phase !in TERMINAL_GENERATION_PHASES) return@withLock

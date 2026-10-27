@@ -75,24 +75,40 @@ class GenerationInteractionStore(private val persistence: HeadlessInteractionPer
         publishLocked()
     }
 
-    suspend fun restoreHeadless() = persistenceMutex.withLock {
+    suspend fun restoreHeadless(exists: suspend (String) -> Boolean = { true }) = persistenceMutex.withLock {
         val saved = persistence?.readAll().orEmpty()
+        val retained = saved.filter { exists(it.sessionId) }
+        if (retained.size != saved.size) persistence?.writeAll(retained)
         synchronized(lock) {
-            saved.forEach { prompt ->
+            saved.filterNot { it in retained }.forEach { prompt ->
+                if (entries[prompt.sessionId]?.takeIf { it.headless }?.prompt?.id == prompt.id) entries.remove(prompt.sessionId)
+            }
+            retained.forEach { prompt ->
                 if (entries[prompt.sessionId] == null) entries[prompt.sessionId] = Entry(prompt, null, true)
             }
             publishLocked()
         }
     }
 
-    suspend fun clearHeadless(sessionId: String) = persistenceMutex.withLock {
-        val entry = synchronized(lock) { entries[sessionId]?.takeIf { it.headless } } ?: return@withLock
+    /** 在协调器准入回调中消耗目标确认，后继生成可立即登记新的等待点。 */
+    fun consumeHeadlessResponse(prompt: GenerationInteraction): Boolean = synchronized(lock) {
+        if (entries[prompt.sessionId]?.takeIf { it.headless && it.visible }?.prompt?.id != prompt.id) return false
+        entries.remove(prompt.sessionId)
+        publishLocked()
+        true
+    }
+
+    suspend fun clearHeadless(sessionId: String, expectedPromptId: String? = null) = persistenceMutex.withLock {
+        val entry = synchronized(lock) {
+            entries[sessionId]?.takeIf { it.headless && (expectedPromptId == null || it.prompt.id == expectedPromptId) }
+        }
+        if (entry == null && expectedPromptId == null) return@withLock
         val remaining = synchronized(lock) {
             entries.values.filter { it.headless && it !== entry }.map { it.prompt }
         }
         persistence?.writeAll(remaining)
         synchronized(lock) {
-            if (entries[sessionId] === entry) entries.remove(sessionId)
+            if (entry != null && entries[sessionId] === entry) entries.remove(sessionId)
             publishLocked()
         }
     }

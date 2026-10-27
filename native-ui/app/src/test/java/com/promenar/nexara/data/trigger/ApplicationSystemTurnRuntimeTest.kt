@@ -18,6 +18,22 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ApplicationSystemTurnRuntimeTest {
+    @Test fun `系统轮按目标会话查询待交互状态`() = runTest {
+        val states = mutableMapOf("pending" to true)
+        val checked = mutableListOf<String>()
+        val runtime = ApplicationSystemTurnRuntime(MutableStateFlow(BackupStartupState.Ready), ChatStore(),
+            findSession = { Session(it, "a") }, exists = { true },
+            hasApproval = { checked += it; states[it] == true },
+            messages = mockk(relaxed = true), coordinator = mockk { every { isSessionBusy(any()) } returns false },
+            foreground = mockk(relaxed = true), interactions = GenerationInteractionStore(), executionGate = SessionExecutionGate(),
+            notify = { _, _, _ -> }, failureText = { "失败" })
+        assertThat(runtime.isBusy("pending")).isTrue()
+        assertThat(runtime.isBusy("other")).isFalse()
+        states["pending"] = false
+        assertThat(runtime.isBusy("pending")).isFalse()
+        assertThat(checked).containsExactly("pending", "other", "pending").inOrder()
+    }
+
     @Test fun `前台跟踪异常时已受理任务会取消并收尾`() = runTest {
         val store = ChatStore()
         val coordinator = DefaultGenerationCoordinator(backgroundScope, GenerationRunnerFactory { _, _ ->
