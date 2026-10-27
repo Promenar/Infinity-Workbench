@@ -1838,10 +1838,14 @@ class ChatViewModel(
 
     fun loadSession(sessionId: String) {
         viewModelScope.launch(Dispatchers.IO) { (application as NexaraApplication).checkSessionRunMode(sessionId) }
-        // 折叠屏展开或旋转会让界面重建并重新载入同一会话，此时输入框里未发送的文字比落库草稿新。
-        val liveInput = _inputText.value.takeIf { _currentSessionId.value == sessionId }
-        _inputText.value = ""
-        resetSessionTransientState()
+        // 折叠屏展开或旋转会让界面重建并重新载入同一会话：会话 id 不变时各收集器不会重启，
+        // 输入、生成状态、提示与撤销都仍是最新的，不能清空后等待下一次事件再补回。
+        val reattaching = _currentSessionId.value == sessionId
+        val liveInput = _inputText.value.takeIf { reattaching }
+        if (!reattaching) {
+            _inputText.value = ""
+            resetSessionTransientState()
+        }
         val existing = store.getSession(sessionId)
         if (existing != null) {
             if (existing.workspaceRootUuid.isNullOrBlank()) {
@@ -1855,7 +1859,7 @@ class ChatViewModel(
             existing.ragOptions?.let { _currentRagOptions.value = it }
             // P0 持久化修复: 恢复历史检索指示器
             val lastMsg = existing.messages.lastOrNull { it.role == MessageRole.ASSISTANT && !it.ragReferences.isNullOrEmpty() }
-            if (lastMsg?.ragReferences.isNullOrEmpty() == false) {
+            if (!reattaching && lastMsg?.ragReferences.isNullOrEmpty() == false) {
                 _ragPhases.update {
                     listOf(
                         RagPhase("retrieved", "已检索", PhaseStatus.DONE, 100,

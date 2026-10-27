@@ -1864,6 +1864,28 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `生成中界面重建后重新载入同一会话不重置生成状态`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession("A")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("partial"))
+        holdStreamOpen = true
+        viewModel.sendMessage("first")
+        advanceUntilIdle()
+        val before = viewModel.uiState.value
+        assertThat(before.isGenerating).isTrue()
+        assertThat(before.streamingContent).isEqualTo("partial")
+
+        viewModel.loadSession("A")
+        advanceUntilIdle()
+
+        val after = viewModel.uiState.value
+        assertThat(after.isGenerating).isTrue()
+        assertThat(after.status).isEqualTo(before.status)
+        assertThat(after.streamingContent).isEqualTo("partial")
+    }
+
+    @Test
     fun `A生成时B发送返回Busy且不留幽灵消息并且B停止不取消A`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("A")
