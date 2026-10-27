@@ -183,4 +183,61 @@ class ThemePreferenceStoreTest {
         assertThat(reloaded.hapticsEnabled).isFalse()
         assertThat(reloaded.statusHapticsEnabled).isFalse()
     }
+
+    @Test
+    fun `动效样式与配色风格读取已存值，未知值回落默认`() = runTest {
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putString(any(), any()) } returns editor
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { edit() } returns editor
+            every { getString("motion_composer_glow", any()) } returns "bottom_strip"
+            every { getString("motion_generation_indicator", any()) } returns "infinity_led"
+            every { getString("motion_empty_chat", any()) } returns "removed_style"
+            every { getString("theme_scheme_style", any()) } returns "fidelity"
+            every { getString("theme_recent_custom_colors", any()) } returns "FFFF5A1F,zz,FF10B981"
+        }
+
+        val state = ThemePreferenceStore(contextFor(prefs)).state.value
+
+        assertThat(state.motion).isEqualTo(
+            NexaraMotionStyles(
+                composer = ComposerGlowStyle.BOTTOM_STRIP,
+                indicator = GenerationIndicatorStyle.INFINITY_LED,
+                emptyChat = EmptyChatStyle.FLOW,
+            ),
+        )
+        assertThat(state.schemeStyle).isEqualTo(NexaraSchemeStyle.FIDELITY)
+        assertThat(state.recentCustomColors).containsExactly(0xFFFF5A1F.toInt(), 0xFF10B981.toInt()).inOrder()
+    }
+
+    @Test
+    fun `切换动效样式写入小写名并立即更新状态`() = runTest {
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putString(any(), any()) } returns editor
+        val prefs = mockk<SharedPreferences>(relaxed = true) { every { edit() } returns editor }
+        val store = ThemePreferenceStore(contextFor(prefs))
+
+        store.setComposerGlowStyle(ComposerGlowStyle.SWEEP_GRID)
+        store.setGenerationIndicatorStyle(GenerationIndicatorStyle.PORTS)
+        store.setEmptyChatStyle(EmptyChatStyle.MOBIUS_LED)
+        store.setSchemeStyle(NexaraSchemeStyle.VIBRANT)
+
+        assertThat(store.state.value.motion.composer).isEqualTo(ComposerGlowStyle.SWEEP_GRID)
+        assertThat(store.state.value.motion.indicator).isEqualTo(GenerationIndicatorStyle.PORTS)
+        assertThat(store.state.value.motion.emptyChat).isEqualTo(EmptyChatStyle.MOBIUS_LED)
+        assertThat(store.state.value.schemeStyle).isEqualTo(NexaraSchemeStyle.VIBRANT)
+        verify { editor.putString("motion_composer_glow", "sweep_grid") }
+        verify { editor.putString("motion_generation_indicator", "ports") }
+        verify { editor.putString("motion_empty_chat", "mobius_led") }
+        verify { editor.putString("theme_scheme_style", "vibrant") }
+    }
+
+    @Test
+    fun `最近自定义色去重置顶并限制数量`() {
+        val recent = (1..8).map { it }
+        assertThat(pushRecentColor(recent, 5, 8)).containsExactly(5, 1, 2, 3, 4, 6, 7, 8).inOrder()
+        assertThat(pushRecentColor(recent, 9, 8)).containsExactly(9, 1, 2, 3, 4, 5, 6, 7).inOrder()
+        assertThat(decodeRecentColors(encodeRecentColors(listOf(0xFF000000.toInt(), 0xFFABCDEF.toInt()))))
+            .containsExactly(0xFF000000.toInt(), 0xFFABCDEF.toInt()).inOrder()
+    }
 }

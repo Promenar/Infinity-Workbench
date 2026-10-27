@@ -140,13 +140,16 @@ class ChatScreenContentStateTest {
             }
         }
 
-        // 首字到达前显示三点波浪；无限动画不阻塞测试空闲，读屏报“正在生成回复”。
+        // 首字到达前显示生成指示；无限动画不阻塞测试空闲，读屏报“正在生成回复”。
         rule.onNodeWithTag(UiTags.CHAT_GENERATING_INDICATOR, useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithContentDescription(resource(R.string.chat_cd_generating_response), useUnmergedTree = true).assertExists()
 
         rule.runOnIdle {
             uiState = uiState.copy(messages = listOf(question, Message("assistant-1", MessageRole.ASSISTANT, "春风", createdAt = 2L)))
         }
+        // 开始输出后指示跟在正文末尾继续播放，本轮结束才消失。
+        rule.onNodeWithTag(UiTags.CHAT_GENERATING_INDICATOR, useUnmergedTree = true).assertIsDisplayed()
+        rule.runOnIdle { uiState = uiState.copy(isGenerating = false, status = GenerationStatus.IDLE) }
         rule.onNodeWithTag(UiTags.CHAT_GENERATING_INDICATOR, useUnmergedTree = true).assertDoesNotExist()
     }
 

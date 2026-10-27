@@ -54,6 +54,28 @@ class ThemeViewModel(
         store.setColorSource(NexaraColorSource.NEXARA)
     }
 
+    /** 应用自定义取色：作为种子色写入，并记进最近使用。 */
+    fun applyCustomColor(argb: Int) {
+        store.rememberCustomColor(argb)
+        setPrimaryColor(androidx.compose.ui.graphics.Color(argb).value.toLong())
+    }
+
+    fun setSchemeStyle(style: com.promenar.nexara.ui.theme.NexaraSchemeStyle) {
+        store.setSchemeStyle(style)
+    }
+
+    fun setComposerGlowStyle(style: com.promenar.nexara.ui.theme.ComposerGlowStyle) {
+        store.setComposerGlowStyle(style)
+    }
+
+    fun setGenerationIndicatorStyle(style: com.promenar.nexara.ui.theme.GenerationIndicatorStyle) {
+        store.setGenerationIndicatorStyle(style)
+    }
+
+    fun setEmptyChatStyle(style: com.promenar.nexara.ui.theme.EmptyChatStyle) {
+        store.setEmptyChatStyle(style)
+    }
+
     fun setPureBlack(enabled: Boolean) {
         store.setPureBlack(enabled)
     }

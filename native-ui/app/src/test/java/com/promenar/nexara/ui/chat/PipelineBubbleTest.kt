@@ -139,8 +139,18 @@ class PipelineBubbleTest {
         assertThat(plan.steps.map { it::class.simpleName })
             .containsExactly("Thinking", "ToolExec", "Content")
             .inOrder()
-        assertThat(plan.showStandaloneCursor).isFalse()
+        // 已有正文时生成指示仍跟在末尾，直到本轮结束。
+        assertThat(plan.showStandaloneCursor).isTrue()
         assertThat(plan.showContentCursor).isFalse()
+    }
+
+    @Test
+    fun `finished turn hides generation indicator`() {
+        val message = Message(id = "assistant-done", role = MessageRole.ASSISTANT, content = "完成")
+
+        val plan = buildPipelineRenderPlan(messages = listOf(message), isGenerating = false, hasStreamingContent = false)
+
+        assertThat(plan.showStandaloneCursor).isFalse()
     }
 
     @Test

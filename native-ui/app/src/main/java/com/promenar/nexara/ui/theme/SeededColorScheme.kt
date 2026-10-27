@@ -5,14 +5,24 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.google.android.material.color.utilities.Hct
+import com.google.android.material.color.utilities.DynamicScheme
+import com.google.android.material.color.utilities.SchemeExpressive
+import com.google.android.material.color.utilities.SchemeFidelity
 import com.google.android.material.color.utilities.SchemeTonalSpot
+import com.google.android.material.color.utilities.SchemeVibrant
 
-/** 使用 Google Material Color Utilities 生成与 Material 3 同源的 Tonal Spot 色板。 */
+/** 使用 Google Material Color Utilities 按 [style] 生成与 Material 3 同源的色板，缺省为 Tonal Spot。 */
 // Material Color Utilities 官方 Java 指南直接使用这些 API；Android artifact 的
 // library-group 注解并不代表运行时不稳定，因此在这一个适配边界内集中抑制。
 @SuppressLint("RestrictedApi")
-internal fun seededColorScheme(seed: Color, dark: Boolean): ColorScheme {
-    val scheme = SchemeTonalSpot(Hct.fromInt(seed.toArgb()), dark, 0.0)
+internal fun seededColorScheme(seed: Color, dark: Boolean, style: NexaraSchemeStyle = NexaraSchemeStyle.TONAL_SPOT): ColorScheme {
+    val hct = Hct.fromInt(seed.toArgb())
+    val scheme: DynamicScheme = when (style) {
+        NexaraSchemeStyle.TONAL_SPOT -> SchemeTonalSpot(hct, dark, 0.0)
+        NexaraSchemeStyle.VIBRANT -> SchemeVibrant(hct, dark, 0.0)
+        NexaraSchemeStyle.FIDELITY -> SchemeFidelity(hct, dark, 0.0)
+        NexaraSchemeStyle.EXPRESSIVE -> SchemeExpressive(hct, dark, 0.0)
+    }
     val base = if (dark) NexaraDarkColorScheme else NexaraLightColorScheme
     fun Int.composeColor() = Color(this)
 

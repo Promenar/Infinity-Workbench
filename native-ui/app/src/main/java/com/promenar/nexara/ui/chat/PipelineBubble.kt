@@ -582,7 +582,8 @@ internal fun buildPipelineRenderPlan(
 
     return PipelineRenderPlan(
         steps = steps,
-        showStandaloneCursor = isGenerating && steps.none { it is PipelineStep.Content },
+        // 生成指示贯穿整轮：首字前单独占位，开始输出后跟在已有步骤与正文末尾，直到本轮结束。
+        showStandaloneCursor = isGenerating,
         showContentCursor = false
     )
 }
@@ -1659,7 +1660,7 @@ private fun formatMessageDocumentBytes(bytes: Long): String = when {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  GenerationIndicator — 首字到达前的三点波浪
+//  GenerationIndicator — 本轮生成期间的生成状态指示
 // ─────────────────────────────────────────────────────────────────
 
 @Composable

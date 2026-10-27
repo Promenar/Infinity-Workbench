@@ -22,7 +22,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.motion.IndicatorPainter
+import com.promenar.nexara.ui.common.motion.drawGenerationIndicator
+import com.promenar.nexara.ui.common.motion.indicatorDesignSize
+import com.promenar.nexara.ui.common.motion.rememberMotionClock
+import com.promenar.nexara.ui.common.motion.rememberMotionPalette
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
+import com.promenar.nexara.ui.theme.GenerationIndicatorStyle
+import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.min
@@ -78,11 +85,47 @@ private fun Color.toHsv(): Triple<Float, Float, Float> {
 }
 
 /**
- * 生成中的三点波浪：三个小圆点依次上浮变亮，颜色从主色过渡到第三色。
- * 系统关闭动画或静态预览时显示静止的三点。读屏报“正在生成回复”。
+ * 生成状态指示：按外观设置选的样式绘制，会话气泡、正文末尾与首页会话列表都经由这里。
+ * 三点波浪的尺寸由 [dotSize]、[gap]、[lift] 决定；灯语样式按 [dotSize] 相对 6dp 等比缩放。
+ * 系统关闭动画或静态预览时显示静止的画面。读屏报“正在生成回复”。
  */
 @Composable
-fun GenerationDots(modifier: Modifier = Modifier, dotSize: Dp = 6.dp, gap: Dp = 5.dp, lift: Dp = 4.dp) {
+fun GenerationDots(
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 6.dp,
+    gap: Dp = 5.dp,
+    lift: Dp = 4.dp,
+    style: GenerationIndicatorStyle = LocalNexaraMotionStyles.current.indicator,
+) {
+    if (style == GenerationIndicatorStyle.WAVE) {
+        WaveDots(modifier, dotSize, gap, lift)
+    } else {
+        LedIndicator(style, dotSize / 6.dp, modifier)
+    }
+}
+
+@Composable
+private fun LedIndicator(style: GenerationIndicatorStyle, scale: Float, modifier: Modifier) {
+    val description = stringResource(R.string.chat_cd_generating_response)
+    val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
+    val clock = rememberMotionClock(running = animate)
+    val palette = rememberMotionPalette()
+    val painter = remember { IndicatorPainter() }
+    val designSize = indicatorDesignSize(style)
+    Canvas(
+        modifier
+            .size(designSize.width * scale, designSize.height * scale)
+            .semantics { contentDescription = description },
+    ) {
+        // 静止时停在 0.37 秒：各灯有亮有灭，截图内容固定。
+        val time = if (animate) clock.time else 0.37f
+        drawGenerationIndicator(style, time, density * scale, palette, painter)
+    }
+}
+
+/** 三点波浪：三个小圆点依次上浮变亮，颜色从主色过渡到第三色。 */
+@Composable
+private fun WaveDots(modifier: Modifier, dotSize: Dp, gap: Dp, lift: Dp) {
     val description = stringResource(R.string.chat_cd_generating_response)
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
     val primary = MaterialTheme.colorScheme.primary

@@ -69,6 +69,12 @@ val NexaraTouchLockContent = Color(0xFFE8E6DF)
 val NexaraTouchLockAccent = Color(0xFFAFA9EC)
 val NexaraTouchLockWarning = Color(0xFFFAC775)
 
+// 颜色运算端点：取色器的明度/饱和度渐变、指示灯提亮与面板压暗都以纯白、纯黑为端点，不随主题变化。
+internal val NexaraPureWhite = Color(0xFFFFFFFF)
+internal val NexaraPureBlack = Color(0xFF000000)
+/** 浅色主题下 LED 面板底板：极淡的墨绿灰，衬出熄灭的灯位。 */
+internal val NexaraLedFaceplateLight = Color(0x12141E19)
+
 internal val NexaraDarkDomainColors = NexaraDomainColors(
     success = Color(0xFF4ADE80),
     onSuccess = Color(0xFF003914),

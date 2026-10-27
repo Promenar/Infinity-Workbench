@@ -81,7 +81,10 @@ fun NexaraTheme(
             val context = LocalContext.current
             androidx.compose.material3.dynamicLightColorScheme(context)
         }
-        seedColor != null -> seededColorScheme(seedColor, useDarkTheme)
+        seedColor != null -> seededColorScheme(seedColor, useDarkTheme, preferences?.schemeStyle ?: NexaraSchemeStyle.TONAL_SPOT)
+        // 默认主色选了非柔和的配色风格时，以首个预设色为种子按该风格生成。
+        preferences != null && preferences.schemeStyle != NexaraSchemeStyle.TONAL_SPOT ->
+            seededColorScheme(NexaraPresetColors.first(), useDarkTheme, preferences.schemeStyle)
         useDarkTheme -> NexaraDarkColorScheme
         else -> NexaraLightColorScheme
     }.withPureBlackSurface(useDarkTheme && preferences?.pureBlack == true)
@@ -129,6 +132,7 @@ fun NexaraTheme(
 
     CompositionLocalProvider(
         LocalNexaraDomainColors provides domainColors,
+        LocalNexaraMotionStyles provides (preferences?.motion ?: NexaraMotionStyles()),
         LocalDensity provides scaledDensity,
         com.promenar.nexara.ui.common.LocalNexaraHaptics provides haptics,
         // 长按菜单、文本选择等组件内置的触感同样服从应用开关。

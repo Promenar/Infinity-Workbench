@@ -206,6 +206,7 @@ import com.promenar.nexara.ui.common.NexaraPopover
 import com.promenar.nexara.ui.common.NexaraPopoverSide
 import com.promenar.nexara.ui.common.NexaraPopoverAlign
 import androidx.compose.material3.FilledTonalButton
+import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.rounded.Compress
@@ -2666,6 +2667,10 @@ fun ChatInputBar(
     ) {
         // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
         val hasAttachments = hasImages || hasDocuments || isImportingDocument
+        // 灯语样式的灯效铺在浮岛底色之上、输入内容之下，随浮岛尺寸变化。
+        val motionStyle = LocalNexaraMotionStyles.current.composer
+        Box {
+        ComposerIslandLights(glow, motionStyle, Modifier.matchParentSize())
         // 尺寸动画会按矩形裁剪，放在容器内部；放在外层会把圆角投影切成直角。
         Column(Modifier.animateContentSize()) {
         topContent()
@@ -2746,6 +2751,7 @@ fun ChatInputBar(
                     },
                 )
             }
+        }
         }
         }
     }

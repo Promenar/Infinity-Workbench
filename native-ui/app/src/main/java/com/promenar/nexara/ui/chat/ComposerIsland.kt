@@ -32,7 +32,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.common.motion.rememberMotionPalette
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
+import com.promenar.nexara.ui.theme.ComposerGlowStyle
+import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlin.math.max
 import kotlin.math.min
@@ -161,8 +164,9 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean): Com
 }
 
 /**
- * 浮岛外圈光效：外侧是沿边缘环行的光晕（Android 13 起用 AGSL），贴边是同角度的流光描边，深色另加顶边高光。
- * 光晕画在浮岛自身边界之外，因此本修饰符须放在裁剪与背景之前。
+ * 浮岛外圈光效：按外观设置的样式绘制。极光环行在外侧画沿边缘环行的光晕（Android 13 起用 AGSL）和同角度的流光描边；
+ * 潮汐呼吸画随呼吸扩散的外圈光晕与渐变描边；灯语样式只留一圈呼吸描边，灯效由 [ComposerIslandLights] 画在浮岛内。
+ * 出错时所有样式都整圈泛红，深色另加顶边高光。光晕画在浮岛自身边界之外，因此本修饰符须放在裁剪与背景之前。
  */
 @Composable
 internal fun Modifier.composerIslandGlow(
@@ -171,6 +175,9 @@ internal fun Modifier.composerIslandGlow(
     corner: Dp = ComposerIslandCorner,
 ): Modifier {
     val (colorA, colorB) = composerGlowColors()
+    val style = LocalNexaraMotionStyles.current.composer
+    val calmColor = rememberMotionPalette().a
+    val outlinePaints = remember { ComposerOutlinePaints() }
     val errorColor = MaterialTheme.nexaraDomainColors.signalDown
     val dark = MaterialTheme.nexaraDomainColors.isDark
     // 静态预览不跑着色器；Android 12 只保留描边。着色器按颜色缓存，重组时不重新编译。
@@ -202,9 +209,14 @@ internal fun Modifier.composerIslandGlow(
         onDrawWithContent {
             val generating = state.generating.value
             val error = state.error.value
-            if (haloShader != null && (generating > 0f || error > 0f)) {
-                updateHaloShader(haloShader, state, generating, error)
+            // 环行光晕只属于极光环行；出错时的整圈泛红所有样式共用。
+            val haloGenerating = if (style == ComposerGlowStyle.AURORA) generating else 0f
+            if (haloShader != null && (haloGenerating > 0f || error > 0f)) {
+                updateHaloShader(haloShader, state, haloGenerating, error)
                 drawRect(haloBrush!!, topLeft = Offset(-reach, -reach), size = Size(size.width + reach * 2, size.height + reach * 2))
+            }
+            if (style == ComposerGlowStyle.BREATHE && generating > 0f) {
+                drawBreatheHalo(generating, state.timeSeconds, cornerPx, colorA, colorB, outlinePaints)
             }
             drawContent()
             if (highlight != null) {
@@ -216,7 +228,11 @@ internal fun Modifier.composerIslandGlow(
                     style = Stroke(1.dp.toPx()),
                 )
             }
-            if (generating > 0f) {
+            if (generating > 0f && style == ComposerGlowStyle.BREATHE) {
+                drawBreatheStroke(generating, state.timeSeconds, cornerPx, colorA, colorB, outlinePaints)
+            } else if (generating > 0f && style != ComposerGlowStyle.AURORA) {
+                drawCalmBorder(generating, state.timeSeconds, cornerPx, calmColor, outlinePaints)
+            } else if (generating > 0f) {
                 sweepMatrix.setRotate(sweepRotationForHead(state.headDegrees), center.x, center.y)
                 sweep.setLocalMatrix(sweepMatrix)
                 drawRoundRect(

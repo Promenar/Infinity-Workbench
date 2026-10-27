@@ -147,4 +147,15 @@ class AgentHubScreenContractTest {
         assertThat(source).contains("pinnedState.takeIf { session.isPinned }")
         assertThat(source).contains("R.string.sessions_tag_pinned).takeIf { agent.isPinned }")
     }
+
+    @Test
+    fun `会话行标题固定单行，过长时跑马灯滚动而不折行`() {
+        val row = hubSource.readText().substringAfter("private fun HubSessionRow(").substringBefore("trailingContent = {")
+        assertThat(row).contains("marqueeTitle = true")
+        val layout = projectRoot.resolve("src/main/java/com/promenar/nexara/ui/common/NexaraSettingsItem.kt").readText()
+            .substringAfter("internal fun NexaraSettingsRowLayout(")
+        // 窄列（< 280dp）放开行数的规则不得覆盖单行标题。
+        assertThat(layout.indexOf("marqueeTitle -> 1")).isLessThan(layout.indexOf("expandTitle -> Int.MAX_VALUE"))
+        assertThat(layout).contains("basicMarquee(")
+    }
 }

@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.basicMarquee
+import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -75,6 +77,11 @@ fun NexaraSettingsItem(
     )
 }
 
+/** 单行标题跑马灯：停 1.5 秒后以 24dp/s 缓慢滚动，每轮之间再停 2 秒。 */
+private const val TitleMarqueeInitialDelayMillis = 1_500
+private const val TitleMarqueeRepeatDelayMillis = 2_000
+private val TitleMarqueeVelocity = 24.dp
+
 /** 所有设置行共享几何布局；交互与状态语义由包装控件提供。 */
 @Composable
 internal fun NexaraSettingsRowLayout(
@@ -93,8 +100,11 @@ internal fun NexaraSettingsRowLayout(
     horizontalPadding: Dp = NexaraSpacing.RowHorizontal,
     // 副标题默认单行；列表项需要完整说明时可放宽到两行。
     subtitleMaxLines: Int = 1,
+    /** 标题始终单行：放不下时缓慢横向滚动（系统关闭动画时改为省略号），列表行不会因长标题变成两行。 */
+    marqueeTitle: Boolean = false,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
+    val marquee = marqueeTitle && rememberAnimationsEnabled()
     BoxWithConstraints(modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f)) {
         val trailingMaxWidth = maxWidth * trailingMaxWidthFraction
         val expandTitle = maxWidth < 280.dp || LocalDensity.current.fontScale > 1f
@@ -116,8 +126,19 @@ internal fun NexaraSettingsRowLayout(
             Column(Modifier.weight(1f)) {
                 Text(title, style = titleTextStyle ?: MaterialTheme.typography.bodyLarge,
                     color = titleColor ?: MaterialTheme.colorScheme.onSurface,
-                    maxLines = if (expandTitle) Int.MAX_VALUE else if (subtitle == null) 2 else 1,
-                    overflow = TextOverflow.Ellipsis)
+                    modifier = if (marquee) Modifier.basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        repeatDelayMillis = TitleMarqueeRepeatDelayMillis,
+                        initialDelayMillis = TitleMarqueeInitialDelayMillis,
+                        velocity = TitleMarqueeVelocity,
+                    ) else Modifier,
+                    maxLines = when {
+                        marqueeTitle -> 1
+                        expandTitle -> Int.MAX_VALUE
+                        subtitle == null -> 2
+                        else -> 1
+                    },
+                    overflow = if (marquee) TextOverflow.Clip else TextOverflow.Ellipsis)
                 if (subtitle != null) {
                     Spacer(Modifier.height(NexaraSpacing.RowTwoLineGap))
                     Text(if (subtitleIsIdentifier) subtitle.breakableIdentifier() else subtitle,

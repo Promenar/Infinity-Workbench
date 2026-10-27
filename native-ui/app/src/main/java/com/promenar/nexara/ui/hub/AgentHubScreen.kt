@@ -882,6 +882,8 @@ private fun HubSessionRow(
         NexaraSettingsRowLayout(
             title = session.title.ifBlank { stringResource(R.string.hub_session_untitled) },
             subtitle = subtitle,
+            // 会话行固定单行：长标题缓慢滚动，不折成两行撑高列表。
+            marqueeTitle = true,
             modifier = Modifier
                 .testTag(tag)
                 // 内屏三列：会话列正在显示的会话与设置目录的选中项同样高亮。

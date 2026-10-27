@@ -46,17 +46,19 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.EmptyChatStyle
+import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** 字标中心所在的纵向比例：略高于正中，给下方的提示语留位置。 */
-private const val WordmarkCenterFraction = 0.42f
+internal const val WordmarkCenterFraction = 0.42f
 private const val WordmarkLogoLimit = 900
 private const val WordmarkAmbientCount = 260
 private const val WordmarkSampleStepDp = 2
-private const val WordmarkMaxTextSizeDp = 68f
+internal const val WordmarkMaxTextSizeDp = 68f
 
 /**
  * 空会话的粒子字标：粒子飞入拼成品牌字标并轻微呼吸，手指按住划过时让开（位置见 [WordmarkPointer]）；开始输入后散成流场，清空输入后重新聚拢。
@@ -99,10 +101,17 @@ internal fun EmptyChatWordmark(dispersed: Boolean, pointer: WordmarkPointer, mod
     val prompt = stringResource(R.string.chat_empty_prompt)
     BoxWithConstraints(modifier.fillMaxSize().testTag(UiTags.CHAT_EMPTY_WORDMARK)) {
         val centerY = constraints.maxHeight * WordmarkCenterFraction
-        ParticleWordmark(dispersed = dispersed, pointer = pointer, modifier = Modifier.fillMaxSize())
+        val style = LocalNexaraMotionStyles.current.emptyChat
+        if (style == EmptyChatStyle.FLOW) {
+            ParticleWordmark(dispersed = dispersed, pointer = pointer, modifier = Modifier.fillMaxSize())
+        } else {
+            LedEmptyChat(style = style, dispersed = dispersed, pointer = pointer, modifier = Modifier.fillMaxSize())
+        }
 
         val promptAlpha by animateFloatAsState(if (dispersed) 0f else 1f, tween(500), label = "empty_prompt_alpha")
-        val promptTop by animateDpAsState(with(LocalDensity.current) { centerY.toDp() } + 56.dp, label = "empty_prompt_top")
+        // 提示语放在图形下方：字标下方 56dp，莫比乌斯带与球体按各自的尺寸往下让。
+        val promptGap = emptyChatPromptGapDp(style, maxWidth.value, maxHeight.value).dp
+        val promptTop by animateDpAsState(with(LocalDensity.current) { centerY.toDp() } + promptGap, label = "empty_prompt_top")
         Box(
             Modifier
                 .fillMaxWidth()
@@ -253,7 +262,45 @@ private data class WordmarkShape(val maxTextSizeDp: Float, val logoLimit: Int, v
 private val ParticleSizeDp = floatArrayOf(0.7f, 1.1f, 1.7f, 1.6f)
 private val ParticleAlpha = floatArrayOf(0.35f, 0.6f, 0.9f, 1f)
 
-/** 把字标按 dp 网格栅格化后采样笔画点，再换算成像素坐标；栅格只有屏幕的 1/density² 大小，几毫秒内完成。 */
+/** 字标的透明度栅格：按 dp 网格绘制，宽高单位为 dp；[centerY] 为栅格化时字标中心的像素纵坐标。 */
+internal class WordmarkMask(val alpha: ByteArray, val width: Int, val height: Int, val centerY: Float) {
+    /** dp 坐标处的透明度 0..255，越界为 0。 */
+    fun at(xDp: Float, yDp: Float): Int {
+        val x = xDp.toInt()
+        val y = yDp.toInt()
+        if (x < 0 || y < 0 || x >= width || y >= height) return 0
+        return alpha[y * width + x].toInt() and 0xFF
+    }
+}
+
+/** 把字标按 dp 网格栅格化；栅格只有屏幕的 1/density² 大小，几毫秒内完成。 */
+internal fun rasterizeWordmark(
+    wordmark: String,
+    widthPx: Float,
+    heightPx: Float,
+    centerY: Float,
+    density: Float,
+    maxTextSizeDp: Float = WordmarkMaxTextSizeDp,
+): WordmarkMask {
+    val width = (widthPx / density).toInt().coerceAtLeast(1)
+    val height = (heightPx / density).toInt().coerceAtLeast(1)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+        letterSpacing = 0.12f
+        textAlign = Paint.Align.CENTER
+    }
+    paint.textSize = fitWordmarkTextSize({ size -> paint.textSize = size; paint.measureText(wordmark) }, width * 0.78f, maxTextSizeDp)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+    val metrics = paint.fontMetrics
+    val baseline = centerY / density - (metrics.ascent + metrics.descent) / 2f
+    android.graphics.Canvas(bitmap).drawText(wordmark, width / 2f, baseline, paint)
+    val alpha = ByteArray(width * height)
+    bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(alpha))
+    bitmap.recycle()
+    return WordmarkMask(alpha, width, height, centerY)
+}
+
+/** 把字标栅格化后采样笔画点，再换算成像素坐标。 */
 private fun buildWordmarkParticles(
     wordmark: String,
     widthPx: Float,
@@ -262,22 +309,8 @@ private fun buildWordmarkParticles(
     density: Float,
     shape: WordmarkShape,
 ): WordmarkParticles {
-    val width = (widthPx / density).toInt().coerceAtLeast(1)
-    val height = (heightPx / density).toInt().coerceAtLeast(1)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Typeface.create(Typeface.DEFAULT, 500, false)
-        letterSpacing = 0.12f
-        textAlign = Paint.Align.CENTER
-    }
-    paint.textSize = fitWordmarkTextSize({ size -> paint.textSize = size; paint.measureText(wordmark) }, width * 0.78f, shape.maxTextSizeDp)
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
-    val metrics = paint.fontMetrics
-    val baseline = centerY / density - (metrics.ascent + metrics.descent) / 2f
-    android.graphics.Canvas(bitmap).drawText(wordmark, width / 2f, baseline, paint)
-    val alpha = ByteArray(width * height)
-    bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(alpha))
-    bitmap.recycle()
-    val targets = sampleWordmarkTargets(alpha, width, height, WordmarkSampleStepDp, shape.logoLimit)
+    val mask = rasterizeWordmark(wordmark, widthPx, heightPx, centerY, density, shape.maxTextSizeDp)
+    val targets = sampleWordmarkTargets(mask.alpha, mask.width, mask.height, WordmarkSampleStepDp, shape.logoLimit)
     for (i in targets.indices) targets[i] *= density
     return WordmarkParticles(targets, shape.ambientCount, widthPx, heightPx, density).also { it.recenter(centerY, heightPx) }
 }

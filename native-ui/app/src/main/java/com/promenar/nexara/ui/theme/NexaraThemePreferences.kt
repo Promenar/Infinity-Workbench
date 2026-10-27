@@ -36,6 +36,8 @@ data class NexaraThemePreferences(
     val mode: NexaraThemeMode = NexaraThemeMode.DARK,
     val colorSource: NexaraColorSource = NexaraColorSource.NEXARA,
     val primaryColor: Long? = null,
+    /** 由种子色生成配色的算法；只对预设色与自定义色生效，跟随系统取色时不用。 */
+    val schemeStyle: NexaraSchemeStyle = NexaraSchemeStyle.TONAL_SPOT,
     val pureBlack: Boolean = false,
     val textScaleEnabled: Boolean = false,
     val textScale: Float = 1f,
@@ -47,4 +49,8 @@ data class NexaraThemePreferences(
     val statusHapticsEnabled: Boolean = true,
     /** 生成中锁定触摸后的解锁方式；生成期间屏幕始终保持常亮。 */
     val touchLockUnlock: TouchLockUnlock = TouchLockUnlock.HOLD,
+    /** 输入框浮岛、生成状态指示与空会话三处动效的样式，颜色都跟随主题色。 */
+    val motion: NexaraMotionStyles = NexaraMotionStyles(),
+    /** 自定义取色最近用过的颜色（ARGB，最新在前）。 */
+    val recentCustomColors: List<Int> = emptyList(),
 )

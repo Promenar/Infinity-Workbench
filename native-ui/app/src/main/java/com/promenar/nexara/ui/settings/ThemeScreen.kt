@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.ui.theme.NexaraLightColorScheme
+import com.promenar.nexara.ui.theme.NexaraDarkColorScheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
@@ -63,6 +67,10 @@ import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraPresetColors
 import com.promenar.nexara.ui.theme.NexaraThemeMode
+import com.promenar.nexara.ui.theme.ComposerGlowStyle
+import com.promenar.nexara.ui.theme.EmptyChatStyle
+import com.promenar.nexara.ui.theme.GenerationIndicatorStyle
+import com.promenar.nexara.ui.theme.NexaraSchemeStyle
 import kotlin.math.roundToInt
 
 @Composable
@@ -86,6 +94,11 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onHapticsChange = viewModel::setHapticsEnabled,
         onStatusHapticsChange = viewModel::setStatusHapticsEnabled,
         onTouchLockUnlockChange = viewModel::setTouchLockUnlock,
+        onCustomColorApply = viewModel::applyCustomColor,
+        onSchemeStyleSelect = viewModel::setSchemeStyle,
+        onComposerGlowSelect = viewModel::setComposerGlowStyle,
+        onIndicatorSelect = viewModel::setGenerationIndicatorStyle,
+        onEmptyChatSelect = viewModel::setEmptyChatStyle,
     )
 }
 
@@ -103,6 +116,11 @@ fun ThemeScreenContent(
     onHapticsChange: (Boolean) -> Unit = {},
     onStatusHapticsChange: (Boolean) -> Unit = {},
     onTouchLockUnlockChange: (com.promenar.nexara.ui.theme.TouchLockUnlock) -> Unit = {},
+    onCustomColorApply: (Int) -> Unit = {},
+    onSchemeStyleSelect: (NexaraSchemeStyle) -> Unit = {},
+    onComposerGlowSelect: (ComposerGlowStyle) -> Unit = {},
+    onIndicatorSelect: (GenerationIndicatorStyle) -> Unit = {},
+    onEmptyChatSelect: (EmptyChatStyle) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -128,8 +146,15 @@ fun ThemeScreenContent(
                 ) {
                     ColorPaletteRow(
                         selectedColor = preferences.primaryColor,
+                        recentCustomColors = preferences.recentCustomColors,
                         onColorSelect = onPrimaryColorSelect,
+                        onCustomColorApply = onCustomColorApply,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                    SchemeStyleSelector(
+                        selected = preferences.schemeStyle,
+                        enabled = !dynamicColorChecked,
+                        onSelect = onSchemeStyleSelect,
                     )
                     SettingsToggle(
                         title = stringResource(R.string.theme_dynamic_color),
@@ -145,6 +170,20 @@ fun ThemeScreenContent(
                             )
                         },
                         modifier = Modifier.testTag("theme_dynamic_color_switch"),
+                    )
+                }
+            }
+
+            item("motion") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.motion_section_title),
+                    footer = stringResource(R.string.motion_section_footer),
+                ) {
+                    MotionStyleRows(
+                        motion = preferences.motion,
+                        onComposerSelect = onComposerGlowSelect,
+                        onIndicatorSelect = onIndicatorSelect,
+                        onEmptyChatSelect = onEmptyChatSelect,
                     )
                 }
             }
@@ -298,25 +337,114 @@ private fun TouchLockUnlockSelector(
 @Composable
 private fun ColorPaletteRow(
     selectedColor: Long?,
+    recentCustomColors: List<Int>,
     onColorSelect: (Long?) -> Unit,
+    onCustomColorApply: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 8 个色块排成两行各 4 个并均分宽度，避免窄屏上第二行只剩一个孤立色块。
+    var showPicker by remember { mutableStateOf(false) }
+    val presetValues = remember { NexaraPresetColors.map { it.value.toLong() } }
+    val customSelected = selectedColor != null && selectedColor !in presetValues
+    // 默认色块始终显示内置配色的主色，不随当前已选的强调色变化。
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val defaultColor = if (dark) NexaraDarkColorScheme.primary else NexaraLightColorScheme.primary
+    // 默认、10 个预设与自定义共 12 个色块，排成三行各 4 个并均分宽度。
     androidx.compose.foundation.layout.FlowRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceAround,
         maxItemsInEachRow = 4,
     ) {
         ColorChoice(
-            color = MaterialTheme.colorScheme.primary,
+            color = defaultColor,
             selected = selectedColor == null,
             onClick = { onColorSelect(null) },
         )
-        NexaraPresetColors.take(7).forEach { color ->
+        NexaraPresetColors.forEach { color ->
             ColorChoice(
                 color = color,
                 selected = selectedColor == color.value.toLong(),
                 onClick = { onColorSelect(color.value.toLong()) },
+            )
+        }
+        CustomColorChoice(
+            color = selectedColor?.takeIf { customSelected }?.let { Color(it.toULong()) },
+            onClick = { showPicker = true },
+        )
+    }
+    val initial = (selectedColor?.let { Color(it.toULong()) } ?: defaultColor).toArgb()
+    ThemeColorPickerSheet(
+        show = showPicker,
+        initialArgb = initial,
+        recentColors = recentCustomColors,
+        onApply = { argb ->
+            onCustomColorApply(argb)
+            showPicker = false
+        },
+        onDismiss = { showPicker = false },
+    )
+}
+
+/** 自定义色块：未选自定义色时画一圈色相环，选中后显示该颜色并打勾。 */
+@Composable
+private fun CustomColorChoice(color: Color?, onClick: () -> Unit) {
+    val label = stringResource(R.string.theme_custom_color)
+    val haptics = LocalNexaraHaptics.current
+    val rainbow = remember { (0..6).map { Color.hsv(it * 60f % 360f, 0.85f, 1f) } }
+    Box(
+        modifier = Modifier.size(48.dp).semantics { contentDescription = label }
+            .selectable(selected = color != null, role = Role.Button, onClick = { haptics.select(false); onClick() })
+            .testTag("theme_custom_color"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier.size(34.dp).clip(CircleShape)
+                .background(if (color != null) androidx.compose.ui.graphics.SolidColor(color) else androidx.compose.ui.graphics.Brush.sweepGradient(rainbow))
+                .then(if (color != null) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (color != null) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(18.dp))
+            } else {
+                Box(Modifier.size(22.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+/** 配色风格：决定种子色如何展开成整套配色；跟随系统取色时不可用。 */
+@Composable
+private fun SchemeStyleSelector(selected: NexaraSchemeStyle, enabled: Boolean, onSelect: (NexaraSchemeStyle) -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    val anchor = rememberNexaraPopoverAnchor()
+    val options = listOf(
+        Triple(NexaraSchemeStyle.TONAL_SPOT, R.string.theme_scheme_tonal_spot, R.string.theme_scheme_tonal_spot_desc),
+        Triple(NexaraSchemeStyle.VIBRANT, R.string.theme_scheme_vibrant, R.string.theme_scheme_vibrant_desc),
+        Triple(NexaraSchemeStyle.FIDELITY, R.string.theme_scheme_fidelity, R.string.theme_scheme_fidelity_desc),
+        Triple(NexaraSchemeStyle.EXPRESSIVE, R.string.theme_scheme_expressive, R.string.theme_scheme_expressive_desc),
+    )
+    NexaraValueRow(
+        title = stringResource(R.string.theme_scheme_style),
+        value = stringResource(options.first { it.first == selected }.second),
+        subtitle = if (enabled) null else stringResource(R.string.theme_scheme_style_dynamic_note),
+        enabled = enabled,
+        modifier = Modifier.nexaraPopoverAnchor(anchor).testTag("theme_scheme_style_picker"),
+        onClick = { if (!anchor.consumeRecentDismiss()) show = true },
+    )
+    NexaraBottomSheet(show = show, title = stringResource(R.string.theme_scheme_style),
+        onDismiss = { show = false }, scrollContent = true, popover = NexaraPopoverSpec(anchor)) {
+        options.forEach { (style, titleRes, descriptionRes) ->
+            val isSelected = selected == style
+            NexaraSettingsItem(
+                title = stringResource(titleRes),
+                subtitle = stringResource(descriptionRes),
+                horizontalPadding = 0.dp,
+                onClick = { onSelect(style); show = false },
+                modifier = Modifier.testTag("theme_scheme_${style.name.lowercase()}"),
+                role = Role.RadioButton,
+                selected = isSelected,
+                trailingContent = { androidx.compose.material3.RadioButton(selected = isSelected, onClick = null) },
             )
         }
     }
