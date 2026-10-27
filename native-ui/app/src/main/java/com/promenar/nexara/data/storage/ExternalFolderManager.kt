@@ -61,12 +61,15 @@ class ExternalFolderManager(
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         mount.takeIf { bound == null || bound[it.alias] == it.id }
     }
-    private suspend fun currentWorkspaceMount(sessionId: String): ExternalMount? =
-        when (val current = workspaces?.resolve(sessionId) ?: return null) {
+    private suspend fun currentWorkspaceMount(sessionId: String): ExternalMount? {
+        currentCoroutineContext()[com.promenar.nexara.data.branch.BranchLinuxWorkspaceOperation]
+            ?.takeIf { it.sessionId == sessionId }?.let { return it.mount }
+        return when (val current = workspaces?.resolve(sessionId) ?: return null) {
             SessionWorkspace.Private -> null
             is SessionWorkspace.Directory -> workspaceMount(current.workspace.id, sessionId, current.workspace.createdAt, null)
             is SessionWorkspace.Unavailable -> workspaceMount(current.workspaceId, sessionId, current.workspace?.createdAt ?: 0, current.reason)
         }
+    }
     private fun workspaceMount(workspaceId: String, sessionId: String, createdAt: Long, unavailable: String?) = ExternalMount(
         ExternalMountPaths.workspaceMountId(workspaceId), ExternalMountPaths.WORKSPACE_ALIAS, ExternalMountPaths.WORKSPACE_SOURCE,
         workspaceId, sessionId, createdAt = createdAt, unavailableReason = unavailable,
@@ -136,7 +139,7 @@ class ExternalFolderManager(
     }
 
     override suspend fun list(sessionId: String, virtualPath: String): List<ExternalFolderEntry> = withContext(Dispatchers.IO) {
-        if (ExternalFolderPaths.normalize(virtualPath) == "/mnt") return@withContext visible(sessionId).filterNot { it.isUserSkills }.map {
+        if (!branchWorkspacePaths(sessionId) && ExternalFolderPaths.normalize(virtualPath) == "/mnt") return@withContext visible(sessionId).filterNot { it.isUserSkills }.map {
             ExternalFolderEntry("/mnt/${it.alias}", it.alias, true, 0, it.createdAt)
         }
         access(sessionId, virtualPath) { mount, backend, relative -> visibleChildren(mount, relative, backend.list(relative)) }
@@ -147,7 +150,7 @@ class ExternalFolderManager(
     }
 
     override suspend fun entry(sessionId: String, path: String): FileEntry? = withContext(Dispatchers.IO) {
-        if (ExternalFolderPaths.normalize(path) == "/mnt") return@withContext FileEntry(
+        if (!branchWorkspacePaths(sessionId) && ExternalFolderPaths.normalize(path) == "/mnt") return@withContext FileEntry(
             ExternalMountPaths.ROOT_UUID, "", null, "mnt", "", isDirectory = true,
             physicalRootPath = "", materializedPath = "/mnt", createdAt = 0, updatedAt = 0,
         )
@@ -243,9 +246,13 @@ class ExternalFolderManager(
     }
     override suspend fun restore(sessionId: String, recycleId: String) = withContext(Dispatchers.IO) { mutex.withLock {
         val item = recycleItemsUnlocked(sessionId).firstOrNull { it.id == recycleId } ?: fail("NOT_FOUND", "回收副本已过期或不属于当前会话")
-        access(sessionId, item.originalPath) { _, backend, relative ->
-            ExternalTreeTransfer.copy(recycle.load(item.id), backend, relative)
-            recycle.remove(item.id)
+        val branch = currentCoroutineContext()[com.promenar.nexara.data.branch.BranchLinuxWorkspaceOperation]
+            ?.takeIf { it.sessionId == sessionId && it.mount.id == item.mountId }
+        withContext(branch?.copy(workspacePaths = true) ?: kotlin.coroutines.EmptyCoroutineContext) {
+            access(sessionId, item.originalPath) { _, backend, relative ->
+                ExternalTreeTransfer.copy(recycle.load(item.id), backend, relative)
+                recycle.remove(item.id)
+            }
         }
     } }
     private suspend fun recycleItemsUnlocked(sessionId: String): List<ExternalRecycleItem> {
@@ -349,16 +356,23 @@ class ExternalFolderManager(
     }
 
     /** 列表路径改写为虚拟路径；工作区根下的同名条目由保留虚拟根遮蔽。 */
-    private fun visibleChildren(mount: ExternalMount, relative: String, children: List<ExternalFolderEntry>) = children
-        .filterNot { mount.isWorkspaceRoot && relative == "/" && it.name in setOf("mnt", "skills") }
+    private suspend fun visibleChildren(mount: ExternalMount, relative: String, children: List<ExternalFolderEntry>): List<ExternalFolderEntry> {
+        val workspacePaths = branchWorkspacePaths(mount.sessionId)
+        return children.filterNot { !workspacePaths && mount.isWorkspaceRoot && relative == "/" && it.name in setOf("mnt", "skills") }
         .map { it.copy(path = ExternalMountPaths.virtualPath(mount, it.path)) }
+    }
+
+    private suspend fun branchWorkspacePaths(sessionId: String): Boolean =
+        currentCoroutineContext()[com.promenar.nexara.data.branch.BranchLinuxWorkspaceOperation]
+            ?.let { it.sessionId == sessionId && it.workspacePaths } == true
 
     private suspend fun resolve(sessionId: String, path: String): Pair<ExternalMount, String> {
-        val parsed = ExternalMountPaths.parse(path)
+        val workspacePaths = branchWorkspacePaths(sessionId)
+        val parsed = if (workspacePaths) null else ExternalMountPaths.parse(path)
         if (parsed == null) {
             val normalized = ExternalFolderPaths.normalize(path)
             val root = currentWorkspaceMount(sessionId) ?: fail("INVALID_PATH", "不是挂载路径")
-            if (normalized == "/mnt") fail("INVALID_PATH", "/mnt 为挂载保留目录")
+            if (!workspacePaths && normalized == "/mnt") fail("INVALID_PATH", "/mnt 为挂载保留目录")
             val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
             if (bound != null && bound[root.alias] != root.id) fail("CONFLICT", "操作期间会话工作区发生变化，请重新读取目标")
             return root to normalized
@@ -398,6 +412,9 @@ class ExternalFolderManager(
     private suspend fun sourceBackend(mount: ExternalMount, sessionId: String? = null): ExternalFolderBackend {
         fun guarded(backend: ExternalFolderBackend, physicalRoot: File? = null): ExternalFolderBackend =
             if (sessionId == null) backend else com.promenar.nexara.startup.StartupGuardedExternalFolderBackend(backend, sessionId) { physicalRoot }
+        currentCoroutineContext()[com.promenar.nexara.data.branch.BranchLinuxWorkspaceOperation]
+            ?.takeIf { it.sessionId == sessionId && it.mount.id == mount.id }
+            ?.let { return guarded(it.backend, it.baseRoot) }
         if (mount.sourceType == ExternalMountPaths.WORKSPACE_SOURCE) {
             val resolver = workspaces ?: fail("UNAVAILABLE", "工作区不可用")
             return when (val current = resolver.resolveWorkspace(mount.sourceId)) {

@@ -88,7 +88,7 @@ class DualDatabaseRecoveryJournalTest {
     }
 
     @Test
-    fun `publishing journal accepts authenticated v18 v19 v20 and v21 candidates but rejects unknown identities`() {
+    fun `发布journal接受v18至v29可信候选并拒绝未知身份`() {
         val root = Files.createTempDirectory("dual-db-journal-schema")
         try {
             val journal = FileDualDatabaseRecoveryJournal(root, DigestAuthenticator)
@@ -103,7 +103,9 @@ class DualDatabaseRecoveryJournalTest {
                 candidateCommitMarker = "dual-database-recovery-v1:tx-1",
                 idMappingSha256 = "f".repeat(64),
             )
-            listOf(CURRENT_V18_IDENTITY, CURRENT_V19_IDENTITY, CURRENT_V20_IDENTITY, CURRENT_V21_IDENTITY).forEach { identity ->
+            listOf(CURRENT_V18_IDENTITY, CURRENT_V19_IDENTITY, CURRENT_V20_IDENTITY, CURRENT_V21_IDENTITY,
+                CURRENT_V22_IDENTITY, CURRENT_V23_IDENTITY, CURRENT_V24_IDENTITY, CURRENT_V25_IDENTITY,
+                CURRENT_V26_IDENTITY, CURRENT_V27_IDENTITY, CURRENT_V28_IDENTITY, CURRENT_V29_IDENTITY).forEach { identity ->
                 journal.write(publishing.copy(candidateRoomIdentity = identity))
                 assertThat(journal.read()?.candidateRoomIdentity).isEqualTo(identity)
             }

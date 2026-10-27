@@ -7,6 +7,23 @@ import org.junit.Test
 
 class BranchSessionPlannerTest {
     @Test
+    fun `历史消息克隆不继承派发关系worktree与自动处理暂停`() {
+        val source = session().copy(parentSessionId = "parent", branchPlanJson = "{}",
+            worktreeDirectory = "/project/branch", worktreeBranch = "feature", worktreeBase = "abc",
+            parentSessionDeleted = true, sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true)
+        val result = BranchSessionPlanner.plan(source, listOf(message("m1", "user", "问题")), "m1", "clone", 2) { "copy-$it" }
+        val clone = (result as BranchSessionPlanResult.Ready).plan.session
+        assertThat(clone.parentSessionId).isNull()
+        assertThat(clone.branchPlanJson).isNull()
+        assertThat(clone.worktreeDirectory).isNull()
+        assertThat(clone.worktreeBranch).isNull()
+        assertThat(clone.worktreeBase).isNull()
+        assertThat(clone.parentSessionDeleted).isFalse()
+        assertThat(clone.sessionAutoWakeCount).isEqualTo(0)
+        assertThat(clone.sessionAutoProcessingPaused).isFalse()
+    }
+
+    @Test
     fun `分支保留已固定运行模式和未确定旧模式`() {
         listOf(null, "LINUX", "BUILTIN").forEach { mode ->
             val result = BranchSessionPlanner.plan(session().copy(runMode = mode),

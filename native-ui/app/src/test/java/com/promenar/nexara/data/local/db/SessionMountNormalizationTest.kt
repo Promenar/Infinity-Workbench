@@ -33,7 +33,7 @@ class SessionMountNormalizationTest {
         }) { room ->
             val dao = room.externalMountDao()
             val all = dao.all()
-            assertThat(room.openHelper.writableDatabase.version).isEqualTo(28)
+            assertThat(room.openHelper.writableDatabase.version).isEqualTo(29)
             assertThat(all).hasSize(6)
             assertThat(all.map { it.id }.distinct()).hasSize(6)
             assertThat(all.map { it.id }).containsNoneOf("global", "global-2")
@@ -128,7 +128,7 @@ class SessionMountNormalizationTest {
                 db.version = 27
             }
             fun open() = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_27_28).addCallback(SessionMountNormalizationCallback { throw it }).allowMainThreadQueries().build()
+                .addMigrations(MIGRATION_27_28, MIGRATION_28_29).addCallback(SessionMountNormalizationCallback { throw it }).allowMainThreadQueries().build()
             if (reopen || afterFirstOpen != null) {
                 val first = open()
                 try { afterFirstOpen?.invoke(first.openHelper.writableDatabase) ?: first.openHelper.writableDatabase } finally { first.close() }

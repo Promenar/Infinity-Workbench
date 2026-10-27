@@ -154,7 +154,12 @@ object GitRevisions {
 data class GitBlobRef(val revision: String, val path: String)
 
 /** 检查所针对的工作区根目录；[kind] 写入 `NEXARA_WORKSPACE_KIND`（private、project、shared）。 */
-data class GitWorkspaceTarget(val root: File, val kind: String)
+data class GitWorkspaceTarget(
+    val root: File,
+    val kind: String,
+    /** Linux guest 前缀到可信宿主目录的映射；null 表示普通宿主仓库，空映射明确拒绝 Linux 指针。 */
+    val linuxPathMappings: Map<String, String>? = null,
+)
 
 sealed interface GitWorkspaceResolution {
     data class Ready(val target: GitWorkspaceTarget) : GitWorkspaceResolution

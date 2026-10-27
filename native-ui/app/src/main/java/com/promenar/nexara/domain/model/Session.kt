@@ -10,4 +10,12 @@ data class Session(
     val updatedAt: Long = 0L,
     val messageCount: Int = 0,
     val runMode: SessionRunMode? = null,
+    val parentSessionId: String? = null,
+    val branchPlanJson: String? = null,
+    val worktreeDirectory: String? = null,
+    val worktreeBranch: String? = null,
+    val worktreeBase: String? = null,
+    val parentSessionDeleted: Boolean = false,
+    val sessionAutoWakeCount: Int = 0,
+    val sessionAutoProcessingPaused: Boolean = false,
 )

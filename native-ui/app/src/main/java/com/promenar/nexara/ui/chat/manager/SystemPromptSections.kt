@@ -14,9 +14,9 @@ import com.promenar.nexara.domain.model.SessionRunMode
  */
 object SystemPromptSections {
     const val LINUX_SHELL_GUIDANCE = "shell_exec 在本会话固定使用 Alpine Linux（musl），使用 apk add 安装软件包；python3 与 pip 需安装对应可选包。" +
-        "会话专用空间为 /home/session，主工作区为 /workspace（NEXARA_WORKSPACE=/workspace），私有主工作区与会话空间指向同一目录。" +
+        "会话专用空间为 /home/session，基础工作区挂载为 /workspace。NEXARA_WORKSPACE 指向命令的起始工作目录，分支 worktree 使用其绑定目录；普通会话通常使用 /workspace。" +
         "真实路径挂载为 /mnt/<别名>，用户级技能为 /mnt/skills（NEXARA_SKILLS=/mnt/skills）；SAF 挂载不可见。" +
-        "文件工具与命令使用相同的 Linux 路径，相对路径相对 /workspace；/root、/etc 等绝对路径指向 Linux rootfs。" +
+        "文件工具与命令使用相同的 Linux 路径，相对路径相对当前会话的起始工作目录；/root、/etc 等绝对路径指向 Linux rootfs。" +
         "/home/session 保存在 rootfs 之外，重置 Linux 不删除它；/root 不进入备份，重置会清空。文件元数据密集操作较慢。" +
         "Linux 不可用时返回错误，请用户在会话中处理环境，不能自动改用系统 sh、打包 Python 或其它运行环境。" +
         "Linux 命令以 Nexara 身份运行，工作区档逐条审批，完全访问档免批。" +
@@ -126,7 +126,7 @@ object SystemPromptSections {
             appendLine()
             appendLine("### Workspace Files")
             if (usesLinux) {
-                appendLine("- 文件工具与 shell 共用 Linux 路径：/workspace 为主工作区，/home/session 为隔离的会话专用空间，/mnt/<别名> 为真实目录挂载，/mnt/skills 为用户技能；其它绝对路径位于 rootfs。相对路径相对 /workspace，路径不允许 ..。")
+                appendLine("- 文件工具与 shell 共用 Linux 路径：/workspace 为基础工作区挂载，/home/session 为隔离的会话专用空间，/mnt/<别名> 为真实目录挂载，/mnt/skills 为用户技能；其它绝对路径位于 rootfs。相对路径相对当前会话的起始工作目录（NEXARA_WORKSPACE），路径不允许 ..。")
             } else if (workspace == null || workspace == com.promenar.nexara.data.workspace.SessionWorkspace.Private) {
                 appendLine("- This conversation has a private workspace. Paths are relative to its root and start with `/` (for example `/notes/plan.md`); file tools accept either `path` or `uuid`.")
             } else {
@@ -225,6 +225,17 @@ object SystemPromptSections {
     private fun currentWorkspace(workspace: com.promenar.nexara.data.workspace.SessionWorkspace?, usesLinux: Boolean = false): String? = when (workspace) {
         null, com.promenar.nexara.data.workspace.SessionWorkspace.Private -> null
         is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> buildString {
+            if (workspace.kind == com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.KIND) {
+                appendLine("### 当前工作区")
+                appendLine("- 当前会话绑定 Git worktree `${workspace.workspace.location}`。文件工具的相对路径与命令起始目录均为此目录；/workspace 保留创建时的基础挂载，绝对路径使用原有 Linux 含义。")
+                appendLine("- 使用 git status 检查工作区变化。rootfs 中的 worktree 随 Linux 重置清除，提交推送仍需遵守会话审批要求。")
+                return@buildString
+            }
+            if (workspace.kind == "branch_shared") {
+                appendLine("### 当前工作区")
+                appendLine("- 当前会话共用派发时的主会话私有工作区；该根目录由应用索引并进入备份。/home/session 是本会话独立的专用空间。")
+                return@buildString
+            }
             val shared = workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED
             val place = when {
                 shared -> "a shared device-storage folder at `${workspace.workspace.location}`"

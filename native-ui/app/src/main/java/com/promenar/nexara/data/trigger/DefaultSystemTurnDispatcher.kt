@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.trigger
 
 import com.promenar.nexara.domain.trigger.SystemTurnDispatcher
+import com.promenar.nexara.domain.trigger.usesSteeringDelivery
 import com.promenar.nexara.domain.trigger.SystemTurnKind
 import com.promenar.nexara.domain.trigger.SystemTurnOutcome
 import com.promenar.nexara.domain.trigger.SystemTurnRequest
@@ -60,10 +61,10 @@ class DefaultSystemTurnDispatcher(
     private val busyTimeoutMillis: Long = 30 * 60 * 1_000L,
     private val pollMillis: Long = 250L,
 ) : SystemTurnDispatcher {
-    private data class EntryKey(val sourceId: String, val sessionId: String? = null, val sequence: Int? = null)
+    private data class EntryKey(val sourceId: String, val sessionId: String? = null, val sequence: Int? = null, val deliveryId: String? = null)
     private class Entry(val request: SystemTurnRequest) {
-        val key = if (request.kind == SystemTurnKind.SUBAGENT_DONE) {
-            EntryKey(request.sourceId, request.sessionId, request.sequence ?: 0)
+        val key = if (request.kind.usesSteeringDelivery) {
+            EntryKey(request.sourceId, request.sessionId, request.sequence ?: 0, request.deliveryIds.firstOrNull().takeIf { request.kind == SystemTurnKind.SESSION_MESSAGE })
         } else EntryKey(request.sourceId)
         val outcome = CompletableDeferred<SystemTurnOutcome>()
         val ticket = SystemTurnAdmissionTicket()
@@ -84,7 +85,7 @@ class DefaultSystemTurnDispatcher(
         val cancelled = mutableListOf<Job>()
         synchronized(lock) {
             entry.admissionOrder = nextAdmissionOrder++
-            if (request.kind == SystemTurnKind.SUBAGENT_DONE) runtime.stageSubagentCompletion(request, entry.ticket)
+            if (request.kind.usesSteeringDelivery) runtime.stageSubagentCompletion(request, entry.ticket)
             pending.put(entry.key, entry)?.let { older ->
                 older.ticket.tryWithdraw()
                 older.outcome.complete(SystemTurnOutcome.Skipped(SystemTurnSkipReason.SUPERSEDED))
@@ -96,7 +97,7 @@ class DefaultSystemTurnDispatcher(
                     older.execution?.let(cancelled::add)
                 }
             }
-            if (request.kind != SystemTurnKind.SUBAGENT_DONE) entry.expiry = applicationScope.launch {
+            if (!request.kind.usesSteeringDelivery) entry.expiry = applicationScope.launch {
                 runtime.awaitReady()
                 delay(busyTimeoutMillis)
                 val expiredJobs = mutableListOf<Job>()
@@ -113,7 +114,7 @@ class DefaultSystemTurnDispatcher(
             }
             entry.outcome.invokeOnCompletion {
                 entry.expiry?.cancel()
-                if (request.kind == SystemTurnKind.SUBAGENT_DONE) runtime.discardSubagentCompletion(entry.ticket)
+                if (request.kind.usesSteeringDelivery) runtime.discardSubagentCompletion(entry.ticket)
             }
             ensureWorkerLocked()
             wake.trySend(Unit)
@@ -195,7 +196,7 @@ class DefaultSystemTurnDispatcher(
                 for (entry in entries) {
                     val inspection = synchronized(lock) {
                         val request = entry.request
-                        val completion = request.kind == SystemTurnKind.SUBAGENT_DONE
+                        val completion = request.kind.usesSteeringDelivery
                         val earlierSameSession = pending.values.any {
                             it !== entry && it.request.sessionId == request.sessionId && it.admissionOrder < entry.admissionOrder
                         }
@@ -243,7 +244,7 @@ class DefaultSystemTurnDispatcher(
                 }
                 return
             }
-            val completion = request.kind == SystemTurnKind.SUBAGENT_DONE
+            val completion = request.kind.usesSteeringDelivery
             if (!completion && runtime.isBusy(request.sessionId)) return
             val admitted = synchronized(lock) {
                 if (pending[entry.key] !== entry || running.containsKey(entry.key) ||

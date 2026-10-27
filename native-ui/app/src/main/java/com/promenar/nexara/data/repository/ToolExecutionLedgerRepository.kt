@@ -758,10 +758,13 @@ class ToolExecutionLedgerRepository(
             ?: return@withTransaction ExactToolApprovalDecision.Conflict
         val target = context.entries.first()
         val key = ToolExecutionKey(sessionId, context.assistant.id, target.toolCallId)
+        val sessions = database.sessionDao()
+        val session = sessions.getById(sessionId) ?: return@withTransaction ExactToolApprovalDecision.Conflict
         if (approved) {
             if (dao.approve(sessionId, context.assistant.id, target.toolCallId, clock()) != 1) {
                 return@withTransaction ExactToolApprovalDecision.Conflict
             }
+            sessions.updateRow(session.copy(sessionAutoWakeCount = 0, sessionAutoProcessingPaused = false))
             ExactToolApprovalDecision.Decided(key, emptyList())
         } else {
             val createdAt = clock()
@@ -782,6 +785,7 @@ class ToolExecutionLedgerRepository(
                     updatedAt = createdAt,
                 ) != 1
             ) return@withTransaction ExactToolApprovalDecision.Conflict
+            sessions.updateRow(session.copy(sessionAutoWakeCount = 0, sessionAutoProcessingPaused = false))
             database.messageDao().insert(terminal.toEntity(sessionId))
             ExactToolApprovalDecision.Decided(key, listOf(terminal))
         }

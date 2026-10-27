@@ -7,6 +7,7 @@ object ToolArgumentApprovalRules {
     private val SSH_HOST_CONFIG_TOOLS = setOf("ssh_host_save", "ssh_host_delete", "ssh_host_install_key")
 
     fun requiresExplicitApproval(toolName: String, arguments: String, resolvedTarget: String? = null): Boolean =
+        (toolName in setOf("session_read", "session_list") && resolvedTarget?.startsWith("session-approval:") == true) ||
         toolName == "resolve_startup_issue" || toolName in SSH_HOST_CONFIG_TOOLS || ToolExecutionTargets.requiresSkillsApproval(
             toolName,
             resolvedTarget ?: ToolExecutionTargets.extract(

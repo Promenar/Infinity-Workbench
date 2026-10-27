@@ -69,6 +69,59 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
+    fun `用户批准工具清零自动唤醒计数并解除自动处理暂停`() = runBlocking {
+        verifyUserDecisionResetsAutoProcessing(approved = true)
+    }
+
+    @Test
+    fun `用户拒绝工具清零自动唤醒计数并解除自动处理暂停`() = runBlocking {
+        verifyUserDecisionResetsAutoProcessing(approved = false)
+    }
+
+    @Test
+    fun `审批恢复保留自动处理暂停且拒绝结果写入失败回滚清零`() = runBlocking {
+        val call = ToolCall("reject-failed", "write_file", "{}")
+        val request = exactRequest("m1", listOf(call), setOf(call.id))
+        repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request)
+        val latest = database.sessionDao().getById("s1")!!
+        database.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
+        repository.recoverApprovalState()
+        assertThat(database.sessionDao().getById("s1")!!.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(database.sessionDao().getById("s1")!!.sessionAutoProcessingPaused).isTrue()
+        database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_user_rejection BEFORE INSERT ON messages WHEN NEW.role = 'tool' BEGIN SELECT RAISE(ABORT, 'test write failure'); END")
+
+        assertThat(runCatching { repository.decideExactToolApproval("s1", request, approved = false) }.isFailure).isTrue()
+
+        assertThat(repository.state(key(call.id))).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+        val unchanged = database.sessionDao().getById("s1")!!
+        assertThat(unchanged.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(unchanged.sessionAutoProcessingPaused).isTrue()
+        assertThat(unchanged.approvalRequest).isEqualTo(latest.approvalRequest)
+    }
+
+    private suspend fun verifyUserDecisionResetsAutoProcessing(approved: Boolean) {
+        val call = ToolCall("user-decision", "write_file", "{}")
+        val request = exactRequest("m1", listOf(call), setOf(call.id))
+        assertThat(repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request))
+            .isEqualTo(ToolApprovalCreation.CREATED)
+        val latest = database.sessionDao().getById("s1")!!
+        database.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
+
+        assertThat(repository.decideExactToolApproval("s1", request.copy(assistantMessageId = "stale"), approved))
+            .isEqualTo(ExactToolApprovalDecision.Conflict)
+        assertThat(database.sessionDao().getById("s1")!!.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(database.sessionDao().getById("s1")!!.sessionAutoProcessingPaused).isTrue()
+        assertThat(repository.decideExactToolApproval("s1", request, approved))
+            .isInstanceOf(ExactToolApprovalDecision.Decided::class.java)
+
+        val decided = database.sessionDao().getById("s1")!!
+        assertThat(decided.sessionAutoWakeCount).isEqualTo(0)
+        assertThat(decided.sessionAutoProcessingPaused).isFalse()
+        assertThat(decided.approvalRequest).isEqualTo(latest.approvalRequest)
+        assertThat(decided.loopStatus).isEqualTo(latest.loopStatus)
+    }
+
+    @Test
     fun `register 原子核对完整 identity 与审批策略`() = runBlocking {
         val safeKey = key("safe")
         val riskyKey = key("risky")

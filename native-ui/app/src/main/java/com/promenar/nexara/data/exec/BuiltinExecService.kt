@@ -57,6 +57,8 @@ class BuiltinExecService(
     private val sessionHome: suspend (String) -> File? = { null },
     private val reconcileSessionHome: suspend (String) -> Unit = {},
     private val messages: RunModeMessages = RunModeMessages(),
+    /** 分支保留创建 worktree 时的父挂载；解析失败须抛出异常，null 只表示普通会话。 */
+    private val linuxLaunchBinding: suspend (sessionId: String) -> com.promenar.nexara.data.branch.BranchLinuxCommandWorkspace? = { null },
 ) {
     suspend fun runModeForSession(sessionId: String?): SessionRunMode? = sessionMode(sessionId)
 
@@ -68,9 +70,11 @@ class BuiltinExecService(
         // 私有主工作区已持有根写锁，直接复用当前根，避免回调重新申请同一把锁。
         val home = if (kind == SessionWorkspaceResolver.KIND_PRIVATE) root else sessionId?.let { sessionHome(it) }
             ?: throw IllegalStateException("会话专用空间不可用")
+        val launchBinding = sessionId?.let { linuxLaunchBinding(it) }
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = root.canonicalPath)
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = home.canonicalPath)
-        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home)
+        launchBinding?.let { com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = it.baseRoot.canonicalPath) }
+        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home, launchBinding)
         val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
         BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment + ("TERM" to "xterm-256color"), stdin, seconds, terminal = true)
     }
@@ -144,7 +148,8 @@ class BuiltinExecService(
         if (kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON && !environment.pythonAvailable) {
             throw IllegalArgumentException("当前设备没有内置 Python，请改用 termux_exec 或 ssh_exec。")
         }
-        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId ?: location.sessionId, path = location.commandDirectory.canonicalPath)
+        val resolvedSessionId = sessionId ?: location.sessionId
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = resolvedSessionId, path = location.commandDirectory.canonicalPath)
         val root = location.commandDirectory
         val workspaceKind = location.workspaceKind
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
@@ -154,12 +159,12 @@ class BuiltinExecService(
                 if (runtime == null || runtime.state.value !is com.promenar.nexara.domain.linux.LinuxRuntimeState.Ready) {
                     throw LinuxUnavailableException(runtime?.state?.value ?: com.promenar.nexara.domain.linux.LinuxRuntimeState.NotInstalled(0))
                 }
-                val request = linuxRequest(root, workspaceKind, sessionId, source, stdin, minutes * 60)
-                val title = titleOrNull(sessionId)
+                val request = linuxRequest(root, workspaceKind, resolvedSessionId, source, stdin, minutes * 60)
+                val title = titleOrNull(resolvedSessionId)
                 val before = packageProvenance.before()
                 return com.promenar.nexara.data.jobs.PreparedBackgroundCommand(
                     request.copy(environment = request.environment + lease.environment), lease::close,
-                    afterRun = { packageProvenance.after(before, sessionId, title) },
+                    afterRun = { packageProvenance.after(before, resolvedSessionId, title) },
                 )
             }
             val python = kind == com.promenar.nexara.domain.jobs.BackgroundJobRunner.PYTHON

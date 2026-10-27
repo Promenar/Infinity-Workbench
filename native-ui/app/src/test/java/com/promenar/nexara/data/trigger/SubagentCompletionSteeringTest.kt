@@ -20,6 +20,48 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SubagentCompletionSteeringTest {
+    @Test fun `首封会话消息持久化失败期间后封不能越过且重试保持顺序`() = runTest {
+        val store = store()
+        val bridge = SubagentCompletionSteering(backgroundScope)
+        fun request(sequence: Int) = request("branch", "正文$sequence").copy(kind = SystemTurnKind.SESSION_MESSAGE,
+            sequence = sequence, deliveryIds = listOf("ordered$sequence"))
+        val first = bridge.enqueue(request(1), SystemTurnAdmissionTicket())
+        val failing = mockk<MessageManager>(relaxed = true)
+        coEvery { failing.addMessage(any(), any()) } throws IllegalStateException("一次性持久化失败")
+        assertThat(bridge.deliver("s", store, failing)).isNull()
+        assertThat(first.outcome.isCompleted).isFalse()
+        val second = bridge.enqueue(request(2), SystemTurnAdmissionTicket())
+        val delivered = bridge.deliver("s", store, messages(store))!!
+        assertThat(delivered.request.deliveryIds).containsExactly("ordered1", "ordered2").inOrder()
+        assertThat(delivered.text.indexOf("正文1")).isLessThan(delivered.text.indexOf("正文2"))
+        assertThat(first.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(second.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+    }
+    @Test fun `会话消息按来源序号合并且不混入子代理完成通知`() = runTest {
+        val store = store()
+        val messages = messages(store)
+        val bridge = SubagentCompletionSteering(backgroundScope)
+        fun message(sequence: Int) = request("branch", "正文$sequence").copy(
+            kind = SystemTurnKind.SESSION_MESSAGE, sequence = sequence, deliveryIds = listOf("mail$sequence"))
+        val later = bridge.enqueue(message(2), SystemTurnAdmissionTicket())
+        val first = bridge.enqueue(message(1), SystemTurnAdmissionTicket())
+        val subagent = bridge.enqueue(request("sa_done", "完成结论"), SystemTurnAdmissionTicket())
+        val delivered = bridge.deliver("s", store, messages)!!
+        assertThat(delivered.request.kind).isEqualTo(SystemTurnKind.SESSION_MESSAGE)
+        assertThat(delivered.request.deliveryIds).containsExactly("mail1", "mail2").inOrder()
+        assertThat(delivered.text.indexOf("正文1")).isLessThan(delivered.text.indexOf("正文2"))
+        assertThat(delivered.text).doesNotContain("完成结论")
+        assertThat(first.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(later.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(subagent.outcome.isCompleted).isFalse()
+        assertThat(bridge.deliver("s", store, messages)!!.request.kind).isEqualTo(SystemTurnKind.SUBAGENT_DONE)
+        val restarted = SubagentCompletionSteering(backgroundScope)
+        val retry = restarted.enqueue(message(1), SystemTurnAdmissionTicket())
+        assertThat(restarted.deliver("s", store, messages)).isNull()
+        assertThat(retry.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(store.getSession("s")!!.messages).hasSize(2)
+    }
+
     @Test fun `完成通知只在步骤边界持久化后回执并按入队顺序合并`() = runTest {
         val store = store()
         val messages = messages(store)

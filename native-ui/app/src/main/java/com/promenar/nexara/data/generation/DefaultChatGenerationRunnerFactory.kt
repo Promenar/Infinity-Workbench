@@ -62,6 +62,9 @@ internal class DefaultChatGenerationRunnerFactory(
     private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     private val askUserLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
     private val subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
+    private val branchService: (() -> com.promenar.nexara.data.branch.BranchSessionService)? = null,
+    private val branchPlans: com.promenar.nexara.data.branch.BranchPlanLedger? = null,
+    private val sessionMailbox: com.promenar.nexara.data.branch.SessionMessageStore? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -109,6 +112,7 @@ internal class DefaultChatGenerationRunnerFactory(
             linuxFiles = linuxFiles,
             askUserLedger = askUserLedger,
             subagentCompletions = subagentCompletions,
+            branchService = branchService, branchPlans = branchPlans, sessionMailbox = sessionMailbox,
         )
     }
 }

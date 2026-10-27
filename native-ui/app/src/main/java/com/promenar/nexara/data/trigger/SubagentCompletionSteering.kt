@@ -67,10 +67,14 @@ class SubagentCompletionSteering(private val applicationScope: CoroutineScope) {
                 val entries = synchronized(lock) { pending[sessionId]?.toList().orEmpty() }
                     .filter { !it.ticket.isWithdrawn }
                 if (entries.isEmpty()) return@withContext null
+                val first = entries.first().request
+                val selected = entries.filter { it.request.kind == first.kind &&
+                    (first.kind != com.promenar.nexara.domain.trigger.SystemTurnKind.SESSION_MESSAGE || it.request.sourceId == first.sourceId) }
+                    .let { if (first.kind == com.promenar.nexara.domain.trigger.SystemTurnKind.SESSION_MESSAGE) it.sortedBy { p -> p.request.sequence } else it }
                 val claims = mutableListOf<SystemTurnDelivery.Claim>()
                 val accepted = mutableListOf<Pending>()
                 try {
-                    for (entry in entries) {
+                    for (entry in selected) {
                         val claim = entry.request.delivery?.claim()
                         if (entry.request.delivery != null && claim == null) {
                             entry.outcome.complete(SystemTurnOutcome.Completed)
@@ -125,8 +129,10 @@ class SubagentCompletionSteering(private val applicationScope: CoroutineScope) {
                     delivered
                 } catch (failure: Throwable) {
                     NexaraLogger.log("[SubagentCompletion] 完成通知送达失败，将重试：${failure::class.java.simpleName}")
-                    accepted.forEach { it.outcome.complete(SystemTurnOutcome.Failed("完成通知持久化失败")) }
-                    synchronized(lock) { accepted.forEach(::detach) }
+                    if (first.kind != com.promenar.nexara.domain.trigger.SystemTurnKind.SESSION_MESSAGE) {
+                        accepted.forEach { it.outcome.complete(SystemTurnOutcome.Failed("完成通知持久化失败")) }
+                        synchronized(lock) { accepted.forEach(::detach) }
+                    }
                     null
                 } finally {
                     claims.asReversed().forEach { it.release() }

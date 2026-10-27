@@ -43,6 +43,8 @@ fun SkillDefinition.toProtocolTool(): ProtocolTool = ProtocolTool(
 )
 
 interface SkillExecutionContext {
+    /** 原生子代理的发送者身份，模型参数不能指定。 */
+    val sourceSubagentId: String? get() = null
     val sessionId: String
     val agentId: String
     /** 该调用准入时的会话模式快照，后端不能把已批准的调用改到其它环境。 */

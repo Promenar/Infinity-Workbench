@@ -69,6 +69,24 @@ class ApplicationSystemTurnRuntimeTest {
         assertThat(store.getSession("s")!!.messages.last().content).isEqualTo("已处理子代理结论")
     }
 
+    @Test fun `会话消息写入唤醒标记后退出仍恢复原消息且不重插入`() = runTest {
+        val persisted = Message("mail", MessageRole.USER, SystemTriggerMessage.compose(
+            SystemTurnRequest("s", SystemTurnKind.SESSION_MESSAGE, "branch", "分支", "阶段结论", deliveryIds = listOf("mail-id")),
+            OffsetDateTime.now()), name = SystemTriggerMessage.MESSAGE_NAME)
+        val wake = Message("session_wake_mail", MessageRole.SYSTEM, "admitted", name = "session_message_wake")
+        val store = ChatStore()
+        val generated = mutableListOf<GenerationRequest>()
+        val coordinator = completionCoordinator(store, generated)
+        val bridge = SubagentCompletionSteering(backgroundScope)
+        val runtime = runtime(store, messageManager(store), coordinator, mockk(relaxed = true), bridge,
+            findSession = { Session(it, "a", messages = listOf(persisted, wake), sessionAutoWakeCount = 1) }) { _, _, _ -> }
+        runtime.recoverSubagentCompletions(listOf("s"))
+        runCurrent()
+        assertThat(generated).hasSize(1)
+        assertThat(generated.single().userMessageId).isEqualTo("mail")
+        assertThat(store.getSession("s")!!.messages.count { it.id == "mail" }).isEqualTo(1)
+        assertThat(store.getSession("s")!!.sessionAutoWakeCount).isEqualTo(1)
+    }
     @Test fun `重启恢复复用尚未启动生成的空助手占位`() = runTest {
         val persisted = persistedCompletion()
         val placeholder = Message("prepared-assistant", MessageRole.ASSISTANT, "", parentMessageId = persisted.id)

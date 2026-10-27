@@ -45,10 +45,26 @@ class SessionWorkspaceResolver(
     private val sharedAccess: SharedWorkspaceAccess,
     private val projectBackend: (File) -> ExternalFolderBackend = ::RealPathExternalFolderBackend,
     private val linuxHome: LinuxHomeWorkspaceSource? = null,
+    private val branchWorktreeResolver: com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver? = null,
+    private val resolveSharedPrivateRoot: suspend (String) -> File? = { null },
 ) {
     suspend fun resolve(sessionId: String?): SessionWorkspace = withContext(Dispatchers.IO) {
-        val workspaceId = sessionId?.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }?.workspaceId
-            ?: return@withContext SessionWorkspace.Private
+        val session = sessionId?.takeIf(String::isNotBlank)?.let { sessionDao.getById(it) }
+        if (session?.branchPlanJson != null && session.worktreeDirectory == null) {
+            val plan = com.promenar.nexara.data.branch.BranchPlanProtocol.decode(session.branchPlanJson, session.executionMode).getOrNull()
+            if (plan == null || plan.workMode == com.promenar.nexara.domain.branch.BranchWorkMode.WORKTREE) {
+                return@withContext SessionWorkspace.Unavailable("branch-worktree:${session.id}", null, "分支 worktree 尚未准备完成，不能使用共用工作区")
+            }
+        }
+        if (session?.worktreeDirectory != null) {
+            val id = com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.ID_PREFIX + session.id
+            return@withContext try {
+                branchWorktreeResolver?.resolve(session)
+                    ?: SessionWorkspace.Unavailable(id, null, "Linux worktree 解析器不可用")
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { SessionWorkspace.Unavailable(id, null, failure.message ?: "Linux worktree 目录不可用") }
+        }
+        val workspaceId = session?.workspaceId ?: return@withContext SessionWorkspace.Private
         resolveWorkspace(workspaceId)
     }
 
@@ -69,6 +85,19 @@ class SessionWorkspaceResolver(
                 WorkspaceEntity.KIND_SHARED -> sharedAccess.root(workspace.location)
                 WorkspaceEntity.KIND_LINUX_HOME -> linuxHome?.root(workspace.location)
                     ?: throw ExternalFolderException("UNAVAILABLE", "Linux 主目录不可用")
+                "branch_shared" -> {
+                    val path = (resolveSharedPrivateRoot(workspace.location)
+                        ?: throw ExternalFolderException("UNAVAILABLE", "共用分支工作区根已删除")).absoluteFile.toPath().normalize()
+                    if (!path.isAbsolute || path.parent == null) throw ExternalFolderException("INVALID_PATH", "共用分支工作区路径无效")
+                    var current = path.root
+                    for (name in path) {
+                        current = current.resolve(name)
+                        if (!Files.isDirectory(current, NOFOLLOW_LINKS) || Files.isSymbolicLink(current)) {
+                            throw ExternalFolderException("UNAVAILABLE", "共用分支工作区不存在或经过符号链接")
+                        }
+                    }
+                    path.toFile()
+                }
                 else -> throw ExternalFolderException("UNSUPPORTED", "未知的工作区类型")
             }
             SessionWorkspace.Directory(workspace, root)
@@ -88,6 +117,7 @@ class SessionWorkspaceResolver(
         WorkspaceEntity.KIND_LINUX_HOME -> com.promenar.nexara.data.storage.LinuxHomeExternalFolderBackend(requireNotNull(linuxHome).files) {
             runCatching { linuxHome?.root(directory.workspace.location) == directory.root }.getOrDefault(false)
         }
+        com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.KIND -> requireNotNull(branchWorktreeResolver).backend(directory)
         else -> projectBackend(directory.root)
     }
 
@@ -97,7 +127,7 @@ class SessionWorkspaceResolver(
 
         fun kindOf(workspace: SessionWorkspace): String = when (workspace) {
             // 现有内置 git 只识别 private/project/shared；Linux 主目录使用私有目录的执行兼容配置。
-            is SessionWorkspace.Directory -> if (workspace.kind == WorkspaceEntity.KIND_LINUX_HOME) WorkspaceEntity.KIND_PROJECT else workspace.kind
+            is SessionWorkspace.Directory -> if (workspace.kind == WorkspaceEntity.KIND_LINUX_HOME || workspace.kind == com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.KIND || workspace.kind == "branch_shared") WorkspaceEntity.KIND_PROJECT else workspace.kind
             is SessionWorkspace.Unavailable -> workspace.workspace?.kind ?: KIND_PRIVATE
             SessionWorkspace.Private -> KIND_PRIVATE
         }

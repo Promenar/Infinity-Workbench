@@ -130,7 +130,8 @@ class DefaultChatGenerationContentStrategy(
     ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
         // 工作区切换提示只供界面展示；当前工作区由系统提示词说明。
-        val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds || it.isWorkspaceSwitchNotice }
+        val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds || it.isWorkspaceSwitchNotice ||
+            com.promenar.nexara.data.branch.SessionMessageStore.isInternal(it.name) || com.promenar.nexara.data.branch.SessionMessageStore.isTimelineRecord(it.name) }
         val currentStart = visibleMessages.indexOfFirst {
             it.id == pinnedUserMessageId && it.role == MessageRole.USER
         }

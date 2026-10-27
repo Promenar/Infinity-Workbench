@@ -5,6 +5,8 @@ import com.promenar.nexara.data.exec.BuiltinCommandRunner
 import com.promenar.nexara.data.exec.BuiltinExecEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -117,9 +119,13 @@ class GitInspector(
                 return@withContext GitInspectResult.Failure(GitInspectError.CommandFailed(null, "无法创建临时目录"))
             }
             val argv = listOf(runtime.launcher.path, "-m", MODULE, FLAG, operation, "--output", output.path, "--repo", target.root.path) + args
-            val result = runner.run(
-                GitInspectCommand(argv, target.root, runtime.environment(target.root, target.kind), timeoutSeconds),
-            )
+            val environment = runtime.environment(target.root, target.kind).toMutableMap()
+            // 仅装配点可提供映射，不从仓库配置、模型输出或执行环境继承。
+            environment.remove("NEXARA_GIT_LINUX_PATH_MAP")
+            target.linuxPathMappings?.let { mappings ->
+                environment["NEXARA_GIT_LINUX_PATH_MAP"] = JsonObject(mappings.mapValues { JsonPrimitive(it.value) }).toString()
+            }
+            val result = runner.run(GitInspectCommand(argv, target.root, environment, timeoutSeconds))
             when {
                 result.timedOut -> GitInspectResult.Failure(GitInspectError.TimedOut)
                 result.exitCode != 0 -> GitInspectResult.Failure(GitInspectError.CommandFailed(result.exitCode, result.stderr.takeLast(DETAIL_LIMIT)))
