@@ -10,6 +10,19 @@ import org.junit.Test
 
 class GenerationPresentationStoreTest {
     @Test
+    fun `待回答保留流式展示但释放生成状态`() = runTest {
+        val store = GenerationPresentationStore()
+        store.begin("A", "task-A")
+        store.port("A", "task-A").setStreamingContent("请选择方案")
+
+        store.accept("A", "task-A", GenerationEvent.PhaseChanged(com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT))
+
+        assertThat(store.observe("A").value?.generating).isFalse()
+        assertThat(store.observe("A").value?.streamingContent).isEqualTo("请选择方案")
+        assertThat(store.observe("A").value?.phase).isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT)
+    }
+
+    @Test
     fun `失败事件只保存结构化failure且保留诊断引用`() = runTest {
         val store = GenerationPresentationStore()
         store.begin("A", "task-A")

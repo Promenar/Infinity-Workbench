@@ -69,9 +69,58 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test fun `提问事务返回时取消也关闭已创建的待回答状态`() = runTest {
+        val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
+        coEvery { ledger.consumeResumption(any(), any()) } returns false
+        coEvery { ledger.cancel("skills-session") } returns emptyList()
+        coEvery { ledger.createBatch(any(), any(), any(), any()) } coAnswers {
+            kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.cancel()
+            com.promenar.nexara.data.repository.AskUserBatchResult(null, emptyList())
+        }
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog, toolNames = listOf("ask_user"), askLedger = ledger)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        val task = kotlinx.coroutines.CoroutineScope(coroutineContext).launch {
+            fixture.runtime.handleTools(fixture.request, listOf(GenerationToolCall("q", "ask_user", "{}")))
+        }
+        task.join()
+
+        assertThat(task.isCancelled).isTrue()
+        coVerify(exactly = 1) { ledger.cancel("skills-session") }
+        coVerify(exactly = 0) { fixture.executor.executeTools(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `预算拒绝首个回答续跑回合前消费恢复标记`() = runTest {
+        val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
+        coEvery { ledger.consumeResumption(any(), any()) } returns true
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog, askLedger = ledger)
+        val call = GenerationToolCall("limited", "read_file", "{}")
+
+        fixture.runtime.rejectToolCalls(fixture.request, listOf(call), "工具预算已耗尽")
+
+        io.mockk.coVerifyOrder {
+            ledger.consumeResumption("skills-session", "assistant")
+            fixture.executor.rejectTools("skills-session", "assistant", any(), "工具预算已耗尽")
+        }
+    }
+
+    @Test fun `回答续跑准备阶段不能消费持久化恢复标记`() = runTest {
+        val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
+        coEvery { ledger.consumeResumption(any(), any()) } returns true
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
+        val fixture = skillsFixture(catalog, askLedger = ledger)
+        fixture.runtime.prepare(fixture.request)
+        coVerify(exactly = 0) { ledger.consumeResumption(any(), any()) }
+    }
     private fun discoveredSkill(name: String, scope: com.promenar.nexara.data.skills.SkillScope = com.promenar.nexara.data.skills.SkillScope.USER) =
         com.promenar.nexara.data.skills.DiscoveredSkill(
             "${scope.name}:$name", scope, name, "Description $name", null, null,
@@ -84,6 +133,8 @@ class DefaultChatGenerationRuntimeTest {
         val request: GenerationRequest,
         val prompts: List<String>,
         val toolThreads: List<Thread> = emptyList(),
+        val executor: ToolExecutor,
+        val store: ChatStore,
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -95,6 +146,7 @@ class DefaultChatGenerationRuntimeTest {
         content: String = "使用 \$demo",
         contextBuilder: ContextBuilder = ContextBuilder(),
         stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
+        askLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
     ): SkillsFixture {
         val settings = mockk<SharedPreferences> {
             every { getInt(any(), any()) } answers { secondArg() }
@@ -125,14 +177,49 @@ class DefaultChatGenerationRuntimeTest {
                 listOf(com.promenar.nexara.data.remote.protocol.ProtocolMessage(role = "system", content = prompt))
             }
         }
+        val executor = mockk<ToolExecutor>(relaxed = true)
         val runtime = DefaultChatGenerationRuntime(
             settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
             AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder, mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), mockk(relaxed = true),
+            contextBuilder, mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), executor,
             mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
             stateBoardRepository = stateBoardRepository,
+            askUserLedger = askLedger,
         )
-        return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads)
+        return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads, executor, store)
+    }
+
+    @Test fun `无界面不广告提问且误调用返回工具错误继续生成`() = runTest {
+        val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
+        coEvery { ledger.consumeResumption(any(), any()) } returns false
+        coEvery { ledger.createBatch(any(), any(), any(), null) } returns com.promenar.nexara.data.repository.AskUserBatchResult(null,
+            listOf(Message("failure", MessageRole.TOOL, """{"status":"error","error":"ASK_USER_UNAVAILABLE"}""", toolCallId = "q")))
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
+        val fixture = skillsFixture(catalog, toolNames = listOf("ask_user", "calculator"), askLedger = ledger)
+        val request = fixture.request.copy(interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.HEADLESS)
+        assertThat(fixture.runtime.buildContext(request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        assertThat(fixture.runtime.knownToolNames(request)).containsExactly("calculator")
+        fixture.prompts.forEach { assertThat(it).doesNotContain("ask_user") }
+        assertThat(fixture.runtime.handleTools(request, listOf(GenerationToolCall("q", "ask_user", "{}"))))
+            .isEqualTo(GenerationToolDecision.CONTINUE)
+        coVerify(exactly = 1) { ledger.createBatch(any(), any(), any(), null) }
+    }
+
+    @Test fun `提问批次绕开审批和执行器并返回等待输入`() = runTest {
+        val pending = com.promenar.nexara.domain.ask.PendingQuestion("skills-session", "assistant", "q",
+            com.promenar.nexara.domain.ask.AskUserRequest(listOf(com.promenar.nexara.domain.ask.AskUserQuestion("方案", "选哪个？", options = listOf(
+                com.promenar.nexara.domain.ask.AskUserOption("甲"), com.promenar.nexara.domain.ask.AskUserOption("乙"))))))
+        val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
+        coEvery { ledger.consumeResumption(any(), any()) } returns false
+        coEvery { ledger.createBatch(any(), any(), any(), any()) } returns com.promenar.nexara.data.repository.AskUserBatchResult(pending, emptyList())
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
+        val fixture = skillsFixture(catalog, toolNames = listOf("ask_user", "shell_exec"), askLedger = ledger)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        val calls = listOf(GenerationToolCall("before", "shell_exec", "{}"), GenerationToolCall("q", "ask_user", "{}"), GenerationToolCall("after", "shell_exec", "{}"))
+        assertThat(fixture.runtime.handleTools(fixture.request, calls)).isEqualTo(GenerationToolDecision.WAIT_FOR_INPUT)
+        assertThat(fixture.store.getSession("skills-session")!!.loopStatus).isEqualTo(com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_INPUT)
+        coVerify(exactly = 0) { fixture.executor.executeTools(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 1) { ledger.createBatch("skills-session", "assistant", match { it.map { call -> call.id } == listOf("before", "q", "after") }, any()) }
     }
 
     @Test fun `工具续轮新助手继承请求所见状态版本而不是重新读取最新值`() = runTest {

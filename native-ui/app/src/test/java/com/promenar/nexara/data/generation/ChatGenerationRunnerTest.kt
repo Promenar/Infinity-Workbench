@@ -159,6 +159,26 @@ class ChatGenerationRunnerTest {
     }
 
     @Test
+    fun `等待用户回答时flush并停在等待阶段`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.ToolCall("tool-1", "ask_user", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("tool-1")),
+            ),
+        )).apply { toolDecisions += GenerationToolDecision.WAIT_FOR_INPUT }
+        val events = mutableListOf<GenerationEvent>()
+
+        ChatGenerationRunner(runtime).run(request(), events::add)
+
+        assertThat(events.phases().takeLast(2))
+            .containsExactly(GenerationPhase.EXECUTING_TOOLS, GenerationPhase.WAITING_INPUT).inOrder()
+        assertThat(runtime.flushCount).isEqualTo(1)
+        assertThat(runtime.terminals).isEmpty()
+        assertThat(runtime.resourceReleases).containsExactly(true)
+        assertThat(runtime.flushCountsAtRelease).containsExactly(1)
+    }
+
+    @Test
     fun `已有部分文本后收到Failure仍落ERROR且不进入完成态`() = runTest {
         val streamFailure = GenerationFailure(
             code = GenerationFailureCode.TIMEOUT,

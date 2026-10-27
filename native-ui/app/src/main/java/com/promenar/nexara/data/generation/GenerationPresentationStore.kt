@@ -99,6 +99,7 @@ class GenerationPresentationStore {
                         GenerationPhase.CANCELLED,
                         GenerationPhase.PERSISTENCE_FAILED,
                         GenerationPhase.WAITING_APPROVAL,
+                        GenerationPhase.WAITING_INPUT,
                     ),
                 )
                 is GenerationEvent.SnapshotChanged -> current.copy(

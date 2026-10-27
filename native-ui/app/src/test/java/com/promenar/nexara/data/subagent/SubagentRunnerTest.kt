@@ -25,6 +25,18 @@ import org.junit.Test
 
 /** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
+    @Test fun `子代理隐藏提问工具并对误调用返回可继续的结构化错误`() = runTest {
+        val host = FakeHost(listOf(read, tool("ask_user", ToolRisk.SAFE_READ)))
+        val models = ScriptedModels(listOf(toolCall("q", "ask_user", "{}")), listOf(text("按默认方案完成")))
+        val result = runner(models, host).run(parent(), session("full_access"), "step", run(), null) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        assertThat(host.executed).isEmpty()
+        assertThat(models.requests.all { it.tools.none { tool -> tool.function.name == "ask_user" } }).isTrue()
+        val failure = kotlinx.serialization.json.Json.parseToJsonElement(models.requests.last().messages.last().content!!)
+            as kotlinx.serialization.json.JsonObject
+        assertThat(failure["error"].toString()).isEqualTo("\"ASK_USER_UNAVAILABLE\"")
+        assertThat(failure["suggestion"].toString()).contains("合理默认")
+    }
     @Test
     fun `生产子代理以父会话步骤和索引派生稳定身份并覆盖工具续轮`() = kotlinx.coroutines.runBlocking {
         com.promenar.nexara.data.remote.SessionHeaderWiringEndpoint().use { endpoint ->

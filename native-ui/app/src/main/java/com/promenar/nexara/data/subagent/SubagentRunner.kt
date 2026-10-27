@@ -180,6 +180,11 @@ class SubagentRunner(
         event: suspend (SubagentEvent.Kind, String, String?, Boolean, Boolean) -> Unit,
     ): CallOutcome {
         event(SubagentEvent.Kind.TOOL_CALL, call.arguments, call.name, false, false)
+        if (call.name == com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME) {
+            val message = com.promenar.nexara.ui.chat.manager.AskUserProtocol.unavailable()
+            event(SubagentEvent.Kind.TOOL_RESULT, message, call.name, true, true)
+            return CallOutcome.Result(message)
+        }
         val tool = tools.singleOrNull { it.function.name == call.name }
         if (tool == null) {
             val available = tools.map { it.function.name }.sorted()

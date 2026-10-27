@@ -55,6 +55,9 @@ data class ToolExecutionLedgerEntity(
 )
 
 enum class ToolLedgerStatus {
+    WAITING_INPUT,
+    /** 回答及续跑消息已落盘，等待续跑首个完整回合或终态落盘。 */
+    INPUT_ANSWERED,
     PENDING_APPROVAL,
     APPROVED,
     RUNNING,

@@ -28,6 +28,7 @@ class GenerationForegroundDecisionTest {
     fun `等待审批终态持久化失败与空状态都停止前台服务`() {
         val stoppingPhases = listOf(
             GenerationPhase.WAITING_APPROVAL,
+            GenerationPhase.WAITING_INPUT,
             GenerationPhase.COMPLETED,
             GenerationPhase.FAILED,
             GenerationPhase.CANCELLED,

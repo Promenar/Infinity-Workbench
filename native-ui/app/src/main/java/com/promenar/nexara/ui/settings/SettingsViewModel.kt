@@ -680,6 +680,7 @@ class SettingsViewModel(
         _skills.value = listOf(
             SkillInfo("web_search", app.getString(R.string.skill_web_search), app.getString(R.string.skill_web_search_desc), enabledSet?.contains("web_search") ?: true),
             SkillInfo("view_media", app.getString(R.string.skill_view_media), app.getString(R.string.skill_view_media_desc), BuiltinToolPreferences.isEnabled(prefs, "view_media")),
+            SkillInfo("ask_user", app.getString(R.string.ask_user_tool_name), app.getString(R.string.ask_user_tool_description), BuiltinToolPreferences.isEnabled(prefs, "ask_user")),
             SkillInfo("web_fetch", app.getString(R.string.skill_web_fetch), app.getString(R.string.skill_web_fetch_desc), enabledSet?.contains("web_fetch") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
             SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true),

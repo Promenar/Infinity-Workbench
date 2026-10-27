@@ -465,6 +465,8 @@ class ChatGenerationRunner(
                         resultsCommitted = true
                         if (result == GenerationToolDecision.WAIT_FOR_APPROVAL) {
                             phase(GenerationPhase.WAITING_APPROVAL)
+                        } else if (result == GenerationToolDecision.WAIT_FOR_INPUT) {
+                            phase(GenerationPhase.WAITING_INPUT)
                         }
                     }
                 }
@@ -501,7 +503,7 @@ class ChatGenerationRunner(
                         resultsCommitted = false
                         snapshot = persist(request, snapshot, emit)
                     }
-                    GenerationToolDecision.WAIT_FOR_APPROVAL -> {
+                    GenerationToolDecision.WAIT_FOR_APPROVAL, GenerationToolDecision.WAIT_FOR_INPUT -> {
                         withContext(NonCancellable) {
                             try {
                                 flushOnce()

@@ -70,6 +70,132 @@ private const val BACKGROUND_SERVICE_STOPPED_MESSAGE = "background service stopp
 @RunWith(RobolectricTestRunner::class)
 @Config(application = TestNexaraApplication::class, sdk = [33])
 class ChatViewModelTest {
+    private suspend fun TestScope.seedAskUser(id: String = "ask-vm"): com.promenar.nexara.domain.ask.PendingQuestion {
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val call = ToolCall("$id-call", "ask_user", """{"questions":[{"header":"方案","question":"选哪个？","options":[{"label":"甲"},{"label":"乙"}]}]}""")
+        val user = Message("$id-user", MessageRole.USER, "处理任务", createdAt = 1)
+        val assistant = Message("$id-assistant", MessageRole.ASSISTANT, "", parentMessageId = user.id, toolCalls = listOf(call), createdAt = 2)
+        val session = Session(id, "a1", modelId = "gpt-4o", workspaceRootUuid = "test-workspace-root", workspacePath = "/test/workspace", messages = listOf(user, assistant))
+        app.database.sessionDao().insert(session.toEntity())
+        app.database.messageDao().insert(user.toEntity(id))
+        app.database.messageDao().insert(assistant.toEntity(id))
+        val tool = com.promenar.nexara.ui.chat.manager.AskUserTool()
+        val pending = app.askUserLedger.createBatch(id, assistant.id, listOf(call),
+            com.promenar.nexara.data.remote.protocol.ProtocolTool(function = ProtocolToolFunction(tool.name, tool.description, tool.parametersSchema),
+                runtimeToolId = tool.runtimeToolId, sourceId = tool.sourceId, risk = tool.risk)).pending!!
+        val restored = app.database.sessionDao().getById(id)!!.toDomain().copy(messages = listOf(user, assistant))
+        savedSessions += restored
+        savedMessages += listOf(user to id, assistant to id)
+        app.chatStore.upsertSession(restored)
+        viewModel.loadSession(id)
+        awaitReal { viewModel.pendingQuestion.value == pending }
+        return pending
+    }
+
+    @Test fun `待回答接口拒绝非法过期与重复回答并只续跑一次`() = runTest {
+        val question = seedAskUser()
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(viewModel.answerQuestion(question.copy(toolCallId = "stale"), com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isFalse()
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(mapOf("未知" to listOf("甲"))))).isFalse()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("回答已收到"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(other = "自由回答"))).isTrue()
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isFalse()
+        awaitReal { protocolRequestCount == 1 && !viewModel.uiState.value.isGenerating }
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(viewModel.pendingQuestion.value).isNull()
+        assertThat(lastPromptRequest!!.messages.first { it.role == "tool" && it.toolCallId == question.toolCallId }.content).contains("自由回答")
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isFalse()
+    }
+
+    @Test fun `待回答保存失败通过错误通道提示且可重试`() = runTest {
+        val question = seedAskUser()
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        app.database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_vm_answer BEFORE INSERT ON messages WHEN NEW.role = 'tool' BEGIN SELECT RAISE(ABORT, 'test write failure'); END")
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isTrue()
+        awaitReal { viewModel.uiState.value.error != null }
+        assertThat(viewModel.uiState.value.error).isNotNull()
+        assertThat(viewModel.pendingQuestion.value).isEqualTo(question)
+        app.database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_vm_answer")
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isTrue()
+        awaitReal { viewModel.pendingQuestion.value == null }
+    }
+
+    @Test fun `切换会话隔离待回答状态并可从数据库还原`() = runTest {
+        val first = seedAskUser("ask-one")
+        val second = seedAskUser("ask-two")
+        assertThat(viewModel.pendingQuestion.value).isEqualTo(second)
+        assertThat(viewModel.answerQuestion(first, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isFalse()
+        viewModel.loadSession("ask-one")
+        awaitReal { viewModel.pendingQuestion.value == first }
+        assertThat(viewModel.pendingQuestion.value).isEqualTo(first)
+    }
+
+    @Test fun `停止待回答清除问题并将工具调用以失败收口`() = runTest {
+        val question = seedAskUser()
+        viewModel.stopGeneration()
+        awaitReal { viewModel.pendingQuestion.value == null }
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        assertThat(app.database.messageDao().getBySession(question.sessionId).first { it.toolCallId == question.toolCallId && it.role == "tool" }.content)
+            .contains("用户未回答并停止了本轮")
+        assertThat(protocolRequestCount).isEqualTo(0)
+    }
+
+    @Test fun `停止清理获得准备锁后取消刚登记的回答续跑`() = runTest {
+        seedSession(messages = listOf(
+            Message("resume-user", MessageRole.USER, "处理任务"),
+            Message("ask_resume_test", MessageRole.ASSISTANT, "", parentMessageId = "resume-user"),
+        ))
+        advanceUntilIdle()
+        val preparation = ChatViewModel::class.java.getDeclaredField("sendPreparationMutex").run {
+            isAccessible = true
+            get(viewModel) as kotlinx.coroutines.sync.Mutex
+        }
+        val cleaned = CompletableDeferred<Unit>()
+        beforeSshClose = { cleaned.complete(Unit) }
+        holdStreamOpen = true
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("正在续跑"))
+        preparation.lock()
+        try {
+            viewModel.stopGeneration()
+            generationCoordinator.start(com.promenar.nexara.domain.generation.GenerationRequest(
+                "s1", "ask_resume_test", "resume-user", "处理任务", emptyList(),
+                com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            ))
+            awaitReal { protocolRequestCount == 1 }
+            ApplicationProvider.getApplicationContext<NexaraApplication>().chatStore.updateSession("s1") {
+                it.copy(loopStatus = LoopStatus.RUNNING)
+            }
+        } finally {
+            preparation.unlock()
+        }
+        awaitReal { cleaned.isCompleted && generationCoordinator.active.value == null }
+
+        assertThat(cleaned.isCompleted).isTrue()
+        assertThat(providerCancelled).isTrue()
+        assertThat(generationCoordinator.active.value).isNull()
+    }
+
+    @Test fun `回答续跑持久化失败后重新打开会话可以重试且不循环`() = runTest {
+        val question = seedAskUser()
+        failQuestionMessageUpdate = true
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("回答已收到"), StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        assertThat(viewModel.answerQuestion(question, com.promenar.nexara.domain.ask.AskUserAnswer(skipped = true))).isTrue()
+        awaitReal { generationCoordinator.observe(question.sessionId).value?.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED }
+        assertThat(generationCoordinator.observe(question.sessionId).value?.phase)
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(protocolRequestCount).isEqualTo(1)
+
+        failQuestionMessageUpdate = false
+        seedSession("other-session")
+        advanceUntilIdle()
+        viewModel.loadSession(question.sessionId)
+        awaitReal { protocolRequestCount == 2 && generationCoordinator.active.value == null }
+
+        assertThat(protocolRequestCount).isEqualTo(2)
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        assertThat(app.askUserLedger.resumption(question.sessionId)).isNull()
+        assertThat(app.database.messageDao().getBySession(question.sessionId).count { it.role == "tool" && it.toolCallId == question.toolCallId }).isEqualTo(1)
+    }
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var viewModel: ChatViewModel
@@ -86,6 +212,7 @@ class ChatViewModelTest {
     private lateinit var recoveryStore: com.promenar.nexara.data.chat.queue.ComposerDraftRecoveryStore
     private var streamGate: CompletableDeferred<List<StreamChunk>>? = null
     private lateinit var generationScope: CoroutineScope
+    private lateinit var generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator
     private lateinit var compactionService: com.promenar.nexara.data.generation.ContextCompactionService
     private var contextEstimateFails = false
     private var compactionOperation: suspend (String) -> com.promenar.nexara.data.generation.ContextCompactionResult = {
@@ -230,6 +357,7 @@ class ChatViewModelTest {
     private val deletedMessages = mutableListOf<String>()
     private var failScopedDelete = false
     private var failSessionUpdate: Throwable? = null
+    private var failQuestionMessageUpdate = false
     private var afterInsert: suspend (Message, String) -> Unit = { _, _ -> }
     private val sshLeases = linkedSetOf<String>()
     private val pausedSshOwners = linkedSetOf<String>()
@@ -295,6 +423,7 @@ class ChatViewModelTest {
         }
 
         override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
+            if (failQuestionMessageUpdate && messageId.startsWith("ask_resume_")) throw java.io.IOException("test write failure")
             val index = savedMessages.indexOfFirst { it.first.id == messageId }
             if (index != -1) {
                 val (msg, sid) = savedMessages[index]
@@ -682,6 +811,7 @@ class ChatViewModelTest {
         fakeStreamChunks = emptyList()
         failScopedDelete = false
         failSessionUpdate = null
+        failQuestionMessageUpdate = false
         afterInsert = { _, _ -> }
         sshLeases.clear()
         pausedSshOwners.clear()
@@ -766,8 +896,9 @@ class ChatViewModelTest {
             toolBuildDispatcher = testDispatcher,
             composerQueueStore = queuePort,
             skillCatalog = slashSkillCatalog,
+            askUserLedger = app.askUserLedger,
         )
-        val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
+        generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
             runnerFactory = runnerFactory,
             presentationStore = presentationStore,
@@ -836,6 +967,8 @@ class ChatViewModelTest {
                     com.promenar.nexara.R.string.chat_context_compress_unavailable_generating -> "generating"
                     com.promenar.nexara.R.string.chat_message_edit_failed -> "message edit failed"
                     com.promenar.nexara.R.string.legacy_root_marker_workspace_unavailable -> "工作区不可用，可继续对话"
+                    com.promenar.nexara.R.string.ask_user_answer_failed -> "回答保存失败，请重试"
+                    com.promenar.nexara.R.string.ask_user_resume_failed -> "回答已保存，重新打开会话续跑"
                     else -> error("unexpected string resource: $resourceId")
                 }
             },

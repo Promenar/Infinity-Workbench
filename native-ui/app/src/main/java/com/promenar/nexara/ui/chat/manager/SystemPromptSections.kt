@@ -84,6 +84,9 @@ object SystemPromptSections {
         appendLine("- Independent calls may be issued together in one turn; calls that depend on earlier results must wait for those results.")
         appendLine("- Every tool result comes back to you. If a call fails, read the error, fix the arguments or choose another tool, and retry; after repeated failures, explain the problem to the user.")
         appendLine("- Some tools need user approval before they run. If a call is rejected, do not repeat it; continue without it or ask the user.")
+        if (com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME in toolNames) {
+            appendLine("- 只有用户才能决定的分歧使用 ask_user 集中提问；能从上下文或合理默认推断的事项不要询问。ask_user 必须单独调用，同批其它调用全部不执行；回答或跳过后按需重新调用。")
+        }
         if (toolNames.any { it.startsWith("schedule_") }) {
             appendLine()
             appendLine("### 定时任务")

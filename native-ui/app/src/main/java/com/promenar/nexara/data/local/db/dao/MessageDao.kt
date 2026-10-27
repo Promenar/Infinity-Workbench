@@ -144,6 +144,9 @@ interface MessageDao {
     @Query("UPDATE messages SET pending_approval_tool_ids = :pendingApprovalToolIds WHERE id = :messageId")
     suspend fun updatePendingApprovalToolIds(messageId: String, pendingApprovalToolIds: String?): Int
 
+    @Query("UPDATE messages SET tool_calls = :toolCalls WHERE id = :messageId AND session_id = :sessionId")
+    suspend fun updateQuestionToolCalls(sessionId: String, messageId: String, toolCalls: String): Int
+
     @Query(
         """UPDATE messages
            SET tool_calls = :toolCalls,

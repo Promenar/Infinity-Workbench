@@ -329,6 +329,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         StartupGuardedToolLedger(ToolExecutionLedgerRepository(database))
     }
 
+    val askUserLedger by lazy {
+        com.promenar.nexara.data.repository.AskUserLedgerRepository(database, sessionExecutionGate)
+    }
+
     val localInferenceRuntimeGate: LocalInferenceRuntimeGate by lazy {
         LocalInferenceRuntimeGate.fromBuildConfig()
     }
@@ -634,6 +638,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)
             },
             closePendingExecution = { sessionId ->
+                askUserLedger.cancelForDeletion(sessionId)
                 database.toolExecutionLedgerDao().cancelOpenForSession(
                     sessionId,
                     "会话已进入删除事务",
@@ -830,7 +835,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 startup = startupState, store = chatStore,
                 findSession = ::loadGenerationSession,
                 exists = { id -> database.sessionDao().getById(id) != null },
-                hasApproval = { database.sessionDao().hasPendingApproval() },
+                hasApproval = { database.sessionDao().hasPendingUserInteraction() },
                 messages = generationMessageManager, coordinator = generationCoordinator,
                 foreground = generationForegroundController, interactions = generationInteractions,
                 executionGate = sessionExecutionGate,
@@ -1052,6 +1057,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             stateBoardRepository = stateBoardRepository,
             runModeCheck = ::checkSessionRunMode,
             linuxFiles = linuxSessionFiles,
+            askUserLedger = askUserLedger,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1446,6 +1452,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             startupDiagnosticTools(startupIssueManager).forEach(::register)
             com.promenar.nexara.ui.chat.manager.skills.longTermMemoryTools(longTermMemoryRepository, longTermMemoryAccess).forEach(::register)
             register(CalculatorSkill())
+            register(com.promenar.nexara.ui.chat.manager.AskUserTool())
             register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
             })
@@ -1789,6 +1796,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                                 // 未知外部副作用不能重放，原有台账恢复语义保留。
                                 toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
                                 toolExecutionLedger.recoverApprovalState()
+                                askUserLedger.recoverAnsweredState()
                             }
                         }
                     },
@@ -1814,6 +1822,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                                 StartupSubsystem.TOOL_LEDGER -> withContext(Dispatchers.IO) {
                                     toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
                                     toolExecutionLedger.recoverApprovalState()
+                                    askUserLedger.recoverAnsweredState()
                                 }
                                 StartupSubsystem.VECTOR_QUEUE -> withContext(Dispatchers.IO) { vectorizationQueue.resumeInterruptedTasks().getOrThrow() }
                                 else -> throw failure
@@ -1928,6 +1937,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         prepared: PreparedStartupWriters,
     ): List<StartupWriterRegistration> {
         return listOfNotNull(
+            jobRegistration(prepared) {
+                generationScope.launch(start = CoroutineStart.LAZY) {
+                    com.promenar.nexara.background.generation.AskUserNotifications(
+                        this@NexaraApplication, askUserLedger, sessionOpenIntentFactory,
+                    ).observe()
+                }
+            },
             prepared.processObserver?.let { observer ->
                 reversibleRegistration(
                     register = { ProcessLifecycleOwner.get().lifecycle.addObserver(observer) },

@@ -102,7 +102,7 @@ object SubagentLimits {
     const val APPROVAL_TIMEOUT_MS = 10 * 60_000L
     const val TOOL_NAME = "agent_task"
     /** 子代理只交回文本，看不到媒体，排除查看媒体的工具以免据此编造内容。 */
-    private val EXCLUDED_TOOLS = setOf(TOOL_NAME, "view_media")
+    private val EXCLUDED_TOOLS = setOf(TOOL_NAME, "view_media", com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME)
 
     /** 子代理不能再派生子代理，也不能改动父会话的计划等内部状态。 */
     fun toolset(parentTools: List<ProtocolTool>, profile: SubagentToolProfile): List<ProtocolTool> = parentTools.filter { tool ->
