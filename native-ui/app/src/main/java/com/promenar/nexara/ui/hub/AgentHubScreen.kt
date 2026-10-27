@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.hub
 
+import androidx.compose.animation.Crossfade
+import com.promenar.nexara.domain.generation.GenerationPhase
+import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
+import com.promenar.nexara.ui.common.GenerationDots
 import com.promenar.nexara.ui.theme.NexaraMotion
 
 import androidx.compose.runtime.key
@@ -95,6 +99,8 @@ fun AgentHubScreen(
     val agents by viewModel.agents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val allSessions by sessionListViewModel.sessions.collectAsState()
+    val activeGeneration by (context.applicationContext as com.promenar.nexara.NexaraApplication)
+        .generationCoordinator.active.collectAsState()
     val sessionsByAgent = remember(allSessions) {
         allSessions.groupBy { it.agentId }
     }
@@ -116,6 +122,7 @@ fun AgentHubScreen(
         pendingDeleteAgentId = agentToDelete,
         pendingDeleteSessionId = pendingDeleteSessionId,
         sessionsByAgent = sessionsByAgent,
+        sessionActivity = hubSessionActivities(activeGeneration),
     )
     val actions = AgentHubScreenActions(
         onSearch = viewModel::updateSearchQuery,
@@ -364,7 +371,22 @@ internal data class AgentHubScreenState(
     val pendingDeleteAgentId: String? = null,
     val pendingDeleteSessionId: String? = null,
     val sessionsByAgent: Map<String, List<Session>> = emptyMap(),
+    /** 正在生成或等待批准的会话，列表行以此替换时间显示状态。 */
+    val sessionActivity: Map<String, HubSessionActivity> = emptyMap(),
 )
+
+internal enum class HubSessionActivity { GENERATING, AWAITING_APPROVAL }
+
+/** 应用级生成任务投影到会话列表：进行中标为生成中，等待批准单独标出，已结束的不标。 */
+internal fun hubSessionActivities(active: GenerationTaskSnapshot?): Map<String, HubSessionActivity> {
+    val phase = active?.phase ?: return emptyMap()
+    val activity = when (phase) {
+        GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.CANCELLED, GenerationPhase.PERSISTENCE_FAILED -> return emptyMap()
+        GenerationPhase.WAITING_APPROVAL -> HubSessionActivity.AWAITING_APPROVAL
+        else -> HubSessionActivity.GENERATING
+    }
+    return mapOf(active.sessionId to activity)
+}
 
 internal data class AgentHubScreenActions(
     val onSearch: (String) -> Unit = {},
@@ -555,6 +577,7 @@ internal fun AgentHubScreenContent(
                                 modifier = Modifier.animateItem(),
                                 title = stringResource(R.string.hub_section_pinned),
                                 entries = sections.pinnedSessions,
+                                activity = state.sessionActivity,
                                 actions = actions,
                             )
                         }
@@ -565,6 +588,7 @@ internal fun AgentHubScreenContent(
                                 modifier = Modifier.animateItem(),
                                 title = stringResource(if (searching) R.string.hub_section_sessions else R.string.hub_section_recent),
                                 entries = sections.sessions,
+                                activity = state.sessionActivity,
                                 actions = actions,
                             )
                         }
@@ -596,6 +620,7 @@ internal fun AgentHubScreenContent(
                                         HubAgentSessions(
                                             agentId = agentId,
                                             sessions = state.sessionsByAgent[agentId].orEmpty(),
+                                            activity = state.sessionActivity,
                                             actions = actions,
                                         )
                                     }
@@ -615,6 +640,7 @@ internal fun AgentHubScreenContent(
 private fun HubSessionSection(
     title: String,
     entries: List<HubSessionEntry>,
+    activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
     modifier: Modifier = Modifier,
 ) {
@@ -631,6 +657,7 @@ private fun HubSessionSection(
                     HubSessionRow(
                         session = entry.session,
                         subtitle = entry.agentTitle,
+                        activity = activity[sessionId],
                         onOpen = { actions.onOpenChat(sessionId) },
                         onTogglePin = { actions.onToggleSessionPin(sessionId) },
                         onRequestDelete = { actions.onRequestDeleteSession(sessionId) },
@@ -722,6 +749,7 @@ private fun HubNewChatAction(
 private fun HubSessionRow(
     session: Session,
     subtitle: String?,
+    activity: HubSessionActivity?,
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
     onRequestDelete: () -> Unit,
@@ -732,6 +760,7 @@ private fun HubSessionRow(
     val pinLabel = stringResource(if (session.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin)
     val deleteLabel = stringResource(R.string.shared_btn_delete)
     val pinnedState = stringResource(R.string.sessions_tag_pinned)
+    val activityState = activity?.let { stringResource(if (it == HubSessionActivity.GENERATING) R.string.chat_cd_generating_response else R.string.hub_session_awaiting_approval) }
     val time = remember(session.updatedAt) {
         formatHubSessionTime(session.updatedAt, System.currentTimeMillis())
     }
@@ -742,7 +771,8 @@ private fun HubSessionRow(
             modifier = Modifier
                 .testTag(tag)
                 .semantics {
-                    if (session.isPinned) stateDescription = pinnedState
+                    listOfNotNull(pinnedState.takeIf { session.isPinned }, activityState)
+                        .takeIf { it.isNotEmpty() }?.let { stateDescription = it.joinToString("，") }
                     customActions = listOf(
                         CustomAccessibilityAction(pinLabel) { onTogglePin(); true },
                         CustomAccessibilityAction(deleteLabel) { onRequestDelete(); true },
@@ -765,12 +795,27 @@ private fun HubSessionRow(
                         )
                         Spacer(Modifier.width(NexaraSpacing.XSmall))
                     }
-                    Text(
-                        text = time,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
+                    // 生成中以三点波浪、等待批准以文字替换时间，回到首页一眼看出哪个会话还在跑。
+                    Crossfade(targetState = activity, label = "hub_session_activity") { current ->
+                        when (current) {
+                            HubSessionActivity.GENERATING -> GenerationDots(
+                                dotSize = 5.dp, gap = 4.dp, lift = 3.dp,
+                                modifier = Modifier.testTag(UiTags.hubSessionGenerating(tag)),
+                            )
+                            HubSessionActivity.AWAITING_APPROVAL -> Text(
+                                text = stringResource(R.string.hub_session_awaiting_approval),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                maxLines = 1,
+                            )
+                            null -> Text(
+                                text = time,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
             },
         )
@@ -903,6 +948,7 @@ private val HubNestedIndent = 40.dp + NexaraSpacing.Medium
 private fun HubAgentSessions(
     agentId: String,
     sessions: List<Session>,
+    activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
 ) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))) {
@@ -923,6 +969,7 @@ private fun HubAgentSessions(
             HubSessionRow(
                 session = session,
                 subtitle = null,
+                activity = activity[session.id],
                 onOpen = { actions.onOpenChat(session.id) },
                 onTogglePin = { actions.onToggleSessionPin(session.id) },
                 onRequestDelete = { actions.onRequestDeleteSession(session.id) },

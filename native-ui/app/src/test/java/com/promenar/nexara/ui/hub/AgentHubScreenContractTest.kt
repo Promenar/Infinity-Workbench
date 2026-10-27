@@ -144,7 +144,7 @@ class AgentHubScreenContractTest {
         val source = hubSource.readText()
 
         assertThat(source).contains("PushPin")
-        assertThat(source).contains("stateDescription = pinnedState")
+        assertThat(source).contains("pinnedState.takeIf { session.isPinned }")
         assertThat(source).contains("R.string.sessions_tag_pinned).takeIf { agent.isPinned }")
     }
 }

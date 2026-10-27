@@ -122,6 +122,8 @@ object UiTags {
     fun hubNewChatAgent(agentId: String): String = "hub_new_chat_agent:$agentId"
     fun hubSession(sessionId: String): String = "hub_session:$sessionId"
     fun hubAgentSession(sessionId: String): String = "hub_agent_session:$sessionId"
+    /** 会话行内的生成中标记，按所在行的标签区分同一会话出现在“最近”与助手展开列表中的两处。 */
+    fun hubSessionGenerating(rowTag: String): String = "$rowTag:generating"
     fun hubAgentNewSession(agentId: String): String = "hub_agent_new_session:$agentId"
     const val AGENT_AVATAR_ACTION = "agent_avatar_action"
 

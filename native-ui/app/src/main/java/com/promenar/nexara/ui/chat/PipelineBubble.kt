@@ -283,6 +283,7 @@ fun PipelineBubble(
                         reasoning = step.reasoning,
                         isGenerating = isGenerating && isLastInGroup && streamingContent.isEmpty(),
                         fontSize = fontSize,
+                        clockKey = step.messageId,
                     )
                     is PipelineStep.ToolExec -> Column {
                         InlineToolRow(
@@ -700,6 +701,32 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
     return merged
 }
 
+/**
+ * 思考计时的进程内记录：起点按消息记第一次看到思考的时刻，结束时记下时长。
+ * 会话页离开后组合被销毁，靠它让回来时继续计时；进程重启后没有记录，只显示“已思考”。
+ */
+internal class ThinkingClock(private val capacity: Int = 64) {
+    private val starts = object : LinkedHashMap<String, Long>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>) = size > capacity
+    }
+    private val durations = object : LinkedHashMap<String, Long>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>) = size > capacity
+    }
+
+    @Synchronized fun start(key: String, now: Long): Long = starts.getOrPut(key) { now }
+
+    @Synchronized fun finish(key: String, now: Long) {
+        if (key in durations) return
+        starts[key]?.let { durations[key] = (now - it).coerceAtLeast(0) }
+    }
+
+    @Synchronized fun duration(key: String): Long? = durations[key]
+
+    companion object {
+        val shared = ThinkingClock()
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  ThinkingTrace — 紧凑思考指示器（气泡内联版本）
 // ─────────────────────────────────────────────────────────────────
@@ -712,20 +739,29 @@ internal fun ThinkingTrace(
     modifier: Modifier = Modifier,
     elapsedMs: Long? = null,
     initiallyExpanded: Boolean = false,
+    /** 计时按此键（消息 id）记在进程内，离开会话再回来不从零开始；为空时只按本次组合计时。 */
+    clockKey: String? = null,
 ) {
     var internalExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
-    var measuredElapsed by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(isGenerating) {
+    var measuredElapsed by remember(clockKey) { mutableStateOf(clockKey?.let(ThinkingClock.shared::duration)) }
+    // 本次组合是否亲眼看到思考进行：只有这样结束时刻才可信；不在场时结束的不补记，避免把离开的时间算进去。
+    var sawThinking by remember(clockKey) { mutableStateOf(false) }
+    LaunchedEffect(isGenerating, clockKey) {
+        fun now() = android.os.SystemClock.elapsedRealtime()
         if (isGenerating) {
-            val start = android.os.SystemClock.elapsedRealtime()
+            sawThinking = true
+            val start = clockKey?.let { ThinkingClock.shared.start(it, now()) } ?: now()
             try {
                 while (true) {
-                    measuredElapsed = android.os.SystemClock.elapsedRealtime() - start
+                    measuredElapsed = now() - start
                     delay(200L)
                 }
             } finally {
-                measuredElapsed = android.os.SystemClock.elapsedRealtime() - start
+                measuredElapsed = now() - start
             }
+        } else if (clockKey != null) {
+            if (sawThinking) ThinkingClock.shared.finish(clockKey, now())
+            ThinkingClock.shared.duration(clockKey)?.let { measuredElapsed = it }
         }
     }
     val seconds = (elapsedMs ?: measuredElapsed)?.coerceAtLeast(0)?.div(1_000)?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()

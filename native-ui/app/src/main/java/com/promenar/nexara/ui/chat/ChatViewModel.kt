@@ -2691,11 +2691,16 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * 离开会话时调用，ViewModel 随后就会被清理：先同步改内存会话（重新进入读的是它），
+     * 再不可取消地落库；否则写库途中作用域被取消，手动删掉的草稿会在重新进入时复活。
+     */
     fun saveCurrentDraft() {
         val sessionId = _currentSessionId.value ?: return
-        val text = _inputText.value
-        viewModelScope.launch {
-            sessionManager.updateSessionDraft(sessionId, text.ifBlank { null })
+        val draft = _inputText.value.ifBlank { null }
+        store.updateSession(sessionId) { it.copy(draft = draft) }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) { sessionManager.updateSessionDraft(sessionId, draft) }
         }
     }
 

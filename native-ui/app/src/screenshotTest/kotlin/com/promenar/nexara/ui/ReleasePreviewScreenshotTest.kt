@@ -1459,6 +1459,10 @@ fun agentHubReleasePreview() {
                         Session(id = "hub-s3", agentId = "agent-writer", title = "Polish the product announcement", updatedAt = 1_749_902_400_000L),
                     ),
                 ),
+                sessionActivity = mapOf(
+                    "hub-s1" to com.promenar.nexara.ui.hub.HubSessionActivity.GENERATING,
+                    "hub-s3" to com.promenar.nexara.ui.hub.HubSessionActivity.AWAITING_APPROVAL,
+                ),
             ),
             actions = AgentHubScreenActions(),
         )

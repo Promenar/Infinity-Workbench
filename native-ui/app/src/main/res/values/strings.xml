@@ -296,6 +296,7 @@
     <string name="hub_cd_agent_actions">Agent actions</string>
     <string name="hub_sessions_empty">No sessions yet</string>
     <string name="hub_session_untitled">Untitled session</string>
+    <string name="hub_session_awaiting_approval">Awaiting approval</string>
 
     <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
     <string name="preset_agent_default_name">&brand; Assistant</string>

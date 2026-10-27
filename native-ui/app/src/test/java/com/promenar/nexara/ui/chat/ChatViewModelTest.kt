@@ -234,6 +234,7 @@ class ChatViewModelTest {
     private val sshLeases = linkedSetOf<String>()
     private val pausedSshOwners = linkedSetOf<String>()
     private var beforeSshClose: suspend () -> Unit = {}
+    private var holdSessionUpdates: kotlinx.coroutines.CompletableDeferred<Unit>? = null
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {
@@ -242,6 +243,8 @@ class ChatViewModelTest {
 
         override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
             failSessionUpdate?.let { throw it }
+            // 真实 Room 写入会挂起；测试用闸门模拟写入途中 ViewModel 被清理。
+            holdSessionUpdates?.await()
             val index = savedSessions.indexOfFirst { it.id == id }
             if (index != -1) {
                 var session = savedSessions[index]
@@ -1861,6 +1864,31 @@ class ChatViewModelTest {
         seedSession("B")
         advanceUntilIdle()
         assertThat(viewModel.inputText.value).isEmpty()
+    }
+
+    @Test
+    fun `离开会话时清空的草稿在ViewModel随即清理后仍然生效`() = runTest {
+        seedSession("A")
+        advanceUntilIdle()
+        viewModel.updateInputText("旧草稿")
+        viewModel.saveCurrentDraft()
+        advanceUntilIdle()
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        assertThat(app.chatStore.getSession("A")!!.draft).isEqualTo("旧草稿")
+
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        holdSessionUpdates = gate
+        viewModel.updateInputText("")
+        viewModel.saveCurrentDraft()
+        ViewModelStore().also { it.put("chat", viewModel) }.clear()
+        // 重新进入会话读的是内存会话，写库完成前就必须是新草稿。
+        assertThat(app.chatStore.getSession("A")!!.draft).isNull()
+        holdSessionUpdates = null
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(app.chatStore.getSession("A")!!.draft).isNull()
+        assertThat(savedSessions.first { it.id == "A" }.draft).isNull()
     }
 
     @Test
