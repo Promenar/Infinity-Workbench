@@ -359,8 +359,10 @@ fun ChatRoute(
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
     var chatPagesToken by rememberSaveable { mutableStateOf("") }
     val chatPages = restoreChatPages(chatPagesToken)
+    // 二级页面由检视器还是整页承载，以会话宿主自身的宽度为准：内屏三列的会话列虽在宽窗口里，自身仍是窄窗口。
+    var paneInspector by remember { mutableStateOf(wideWindow) }
     // 窄窗口整页与检视器“文件”“Git”页签共用的层级；收起时仍按最后的层级渲染，退场动画期间内容不消失。
-    val pageStack = chatPageStack(chatPages, wideWindow)
+    val pageStack = chatPageStack(chatPages, paneInspector)
     var lastPageStack by remember { mutableStateOf(pageStack) }
     SideEffect { if (pageStack.isNotEmpty()) lastPageStack = pageStack }
     val shownChatPages = pageStack.ifEmpty { lastPageStack }
@@ -736,7 +738,7 @@ fun ChatRoute(
             }
             val tabSwitch = rootSwitch.takeIf { inInspector }
             // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
-            chatPageStack(ChatPage.entries, wideWindow)
+            chatPageStack(ChatPage.entries, paneInspector)
                 .sortedBy { page -> shownChatPages.indexOf(page).let { if (it < 0) Int.MAX_VALUE else it } }
                 .forEach { page ->
                     androidx.compose.runtime.key(page) {
@@ -787,6 +789,8 @@ fun ChatRoute(
         coverSuspended = hasGenerationInteraction,
         pane = chatPageLevels,
     ) {
+    val hostInspector = com.promenar.nexara.ui.common.LocalNexaraInspectorLayout.current
+    SideEffect { paneInspector = hostInspector }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalChatPopoverAnchors provides popoverAnchors,
         LocalToolLiveOutput provides application.toolLiveOutputStore,

@@ -2115,23 +2115,9 @@ fun ChatTopBar(
             LocalChatNavigationIcon.current?.invoke() ?: NexaraBackButton(onClick = onBack)
         },
         actions = {
-            browser?.let { entry ->
-                ChatTopBarAction(
-                    selected = entry.open,
-                    onClick = entry.onClick,
-                    modifier = Modifier.testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY),
-                ) { BrowserTopBarIcon(entry.mode) }
-            }
-            // 宽窗口的文件、产物与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单；窄窗口的产物入口在选项菜单首项。
-            if (inspector == null) {
-                ChatTopBarAction(selected = false, onClick = onWorkspace) {
-                    Icon(
-                        Icons.Outlined.Folder,
-                        stringResource(R.string.chat_cd_workspace),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            } else {
+            // 宽窗口的文件、产物与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单；
+            // 窄窗口顶栏只留选项菜单，产物、浏览器与文件是菜单首组。
+            if (inspector != null) {
                 ChatTopBarAction(
                     selected = inspector.open,
                     onClick = { haptics.toggle(!inspector.open); inspector.onToggle() },
@@ -2141,15 +2127,24 @@ fun ChatTopBar(
                 }
             }
             Box(Modifier.nexaraPopoverAnchor(menuAnchor)) {
+                // 浏览器收进菜单后，Agent 正在使用或需要你处理的圆点挂到菜单按钮上。
+                val browserDot = browser?.mode?.let { browserStatusDot(it) }
+                val browserStatus = browser?.mode?.let { browserStatusDescription(it) }
+                val optionsDescription = listOfNotNull(stringResource(R.string.chat_cd_options), browserStatus).joinToString(", ")
                 IconButton(
                     onClick = { showMenu = true },
                     modifier = Modifier.testTag(UiTags.CHAT_OPTIONS),
                 ) {
-                    Icon(
-                        Icons.Rounded.MoreVert,
-                        stringResource(R.string.chat_cd_options),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
+                    Box {
+                        Icon(
+                            Icons.Rounded.MoreVert,
+                            optionsDescription,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (browserDot != null) {
+                            Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(browserDot, CircleShape))
+                        }
+                    }
                 }
                 NexaraDropdownMenu(
                     expanded = showMenu,
@@ -2167,13 +2162,54 @@ fun ChatTopBar(
                                 )
                             },
                             text = { Text(stringResource(R.string.canvas_title), style = NexaraTypography.labelLarge) },
-                            trailingIcon = {
-                                Text(entry.count.toString(), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            },
+                            trailingIcon = if (entry.count > 0) {
+                                { Text(entry.count.toString(), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            } else null,
                             modifier = Modifier.testTag(UiTags.CANVAS_ENTRY),
                             onClick = {
                                 showMenu = false
                                 entry.onClick()
+                            },
+                        )
+                    }
+                    browser?.let { entry ->
+                        NexaraMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Public,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.browser_title), style = NexaraTypography.labelLarge) },
+                            trailingIcon = browserDot?.let { dot ->
+                                { Box(Modifier.size(8.dp).background(dot, CircleShape)) }
+                            },
+                            modifier = Modifier
+                                .testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY)
+                                .then(if (browserStatus != null) Modifier.semantics { stateDescription = browserStatus } else Modifier),
+                            onClick = {
+                                showMenu = false
+                                entry.onClick()
+                            },
+                        )
+                    }
+                    if (inspector == null) {
+                        NexaraMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.chat_cd_workspace), style = NexaraTypography.labelLarge) },
+                            modifier = Modifier.testTag(UiTags.CHAT_MENU_WORKSPACE),
+                            onClick = {
+                                showMenu = false
+                                onWorkspace()
                             },
                         )
                         HorizontalDivider(
@@ -2282,9 +2318,9 @@ fun ChatTopBar(
 @Immutable
 data class ChatTopBarArtifacts(val count: Int, val onClick: () -> Unit)
 
-/** 宽窗口由检视器页签承载产物；窄窗口在会话已有产物时才占顶栏位置。 */
+/** 宽窗口由检视器页签承载产物；窄窗口菜单始终有产物入口，有产物时显示数量。 */
 internal fun chatTopBarArtifacts(inspectorMode: Boolean, count: Int, onOpen: () -> Unit): ChatTopBarArtifacts? =
-    if (inspectorMode || count <= 0) null else ChatTopBarArtifacts(count, onOpen)
+    if (inspectorMode) null else ChatTopBarArtifacts(count.coerceAtLeast(0), onOpen)
 
 /** 宽窗口顶栏的检视器入口状态。 */
 @Immutable
@@ -2311,27 +2347,19 @@ internal fun chatTopBarBrowser(
 
 private val BrowserMaximizedInset = 24.dp
 
+/** Agent 正在使用浏览器挂主色圆点，需要用户处理挂橙色圆点；空闲时没有圆点。 */
 @Composable
-private fun BrowserTopBarIcon(mode: com.promenar.nexara.data.browser.BrowserMode) {
-    val dot = when (mode) {
-        com.promenar.nexara.data.browser.BrowserMode.AGENT -> MaterialTheme.colorScheme.primary
-        com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> MaterialTheme.colorScheme.tertiary
-        else -> null
-    }
-    val description = listOfNotNull(
-        stringResource(R.string.browser_cd_open),
-        when (mode) {
-            com.promenar.nexara.data.browser.BrowserMode.AGENT -> stringResource(R.string.chat_inspector_browser_agent)
-            com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> stringResource(R.string.chat_inspector_browser_needs_you)
-            else -> null
-        },
-    ).joinToString(", ")
-    Box {
-        Icon(Icons.Rounded.Public, description, modifier = Modifier.size(22.dp))
-        if (dot != null) {
-            Box(Modifier.align(Alignment.TopEnd).size(8.dp).background(dot, androidx.compose.foundation.shape.CircleShape))
-        }
-    }
+private fun browserStatusDot(mode: com.promenar.nexara.data.browser.BrowserMode): Color? = when (mode) {
+    com.promenar.nexara.data.browser.BrowserMode.AGENT -> MaterialTheme.colorScheme.primary
+    com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> MaterialTheme.colorScheme.tertiary
+    else -> null
+}
+
+@Composable
+private fun browserStatusDescription(mode: com.promenar.nexara.data.browser.BrowserMode): String? = when (mode) {
+    com.promenar.nexara.data.browser.BrowserMode.AGENT -> stringResource(R.string.chat_inspector_browser_agent)
+    com.promenar.nexara.data.browser.BrowserMode.HANDOFF -> stringResource(R.string.chat_inspector_browser_needs_you)
+    else -> null
 }
 
 /** 顶栏状态行中工作区的显示名称。 */

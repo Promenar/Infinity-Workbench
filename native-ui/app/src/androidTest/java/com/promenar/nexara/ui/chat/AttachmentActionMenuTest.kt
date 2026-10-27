@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -145,17 +147,16 @@ class AttachmentActionMenuTest {
 
     @Test
     fun topBarTap_dismissesMenuWithoutInvokingUnderlyingAction() {
-        var workspaceOpens = 0
-        render(onOpenWorkspace = { workspaceOpens += 1 })
+        render()
 
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
-        val workspace = rule.onNodeWithContentDescription(resource(R.string.chat_cd_workspace))
-        workspace.performTouchInput { click() }
-        rule.runOnIdle { assertThat(workspaceOpens).isEqualTo(0) }
+        val options = rule.onNodeWithTag(UiTags.CHAT_OPTIONS)
+        options.performTouchInput { click() }
         rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertDoesNotExist()
+        rule.onAllNodesWithTag(UiTags.CHAT_SESSION_SETTINGS).assertCountEquals(0)
 
-        workspace.performTouchInput { click() }
-        rule.runOnIdle { assertThat(workspaceOpens).isEqualTo(1) }
+        options.performTouchInput { click() }
+        rule.onNodeWithTag(UiTags.CHAT_SESSION_SETTINGS).assertIsDisplayed()
     }
 
     @Test

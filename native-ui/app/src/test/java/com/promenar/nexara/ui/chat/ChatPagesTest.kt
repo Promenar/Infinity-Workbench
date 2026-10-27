@@ -47,7 +47,7 @@ class ChatPagesTest {
     @Test fun `顶栏产物入口只在窄窗口且会话已有产物时出现`() {
         val open = {}
         assertThat(chatTopBarArtifacts(inspectorMode = false, count = 2, onOpen = open)).isEqualTo(ChatTopBarArtifacts(count = 2, onClick = open))
-        assertThat(chatTopBarArtifacts(inspectorMode = false, count = 0, onOpen = open)).isNull()
+        assertThat(chatTopBarArtifacts(inspectorMode = false, count = 0, onOpen = open)).isEqualTo(ChatTopBarArtifacts(count = 0, onClick = open))
         assertThat(chatTopBarArtifacts(inspectorMode = true, count = 2, onOpen = open)).isNull()
     }
 
