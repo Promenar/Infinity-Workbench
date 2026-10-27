@@ -99,7 +99,7 @@ class SubagentRunner(
             )
             val messages = restored.messages.toMutableList()
             if (messages.isEmpty()) {
-                messages += ProtocolMessage("system", systemPrompt(preset, availableTools(host.tools(first), initial.toolProfile), first.executionMode, first.runMode))
+                messages += ProtocolMessage("system", systemPrompt(preset, availableTools(host.tools(first), initial.toolProfile, initial.allowedTools), first.executionMode, first.runMode))
                 messages += ProtocolMessage("user", initial.prompt)
             } else {
                 // 中断时无法确定未落盘的工具是否已产生副作用，补齐协议配对，不自动重做。
@@ -132,7 +132,7 @@ class SubagentRunner(
                     saveState()
                     update(run.copy(status = if (state.wrapUpAfterStep != null) SubagentStatus.WRAPPING_UP else SubagentStatus.RUNNING, events = run.events + additions))
                 }
-                val tools = availableTools(host.tools(current), initial.toolProfile)
+                val tools = availableTools(host.tools(current), initial.toolProfile, initial.allowedTools)
                 val system = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode, current.runMode))
                 if (messages.firstOrNull()?.role == "system") messages[0] = system else messages.add(0, system)
                 val stepsThisExecution = state.completedSteps - state.executionStartStep
@@ -270,11 +270,13 @@ class SubagentRunner(
             val message = com.promenar.nexara.ui.chat.manager.AskUserProtocol.unavailable()
             return result(message, true)
         }
-        val tool = tools.singleOrNull { it.function.name == call.name }
+        val session = sessions() ?: return CallOutcome.SessionGone
+        val available = availableTools(host.tools(session), current().toolProfile, current().allowedTools)
+        val tool = tools.singleOrNull { it.function.name == call.name }?.takeIf { it in available }
         if (tool == null) {
-            val available = tools.map { it.function.name }.sorted()
+            val names = available.filter { it in tools }.map { it.function.name }.sorted()
             val message = "当前不可用的工具 `${call.name.take(80)}`。" +
-                if (available.isEmpty()) "没有可用工具，请直接给出结论。" else "可用工具：${available.joinToString(", ")}。"
+                if (names.isEmpty()) "没有可用工具，请直接给出结论。" else "可用工具：${names.joinToString(", ")}。"
             return result(message, true)
         }
         val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(ToolCall(call.id, call.name, call.arguments), tool, requiresApproval = false)
@@ -283,7 +285,6 @@ class SubagentRunner(
             return result(message, true)
         }
         val arguments = resolved.arguments
-        val session = sessions() ?: return CallOutcome.SessionGone
         val target = host.target(session, tool, call.arguments)
         val mode = ExecutionModeCodec.parseOrWorkspace(session.executionMode.ifEmpty { "workspace" })
         val needsApproval = ToolExecutionPolicy.requiresApproval(mode, call.name, tool.risk, call.arguments, target, usesLinux = session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX)
@@ -306,6 +307,9 @@ class SubagentRunner(
             val now = sessions() ?: return CallOutcome.SessionGone
             if (host.target(now, tool, call.arguments) != target) {
                 return result(TARGET_CHANGED, true)
+            }
+            if (tool !in availableTools(host.tools(now), current().toolProfile, current().allowedTools)) {
+                return result("当前不可用的工具 `${call.name.take(80)}`。", true)
             }
         }
         val key = "subagent:$stepId:${current().index}:${call.id}"
@@ -335,9 +339,16 @@ class SubagentRunner(
         }
     }
 
-    private fun availableTools(tools: List<ProtocolTool>, profile: SubagentToolProfile): List<ProtocolTool> =
+    internal suspend fun ignoredTools(session: Session, spec: SubagentSpec): List<String> {
+        val requested = spec.allowedTools ?: return emptyList()
+        val names = availableTools(host.tools(session), spec.toolProfile).mapTo(mutableSetOf()) { it.function.name }
+        return requested.distinct().filterNot { it in names }
+    }
+
+    private fun availableTools(tools: List<ProtocolTool>, profile: SubagentToolProfile, allowedTools: List<String>? = null): List<ProtocolTool> =
         SubagentLimits.toolset(tools, profile).filter {
-            it.function.name !in CONTROL_TOOLS && it.runtimeToolId !in CONTROL_TOOLS
+            it.function.name !in CONTROL_TOOLS && it.runtimeToolId !in CONTROL_TOOLS &&
+                (allowedTools == null || it.function.name in allowedTools)
         }
 
     private data class RoundRequest(val messages: List<ProtocolMessage>, val maxOutputTokens: Int)

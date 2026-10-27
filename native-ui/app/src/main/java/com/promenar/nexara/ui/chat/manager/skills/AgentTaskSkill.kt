@@ -28,7 +28,8 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
         "Use background=false when the results are required to continue, or agent_wait to wait later. Stopping this turn does not stop subagents. Each subagent works with this session's " +
         "model, workspace and approval rules, cannot ask the user anything, and returns only its final answer. List up to " +
         "${SubagentLimits.MAX_PARALLEL} independent tasks in one call to run them in parallel. Write each prompt as a complete brief: " +
-        "goal, relevant paths or facts, constraints and the expected answer format. Use preset \"explorer\" for read-only research."
+        "goal, relevant paths or facts, constraints and the expected answer format. Use preset \"explorer\" for read-only research. " +
+        "Use each task's optional tools list to restrict the tools available to that subagent; it cannot grant tools outside tool_profile."
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
     override val parametersSchema = """{
@@ -46,7 +47,8 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
                         "description":{"type":"string","description":"Short task title shown to the user, at most 60 characters"},
                         "prompt":{"type":"string","description":"Complete, self-contained instructions for the subagent"},
                         "preset":{"type":"string","enum":["explorer"],"description":"Optional preset; explorer is read-only"},
-                        "tool_profile":{"type":"string","enum":["read_only","inherit"],"description":"read_only allows only read tools; inherit uses this session's tools. Defaults to inherit, or read_only for explorer"}
+                        "tool_profile":{"type":"string","enum":["read_only","inherit"],"description":"read_only allows only read tools; inherit uses this session's tools. Defaults to inherit, or read_only for explorer"},
+                        "tools":{"type":"array","items":{"type":"string"},"description":"Optional tool-name allowlist to further restrict tool_profile; cannot grant tools outside that profile. Unknown or unavailable names are ignored and listed in the result; an empty list disables all tools"}
                     },
                     "required":["description","prompt"],
                     "additionalProperties":false
@@ -100,6 +102,7 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
                     preset?.profile == SubagentToolProfile.READ_ONLY -> SubagentToolProfile.READ_ONLY
                     else -> profile ?: SubagentToolProfile.INHERIT
                 },
+                allowedTools = (task["tools"] as? JsonArray)?.map { (it as JsonPrimitive).content }?.distinct(),
             )
         }
     }
@@ -123,6 +126,7 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
             }
             "## Subagent ${run.index + 1}: ${run.description}\nID: ${run.id}\nStatus: ${run.status.name.lowercase()}." +
                 " Steps: ${run.step}; tokens: ${run.totalTokens}." + note +
+                (run.ignoredTools.takeIf { it.isNotEmpty() }?.let { "\nIgnored tools: ${it.joinToString(", ")}" }.orEmpty()) +
                 (run.result?.let { "\n$it" } ?: run.error?.let { "\n$it" }.orEmpty()) +
                 (run.resultPath?.let { "\nResult path: $it" }.orEmpty())
         }

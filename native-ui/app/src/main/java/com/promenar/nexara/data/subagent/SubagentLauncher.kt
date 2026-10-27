@@ -61,6 +61,7 @@ class SubagentLauncher(
         val model = modelFor(parent)?.takeIf(String::isNotBlank) ?: throw SubagentModelUnavailable("会话没有可用模型")
         val effort = reasoningEffortFor(parent)
         val tokenLimit = taskTokenLimit()
+        val ignoredTools = specs.map { runner.ignoredTools(parent, it) }
         val runs = withContext(NonCancellable) { mutex.withLock {
             initializeLocked()
             check(parent.id !in deleted) { "父会话已删除" }
@@ -73,7 +74,9 @@ class SubagentLauncher(
                 SubagentRun(index, id = id, preset = spec.preset?.wireName, description = spec.description, prompt = spec.prompt,
                     toolProfile = spec.toolProfile, modelId = model, reasoningEffort = effort, maxSteps = 0, maxTurns = maxTurns,
                     maxTokens = if (tokenLimit <= 0) 0 else (tokenLimit / specs.size).coerceIn(1, Int.MAX_VALUE.toLong()).toInt(),
-                    status = SubagentStatus.QUEUED, startedAt = clock())
+                    status = SubagentStatus.QUEUED, startedAt = clock(),
+                    allowedTools = spec.allowedTools?.distinct()?.filterNot { it in ignoredTools[index] },
+                    ignoredTools = ignoredTools[index])
             }
             putLocked(SubagentBatch(parent.id, stepId, created))
             created.forEach { run ->
