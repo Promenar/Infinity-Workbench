@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.NexaraHapticEvent
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -207,12 +209,16 @@ private fun AttachmentAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalNexaraHaptics.current
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) {
+                haptics.perform(NexaraHapticEvent.SELECTION)
+                onClick()
+            }
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

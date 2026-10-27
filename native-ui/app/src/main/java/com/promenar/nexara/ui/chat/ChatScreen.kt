@@ -193,6 +193,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.ui.common.NexaraPopover
 import com.promenar.nexara.ui.common.NexaraPopoverSide
 import com.promenar.nexara.ui.common.NexaraPopoverAlign
@@ -1587,10 +1589,14 @@ internal fun ChatModelSelector(
     modifier: Modifier = Modifier,
 ) {
     val anchor = LocalChatPopoverAnchors.current?.model
+    val haptics = LocalNexaraHaptics.current
     Box(
         modifier = modifier.height(40.dp)
             .then(if (anchor != null) Modifier.nexaraPopoverAnchor(anchor) else Modifier)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sheet_tab_model), onClick = onClick)
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.sheet_tab_model)) {
+                haptics.perform(NexaraHapticEvent.SELECTION)
+                onClick()
+            }
             .testTag(UiTags.CHAT_MODEL_SELECTOR),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -1622,6 +1628,7 @@ private fun TokenIndicator(
 ) {
     var showPanel by remember { mutableStateOf(false) }
     val anchor = rememberNexaraPopoverAnchor()
+    val haptics = LocalNexaraHaptics.current
 
     val progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f)
     val percentage = (state.used.toDouble() / state.max.coerceAtLeast(1) * 100).toInt()
@@ -1629,7 +1636,12 @@ private fun TokenIndicator(
     Row(
         modifier = Modifier.height(40.dp)
             .nexaraPopoverAnchor(anchor)
-            .clickable(role = Role.Button) { if (!anchor.consumeRecentDismiss()) showPanel = !showPanel }
+            .clickable(role = Role.Button) {
+                if (!anchor.consumeRecentDismiss()) {
+                    if (!showPanel) haptics.perform(NexaraHapticEvent.SELECTION)
+                    showPanel = !showPanel
+                }
+            }
             .semantics { contentDescription = description }
             .testTag(UiTags.CHAT_TOKEN_INDICATOR)
             .padding(horizontal = 6.dp),
@@ -1662,6 +1674,7 @@ private fun TokenIndicator(
             state = state,
             isCompressing = isCompressing,
             onManualSummary = {
+                haptics.perform(NexaraHapticEvent.CONFIRM)
                 onManualSummary()
                 showPanel = false
             },
@@ -1914,6 +1927,7 @@ fun ChatTopBar(
     /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
     browser: ChatTopBarBrowser? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     var showMenu by remember { mutableStateOf(false) }
     // 运行模式面板贴着点按的入口弹出：标识或菜单按钮。
     val runModeAnchor = LocalChatPopoverAnchors.current?.runMode
@@ -2074,7 +2088,7 @@ fun ChatTopBar(
             } else {
                 ChatTopBarAction(
                     selected = inspector.open,
-                    onClick = inspector.onToggle,
+                    onClick = { haptics.toggle(!inspector.open); inspector.onToggle() },
                     modifier = Modifier.testTag(ChatInspectorTags.TOGGLE),
                 ) {
                     Icon(Icons.Outlined.ViewSidebar, stringResource(R.string.chat_inspector_toggle), modifier = Modifier.size(22.dp))
@@ -2456,6 +2470,7 @@ fun ChatInputBar(
     /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
     topContent: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val haptics = LocalNexaraHaptics.current
     val shownPlaceholder = if (isGenerating) stringResource(R.string.chat_input_placeholder_generating) else placeholder
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
@@ -2528,7 +2543,10 @@ fun ChatInputBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ChatCompactIconButton(
-                    onClick = { onAttachmentMenuExpandedChange(!attachmentMenuExpanded) },
+                    onClick = {
+                        if (!attachmentMenuExpanded) haptics.perform(NexaraHapticEvent.SELECTION)
+                        onAttachmentMenuExpandedChange(!attachmentMenuExpanded)
+                    },
                     // 按钮左缘贴齐容器边缘：图标墨迹距输入文字左缘约 1.6dp，且不被容器裁剪。
                     modifier = Modifier.offset(x = (-12).dp)
                         .onGloballyPositioned { onAttachmentAnchorBoundsChange(it.boundsInRoot()) }

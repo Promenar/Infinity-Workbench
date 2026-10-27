@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -383,6 +384,7 @@ private fun RunDetailTabs(
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        val haptics = LocalNexaraHaptics.current
         tabs.forEach { tab ->
             val active = tab == selected
             val (label, count) = when (tab) {
@@ -398,7 +400,7 @@ private fun RunDetailTabs(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 40.dp)
-                    .clickable(role = Role.Tab) { onSelect(tab) }
+                    .clickable(role = Role.Tab) { haptics.select(active); onSelect(tab) }
                     .semantics { this.selected = active }
                     .testTag(UiTags.runSheetTab(tab.name)),
             ) {

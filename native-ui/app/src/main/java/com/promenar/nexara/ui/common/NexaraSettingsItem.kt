@@ -46,12 +46,18 @@ fun NexaraSettingsItem(
     horizontalPadding: Dp = NexaraSpacing.RowHorizontal,
     subtitleMaxLines: Int = 1,
 ) {
+    val haptics = LocalNexaraHaptics.current
+    // 单选行在选中项变化时轻振；按钮行是导航或打开面板，不振动。
+    val radioSelected = selected.takeIf { role == Role.RadioButton }
     NexaraSettingsRowLayout(
         title = title,
         subtitle = subtitle,
         icon = icon,
         modifier = modifier.semantics { if (selected != null) this.selected = selected }
-            .clickable(enabled = enabled, role = role, onClickLabel = onClickLabel, onClick = onClick),
+            .clickable(enabled = enabled, role = role, onClickLabel = onClickLabel) {
+                radioSelected?.let(haptics::select)
+                onClick()
+            },
         enabled = enabled,
         leadingSpacer = leadingSpacer,
         titleTextStyle = titleTextStyle,

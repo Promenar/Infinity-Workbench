@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.NexaraHapticEvent
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,9 +42,10 @@ internal fun ExecutionModeButton(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val description = stringResource(R.string.chat_execution_mode_cd, stringResource(mode.labelRes))
+    val haptics = LocalNexaraHaptics.current
     Box(modifier) {
         ChatCompactIconButton(
-            onClick = { expanded = true },
+            onClick = { haptics.perform(NexaraHapticEvent.SELECTION); expanded = true },
             modifier = Modifier
                 .semantics { contentDescription = description }
                 .testTag(UiTags.CHAT_EXECUTION_MODE),
@@ -72,6 +75,7 @@ internal fun ExecutionModeButton(
                     leadingIcon = { Icon(option.icon(), contentDescription = null, tint = option.tint()) },
                     trailingIcon = if (option == mode) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    haptic = NexaraHapticEvent.SELECTION.takeIf { option != mode },
                     onClick = {
                         expanded = false
                         if (option != mode) onSelect(option)

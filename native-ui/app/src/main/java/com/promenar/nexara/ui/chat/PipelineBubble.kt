@@ -875,7 +875,7 @@ internal fun AssistantActionRow(
                         Icon(Icons.Rounded.ContentCopy, stringResource(R.string.chat_action_copy), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
                     if (onRegenerate != null) {
-                        IconButton(onClick = onRegenerate, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_REGENERATE")) {
+                        IconButton(onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onRegenerate() }, modifier = Modifier.size(48.dp).testTag("CHAT_ASSISTANT_REGENERATE")) {
                             Icon(Icons.Rounded.Refresh, stringResource(R.string.chat_action_regenerate), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
@@ -893,7 +893,8 @@ internal fun AssistantActionRow(
                                     text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
                                     leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
                                     modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
-                                    onClick = { haptics.perform(NexaraHapticEvent.CONFIRM); onCopyAllProcess(); showMore = false },
+                                    haptic = NexaraHapticEvent.CONFIRM,
+                                    onClick = { onCopyAllProcess(); showMore = false },
                                 )
                             }
                             if (onBranch != null) {
@@ -1650,7 +1651,6 @@ fun MessageContextMenu(
     timestamp: String? = null,
     touch: NexaraMenuTouch? = null,
 ) {
-    val haptics = LocalNexaraHaptics.current
     NexaraDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -1670,8 +1670,8 @@ fun MessageContextMenu(
                 )
             },
             text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelLarge) },
+            haptic = NexaraHapticEvent.CONFIRM,
             onClick = {
-                haptics.perform(NexaraHapticEvent.CONFIRM)
                 onCopy()
                 onDismiss()
             }

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.components
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.common.NexaraModalSheet
 import androidx.compose.animation.AnimatedContent
@@ -668,13 +669,17 @@ private fun FileTreeRow(
         hasFolderClick = onFolderClick != null,
         hasFileClick = onFileClick != null,
     )
+    val haptics = LocalNexaraHaptics.current
     val handleActivate: (() -> Unit)? = activation?.let { resolvedActivation ->
         {
             when {
-                resolvedActivation == FileNodeActivation.ToggleSelection -> when {
-                    onToggleSelection != null -> onToggleSelection(file)
-                    isSelected -> selectedIds.remove(file.uuid)
-                    else -> selectedIds.add(file.uuid)
+                resolvedActivation == FileNodeActivation.ToggleSelection -> {
+                    haptics.toggle(!isSelected)
+                    when {
+                        onToggleSelection != null -> onToggleSelection(file)
+                        isSelected -> selectedIds.remove(file.uuid)
+                        else -> selectedIds.add(file.uuid)
+                    }
                 }
                 resolvedActivation == FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
                 isVirtualNode -> if (onFolderClick != null) onFolderClick.invoke(file.uuid, file.name) else onToggleExpanded()
@@ -700,6 +705,7 @@ private fun FileTreeRow(
         isMultiSelectMode = isMultiSelectMode,
         isSelected = isSelected,
         onSelectionChange = { checked ->
+            if (checked != isSelected) haptics.toggle(checked)
             if (onToggleSelection != null) {
                 if (checked != isSelected) onToggleSelection(file)
             } else {
@@ -710,7 +716,7 @@ private fun FileTreeRow(
         onOpenMenu = if (hasMenuActions) ({ menuTouch.clear(); showMenu = true }) else null,
         onToggleExpanded = onToggleExpanded,
         // 多选期间点按目录图标也只切换选择，不进入目录。
-        onFolderClick = if (onToggleSelection != null && isMultiSelectMode) ({ _, _ -> onToggleSelection(file) }) else onFolderClick,
+        onFolderClick = if (onToggleSelection != null && isMultiSelectMode) ({ _, _ -> haptics.toggle(!isSelected); onToggleSelection(file) }) else onFolderClick,
         allowTreeExpansion = allowTreeExpansion,
         modifier = Modifier
             .testTag("files_panel_node_${file.uuid}")

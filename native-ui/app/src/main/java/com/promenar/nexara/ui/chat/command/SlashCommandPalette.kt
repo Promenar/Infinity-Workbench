@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat.command
 
+import com.promenar.nexara.ui.common.NexaraHapticEvent
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -138,11 +140,15 @@ private fun SlashCommandRow(command: SlashCommand, onClick: () -> Unit) {
     }
     val summary = listOfNotNull(command.displayName, sourceLabel, command.description.takeIf(String::isNotBlank)).joinToString(" · ")
     val description = stringResource(R.string.slash_item_cd, command.name, summary)
+    val haptics = LocalNexaraHaptics.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button) {
+                haptics.perform(NexaraHapticEvent.SELECTION)
+                onClick()
+            }
             .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(start = NexaraSpacing.Large, end = NexaraSpacing.Large, top = 6.dp, bottom = 6.dp)
             .testTag(UiTags.CHAT_SLASH_ITEM_PREFIX + command.name),

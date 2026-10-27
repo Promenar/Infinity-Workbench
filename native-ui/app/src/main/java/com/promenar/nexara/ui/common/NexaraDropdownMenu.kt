@@ -253,6 +253,7 @@ fun NexaraDropdownMenu(
 /**
  * 菜单项：10dp 圆角按压高亮，图标与文字间距 12dp；[destructive] 时文字与图标用错误色。
  * 参数与 Material 的 DropdownMenuItem 对齐，便于各处直接替换。
+ * 点按时按 [haptic] 振动，默认轻 tick；复制等确认动作传确认档，不需要时传 null。
  */
 @Composable
 fun NexaraMenuItem(
@@ -264,8 +265,10 @@ fun NexaraMenuItem(
     enabled: Boolean = true,
     destructive: Boolean = false,
     contentPadding: PaddingValues = MenuItemPadding,
+    haptic: NexaraHapticEvent? = NexaraHapticEvent.SELECTION,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val haptics = LocalNexaraHaptics.current
     val textColor = when {
         !enabled -> scheme.onSurface.copy(alpha = 0.38f)
         destructive -> scheme.error
@@ -281,7 +284,10 @@ fun NexaraMenuItem(
             .fillMaxWidth()
             .sizeIn(minWidth = 112.dp, maxWidth = 300.dp, minHeight = MenuItemMinHeight)
             .clip(MenuItemShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) {
+                haptic?.let(haptics::perform)
+                onClick()
+            }
             .padding(contentPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {

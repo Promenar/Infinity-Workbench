@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -211,6 +212,7 @@ internal fun ChatInspectorCard(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val paneLabel = stringResource(R.string.chat_inspector_label)
+    val haptics = LocalNexaraHaptics.current
     Surface(
         modifier = modifier.semantics { paneTitle = paneLabel }.testTag(NexaraPaneTags.INSPECTOR),
         shape = InspectorShape,
@@ -236,12 +238,12 @@ internal fun ChatInspectorCard(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     badges.pages().forEach { page ->
-                        InspectorTab(page = page, selected = page == root, badges = badges, onClick = { onSelect(page) })
+                        InspectorTab(page = page, selected = page == root, badges = badges, onClick = { haptics.select(page == root); onSelect(page) })
                     }
                 }
                 // 宽窗口没有运行坞，生成中的触摸锁放在检视器底栏。
                 onLockTouch?.let { TouchLockButton(onLock = it) }
-                IconButton(onClick = onToggleWiden, modifier = Modifier.testTag(ChatInspectorTags.WIDEN)) {
+                IconButton(onClick = { haptics.toggle(!widened); onToggleWiden() }, modifier = Modifier.testTag(ChatInspectorTags.WIDEN)) {
                     Icon(
                         if (widened) Icons.Rounded.CloseFullscreen else Icons.Rounded.OpenInFull,
                         contentDescription = stringResource(if (widened) R.string.chat_inspector_restore_width else R.string.chat_inspector_widen),
@@ -249,7 +251,7 @@ internal fun ChatInspectorCard(
                         modifier = Modifier.size(18.dp),
                     )
                 }
-                IconButton(onClick = onCollapse, modifier = Modifier.testTag(ChatInspectorTags.COLLAPSE)) {
+                IconButton(onClick = { haptics.toggle(false); onCollapse() }, modifier = Modifier.testTag(ChatInspectorTags.COLLAPSE)) {
                     Icon(
                         Icons.Rounded.KeyboardDoubleArrowRight,
                         contentDescription = stringResource(R.string.chat_inspector_collapse),
@@ -304,6 +306,7 @@ internal fun ChatInspectorStrip(
     modifier: Modifier = Modifier,
     onLockTouch: (() -> Unit)? = null,
 ) {
+    val haptics = LocalNexaraHaptics.current
     Surface(
         modifier = modifier.testTag(NexaraPaneTags.INSPECTOR_STRIP),
         shape = RoundedCornerShape(24.dp),
@@ -322,7 +325,7 @@ internal fun ChatInspectorStrip(
                             interactionSource = null,
                             indication = ripple(bounded = false, radius = 20.dp),
                             role = Role.Button,
-                            onClick = { onOpen(page) },
+                            onClick = { haptics.toggle(true); onOpen(page) },
                         )
                         .semantics { contentDescription = description }
                         .testTag(ChatInspectorTags.stripItem(page)),
@@ -336,7 +339,7 @@ internal fun ChatInspectorStrip(
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
             onLockTouch?.let { TouchLockButton(onLock = it) }
-            IconButton(onClick = onExpand, modifier = Modifier.testTag(ChatInspectorTags.EXPAND)) {
+            IconButton(onClick = { haptics.toggle(true); onExpand() }, modifier = Modifier.testTag(ChatInspectorTags.EXPAND)) {
                 Icon(
                     Icons.Rounded.KeyboardDoubleArrowLeft,
                     contentDescription = stringResource(R.string.chat_inspector_expand),

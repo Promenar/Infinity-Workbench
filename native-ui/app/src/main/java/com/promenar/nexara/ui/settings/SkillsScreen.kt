@@ -796,7 +796,7 @@ internal fun EngineOption(id: String, label: String, isSelected: Boolean, onClic
     val select = { haptics.select(isSelected); onClick() }
     NexaraSettingsItem(
         title = label,
-        onClick = select,
+        onClick = onClick,
         modifier = Modifier.testTag("search_engine_$id")
             .selectable(selected = isSelected, role = Role.RadioButton, onClick = select),
         role = Role.RadioButton,
