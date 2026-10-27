@@ -6,8 +6,7 @@ import org.junit.Test
 
 class ToolLedgerStatusConverterTest {
     @Test
-    fun allEightStatesRoundTripExactly() {
-        assertThat(ToolLedgerStatus.entries).hasSize(8)
+    fun allStatesRoundTripExactly() {
         ToolLedgerStatus.entries.forEach { state ->
             assertThat(Converters.stringToToolLedgerStatus(
                 Converters.toolLedgerStatusToString(state),

@@ -433,6 +433,16 @@ class ChatViewModel(
     val isImportingDocument: StateFlow<Boolean> = _isImportingDocument
 
     private val _currentSessionId = MutableStateFlow<String?>(null)
+    private val askUserLedger = (application as NexaraApplication).askUserLedger
+    private val questionSubmissionLock = Any()
+    private val questionSubmissions = mutableSetOf<com.promenar.nexara.domain.ask.PendingQuestion>()
+    private var lastAnsweredQuestion: com.promenar.nexara.domain.ask.PendingQuestion? = null
+    private val questionResumptionAttempts = mutableMapOf<String, String>()
+    private val questionResumeMutex = Mutex()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val pendingQuestion: StateFlow<com.promenar.nexara.domain.ask.PendingQuestion?> = _currentSessionId
+        .flatMapLatest { sessionId -> if (sessionId == null) flowOf(null) else askUserLedger.observePending(sessionId) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val _agentName = MutableStateFlow("")
 
     private val _streamingContent = MutableStateFlow("")
@@ -623,6 +633,19 @@ class ChatViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
     init {
+        viewModelScope.launch {
+            @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+            val resumptions = _currentSessionId.flatMapLatest { sessionId ->
+                if (sessionId != null) questionResumptionAttempts.remove(sessionId)
+                if (sessionId == null) flowOf(null)
+                else combine(askUserLedger.observeResumption(sessionId), generationCoordinator.active) { resumption, active ->
+                    sessionId.takeIf { resumption != null && (active == null || active.sessionId == sessionId) }
+                }
+            }
+            resumptions.collect { sessionId ->
+                if (sessionId != null) resumeAfterQuestion(sessionId)
+            }
+        }
         viewModelScope.launch {
             _currentSessionId.collectLatest { sessionId ->
                 _composerQueue.value = ComposerQueueUiState()
@@ -1634,13 +1657,28 @@ class ChatViewModel(
      */
     private suspend fun closePendingApprovalBeforeNewTurn(sessionId: String) {
         val session = store.getSession(sessionId) ?: return
-        if (session.approvalRequest == null && session.loopStatus != com.promenar.nexara.data.model.LoopStatus.PAUSED) return
+        if (session.approvalRequest == null && session.loopStatus !in setOf(
+                com.promenar.nexara.data.model.LoopStatus.PAUSED,
+                com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_INPUT,
+                com.promenar.nexara.data.model.LoopStatus.INPUT_ANSWERED,
+            )) return
         terminateSessionWork(sessionId)
     }
 
     /** 终止当前任务时同步审批终态，并在不可取消的 IO 清理中关闭该会话的 SSH owner。 */
     private suspend fun terminateSessionWork(sessionId: String) {
+        // 准备锁等待期间可能登记了续跑任务，获锁后必须再次同步取消。
+        generationCoordinator.observe(sessionId).value?.let {
+            generationCoordinator.cancel(it.taskId, com.promenar.nexara.domain.generation.CancellationReason.USER)
+        }
         try {
+            if (store.getSession(sessionId)?.loopStatus in setOf(
+                    com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_INPUT,
+                    com.promenar.nexara.data.model.LoopStatus.INPUT_ANSWERED,
+                ) || pendingQuestion.value?.sessionId == sessionId) {
+                generationCoordinator.cancelAndJoinSession(sessionId, com.promenar.nexara.domain.generation.CancellationReason.USER)
+                askUserLedger.cancel(sessionId).forEach { messageManager.mirrorPersistedMessage(sessionId, it) }
+            }
             if (store.getSession(sessionId)?.approvalRequest != null) {
                 try {
                     approvalManager.cancelPendingApproval(sessionId)
@@ -1719,6 +1757,69 @@ class ChatViewModel(
         )
     }
 
+    /** 返回值仅表示本地受理；数据库失败保留原提问并通过错误通道提示。 */
+    fun answerQuestion(
+        expected: com.promenar.nexara.domain.ask.PendingQuestion,
+        answer: com.promenar.nexara.domain.ask.AskUserAnswer,
+    ): Boolean {
+        val frozenAnswer = answer.copy(answers = answer.answers.mapValues { it.value.toList() }.toMap())
+        synchronized(questionSubmissionLock) {
+            if (_currentSessionId.value != expected.sessionId || pendingQuestion.value != expected ||
+                lastAnsweredQuestion == expected ||
+                com.promenar.nexara.ui.chat.manager.AskUserValidation.answer(expected.request, frozenAnswer) != null ||
+                !questionSubmissions.add(expected)) return false
+        }
+        viewModelScope.launch {
+            try {
+                sendPreparationMutex.withLock {
+                    val result = askUserLedger.answer(expected, frozenAnswer) ?: return@launch
+                    synchronized(questionSubmissionLock) { lastAnsweredQuestion = expected }
+                    messageManager.mirrorPersistedMessage(expected.sessionId, result.result)
+                    messageManager.mirrorPersistedMessage(expected.sessionId, result.assistant)
+                    store.updateSession(expected.sessionId) { it.copy(loopStatus = com.promenar.nexara.data.model.LoopStatus.INPUT_ANSWERED) }
+                }
+                resumeAfterQuestion(expected.sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _error.value = stringResourceResolver(R.string.ask_user_answer_failed)
+            } finally {
+                synchronized(questionSubmissionLock) { questionSubmissions.remove(expected) }
+            }
+        }
+        return true
+    }
+
+    private suspend fun resumeAfterQuestion(sessionId: String) = questionResumeMutex.withLock {
+        val continuation = askUserLedger.resumption(sessionId) ?: return@withLock
+        val task = generationCoordinator.observe(sessionId).value
+        if (task?.assistantMessageId == continuation.assistant.id && task.phase !in TERMINAL_GENERATION_PHASES) return@withLock
+        if (task?.phase == GenerationPhase.WAITING_INPUT) generationCoordinator.awaitSessionIdle(sessionId)
+        else if (task != null && task.phase !in TERMINAL_GENERATION_PHASES) return@withLock
+        sendPreparationMutex.withLock questionStart@ {
+            // 等待旧任务释放期间可能已经停止、删除或被其它操作处理，不能使用此前读出的对象启动。
+            val current = askUserLedger.resumption(sessionId) ?: return@questionStart
+            if (current.assistant.id != continuation.assistant.id || questionResumptionAttempts[sessionId] == current.assistant.id) return@questionStart
+            questionResumptionAttempts[sessionId] = current.assistant.id
+            messageManager.mirrorPersistedMessage(sessionId, current.result)
+            messageManager.mirrorPersistedMessage(sessionId, current.assistant)
+            try {
+                val result = generateMessage(sessionId, current.user.content, isResumption = true,
+                    existingAssistantMsgId = current.assistant.id, userMsgId = current.user.id,
+                    userContent = current.user.content, generationRequestId = current.assistant.id)
+                if (result is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected) {
+                    _error.value = stringResourceResolver(R.string.ask_user_resume_failed)
+                } else if (result is com.promenar.nexara.domain.generation.StartGenerationResult.Busy) {
+                    questionResumptionAttempts.remove(sessionId)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _error.value = stringResourceResolver(R.string.ask_user_resume_failed)
+            }
+        }
+    }
+
     @Suppress("UNUSED_PARAMETER")
     private suspend fun generateMessage(
         sessionId: String,
@@ -1731,6 +1832,7 @@ class ChatViewModel(
         rollbackUserOnPreparationFailure: Boolean = false,
         clearDraftOnConnecting: Boolean = false,
         assistantMessageIdsToReplace: Set<String> = emptySet(),
+        generationRequestId: String? = null,
     ): com.promenar.nexara.domain.generation.StartGenerationResult? {
         val session = store.getSession(sessionId) ?: return null
         val assistantMsgId = existingAssistantMsgId
@@ -1753,7 +1855,7 @@ class ChatViewModel(
             },
             rollbackUserOnPreparationFailure = rollbackUserOnPreparationFailure,
             messageIdsToReplace = assistantMessageIdsToReplace,
-            requestId = IdGenerator.message("generation"),
+            requestId = generationRequestId ?: IdGenerator.message("generation"),
         )
         if (clearDraftOnConnecting) {
             pendingDraftClearTaskId = DRAFT_PENDING_START
@@ -2773,8 +2875,9 @@ class ChatViewModel(
 
         viewModelScope.launch {
             val approvalTarget = store.getSession(sessionId)?.approvalRequest?.assistantMessageId
+            val questionTarget = askUserLedger.pending(sessionId)?.assistantMessageId
             val expanded = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(session.messages, it) }
-            if (approvalTarget != null && approvalTarget in expanded) {
+            if ((approvalTarget != null && approvalTarget in expanded) || (questionTarget != null && questionTarget in expanded)) {
                 sendPreparationMutex.withLock {
                     closePendingApprovalBeforeNewTurn(sessionId)
                 }
@@ -3000,6 +3103,7 @@ class ChatViewModel(
         private val QUEUE_INACTIVE_PHASES = setOf(
             GenerationPhase.COMPLETED, GenerationPhase.FAILED, GenerationPhase.PERSISTENCE_FAILED,
             GenerationPhase.CANCELLED, GenerationPhase.WAITING_APPROVAL,
+            GenerationPhase.WAITING_INPUT,
         )
         private val DRAFT_SETTLING_PHASES = setOf(
             com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
@@ -3027,7 +3131,8 @@ class ChatViewModel(
             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
         )
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
-            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
+            setOf(com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
+                com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT)
         private const val FONT_SIZE_PERSISTENCE_DEBOUNCE_MS = 180L
         private const val DRAFT_PENDING_START = "__pending_generation_start__"
 

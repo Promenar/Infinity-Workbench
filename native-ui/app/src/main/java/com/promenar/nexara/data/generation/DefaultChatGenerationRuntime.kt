@@ -72,6 +72,8 @@ import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
@@ -175,7 +177,9 @@ internal class DefaultChatGenerationRuntime(
     private val stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
     private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
     private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
+    private val askUserLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
 ) : ChatGenerationRuntime {
+    private var interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE
     private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
     private var baselineTokens = 0L
@@ -197,7 +201,12 @@ internal class DefaultChatGenerationRuntime(
 
     /** 生成运行在主线程作用域；工具表要按会话扫描技能目录，统一放到 IO 上构建。 */
     private suspend fun buildToolsOffMain(session: com.promenar.nexara.data.model.Session, modelId: String? = preparedRoute?.modelId): List<ProtocolTool> =
-        kotlinx.coroutines.withContext(toolBuildDispatcher) { contentStrategy.buildTools(if (modelId == null) session else session.copy(modelId = modelId)) }
+        kotlinx.coroutines.withContext(toolBuildDispatcher) {
+            contentStrategy.buildTools(if (modelId == null) session else session.copy(modelId = modelId)).filterNot {
+                interactionMode == com.promenar.nexara.domain.generation.GenerationInteractionMode.HEADLESS &&
+                    it.function.name == com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME
+            }
+        }
 
     private suspend fun buildMessagesWithMedia(
         session: com.promenar.nexara.data.model.Session,
@@ -437,6 +446,7 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun prepare(request: GenerationRequest) {
+        interactionMode = request.interactionMode
         stateBoardRepository?.beginGeneration(request.sessionId, request.assistantMessageId, request.messageIdsToReplace)
         sshRuntime?.resumeOwner("agent:${request.sessionId}")
         val session = requireNotNull(store.getSession(request.sessionId)) { "生成会话不存在" }
@@ -463,6 +473,7 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
+        interactionMode = request.interactionMode
         runModeCheck?.invoke(request.sessionId)?.let { failure ->
             handlePreparationFailure(request, failure, null)
             return GenerationPreparationOutcome.Handled(failure)
@@ -825,8 +836,40 @@ internal class DefaultChatGenerationRuntime(
     ): GenerationToolDecision {
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
-        ensureAutomaticConsent(request, session.executionMode.ifEmpty { "workspace" })
+        settleQuestionResumption(request)
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
+        if (calls.any { it.name == com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME }) {
+            toolRounds++
+            val repository = askUserLedger
+            if (repository == null || com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
+                for (call in calls) toolExecutor.rejectTools(request.sessionId, assistantMessageId(request), listOf(call),
+                    com.promenar.nexara.ui.chat.manager.AskUserProtocol.unavailable())
+                return GenerationToolDecision.CONTINUE
+            }
+            val advertised = preparedTools.singleOrNull { it.function.name == com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME }
+            val current = if (request.interactionMode == com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE)
+                buildToolsOffMain(session).singleOrNull { it.function.name == com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME }
+                else null
+            try {
+                val result = repository.createBatch(request.sessionId, assistantMessageId(request), calls, current?.takeIf { it == advertised })
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                result.messages.forEach { messageManager.mirrorPersistedMessage(request.sessionId, it) }
+                if (result.pending != null) {
+                    store.updateSession(request.sessionId) { it.copy(approvalRequest = null, loopStatus = com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_INPUT) }
+                    commitReplacement(request)
+                    ui.setGenerating(false)
+                    return GenerationToolDecision.WAIT_FOR_INPUT
+                }
+            } catch (cancelled: CancellationException) {
+                // 创建已提交但尚未镜像至界面时停止，也必须关闭账本中的提问。
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    repository.cancel(request.sessionId).forEach { messageManager.mirrorPersistedMessage(request.sessionId, it) }
+                }
+                throw cancelled
+            }
+            return GenerationToolDecision.CONTINUE
+        }
+        ensureAutomaticConsent(request, session.executionMode.ifEmpty { "workspace" })
         if (com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
             toolRounds++
             try {
@@ -958,6 +1001,7 @@ internal class DefaultChatGenerationRuntime(
         reason: String,
     ) {
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
+        settleQuestionResumption(request)
         toolExecutor.rejectTools(
             request.sessionId,
             assistantMessageId(request),
@@ -1102,6 +1146,7 @@ internal class DefaultChatGenerationRuntime(
                 )
             } else null,
         )
+        settleQuestionResumption(request)
         if (request.messageIdsToReplace.isNotEmpty()) {
             if (status == GenerationTerminalStatus.SUCCESS) {
                 commitReplacement(request)
@@ -1199,6 +1244,7 @@ internal class DefaultChatGenerationRuntime(
                 GenerationFailureCodec.encode(generationFailure),
             )
         }
+        settleQuestionResumption(request)
     }
 
     private suspend fun handleDocumentBudgetFailure(
@@ -1210,6 +1256,11 @@ internal class DefaultChatGenerationRuntime(
         ui.setProviderFailure(null)
         ui.setGenerating(false)
         ui.onHandledFailure()
+        if (askUserLedger?.resumptionForAssistant(request.sessionId, request.assistantMessageId) != null) {
+            messageManager.markGenerationTerminal(request.sessionId, assistantMessageId(request), "", "error", GenerationFailureCodec.encode(generationFailure))
+            settleQuestionResumption(request)
+            return
+        }
         if (request.messageIdsToReplace.isNotEmpty()) {
             discardPreparedMessagesPreservingSummaryUsage(
                 request,
@@ -1221,6 +1272,13 @@ internal class DefaultChatGenerationRuntime(
                 request.userMessageId.takeIf { request.rollbackUserOnPreparationFailure },
             )
             discardPreparedMessagesPreservingSummaryUsage(request, preparedIds)
+        }
+    }
+
+    /** 首个模型回合或终态已落盘后才关闭恢复入口；工具副作用发生前必须完成。 */
+    private suspend fun settleQuestionResumption(request: GenerationRequest) {
+        if (askUserLedger?.consumeResumption(request.sessionId, request.assistantMessageId) == true) {
+            store.updateSession(request.sessionId) { it.copy(loopStatus = com.promenar.nexara.data.model.LoopStatus.RUNNING) }
         }
     }
 

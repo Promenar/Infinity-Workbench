@@ -140,7 +140,7 @@ sealed interface GenerationChunk {
     ) : GenerationChunk
 }
 
-enum class GenerationToolDecision { CONTINUE, WAIT_FOR_APPROVAL, COMPLETE }
+enum class GenerationToolDecision { CONTINUE, WAIT_FOR_APPROVAL, WAIT_FOR_INPUT, COMPLETE }
 sealed interface GenerationPreparationOutcome {
     data object Ready : GenerationPreparationOutcome
     data class Handled(val failure: GenerationFailure) : GenerationPreparationOutcome

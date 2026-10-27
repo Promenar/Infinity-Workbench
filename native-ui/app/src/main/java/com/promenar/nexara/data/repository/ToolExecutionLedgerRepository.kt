@@ -674,6 +674,7 @@ class ToolExecutionLedgerRepository(
         pendingToolCallIds: Set<String>,
         request: ApprovalRequest,
     ): ToolApprovalCreation = database.withTransaction {
+        if (dao.getInputForSession(keySessionId).isNotEmpty()) return@withTransaction ToolApprovalCreation.CONFLICT
         val assistant = database.messageDao().getById(assistantMessageId)
             ?.takeIf { it.sessionId == keySessionId && it.role == "assistant" }
             ?: return@withTransaction ToolApprovalCreation.CONFLICT

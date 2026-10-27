@@ -9,6 +9,21 @@ import com.promenar.nexara.data.local.db.entity.ToolLedgerStatus
 
 @Dao
 interface ToolExecutionLedgerDao {
+    @Query("SELECT * FROM tool_execution_ledger WHERE session_id = :sessionId AND status IN ('WAITING_INPUT', 'INPUT_ANSWERED')")
+    suspend fun getInputForSession(sessionId: String): List<ToolExecutionLedgerEntity>
+
+    @Query("SELECT * FROM tool_execution_ledger WHERE session_id = :sessionId AND status IN ('WAITING_INPUT', 'INPUT_ANSWERED')")
+    fun observeInputForSession(sessionId: String): kotlinx.coroutines.flow.Flow<List<ToolExecutionLedgerEntity>>
+
+    @Query("SELECT * FROM tool_execution_ledger WHERE status IN ('WAITING_INPUT', 'INPUT_ANSWERED')")
+    suspend fun getAllInput(): List<ToolExecutionLedgerEntity>
+
+    @Query("SELECT * FROM tool_execution_ledger WHERE status = 'WAITING_INPUT'")
+    fun observeAllPendingInput(): kotlinx.coroutines.flow.Flow<List<ToolExecutionLedgerEntity>>
+
+    @Query("UPDATE tool_execution_ledger SET status = 'SUCCEEDED', updated_at = :updatedAt WHERE session_id = :sessionId AND assistant_message_id = :assistantMessageId AND tool_call_id = :toolCallId AND status = 'INPUT_ANSWERED'")
+    suspend fun consumeInputResume(sessionId: String, assistantMessageId: String, toolCallId: String, updatedAt: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entry: ToolExecutionLedgerEntity): Long
 

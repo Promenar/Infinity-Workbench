@@ -30,7 +30,12 @@ interface SessionDao {
     @Transaction
     suspend fun update(session: SessionEntity) {
         val existing = getById(session.id) ?: return
-        updateRow(session.copy(runMode = existing.runMode))
+        val questionState = setOf("waiting_for_input", "input_answered")
+        // 提问状态仅由账本事务切换；旧快照既不能清掉当前请求，也不能复活已关闭的请求。
+        val preserveQuestion = existing.loopStatus in questionState || session.loopStatus in questionState
+        updateRow(session.copy(runMode = existing.runMode,
+            loopStatus = if (preserveQuestion) existing.loopStatus else session.loopStatus,
+            approvalRequest = if (preserveQuestion) existing.approvalRequest else session.approvalRequest))
     }
 
     @Delete
@@ -111,6 +116,9 @@ interface SessionDao {
     /** 系统触发排队时轮询，只判断是否存在待批准的工具调用。 */
     @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE approval_request IS NOT NULL AND approval_request != '')")
     suspend fun hasPendingApproval(): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM sessions WHERE (approval_request IS NOT NULL AND approval_request != '') OR loop_status IN ('waiting_for_input', 'input_answered'))")
+    suspend fun hasPendingUserInteraction(): Boolean
 
     @Query("UPDATE sessions SET options = :options, rag_options = :ragOptions, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateOptions(sessionId: String, options: String?, ragOptions: String?, updatedAt: Long)

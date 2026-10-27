@@ -482,7 +482,7 @@ data class SessionStats(
 
 @Serializable
 enum class LoopStatus {
-    IDLE, RUNNING, PAUSED, WAITING_FOR_APPROVAL, COMPLETED;
+    IDLE, RUNNING, PAUSED, WAITING_FOR_APPROVAL, WAITING_FOR_INPUT, INPUT_ANSWERED, COMPLETED;
 
     fun toSerializedName(): String = name.lowercase()
 

@@ -25,6 +25,7 @@ fun shouldHandleGenerationStop(trackedTaskId: String?, requestedTaskId: String):
 
 private val STOPPING_PHASES = setOf(
     GenerationPhase.WAITING_APPROVAL,
+    GenerationPhase.WAITING_INPUT,
     GenerationPhase.COMPLETED,
     GenerationPhase.FAILED,
     GenerationPhase.CANCELLED,
