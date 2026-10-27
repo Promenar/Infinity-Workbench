@@ -812,8 +812,10 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
                             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
                             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
+                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT,
                         )
                         _generationStatus.value = when (task.phase) {
+                            com.promenar.nexara.domain.generation.GenerationPhase.QUEUED,
                             com.promenar.nexara.domain.generation.GenerationPhase.PREPARING,
                             com.promenar.nexara.domain.generation.GenerationPhase.BUILDING_CONTEXT,
                             com.promenar.nexara.domain.generation.GenerationPhase.CONNECTING -> GenerationStatus.UPLOADING
@@ -824,7 +826,8 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.FAILED -> GenerationStatus.ERROR
                             com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED -> GenerationStatus.IDLE
                             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED -> GenerationStatus.ERROR
-                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL -> _generationStatus.value
+                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
+                            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_INPUT -> _generationStatus.value
                             com.promenar.nexara.domain.generation.GenerationPhase.POST_PROCESSING -> GenerationStatus.RECEIVING
                         }
                         if (task.phase in TERMINAL_GENERATION_PHASES) {

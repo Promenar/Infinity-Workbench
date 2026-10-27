@@ -1,6 +1,8 @@
 package com.promenar.nexara.domain.generation
 
 enum class GenerationPhase {
+    /** 已受理但同时生成的会话已达上限，排队等待空位；可取消。 */
+    QUEUED,
     PREPARING,
     BUILDING_CONTEXT,
     CONNECTING,
@@ -9,6 +11,8 @@ enum class GenerationPhase {
     /** 正在执行本轮已获准的工具调用；生成仍在进行，可停止。 */
     EXECUTING_TOOLS,
     WAITING_APPROVAL,
+    /** 本轮因 `ask_user` 暂停，等待用户回答；与等待批准一样持久化，回答后续跑。 */
+    WAITING_INPUT,
     POST_PROCESSING,
     COMPLETED,
     FAILED,

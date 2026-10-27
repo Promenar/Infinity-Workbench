@@ -96,6 +96,7 @@ class GenerationNotificationFactory(
     }
 
     private fun GenerationPhase.notificationTextRes(): Int = when (this) {
+        GenerationPhase.QUEUED,
         GenerationPhase.PREPARING,
         GenerationPhase.BUILDING_CONTEXT,
         GenerationPhase.CONNECTING -> R.string.generation_notification_preparing
@@ -104,6 +105,7 @@ class GenerationNotificationFactory(
         GenerationPhase.STREAMING,
         GenerationPhase.POST_PROCESSING -> R.string.generation_notification_generating
         GenerationPhase.WAITING_APPROVAL,
+        GenerationPhase.WAITING_INPUT,
         GenerationPhase.COMPLETED,
         GenerationPhase.FAILED,
         GenerationPhase.CANCELLED,
