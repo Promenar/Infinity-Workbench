@@ -13,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -25,6 +24,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
 import com.promenar.nexara.navigation.SettingsNavigator
+import com.promenar.nexara.navigation.SettingsPaneEntriesSaver
 import com.promenar.nexara.navigation.SettingsPaneEntry
 import com.promenar.nexara.navigation.SettingsPaneRoots
 import com.promenar.nexara.navigation.concreteRoute
@@ -119,11 +119,6 @@ internal fun SettingsTwoPane(
         }
     }
 }
-
-private val SettingsPaneEntriesSaver = listSaver<List<SettingsPaneEntry>, String>(
-    save = { entries -> entries.flatMap { listOf(it.id, it.route) } },
-    restore = { flat -> flat.chunked(2) { SettingsPaneEntry(it[0], it[1]) } },
-)
 
 object SettingsTwoPaneTags {
     const val ROOT = "settings_two_pane"

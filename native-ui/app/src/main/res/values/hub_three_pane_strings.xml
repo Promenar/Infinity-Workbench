@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hub_pane_expand">Expand conversation</string>
+    <string name="hub_pane_restore">Show navigation and list</string>
+    <string name="hub_strip_open_list">Show session list</string>
+    <string name="hub_pane_empty">Pick a conversation on the left, or start a new one</string>
+</resources>
