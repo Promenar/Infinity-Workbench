@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedContent
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -40,6 +41,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +85,8 @@ fun AgentHubScreen(
     onNavigateToChat: (String) -> Unit,
     onNavigateToAgentEdit: (String) -> Unit,
     onOpenLinuxEnvironment: () -> Unit = {},
+    /** 内屏三列：点会话改为在右侧会话列选中；为 null 时打开整页会话。 */
+    threePane: HubThreePaneHost? = null,
 ) {
     val context = LocalContext.current
     val viewModel: AgentHubViewModel = viewModel(
@@ -118,100 +122,126 @@ fun AgentHubScreen(
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
-    var agentToDelete by remember { mutableStateOf<String?>(null) }
-    var pendingDeleteSessionId by remember { mutableStateOf<String?>(null) }
-    var searchActive by rememberSaveable { mutableStateOf(false) }
-
-    val state = AgentHubScreenState(
-        displayAgents = displayAgents,
-        searchQuery = searchQuery,
-        searchActive = searchActive,
-        showAddDialog = showAddDialog,
-        pendingDeleteAgentId = agentToDelete,
-        pendingDeleteSessionId = pendingDeleteSessionId,
-        sessionsByAgent = sessionsByAgent,
-        sessionActivity = hubSessionActivities(activeGeneration, allSessions),
-    )
-    val actions = AgentHubScreenActions(
-        onSearch = viewModel::updateSearchQuery,
-        onSearchActiveChange = { searchActive = it },
-        onRequestAdd = { showAddDialog = true },
-        onCancelAdd = { showAddDialog = false },
-        onCreateAgent = { name, desc, model, systemPrompt ->
-            viewModel.createAgent(name, desc, model, systemPrompt)
-            showAddDialog = false
-        },
-        onRequestDelete = { agentToDelete = it },
-        onCancelDelete = { agentToDelete = null },
-        onConfirmDelete = { id ->
-            viewModel.deleteAgent(id)
-            agentToDelete = null
-        },
-        onTogglePin = viewModel::togglePin,
-        onEdit = onNavigateToAgentEdit,
-        onOpenChat = onNavigateToChat,
-        onCreateSession = { agentId ->
-            sessionListViewModel.createSession(agentId) { sessionId ->
-                onNavigateToChat(sessionId)
-            }
-        },
-        onToggleSessionPin = sessionListViewModel::pinSession,
-        onRequestDeleteSession = { sessionId ->
-            pendingDeleteSessionId = sessionId
-        },
-        onCancelDeleteSession = {
-            pendingDeleteSessionId = null
-        },
-        onDeleteSession = { sessionId, keepFiles ->
-            sessionListViewModel.deleteSession(sessionId, keepFiles)
-            pendingDeleteSessionId = null
-        },
-        loadWorkspaceSummary = (LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication)
-            ?.let { app -> app::privateWorkspaceSummary },
-    )
-
-    // 启动自检问题：照常进入，列表顶部提示受影响的范围，点开处置或交给 Agent 诊断。
-    val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
-    val startupIssues = app?.startupIssues?.collectAsState()?.value.orEmpty()
-    var showStartupIssues by remember { mutableStateOf(false) }
-    // 启动时的非阻断提示：Linux 不可用时列出受影响的 Linux 会话数；环境状态变化后重新统计。
-    val linuxState = app?.linux?.runtime?.state?.collectAsState()?.value
-    var linuxAffected by remember { mutableStateOf(0) }
-    LaunchedEffect(app, linuxState) {
-        linuxAffected = if (app == null || !com.promenar.nexara.distribution.DistributionCapabilities.linuxRuntimeAvailable) 0 else runCatching {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.sessionRunModes.startupCheck().affectedSessionCount }
-        }.getOrDefault(0)
+    val selectedSessionId = threePane?.state?.hubSessionId
+    val sessionActivity = hubSessionActivities(activeGeneration, allSessions)
+    val createSession: (String, (String) -> Unit) -> Unit = { agentId, open ->
+        sessionListViewModel.createSession(agentId) { sessionId -> open(sessionId) }
     }
-    AgentHubScreenContent(
-        state = state,
-        actions = actions,
-        snackbarHostState = snackbarHostState,
-        startupBanner = {
-            if (startupIssues.isNotEmpty()) {
-                com.promenar.nexara.ui.startup.StartupIssuesBanner(startupIssues.size, onOpen = { showStartupIssues = true })
-            }
-            if (linuxAffected > 0) {
-                com.promenar.nexara.ui.startup.LinuxUnavailableBanner(linuxAffected, onOpen = onOpenLinuxEnvironment)
-            }
-        },
-    )
-    if (showStartupIssues && app != null) {
-        com.promenar.nexara.ui.startup.StartupIssuesSheet(
-            onDismiss = { showStartupIssues = false },
-            diagnosisAgentId = { issues ->
-                issues.firstNotNullOfOrNull { issue ->
-                    allSessions.firstOrNull { it.id == issue.scope.id }?.agentId
-                } ?: displayAgents.firstOrNull()?.agent?.id
+    // 列表本身与它的弹窗：三列时放在列表列里，点会话在会话列选中。
+    @Composable
+    fun HubListContent(openChat: (String) -> Unit, selectedSessionId: String?, closeSessions: (Set<String>) -> Unit = {}) {
+        var agentToDelete by remember { mutableStateOf<String?>(null) }
+        var pendingDeleteSessionId by remember { mutableStateOf<String?>(null) }
+        var searchActive by rememberSaveable { mutableStateOf(false) }
+
+        val state = AgentHubScreenState(
+            displayAgents = displayAgents,
+            searchQuery = searchQuery,
+            searchActive = searchActive,
+            showAddDialog = showAddDialog,
+            pendingDeleteAgentId = agentToDelete,
+            pendingDeleteSessionId = pendingDeleteSessionId,
+            sessionsByAgent = sessionsByAgent,
+            sessionActivity = sessionActivity,
+            selectedSessionId = selectedSessionId,
+        )
+        val actions = AgentHubScreenActions(
+            onSearch = viewModel::updateSearchQuery,
+            onSearchActiveChange = { searchActive = it },
+            onRequestAdd = { showAddDialog = true },
+            onCancelAdd = { showAddDialog = false },
+            onCreateAgent = { name, desc, model, systemPrompt ->
+                viewModel.createAgent(name, desc, model, systemPrompt)
+                showAddDialog = false
             },
-            onOpenSession = onNavigateToChat,
+            onRequestDelete = { agentToDelete = it },
+            onCancelDelete = { agentToDelete = null },
+            onConfirmDelete = { id ->
+                closeSessions(sessionsByAgent[id].orEmpty().mapTo(HashSet()) { it.id })
+                viewModel.deleteAgent(id)
+                agentToDelete = null
+            },
+            onTogglePin = viewModel::togglePin,
+            onEdit = onNavigateToAgentEdit,
+            onOpenChat = openChat,
+            onCreateSession = { agentId -> createSession(agentId, openChat) },
+            onToggleSessionPin = sessionListViewModel::pinSession,
+            onRequestDeleteSession = { sessionId ->
+                pendingDeleteSessionId = sessionId
+            },
+            onCancelDeleteSession = {
+                pendingDeleteSessionId = null
+            },
+            onDeleteSession = { sessionId, keepFiles ->
+                closeSessions(setOf(sessionId))
+                sessionListViewModel.deleteSession(sessionId, keepFiles)
+                pendingDeleteSessionId = null
+            },
+            loadWorkspaceSummary = (LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication)
+                ?.let { app -> app::privateWorkspaceSummary },
         )
+
+        // 启动自检问题：照常进入，列表顶部提示受影响的范围，点开处置或交给 Agent 诊断。
+        val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
+        val startupIssues = app?.startupIssues?.collectAsState()?.value.orEmpty()
+        var showStartupIssues by remember { mutableStateOf(false) }
+        // 启动时的非阻断提示：Linux 不可用时列出受影响的 Linux 会话数；环境状态变化后重新统计。
+        val linuxState = app?.linux?.runtime?.state?.collectAsState()?.value
+        var linuxAffected by remember { mutableStateOf(0) }
+        LaunchedEffect(app, linuxState) {
+            linuxAffected = if (app == null || !com.promenar.nexara.distribution.DistributionCapabilities.linuxRuntimeAvailable) 0 else runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.sessionRunModes.startupCheck().affectedSessionCount }
+            }.getOrDefault(0)
+        }
+        AgentHubScreenContent(
+            state = state,
+            actions = actions,
+            snackbarHostState = snackbarHostState,
+            startupBanner = {
+                if (startupIssues.isNotEmpty()) {
+                    com.promenar.nexara.ui.startup.StartupIssuesBanner(startupIssues.size, onOpen = { showStartupIssues = true })
+                }
+                if (linuxAffected > 0) {
+                    com.promenar.nexara.ui.startup.LinuxUnavailableBanner(linuxAffected, onOpen = onOpenLinuxEnvironment)
+                }
+            },
+        )
+        if (showStartupIssues && app != null) {
+            com.promenar.nexara.ui.startup.StartupIssuesSheet(
+                onDismiss = { showStartupIssues = false },
+                diagnosisAgentId = { issues ->
+                    issues.firstNotNullOfOrNull { issue ->
+                        allSessions.firstOrNull { it.id == issue.scope.id }?.agentId
+                    } ?: displayAgents.firstOrNull()?.agent?.id
+                },
+                onOpenSession = openChat,
+            )
+        }
+
+        if (state.showAddDialog) {
+            AddAgentDialog(
+                onDismiss = actions.onCancelAdd,
+                onConfirm = actions.onCreateAgent,
+            )
+        }
     }
 
-    if (state.showAddDialog) {
-        AddAgentDialog(
-            onDismiss = actions.onCancelAdd,
-            onConfirm = actions.onCreateAgent,
+    if (threePane != null) {
+        HubThreePane(
+            host = threePane,
+            strip = hubStripEntries(displayAgents, sessionsByAgent, selectedSessionId),
+            activity = sessionActivity,
+            empty = { open ->
+                HubPaneEmpty(
+                    agents = displayAgents,
+                    onCreateSession = { agentId -> createSession(agentId, open) },
+                    onRequestAdd = { showAddDialog = true },
+                )
+            },
+            list = { open, close -> HubListContent(open, selectedSessionId, close) },
         )
+    } else {
+        HubListContent(onNavigateToChat, null)
     }
 }
 
@@ -381,6 +411,8 @@ internal data class AgentHubScreenState(
     val sessionsByAgent: Map<String, List<Session>> = emptyMap(),
     /** 正在生成或等待批准的会话，列表行以此替换时间显示状态。 */
     val sessionActivity: Map<String, HubSessionActivity> = emptyMap(),
+    /** 内屏三列时会话列正在显示的会话，列表中高亮。 */
+    val selectedSessionId: String? = null,
 )
 
 internal enum class HubSessionActivity { GENERATING, QUEUED, AWAITING_APPROVAL, AWAITING_ANSWER }
@@ -597,6 +629,7 @@ internal fun AgentHubScreenContent(
                                 title = stringResource(R.string.hub_section_pinned),
                                 entries = sections.pinnedSessions,
                                 activity = state.sessionActivity,
+                                selectedSessionId = state.selectedSessionId,
                                 actions = actions,
                             )
                         }
@@ -608,6 +641,7 @@ internal fun AgentHubScreenContent(
                                 title = stringResource(if (searching) R.string.hub_section_sessions else R.string.hub_section_recent),
                                 entries = sections.sessions,
                                 activity = state.sessionActivity,
+                                selectedSessionId = state.selectedSessionId,
                                 actions = actions,
                             )
                         }
@@ -640,6 +674,7 @@ internal fun AgentHubScreenContent(
                                             agentId = agentId,
                                             sessions = state.sessionsByAgent[agentId].orEmpty(),
                                             activity = state.sessionActivity,
+                                            selectedSessionId = state.selectedSessionId,
                                             actions = actions,
                                         )
                                     }
@@ -662,6 +697,7 @@ private fun HubSessionSection(
     activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
     modifier: Modifier = Modifier,
+    selectedSessionId: String? = null,
 ) {
     NexaraSettingsSection(
         title = title,
@@ -677,6 +713,7 @@ private fun HubSessionSection(
                         session = entry.session,
                         subtitle = entry.agentTitle,
                         activity = activity[sessionId],
+                        selected = sessionId == selectedSessionId,
                         onOpen = { actions.onOpenChat(sessionId) },
                         onTogglePin = { actions.onToggleSessionPin(sessionId) },
                         onRequestDelete = { actions.onRequestDeleteSession(sessionId) },
@@ -708,58 +745,76 @@ private fun HubNewChatAction(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        NexaraDropdownMenu(
+        HubNewChatMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
-            minWidth = 200.dp,
-        ) {
-            Text(
-                text = stringResource(R.string.hub_new_chat),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
-            )
-            agents.forEach { item ->
-                NexaraMenuItem(
-                    leadingIcon = {
-                        AgentAvatar(
-                            icon = agentIconVector(item.agent.icon),
-                            customImageUri = item.agent.avatarPath,
-                            backgroundColor = agentAvatarColor(item.agent),
-                            size = 28.dp,
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = item.title,
-                            style = NexaraTypography.labelLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onCreateSession(item.agent.id)
-                    },
-                    modifier = Modifier.testTag(UiTags.hubNewChatAgent(item.agent.id)),
-                )
-            }
+            onDismiss = { expanded = false },
+            agents = agents,
+            onCreateSession = onCreateSession,
+            onRequestAdd = onRequestAdd,
+        )
+    }
+}
+
+/** “新对话”的助手选择菜单：选择助手后直接新建会话，末项添加助手。页头与内屏会话列的新建入口共用。 */
+@Composable
+internal fun HubNewChatMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    agents: List<AgentDisplayItem>,
+    onCreateSession: (String) -> Unit,
+    onRequestAdd: () -> Unit,
+) {
+    NexaraDropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        minWidth = 200.dp,
+    ) {
+        Text(
+            text = stringResource(R.string.hub_new_chat),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
+        )
+        agents.forEach { item ->
             NexaraMenuItem(
                 leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                    AgentAvatar(
+                        icon = agentIconVector(item.agent.icon),
+                        customImageUri = item.agent.avatarPath,
+                        backgroundColor = agentAvatarColor(item.agent),
+                        size = 28.dp,
                     )
                 },
-                text = { Text(stringResource(R.string.hub_btn_add_agent), style = NexaraTypography.labelLarge) },
-                onClick = {
-                    expanded = false
-                    onRequestAdd()
+                text = {
+                    Text(
+                        text = item.title,
+                        style = NexaraTypography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
+                onClick = {
+                    onDismiss()
+                    onCreateSession(item.agent.id)
+                },
+                modifier = Modifier.testTag(UiTags.hubNewChatAgent(item.agent.id)),
             )
         }
+        NexaraMenuItem(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
+            text = { Text(stringResource(R.string.hub_btn_add_agent), style = NexaraTypography.labelLarge) },
+            onClick = {
+                onDismiss()
+                onRequestAdd()
+            },
+        )
     }
 }
 
@@ -772,6 +827,7 @@ private fun HubSessionRow(
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
     onRequestDelete: () -> Unit,
+    selected: Boolean = false,
     tag: String = UiTags.hubSession(session.id),
     startIndent: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
@@ -780,7 +836,7 @@ private fun HubSessionRow(
     val pinLabel = stringResource(if (session.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin)
     val deleteLabel = stringResource(R.string.shared_btn_delete)
     val pinnedState = stringResource(R.string.sessions_tag_pinned)
-    val activityState = activity?.let { stringResource(if (it == HubSessionActivity.GENERATING) R.string.chat_cd_generating_response else R.string.hub_session_awaiting_approval) }
+    val activityState = activity?.let { stringResource(hubSessionActivityLabel(it)) }
     val time = remember(session.updatedAt) {
         formatHubSessionTime(session.updatedAt, System.currentTimeMillis())
     }
@@ -790,7 +846,10 @@ private fun HubSessionRow(
             subtitle = subtitle,
             modifier = Modifier
                 .testTag(tag)
+                // 内屏三列：会话列正在显示的会话与设置目录的选中项同样高亮。
+                .then(if (selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
                 .semantics {
+                    if (selected) this.selected = true
                     listOfNotNull(pinnedState.takeIf { session.isPinned }, activityState)
                         .takeIf { it.isNotEmpty() }?.let { stateDescription = it.joinToString("，") }
                     customActions = listOf(
@@ -994,6 +1053,7 @@ private fun HubAgentSessions(
     sessions: List<Session>,
     activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
+    selectedSessionId: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate))) {
         if (sessions.isEmpty()) {
@@ -1014,6 +1074,7 @@ private fun HubAgentSessions(
                 session = session,
                 subtitle = null,
                 activity = activity[session.id],
+                selected = session.id == selectedSessionId,
                 onOpen = { actions.onOpenChat(session.id) },
                 onTogglePin = { actions.onToggleSessionPin(session.id) },
                 onRequestDelete = { actions.onRequestDeleteSession(session.id) },
@@ -1286,7 +1347,7 @@ internal fun filterAgentDisplays(items: List<AgentDisplayItem>, query: String): 
 
 /** 助手主题色向次要文字色靠拢 35%，头像底色不抢标题。 */
 @Composable
-private fun agentAvatarColor(agent: Agent): Color {
+internal fun agentAvatarColor(agent: Agent): Color {
     val parsed = try {
         Color(agent.color.toColorInt())
     } catch (_: Exception) {
@@ -1295,7 +1356,7 @@ private fun agentAvatarColor(agent: Agent): Color {
     return lerp(parsed, MaterialTheme.colorScheme.onSurfaceVariant, 0.35f)
 }
 
-private fun agentIconVector(icon: String): ImageVector = when (icon) {
+internal fun agentIconVector(icon: String): ImageVector = when (icon) {
     "💻" -> Icons.Rounded.Code
     "📝" -> Icons.Rounded.EditNote
     "🌐", "A" -> Icons.Rounded.Translate

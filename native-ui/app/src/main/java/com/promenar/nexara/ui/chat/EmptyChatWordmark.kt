@@ -154,11 +154,10 @@ internal fun ParticleWordmark(
         val preview = remember(wordmark, widthPx, density, shape) {
             if (inspection) buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density, shape).also { it.settle() } else null
         }
+        // 宽度变化（开合屏、首页会话列展开）时按新宽度重建；重建完成前沿用旧粒子。
         val particles by produceState(preview, wordmark, widthPx, density, shape) {
-            if (value == null) {
-                value = withContext(Dispatchers.Default) {
-                    buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density, shape)
-                }
+            value = preview ?: withContext(Dispatchers.Default) {
+                buildWordmarkParticles(wordmark, widthPx, heightPx, centerY, density, shape)
             }
         }
         var frame by remember { mutableLongStateOf(0L) }

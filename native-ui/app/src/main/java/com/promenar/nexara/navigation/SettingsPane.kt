@@ -123,7 +123,17 @@ internal interface SettingsBackStack {
  * 窗口变宽时收回主标签页之上的整页设置子页：逐层弹出右列可承载的页面直到主标签页，
  * 返回它们（底层在前）。中途遇到其它页面、到不了主标签页或底层不是设置首页条目时，按原顺序压回并返回 null。
  */
-internal fun SettingsBackStack.takeSettingsPagesAboveMainTabs(): List<String>? {
+internal fun SettingsBackStack.takeSettingsPagesAboveMainTabs(): List<String>? =
+    takePagesAboveMainTabs(::isSettingsPaneRoute) { settingsPagesAboveMainTabs(it) }
+
+/**
+ * 逐层弹出 [accept] 认可的页面直到主标签页，交给 [collect] 判定（底层在前）；
+ * 中途遇到其它页面、到不了主标签页或 [collect] 返回 null 时，按原顺序压回并返回 null。
+ */
+internal fun SettingsBackStack.takePagesAboveMainTabs(
+    accept: (String) -> Boolean,
+    collect: (List<String>) -> List<String>?,
+): List<String>? {
     val popped = ArrayList<String>()
     var reachedMainTabs = false
     while (true) {
@@ -132,11 +142,11 @@ internal fun SettingsBackStack.takeSettingsPagesAboveMainTabs(): List<String>? {
             reachedMainTabs = true
             break
         }
-        if (!isSettingsPaneRoute(route) || !hasPrevious) break
+        if (!accept(route) || !hasPrevious) break
         popped += route
         pop()
     }
-    val pages = if (reachedMainTabs) settingsPagesAboveMainTabs(popped.asReversed()) else null
+    val pages = if (reachedMainTabs) collect(popped.asReversed()) else null
     if (pages == null) popped.asReversed().forEach(::push)
     return pages
 }
@@ -154,6 +164,12 @@ internal class NavControllerSettingsBackStack(private val nav: NavController) : 
 
 /** 右列返回栈中的一层：条目 id 区分同一路由的不同实例。 */
 internal data class SettingsPaneEntry(val id: String, val route: String)
+
+/** 右列层级跨 Activity 重建保存：条目 id 与路由交替排列。 */
+internal val SettingsPaneEntriesSaver = androidx.compose.runtime.saveable.listSaver<List<SettingsPaneEntry>, String>(
+    save = { entries -> entries.flatMap { listOf(it.id, it.route) } },
+    restore = { flat -> flat.chunked(2) { SettingsPaneEntry(it[0], it[1]) } },
+)
 
 /**
  * 右列栈顶变化后的层级：[current] 已在层级中即为后退，截到它为止；否则接在 [previousId] 之后
