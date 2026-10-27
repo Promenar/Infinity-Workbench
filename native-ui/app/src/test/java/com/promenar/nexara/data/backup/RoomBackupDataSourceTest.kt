@@ -41,8 +41,25 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.FileOperationRepository
 import com.promenar.nexara.data.repository.PersistentFileIdentity
+import com.promenar.nexara.data.repository.PathWorkspaceTreeScanner
 import com.promenar.nexara.data.repository.TestWorkspaceFileOps
 import com.promenar.nexara.data.repository.WorkspaceRepository
+import com.promenar.nexara.data.repository.ToolExecutionKey
+import com.promenar.nexara.data.repository.ToolExecutionLedgerRepository
+import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
+import com.promenar.nexara.data.repository.ToolLedgerState
+import com.promenar.nexara.data.generation.SessionToolResolver
+import com.promenar.nexara.data.storage.JvmBoundRealPathFileSystem
+import com.promenar.nexara.data.model.ToolCall
+import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.ui.chat.manager.MessageManager
+import com.promenar.nexara.ui.chat.manager.ToolExecutor
+import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
 import com.promenar.nexara.domain.repository.WriteResult
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +86,222 @@ import kotlinx.serialization.json.jsonPrimitive
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
+    @Test
+    fun `分支备份恢复保留父子关系方案worktree与自动处理状态`() = runBlocking {
+        seedCompleteGraph()
+        val branch = SessionEntity("branch", "agent-1", createdAt = 1, updatedAt = 2,
+            parentSessionId = "session-1", branchPlanJson = "{\"topic\":\"审查\"}",
+            worktreeDirectory = "/project/feature", worktreeBranch = "feature", worktreeBase = "abc123",
+            sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true)
+        db.sessionDao().insert(branch)
+        db.messageDao().insert(MessageEntity("branch-message", "branch", "assistant", "分支记录", createdAt = 2))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        assertThat(db.sessionDao().getById("branch")).isEqualTo(branch)
+        assertThat(db.messageDao().getById("branch-message")!!.content).isEqualTo("分支记录")
+    }
+
+    @Test
+    fun `恢复缺失父会话时解除引用并标记原主会话已删除`() = runBlocking {
+        seedCompleteGraph()
+        val branch = SessionEntity("branch", "agent-1", createdAt = 1, updatedAt = 2,
+            parentSessionId = "missing-parent", branchPlanJson = "{}", worktreeDirectory = "/project/feature",
+            worktreeBranch = "feature", worktreeBase = "abc123")
+        db.sessionDao().insert(branch)
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        assertThat(db.sessionDao().getById("branch")).isEqualTo(branch.copy(parentSessionId = null, parentSessionDeleted = true))
+    }
+
+    @Test
+    fun `恢复解除跨助手自引用循环与超过一层的分支关系`() = runBlocking {
+        seedCompleteGraph()
+        db.agentDao().insert(AgentEntity("other-agent", "另一个助手", createdAt = 1))
+        val valid = SessionEntity("valid-branch", "agent-1", parentSessionId = "session-1", branchPlanJson = "{}", createdAt = 1, updatedAt = 2)
+        val orphan = SessionEntity("orphan-branch", "agent-1", branchPlanJson = "{}", parentSessionDeleted = true, createdAt = 1, updatedAt = 2)
+        val planOnly = SessionEntity("plan-parent", "agent-1", branchPlanJson = "{}", createdAt = 1, updatedAt = 2)
+        val invalid = listOf(
+            valid.copy(id = "cross-agent", agentId = "other-agent"),
+            valid.copy(id = "second-level", parentSessionId = valid.id),
+            valid.copy(id = "self", parentSessionId = "self"),
+            valid.copy(id = "cycle-a", parentSessionId = "cycle-b"),
+            valid.copy(id = "cycle-b", parentSessionId = "cycle-a"),
+            valid.copy(id = "orphan-child", parentSessionId = orphan.id),
+            valid.copy(id = "plan-child", parentSessionId = planOnly.id),
+            valid.copy(id = "deleted-parent-mark", parentSessionDeleted = true),
+        )
+        (listOf(valid, orphan, planOnly) + invalid).forEach { db.sessionDao().insert(it) }
+        db.messageDao().insert(MessageEntity("isolated-message", "cross-agent", "assistant", "保留私有分支记录", createdAt = 3))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        assertThat(db.sessionDao().getById(valid.id)).isEqualTo(valid)
+        assertThat(db.sessionDao().getById(orphan.id)).isEqualTo(orphan)
+        invalid.forEach { before ->
+            assertThat(db.sessionDao().getById(before.id)).isEqualTo(before.copy(parentSessionId = null, parentSessionDeleted = true))
+        }
+        assertThat(db.sessionDao().getAll().filter { it.parentSessionId == "session-1" }.map { it.id }).containsExactly(valid.id)
+        assertThat(db.messageDao().getById("isolated-message")!!.content).isEqualTo("保留私有分支记录")
+    }
+
+    @Test
+    fun `父会话删除后已批准工具统一对账的修改及新增文件可备份恢复`() = runBlocking {
+        seedCompleteGraph()
+        val initial = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+        newDataSource().restore(validated(initial))
+        val registry = WorkspaceEntity("branch-shared-root", "branch_shared", "共用分支工作区", "root-1", 2)
+        db.workspaceDao().insert(registry)
+        val child = SessionEntity("shared-child", "agent-1", parentSessionId = "session-1", branchPlanJson = "{}",
+            workspaceId = registry.id, createdAt = 2, updatedAt = 3)
+        db.sessionDao().insert(child)
+        db.messageDao().insert(MessageEntity("shared-child-message", child.id, "assistant", "保留分支", createdAt = 3))
+        assertThat(com.promenar.nexara.data.session.RoomSessionDeletionTransaction(db).deleteWithoutWorkspace("session-1")).isTrue()
+        assertThat(db.sessionDao().getAll().none { it.workspaceRootUuid == registry.location }).isTrue()
+        val sharedRoot = db.fileEntryDao().getByUuid(registry.location, registry.location)!!
+        val oldFile = db.fileEntryDao().getByUuid(registry.location, "file-1")!!
+        val backend = JvmBoundRealPathFileSystem().backend(java.io.File(sharedRoot.physicalRootPath))
+        val updatedContent = "父会话删除后修改的内容"
+        val addedContent = "孤立分支新增的内容"
+        val workspace = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(), treeScanner = PathWorkspaceTreeScanner)
+        val privateRoot = workspace.ensureSessionRoot(child.id, sourceBase.resolve("branch-private").toString())
+        assertThat(privateRoot.uuid).isNotEqualTo(registry.location)
+        val call = ToolCall("approved-write", "write_file", "{}")
+        var toolStage = "未进入技能"
+        val skill = object : SkillDefinition {
+            override val id = "write_file"
+            override val name = "write_file"
+            override val description = "测试共用分支文件写入"
+            override val mcpServerId: String? = null
+            override val parametersSchema = """{"type":"object","properties":{}}"""
+            override val risk = com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE
+            override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+                assertThat(context.sessionId).isEqualTo(child.id)
+                assertThat(context.isApprovalBoundExecution).isTrue()
+                toolStage = "修改已有文件"
+                backend.write("/docs/a.txt", updatedContent.toByteArray(), expectedSha256 = oldFile.hash)
+                toolStage = "新增文件"
+                backend.write("/docs/new.txt", addedContent.toByteArray(), createOnly = true)
+                toolStage = "验证对账前的索引与备份失败"
+                assertThat(db.fileEntryDao().getByUuid(registry.location, "file-1")!!.hash).isEqualTo(oldFile.hash)
+                assertThat(db.fileEntryDao().getActiveByMaterializedPath(registry.location, "/docs/new.txt")).isNull()
+                assertThat(runCatching { newDataSource().snapshot(CANONICAL_CONTENT) }.exceptionOrNull())
+                    .isInstanceOf(BackupValidationException::class.java)
+                toolStage = "写入完成"
+                return ToolResult(call.id, "写入完成", status = "success")
+            }
+        }
+        val prepared = skill.toProtocolTool()
+        val skills = object : SkillRegistry {
+            override fun getSkill(name: String) = skill.takeIf { it.name == name }
+            override fun getAllSkills() = listOf(skill)
+            override fun getAllTools(allowedIds: List<String>?) = listOf(prepared)
+        }
+        val ledger = ToolExecutionLedgerRepository(db)
+        val key = ToolExecutionKey(child.id, "shared-child-message", call.id)
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(call, prepared, true)
+            as ToolInvocationIdentityResolution.Valid).identity
+        ledger.register(key, identity)
+        assertThat(ledger.approve(setOf(key))).isEqualTo(1)
+        val store = ChatStore().apply {
+            upsertSession(db.sessionDao().getById(child.id)!!.toDomain().copy(
+                messages = listOf(db.messageDao().getById("shared-child-message")!!.toDomain())))
+        }
+        var reconciled: com.promenar.nexara.data.repository.WorkspaceChangeReport? = null
+        var captured: BackupSnapshot? = null
+        val finalized = mutableListOf<String>()
+        val executor = ToolExecutor(store, io.mockk.mockk<MessageManager>(relaxed = true), skills,
+            SessionToolResolver { listOf(prepared) }, ledger = ledger, afterTools = { sessionId ->
+                finalized += sessionId
+                reconciled = workspace.reconcileSessionWorkspace(registry.location, sessionId)
+                captured = newDataSource().snapshot(CANONICAL_CONTENT)
+            })
+
+        executor.executeTools(child.id, "shared-child-message", listOf(call), preparedTools = listOf(prepared))
+
+        assertThat(finalized).containsExactly(child.id)
+        val toolResults = db.messageDao().getBySession(child.id).filter { it.role == "tool" && it.toolCallId == call.id }.map { it.content }
+        com.google.common.truth.Truth.assertWithMessage("工具执行阶段：%s；持久化工具结果：%s", toolStage, toolResults)
+            .that(ledger.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+        val changes = requireNotNull(reconciled)
+        assertThat(changes.modified).contains("/docs/a.txt")
+        assertThat(changes.added).contains("/docs/new.txt")
+        val addedFile = db.fileEntryDao().getActiveByMaterializedPath(registry.location, "/docs/new.txt")!!
+        assertThat(addedFile.lastWriteSessionId).isEqualTo(child.id)
+        assertThat(db.fileEntryDao().getByUuid(registry.location, "file-1")!!.lastWriteSessionId).isEqualTo(child.id)
+        val snapshot = requireNotNull(captured)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        val restoredRegistry = db.workspaceDao().getById(registry.id)!!
+        val restoredChild = db.sessionDao().getById(child.id)!!
+        val restoredRoot = db.fileEntryDao().getByUuid(restoredRegistry.location, restoredRegistry.location)!!
+        val restoredFile = db.fileEntryDao().getByUuid(restoredRegistry.location, "file-1")!!
+        assertThat(restoredRegistry).isEqualTo(registry)
+        assertThat(restoredChild.copy(workspacePath = null)).isEqualTo(child.copy(
+            parentSessionId = null, parentSessionDeleted = true, workspaceRootUuid = privateRoot.uuid))
+        val restoredPrivateRoot = db.fileEntryDao().getByUuid(privateRoot.uuid, privateRoot.uuid)!!
+        assertThat(restoredChild.workspacePath).isEqualTo(restoredPrivateRoot.physicalRootPath)
+        assertThat(restoredRoot.uuid).isEqualTo("root-1")
+        assertThat(restoredRoot.physicalRootPath).isNotEqualTo(sourceRoot.toString())
+        assertThat(restoredFile.physicalRootPath).isEqualTo(restoredRoot.physicalRootPath)
+        assertThat(restoredFile.hash).isEqualTo(sha256(updatedContent.toByteArray()))
+        assertThat(readUtf8(java.nio.file.Paths.get(restoredRoot.physicalRootPath).resolve("docs/a.txt"))).isEqualTo(updatedContent)
+        val restoredAdded = db.fileEntryDao().getByUuid(restoredRegistry.location, addedFile.uuid)!!
+        assertThat(restoredAdded.hash).isEqualTo(sha256(addedContent.toByteArray()))
+        assertThat(restoredAdded.lastWriteSessionId).isEqualTo(child.id)
+        assertThat(readUtf8(java.nio.file.Paths.get(restoredAdded.physicalRootPath).resolve("docs/new.txt"))).isEqualTo(addedContent)
+        assertThat(db.sessionDao().getById("session-1")).isNull()
+        assertThat(db.messageDao().getById("shared-child-message")!!.content).isEqualTo("保留分支")
+    }
+
+    @Test
+    fun `v9备份补齐分支默认值后恢复旧会话`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val fields = setOf("parent_session_id", "branch_plan_json", "worktree_directory", "worktree_branch", "worktree_base",
+            "parent_session_deleted", "session_auto_wake_count", "session_auto_processing_paused")
+        val legacy = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(9), "tables" to JsonObject(tables +
+            ("sessions" to JsonArray(tables.getValue("sessions").jsonArray.map { JsonObject(it.jsonObject - fields) }))))).toString().toByteArray()
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot, database = legacy))
+
+        val session = db.sessionDao().getById("session-1")!!
+        assertThat(session.parentSessionId).isNull()
+        assertThat(session.parentSessionDeleted).isFalse()
+        assertThat(session.sessionAutoWakeCount).isEqualTo(0)
+        assertThat(session.sessionAutoProcessingPaused).isFalse()
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+    }
+
+    @Test
+    fun `缺父引用规范化不能掩盖当前备份的缺列或类型错误`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        for (missing in listOf(true, false)) {
+            val malformed = mutateRows(snapshot, "sessions") { rows -> JsonArray(rows.map { raw ->
+                val row = raw.jsonObject + ("parent_session_id" to JsonPrimitive("missing-parent"))
+                JsonObject(if (missing) row - "parent_session_deleted" else row + ("parent_session_deleted" to JsonPrimitive("invalid")))
+            }) }
+            assertThat(runCatching { newDataSource().restore(malformed) }.exceptionOrNull())
+                .isInstanceOf(BackupValidationException::class.java)
+            assertThat(db.sessionDao().getById("session-1")!!.parentSessionDeleted).isFalse()
+        }
+    }
+
     @Test fun `恢复拒绝超长空白标题和无界id并保持原数据`() = runBlocking {
         seedCompleteGraph()
         insertMemory("sentinel")
@@ -112,12 +345,12 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v8和v9备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
+    fun `v8至v10备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val tables = root.getValue("tables").jsonObject
-        for (version in 8..9) {
+        for (version in 8..10) {
             val legacyTables = if (version == 8) tables - "long_term_memories" else tables
             val missingMode = JsonObject(root + mapOf(
                 "schemaVersion" to JsonPrimitive(version),
@@ -132,11 +365,11 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v9备份恢复保留长期记忆全部字段且来源缺失不影响恢复`() = runBlocking {
+    fun `备份恢复保留长期记忆全部字段且来源缺失不影响恢复`() = runBlocking {
         seedCompleteGraph()
         insertMemory("memory-1", sourceSessionId = "deleted-session")
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
-        assertThat(snapshot.databaseSchemaVersion).isEqualTo(9)
+        assertThat(snapshot.databaseSchemaVersion).isEqualTo(10)
         db.clearAllTables()
         newDataSource().restore(validated(snapshot))
         db.openHelper.writableDatabase.query("SELECT * FROM long_term_memories WHERE id=?", arrayOf(memoryId("memory-1"))).use {
@@ -173,7 +406,7 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v9备份缺长期记忆表时拒绝且保留当前数据`() = runBlocking {
+    fun `当前备份缺长期记忆表时拒绝且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         insertMemory("sentinel")
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
@@ -736,8 +969,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(9)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("9")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(10)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("10")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",

@@ -26,6 +26,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_21_22
 import com.promenar.nexara.data.local.db.MIGRATION_22_23
 import com.promenar.nexara.data.memory.isEnabledForToolAdvertisement
+import com.promenar.nexara.data.local.db.MIGRATION_28_29
 import com.promenar.nexara.data.local.db.MIGRATION_27_28
 import com.promenar.nexara.data.local.db.MIGRATION_26_27
 import com.promenar.nexara.data.local.db.MIGRATION_25_26
@@ -300,7 +301,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
             .addCallback(SessionMountNormalizationCallback { NexaraLogger.logError("SessionMountNormalization", it) })
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
@@ -620,7 +621,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 } else {
                     val rootUuid = session.workspaceRootUuid
                     val pathStr = session.workspacePath
-                    if (rootUuid.isNullOrBlank() || pathStr.isNullOrBlank()) {
+                    val sharedWorkspace = rootUuid?.let { database.workspaceDao().getByLocation("branch_shared", it) }
+                    val sharedByBranches = sharedWorkspace != null && database.workspaceDao().countSessionReferences(sharedWorkspace.id) > 0
+                    if (sharedByBranches || rootUuid.isNullOrBlank() || pathStr.isNullOrBlank()) {
                         true
                     } else {
                         val path = java.io.File(pathStr)
@@ -704,7 +707,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
 
     suspend fun deleteSessionRecoverably(sessionId: String, keepFiles: Boolean = false):
         com.promenar.nexara.data.session.SessionDeletionResult = try {
-        withContext(Dispatchers.IO) { sessionDeletionCoordinator.delete(sessionId, keepFiles) }
+        withContext(Dispatchers.IO) {
+            val result = sessionDeletionCoordinator.delete(sessionId, keepFiles)
+            database.sessionDao().getAll().filter { it.parentSessionDeleted }.forEach { row ->
+                chatStore.updateSession(row.id) { it.copy(parentSessionId = row.parentSessionId, parentSessionDeleted = true) }
+            }
+            result
+        }
     } finally {
         withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
             scheduledTaskController.resumeSchedulingForSession(sessionId)
@@ -785,7 +794,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         ): com.promenar.nexara.data.subagent.SubagentToolOutcome {
             val skill = skillRegistry.getSkillByRuntimeToolId(tool.runtimeToolId)?.takeIf { it.name == tool.function.name }
                 ?: return com.promenar.nexara.data.subagent.SubagentToolOutcome("工具当前不可用", failed = true)
-            val result = skill.execute(arguments, context)
+            val result = try { skill.execute(arguments, context) }
+                finally { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { reconcileBranchWorkspace(context.sessionId) } }
             val failed = result.status != "success"
             return com.promenar.nexara.data.subagent.SubagentToolOutcome(
                 if (failed) com.promenar.nexara.ui.chat.manager.ToolFailureSummary.format(result.content) else result.content,
@@ -799,6 +809,64 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         }
     }
     val subagentControls: com.promenar.nexara.data.subagent.SubagentControls get() = subagentLauncher
+    val branchPlans by lazy { com.promenar.nexara.data.branch.BranchPlanLedger(database, sessionExecutionGate) }
+    private val sessionMailbox by lazy {
+        com.promenar.nexara.data.branch.SessionMessageStore(database, generationScope, { systemTurnDispatcher }, chatStore,
+            generationMessageManager, { getString(R.string.branch_auto_processing_paused) })
+    }
+    private val branchWorktrees by lazy {
+        com.promenar.nexara.data.branch.BranchWorktreeService(
+            resolveDirectory = { session ->
+                session.worktreeDirectory ?: if (session.workspaceId?.let { database.workspaceDao().getById(it) }?.kind ==
+                    com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME) "/root" else "/workspace"
+            },
+            execute = { session, cwd, command ->
+                withContext(Dispatchers.IO) {
+                    val base = branchUnderlyingWorkspace(session)
+                    val launch = linux.runtime.prepareLaunch(com.promenar.nexara.domain.linux.LinuxLaunchSpec.shell(command, base)
+                        .copy(workingDirectory = cwd, mounts = externalFolderManager.visible(session.id).filter { it.sourceType == "real_path" }
+                            .map { com.promenar.nexara.domain.linux.LinuxBind(File(it.sourceId), "/mnt/${it.alias}") }))
+                    val output = backgroundCommandRunner.run(com.promenar.nexara.data.exec.BuiltinCommandRequest(
+                        launch.command, launch.hostWorkingDirectory, launch.environment, timeoutSeconds = 120))
+                    com.promenar.nexara.data.branch.BranchWorktreeCommandOutput(output.exitCode, output.stdout, output.stderr,
+                        output.timedOut, output.stdoutTruncated || output.stderrTruncated)
+                }
+            },
+        )
+    }
+    private suspend fun branchUnderlyingWorkspace(session: com.promenar.nexara.data.local.db.entity.SessionEntity): File {
+        val workspace = if (session.workspaceId != null)
+            sessionWorkspaceResolver.resolveWorkspace(session.workspaceId) else sessionWorkspaceResolver.resolve(session.id)
+        return when (workspace) {
+            is com.promenar.nexara.data.workspace.SessionWorkspace.Directory -> workspace.root
+            is com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable -> error(workspace.reason)
+            com.promenar.nexara.data.workspace.SessionWorkspace.Private -> File(workspaceRepository.ensureSessionRoot(session.id).physicalRootPath)
+        }
+    }
+    private suspend fun branchMountedDirectory(session: com.promenar.nexara.data.local.db.entity.SessionEntity, path: String): File? {
+        if (path == "/workspace" || path.startsWith("/workspace/")) return File(branchUnderlyingWorkspace(session), path.removePrefix("/workspace").removePrefix("/"))
+        if (path.startsWith("/mnt/")) {
+            val alias = path.removePrefix("/mnt/").substringBefore('/')
+            val mount = externalFolderManager.visible(session.id).singleOrNull { it.alias == alias && it.sourceType == "real_path" } ?: return null
+            return File(mount.sourceId, path.removePrefix("/mnt/$alias").removePrefix("/"))
+        }
+        return null
+    }
+    private val branchService: com.promenar.nexara.data.branch.BranchSessionService by lazy {
+        com.promenar.nexara.data.branch.BranchSessionService(database, branchPlans, askUserLedger, generationScope,
+            generationCoordinator, chatStore, generationMessageManager, ::loadGenerationSession,
+            { workspaceRepository.ensureSessionRoot(it); Unit }, branchWorktrees, sessionMailbox, sessionExecutionGate,
+            { generationForegroundController.track(it) }, { getString(R.string.branch_worktree_failed, it) },
+            subagentTitle = { parent, id -> subagentLauncher.read(parent, id).description },
+            reconcileSharedSource = { rootUuid, sessionId ->
+                (workspaceRepository as WorkspaceRepository).reconcileSessionWorkspace(rootUuid, sessionId)
+                Unit
+            })
+    }
+    val branchControls: com.promenar.nexara.domain.branch.BranchControls get() = branchService
+    suspend fun reconcileBranchWorkspace(sessionId: String): Unit = branchService.afterTools(sessionId)
+    suspend fun sessionCommunicationApprovalTarget(session: com.promenar.nexara.data.model.Session, tool: String, arguments: String): String? =
+        branchService.approvalTarget(session, tool, arguments)
     private val subagentCompletions by lazy { com.promenar.nexara.data.trigger.SubagentCompletionSteering(generationScope) }
     private val subagentResultFiles by lazy {
         com.promenar.nexara.data.subagent.SubagentResultFiles(
@@ -872,6 +940,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.data.trigger.ApplicationSystemTurnRuntime(
                 startup = startupState, store = chatStore,
                 subagentCompletions = subagentCompletions,
+                admitMessageWake = sessionMailbox::admitWake,
                 findSession = ::loadGenerationSession,
                 exists = { id -> database.sessionDao().getById(id) != null },
                 hasApproval = { id -> database.sessionDao().hasPendingUserInteraction(id) },
@@ -1009,6 +1078,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             grantVerifier = this::verifyTargetGrant,
             liveOutput = toolLiveOutputStore,
             unavailableLedgerMessage = { getString(com.promenar.nexara.R.string.startup_isolation_tool_ledger_diagnostics_only) },
+            afterTools = ::reconcileBranchWorkspace,
         )
     }
     private val generationPostProcessor by lazy {
@@ -1081,6 +1151,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             runModeCheck = ::checkSessionRunMode,
             linuxFiles = linuxSessionFiles,
             askUserLedger = askUserLedger,
+            branchService = { branchService }, branchPlans = branchPlans, sessionMailbox = sessionMailbox,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1272,6 +1343,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionHome = { id -> File(workspaceRepository.ensureSessionRoot(id).physicalRootPath) },
             reconcileSessionHome = ::reconcileSessionHome,
             messages = runModeMessages,
+            linuxLaunchBinding = { sessionId ->
+                val row = database.sessionDao().getById(sessionId)
+                row?.worktreeDirectory?.let { com.promenar.nexara.data.branch.BranchLinuxCommandWorkspace(branchUnderlyingWorkspace(row), it) }
+            },
         )
     }
 
@@ -1283,6 +1358,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             projectsRoot = File(filesDir, "projects"),
             sharedAccess = com.promenar.nexara.data.workspace.AndroidSharedWorkspaceAccess(this),
             linuxHome = com.promenar.nexara.data.workspace.LinuxHomeWorkspaceSource(linux.runtime),
+            branchWorktreeResolver = com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver(linux.runtime, ::branchMountedDirectory),
+            resolveSharedPrivateRoot = { uuid -> database.fileEntryDao().getAnyStateByUuidForLifecycle(uuid, uuid)?.physicalRootPath?.let(::File) },
         )
     }
 
@@ -1312,6 +1389,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         val locator = com.promenar.nexara.data.git.SessionGitWorkspaceLocator(
             resolveWorkspace = sessionWorkspaceResolver::resolve,
             privateRoot = { sessionId -> workspaceRepository.ensureSessionRoot(sessionId).physicalRootPath },
+            linuxPathMappings = { sessionId ->
+                if (sessionRunModes.modeFor(sessionId) != com.promenar.nexara.domain.model.SessionRunMode.LINUX) null else {
+                    val session = checkNotNull(database.sessionDao().getById(sessionId))
+                    mapOf("/" to linux.runtime.paths.rootfs.canonicalPath, "/workspace" to branchUnderlyingWorkspace(session).canonicalPath) +
+                        externalFolderManager.visible(sessionId).filter { it.sourceType == "real_path" }.associate { "/mnt/${it.alias}" to File(it.sourceId).canonicalPath }
+                }
+            },
         )
         com.promenar.nexara.data.git.GitChangesService(
             locate = locator::locate,
@@ -1448,6 +1532,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess(
             externalFolderManager, workspaceRepository, fileOperationRepository, sessionWorkspaceResolver::resolve,
             com.promenar.nexara.data.workspace.LinuxSessionRootfsBackend(linux.files), pendingDocumentIndexCoordinator, sessions = sessionRepository,
+            branchNamespace = { sessionId ->
+                val row = database.sessionDao().getById(sessionId)
+                row?.worktreeDirectory?.let { cwd ->
+                    val baseRoot = branchUnderlyingWorkspace(row)
+                    com.promenar.nexara.data.branch.BranchLinuxFileNamespace(
+                        com.promenar.nexara.data.branch.BranchLinuxCommandWorkspace(baseRoot, cwd),
+                        com.promenar.nexara.data.storage.RealPathExternalFolderBackend(baseRoot))
+                }
+            },
         )
     }
 
@@ -1484,6 +1577,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             com.promenar.nexara.ui.chat.manager.skills.longTermMemoryTools(longTermMemoryRepository, longTermMemoryAccess).forEach(::register)
             register(CalculatorSkill())
             register(com.promenar.nexara.ui.chat.manager.AskUserTool())
+            register(com.promenar.nexara.data.branch.SessionBranchTool())
+            register(com.promenar.nexara.data.branch.SessionListTool { branchService })
             register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
             })
@@ -1546,9 +1641,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.nexara.ui.chat.manager.skills.TailnetStatusSkill(tailnetManager))
             register(com.promenar.nexara.ui.chat.manager.skills.AgentTaskSkill { subagentLauncher })
             register(com.promenar.nexara.ui.chat.manager.skills.AgentWaitSkill { subagentLauncher })
-            val subagentAddress = com.promenar.nexara.ui.chat.manager.skills.SubagentAddressHandler { subagentLauncher }
+            val subagentAddress = com.promenar.nexara.ui.chat.manager.skills.SubagentAddressHandler({ subagentLauncher }) { context, run, text ->
+                sessionMailbox.recordSubagentSend(context.sessionId, run.id, run.description, text)
+            }
             listOf("session_read", "session_send", "session_stop").forEach { operation ->
-                register(com.promenar.nexara.ui.chat.manager.skills.SessionSubagentSkill(operation, listOf(subagentAddress)))
+                register(com.promenar.nexara.ui.chat.manager.skills.SessionSubagentSkill(operation, listOf(subagentAddress, com.promenar.nexara.data.branch.BranchSessionAddressHandler { branchService })))
             }
         }
     }
@@ -1892,6 +1989,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         NexaraLogger.logError("SubagentCompletionRecovery", failure)
                     }
                     subagentLauncher.recover()
+                    branchService.recover()
                 }
                 generationScope.launch(Dispatchers.IO) {
                     startupIssueManager.recover(StartupStep.MEMORY_CLEANUP, StartupIssueScope.subsystem(StartupSubsystem.MEMORY_CLEANUP)) {

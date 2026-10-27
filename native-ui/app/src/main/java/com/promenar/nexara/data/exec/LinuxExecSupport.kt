@@ -19,14 +19,16 @@ internal fun linuxExecSpec(
     mounts: List<ExternalMount>,
     skills: File,
     sessionHome: File = workspace,
+    launchBinding: com.promenar.nexara.data.branch.BranchLinuxCommandWorkspace? = null,
 ): LinuxLaunchSpec {
     val binds = mounts.filterNot { it.isUserSkills }.mapNotNull { mount ->
         if (runCatching { ExternalMountPaths.validateAlias(mount.alias) }.getOrNull() != mount.alias) return@mapNotNull null
         val path = ExternalMountPaths.commandAccess(mount).realPath ?: return@mapNotNull null
         LinuxBind(File(path), "/mnt/${mount.alias}")
     } + LinuxBind(skills, "/mnt/skills")
-    return LinuxLaunchSpec.shell(command, workspace, binds).copy(sessionHome = sessionHome, environment = mapOf(
-        "NEXARA_WORKSPACE" to "/workspace",
+    return LinuxLaunchSpec.shell(command, launchBinding?.baseRoot ?: workspace, binds).copy(
+        sessionHome = sessionHome, workingDirectory = launchBinding?.workingDirectory, environment = mapOf(
+        "NEXARA_WORKSPACE" to (launchBinding?.workingDirectory ?: "/workspace"),
         "NEXARA_WORKSPACE_KIND" to kind,
         "NEXARA_BACKEND" to "linux",
         "NEXARA_SKILLS" to "/mnt/skills",

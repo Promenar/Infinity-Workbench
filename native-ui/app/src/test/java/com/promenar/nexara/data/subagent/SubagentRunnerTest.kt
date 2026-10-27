@@ -248,12 +248,12 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `子代理不提供所有新增控制工具及其别名`() = runTest {
-        val controls = listOf("agent_wait", "session_read", "session_send", "session_stop")
+    fun `子代理只提供主会话读取发送并隐藏派发停止等待及控制别名`() = runTest {
+        val controls = listOf("agent_wait", "session_read", "session_send", "session_stop", "session_list", "session_branch")
         val host = FakeHost(listOf(read) + controls.map { tool(it, ToolRisk.SAFE_READ) } + tool("control_alias", ToolRisk.SAFE_READ).copy(runtimeToolId = "session_send"))
         val models = ScriptedModels(listOf(text("完成")))
         runner(models, host).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
-        assertThat(models.requests.single().tools.map { it.function.name }).containsExactly("read_file")
+        assertThat(models.requests.single().tools.map { it.function.name }).containsExactly("read_file", "session_read", "session_send")
     }
 
     @Test fun `子代理隐藏提问工具并对误调用返回可继续的结构化错误`() = runTest {

@@ -60,6 +60,7 @@ class ToolExecutor internal constructor(
     /** 运行中命令的实时输出，按工具调用步骤 id 登记。 */
     private val liveOutput: com.promenar.nexara.data.exec.ToolLiveOutputStore? = null,
     private val unavailableLedgerMessage: () -> String = { "TOOL_LEDGER_UNAVAILABLE" },
+    private val afterTools: suspend (String) -> Unit = {},
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -71,13 +72,15 @@ class ToolExecutor internal constructor(
     ) {
         val grantTargets = expectedGrantTargets.toMap()
         val gate = executionGate
-        if (gate == null) {
-            executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools, grantTargets)
-        } else {
-            gate.withNewSessionAdmission(sessionId) {
+        suspend fun executeAndReconcile() {
+            try {
                 executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools, grantTargets)
+            } finally {
+                withContext(NonCancellable + kotlinx.coroutines.Dispatchers.IO) { afterTools(sessionId) }
             }
         }
+        if (gate == null) executeAndReconcile()
+        else gate.withNewSessionAdmission(sessionId) { executeAndReconcile() }
     }
 
     /**

@@ -42,6 +42,34 @@ class AskUserLedgerRepositoryTest {
 
     private suspend fun pending(): PendingQuestion = repository.pending("s")!!
 
+    @Test fun `用户回答清零自动唤醒计数并解除自动处理暂停`() = runBlocking {
+        create()
+        val latest = db.sessionDao().getById("s")!!
+        db.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
+
+        assertThat(repository.answer(pending(), AskUserAnswer(skipped = true))).isNotNull()
+
+        val answered = db.sessionDao().getById("s")!!
+        assertThat(answered.sessionAutoWakeCount).isEqualTo(0)
+        assertThat(answered.sessionAutoProcessingPaused).isFalse()
+        assertThat(answered.loopStatus).isEqualTo("input_answered")
+    }
+
+    @Test fun `过期回答和提问恢复不能清零自动唤醒计数`() = runBlocking {
+        create()
+        val question = pending()
+        val latest = db.sessionDao().getById("s")!!
+        db.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
+
+        assertThat(repository.answer(question.copy(toolCallId = "stale"), AskUserAnswer(skipped = true))).isNull()
+        AskUserLedgerRepository(db).recoverAnsweredState()
+        assertThat(AskUserLedgerRepository(db).pending("s")).isEqualTo(question)
+
+        val restored = db.sessionDao().getById("s")!!
+        assertThat(restored.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(restored.sessionAutoProcessingPaused).isTrue()
+    }
+
     @Test fun `提问和账本原子持久化且重建和审批恢复保留提问`() = runBlocking {
         assertThat(create().pending).isNotNull()
         val expected = pending()
@@ -147,12 +175,18 @@ class AskUserLedgerRepositoryTest {
     @Test fun `回答结果写失败回滚全部状态且原提问可以重试`() = runBlocking {
         create()
         val question = pending()
+        val latest = db.sessionDao().getById("s")!!
+        db.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
         db.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_answer BEFORE INSERT ON messages WHEN NEW.role = 'tool' BEGIN SELECT RAISE(ABORT, 'test write failure'); END")
         assertThat(runCatching { repository.answer(question, AskUserAnswer(skipped = true)) }.isFailure).isTrue()
         assertThat(repository.pending("s")).isEqualTo(question)
         assertThat(repository.resumption("s")).isNull()
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoProcessingPaused).isTrue()
         db.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_answer")
         assertThat(repository.answer(question, AskUserAnswer(skipped = true))).isNotNull()
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoWakeCount).isEqualTo(0)
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoProcessingPaused).isFalse()
     }
 
     @Test fun `同助手消息的冲突提问不得覆盖当前提问参数`() = runBlocking {
@@ -229,12 +263,16 @@ class AskUserLedgerRepositoryTest {
     @Test fun `续跑终态持久化后的进程中断只补齐账本不重放模型`() = runBlocking {
         create()
         val answer = repository.answer(pending(), AskUserAnswer(skipped = true))!!
+        val latest = db.sessionDao().getById("s")!!
+        db.sessionDao().updateRow(latest.copy(sessionAutoWakeCount = 8, sessionAutoProcessingPaused = true))
         db.messageDao().updateStatus(answer.assistant.id, "error")
         assertThat(repository.resumption("s")).isNull()
         val restored = AskUserLedgerRepository(db)
         restored.recoverAnsweredState()
         assertThat(db.toolExecutionLedgerDao().get("s", "m", "question")!!.status.name).isEqualTo("SUCCEEDED")
         assertThat(db.sessionDao().getById("s")!!.loopStatus).isEqualTo("paused")
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoWakeCount).isEqualTo(8)
+        assertThat(db.sessionDao().getById("s")!!.sessionAutoProcessingPaused).isTrue()
         restored.recoverAnsweredState()
         assertThat(db.messageDao().getBySession("s").count { it.toolCallId == "question" }).isEqualTo(1)
     }

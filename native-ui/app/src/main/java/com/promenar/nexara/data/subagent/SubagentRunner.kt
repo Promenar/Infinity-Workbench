@@ -320,6 +320,7 @@ class SubagentRunner(
         update(current().copy(currentTool = call.name, liveOutputKey = key.takeIf { liveOutput != null }), false)
         val context = object : SkillExecutionContext by parent {
             override val runMode = session.runMode
+            override val sourceSubagentId = current().id
             override val approvedExecutionTarget = if (needsApproval) target else null
             override val isApprovalBoundExecution = needsApproval
             override val liveOutput = sink
@@ -349,8 +350,9 @@ class SubagentRunner(
     }
 
     private fun availableTools(tools: List<ProtocolTool>, profile: SubagentToolProfile, allowedTools: List<String>? = null): List<ProtocolTool> =
-        SubagentLimits.toolset(tools, profile).filter {
+        (SubagentLimits.toolset(tools, profile) + tools.filter { it.function.name in setOf("session_read", "session_send") }).distinctBy { it.function.name }.filter {
             it.function.name !in CONTROL_TOOLS && it.runtimeToolId !in CONTROL_TOOLS &&
+                (it.runtimeToolId !in setOf("session_read", "session_send") || it.function.name == it.runtimeToolId) &&
                 (allowedTools == null || it.function.name in allowedTools)
         }
 
@@ -555,7 +557,7 @@ class SubagentRunner(
         internal const val CONTEXT_LIMIT = "子代理上下文超过模型可用窗口；必要系统约束、用户指令或工具定义无法安全容纳，请缩小任务或追加指令范围。"
         internal fun internalError(error: Exception) = "子代理内部错误（${error::class.java.simpleName}）"
         private val PRETTY_JSON = kotlinx.serialization.json.Json { prettyPrint = true }
-        private val CONTROL_TOOLS = setOf(SubagentLimits.WAIT_TOOL_NAME, "session_read", "session_send", "session_stop")
+        private val CONTROL_TOOLS = setOf(SubagentLimits.WAIT_TOOL_NAME, "session_branch", "session_list", "session_stop")
         private const val INTERRUPTED_TOOL_RESULT = "工具执行被中断，状态未知。请先核对实际状态，不要直接重复可能产生副作用的操作。"
         private const val WORKSPACE_PATHS = "工作区文件使用以 / 开头的虚拟路径（相对工作区根目录），文件工具接受 path 或 uuid；" +
             "先用 list_files、search_files 查找，不要猜测路径，也不要使用设备上的绝对路径。"

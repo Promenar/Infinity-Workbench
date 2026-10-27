@@ -20,6 +20,7 @@ class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
 
     suspend fun deleteWithoutWorkspace(sessionId: String): Boolean = database.withTransaction {
         val dao = database.sessionDeletionDao()
+        dao.detachBranches(sessionId)
         dao.deleteAttachments(sessionId)
         dao.deleteToolLedger(sessionId)
         dao.deleteArtifacts(sessionId)
@@ -39,6 +40,7 @@ class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
         database.withTransaction {
             validatePreparedJournal(target, operationId)
             val dao = database.sessionDeletionDao()
+            dao.detachBranches(target.sessionId)
             dao.deleteAttachments(target.sessionId)
             dao.deleteToolLedger(target.sessionId)
             dao.deleteArtifacts(target.sessionId)

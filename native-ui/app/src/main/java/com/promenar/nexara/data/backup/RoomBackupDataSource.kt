@@ -45,6 +45,7 @@ internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.loca
 internal const val ROOM_SCHEMA_V26_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V26_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V27_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V27_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V28_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V28_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V29_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V29_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
@@ -163,10 +164,11 @@ class RoomBackupDataSource(
         requireWorkspaceMutationJournalRecovered()
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
-        val payload = stripDeviceLocalAvatarPaths(parseDatabase(validated.database))
+        val parsedPayload = stripDeviceLocalAvatarPaths(parseDatabase(validated.database))
         val preferenceSnapshot = parsePreferences(validated.preferences)
-        validatePayload(payload, validated.files)
+        validatePayload(parsedPayload, validated.files)
         validateSecrets(validated.secrets, preferenceSnapshot.providerIds)
+        val payload = normalizeBranchSessions(parsedPayload)
 
         val restoreId = operationId
         val stagingRoot = restoreParent.resolve(".restore-$restoreId.tmp")
@@ -511,8 +513,9 @@ class RoomBackupDataSource(
         }
         val upgraded = when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> return decoded
-            8 -> return upgradeV8Payload(decoded)
-            7 -> return upgradeV8Payload(upgradeV7Payload(decoded))
+            9 -> return upgradeV9Payload(decoded)
+            8 -> return upgradeV9Payload(upgradeV8Payload(decoded))
+            7 -> return upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(decoded)))
             1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
             2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
             3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
@@ -522,7 +525,7 @@ class RoomBackupDataSource(
             else -> return decoded
         }
         if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
-        return upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList()))))
+        return upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList())))))
     }
 
     /** 历史包没有运行模式，恢复为未确定状态，首次进入会话时再检查。 */
@@ -534,7 +537,40 @@ class RoomBackupDataSource(
 
     private fun upgradeV8Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
         if (LONG_TERM_MEMORY_TABLE in payload.tables) throw BackupValidationException("历史备份不应包含长期记忆表")
-        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables + (LONG_TERM_MEMORY_TABLE to emptyList()))
+        return payload.copy(schemaVersion = 9, tables = payload.tables + (LONG_TERM_MEMORY_TABLE to emptyList()))
+    }
+
+    private fun upgradeV9Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val sessions = payload.tables["sessions"] ?: throw BackupValidationException("数据库 payload 缺少表: sessions")
+        val defaults = mapOf(
+            "parent_session_id" to JsonNull,
+            "branch_plan_json" to JsonNull,
+            "worktree_directory" to JsonNull,
+            "worktree_branch" to JsonNull,
+            "worktree_base" to JsonNull,
+            "parent_session_deleted" to JsonPrimitive(0),
+            "session_auto_wake_count" to JsonPrimitive(0),
+            "session_auto_processing_paused" to JsonPrimitive(0),
+        )
+        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables +
+            ("sessions" to sessions.map { row -> JsonObject(defaults + row) }))
+    }
+
+    /** 分支只关联同助手的普通主会话；无效关系保留为带删除标记的独立会话。 */
+    private fun normalizeBranchSessions(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val sessions = payload.tables["sessions"] ?: return payload
+        val byId = sessions.associateBy { it.requiredString("id") }
+        return payload.copy(tables = payload.tables + ("sessions" to sessions.map { row ->
+            val parentId = row.optionalString("parent_session_id")
+            val parent = parentId?.let(byId::get)
+            val valid = parent != null && parentId != row.requiredString("id") &&
+                parent.requiredString("agent_id") == row.requiredString("agent_id") &&
+                parent.optionalString("parent_session_id") == null && parent.optionalString("branch_plan_json") == null &&
+                !parent.requiredBoolean("parent_session_deleted") && !row.requiredBoolean("parent_session_deleted")
+            if (parentId != null && !valid) {
+                JsonObject(row + mapOf("parent_session_id" to JsonNull, "parent_session_deleted" to JsonPrimitive(1)))
+            } else row
+        }))
     }
 
     /**
@@ -857,8 +893,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 28 || identityHash != ROOM_SCHEMA_V28_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v28")
+        if (sqlite.version != 29 || identityHash != ROOM_SCHEMA_V29_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v29")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1659,7 +1695,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 9
+        const val DATABASE_SCHEMA_VERSION = 10
         const val LONG_TERM_MEMORY_TABLE = "long_term_memories"
         const val MAX_LONG_TERM_MEMORIES = LongTermMemoryValidation.MAX_MEMORIES
         const val PARAMETER_SCHEME_TABLE = "parameter_schemes"

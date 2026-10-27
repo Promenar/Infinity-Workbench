@@ -25,6 +25,8 @@ class DefaultSessionToolResolver(
         val capabilities = mediaCapabilities(session)
         val canView = capabilities.vision || capabilities.audioInput || capabilities.videoUnderstanding
         return allTools.filter { tool ->
+            if (tool.sourceId == "builtin" && tool.function.name == "session_branch" &&
+                (session.parentSessionId != null || session.branchPlanJson != null || session.parentSessionDeleted)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } in com.promenar.nexara.data.memory.LongTermMemoryPreferences.TOOL_IDS && !memoryToolsAllowed) return@filter false
             if (tool.sourceId == "builtin" && session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX &&
                 tool.runtimeToolId.ifBlank { tool.function.name } in LINUX_HIDDEN_TOOLS) return@filter false

@@ -1,7 +1,6 @@
 package com.promenar.nexara.data.local.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -26,7 +25,7 @@ interface SessionDao {
     @Update
     suspend fun updateRow(session: SessionEntity)
 
-    /** 常规整行保存不能撤销显式模式切换；读取与写入在同一个事务内完成。 */
+    /** 常规整行保存保留专用事务维护的模式、分支关系与自动处理状态。 */
     @Transaction
     suspend fun update(session: SessionEntity) {
         val existing = getById(session.id) ?: return
@@ -34,15 +33,32 @@ interface SessionDao {
         // 提问状态仅由账本事务切换；旧快照既不能清掉当前请求，也不能复活已关闭的请求。
         val preserveQuestion = existing.loopStatus in questionState || session.loopStatus in questionState
         updateRow(session.copy(runMode = existing.runMode,
+            parentSessionId = existing.parentSessionId,
+            branchPlanJson = existing.branchPlanJson,
+            worktreeDirectory = existing.worktreeDirectory,
+            worktreeBranch = existing.worktreeBranch,
+            worktreeBase = existing.worktreeBase,
+            parentSessionDeleted = existing.parentSessionDeleted,
+            sessionAutoWakeCount = existing.sessionAutoWakeCount,
+            sessionAutoProcessingPaused = existing.sessionAutoProcessingPaused,
             loopStatus = if (preserveQuestion) existing.loopStatus else session.loopStatus,
             approvalRequest = if (preserveQuestion) existing.approvalRequest else session.approvalRequest))
     }
 
-    @Delete
-    suspend fun delete(session: SessionEntity)
+    @Transaction
+    suspend fun delete(session: SessionEntity) = deleteById(session.id)
+
+    @Query("UPDATE sessions SET parent_session_id = NULL, parent_session_deleted = 1 WHERE parent_session_id = :parentSessionId")
+    suspend fun detachBranches(parentSessionId: String): Int
+
+    @Transaction
+    suspend fun deleteById(sessionId: String) {
+        detachBranches(sessionId)
+        deleteRowById(sessionId)
+    }
 
     @Query("DELETE FROM sessions WHERE id = :sessionId")
-    suspend fun deleteById(sessionId: String)
+    suspend fun deleteRowById(sessionId: String)
 
     @Query("SELECT * FROM sessions WHERE id = :sessionId")
     suspend fun getById(sessionId: String): SessionEntity?

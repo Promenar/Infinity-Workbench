@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
+import com.promenar.nexara.data.branch.BranchLinuxFileNamespace
+import com.promenar.nexara.data.branch.BranchLinuxWorkspaceOperation
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
@@ -38,8 +40,12 @@ class LinuxSessionExternalWorkspaceAccess(
     private val rootfs: ExternalFolderBackend,
     private val indexEvents: FileIndexEventSink = FileIndexEventSink.None,
     private val sessions: com.promenar.nexara.data.repository.ISessionRepository? = null,
+    private val branchNamespace: suspend (sessionId: String) -> BranchLinuxFileNamespace? = { null },
 ) : ExternalWorkspaceAccess by original {
-    private data class Namespace(val root: FileEntry, val workspace: SessionWorkspace, val mount: ExternalMount)
+    private data class Namespace(val root: FileEntry, val workspace: SessionWorkspace, val mount: ExternalMount,
+        val branch: BranchLinuxFileNamespace?, val workspaceOverride: BranchLinuxWorkspaceOperation?) {
+        val workingDirectory: String get() = branch?.commandWorkspace?.workingDirectory ?: LinuxSessionPaths.WORKSPACE_ROOT
+    }
     private val versions = linkedMapOf<String, ByteArray>()
 
     override fun observeMounts(sessionId: String) = original.observeMounts(sessionId).map { mounts -> mounts.filter(::allowed) }
@@ -72,8 +78,8 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun entry(sessionId: String, path: String): FileEntry? = operation {
-        val normalized = LinuxSessionPaths.normalize(path)
         val current = namespace(sessionId)
+        val normalized = normalize(current, path)
         val stat = stat(sessionId, current, normalized) ?: return@operation null
         val hash = stat.sha256 ?: if (!stat.isDirectory && stat.size <= VERSION_BYTES) {
             Sha256Utils.hash(read(sessionId, normalized, VERSION_BYTES))
@@ -88,13 +94,13 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun list(sessionId: String, virtualPath: String): List<ExternalFolderEntry> = operation {
-        val path = LinuxSessionPaths.normalize(virtualPath)
         val current = namespace(sessionId)
+        val path = normalize(current, virtualPath)
         val target = route(current, path)
         val entries = when (target.kind) {
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).list(target.path).map { it.copy(path = child(path, it.name)) }
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.list(sessionId, target.path) }
-                .filterNot { it.path == "/mnt" || it.path == "/skills" }.map { it.copy(path = child(path, it.name)) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.list(sessionId, target.path) }
+                .filterNot { current.branch == null && (it.path == "/mnt" || it.path == "/skills") }.map { it.copy(path = child(path, it.name)) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.list(sessionId, it) }
                 .map { it.copy(path = child(path, it.name)) }
             LinuxSessionPathKind.MOUNTS -> visible(sessionId).map { ExternalFolderEntry("/mnt/${it.alias}", it.alias, true, 0, it.createdAt) }
@@ -112,12 +118,12 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun read(sessionId: String, virtualPath: String, maxBytes: Long): ByteArray = operation {
-        val path = LinuxSessionPaths.normalize(virtualPath)
         val current = namespace(sessionId)
+        val path = normalize(current, virtualPath)
         val target = route(current, path)
         val bytes = when (target.kind) {
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).read(target.path, maxBytes)
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.read(sessionId, target.path, maxBytes) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.read(sessionId, target.path, maxBytes) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.read(sessionId, it, maxBytes) }
             LinuxSessionPathKind.ROOTFS -> rootfs.read(target.path, maxBytes)
             LinuxSessionPathKind.MOUNTS -> fail("IS_DIRECTORY", "目标是目录")
@@ -127,13 +133,13 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun write(sessionId: String, path: String, bytes: ByteArray, expectedSha256: String?, createOnly: Boolean): FileEntry = operation {
-        val normalized = mutation(path)
         val current = namespace(sessionId)
+        val normalized = mutation(current, path)
         val target = route(current, normalized)
         requireWritable(sessionId, current, normalized)
         when (target.kind) {
             LinuxSessionPathKind.PRIVATE -> writePrivate(sessionId, current, target.path, bytes, expectedSha256, createOnly)
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.write(sessionId, target.path, bytes, expectedSha256, createOnly) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.write(sessionId, target.path, bytes, expectedSha256, createOnly) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.write(sessionId, it, bytes, expectedSha256, createOnly) }
             LinuxSessionPathKind.ROOTFS -> rootfs.write(target.path, bytes, expectedSha256, createOnly)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能覆盖挂载根目录")
@@ -143,13 +149,13 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun createDirectory(sessionId: String, path: String): FileEntry = operation {
-        val normalized = mutation(path)
         val current = namespace(sessionId)
+        val normalized = mutation(current, path)
         val target = route(current, normalized)
         requireWritable(sessionId, current, normalized)
         when (target.kind) {
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).let { backend -> backend.createDirectory(target.path).also { backend.confirmCreated() } }
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.createDirectory(sessionId, target.path) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.createDirectory(sessionId, target.path) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.createDirectory(sessionId, it) }
             LinuxSessionPathKind.ROOTFS -> rootfs.createDirectory(target.path)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能创建挂载根目录")
@@ -158,8 +164,8 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun delete(sessionId: String, path: String, expectedSha256: String?, irreversible: Boolean) = operation {
-        val normalized = mutation(path)
         val current = namespace(sessionId)
+        val normalized = mutation(current, path)
         val target = route(current, normalized)
         requireWritable(sessionId, current, normalized)
         when (target.kind) {
@@ -168,7 +174,7 @@ class LinuxSessionExternalWorkspaceAccess(
                 if (expectedSha256 != null) workspace.moveToRecycleBinIfHash(current.root.uuid, entry.uuid, expectedSha256)
                 else workspace.moveToRecycleBin(current.root.uuid, entry.uuid)
             }
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.delete(sessionId, target.path, expectedSha256, irreversible) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.delete(sessionId, target.path, expectedSha256, irreversible) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.delete(sessionId, it, expectedSha256, irreversible) }
             LinuxSessionPathKind.ROOTFS -> rootfs.delete(target.path, expectedSha256)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能删除挂载根目录")
@@ -177,11 +183,11 @@ class LinuxSessionExternalWorkspaceAccess(
 
     override suspend fun backupBeforeMove(sessionId: String, path: String): String = operation {
         val current = namespace(sessionId)
-        val normalized = mutation(path)
+        val normalized = mutation(current, path)
         val target = route(current, normalized)
         requireWritable(sessionId, current, normalized)
         when (target.kind) {
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.backupBeforeMove(sessionId, target.path) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.backupBeforeMove(sessionId, target.path) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.backupBeforeMove(sessionId, it) }
             else -> "linux-session:$sessionId"
         }
@@ -193,14 +199,25 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     override suspend fun version(sessionId: String, path: String, hash: String): ByteArray? = operation {
-        val normalized = LinuxSessionPaths.normalize(path)
         val current = namespace(sessionId)
+        val normalized = normalize(current, path)
         val target = route(current, normalized)
         when (target.kind) {
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.version(sessionId, target.path, hash) }
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.version(sessionId, target.path, hash) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.version(sessionId, it, hash) }
             else -> synchronized(versions) { versions[versionKey(current, normalized, hash)]?.copyOf() }
         }
+    }
+
+    override suspend fun recycleItems(sessionId: String): List<ExternalRecycleItem> = operation {
+        val current = namespace(sessionId)
+        withOriginalBindings(current) { original.recycleItems(sessionId) }.map {
+            it.copy(originalPath = if (it.mountId == current.workspaceOverride?.mount?.id) fromWorkspace(it.originalPath) else fromOriginal(it.originalPath))
+        }
+    }
+
+    override suspend fun restore(sessionId: String, recycleId: String) = operation {
+        withOriginalBindings(namespace(sessionId)) { original.restore(sessionId, recycleId) }
     }
 
     override fun backend(sessionId: String, mountIds: Map<String, String>): ExternalFolderBackend = object : ExternalFolderBackend {
@@ -219,8 +236,8 @@ class LinuxSessionExternalWorkspaceAccess(
 
     /** 与审批解析器共用，确保别名存在且来源不为 SAF。 */
     suspend fun validatePath(sessionId: String, path: String): String = operation {
-        val normalized = LinuxSessionPaths.normalize(path)
         val current = namespace(sessionId)
+        val normalized = normalize(current, path)
         val target = route(current, normalized)
         if (target.kind == LinuxSessionPathKind.EXTERNAL) checkedExternal(sessionId, target.path)
         normalized
@@ -228,8 +245,8 @@ class LinuxSessionExternalWorkspaceAccess(
 
     /** 审批与执行使用同一 Linux 路径元组和命名空间身份，不先转换成其它目标。 */
     suspend fun executionTarget(sessionId: String, tool: ProtocolTool, args: JsonObject): String? = operation {
-        val normalized = LinuxSessionPaths.normalizeArguments(tool.function.name, args)
         val current = namespace(sessionId)
+        val normalized = LinuxSessionPaths.normalizeArguments(tool.function.name, args, current.workingDirectory)
         val resolved = mutableMapOf<String, String>()
         for (key in listOf("uuid", "parentUuid", "newParentUuid")) {
             val uuid = (normalized[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
@@ -256,7 +273,8 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     internal suspend fun invocationArguments(sessionId: String, tool: String, args: JsonObject): JsonObject = operation {
-        val values = LinuxSessionPaths.normalizeArguments(tool, args).toMutableMap()
+        val current = namespace(sessionId)
+        val values = LinuxSessionPaths.normalizeArguments(tool, args, current.workingDirectory).toMutableMap()
         for (key in listOf("uuid", "parentUuid", "newParentUuid")) {
             val uuid = (values[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
             if (uuid.isNotEmpty()) {
@@ -280,8 +298,8 @@ class LinuxSessionExternalWorkspaceAccess(
     /** 同一私有树内移动沿用 Room 身份和版本链；跨来源移动仍使用校验与补偿传输。 */
     internal suspend fun movePrivate(sessionId: String, source: String, destination: String, expectedHash: String?): com.promenar.nexara.data.model.ToolResult? = operation {
         val current = namespace(sessionId)
-        val from = route(current, mutation(source))
-        val to = route(current, mutation(destination))
+        val from = route(current, mutation(current, source))
+        val to = route(current, mutation(current, destination))
         requireWritable(sessionId, current, source)
         requireWritable(sessionId, current, destination)
         if (from.kind != LinuxSessionPathKind.PRIVATE || to.kind != LinuxSessionPathKind.PRIVATE) return@operation null
@@ -319,20 +337,26 @@ class LinuxSessionExternalWorkspaceAccess(
         val root = sessions?.getById(sessionId)?.workspaceRootUuid?.let { workspace.getByUuid(it, it) }
             ?: workspace.ensureSessionRoot(sessionId)
         val current = sessionWorkspace(sessionId)
+        val branch = branchNamespace(sessionId)
         val rootIdentity = rootfs.stat("/")?.identity ?: fail("UNAVAILABLE", "无法绑定 Linux 根目录身份")
         val mainIdentity = when (current) {
             SessionWorkspace.Private -> "private"
             is SessionWorkspace.Directory -> "${current.workspace.id}:${current.workspace.kind}:${current.workspace.location}:${current.root.path}:${directoryIdentity(current.root)}"
             is SessionWorkspace.Unavailable -> "unavailable:${current.workspaceId}"
         }
-        val identity = Sha256Utils.hash("$sessionId|${root.uuid}|${root.hash}|${root.physicalRootPath}|$mainIdentity|$rootIdentity")
+        val branchIdentity = branch?.commandWorkspace?.let { "${it.baseRoot.path}:${directoryIdentity(it.baseRoot)}:${it.workingDirectory}" }.orEmpty()
+        val identity = Sha256Utils.hash("$sessionId|${root.uuid}|${root.hash}|${root.physicalRootPath}|$mainIdentity|$rootIdentity|$branchIdentity")
         val mount = ExternalMount("linux:$identity", "", "linux_session", sessionId, sessionId, 0)
         val bound = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds
         if (bound != null && bound[""] != mount.id) fail("CONFLICT", "Linux 会话目录或工作区身份已改变，请重新审批")
-        return Namespace(root, current, mount)
+        val workspaceOverride = branch?.let { BranchLinuxWorkspaceOperation(sessionId,
+            ExternalMount("branch-linux-base:$identity", "", "branch_linux_workspace", sessionId, sessionId, 0),
+            it.backend, it.commandWorkspace.baseRoot) }
+        return Namespace(root, current, mount, branch, workspaceOverride)
     }
 
-    private fun route(current: Namespace, path: String): LinuxSessionPath = LinuxSessionPaths.route(path, current.workspace == SessionWorkspace.Private).also {
+    private fun normalize(current: Namespace, path: String): String = LinuxSessionPaths.normalize(path, current.workingDirectory)
+    private fun route(current: Namespace, path: String): LinuxSessionPath = LinuxSessionPaths.route(normalize(current, path), current.workspace == SessionWorkspace.Private && current.branch == null).also {
         if (it.kind == LinuxSessionPathKind.WORKSPACE && current.workspace is SessionWorkspace.Unavailable) fail("UNAVAILABLE", "会话主工作区不可用，请检查目录与授权")
     }
 
@@ -340,6 +364,11 @@ class LinuxSessionExternalWorkspaceAccess(
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = current.root.uuid,
             path = current.root.physicalRootPath)
         val target = route(current, path)
+        current.workspaceOverride?.takeIf { target.kind == LinuxSessionPathKind.WORKSPACE }?.let {
+            com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = it.baseRoot.canonicalPath)
+            com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId,
+                path = File(it.baseRoot, target.path.removePrefix("/")).canonicalPath)
+        }
         (current.workspace as? SessionWorkspace.Directory)?.let {
             com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = it.root.canonicalPath)
             if (target.kind == LinuxSessionPathKind.WORKSPACE) {
@@ -368,7 +397,7 @@ class LinuxSessionExternalWorkspaceAccess(
         val target = route(current, path)
         return when (target.kind) {
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).stat(target.path)?.copy(path = path)
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current) { original.entry(sessionId, target.path) }?.let {
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.entry(sessionId, target.path) }?.let {
                 ExternalFolderEntry(path, it.name, it.isDirectory, it.sizeBytes, it.updatedAt, it.hash)
             }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.entry(sessionId, it) }?.let {
@@ -413,10 +442,10 @@ class LinuxSessionExternalWorkspaceAccess(
         val checked = checkedExternal(sessionId, path)
         return withOriginalBindings(current) { action(checked) }
     }
-    private suspend fun <T> withOriginalBindings(current: Namespace, action: suspend () -> T): T {
+    private suspend fun <T> withOriginalBindings(current: Namespace, workspacePaths: Boolean = false, action: suspend () -> T): T {
         val ids = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds.orEmpty().toMutableMap()
         ids.keys.filter(String::isNotEmpty).forEach { alias -> ids[alias] = originalMountId(ids.getValue(alias)) }
-        when (val selected = current.workspace) {
+        if (current.workspaceOverride != null) ids[""] = current.workspaceOverride.mount.id else when (val selected = current.workspace) {
             is SessionWorkspace.Directory -> ids[""] = ExternalMountPaths.workspaceMountId(selected.workspace.id)
             is SessionWorkspace.Unavailable -> ids[""] = ExternalMountPaths.workspaceMountId(selected.workspaceId)
             SessionWorkspace.Private -> ids.remove("")
@@ -424,8 +453,9 @@ class LinuxSessionExternalWorkspaceAccess(
         if (currentCoroutineContext()[ExternalMountOperationBindings] == null) {
             original.visible(current.mount.sessionId).filter(::allowed).forEach { ids[it.alias] = it.id }
         }
-        return withContext(ExternalMountOperationBindings(ids)) { action() }
+        return withContext(ExternalMountOperationBindings(ids) + (current.workspaceOverride?.copy(workspacePaths = workspacePaths) ?: kotlin.coroutines.EmptyCoroutineContext)) { action() }
     }
+    private fun fromWorkspace(path: String): String = LinuxSessionPaths.WORKSPACE_ROOT + path.takeUnless { it == "/" }.orEmpty()
     private fun fromOriginal(path: String): String = when {
         path == "/skills" || path.startsWith("/skills/") -> LinuxSessionPaths.SKILLS_ROOT + path.removePrefix("/skills")
         path == "/mnt" || path.startsWith("/mnt/") -> path
@@ -440,8 +470,8 @@ class LinuxSessionExternalWorkspaceAccess(
         }.lowercase(java.util.Locale.ROOT)
         return relative == "/.agents" || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")
     }
-    private fun mutation(path: String): String = LinuxSessionPaths.normalize(path).also {
-        if (it in setOf("/", "/home", "/home/session", "/workspace", "/mnt") || it.startsWith("/mnt/") && it.count { c -> c == '/' } == 2) {
+    private fun mutation(current: Namespace, path: String): String = normalize(current, path).also {
+        if (it in setOf("/", "/home", "/home/session", "/workspace", "/mnt", current.workingDirectory) || it.startsWith("/mnt/") && it.count { c -> c == '/' } == 2) {
             fail("INVALID_PATH", "不能修改 Linux 或挂载根目录")
         }
     }

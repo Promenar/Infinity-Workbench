@@ -227,17 +227,17 @@ class DefaultChatGenerationRuntimeTest {
         return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads, executor, store)
     }
 
-    @Test fun `无界面不广告提问且误调用返回工具错误继续生成`() = runTest {
+    @Test fun `无界面不广告提问或分支且误提问返回工具错误继续生成`() = runTest {
         val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
         coEvery { ledger.consumeResumption(any(), any()) } returns false
         coEvery { ledger.createBatch(any(), any(), any(), null) } returns com.promenar.nexara.data.repository.AskUserBatchResult(null,
             listOf(Message("failure", MessageRole.TOOL, """{"status":"error","error":"ASK_USER_UNAVAILABLE"}""", toolCallId = "q")))
         val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
-        val fixture = skillsFixture(catalog, toolNames = listOf("ask_user", "calculator"), askLedger = ledger)
+        val fixture = skillsFixture(catalog, toolNames = listOf("ask_user", "session_branch", "calculator"), askLedger = ledger)
         val request = fixture.request.copy(interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.HEADLESS)
         assertThat(fixture.runtime.buildContext(request)).isEqualTo(GenerationPreparationOutcome.Ready)
         assertThat(fixture.runtime.knownToolNames(request)).containsExactly("calculator")
-        fixture.prompts.forEach { assertThat(it).doesNotContain("ask_user") }
+        fixture.prompts.forEach { assertThat(it).doesNotContain("ask_user"); assertThat(it).doesNotContain("session_branch") }
         assertThat(fixture.runtime.handleTools(request, listOf(GenerationToolCall("q", "ask_user", "{}"))))
             .isEqualTo(GenerationToolDecision.CONTINUE)
         coVerify(exactly = 1) { ledger.createBatch(any(), any(), any(), null) }

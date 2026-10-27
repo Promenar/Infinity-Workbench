@@ -153,6 +153,8 @@ class AskUserLedgerRepository(
                 parentMessageId = assistant.id, thoughtSignature = assistant.thoughtSignature, createdAt = now)
             if (ledger.decideTerminal(expected.sessionId, assistant.id, expected.toolCallId,
                     setOf(ToolLedgerStatus.WAITING_INPUT), ToolLedgerStatus.INPUT_ANSWERED, result.id, null, now) != 1) return@withTransaction null
+            val session = sessions.getById(expected.sessionId) ?: error("提问所属会话不存在")
+            sessions.updateRow(session.copy(sessionAutoWakeCount = 0, sessionAutoProcessingPaused = false))
             val continuation = Message(id = resumeId(result.id), role = MessageRole.ASSISTANT, content = "",
                 parentMessageId = user.id, modelId = assistant.modelId, createdAt = now + 1)
             messages.insert(result.toEntity(expected.sessionId))
@@ -230,8 +232,8 @@ class AskUserLedgerRepository(
                 entry.resultMessageId?.let { messages.updateStatus(resumeId(it), "cancelled") }
             } else {
                 val result = Message(id = "ask_cancel_${UUID.randomUUID()}", role = MessageRole.TOOL,
-                    name = AskUserLimits.TOOL_NAME, toolCallId = entry.toolCallId, parentMessageId = entry.assistantMessageId,
-                    content = AskUserProtocol.failure("ASK_USER_CANCELLED", "用户未回答并停止了本轮。", "本轮已停止，请勿继续执行。"),
+                    name = entry.toolName, toolCallId = entry.toolCallId, parentMessageId = entry.assistantMessageId,
+                    content = if (entry.toolName == "session_branch") "工作方案未处理，用户已停止本轮。" else AskUserProtocol.failure("ASK_USER_CANCELLED", "用户未回答并停止了本轮。", "本轮已停止，请勿继续执行。"),
                     thoughtSignature = messages.getById(entry.assistantMessageId)?.thoughtSignature, createdAt = clock())
                 if (ledger.decideTerminal(sessionId, entry.assistantMessageId, entry.toolCallId,
                         setOf(ToolLedgerStatus.WAITING_INPUT), ToolLedgerStatus.CANCELLED, result.id, "用户未回答并停止了本轮", clock()) == 1) {

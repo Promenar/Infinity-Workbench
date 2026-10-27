@@ -1160,7 +1160,17 @@ def _inspect_open(path):
     if not os.path.lexists(os.path.join(path, ".git")):
         return None
     try:
-        repo = Repo(path)
+        mapping_text = os.environ.get("NEXARA_GIT_LINUX_PATH_MAP")
+        if mapping_text is None:
+            repo = Repo(path)
+        else:
+            import json
+
+            try:
+                mappings = json.loads(mapping_text)
+            except (TypeError, ValueError):
+                raise _InspectError("UNSAFE_GIT_PATH", "Linux Git 路径映射无效") from None
+            repo = Repo(path, **_inspect_mapped_control_paths(path, mappings))
     except NotGitRepository:
         return None
     if repo.bare:
@@ -1169,6 +1179,101 @@ def _inspect_open(path):
     if _workspace_kind() == "shared":
         _inspect_shared_config(repo)
     return repo
+
+
+def _inspect_mapped_control_paths(path, mappings):
+    """把 Linux 的 gitdir/commondir 映射到装配点授权的宿主根，不改写仓库指针文件。"""
+    import stat
+
+    def fail():
+        raise _InspectError("UNSAFE_GIT_PATH", "Linux Git 指针不在可信映射内或经过符号链接")
+
+    if not isinstance(mappings, dict) or not mappings:
+        fail()
+    trusted = {}
+    for guest, host in mappings.items():
+        if (not isinstance(guest, str) or not isinstance(host, str) or not guest.startswith("/")
+                or not os.path.isabs(host) or "\0" in guest or "\0" in host
+                or any(part in (".", "..") for part in guest.split("/"))):
+            fail()
+        host = os.path.abspath(host)
+        if os.path.realpath(host) != host or not os.path.isdir(host):
+            fail()
+        trusted[guest.rstrip("/") or "/"] = host
+
+    def inside(target, root):
+        return target == root or target.startswith(root.rstrip(os.sep) + os.sep)
+
+    def checked_host(target, directory=True):
+        target = os.path.abspath(target)
+        roots = [host for host in trusted.values() if inside(target, host)]
+        if not roots:
+            fail()
+        root = max(roots, key=len)
+        relative = os.path.relpath(target, root)
+        current = root
+        for part in ([] if relative == "." else relative.split(os.sep)):
+            current = os.path.join(current, part)
+            try:
+                mode = os.lstat(current).st_mode
+            except OSError:
+                fail()
+            if stat.S_ISLNK(mode):
+                fail()
+        if directory and not os.path.isdir(target):
+            fail()
+        return target
+
+    def mapped(raw, parent):
+        if not raw or "\0" in raw or "\n" in raw or "\r" in raw:
+            fail()
+        if not raw.startswith("/"):
+            return checked_host(os.path.join(parent, raw))
+        guest = os.path.normpath(raw)
+        prefixes = [prefix for prefix in trusted if prefix == "/" or inside(guest, prefix)]
+        # 运行时绑定绝不能回退到 rootfs 中的同名占位目录。
+        if (inside(guest, "/workspace") or inside(guest, "/mnt")) and not any(prefix != "/" for prefix in prefixes):
+            fail()
+        if not prefixes:
+            fail()
+        prefix = max(prefixes, key=len)
+        return checked_host(os.path.join(trusted[prefix], guest[len(prefix):].lstrip("/")))
+
+    def read_pointer(file):
+        checked_host(file, directory=False)
+        if not stat.S_ISREG(os.lstat(file).st_mode):
+            fail()
+        with open(file, "rb") as handle:
+            data = handle.read(4097)
+        if len(data) > 4096:
+            fail()
+        try:
+            return data.decode("utf-8").rstrip("\r\n")
+        except UnicodeError:
+            fail()
+
+    worktree = checked_host(path)
+    dotgit = os.path.join(worktree, ".git")
+    checked_host(dotgit, directory=False)
+    if os.path.isdir(dotgit):
+        control = dotgit
+    else:
+        pointer = read_pointer(dotgit)
+        if not pointer.startswith("gitdir: "):
+            fail()
+        control = mapped(pointer[len("gitdir: "):], worktree)
+    common_pointer = os.path.join(control, "commondir")
+    common = mapped(read_pointer(common_pointer), control) if os.path.lexists(common_pointer) else control
+    # 外部对象库会让 dulwich 再按宿主路径寻址；本入口只支持当前可信仓库的对象库。
+    alternates = os.path.join(common, "objects", "info", "alternates")
+    if os.path.lexists(alternates) and read_pointer(alternates).strip():
+        fail()
+    for directory in {control, common}:
+        for name in ("config", "config.worktree", "HEAD", "index", "packed-refs", "shallow", "objects", "refs"):
+            metadata = os.path.join(directory, name)
+            if os.path.lexists(metadata):
+                checked_host(metadata, directory=False)
+    return {"controldir": control, "commondir": common, "worktree": worktree}
 
 
 def _inspect_shared_config(repo):

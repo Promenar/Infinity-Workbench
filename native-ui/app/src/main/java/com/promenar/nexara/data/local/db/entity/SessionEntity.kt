@@ -64,4 +64,20 @@ data class SessionEntity(
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
+    @ColumnInfo(name = "parent_session_id")
+    val parentSessionId: String? = null,
+    @ColumnInfo(name = "branch_plan_json")
+    val branchPlanJson: String? = null,
+    @ColumnInfo(name = "worktree_directory")
+    val worktreeDirectory: String? = null,
+    @ColumnInfo(name = "worktree_branch")
+    val worktreeBranch: String? = null,
+    @ColumnInfo(name = "worktree_base")
+    val worktreeBase: String? = null,
+    @ColumnInfo(name = "parent_session_deleted", defaultValue = "0")
+    val parentSessionDeleted: Boolean = false,
+    @ColumnInfo(name = "session_auto_wake_count", defaultValue = "0")
+    val sessionAutoWakeCount: Int = 0,
+    @ColumnInfo(name = "session_auto_processing_paused", defaultValue = "0")
+    val sessionAutoProcessingPaused: Boolean = false,
 )

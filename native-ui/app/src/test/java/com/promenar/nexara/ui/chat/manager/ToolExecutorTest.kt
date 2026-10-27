@@ -324,6 +324,89 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `已批准工具成功写文件后按会话执行一次收尾`() = testScope.runTest {
+        verifyApprovedToolFinalization(fail = false)
+    }
+
+    @Test
+    fun `已批准工具写文件后抛错仍按会话执行一次收尾`() = testScope.runTest {
+        verifyApprovedToolFinalization(fail = true)
+    }
+
+    private suspend fun verifyApprovedToolFinalization(fail: Boolean) {
+        val sessionId = "branch-finalize-$fail"
+        seedSessionWithAssistant(sessionId)
+        val file = grantFiles.newFile("tool-finalize-$fail.txt")
+        var executions = 0
+        val skill = testSkill("write_file", risk = ToolRisk.FILE_WRITE) {
+            executions++
+            file.writeText("工具已写入")
+            if (fail) throw IllegalStateException("写入后的工具异常")
+            ToolResult("approved-write", "写入完成", status = "success")
+        }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val call = ToolCall("approved-write", skill.name, "{}")
+        val key = ToolExecutionKey(sessionId, "m1", call.id)
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(call, registry.getAllTools().single(), true)
+            as ToolInvocationIdentityResolution.Valid).identity
+        ledger.register(key, identity)
+        assertThat(ledger.approve(setOf(key))).isEqualTo(1)
+        val finalized = mutableListOf<String>()
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            afterTools = { id ->
+                assertThat(file.readText()).isEqualTo("工具已写入")
+                finalized += id
+            })
+
+        executor.executeTools(sessionId, "m1", listOf(call), preparedTools = registry.getAllTools())
+
+        assertThat(executions).isEqualTo(1)
+        assertThat(finalized).containsExactly(sessionId)
+        assertThat(ledger.state(key)).isEqualTo(if (fail) ToolLedgerState.FAILED else ToolLedgerState.SUCCEEDED)
+    }
+
+    @Test
+    fun `已批准工具协程取消后仍在不可取消上下文完成一次收尾`() = testScope.runTest {
+        val sessionId = "branch-finalize-cancelled"
+        seedSessionWithAssistant(sessionId)
+        val file = grantFiles.newFile("tool-finalize-cancelled.txt")
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val skill = testSkill("write_file", risk = ToolRisk.FILE_WRITE) {
+            file.writeText("取消前已写入")
+            entered.complete(Unit)
+            kotlinx.coroutines.awaitCancellation()
+        }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val call = ToolCall("cancelled-write", skill.name, "{}")
+        val key = ToolExecutionKey(sessionId, "m1", call.id)
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(call, registry.getAllTools().single(), true)
+            as ToolInvocationIdentityResolution.Valid).identity
+        ledger.register(key, identity)
+        assertThat(ledger.approve(setOf(key))).isEqualTo(1)
+        val finalized = mutableListOf<String>()
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            afterTools = { id ->
+                assertThat(kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.isActive).isTrue()
+                kotlinx.coroutines.delay(1)
+                assertThat(file.readText()).isEqualTo("取消前已写入")
+                finalized += id
+            })
+        val execution = async {
+            executor.executeTools(sessionId, "m1", listOf(call), preparedTools = registry.getAllTools())
+        }
+        entered.await()
+
+        execution.cancel()
+        execution.join()
+
+        assertThat(execution.isCancelled).isTrue()
+        assertThat(finalized).containsExactly(sessionId)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+    }
+
+    @Test
     fun `会话删除锁定后工具入口在注册ledger前拒绝执行`() = testScope.runTest {
         seedSessionWithAssistant()
         val gate = com.promenar.nexara.data.session.SessionExecutionGate()

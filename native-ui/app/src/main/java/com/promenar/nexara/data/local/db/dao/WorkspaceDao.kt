@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface WorkspaceDao {
-    @Query("SELECT * FROM workspaces ORDER BY created_at ASC")
+    @Query("SELECT * FROM workspaces WHERE kind != 'branch_shared' ORDER BY created_at ASC")
     fun observeAll(): Flow<List<WorkspaceEntity>>
 
     @Query("SELECT * FROM workspaces WHERE id = :id")

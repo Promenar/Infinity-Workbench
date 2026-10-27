@@ -6,6 +6,9 @@ import androidx.room.Query
 /** 会话删除不依赖外键级联；每个关联面都由事务显式清理。 */
 @Dao
 interface SessionDeletionDao {
+    @Query("UPDATE sessions SET parent_session_id = NULL, parent_session_deleted = 1 WHERE parent_session_id = :parentSessionId")
+    suspend fun detachBranches(parentSessionId: String): Int
+
     @Query("DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE session_id = :sessionId)")
     suspend fun deleteAttachments(sessionId: String): Int
 

@@ -171,11 +171,12 @@ internal suspend fun resolveChatApprovalExecutionTarget(
     mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
     linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
+    sessionCommunicationTarget: (suspend (Session, String, String) -> String?)? = null,
 ): String? {
     val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
         .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName } ?: return null
     val tool = toolLookup(identity.runtimeToolId) ?: return null
-    return com.promenar.nexara.data.generation.resolveSessionToolTarget(
+    return sessionCommunicationTarget?.invoke(session, call.name, call.arguments) ?: com.promenar.nexara.data.generation.resolveSessionToolTarget(
         session, tool, call.arguments, workspaceRepository, mounts, sshHostStore, sshSessionHost, linuxFiles,
     )
 }
@@ -399,6 +400,7 @@ class ChatViewModel(
         (application as NexaraApplication).sessionExecutionGate,
         grantVerifier = (application as NexaraApplication)::verifyTargetGrant,
         liveOutput = (application as NexaraApplication).toolLiveOutputStore,
+        afterTools = (application as NexaraApplication)::reconcileBranchWorkspace,
     )
     private val taskPlanActions = TaskPlanActions((application as NexaraApplication).taskRepository)
     private val approvalManager = ApprovalManager(
@@ -417,6 +419,7 @@ class ChatViewModel(
                 mounts = (application as NexaraApplication).externalFolderManager,
                 sshHostStore = (application as NexaraApplication).sshHostStore,
                 linuxFiles = (application as NexaraApplication).linuxSessionFiles,
+                sessionCommunicationTarget = (application as NexaraApplication)::sessionCommunicationApprovalTarget,
             )
         },
         resolveAllowlistScope = (application as NexaraApplication)::resolveToolAllowlistScope,

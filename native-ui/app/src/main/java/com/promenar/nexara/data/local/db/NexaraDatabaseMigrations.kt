@@ -5,6 +5,20 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** 分支关系没有级联外键，删除主会话时由删除事务保留并解除子会话引用。 */
+val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN branch_plan_json TEXT")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN worktree_directory TEXT")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN worktree_branch TEXT")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN worktree_base TEXT")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN parent_session_deleted INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN session_auto_wake_count INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN session_auto_processing_paused INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 /** 历史会话不推断执行环境，由首次进入会话时的检查决定。 */
 val MIGRATION_26_27 = object : Migration(26, 27) {
     override fun migrate(db: SupportSQLiteDatabase) {

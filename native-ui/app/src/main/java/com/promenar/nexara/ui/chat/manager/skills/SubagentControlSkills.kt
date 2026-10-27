@@ -20,9 +20,13 @@ interface SessionAddressHandler {
     suspend fun execute(operation: String, id: String, args: JsonObject, context: SkillExecutionContext): String
 }
 
-class SubagentAddressHandler(private val launcher: () -> SubagentLauncher) : SessionAddressHandler {
+class SubagentAddressHandler(private val launcher: () -> SubagentLauncher,
+    private val sent: suspend (SkillExecutionContext, SubagentRun, String) -> Unit,
+) : SessionAddressHandler {
+    constructor(launcher: () -> SubagentLauncher) : this(launcher, { _, _, _ -> })
     override fun accepts(id: String) = id.startsWith("sa_")
     override suspend fun execute(operation: String, id: String, args: JsonObject, context: SkillExecutionContext): String {
+        require(context.sourceSubagentId == null) { "子代理只能与自己的主会话通信" }
         val runtime = launcher()
         val run = when (operation) {
             "session_send" -> runtime.send(context.sessionId, id, args["message"]!!.jsonPrimitive.content,
@@ -33,6 +37,7 @@ class SubagentAddressHandler(private val launcher: () -> SubagentLauncher) : Ses
             }
             else -> runtime.read(context.sessionId, id)
         }
+        if (operation == "session_send") sent(context, run, args["message"]?.jsonPrimitive?.content.orEmpty())
         val elapsed = ((run.endedAt ?: System.currentTimeMillis()) - run.startedAt).coerceAtLeast(0) / 1000
         val events = run.events.takeLast(20).joinToString("\n") { "${it.kind} (${it.by ?: "SUBAGENT"}): ${it.text.take(SubagentLimits.MAX_EVENT_CHARS)}" }
         return AgentTaskSkill.formatResults(listOf(run)) + "\nElapsed: ${elapsed}s; current tool: ${run.currentTool ?: "none"}.\nRecent events:\n$events"
@@ -49,9 +54,9 @@ class SessionSubagentSkill(
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
     override val description = when (name) {
-        "session_read" -> "Read the status, bounded recent events, progress and conclusion of a subagent spawned by this session."
-        "session_send" -> "Send instructions to this session's subagent before its next step. wrapUp=true asks for a stage conclusion within two more steps. Completed, failed or interrupted subagents resume with their saved context. Stopped subagents cannot resume."
-        else -> "Immediately stop this session's subagent, cancelling its model and tool execution. The subagent cannot resume and sends no completion notification."
+        "session_read" -> "读取家族会话或本会话子代理的状态与最近记录。同助手其它会话的读取每次需批准，跨助手不可见。"
+        "session_send" -> "向主会话或本会话的分支、子代理发消息；wrapUp=true 请求收尾并交回结论。其它会话不能发送。停止的子代理不能恢复。"
+        else -> "立即停止本会话分支当前一轮生成或本会话子代理；不删除会话。分支不能停止主会话。"
     }
     override val parametersSchema = if (name == "session_send") """{
         "type":"object","properties":{"id":{"type":"string"},"message":{"type":"string"},"wrapUp":{"type":"boolean"}},

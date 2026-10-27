@@ -497,6 +497,79 @@ class InspectUsageTest(unittest.TestCase):
         self.assertEqual(nexara_git._tree_path("src/中文.txt"), "src/中文.txt".encode())
 
 
+class WorktreeInspectPathMappingTest(unittest.TestCase):
+    """只构造指针与空元数据目录，不创建 Git 仓库或执行 Git。"""
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.rootfs = Path(temp.name).resolve() / "rootfs"
+        self.work = self.rootfs / "root/branch"
+        self.control = self.rootfs / "root/repo/.git/worktrees/branch"
+        self.common = self.rootfs / "root/repo/.git"
+        self.work.mkdir(parents=True)
+        self.control.mkdir(parents=True)
+        (self.work / ".git").write_text("gitdir: /root/repo/.git/worktrees/branch\n")
+        (self.control / "commondir").write_text("../..\n")
+        self.mapping = {"/": str(self.rootfs)}
+
+    def test_linux_absolute_git_pointer_and_relative_common_directory(self) -> None:
+        args = nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+        self.assertEqual(args, {"controldir": str(self.control), "commondir": str(self.common), "worktree": str(self.work)})
+
+    def test_relative_git_pointer_is_resolved_inside_mapping(self) -> None:
+        (self.work / ".git").write_text("gitdir: ../repo/.git/worktrees/branch\n")
+        self.assertEqual(nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)["controldir"], str(self.control))
+
+    def test_inspect_opener_passes_mapped_paths_to_dulwich_without_rewriting_pointer(self) -> None:
+        import json
+        import types
+
+        repo = unittest.mock.Mock(bare=False)
+        factory = unittest.mock.Mock(return_value=repo)
+        modules = {"dulwich.repo": types.SimpleNamespace(Repo=factory),
+                   "dulwich.errors": types.SimpleNamespace(NotGitRepository=type("NotGitRepository", (Exception,), {}))}
+        pointer = (self.work / ".git").read_bytes()
+        with unittest.mock.patch.dict(sys.modules, modules), unittest.mock.patch.dict(os.environ, {
+            "NEXARA_GIT_LINUX_PATH_MAP": json.dumps(self.mapping), "NEXARA_WORKSPACE_KIND": "project",
+        }):
+            self.assertIs(nexara_git._inspect_open(str(self.work)), repo)
+        factory.assert_called_once_with(str(self.work), controldir=str(self.control), commondir=str(self.common), worktree=str(self.work))
+        self.assertEqual((self.work / ".git").read_bytes(), pointer)
+
+    def test_missing_mapping_or_unmapped_mount_fails_closed(self) -> None:
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), {})
+        (self.work / ".git").write_text("gitdir: /workspace/repo/.git/worktrees/branch\n")
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+
+    def test_mapped_mount_uses_explicit_host_root(self) -> None:
+        (self.work / ".git").write_text("gitdir: /workspace/.git/worktrees/branch\n")
+        mapping = {**self.mapping, "/workspace": str(self.rootfs / "root/repo")}
+        self.assertEqual(nexara_git._inspect_mapped_control_paths(str(self.work), mapping)["controldir"], str(self.control))
+
+    def test_relative_escape_and_symlink_are_rejected(self) -> None:
+        (self.work / ".git").write_text("gitdir: ../../../../outside\n")
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+        (self.work / ".git").write_text("gitdir: /root/link\n")
+        (self.rootfs / "root/link").symlink_to(self.control, target_is_directory=True)
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+
+    def test_unmapped_absolute_common_and_object_alternates_are_rejected(self) -> None:
+        (self.control / "commondir").write_text("/mnt/foreign/.git\n")
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+        (self.control / "commondir").write_text("../..\n")
+        alternate = self.common / "objects/info/alternates"
+        alternate.parent.mkdir(parents=True)
+        alternate.write_text("/host/foreign/objects\n")
+        with self.assertRaises(nexara_git._InspectError):
+            nexara_git._inspect_mapped_control_paths(str(self.work), self.mapping)
+
+
 class InspectTest(unittest.TestCase):
     """经 python -m nexara_git --nexara-inspect 读取状态、内容与历史，断言 JSON 结构且不改动仓库。"""
 
@@ -548,7 +621,7 @@ class InspectTest(unittest.TestCase):
 
     # —— 调用检查入口 ——
     def inspect(self, operation: str, *args: str, kind: str = "project", repo: Path | None = None,
-                workspace: Path | None = None) -> dict:
+                workspace: Path | None = None, path_mappings: dict | None = None) -> dict:
         import json
 
         self.outputs += 1
@@ -563,6 +636,8 @@ class InspectTest(unittest.TestCase):
         }
         if workspace is not None:
             env["NEXARA_WORKSPACE"] = str(workspace)
+        if path_mappings is not None:
+            env["NEXARA_GIT_LINUX_PATH_MAP"] = json.dumps(path_mappings)
         result = subprocess.run(
             [sys.executable, "-m", "nexara_git", "--nexara-inspect", operation, "--output", str(output), *args],
             cwd=str(repo or self.work), env=env, capture_output=True, text=True, timeout=120,
@@ -615,6 +690,92 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(self.inspect("log"), {"version": 1, "repository": True, "commits": [], "truncated": False})
         self.assertFalse(self.blob("HEAD", "a.txt")["exists"])
         self.assertFalse(self.blob("INDEX", "a.txt")["exists"])
+
+    def _linked_worktree_fixture(self, namespace: str, absolute_common: bool) -> None:
+        """系统 Git 只在临时目录内建仓和提交；检查阶段把真实指针表达成 Linux guest 路径。"""
+        import shutil
+
+        git = shutil.which("git")
+        if git is None:
+            self.skipTest("离线 linked worktree 夹具需要系统 Git")
+        rootfs = self.root / "rootfs"
+        rootfs.mkdir()
+        if namespace == "root":
+            self.work = rootfs / "root/repo"
+            linked = rootfs / "root/linked"
+            guest_repo, guest_linked = "/root/repo", "/root/linked"
+            mappings = {"/": str(rootfs)}
+        else:
+            self.work = self.root / "workspace"
+            linked = self.work / "branches/linked"
+            guest_repo, guest_linked = "/workspace", "/workspace/branches/linked"
+            mappings = {"/": str(rootfs), "/workspace": str(self.work)}
+        self.work.mkdir(parents=True)
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.root / "home"),
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "LANG": "C.UTF-8"}
+
+        def local_git(*arguments, cwd=None):
+            result = subprocess.run([git, "-c", "user.name=Offline Fixture", "-c", "user.email=fixture@example.invalid",
+                                     "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + os.devnull, *arguments],
+                                    cwd=str(cwd or self.work), env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip()
+
+        local_git("init", "--quiet", "-b", "main")
+        self.write("a.txt", "base\n")
+        self.write("delete.txt", "delete base\n")
+        local_git("add", "--", "a.txt", "delete.txt")
+        local_git("commit", "--quiet", "--no-verify", "-m", "offline fixture")
+        head = local_git("rev-parse", "HEAD")
+        local_git("worktree", "add", "--quiet", "-b", "feature", str(linked), "HEAD")
+        (linked / "a.txt").write_text("staged\n")
+        (linked / "staged-new.txt").write_text("staged new\n")
+        local_git("add", "--", "a.txt", "staged-new.txt", cwd=linked)
+        (linked / "a.txt").write_text("working tree\n")
+        (linked / "delete.txt").unlink()
+        (linked / "新文件.txt").write_text("untracked\n")
+
+        pointer = linked / ".git"
+        control = Path(pointer.read_text().removeprefix("gitdir: ").strip())
+        self.assertTrue(control.is_dir())
+        common_pointer = control / "commondir"
+        self.assertEqual(common_pointer.read_text().strip(), "../..")
+        pointer.write_text("gitdir: " + guest_repo + "/" + control.relative_to(self.work).as_posix() + "\n")
+        (control / "gitdir").write_text(guest_linked + "/.git\n")
+        if absolute_common:
+            common_pointer.write_text(guest_repo + "/.git\n")
+        before_pointer = pointer.read_bytes()
+
+        def metadata_snapshot():
+            return {path.relative_to(self.root): path.read_bytes() for path in (self.work / ".git").rglob("*") if path.is_file()}
+
+        before_metadata = metadata_snapshot()
+        status = self.inspect("status", repo=linked, workspace=linked, path_mappings=mappings)
+        self.assertNotIn("error", status, status)
+        self.assertTrue(status["repository"])
+        self.assertEqual((status["branch"], status["head"]), ("feature", head))
+        self.assertEqual(self.paths(status, "staged"), {"a.txt": "modified", "staged-new.txt": "added"})
+        self.assertEqual(self.paths(status, "unstaged"), {"a.txt": "modified", "delete.txt": "deleted"})
+        self.assertEqual(self.paths(status, "untracked"), {"新文件.txt": "added"})
+        modified = next(item for item in status["unstaged"] if item["path"] == "a.txt")
+        self.assertEqual((modified["added_lines"], modified["removed_lines"]), (1, 1))
+        blobs = self.inspect("read", "--blob", "HEAD:a.txt", "--blob", "INDEX:a.txt", repo=linked, path_mappings=mappings)
+        self.assertNotIn("error", blobs, blobs)
+        self.assertEqual([blob["text"] for blob in blobs["blobs"]], ["base\n", "staged\n"])
+        log = self.inspect("log", repo=linked, path_mappings=mappings)
+        self.assertEqual([entry["sha"] for entry in log["commits"]], [head])
+        branches = self.inspect("branches", repo=linked, path_mappings=mappings)
+        self.assertEqual({entry["name"]: entry["current"] for entry in branches["branches"]}, {"feature": True, "main": False})
+        detail = self.inspect("commit", "--commit", head, repo=linked, path_mappings=mappings)
+        self.assertEqual(detail["commit"]["sha"], head)
+        self.assertEqual(pointer.read_bytes(), before_pointer)
+        self.assertEqual(metadata_snapshot(), before_metadata)
+
+    def test_linked_worktree_linux_root_pointer_and_absolute_common_are_read_only(self) -> None:
+        self._linked_worktree_fixture("root", absolute_common=True)
+
+    def test_linked_worktree_workspace_pointer_and_relative_common_are_read_only(self) -> None:
+        self._linked_worktree_fixture("workspace", absolute_common=False)
 
     def test_local_internal_gitignore_hides_untracked_files_without_repository_writes(self) -> None:
         self.init()

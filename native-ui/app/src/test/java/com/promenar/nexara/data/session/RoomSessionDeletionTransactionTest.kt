@@ -25,6 +25,26 @@ import java.nio.file.Files
 class RoomSessionDeletionTransactionTest {
     private lateinit var database: NexaraDatabase
 
+    @Test
+    fun `工作区删除事务保留分支消息并解除父引用`() = runBlocking {
+        seedAllRelations()
+        val child = com.promenar.nexara.data.local.db.entity.SessionEntity("child", "agent", createdAt = 1, updatedAt = 2,
+            parentSessionId = SESSION, branchPlanJson = "{}", worktreeDirectory = "/project/feature", worktreeBranch = "feature")
+        database.sessionDao().insert(child)
+        database.messageDao().insert(com.promenar.nexara.data.local.db.entity.MessageEntity("child-message", "child", "user", "保留分支消息", createdAt = 2))
+        val raw = WorkspaceMutationPayloadCodec.encode(WorkspaceMutationPayload(
+            sourceRelativePath = "root", targetRelativePath = ".nexara_session_deletions/branch-delete",
+            databaseTargetUuid = SESSION, expectedSha256 = "identity"))
+        database.workspaceMutationDao().insert(WorkspaceMutationEntity(operationId = "branch-delete", workspaceRootUuid = ROOT,
+            operationType = WorkspaceMutationType.DELETE, payload = raw, payloadDigest = Sha256Utils.hash(raw), createdAt = 1, updatedAt = 1))
+
+        RoomSessionDeletionTransaction(database).delete(target(), "branch-delete")
+
+        assertThat(database.sessionDao().getById("child")).isEqualTo(child.copy(parentSessionId = null, parentSessionDeleted = true))
+        assertThat(database.messageDao().getById("child-message")!!.content).isEqualTo("保留分支消息")
+        assertThat(database.sessionDao().getById(SESSION)).isNull()
+    }
+
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()

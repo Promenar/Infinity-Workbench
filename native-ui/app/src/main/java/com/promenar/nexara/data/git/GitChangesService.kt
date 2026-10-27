@@ -17,14 +17,18 @@ import java.nio.file.LinkOption
 class SessionGitWorkspaceLocator(
     private val resolveWorkspace: suspend (String) -> SessionWorkspace,
     private val privateRoot: suspend (String) -> String,
+    private val linuxPathMappings: suspend (String) -> Map<String, String>? = { null },
 ) {
     suspend fun locate(sessionId: String): GitWorkspaceResolution = try {
         when (val workspace = resolveWorkspace(sessionId)) {
-            is SessionWorkspace.Directory -> GitWorkspaceResolution.Ready(GitWorkspaceTarget(workspace.root, workspace.kind))
+            is SessionWorkspace.Directory -> GitWorkspaceResolution.Ready(GitWorkspaceTarget(workspace.root, workspace.kind,
+                linuxPathMappings(sessionId) ?: emptyMap<String, String>().takeIf {
+                    workspace.kind == com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.KIND
+                }))
             is SessionWorkspace.Unavailable -> GitWorkspaceResolution.Unavailable(workspace.reason)
             SessionWorkspace.Private -> {
                 val root = withContext(Dispatchers.IO) { File(privateRoot(sessionId)).canonicalFile }
-                GitWorkspaceResolution.Ready(GitWorkspaceTarget(root, SessionWorkspaceResolver.KIND_PRIVATE))
+                GitWorkspaceResolution.Ready(GitWorkspaceTarget(root, SessionWorkspaceResolver.KIND_PRIVATE, linuxPathMappings(sessionId)))
             }
         }
     } catch (cancelled: CancellationException) {

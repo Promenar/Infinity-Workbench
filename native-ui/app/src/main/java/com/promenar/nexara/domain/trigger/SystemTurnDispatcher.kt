@@ -8,6 +8,8 @@ enum class SystemTurnKind(val wireName: String) {
     JOB_EXIT("job_exit"),
     /** 后台子代理完成、失败或交回阶段结论；[SystemTurnRequest.sourceId] 为子代理 id，正文为结论或摘要与全文路径。 */
     SUBAGENT_DONE("subagent_done"),
+    /** 会话间持久消息，复用步骤边界送达。 */
+    SESSION_MESSAGE("session_message"),
     ;
 
     companion object {
@@ -72,3 +74,7 @@ interface SystemTurnDispatcher {
     /** 挂起到该轮结束、暂停或被跳过。调用方取消协程只撤回尚未发出的请求，不停止已开始的生成。 */
     suspend fun request(request: SystemTurnRequest): SystemTurnOutcome
 }
+
+/** 完成与通信通知共享可靠送达桥，普通定时来源仍使用原有过期规则。 */
+val SystemTurnKind.usesSteeringDelivery: Boolean
+    get() = this == SystemTurnKind.SUBAGENT_DONE || this == SystemTurnKind.SESSION_MESSAGE

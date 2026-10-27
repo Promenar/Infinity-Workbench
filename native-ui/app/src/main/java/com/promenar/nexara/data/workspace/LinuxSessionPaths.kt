@@ -32,10 +32,10 @@ object LinuxSessionPaths {
     const val WORKSPACE_ROOT = "/workspace"
     const val SKILLS_ROOT = "/mnt/skills"
 
-    fun normalize(raw: String): String {
+    fun normalize(raw: String, workingDirectory: String = WORKSPACE_ROOT): String {
         val value = raw.trim()
         if (value.isEmpty() || value.any(Character::isISOControl) || '\\' in value || Regex("^[A-Za-z]:").containsMatchIn(value)) invalid()
-        val absolute = if (value.startsWith('/')) value else "$WORKSPACE_ROOT/$value"
+        val absolute = if (value.startsWith('/')) value else "${normalizedWorkingDirectory(workingDirectory)}/$value"
         val normalized = ExternalFolderPaths.normalize(absolute)
         if (normalized.split('/').any { it == ".l2s" || it.startsWith(".l2s.") || it.startsWith(".proot.l2s.") }) invalid()
         return normalized
@@ -62,17 +62,22 @@ object LinuxSessionPaths {
         else -> ""
     }
 
-    fun normalizeArguments(tool: String, args: JsonObject): JsonObject = JsonObject(args.toMutableMap().apply {
+    fun normalizeArguments(tool: String, args: JsonObject, workingDirectory: String = WORKSPACE_ROOT): JsonObject = JsonObject(args.toMutableMap().apply {
         listOf("path", "parentPath", "newParentPath").forEach { key ->
-            (get(key) as? JsonPrimitive)?.takeIf { it.isString && it.content.isNotBlank() }?.let { put(key, JsonPrimitive(normalize(it.content))) }
+            (get(key) as? JsonPrimitive)?.takeIf { it.isString && it.content.isNotBlank() }?.let { put(key, JsonPrimitive(normalize(it.content, workingDirectory))) }
         }
         val defaultKey = when (tool) {
             "create_file", "create_directory" -> "parentPath".takeIf { !hasString(args, "parentUuid") }
             "list_files" -> "path".takeIf { !hasString(args, "parentUuid") }
             else -> null
         }
-        if (defaultKey != null && !hasString(args, defaultKey)) put(defaultKey, JsonPrimitive(WORKSPACE_ROOT))
+        if (defaultKey != null && !hasString(args, defaultKey)) put(defaultKey, JsonPrimitive(normalizedWorkingDirectory(workingDirectory)))
     })
+
+    private fun normalizedWorkingDirectory(path: String): String {
+        if (!path.startsWith('/') || path.any(Character::isISOControl) || '\\' in path) invalid()
+        return ExternalFolderPaths.normalize(path)
+    }
 
     private fun hasString(args: JsonObject, key: String) = (args[key] as? JsonPrimitive)?.let { it.isString && it.content.isNotBlank() } == true
     private fun invalid(): Nothing = throw ExternalFolderException("INVALID_PATH", "Linux 路径包含越界片段、无效名称或宿主路径写法")

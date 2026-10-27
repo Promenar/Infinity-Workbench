@@ -40,6 +40,7 @@ class ApplicationSystemTurnRuntime(
     private val notify: suspend (SystemTurnRequest, SystemTurnOutcome, String?) -> Unit,
     private val failureText: (GenerationError?) -> String,
     private val subagentCompletions: SubagentCompletionSteering? = null,
+    private val admitMessageWake: suspend (String, String, SystemTurnKind) -> Boolean = { _, _, _ -> true },
 ) : SystemTurnRuntime {
     override suspend fun awaitReady() { startup.first { it == BackupStartupState.Ready } }
     override suspend fun sessionExists(sessionId: String) = withContext(Dispatchers.IO) { exists(sessionId) }
@@ -101,12 +102,13 @@ class ApplicationSystemTurnRuntime(
     )
 
     private fun pendingCompletion(session: Session): PendingCompletion? {
-        val last = session.messages.lastOrNull() ?: return null
+        val relevant = session.messages.filterNot { com.promenar.nexara.data.branch.SessionMessageStore.isInternal(it.name) }
+        val last = relevant.lastOrNull() ?: return null
         val placeholder = last.takeIf { it.role == MessageRole.ASSISTANT && it.isUnstartedCompletionPlaceholder() }
-        val user = if (placeholder == null) last else session.messages.getOrNull(session.messages.lastIndex - 1)
+        val user = if (placeholder == null) last else relevant.getOrNull(relevant.lastIndex - 1)
         if (user == null || user.role != MessageRole.USER || user.name != SystemTriggerMessage.MESSAGE_NAME) return null
         if (placeholder != null && placeholder.parentMessageId != user.id) return null
-        val parsed = SystemTriggerMessage.parse(user.content)?.takeIf { it.kind == SystemTurnKind.SUBAGENT_DONE } ?: return null
+        val parsed = SystemTriggerMessage.parse(user.content)?.takeIf { it.kind.usesSteeringDelivery } ?: return null
         val consumer = parsed.consumerAssistantId?.let { id ->
             session.messages.firstOrNull { it.id == id && it.role == MessageRole.ASSISTANT }
         }
@@ -135,10 +137,11 @@ class ApplicationSystemTurnRuntime(
             var retryMillis = 250L
             while (!pending.outcome.isCompleted && !ticket.isWithdrawn) {
                 // 接受票据只代表正在写入，持久化回执才代表已经送达。
-                if (ticket.acceptedTaskId != null) return pending.outcome.await()
+                if (ticket.acceptedTaskId != null && request.kind != SystemTurnKind.SESSION_MESSAGE) return pending.outcome.await()
                 store.turnAdmission.withLock(request.sessionId) {
                     executionGate.withNewSessionAdmission(request.sessionId) {
-                        if (pending.outcome.isCompleted || !ticket.isOpen) return@withNewSessionAdmission
+                        if (pending.outcome.isCompleted || ticket.isWithdrawn ||
+                            !ticket.isOpen && request.kind != SystemTurnKind.SESSION_MESSAGE) return@withNewSessionAdmission
                         if (!sessionExists(request.sessionId)) {
                             pending.outcome.complete(SystemTurnOutcome.Skipped(SystemTurnSkipReason.SESSION_MISSING))
                             return@withNewSessionAdmission
@@ -175,6 +178,7 @@ class ApplicationSystemTurnRuntime(
         preparedUser: Message? = null,
     ) {
         val request = delivered.request
+        if (!admitMessageWake(request.sessionId, delivered.userMessageId, request.kind)) return
         val session = store.getSession(request.sessionId) ?: return
         val assistantId = preparedAssistantId ?: "ai_${UUID.randomUUID()}"
         var taskId: String? = null
