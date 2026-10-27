@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -193,7 +195,7 @@ private fun inspectorBorder() = BorderStroke(0.5.dp, MaterialTheme.colorScheme.o
 
 /**
  * 宽窗口会话右侧的浮动检视器：独立圆角卡片，不以竖线切开会话。
- * 顶部是页签与加宽、收起按钮；当前页签显示图标与名称，其余只显示图标与角标。
+ * 底栏左侧是页签，右侧是加宽与收起；当前页签显示图标与名称，其余只显示图标与角标。
  * 内容以 [NexaraPanePresentation.Inspector] 承载：页面不再贴系统栏留白，根层不重复画顶栏。
  */
 @Composable
@@ -217,16 +219,27 @@ internal fun ChatInspectorCard(
         shadowElevation = 8.dp,
     ) {
         Column(Modifier.fillMaxSize()) {
+            CompositionLocalProvider(LocalNexaraPanePresentation provides NexaraPanePresentation.Inspector) {
+                Box(Modifier.weight(1f).fillMaxWidth(), content = content)
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            // 页签与操作都在底栏：展开的内屏双手持握时拇指在下方，不必伸到屏幕顶部；收起留在最右，与边缘条底部的展开按钮同处。
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                badges.pages().forEach { page ->
-                    InspectorTab(page = page, selected = page == root, badges = badges, onClick = { onSelect(page) })
+                // 页签多、生成中又多出触摸锁时，窄卡片放不下整行；页签区横向滚动，右侧操作始终可见。
+                Row(
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    badges.pages().forEach { page ->
+                        InspectorTab(page = page, selected = page == root, badges = badges, onClick = { onSelect(page) })
+                    }
                 }
-                Spacer(Modifier.weight(1f))
-                // 宽窗口没有运行坞，生成中的触摸锁放在检视器顶栏。
+                // 宽窗口没有运行坞，生成中的触摸锁放在检视器底栏。
                 onLockTouch?.let { TouchLockButton(onLock = it) }
                 IconButton(onClick = onToggleWiden, modifier = Modifier.testTag(ChatInspectorTags.WIDEN)) {
                     Icon(
@@ -243,10 +256,6 @@ internal fun ChatInspectorCard(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-            CompositionLocalProvider(LocalNexaraPanePresentation provides NexaraPanePresentation.Inspector) {
-                Box(Modifier.weight(1f).fillMaxWidth(), content = content)
             }
         }
     }
@@ -284,7 +293,7 @@ private fun InspectorTab(page: ChatPage, selected: Boolean, badges: ChatInspecto
 }
 
 /**
- * 检视器收起后的边缘条：贴在会话右缘的竖向胶囊，只有页签图标与角标，点按以该页签展开。
+ * 检视器收起后的边缘条：贴在会话右缘、底部对齐的竖向胶囊，只有页签图标与角标，点按以该页签展开。
  * 没有任何内容时整个检视器隐藏，边缘条也不出现。
  */
 @Composable

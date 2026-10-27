@@ -1320,7 +1320,8 @@ fun ChatScreenContent(
                             slideInHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)) { it },
                         exit = fadeOut(tween(NexaraMotion.DurationShort)) +
                             slideOutHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)) { it },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp),
+                        // 与卡片底栏同处底部：输入区横跨全宽，底边留在输入区上方以免挡住发送键。
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = composerReserve + 8.dp),
                     ) {
                         ChatInspectorStrip(
                             badges = inspectorBadges,

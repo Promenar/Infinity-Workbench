@@ -5,7 +5,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.Test
 
-/** 触摸锁入口：手机在运行坞，宽窗口没有运行坞时在检视器卡片顶栏与边缘条。 */
+/** 触摸锁入口：手机在运行坞，宽窗口没有运行坞时在检视器卡片底栏与边缘条。 */
 class TouchLockEntryContractTest {
     private val screen = Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt")).toString(Charsets.UTF_8)
 

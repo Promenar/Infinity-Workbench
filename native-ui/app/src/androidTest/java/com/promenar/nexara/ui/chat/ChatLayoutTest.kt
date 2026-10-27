@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
@@ -12,6 +13,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -145,5 +147,37 @@ class ChatLayoutTest {
         rule.onNodeWithContentDescription(files).assertIsDisplayed()
         rule.onAllNodesWithTag(ChatInspectorTags.TOGGLE).assertCountEquals(0)
     }
-}
 
+    @Test fun inspectorTabsAndActionsShareBottomBarWithCollapseAtRight() {
+        var collapsed = false
+        rule.setContent {
+            NexaraTheme {
+                ChatInspectorCard(
+                    root = ChatPage.Run,
+                    badges = ChatInspectorBadges(
+                        running = true, hasRunContent = true, gitAvailable = true, gitChanges = 3, canvases = 2,
+                        browser = com.promenar.nexara.data.browser.BrowserMode.AGENT, browserEntry = true,
+                    ),
+                    widened = false,
+                    onSelect = {},
+                    onToggleWiden = {},
+                    onCollapse = { collapsed = true },
+                    modifier = Modifier.width(360.dp).height(600.dp),
+                    onLockTouch = {},
+                ) {}
+            }
+        }
+        val card = rule.onNodeWithTag(com.promenar.nexara.ui.common.NexaraPaneTags.INSPECTOR).getUnclippedBoundsInRoot()
+        val collapse = rule.onNodeWithTag(ChatInspectorTags.COLLAPSE).getUnclippedBoundsInRoot()
+        val widen = rule.onNodeWithTag(ChatInspectorTags.WIDEN).getUnclippedBoundsInRoot()
+        val tab = rule.onNodeWithTag(ChatInspectorTags.tab(ChatPage.Run)).getUnclippedBoundsInRoot()
+        assertThat((card.bottom - collapse.bottom).value).isAtMost(8f)
+        assertThat((card.right - collapse.right).value).isAtMost(8f)
+        assertThat(widen.right.value).isAtMost(collapse.left.value)
+        assertThat(abs((widen.top - collapse.top).value)).isAtMost(1f)
+        assertThat((card.bottom - tab.bottom).value).isAtMost(8f)
+        assertThat(tab.right.value).isAtMost(widen.left.value)
+        rule.onNodeWithTag(ChatInspectorTags.COLLAPSE).performClick()
+        assertThat(collapsed).isTrue()
+    }
+}
