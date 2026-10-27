@@ -77,4 +77,34 @@ class SubagentTimelineTest {
         // 没有可作对象的字符串参数时逐项展示。
         assertThat(subagentCallDisplay("""{"limit":5}""")).isEqualTo(SubagentCallDisplay(null, "limit: 5"))
     }
+
+    @Test
+    fun `调用进行中的主会话干预不打断该调用与结果的配对`() {
+        val items = subagentTimeline(
+            listOf(
+                event(Kind.TOOL_CALL, "{\"command\":\"sleep 20\"}", "shell_exec"),
+                event(Kind.APPROVAL, "sleep 20", "shell_exec"),
+                event(Kind.DETACH),
+                event(Kind.TOOL_RESULT, "ok", "shell_exec"),
+            ),
+            runError = null,
+        )
+        assertThat(items).hasSize(2)
+        val tool = items[0] as SubagentTimelineItem.Tool
+        assertThat(tool.approval).isNotNull()
+        assertThat(tool.result?.text).isEqualTo("ok")
+        assertThat(items[1]).isInstanceOf(SubagentTimelineItem.Intervention::class.java)
+    }
+
+    @Test
+    fun `命令结果只展示输出与退出码，非命令工具与纯文本原样展示`() {
+        val empty = subagentCommandResult("shell_exec", "{\"exit_code\":0,\"stdout\":\"\",\"stderr\":\"\",\"timed_out\":false}")!!
+        assertThat(empty.output).isNull()
+        assertThat(empty.exitCode).isEqualTo(0)
+        val mixed = subagentCommandResult("shell_exec", "{\"exit_code\":2,\"stdout\":\"a\\n\",\"stderr\":\"boom\"}")!!
+        assertThat(mixed.output).isEqualTo("a\nboom")
+        assertThat(mixed.exitCode).isEqualTo(2)
+        assertThat(subagentCommandResult("list_files", "{\"exit_code\":0}")).isNull()
+        assertThat(subagentCommandResult("shell_exec", "plain text")).isNull()
+    }
 }

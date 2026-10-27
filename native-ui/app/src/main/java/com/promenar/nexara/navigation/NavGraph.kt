@@ -474,6 +474,7 @@ private fun SubagentViewerDestination(app: NexaraApplication, backStackEntry: an
     val batch by remember(owner, stepId) { app.subagentRunStore.observe(owner, stepId).onEach { loaded = true } }
         .collectAsState(initial = initial)
     val providerModels by com.promenar.nexara.data.manager.ProviderManager.getInstance().providerModels.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     CompositionLocalProvider(com.promenar.nexara.ui.chat.LocalToolLiveOutput provides app.toolLiveOutputStore) {
         com.promenar.nexara.ui.chat.SubagentViewerScreen(
             batch = batch,
@@ -483,6 +484,7 @@ private fun SubagentViewerDestination(app: NexaraApplication, backStackEntry: an
                 com.promenar.nexara.ui.chat.resolveModelDisplayNames(modelId, emptyList(), providerModels)[modelId] ?: modelId
             },
             onBack = onBack,
+            onStop = { run -> scope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { app.subagentControls.stop(owner, run.id) } } },
         )
     }
 }

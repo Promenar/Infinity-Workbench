@@ -796,6 +796,7 @@ fun ChatRoute(
         LocalToolLiveOutput provides application.toolLiveOutputStore,
         LocalMemoryChangeHost provides rememberMemoryChangeHost(application.longTermMemoryRepository),
         LocalSubagentRuns provides subagentRuns,
+        LocalSubagentControls provides application.subagentControls,
         com.promenar.nexara.ui.chat.components.LocalAgentActivity provides agentActivity,
         LocalChatBrowser provides ChatBrowserAccess(browserState) { openChatPage(ChatPage.Browser) },
     ) {

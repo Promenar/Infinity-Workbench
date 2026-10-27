@@ -133,7 +133,10 @@ internal fun SubagentGroupCard(stepId: String, modifier: Modifier = Modifier) {
             onOpen = { index -> access.onOpen(stepId, index) },
             modifier = modifier,
             onDetach = controls?.let { { it.releaseWait(current.sessionId, stepId) } },
-            onStop = controls?.let { { run: SubagentRun -> scope.launch { it.stop(current.sessionId, run.id) } } },
+            onStop = controls?.let { { run: SubagentRun -> scope.launch {
+                // 停止一旦发出就做完，卡片滚出屏幕时也不中途取消。
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { it.stop(current.sessionId, run.id) }
+            } } },
         )
     }
 }
@@ -716,7 +719,25 @@ private fun SubagentToolStep(step: SubagentTimelineItem.Tool, running: Boolean) 
                 )
             }
             step.result?.takeIf { it.text.isNotBlank() }?.let { result ->
-                if (result.failed) ToolErrorBlock(result.text) else ApprovalTextBlock(result.text)
+                val command = remember(result.text, step.toolName) { if (result.failed) null else subagentCommandResult(step.toolName, result.text) }
+                when {
+                    result.failed -> ToolErrorBlock(result.text)
+                    command != null -> {
+                        command.output?.let { ApprovalTextBlock(it) } ?: Text(
+                            stringResource(R.string.linux_output_empty),
+                            style = NexaraTypography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        command.exitCode?.takeIf { it != 0 }?.let {
+                            Text(
+                                stringResource(R.string.termux_exit_code, it.toString()),
+                                style = NexaraTypography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                    else -> ApprovalTextBlock(result.text)
+                }
             }
         }
     }
@@ -822,6 +843,18 @@ internal data class SubagentCallDisplay(val subject: String?, val details: Strin
  * 把按时间记录的事件合并为时间线：调用、审批与结果按顺序归入同一步；
  * 与交回结果同文的终止错误只在结果区展示一次。
  */
+/** 查看页里命令工具的结果：只取输出正文与退出码，不展示原始 JSON。 */
+internal data class SubagentCommandResult(val output: String?, val exitCode: Int?)
+
+/** 不是命令工具或结果不是结构化 JSON 时返回 null，由调用方原样展示。 */
+internal fun subagentCommandResult(toolName: String?, text: String): SubagentCommandResult? {
+    if (!com.promenar.nexara.ui.linux.output.CommandOutputParser.isCommandTool(toolName)) return null
+    if (!text.trimStart().startsWith("{")) return null
+    val parsed = runCatching { com.promenar.nexara.ui.linux.output.CommandOutputParser.parse(toolName, null, text, null) }.getOrNull() ?: return null
+    val output = listOf(parsed.stdout.raw, parsed.stderr.raw).map(String::trimEnd).filter(String::isNotEmpty).joinToString("\n")
+    return SubagentCommandResult(output.ifEmpty { null }, parsed.exitCode)
+}
+
 internal fun subagentTimeline(events: List<SubagentEvent>, runError: String?): List<SubagentTimelineItem> {
     val items = mutableListOf<SubagentTimelineItem>()
     var open: Int? = null
@@ -851,8 +884,8 @@ internal fun subagentTimeline(events: List<SubagentEvent>, runError: String?): L
             }
             SubagentEvent.Kind.PARENT_MESSAGE, SubagentEvent.Kind.WRAP_UP, SubagentEvent.Kind.STOP,
             SubagentEvent.Kind.RESUME, SubagentEvent.Kind.DETACH -> {
+                // 干预发生在调用进行中时，随后到达的结果仍归该调用，不另起一项。
                 items += SubagentTimelineItem.Intervention(event)
-                open = null
             }
             SubagentEvent.Kind.ERROR -> {
                 val terminal = position == events.lastIndex && event.text == runError
