@@ -247,8 +247,10 @@ internal fun subagentStatusText(run: SubagentRun, now: Long): String = when (run
     SubagentStatus.WAITING_APPROVAL -> stringResource(R.string.subagent_status_waiting, toolFriendlyName(run.currentTool))
     SubagentStatus.COMPLETED -> stringResource(R.string.subagent_status_done, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
     SubagentStatus.FAILED -> stringResource(R.string.subagent_status_failed, run.error.orEmpty())
-    SubagentStatus.CANCELLED -> stringResource(R.string.subagent_status_cancelled)
+    SubagentStatus.CANCELLED, SubagentStatus.STOPPED -> stringResource(R.string.subagent_status_cancelled)
     SubagentStatus.INTERRUPTED -> stringResource(R.string.subagent_status_interrupted)
+    SubagentStatus.QUEUED -> stringResource(R.string.subagent_status_queued)
+    SubagentStatus.WRAPPING_UP -> stringResource(R.string.subagent_status_wrapping_up)
 }
 
 @Composable
@@ -533,6 +535,12 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
                     )
                     is SubagentTimelineItem.Tool -> SubagentToolStep(item, running = run.status.isActive)
                     is SubagentTimelineItem.Failure -> ToolErrorBlock(item.text)
+                    // 干预事件行的正式样式随 P4 界面落地，契约阶段先以说明文字占位。
+                    is SubagentTimelineItem.Intervention -> if (item.event.text.isNotBlank()) Text(
+                        item.event.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             run.liveOutputKey?.takeIf { run.status.isActive }?.let { RunningToolLiveOutput(it) }
@@ -647,6 +655,8 @@ internal sealed interface SubagentTimelineItem {
         val result: SubagentEvent? = null,
     ) : SubagentTimelineItem
     data class Failure(val text: String) : SubagentTimelineItem
+    /** 主会话的干预或等待变化：追加指令、软停止、硬停止、恢复、转入后台。 */
+    data class Intervention(val event: SubagentEvent) : SubagentTimelineItem
 }
 
 /** 工具调用的展示形式：最能说明对象的一项参数单独给出，其余参数格式化后作为补充。 */
@@ -681,6 +691,11 @@ internal fun subagentTimeline(events: List<SubagentEvent>, runError: String?): L
                 if (!attach(event) { it.copy(result = event) }) {
                     items += SubagentTimelineItem.Tool(event.toolName, SubagentCallDisplay(null, null), result = event)
                 }
+                open = null
+            }
+            SubagentEvent.Kind.PARENT_MESSAGE, SubagentEvent.Kind.WRAP_UP, SubagentEvent.Kind.STOP,
+            SubagentEvent.Kind.RESUME, SubagentEvent.Kind.DETACH -> {
+                items += SubagentTimelineItem.Intervention(event)
                 open = null
             }
             SubagentEvent.Kind.ERROR -> {

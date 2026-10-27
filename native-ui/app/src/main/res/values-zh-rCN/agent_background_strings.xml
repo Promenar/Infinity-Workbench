@@ -105,4 +105,5 @@
     <string name="agent_jobs_group_running">运行中 · %1$d</string>
     <string name="agent_jobs_group_finished">已结束 · %1$d</string>
     <string name="agent_jobs_exit_badge">退出 %1$d</string>
+    <string name="system_trigger_subagent_done">子代理交回结论 · %1$s</string>
 </resources>

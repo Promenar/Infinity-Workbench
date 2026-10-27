@@ -51,4 +51,6 @@
     <string name="subagent_approval_waiting">等你批准</string>
     <string name="subagent_approval_allow_a11y">允许%1$s，风险类别 %2$s</string>
     <string name="subagent_approval_deny_a11y">拒绝%1$s，风险类别 %2$s</string>
+    <string name="subagent_status_queued">排队中</string>
+    <string name="subagent_status_wrapping_up">收尾中</string>
 </resources>

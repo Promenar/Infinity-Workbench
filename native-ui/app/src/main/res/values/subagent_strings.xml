@@ -51,4 +51,6 @@
     <string name="subagent_approval_waiting">Waiting for you</string>
     <string name="subagent_approval_allow_a11y">Allow %1$s, risk %2$s</string>
     <string name="subagent_approval_deny_a11y">Reject %1$s, risk %2$s</string>
+    <string name="subagent_status_queued">Queued</string>
+    <string name="subagent_status_wrapping_up">Wrapping up</string>
 </resources>

@@ -69,6 +69,7 @@ internal fun SystemTriggerRow(trigger: SystemTriggerMessage.Parsed, modifier: Mo
         SystemTurnKind.SCHEDULE -> trigger.sequence?.let { stringResource(R.string.system_trigger_schedule_seq, trigger.title, it) }
             ?: stringResource(R.string.system_trigger_schedule, trigger.title)
         SystemTurnKind.JOB_EXIT -> stringResource(R.string.system_trigger_job_exit, trigger.title)
+        SystemTurnKind.SUBAGENT_DONE -> stringResource(R.string.system_trigger_subagent_done, trigger.title)
     }
     val meta = if (trigger.catchUp) stringResource(R.string.system_trigger_catch_up, time) else time
     val hasBody = trigger.body.isNotBlank()

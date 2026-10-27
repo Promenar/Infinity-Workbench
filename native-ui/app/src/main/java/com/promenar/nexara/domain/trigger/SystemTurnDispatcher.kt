@@ -6,6 +6,8 @@ enum class SystemTurnKind(val wireName: String) {
     SCHEDULE("schedule"),
     /** 后台任务结束且要求唤醒 Agent。 */
     JOB_EXIT("job_exit"),
+    /** 后台子代理完成、失败或交回阶段结论；[SystemTurnRequest.sourceId] 为子代理 id，正文为结论或摘要与全文路径。 */
+    SUBAGENT_DONE("subagent_done"),
     ;
 
     companion object {
