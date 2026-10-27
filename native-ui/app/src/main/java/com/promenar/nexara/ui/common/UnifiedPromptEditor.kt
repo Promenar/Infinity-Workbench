@@ -71,8 +71,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraMonospace
@@ -257,10 +255,10 @@ fun UnifiedPromptEditor(
     }
 
     when (mode) {
-        EditorMode.DIALOG -> Dialog(
+        EditorMode.DIALOG -> NexaraFullscreenDialog(
             onDismissRequest = requestDismiss,
             // 窗口铺到系统栏下方，背景覆盖整屏；状态栏、导航栏与键盘的留白由内容自己处理。
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+            systemBarColor = MaterialTheme.colorScheme.background,
         ) {
             BoxWithConstraints(
                 modifier = Modifier

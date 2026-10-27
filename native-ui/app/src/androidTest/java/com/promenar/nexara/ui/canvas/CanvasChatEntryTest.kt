@@ -50,8 +50,14 @@ class CanvasChatEntryTest {
                 }
             }
         }
+        // 产物入口在选项菜单里，会话有产物时才出现。
+        rule.onNodeWithTag(UiTags.CHAT_OPTIONS).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_SESSION_SETTINGS).assertIsDisplayed()
         rule.onAllNodesWithTag(UiTags.CANVAS_ENTRY).assertCountEquals(0)
+        androidx.test.espresso.Espresso.pressBack()
         runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
+        rule.waitForIdle()
+        rule.onNodeWithTag(UiTags.CHAT_OPTIONS).performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag(UiTags.CANVAS_ENTRY).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag(UiTags.CANVAS_ENTRY).assertIsDisplayed().performClick()
         rule.runOnIdle { assertThat(opened).isEqualTo(1) }

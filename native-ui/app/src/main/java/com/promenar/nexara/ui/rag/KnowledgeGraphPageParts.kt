@@ -43,9 +43,8 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
+import com.promenar.nexara.ui.common.NexaraChip
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -194,7 +193,6 @@ internal fun KnowledgeGraphScopeRow(
 }
 
 /** 类型筛选：只列出当前图谱里出现的类型，多选；未选任何类型时全部显示。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun KnowledgeGraphTypeFilterRow(
     counts: Map<KgEntityKind, Int>,
@@ -212,28 +210,11 @@ internal fun KnowledgeGraphTypeFilterRow(
         items(kinds, key = { it.name }) { kind ->
             val color = palette.of(kind)
             val isOn = kind in selected
-            FilterChip(
-                selected = isOn,
+            NexaraChip(
+                label = stringResource(R.string.kg_type_filter_chip, stringResource(kind.label), counts[kind] ?: 0),
                 onClick = { onToggle(kind) },
-                label = {
-                    Text(
-                        stringResource(R.string.kg_type_filter_chip, stringResource(kind.label), counts[kind] ?: 0),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                },
-                leadingIcon = { Icon(kind.icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp)) },
-                shape = CircleShape,
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = color.copy(alpha = 0.18f),
-                    selectedLabelColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isOn,
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    selectedBorderColor = color,
-                    selectedBorderWidth = 1.dp,
-                ),
+                selected = isOn,
+                leading = { Icon(kind.icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier.testTag(UiTags.kgTypeFilter(kind.name)),
             )
         }

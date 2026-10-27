@@ -1,10 +1,9 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -117,18 +116,15 @@ fun NexaraValuePickerContent(
                 Text(spec.format(spec.min), style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(spec.format(spec.max), style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                spec.effectivePresets.forEach { preset ->
-                    FilterChip(selected = spec.selectedPreset(draft)?.value == preset.value,
-                        onClick = { draft = preset.value; onValueChange(draft) },
-                        label = {
-                            val label = numericValueLabel(spec, preset.value)
-                            Text(if (spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label,
-                                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
-                        },
-                        modifier = Modifier.height(32.dp))
-                }
-            }
+            NexaraSegmentedControl(
+                segments = spec.effectivePresets.map { preset ->
+                    val label = numericValueLabel(spec, preset.value)
+                    NexaraSegment(preset.value, if (spec.isDefault(preset.value)) stringResource(R.string.numeric_default_value, label) else label)
+                },
+                selected = spec.selectedPreset(draft)?.value,
+                onSelect = { draft = it; onValueChange(draft) },
+                modifier = Modifier.padding(top = 8.dp),
+            )
             TextButton(onClick = { draft = spec.defaultValue; onValueChange(draft) }, modifier = Modifier.align(Alignment.End)) {
                 Text(stringResource(R.string.numeric_restore_default))
             }

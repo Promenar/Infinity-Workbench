@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -31,8 +28,6 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Web
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -65,7 +60,8 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.artifact.ArtifactCandidate
 import com.promenar.nexara.data.artifact.ArtifactKind
 import com.promenar.nexara.data.artifact.ArtifactSummary
-import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -83,7 +79,6 @@ internal fun ArtifactsContent(
     onIgnore: (ArtifactCandidate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalNexaraHaptics.current
     var selected by rememberSaveable { mutableStateOf(ArtifactFilter.ALL) }
     val filter = effectiveArtifactFilter(selected, artifacts)
     val view = artifactSections(artifacts, filter, candidates.size)
@@ -96,24 +91,14 @@ internal fun ArtifactsContent(
             return@LazyColumn
         }
         if (artifacts.isNotEmpty()) item(key = "filters") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.XSmall),
-                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-            ) {
-                artifactFilters(artifacts).forEach { (option, count) ->
-                    val isSelected = option == filter
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { haptics.select(isSelected); selected = option },
-                        label = { Text("${stringResource(option.labelRes)} $count") },
-                        leadingIcon = if (isSelected) ({ Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }) else null,
-                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag(UiTags.artifactFilter(option.name)),
-                    )
-                }
-            }
+            NexaraSegmentedControl(
+                segments = artifactFilters(artifacts).map { (option, count) ->
+                    NexaraSegment(option, stringResource(option.labelRes), tag = UiTags.artifactFilter(option.name), count = count)
+                },
+                selected = filter,
+                onSelect = { selected = it },
+                contentPadding = PaddingValues(start = NexaraSpacing.Large, end = NexaraSpacing.Large, top = NexaraSpacing.Small, bottom = NexaraSpacing.XSmall),
+            )
         }
         if (view.prototypes.isNotEmpty()) {
             item(key = "prototype-header") { SectionHeader(stringResource(R.string.artifact_section_prototype), stringResource(R.string.artifact_prototype_hint)) }

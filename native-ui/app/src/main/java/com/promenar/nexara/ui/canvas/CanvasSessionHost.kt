@@ -15,8 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import com.promenar.nexara.ui.common.NexaraFullscreenDialog
 import com.promenar.nexara.R
 import com.promenar.nexara.data.canvas.CanvasDocument
 import com.promenar.nexara.data.canvas.CanvasMetadata
@@ -222,7 +221,7 @@ fun CanvasSessionHost(
             }
         }
         val prototype = (metadata ?: document?.metadata)?.kind == CanvasKind.PROTOTYPE
-        Dialog(onDismissRequest = { openedId = null }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        NexaraFullscreenDialog(onDismissRequest = { openedId = null }) {
             if (prototype) PrototypeBoardContent(
                 document = document,
                 metadata = metadata,
@@ -262,7 +261,7 @@ fun CanvasSessionHost(
         val image = snapshot?.let { fileArtifactPreview(it.summary.kind, it.summary.fileName ?: it.file.name, it.file.length()) } == FileArtifactPreview.IMAGE
         // 图片查看器自带全屏窗口；其它预览放进全屏对话框。
         if (image) FileArtifactViewer(snapshot = snapshot, error = failed, onClose = { openedFile = null })
-        else Dialog(onDismissRequest = { openedFile = null }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        else NexaraFullscreenDialog(onDismissRequest = { openedFile = null }) {
             FileArtifactViewer(snapshot = snapshot, error = failed, onClose = { openedFile = null })
         }
     }

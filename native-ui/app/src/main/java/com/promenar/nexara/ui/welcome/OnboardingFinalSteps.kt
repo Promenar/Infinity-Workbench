@@ -35,7 +35,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +62,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.ui.chat.ParticleWordmark
+import com.promenar.nexara.ui.common.NexaraChip
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraMotion
@@ -282,7 +282,7 @@ internal fun OnboardingAgentStep(state: OnboardingUiState, actions: OnboardingAc
         RiseIn(4) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                 suggestions.forEach { suggestion ->
-                    SuggestionChip(onClick = { name = suggestion }, enabled = !state.busy, label = { Text(suggestion) })
+                    NexaraChip(label = suggestion, onClick = { name = suggestion }, selected = name.trim() == suggestion, enabled = !state.busy)
                 }
             }
         }

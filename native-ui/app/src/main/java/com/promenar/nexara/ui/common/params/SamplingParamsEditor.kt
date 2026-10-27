@@ -37,14 +37,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -98,6 +95,7 @@ import com.promenar.nexara.data.model.params.SamplingParam
 import com.promenar.nexara.data.model.params.SamplingValues
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
+import com.promenar.nexara.ui.common.NexaraChip
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraStepperButton
@@ -303,10 +301,10 @@ fun ParameterSchemeSection(
                         )
                     }
                     if (selection.schemeId == null) {
-                        AssistChip(
+                        NexaraChip(
+                            label = stringResource(R.string.params_scheme_save),
                             onClick = { naming = SchemeNaming.Create },
-                            label = { Text(stringResource(R.string.params_scheme_save)) },
-                            leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            leading = { Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) },
                             modifier = Modifier.testTag("params_scheme_save"),
                         )
                     }
@@ -414,16 +412,14 @@ private fun SchemeChip(
     var menuOpen by remember { mutableStateOf(false) }
     val opensMenu = selected && menu != null
     Box {
-        FilterChip(
-            selected = selected,
+        NexaraChip(
+            label = label,
             onClick = { if (opensMenu) menuOpen = true else onClick() },
-            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = if (selected) {
-                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            selected = selected,
+            trailing = if (opensMenu) {
+                { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
             } else null,
-            trailingIcon = if (opensMenu) {
-                { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
-            } else null,
+            haptic = false,
             modifier = Modifier.testTag(tag),
         )
         if (menu != null) {

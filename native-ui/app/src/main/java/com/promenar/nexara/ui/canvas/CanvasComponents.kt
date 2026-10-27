@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -367,11 +369,13 @@ fun CanvasFullscreenContent(
         modifier = modifier.fillMaxSize().testTag(UiTags.CANVAS_FULLSCREEN),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Column(modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceContainer)
+                    // 顶栏底色延伸到状态栏下方，和系统栏连成一体。
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.XSmall),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

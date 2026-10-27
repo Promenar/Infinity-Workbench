@@ -18,7 +18,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import com.promenar.nexara.ui.common.NexaraChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -184,12 +184,11 @@ fun SshTerminalScreen(alias: String, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
             ) {
                 item {
-                    FilterChip(
-                        selected = control,
+                    NexaraChip(
+                        label = stringResource(R.string.ssh_terminal_ctrl),
                         onClick = { control = !control },
+                        selected = control,
                         enabled = connected,
-                        label = { Text(stringResource(R.string.ssh_terminal_ctrl)) },
-                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                     )
                 }
                 item { TerminalAction(R.string.ssh_terminal_esc, connected) { terminal.send("\u001B"); control = false } }

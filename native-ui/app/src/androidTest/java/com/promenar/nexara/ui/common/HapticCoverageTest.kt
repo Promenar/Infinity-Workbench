@@ -23,6 +23,14 @@ import com.promenar.nexara.ui.chat.ChatInspectorStrip
 import com.promenar.nexara.ui.chat.ChatInspectorTags
 import com.promenar.nexara.ui.chat.ChatPage
 import com.promenar.nexara.ui.theme.NexaraTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertTouchHeightIsEqualTo
+import androidx.compose.ui.test.assertIsSelected
 import org.junit.Rule
 import org.junit.Test
 
@@ -105,6 +113,50 @@ class HapticCoverageTest {
                 HapticFeedbackConstants.TOGGLE_ON,
                 HapticFeedbackConstants.TOGGLE_ON,
             ).inOrder()
+        }
+    }
+
+    @Test
+    fun segmentedControlTicksOnlyWhenSwitching_andMovesSelection() {
+        var picked = "a"
+        val view = show {
+            var current by remember { mutableStateOf("a") }
+            NexaraSegmentedControl(
+                segments = listOf(NexaraSegment("a", "A", tag = "seg_a", count = 2), NexaraSegment("b", "B", tag = "seg_b")),
+                selected = current,
+                onSelect = { current = it; picked = it },
+            )
+        }
+        rule.onNodeWithTag("seg_a").assertIsSelected().assertHeightIsAtLeast(40.dp)
+        rule.onNodeWithTag("seg_a").performClick()
+        rule.onNodeWithTag("seg_b").assertIsNotSelected().performClick()
+        rule.onNodeWithTag("seg_b").assertIsSelected()
+        rule.onNodeWithTag("seg_a").assertIsNotSelected()
+        rule.runOnIdle {
+            assertThat(picked).isEqualTo("b")
+            // 点已选中的段不振动，切换时给一次分段刻度反馈。
+            assertThat(view.played).containsExactly(HapticFeedbackConstants.SEGMENT_TICK)
+        }
+    }
+
+    @Test
+    fun chipTogglesWithTick_actionChipStaysSilent_andCallerCanOwnFeedback() {
+        var toggled = 0
+        val view = show {
+            var on by remember { mutableStateOf(false) }
+            Column {
+                NexaraChip(label = "Filter", onClick = { on = !on; toggled++ }, selected = on, modifier = Modifier.testTag("toggle"))
+                NexaraChip(label = "Save", onClick = {}, modifier = Modifier.testTag("action"))
+                NexaraChip(label = "Own", onClick = {}, selected = false, haptic = false, modifier = Modifier.testTag("own"))
+            }
+        }
+        rule.onNodeWithTag("toggle").assertIsNotSelected().assertTouchHeightIsEqualTo(48.dp).performClick()
+        rule.onNodeWithTag("toggle").assertIsSelected()
+        rule.onNodeWithTag("action").performClick()
+        rule.onNodeWithTag("own").performClick()
+        rule.runOnIdle {
+            assertThat(toggled).isEqualTo(1)
+            assertThat(view.played).containsExactly(HapticFeedbackConstants.SEGMENT_TICK)
         }
     }
 }

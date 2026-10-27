@@ -860,12 +860,6 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             },
         )
         ProviderAddressHint(hint = state.apiSource?.hint, onSourceSelected = actions.onApiSourceSelected)
-        ProviderSessionHeaderFields(
-            enabled = state.sessionHeadersEnabled,
-            name = state.sessionHeaderName,
-            onEnabled = actions.onSessionHeadersEnabled,
-            onName = actions.onSessionHeaderName,
-        )
         SecretField(
             value = state.secretInput,
             onValueChange = actions.onSecretChange,
@@ -893,6 +887,13 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             ),
             supportingText = if (state.credentialKindMismatch) stringResource(R.string.provider_form_credential_kind_changed) else null,
             isError = state.credentialKindMismatch,
+        )
+        // 会话请求头属于请求行为，放在地址与密钥这组连接信息之后。
+        ProviderSessionHeaderFields(
+            enabled = state.sessionHeadersEnabled,
+            name = state.sessionHeaderName,
+            onEnabled = actions.onSessionHeadersEnabled,
+            onName = actions.onSessionHeaderName,
         )
     }
 }

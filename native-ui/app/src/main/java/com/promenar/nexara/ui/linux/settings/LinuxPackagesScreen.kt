@@ -18,15 +18,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import com.promenar.nexara.ui.common.NexaraPageSearch
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
@@ -157,19 +157,12 @@ internal fun LinuxPackagesContent(state: LinuxPackagesUiState, actions: LinuxPac
                 modifier = Modifier.testTag(UiTags.LINUX_PACKAGES_UPGRADE_ALL),
             ) { Text(stringResource(R.string.linux_packages_upgrade_all)) }
         }
-        LazyRow(
+        NexaraSegmentedControl(
+            segments = LinuxPackageFilter.entries.map { NexaraSegment(it, filterLabel(it, state.updateCount)) },
+            selected = state.filter,
+            onSelect = actions.onFilter,
             contentPadding = PaddingValues(horizontal = NexaraSpacing.Large),
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-        ) {
-            items(LinuxPackageFilter.entries, key = { it.name }) { filter ->
-                FilterChip(
-                    selected = state.filter == filter,
-                    onClick = { actions.onFilter(filter) },
-                    label = { Text(filterLabel(filter, state.updateCount)) },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                )
-            }
-        }
+        )
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(bottom = NexaraSpacing.Large),

@@ -1920,7 +1920,7 @@ fun ChatTopBar(
     onDeleteSession: () -> Unit,
     showDivider: Boolean = false,
     windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-    /** 窄窗口顶栏的产物入口；宽窗口由检视器页签承载，传 null。 */
+    /** 窄窗口选项菜单首项的产物入口；宽窗口由检视器页签承载，传 null。 */
     artifacts: ChatTopBarArtifacts? = null,
     git: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
     onOpenGit: () -> Unit = {},
@@ -2083,16 +2083,7 @@ fun ChatTopBar(
                     modifier = Modifier.testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY),
                 ) { BrowserTopBarIcon(entry.mode) }
             }
-            // 宽窗口的文件、产物与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单。
-            artifacts?.let { entry ->
-                ChatTopBarAction(selected = false, onClick = entry.onClick, modifier = Modifier.testTag(UiTags.CANVAS_ENTRY)) {
-                    Icon(
-                        Icons.Outlined.Dashboard,
-                        stringResource(R.string.canvas_title),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
+            // 宽窗口的文件、产物与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单；窄窗口的产物入口在选项菜单首项。
             if (inspector == null) {
                 ChatTopBarAction(selected = false, onClick = onWorkspace) {
                     Icon(
@@ -2126,6 +2117,31 @@ fun ChatTopBar(
                     onDismissRequest = { showMenu = false },
                     minWidth = 190.dp,
                 ) {
+                    artifacts?.let { entry ->
+                        NexaraMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Dashboard,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.canvas_title), style = NexaraTypography.labelLarge) },
+                            trailingIcon = {
+                                Text(entry.count.toString(), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            modifier = Modifier.testTag(UiTags.CANVAS_ENTRY),
+                            onClick = {
+                                showMenu = false
+                                entry.onClick()
+                            },
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        )
+                    }
                     NexaraMenuItem(
                         leadingIcon = {
                             Icon(
@@ -2223,7 +2239,7 @@ fun ChatTopBar(
     }
 }
 
-/** 窄窗口顶栏的产物入口。 */
+/** 窄窗口选项菜单中的产物入口。 */
 @Immutable
 data class ChatTopBarArtifacts(val count: Int, val onClick: () -> Unit)
 

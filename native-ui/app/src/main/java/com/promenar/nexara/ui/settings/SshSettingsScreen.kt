@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.settings
 
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,7 +53,6 @@ import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -785,20 +785,15 @@ private fun SshHostEditorSheet(
                         modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
                         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
                     ) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-                        ) {
-                            SshAuthType.entries.forEach { type ->
-                                FilterChip(
-                                    selected = authType == type,
-                                    onClick = { authType = type; clearSecrets() },
-                                    enabled = !busy,
-                                    label = { Text(stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password)) },
-                                    modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
-                                )
-                            }
-                        }
+                        NexaraSegmentedControl(
+                            segments = SshAuthType.entries.map { type ->
+                                NexaraSegment(type, stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password))
+                            },
+                            selected = authType,
+                            onSelect = { authType = it; clearSecrets() },
+                            enabled = !busy,
+                            fillWidth = true,
+                        )
                         if (authType == SshAuthType.PASSWORD) {
                             SshEditorField(password, { password = it }, R.string.ssh_password, secret = true, enabled = !busy)
                         } else {

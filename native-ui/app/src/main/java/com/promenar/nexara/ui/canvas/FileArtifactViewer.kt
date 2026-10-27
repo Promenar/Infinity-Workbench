@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -125,11 +127,13 @@ internal fun FileArtifactViewer(
         }
     }
     Surface(modifier = Modifier.fillMaxSize().testTag(UiTags.ARTIFACT_FILE_VIEWER), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surfaceContainer)
+                    // 顶栏底色延伸到状态栏下方，和系统栏连成一体。
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(horizontal = NexaraSpacing.XSmall, vertical = NexaraSpacing.XSmall),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

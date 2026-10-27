@@ -1,12 +1,7 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,15 +28,18 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -58,6 +56,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.window.PopupProperties
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -163,7 +163,7 @@ fun Modifier.nexaraMenuHost(active: Boolean): Modifier {
  * - 16dp 圆角，surfaceContainerHigh 底色，0.5dp outlineVariant 描边与浮层阴影；
  * - 内衬 6dp，菜单项用 [NexaraMenuItem]（10dp 圆角按压高亮），分组用 [NexaraMenuDivider]；
  * - 放在触发控件所在的 Box 内，贴着控件弹出；长按触发时传 [touch]，从按住的位置长出；
- * - 从靠近锚点的角缩放淡入，关闭时先播放退场再移除。
+ * - 从靠近锚点的角缩放淡入（弹出窗口画出两帧后才开始，避开挂载时的掉帧），关闭时先播放退场再移除。
  * [offset] 在算好的位置上再平移（与 Material 下拉菜单的偏移含义一致）。
  */
 @Composable
@@ -177,9 +177,23 @@ fun NexaraDropdownMenu(
     touch: NexaraMenuTouch? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val visibleState = remember { MutableTransitionState(false) }
-    visibleState.targetState = expanded
-    if (!visibleState.currentState && !visibleState.targetState && visibleState.isIdle) return
+    // 弹出窗口挂载、取得焦点与菜单首次组合都在打开后的头几帧里，直接起动画会在这几帧掉帧。
+    // 所以先以透明状态挂上并量好菜单，等弹出窗口画出两帧后再开始入场；关闭时播完退场再移除。
+    val alpha = remember { Animatable(0f) }
+    val scale = remember { Animatable(MenuEnterScale) }
+    var mounted by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            mounted = true
+        } else if (mounted) {
+            coroutineScope {
+                launch { alpha.animateTo(0f, tween(MenuExitMillis)) }
+                launch { scale.animateTo(MenuExitScale, tween(MenuExitMillis, easing = NexaraMotion.EmphasizedAccelerate)) }
+            }
+            mounted = false
+        }
+    }
+    if (!expanded && !mounted) return
 
     val density = LocalDensity.current
     val bounds = rememberNexaraPopoverBounds()
@@ -223,29 +237,41 @@ fun NexaraDropdownMenu(
         },
         properties = properties,
     ) {
-        AnimatedVisibility(
-            visibleState = visibleState,
-            enter = fadeIn(tween(MenuEnterMillis)) +
-                scaleIn(tween(MenuEnterMillis, easing = NexaraMotion.EmphasizedDecelerate), initialScale = 0.86f, transformOrigin = origin),
-            exit = fadeOut(tween(MenuExitMillis)) +
-                scaleOut(tween(MenuExitMillis, easing = NexaraMotion.EmphasizedAccelerate), targetScale = 0.94f, transformOrigin = origin),
-        ) {
-            Surface(
-                shape = MenuShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                shadowElevation = 8.dp,
-                modifier = modifier.testTag(NexaraMenuTags.MENU),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .width(IntrinsicSize.Max)
-                        .widthIn(min = minWidth)
-                        .verticalScroll(rememberScrollState())
-                        .padding(MenuInnerPadding),
-                    content = content,
-                )
+        if (expanded) {
+            LaunchedEffect(Unit) {
+                if (alpha.value == 0f) {
+                    scale.snapTo(MenuEnterScale)
+                    withFrameNanos {}
+                    withFrameNanos {}
+                }
+                coroutineScope {
+                    launch { alpha.animateTo(1f, tween(MenuEnterMillis)) }
+                    launch { scale.animateTo(1f, tween(MenuEnterMillis, easing = NexaraMotion.EmphasizedDecelerate)) }
+                }
             }
+        }
+        Surface(
+            shape = MenuShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            shadowElevation = 8.dp,
+            modifier = modifier
+                .graphicsLayer {
+                    this.alpha = alpha.value
+                    scaleX = scale.value
+                    scaleY = scale.value
+                    transformOrigin = origin
+                }
+                .testTag(NexaraMenuTags.MENU),
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Max)
+                    .widthIn(min = minWidth)
+                    .verticalScroll(rememberScrollState())
+                    .padding(MenuInnerPadding),
+                content = content,
+            )
         }
     }
 }
@@ -332,3 +358,5 @@ private val MenuItemMinHeight = 44.dp
 private val MenuItemPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 private const val MenuEnterMillis = 180
 private const val MenuExitMillis = 110
+private const val MenuEnterScale = 0.86f
+private const val MenuExitScale = 0.94f

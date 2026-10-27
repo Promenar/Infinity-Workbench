@@ -68,7 +68,7 @@ class KgRequestClient(
                         maxTokens = maxOutputTokens,
                         stream = false,
                         sessionId = sessionId,
-                        sessionHeaders = router.sessionHeaders(resolved, sessionId),
+                        sessionHeaders = sessionId?.let { router.sessionHeaders(resolved, it) },
                     ))
                     reportedUsage = response.usage?.let {
                         KgTokenUsage(it.input.coerceAtLeast(0).toLong(), it.output.coerceAtLeast(0).toLong())

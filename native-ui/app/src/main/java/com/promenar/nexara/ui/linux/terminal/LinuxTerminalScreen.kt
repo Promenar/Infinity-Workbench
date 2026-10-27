@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -33,8 +31,6 @@ import androidx.compose.material.icons.rounded.KeyboardHide
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -73,6 +69,8 @@ import com.promenar.nexara.domain.linux.LinuxRuntimeState
 import com.promenar.nexara.domain.linux.LinuxTerminalLocation
 import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.ui.common.ConfirmDialog
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.linux.output.AnsiPalette
 import com.promenar.nexara.ui.linux.output.AnsiParser
@@ -287,50 +285,38 @@ private fun terminalSubtitle(state: LinuxTerminalUiState): String? {
 private fun TabsRow(state: LinuxTerminalUiState, onSelect: (String) -> Unit) {
     // 单个页签没有切换意义；新开第二个会话后才显示页签行。
     if (state.tabs.size < 2) return
-    val selectedKey = state.selectedTab?.key
-    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides CompactTouchTarget) {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-            contentPadding = PaddingValues(bottom = NexaraSpacing.XSmall),
-        ) {
-            items(state.tabs, key = { it.key }) { tab ->
-                val label = when (tab) {
-                    is TerminalTab.Shell -> stringResource(
-                        if (tab.info.running) R.string.linux_terminal_tab else R.string.linux_terminal_tab_exited,
-                        tab.info.ordinal,
+    val segments = state.tabs.map { tab ->
+        when (tab) {
+            is TerminalTab.Shell -> NexaraSegment(
+                value = tab.key,
+                label = stringResource(if (tab.info.running) R.string.linux_terminal_tab else R.string.linux_terminal_tab_exited, tab.info.ordinal),
+                tag = UiTags.linuxTerminalTab(tab.info.id),
+            )
+            is TerminalTab.AgentJob -> NexaraSegment(
+                value = tab.key,
+                label = stringResource(R.string.linux_terminal_job_tab, tab.ordinal),
+                tag = UiTags.linuxTerminalJobTab(tab.job.id),
+                leading = {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(
+                                if (tab.job.state == BackgroundJobState.RUNNING) MaterialTheme.nexaraDomainColors.warning
+                                else MaterialTheme.colorScheme.outline,
+                                CircleShape,
+                            ),
                     )
-                    is TerminalTab.AgentJob -> stringResource(R.string.linux_terminal_job_tab, tab.ordinal)
-                }
-                val tag = when (tab) {
-                    is TerminalTab.Shell -> UiTags.linuxTerminalTab(tab.info.id)
-                    is TerminalTab.AgentJob -> UiTags.linuxTerminalJobTab(tab.job.id)
-                }
-                FilterChip(
-                    selected = tab.key == selectedKey,
-                    onClick = { onSelect(tab.key) },
-                    label = { Text(label, maxLines = 1) },
-                    leadingIcon = if (tab is TerminalTab.AgentJob) {
-                        {
-                            Box(
-                                Modifier
-                                    .size(8.dp)
-                                    .background(
-                                        if (tab.job.state == BackgroundJobState.RUNNING) MaterialTheme.nexaraDomainColors.warning
-                                        else MaterialTheme.colorScheme.outline,
-                                        CircleShape,
-                                    ),
-                            )
-                        }
-                    } else null,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ),
-                    modifier = Modifier.testTag(tag),
-                )
-            }
+                },
+            )
         }
     }
+    NexaraSegmentedControl(
+        segments = segments,
+        selected = state.selectedTab?.key,
+        onSelect = onSelect,
+        compact = true,
+        contentPadding = PaddingValues(bottom = NexaraSpacing.XSmall),
+    )
 }
 
 @Composable

@@ -18,8 +18,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -47,7 +45,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -83,6 +80,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
@@ -405,7 +404,6 @@ private fun ServiceTile(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CustomProtocolPicker(selectedIndex: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
@@ -414,16 +412,12 @@ private fun CustomProtocolPicker(selectedIndex: Int, enabled: Boolean, onSelect:
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-            CUSTOM_PROTOCOL_OPTIONS.forEachIndexed { index, protocol ->
-                FilterChip(
-                    selected = index == selectedIndex,
-                    onClick = { onSelect(index) },
-                    enabled = enabled,
-                    label = { Text(protocol.displayName) },
-                )
-            }
-        }
+        NexaraSegmentedControl(
+            segments = CUSTOM_PROTOCOL_OPTIONS.mapIndexed { index, protocol -> NexaraSegment(index, protocol.displayName) },
+            selected = selectedIndex,
+            onSelect = onSelect,
+            enabled = enabled,
+        )
     }
 }
 
