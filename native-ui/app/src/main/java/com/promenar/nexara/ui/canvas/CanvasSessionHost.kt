@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.canvas
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -24,8 +23,6 @@ import com.promenar.nexara.data.canvas.CanvasMetadata
 import com.promenar.nexara.data.canvas.CanvasStore
 import com.promenar.nexara.data.canvas.CanvasWorkspaceSync
 import com.promenar.nexara.data.workspace.WorkspaceDefaultFileDestination
-import com.promenar.nexara.ui.common.NexaraBottomSheet
-import com.promenar.nexara.ui.common.NexaraSheetHeight
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,7 +33,9 @@ internal data class CanvasSessionAccess(
     val canvases: List<CanvasMetadata>,
     val loaded: Boolean,
     val open: (String) -> Unit,
+    /** 打开产物列表：窄窗口为整页，宽窗口为检视器页签，由宿主决定。 */
     val openList: () -> Unit,
+    val listFailed: Boolean = false,
     /** 打开指定版本；不早于当前版本时按跟随最新打开。 */
     val openVersion: (String, Int) -> Unit = { id, _ -> open(id) },
     val copySource: (String, Int) -> Unit = { _, _ -> },
@@ -70,6 +69,7 @@ fun CanvasSessionHost(
     sessionId: String,
     store: CanvasStore,
     onInsertText: (String) -> Unit,
+    onOpenList: () -> Unit,
     onRevealInWorkspace: (String) -> Unit = {},
     primaryWorkspaceId: String? = null,
     content: @Composable () -> Unit,
@@ -77,7 +77,6 @@ fun CanvasSessionHost(
     var canvases by remember { mutableStateOf<List<CanvasMetadata>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var listFailed by remember { mutableStateOf(false) }
-    var showList by remember { mutableStateOf(false) }
     var openedId by remember { mutableStateOf<String?>(null) }
     var selectedVersion by remember { mutableStateOf<Int?>(null) }
     val currentInsert by rememberUpdatedState(onInsertText)
@@ -96,13 +95,13 @@ fun CanvasSessionHost(
     }
     val currentReveal by rememberUpdatedState(onRevealInWorkspace)
     val access = CanvasSessionAccess(sessionId, store, canvases, loaded,
-        open = { id -> selectedVersion = null; openedId = id; showList = false },
-        openList = { showList = true },
+        open = { id -> selectedVersion = null; openedId = id },
+        openList = onOpenList,
+        listFailed = listFailed,
         openVersion = { id, version ->
             val current = canvases.find { it.id == id }?.currentVersion
             selectedVersion = version.takeIf { current != null && it < current }
             openedId = id
-            showList = false
         },
         copySource = { id, version ->
             scope.launch {
@@ -114,9 +113,6 @@ fun CanvasSessionHost(
         primaryWorkspaceId = primaryWorkspaceId,
     )
     CompositionLocalProvider(LocalCanvasSession provides access) { content() }
-    NexaraBottomSheet(show = showList, onDismiss = { showList = false }, title = null, height = NexaraSheetHeight.Full, dragGesturesEnabled = false) {
-        if (listFailed) Text(loadError) else CanvasListContent(canvases, access.open, Modifier.fillMaxSize())
-    }
     openedId?.let { id ->
         val metadata = canvases.find { it.id == id }
         val latestRevisionKey = metadata?.currentVersion.takeIf { selectedVersion == null }

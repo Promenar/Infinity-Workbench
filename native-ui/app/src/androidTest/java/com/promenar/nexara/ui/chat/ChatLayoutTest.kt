@@ -122,7 +122,7 @@ class ChatLayoutTest {
         rule.runOnIdle { assertThat(renamed).isTrue() }
     }
 
-    @Test fun wideTopBarKeepsOnlyInspectorToggleAndMenuWhileNarrowKeepsFiles() {
+    @Test fun wideTopBarKeepsOnlyInspectorToggleAndMenuWhileNarrowKeepsFilesAndArtifacts() {
         val resources = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.resources
         val files = resources.getString(com.promenar.nexara.R.string.chat_cd_workspace)
         val canvas = resources.getString(com.promenar.nexara.R.string.canvas_title)
@@ -132,7 +132,7 @@ class ChatLayoutTest {
                 Box(Modifier.width(if (wide) 814.dp else 411.dp)) {
                     ChatTopBar(
                         "会话", {}, {}, {}, onClearHistory = {}, onRename = {}, onDeleteSession = {},
-                        onCanvases = {},
+                        artifacts = chatTopBarArtifacts(inspectorMode = wide, count = 1, onOpen = {}),
                         inspector = if (wide) ChatTopBarInspector(open = false, onToggle = {}) else null,
                     )
                 }
@@ -145,7 +145,12 @@ class ChatLayoutTest {
 
         wide = false
         rule.onNodeWithContentDescription(files).assertIsDisplayed()
+        rule.onNodeWithContentDescription(canvas).assertIsDisplayed()
         rule.onAllNodesWithTag(ChatInspectorTags.TOGGLE).assertCountEquals(0)
+        // 产物与运行模式各有固定入口，选项菜单不再重复。
+        rule.onNodeWithTag(UiTags.CHAT_OPTIONS).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_SESSION_SETTINGS).assertIsDisplayed()
+        rule.onAllNodesWithText(resources.getString(com.promenar.nexara.R.string.run_mode_title), substring = true).assertCountEquals(0)
     }
 
     @Test fun inspectorTabsAndActionsShareBottomBarWithCollapseAtRight() {

@@ -25,6 +25,9 @@ import com.promenar.nexara.R
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
+import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
@@ -38,17 +41,33 @@ class CanvasChatEntryTest {
 
     @After fun cleanup() { root.deleteRecursively() }
 
-    @Test fun topBarMenu_opensSessionCanvasList() {
+    @Test fun narrowTopBar_showsArtifactsEntryOnlyWithArtifacts_andOpensList() {
+        var opened = 0
         rule.setContent {
             NexaraTheme {
-                CanvasSessionHost("session", store, onInsertText = {}) {
+                CanvasSessionHost("session", store, onInsertText = {}, onOpenList = { opened++ }) {
                     ChatScreenContent(ChatScreenState(), ChatScreenActions())
                 }
             }
         }
-        rule.onNodeWithTag(UiTags.CHAT_OPTIONS).performClick()
+        rule.onAllNodesWithTag(UiTags.CANVAS_ENTRY).assertCountEquals(0)
+        runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag(UiTags.CANVAS_ENTRY).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag(UiTags.CANVAS_ENTRY).assertIsDisplayed().performClick()
-        rule.onNodeWithTag(UiTags.CANVAS_LIST).assertIsDisplayed()
+        rule.runOnIdle { assertThat(opened).isEqualTo(1) }
+    }
+
+    @Test fun artifactsPage_listsSessionArtifacts() {
+        runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
+        rule.setContent {
+            NexaraTheme {
+                CanvasSessionHost("session", store, onInsertText = {}, onOpenList = {}) {
+                    CanvasListPage(onBack = {})
+                }
+            }
+        }
+        rule.onNodeWithTag(UiTags.CANVAS_PAGE).assertIsDisplayed()
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag(UiTags.CANVAS_LIST_ITEM).fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test fun successfulToolCard_opensLatestAndRefreshesWhileVisible() {
@@ -60,7 +79,7 @@ class CanvasChatEntryTest {
         rule.setContent {
             CompositionLocalProvider(LocalInspectionMode provides true) {
                 NexaraTheme {
-                    CanvasSessionHost("session", store, onInsertText = {}) {
+                    CanvasSessionHost("session", store, onInsertText = {}, onOpenList = {}) {
                         Box(Modifier.fillMaxSize()) { CanvasInvocationCards(steps) }
                     }
                 }
@@ -88,7 +107,7 @@ class CanvasChatEntryTest {
         rule.setContent {
             CompositionLocalProvider(LocalInspectionMode provides true) {
                 NexaraTheme {
-                    CanvasSessionHost("session", store, onInsertText = {}) {
+                    CanvasSessionHost("session", store, onInsertText = {}, onOpenList = {}) {
                         Box(Modifier.fillMaxSize()) { CanvasInvocationCards(steps, inline = true) }
                     }
                 }
@@ -115,7 +134,7 @@ class CanvasChatEntryTest {
         rule.setContent {
             CompositionLocalProvider(LocalInspectionMode provides true) {
                 NexaraTheme {
-                    CanvasSessionHost("session", limited, onInsertText = {}) {
+                    CanvasSessionHost("session", limited, onInsertText = {}, onOpenList = {}) {
                         val revision = LocalCanvasSession.current?.canvases?.singleOrNull()?.currentVersion ?: 0
                         SideEffect { observedRevision.set(revision) }
                         Box(Modifier.fillMaxSize()) { CanvasInvocationCards(steps) }

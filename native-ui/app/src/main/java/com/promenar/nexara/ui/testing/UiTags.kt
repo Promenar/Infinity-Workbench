@@ -420,6 +420,7 @@ object UiTags {
     const val CANVAS_OPEN = "canvas_open"
     const val CANVAS_PREVIEW = "canvas_preview"
     const val CANVAS_LIST = "canvas_list"
+    const val CANVAS_PAGE = "canvas_page"
     const val CANVAS_LIST_ITEM = "canvas_list_item"
     const val CANVAS_FULLSCREEN = "canvas_fullscreen"
     const val CANVAS_CLOSE = "canvas_close"

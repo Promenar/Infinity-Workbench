@@ -68,7 +68,7 @@ class BrowserToolPresentationTest {
         val badges = ChatInspectorBadges(browser = com.promenar.nexara.data.browser.BrowserMode.IDLE)
         assertThat(badges.pages()).contains(ChatPage.Browser)
         assertThat(badges.hasContent).isTrue()
-        assertThat(chatPageStack(listOf(ChatPage.Browser))).containsExactly(ChatPage.Browser)
+        assertThat(chatPageStack(listOf(ChatPage.Browser), wideWindow = false)).containsExactly(ChatPage.Browser)
         assertThat(restoreChatPages("browser")).containsExactly(ChatPage.Browser)
     }
 

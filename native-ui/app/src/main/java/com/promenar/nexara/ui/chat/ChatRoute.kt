@@ -359,7 +359,7 @@ fun ChatRoute(
     var chatPagesToken by rememberSaveable { mutableStateOf("") }
     val chatPages = restoreChatPages(chatPagesToken)
     // 窄窗口整页与检视器“文件”“Git”页签共用的层级；收起时仍按最后的层级渲染，退场动画期间内容不消失。
-    val pageStack = chatPageStack(chatPages)
+    val pageStack = chatPageStack(chatPages, wideWindow)
     var lastPageStack by remember { mutableStateOf(pageStack) }
     SideEffect { if (pageStack.isNotEmpty()) lastPageStack = pageStack }
     val shownChatPages = pageStack.ifEmpty { lastPageStack }
@@ -658,6 +658,7 @@ fun ChatRoute(
         sessionId = sessionId,
         store = application.canvasStore,
         onInsertText = { text -> chatViewModel.appendCanvasText(sessionId, text) },
+        onOpenList = { openChatPage(ChatPage.Canvas) },
         onRevealInWorkspace = { path ->
             workspaceLocatePath = path
             openChatPage(ChatPage.Explorer)
@@ -727,8 +728,7 @@ fun ChatRoute(
             }
             val tabSwitch = rootSwitch.takeIf { inInspector }
             // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
-            ChatPage.entries
-                .filter { it.isPage }
+            chatPageStack(ChatPage.entries, wideWindow)
                 .sortedBy { page -> shownChatPages.indexOf(page).let { if (it < 0) Int.MAX_VALUE else it } }
                 .forEach { page ->
                     androidx.compose.runtime.key(page) {
@@ -762,7 +762,10 @@ fun ChatRoute(
                                     sessionId = sessionId,
                                     onBack = closeTopChatPage.takeUnless { inInspector },
                                 )
-                                ChatPage.Run, ChatPage.Canvas -> Unit
+                                ChatPage.Canvas -> com.promenar.nexara.ui.canvas.CanvasListPage(
+                                    onBack = closeTopChatPage.takeUnless { inInspector },
+                                )
+                                ChatPage.Run -> Unit
                             }
                         }
                     }

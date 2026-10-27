@@ -29,8 +29,12 @@ internal fun saveChatPages(pages: List<ChatPage>): String = pages.joinToString("
 internal fun restoreChatPages(token: String): List<ChatPage> =
     token.split(',').mapNotNull { part -> ChatPage.entries.firstOrNull { it.token == part } }.distinct()
 
-/** 窄窗口整页承载的层级：只取资源管理器、Git 与浏览器；运行与画布只是宽窗口检视器的页签，窄窗口不覆盖会话。 */
-internal fun chatPageStack(pages: List<ChatPage>): List<ChatPage> = pages.filter { it.isPage }
+/**
+ * 整页承载的层级：资源管理器、Git、浏览器，窄窗口另加产物；任务只是检视器的页签。
+ * 宽窗口的产物由检视器自己的页签承载，不进整页层级。
+ */
+internal fun chatPageStack(pages: List<ChatPage>, wideWindow: Boolean): List<ChatPage> =
+    pages.filter { it.isPage || (it == ChatPage.Canvas && !wideWindow) }
 
 /**
  * 宽窗口检视器的开合：已在该页签的根层时收起，否则以该页签为根打开。

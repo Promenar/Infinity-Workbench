@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chat_inspector_label">检视器</string>
-    <string name="chat_inspector_tab_run">运行</string>
+    <string name="chat_inspector_tab_run">任务</string>
     <string name="chat_inspector_tab_files">文件</string>
     <string name="chat_inspector_tab_git">Git</string>
-    <string name="chat_inspector_tab_canvas">画布</string>
+    <string name="chat_inspector_tab_canvas">产物</string>
     <string name="chat_inspector_toggle">显示或收起检视器</string>
     <string name="chat_inspector_expand">展开检视器</string>
     <string name="chat_inspector_collapse">收起检视器</string>

@@ -29,13 +29,26 @@ class ChatPagesTest {
         assertThat(restoreChatPages("explorer,unknown,git,git")).isEqualTo(pages)
     }
 
-    @Test fun `运行与画布页签可保存恢复，但不进入窄窗口整页层级`() {
+    @Test fun `任务页签只属于检视器，窄窗口产物与文件、浏览器一样整页打开`() {
         val pages = listOf(ChatPage.Run)
         assertThat(restoreChatPages(saveChatPages(pages))).isEqualTo(pages)
         assertThat(restoreChatPages("canvas")).containsExactly(ChatPage.Canvas)
-        assertThat(chatPageStack(listOf(ChatPage.Run))).isEmpty()
-        assertThat(chatPageStack(listOf(ChatPage.Canvas))).isEmpty()
-        assertThat(chatPageStack(listOf(ChatPage.Explorer, ChatPage.Git))).containsExactly(ChatPage.Explorer, ChatPage.Git).inOrder()
+        assertThat(chatPageStack(listOf(ChatPage.Run), wideWindow = false)).isEmpty()
+        assertThat(chatPageStack(listOf(ChatPage.Canvas), wideWindow = false)).containsExactly(ChatPage.Canvas)
+        assertThat(chatPageStack(listOf(ChatPage.Explorer, ChatPage.Git), wideWindow = false)).containsExactly(ChatPage.Explorer, ChatPage.Git).inOrder()
+    }
+
+    @Test fun `宽窗口的产物由检视器页签承载，不进整页层级`() {
+        assertThat(chatPageStack(listOf(ChatPage.Canvas), wideWindow = true)).isEmpty()
+        assertThat(chatPageStack(listOf(ChatPage.Run), wideWindow = true)).isEmpty()
+        assertThat(chatPageStack(listOf(ChatPage.Explorer, ChatPage.Git), wideWindow = true)).containsExactly(ChatPage.Explorer, ChatPage.Git).inOrder()
+    }
+
+    @Test fun `顶栏产物入口只在窄窗口且会话已有产物时出现`() {
+        val open = {}
+        assertThat(chatTopBarArtifacts(inspectorMode = false, count = 2, onOpen = open)).isEqualTo(ChatTopBarArtifacts(count = 2, onClick = open))
+        assertThat(chatTopBarArtifacts(inspectorMode = false, count = 0, onOpen = open)).isNull()
+        assertThat(chatTopBarArtifacts(inspectorMode = true, count = 2, onOpen = open)).isNull()
     }
 
     @Test fun `顶栏图标在已打开的根层页签上收起，否则以该页签为根打开`() {

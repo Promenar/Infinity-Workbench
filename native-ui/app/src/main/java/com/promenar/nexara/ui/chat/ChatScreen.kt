@@ -96,6 +96,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Psychology
@@ -668,7 +669,9 @@ fun ChatScreenContent(
                     onClearHistory = actions.onOpenClearDialog,
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
-                    onCanvases = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Canvas) }) else com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.openList,
+                    artifacts = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.let { canvasSession ->
+                        chatTopBarArtifacts(inspectorMode, canvasSession.canvases.size, canvasSession.openList)
+                    },
                     git = state.gitSummary,
                     onOpenGit = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Git) }) else actions.onOpenGit,
                     inspector = if (inspectorMode) ChatTopBarInspector(
@@ -1914,7 +1917,8 @@ fun ChatTopBar(
     onDeleteSession: () -> Unit,
     showDivider: Boolean = false,
     windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-    onCanvases: (() -> Unit)? = null,
+    /** 窄窗口顶栏的产物入口；宽窗口由检视器页签承载，传 null。 */
+    artifacts: ChatTopBarArtifacts? = null,
     git: com.promenar.nexara.ui.git.GitEntrySummary.Repository? = null,
     onOpenGit: () -> Unit = {},
     runMode: com.promenar.nexara.ui.chat.runmode.RunModeBadge? = null,
@@ -2076,7 +2080,16 @@ fun ChatTopBar(
                     modifier = Modifier.testTag(com.promenar.nexara.ui.browser.BrowserTags.TOP_BAR_ENTRY),
                 ) { BrowserTopBarIcon(entry.mode) }
             }
-            // 宽窗口的文件、画布与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单。
+            // 宽窗口的文件、产物与浏览器都是检视器侧栏的页签，顶栏只留侧栏开合与菜单。
+            artifacts?.let { entry ->
+                ChatTopBarAction(selected = false, onClick = entry.onClick, modifier = Modifier.testTag(UiTags.CANVAS_ENTRY)) {
+                    Icon(
+                        Icons.Outlined.Dashboard,
+                        stringResource(R.string.canvas_title),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
             if (inspector == null) {
                 ChatTopBarAction(selected = false, onClick = onWorkspace) {
                     Icon(
@@ -2110,14 +2123,6 @@ fun ChatTopBar(
                     onDismissRequest = { showMenu = false },
                     minWidth = 190.dp,
                 ) {
-                    onCanvases?.let { open ->
-                        NexaraMenuItem(
-                            text = { Text(stringResource(R.string.canvas_title), style = NexaraTypography.labelLarge) },
-                            leadingIcon = { Icon(Icons.Rounded.Description, contentDescription = null) },
-                            modifier = Modifier.testTag(UiTags.CANVAS_ENTRY),
-                            onClick = { showMenu = false; open() },
-                        )
-                    }
                     NexaraMenuItem(
                         leadingIcon = {
                             Icon(
@@ -2132,27 +2137,6 @@ fun ChatTopBar(
                         onClick = {
                             showMenu = false
                             onSettings()
-                        }
-                    )
-                    if (runMode != null) NexaraMenuItem(
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Terminal,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        },
-                        text = {
-                            Text(
-                                stringResource(R.string.run_mode_title) + " · " + stringResource(runMode.mode.labelRes()),
-                                style = NexaraTypography.labelLarge,
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            runModeAnchor?.pointAt(menuAnchor)
-                            onRunMode()
                         }
                     )
                     NexaraMenuItem(
@@ -2235,6 +2219,14 @@ fun ChatTopBar(
         modifier = Modifier.align(Alignment.BottomCenter).alpha(dividerAlpha))
     }
 }
+
+/** 窄窗口顶栏的产物入口。 */
+@Immutable
+data class ChatTopBarArtifacts(val count: Int, val onClick: () -> Unit)
+
+/** 宽窗口由检视器页签承载产物；窄窗口在会话已有产物时才占顶栏位置。 */
+internal fun chatTopBarArtifacts(inspectorMode: Boolean, count: Int, onOpen: () -> Unit): ChatTopBarArtifacts? =
+    if (inspectorMode || count <= 0) null else ChatTopBarArtifacts(count, onOpen)
 
 /** 宽窗口顶栏的检视器入口状态。 */
 @Immutable

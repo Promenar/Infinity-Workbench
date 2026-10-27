@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="canvas_card_more_actions">更多画布操作</string>
+    <string name="canvas_card_more_actions">更多产物操作</string>
     <string name="canvas_card_newer">已有 v%1$d</string>
     <string name="canvas_card_version_path">v%1$d · %2$s</string>
     <string name="canvas_card_open_latest">打开最新版本</string>
     <string name="canvas_card_reveal">在工作区中显示</string>
     <string name="canvas_card_not_synced_version">v%1$d · 未同步到工作区</string>
-    <string name="canvas_card_inline_version">画布 · v%1$d</string>
+    <string name="canvas_card_inline_version">产物 · v%1$d</string>
     <string name="canvas_turn_artifacts">本轮产物</string>
 </resources>
