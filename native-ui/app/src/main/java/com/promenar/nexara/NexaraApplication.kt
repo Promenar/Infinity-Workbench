@@ -136,6 +136,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.withLock
@@ -677,7 +678,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     { toolOutputStore.deleteSession(sessionId) },
                     deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
                     deleteFolds = { contextFoldStore.deleteSession(sessionId) },
-                    deleteSubagents = { subagentRunStore.deleteSession(sessionId) },
+                    deleteSubagents = { subagentLauncher.deleteSession(sessionId) },
                     deleteComposerQueue = {
                         composerDraftRecovery.deleteSession(sessionId)
                         generationPresentationStore.discardSubmittedDraft(sessionId)
@@ -797,6 +798,23 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             LlmProvider.local(localInferenceEngine, modelId)
         }
     }
+    val subagentControls: com.promenar.nexara.data.subagent.SubagentControls get() = subagentLauncher
+    private val subagentCompletions by lazy { com.promenar.nexara.data.trigger.SubagentCompletionSteering(generationScope) }
+    private val subagentResultFiles by lazy {
+        com.promenar.nexara.data.subagent.SubagentResultFiles(
+            sessionRepository, workspaceRepository, externalFolderManager, sessionWorkspaceResolver::resolve,
+            skillCatalog.userRoot, pendingDocumentIndexCoordinator, modeFor = sessionRunModes::modeFor,
+            linuxFiles = linux.files, directoryBackend = sessionWorkspaceResolver::backend,
+        )
+    }
+    private val subagentRuntimeTexts get() = com.promenar.nexara.data.subagent.SubagentRuntimeTexts(
+        interrupted = getString(R.string.bg_subagent_interrupted),
+        resultWriteFailed = getString(R.string.bg_subagent_result_write_failed),
+        executionFailed = getString(R.string.bg_subagent_execution_failed),
+        persistenceFailed = getString(R.string.bg_subagent_persistence_failed),
+        stopPersistenceFailed = getString(R.string.bg_subagent_stop_persistence_failed),
+        contextLimit = getString(R.string.bg_subagent_context_limit),
+    )
     val subagentLauncher by lazy {
         com.promenar.nexara.data.subagent.SubagentLauncher(
             runner = com.promenar.nexara.data.subagent.SubagentRunner(
@@ -806,9 +824,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 host = subagentToolHost,
                 approvals = subagentApprovalBroker,
                 liveOutput = toolLiveOutputStore,
+                contextLimitText = subagentRuntimeTexts.contextLimit,
             ),
             store = subagentRunStore,
-            session = { sessionId -> chatStore.getSession(sessionId) },
+            session = ::loadGenerationSession,
             modelFor = { session ->
                 // 与父会话生成相同的模型选择顺序。
                 session.modelId?.takeIf(String::isNotBlank)
@@ -818,7 +837,18 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             taskTokenLimit = {
                 getSharedPreferences("nexara_settings", MODE_PRIVATE).getInt("task_token_limit", 0).coerceAtLeast(0).toLong()
             },
-        )
+            applicationScope = CoroutineScope(generationScope.coroutineContext + Dispatchers.IO),
+            dispatcher = { systemTurnDispatcher },
+            contextWindow = { modelId -> ProviderManager.getInstance().providerModels.value.find { it.id == modelId }?.contextLength },
+            writeResult = subagentResultFiles::write,
+            texts = subagentRuntimeTexts,
+        ).also { launcher ->
+            generationScope.launch {
+                launcher.activeRuns.map { it.isNotEmpty() }.distinctUntilChanged().collect { active ->
+                    if (active) generationForegroundController.trackSubagents()
+                }
+            }
+        }
     }
     val generationForegroundController:
         com.promenar.nexara.background.generation.GenerationForegroundController by lazy {
@@ -843,6 +873,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             generationScope,
             com.promenar.nexara.data.trigger.ApplicationSystemTurnRuntime(
                 startup = startupState, store = chatStore,
+                subagentCompletions = subagentCompletions,
                 findSession = ::loadGenerationSession,
                 exists = { id -> database.sessionDao().getById(id) != null },
                 hasApproval = { id -> database.sessionDao().hasPendingUserInteraction(id) },
@@ -1041,6 +1072,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             sessionGraph = sessionGraphScheduler,
             sessionState = sessionStateScheduler,
             subagentUsage = subagentRunStore,
+            subagentCompletions = subagentCompletions,
             tailnetGate = tailnetConnectGate,
             composerQueueStore = composerQueueStore,
             stateBoardRepository = stateBoardRepository,
@@ -1080,10 +1112,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val tokenStatsRepository: ITokenStatsRepository by lazy {
-        TokenStatsRepository(
+        com.promenar.nexara.data.subagent.SubagentTokenStatsRepository(TokenStatsRepository(
             database.messageDao(), kgUsageStore,
             com.promenar.nexara.data.repository.RolledBackSummaryUsageStore(getSharedPreferences("nexara_settings", MODE_PRIVATE)),
-        )
+        ), subagentRunStore, title = { sessionId -> sessionRepository.getById(sessionId)?.title })
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
@@ -1511,6 +1543,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(DropPlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.TailnetStatusSkill(tailnetManager))
             register(com.promenar.nexara.ui.chat.manager.skills.AgentTaskSkill { subagentLauncher })
+            register(com.promenar.nexara.ui.chat.manager.skills.AgentWaitSkill { subagentLauncher })
+            val subagentAddress = com.promenar.nexara.ui.chat.manager.skills.SubagentAddressHandler { subagentLauncher }
+            listOf("session_read", "session_send", "session_stop").forEach { operation ->
+                register(com.promenar.nexara.ui.chat.manager.skills.SessionSubagentSkill(operation, listOf(subagentAddress)))
+            }
         }
     }
 
@@ -1843,6 +1880,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 }
                 startupIssueManager.recover(StartupStep.MODEL_CATALOG, StartupIssueScope.subsystem(StartupSubsystem.MODEL_CATALOG)) { startModelCatalogUpdates() }
                 _startupState.value = BackupStartupState.Ready
+                generationScope.launch { subagentLauncher.recover() }
                 generationScope.launch(Dispatchers.IO) {
                     startupIssueManager.recover(StartupStep.MEMORY_CLEANUP, StartupIssueScope.subsystem(StartupSubsystem.MEMORY_CLEANUP)) {
                         conversationMemoryLifecycle.purgeExpired()

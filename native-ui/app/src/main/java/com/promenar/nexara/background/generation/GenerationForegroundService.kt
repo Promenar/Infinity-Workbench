@@ -3,6 +3,7 @@ package com.promenar.nexara.background.generation
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,8 +12,10 @@ import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import androidx.core.app.NotificationCompat
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.MainActivity
 import com.promenar.nexara.R
 import com.promenar.nexara.data.backup.BackupStartupState
+import com.promenar.nexara.data.subagent.SubagentRun
 import com.promenar.nexara.domain.generation.CancellationReason
 import com.promenar.nexara.domain.generation.GenerationCoordinator
 import com.promenar.nexara.domain.generation.GenerationPhase
@@ -24,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class GenerationForegroundService : Service() {
@@ -34,6 +38,8 @@ class GenerationForegroundService : Service() {
     private var failureReporter: ForegroundServiceFailureReporter? = null
     private var observerJob: Job? = null
     private var trackedTaskId: String? = null
+    private var trackedSubagents = false
+    private var subagentCount = 0
     private var latestStartId: Int = 0
 
     override fun onCreate() {
@@ -47,8 +53,9 @@ class GenerationForegroundService : Service() {
         latestStartId = startId
         when (intent?.action) {
             ACTION_TRACK -> if (promoteForCommand()) handleTrack(intent) else Unit
+            ACTION_TRACK_SUBAGENTS -> if (promoteForCommand(subagents = true)) handleTrackSubagents() else Unit
             ACTION_STOP -> handleStop(intent)
-            else -> if (trackedTaskId == null) stopSelfResult(startId) else Unit
+            else -> if (trackedTaskId == null && !trackedSubagents) stopSelfResult(startId) else Unit
         }
         return START_NOT_STICKY
     }
@@ -90,15 +97,34 @@ class GenerationForegroundService : Service() {
         )
         trackedTaskId = taskId
         if (!startImmediately(initial)) return
+        observeWork(activeCoordinator)
+    }
+
+    private fun handleTrackSubagents() {
+        if (app.startupState.value != BackupStartupState.Ready) {
+            stopUnconditionally()
+            return
+        }
+        val activeCoordinator = app.generationCoordinator
+        coordinator = activeCoordinator
+        subagentCount = app.subagentLauncher.activeRuns.value.count { it.status.isActive }
+        trackedSubagents = subagentCount > 0
+        observeWork(activeCoordinator)
+    }
+
+    private fun observeWork(activeCoordinator: GenerationCoordinator) {
         observerJob?.cancel()
         observerJob = serviceScope.launch {
-            activeCoordinator.sessions.collect { snapshots ->
-                when (val decision = reduceGenerationForeground(snapshots)) {
-                    is GenerationForegroundDecision.Update -> updateNotification(listOf(decision.snapshot))
-                    is GenerationForegroundDecision.UpdateMany -> updateNotification(decision.snapshots)
-                    is GenerationForegroundDecision.Stop -> stopTracking(null)
-                }
+            combine(activeCoordinator.sessions, app.subagentLauncher.activeRuns) { snapshots, runs ->
+                reduceForegroundWork(snapshots, runs)
             }
+                .collect { work ->
+                    trackedTaskId = work.generations.lastOrNull()?.taskId
+                    subagentCount = work.subagentCount
+                    trackedSubagents = subagentCount > 0
+                    if (work.isEmpty) stopTracking(null)
+                    else updateNotification(work.generations)
+                }
         }
     }
 
@@ -111,27 +137,27 @@ class GenerationForegroundService : Service() {
         if (intent.getBooleanExtra(EXTRA_STOP_ALL, false)) {
             val snapshots = coordinator?.sessions?.value.orEmpty().values.toList()
             coordinator?.cancelAll(CancellationReason.USER)
-            if (snapshots.isEmpty()) stopTracking(null)
+            if (snapshots.isEmpty() && !trackedSubagents) stopTracking(null)
             return
         }
         if (taskId == null) {
-            if (trackedTaskId == null) stopSelfResult(latestStartId)
+            if (trackedTaskId == null && !trackedSubagents) stopSelfResult(latestStartId)
             return
         }
         if (trackedTaskId == null) {
-            stopSelfResult(latestStartId)
+            if (!trackedSubagents) stopSelfResult(latestStartId)
             return
         }
         if (coordinator?.sessions?.value?.values?.none { it.taskId == taskId } != false) return
         coordinator?.cancel(taskId, CancellationReason.USER)
     }
 
-    private fun promoteForCommand(): Boolean = try {
+    private fun promoteForCommand(subagents: Boolean = false): Boolean = try {
         ensureStartingChannel()
         ServiceCompat.startForeground(
             this,
             GenerationNotificationFactory.NOTIFICATION_ID,
-            startingNotification(),
+            startingNotification(subagents),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
         true
@@ -155,11 +181,11 @@ class GenerationForegroundService : Service() {
         )
     }
 
-    private fun startingNotification(): Notification =
+    private fun startingNotification(subagents: Boolean): Notification =
         NotificationCompat.Builder(this, GenerationNotificationFactory.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.generation_notification_title))
-            .setContentText(getString(R.string.generation_notification_preparing))
+            .setContentTitle(getString(if (subagents) R.string.bg_subagent_notification_title else R.string.generation_notification_title))
+            .setContentText(getString(if (subagents) R.string.bg_subagent_notification_starting else R.string.generation_notification_preparing))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
@@ -183,11 +209,13 @@ class GenerationForegroundService : Service() {
     }
 
     private fun updateNotification(snapshots: List<GenerationTaskSnapshot>) {
-        val taskId = trackedTaskId ?: return
+        val taskId = trackedTaskId
+        if (taskId == null && !trackedSubagents) return
         val notification = try {
-            notificationFactory.create(snapshots)
+            if (subagentCount > 0) subagentNotification(snapshots)
+            else notificationFactory.create(snapshots)
         } catch (_: RuntimeException) {
-            handlePromotionFailure(taskId)
+            if (taskId != null) handlePromotionFailure(taskId) else stopUnconditionally()
             return
         }
         try {
@@ -198,8 +226,46 @@ class GenerationForegroundService : Service() {
         } catch (_: SecurityException) {
             // Android 13+ 拒绝通知权限不影响已启动的前台生成任务。
         } catch (_: RuntimeException) {
-            handlePromotionFailure(taskId)
+            if (taskId != null) handlePromotionFailure(taskId) else stopUnconditionally()
         }
+    }
+
+    private fun subagentNotification(snapshots: List<GenerationTaskSnapshot>): Notification {
+        val generationCount = snapshots.size
+        val content = if (generationCount > 0) {
+            getString(R.string.bg_subagent_notification_with_generations, subagentCount, generationCount)
+        } else {
+            resources.getQuantityString(R.plurals.bg_subagent_notification_running, subagentCount, subagentCount)
+        }
+        val openIntent = snapshots.lastOrNull()?.let(notificationFactory::openIntent)
+            ?: Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+        val open = PendingIntent.getActivity(
+            this, 0, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, GenerationNotificationFactory.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.bg_subagent_notification_title))
+            .setContentText(content)
+            .setContentIntent(open)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .apply {
+                if (generationCount > 0) addAction(
+                    0, getString(R.string.bg_subagent_notification_stop_generations),
+                    PendingIntent.getService(
+                        this@GenerationForegroundService, 0, notificationFactory.stopAllIntent(),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT,
+                    ),
+                )
+            }
+            .build()
     }
 
     private fun handlePromotionFailure(taskId: String) {
@@ -218,6 +284,8 @@ class GenerationForegroundService : Service() {
         observerJob?.cancel()
         observerJob = null
         trackedTaskId = null
+        trackedSubagents = false
+        subagentCount = 0
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelfResult(latestStartId)
     }
@@ -226,18 +294,24 @@ class GenerationForegroundService : Service() {
         observerJob?.cancel()
         observerJob = null
         trackedTaskId = null
+        trackedSubagents = false
+        subagentCount = 0
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     companion object {
         const val ACTION_TRACK = "com.promenar.nexara.generation.TRACK"
+        const val ACTION_TRACK_SUBAGENTS = "com.promenar.nexara.generation.TRACK_SUBAGENTS"
         const val ACTION_STOP = "com.promenar.nexara.generation.STOP"
         const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_ASSISTANT_MESSAGE_ID = "assistant_message_id"
         const val EXTRA_STARTED_AT = "started_at"
         const val EXTRA_STOP_ALL = "stop_all"
+
+        fun trackSubagentsIntent(context: Context) =
+            Intent(context, GenerationForegroundService::class.java).apply { action = ACTION_TRACK_SUBAGENTS }
 
         fun trackIntent(context: Context, snapshot: GenerationTaskSnapshot) =
             Intent(context, GenerationForegroundService::class.java).apply {
@@ -248,4 +322,23 @@ class GenerationForegroundService : Service() {
                 putExtra(EXTRA_STARTED_AT, snapshot.startedAt)
             }
     }
+}
+
+internal data class ForegroundWorkState(
+    val generations: List<GenerationTaskSnapshot>,
+    val subagentCount: Int,
+) {
+    val isEmpty: Boolean get() = generations.isEmpty() && subagentCount == 0
+}
+
+internal fun reduceForegroundWork(
+    sessions: Map<String, GenerationTaskSnapshot>,
+    activeRuns: List<SubagentRun>,
+): ForegroundWorkState {
+    val generations = when (val decision = reduceGenerationForeground(sessions)) {
+        is GenerationForegroundDecision.Update -> listOf(decision.snapshot)
+        is GenerationForegroundDecision.UpdateMany -> decision.snapshots
+        is GenerationForegroundDecision.Stop -> emptyList()
+    }
+    return ForegroundWorkState(generations, activeRuns.count { it.status.isActive })
 }

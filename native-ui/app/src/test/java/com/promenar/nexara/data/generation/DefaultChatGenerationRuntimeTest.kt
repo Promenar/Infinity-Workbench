@@ -73,6 +73,31 @@ import kotlinx.coroutines.launch
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test fun `下一步骤的上下文包含已合并的子代理完成通知`() = runTest {
+        val bridge = com.promenar.nexara.data.trigger.SubagentCompletionSteering(backgroundScope)
+        val builder = mockk<ContextBuilder> {
+            coEvery { buildContext(any()) } returns ContextBuilderResult("", "", emptyList(), emptyList(), null, "system")
+        }
+        val catalog = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog, contextBuilder = builder, subagentCompletions = bridge)
+        val pending = bridge.enqueue(com.promenar.nexara.domain.trigger.SystemTurnRequest(
+            "skills-session", com.promenar.nexara.domain.trigger.SystemTurnKind.SUBAGENT_DONE,
+            "sa_done", "检索", "结论正文", sequence = 1,
+        ), com.promenar.nexara.data.trigger.SystemTurnAdmissionTicket())
+
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+
+        assertThat(pending.outcome.await()).isEqualTo(com.promenar.nexara.domain.trigger.SystemTurnOutcome.Completed)
+        coVerify(exactly = 1) {
+            builder.buildContext(match { params -> params.session.messages.any { it.content.contains("结论正文") } })
+        }
+        assertThat(fixture.store.getSession("skills-session")!!.messages.count {
+            it.name == com.promenar.nexara.domain.trigger.SystemTriggerMessage.MESSAGE_NAME
+        }).isEqualTo(1)
+    }
+
     @Test fun `提问事务返回时取消也关闭已创建的待回答状态`() = runTest {
         val ledger = mockk<com.promenar.nexara.data.repository.AskUserLedgerRepository>()
         coEvery { ledger.consumeResumption(any(), any()) } returns false
@@ -147,6 +172,7 @@ class DefaultChatGenerationRuntimeTest {
         contextBuilder: ContextBuilder = ContextBuilder(),
         stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
         askLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
+        subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
     ): SkillsFixture {
         val settings = mockk<SharedPreferences> {
             every { getInt(any(), any()) } answers { secondArg() }
@@ -178,13 +204,22 @@ class DefaultChatGenerationRuntimeTest {
             }
         }
         val executor = mockk<ToolExecutor>(relaxed = true)
+        val messageManager = mockk<MessageManager>(relaxed = true)
+        if (subagentCompletions != null) {
+            coEvery { messageManager.addMessage(any(), any()) } coAnswers {
+                val sessionId = firstArg<String>()
+                val message = secondArg<Message>()
+                store.updateSession(sessionId) { it.copy(messages = it.messages + message) }
+            }
+        }
         val runtime = DefaultChatGenerationRuntime(
             settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
             AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder, mockk(relaxed = true), { mockk() }, mockk(), mockk(relaxed = true), executor,
+            contextBuilder, messageManager, { mockk() }, mockk(), mockk(relaxed = true), executor,
             mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
             stateBoardRepository = stateBoardRepository,
             askUserLedger = askLedger,
+            subagentCompletions = subagentCompletions,
         )
         return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads, executor, store)
     }

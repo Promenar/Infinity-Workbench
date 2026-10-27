@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.emptyFlow
 interface GenerationForegroundController {
     val failures: Flow<ForegroundServiceFailure>
     fun track(snapshot: GenerationTaskSnapshot): ForegroundStartResult
+    fun trackSubagents(): ForegroundStartResult = ForegroundStartResult.StartedWithNotifications
 }
 
 sealed interface ForegroundStartResult {
@@ -41,10 +42,18 @@ class AndroidGenerationForegroundController(
     private val mutableFailures = MutableSharedFlow<ForegroundServiceFailure>(extraBufferCapacity = 8)
     override val failures: Flow<ForegroundServiceFailure> = mutableFailures
 
-    override fun track(snapshot: GenerationTaskSnapshot): ForegroundStartResult = try {
+    override fun track(snapshot: GenerationTaskSnapshot): ForegroundStartResult = start(
+        GenerationForegroundService.trackIntent(applicationContext, snapshot),
+    )
+
+    override fun trackSubagents(): ForegroundStartResult = start(
+        GenerationForegroundService.trackSubagentsIntent(applicationContext),
+    )
+
+    private fun start(intent: android.content.Intent): ForegroundStartResult = try {
         ContextCompat.startForegroundService(
             applicationContext,
-            GenerationForegroundService.trackIntent(applicationContext, snapshot),
+            intent,
         )
         if (
             Build.VERSION.SDK_INT < 33 ||

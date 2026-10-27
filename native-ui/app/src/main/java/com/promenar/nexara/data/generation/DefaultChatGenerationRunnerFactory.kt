@@ -61,6 +61,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
     private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     private val askUserLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
+    private val subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
         ChatGenerationRunner(createRuntime(request.sessionId, taskId))
@@ -107,6 +108,7 @@ internal class DefaultChatGenerationRunnerFactory(
             runModeCheck = runModeCheck,
             linuxFiles = linuxFiles,
             askUserLedger = askUserLedger,
+            subagentCompletions = subagentCompletions,
         )
     }
 }

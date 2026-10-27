@@ -28,7 +28,7 @@ class GenerationForegroundServiceContractTest {
     fun `TRACK先进入前台再观察且Service不承诺进程死亡恢复`() {
         val track = functionBody("private fun handleTrack(intent: Intent)")
         assertThat(track.indexOf("startImmediately(initial)")).isAtLeast(0)
-        assertThat(track.indexOf("activeCoordinator.sessions.collect"))
+        assertThat(track.indexOf("observeWork(activeCoordinator)"))
             .isGreaterThan(track.indexOf("startImmediately(initial)"))
         assertThat(service).contains("return START_NOT_STICKY")
         assertThat(service).contains("stopSelfResult(latestStartId)")
@@ -73,7 +73,7 @@ class GenerationForegroundServiceContractTest {
     fun `陈旧STOP在取消与停止之前先校验当前taskId`() {
         val stop = functionBody("private fun handleStop(intent: Intent)")
         val noTrackedTask = stop.indexOf(
-            "if (trackedTaskId == null) {\n            stopSelfResult(latestStartId)\n            return\n        }",
+            "if (trackedTaskId == null) {\n            if (!trackedSubagents) stopSelfResult(latestStartId)\n            return\n        }",
         )
         val guard = stop.indexOf("if (coordinator?.sessions?.value?.values?.none { it.taskId == taskId } != false) return")
         assertThat(noTrackedTask).isAtLeast(0)
@@ -129,13 +129,26 @@ class GenerationForegroundServiceContractTest {
             "override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int",
         )
         assertThat(onStart).contains(
-            "else -> if (trackedTaskId == null) stopSelfResult(startId) else Unit",
+            "else -> if (trackedTaskId == null && !trackedSubagents) stopSelfResult(startId) else Unit",
         )
 
         val track = functionBody("private fun handleTrack(intent: Intent)")
         assertThat(track).contains("stopUnconditionally()")
         val stop = functionBody("private fun handleStop(intent: Intent)")
-        assertThat(stop).contains("if (trackedTaskId == null) stopSelfResult(latestStartId)")
+        assertThat(stop).contains("if (trackedTaskId == null && !trackedSubagents) stopSelfResult(latestStartId)")
+    }
+
+    @Test
+    fun `合并观察子代理存活且停止父会话不会撤销子代理保活`() {
+        val observe = functionBody("private fun observeWork(activeCoordinator: GenerationCoordinator)")
+        assertThat(observe).contains("combine(activeCoordinator.sessions, app.subagentLauncher.activeRuns)")
+        assertThat(observe).contains("if (work.isEmpty) stopTracking(null)")
+        val stop = functionBody("private fun handleStop(intent: Intent)")
+        assertThat(stop).contains("if (snapshots.isEmpty() && !trackedSubagents) stopTracking(null)")
+        assertThat(stop).doesNotContain("subagentLauncher.stop")
+        val notification = functionBody("private fun subagentNotification(snapshots: List<GenerationTaskSnapshot>): Notification")
+        assertThat(notification).contains("bg_subagent_notification_stop_generations")
+        assertThat(notification).contains("notificationFactory.stopAllIntent()")
     }
 
     private fun read(path: String) = Files.readAllBytes(Path.of(path)).toString(Charsets.UTF_8)

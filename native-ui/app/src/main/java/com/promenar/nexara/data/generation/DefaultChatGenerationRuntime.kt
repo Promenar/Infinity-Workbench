@@ -178,6 +178,7 @@ internal class DefaultChatGenerationRuntime(
     private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
     private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     private val askUserLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
+    private val subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
 ) : ChatGenerationRuntime {
     private var interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE
     private val compactionTurnState = ContextCompactionTurnState()
@@ -474,6 +475,7 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
         interactionMode = request.interactionMode
+        subagentCompletions?.deliver(request.sessionId, store, messageManager)
         runModeCheck?.invoke(request.sessionId)?.let { failure ->
             handlePreparationFailure(request, failure, null)
             return GenerationPreparationOutcome.Handled(failure)

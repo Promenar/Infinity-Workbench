@@ -24,6 +24,7 @@ object SystemTriggerMessage {
         val catchUp: Boolean,
         val firedAt: OffsetDateTime,
         val body: String,
+        val deliveryIds: List<String> = emptyList(),
     )
 
     fun compose(request: SystemTurnRequest, firedAt: OffsetDateTime): String {
@@ -33,6 +34,7 @@ object SystemTriggerMessage {
             add("title" to request.title)
             request.sequence?.let { add("seq" to it.toString()) }
             if (request.catchUp) add("catch_up" to "true")
+            if (request.deliveryIds.isNotEmpty()) add("delivery_ids" to request.deliveryIds.joinToString(","))
             add("fired_at" to firedAt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
         }
         val header = attributes.joinToString(" ", prefix = "<$TAG ", postfix = "/>") { (key, value) ->
@@ -63,6 +65,7 @@ object SystemTriggerMessage {
             catchUp = attributes["catch_up"] == "true",
             firedAt = firedAt,
             body = if ('\n' in content) content.substringAfter('\n') else "",
+            deliveryIds = attributes["delivery_ids"]?.split(',')?.filter(String::isNotEmpty).orEmpty(),
         )
     }
 

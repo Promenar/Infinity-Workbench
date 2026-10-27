@@ -8,6 +8,15 @@ import org.junit.Test
 class SystemTriggerMessageTest {
     private val firedAt = OffsetDateTime.of(2026, 10, 23, 10, 30, 0, 0, ZoneOffset.ofHours(8))
 
+    @Test fun `合并完成通知的全部送达标识可往返且旧消息兼容`() {
+        val request = SystemTurnRequest("s", SystemTurnKind.SUBAGENT_DONE, "sa_a", "结论", "正文",
+            sequence = 2, deliveryIds = listOf("sa_a:2", "sa_b:1"))
+        assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(request, firedAt))!!.deliveryIds)
+            .containsExactly("sa_a:2", "sa_b:1").inOrder()
+        val legacy = request.copy(deliveryIds = emptyList())
+        assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(legacy, firedAt))!!.deliveryIds).isEmpty()
+    }
+
     @Test
     fun `标记行与正文可以往返解析`() {
         val request = SystemTurnRequest(

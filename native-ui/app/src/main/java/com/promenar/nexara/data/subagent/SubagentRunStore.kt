@@ -25,14 +25,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-/** 子代理只与主 Agent 通信，界面只能读取；用量待父轮次汇入其助手消息。 */
+/** 父轮附加用量的兼容端口；后台子代理使用持久累计记录独立统计。 */
 interface SubagentUsageLedger {
     fun add(sessionId: String, usage: TokenUsage)
     fun drain(sessionId: String): TokenUsage?
 }
 
 /**
- * 子代理运行记录：运行中保存在内存供界面实时读取，同时写入应用私有的不备份目录；
+ * 子代理运行记录与恢复检查点：内存供界面实时读取，持久状态写入应用私有的不备份目录；
  * 父会话删除时整目录删除。进程重启后仍为运行中的记录显示为已中断。
  */
 class SubagentRunStore(
@@ -59,8 +59,8 @@ class SubagentRunStore(
     /** 运行中更新：内存立即可见，磁盘按调用方节奏写入。 */
     suspend fun update(batch: SubagentBatch, persist: Boolean) {
         if (batch.sessionId in deleted) return
-        live.update { it + (key(batch.sessionId, batch.stepId) to batch) }
         if (persist) write(batch)
+        if (batch.sessionId !in deleted) live.update { it + (key(batch.sessionId, batch.stepId) to batch) }
     }
 
     suspend fun finish(batch: SubagentBatch) {
@@ -85,6 +85,93 @@ class SubagentRunStore(
         } catch (_: IllegalArgumentException) {
             null
         }
+    }
+
+    /** 应用启动与独立用量统计扫描；只接受由本存储写入的哈希目录。 */
+    suspend fun all(): List<SubagentBatch> = withContext(dispatcher) {
+        mutex.withLock {
+            val base = checkedRoot(false) ?: return@withLock emptyList()
+            val disk = base.listFiles().orEmpty().filter { it.name.matches(Regex("[a-f0-9]{64}")) && Files.isDirectory(it.toPath(), NOFOLLOW_LINKS) }
+                .flatMap { directory ->
+                    checkChild(directory, base)
+                    directory.listFiles().orEmpty().filter { it.name.matches(Regex("[a-f0-9]{64}\\.json")) }.mapNotNull { file ->
+                        try {
+                            checkChild(file, directory)
+                            val batch = json.decodeFromString(SubagentBatch.serializer(), file.readText())
+                            batch.takeIf { sha256(it.sessionId) == directory.name && "${sha256(it.stepId)}.json" == file.name && it.sessionId !in deleted }
+                        } catch (_: Exception) { null }
+                    }
+                }
+            (disk.associateBy { key(it.sessionId, it.stepId) } + live.value).values.toList()
+        }
+    }
+
+    suspend fun usageWatermarks(): Map<String, TokenUsage> = withContext(dispatcher) {
+        mutex.withLock {
+            val base = checkedRoot(false) ?: return@withLock emptyMap()
+            val file = File(base, "usage-watermarks.json").also { checkChild(it, base) }
+            if (!file.isFile) emptyMap() else json.decodeFromString<kotlin.collections.Map<String, TokenUsage>>(file.readText())
+        }
+    }
+
+    suspend fun resetUsageWatermarks() {
+        val watermark = all().flatMap { it.runs }.filter { it.id.isNotEmpty() }.flatMap { run ->
+            listOf(run.id to TokenUsage(input = run.inputTokens, output = run.outputTokens, total = run.totalTokens)) +
+                run.dailyUsage.map { (day, usage) -> "${run.id}/$day" to usage }
+        }.toMap()
+        restoreUsageWatermarks(watermark)
+    }
+
+    suspend fun restoreUsageWatermarks(watermark: Map<String, TokenUsage>) = withContext(dispatcher) { mutex.withLock {
+        val base = checkNotNull(checkedRoot(true))
+        val file = File(base, "usage-watermarks.json").also { checkChild(it, base) }
+        atomicText(file, json.encodeToString(kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.serializer<String>(), TokenUsage.serializer()), watermark))
+    } }
+
+    suspend fun execution(sessionId: String, stepId: String, id: String): SubagentExecutionState? = withContext(dispatcher) {
+        mutex.withLock { readExecution(sessionId, stepId, id) }
+    }
+
+    /** 收件箱与模型历史共用原子检查点，历史提交时才移除已消费指令。 */
+    suspend fun saveExecution(sessionId: String, stepId: String, id: String, state: SubagentExecutionState) = withContext(dispatcher) {
+        mutex.withLock {
+            if (sessionId in deleted) return@withLock
+            val old = readExecution(sessionId, stepId, id)
+            val pending = (old?.pendingInstructions.orEmpty() + state.pendingInstructions).distinctBy { it.id }
+                .filter { it.id !in state.consumedInstructionIds }
+            val file = executionFile(sessionId, stepId, id, true) ?: return@withLock
+            atomicText(file, json.encodeToString(SubagentExecutionState.serializer(), state.copy(pendingInstructions = pending)))
+        }
+    }
+
+    suspend fun enqueue(sessionId: String, stepId: String, id: String, instruction: SubagentInstruction) = withContext(dispatcher) {
+        mutex.withLock {
+            check(sessionId !in deleted) { "父会话已删除" }
+            val state = readExecution(sessionId, stepId, id) ?: SubagentExecutionState()
+            val file = checkNotNull(executionFile(sessionId, stepId, id, true))
+            atomicText(file, json.encodeToString(SubagentExecutionState.serializer(), state.copy(pendingInstructions = state.pendingInstructions + instruction)))
+        }
+    }
+
+    private fun readExecution(sessionId: String, stepId: String, id: String): SubagentExecutionState? {
+        val file = executionFile(sessionId, stepId, id, false) ?: return null
+        if (!Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS)) return null
+        return json.decodeFromString(SubagentExecutionState.serializer(), file.readText())
+    }
+
+    private fun executionFile(sessionId: String, stepId: String, id: String, create: Boolean): File? {
+        require(id.matches(Regex("sa_[a-z0-9]{6}"))) { "子代理地址无效" }
+        val batch = entry(sessionId, stepId, create) ?: return null
+        return File(batch.parentFile, "${sha256(stepId)}-$id.context").also { checkChild(it, batch.parentFile) }
+    }
+
+    private fun atomicText(entry: File, text: String) {
+        val temporary = File(entry.parentFile, ".${entry.name}-${UUID.randomUUID()}.tmp")
+        try {
+            FileOutputStream(temporary).use { stream -> stream.write(text.toByteArray(Charsets.UTF_8)); stream.fd.sync() }
+            try { Files.move(temporary.toPath(), entry.toPath(), ATOMIC_MOVE, REPLACE_EXISTING) }
+            catch (_: AtomicMoveNotSupportedException) { Files.move(temporary.toPath(), entry.toPath(), REPLACE_EXISTING) }
+        } finally { Files.deleteIfExists(temporary.toPath()) }
     }
 
     suspend fun deleteSession(sessionId: String): Unit = withContext(dispatcher) {
@@ -115,30 +202,10 @@ class SubagentRunStore(
     override fun drain(sessionId: String): TokenUsage? = usage.remove(sessionId)
 
     private suspend fun write(batch: SubagentBatch) = withContext(dispatcher) {
-        try {
-            mutex.withLock {
-                if (batch.sessionId in deleted) return@withLock
-                val entry = entry(batch.sessionId, batch.stepId, create = true) ?: return@withLock
-                val temporary = File(entry.parentFile, ".${entry.name}-${UUID.randomUUID()}.tmp")
-                try {
-                    FileOutputStream(temporary).use { stream ->
-                        stream.write(json.encodeToString(SubagentBatch.serializer(), batch).toByteArray(Charsets.UTF_8))
-                        stream.fd.sync()
-                    }
-                    checkChild(entry, entry.parentFile)
-                    try {
-                        Files.move(temporary.toPath(), entry.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
-                    } catch (_: AtomicMoveNotSupportedException) {
-                        Files.move(temporary.toPath(), entry.toPath(), REPLACE_EXISTING)
-                    }
-                } finally {
-                    Files.deleteIfExists(temporary.toPath())
-                }
-            }
-        } catch (_: IOException) {
-            // 记录只供查看；写盘失败不影响子代理结果交回主 Agent。
-        } catch (_: SecurityException) {
-            // 应用私有目录不可用时只保留内存记录。
+        mutex.withLock {
+            if (batch.sessionId in deleted) return@withLock
+            val file = entry(batch.sessionId, batch.stepId, create = true) ?: error("子代理目录不可用")
+            atomicText(file, json.encodeToString(SubagentBatch.serializer(), batch))
         }
     }
 

@@ -17,12 +17,15 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 
-/** 派生子代理：每个子代理在独立上下文中完成一项子任务，最终正文作为本工具结果交回。 */
+/** 派生子代理：后台回执与前台等待均复用应用级执行者。 */
 class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefinition {
     override val id = SubagentLimits.TOOL_NAME
     override val name = SubagentLimits.TOOL_NAME
-    override val description = "Delegate self-contained subtasks to subagents. Each subagent works in a fresh context with this session's " +
+    override val description = "Delegate self-contained subtasks to application-owned subagents. Background is the default: return IDs immediately and receive conclusions automatically. " +
+        "Use background=false when the results are required to continue, or agent_wait to wait later. Stopping this turn does not stop subagents. Each subagent works with this session's " +
         "model, workspace and approval rules, cannot ask the user anything, and returns only its final answer. List up to " +
         "${SubagentLimits.MAX_PARALLEL} independent tasks in one call to run them in parallel. Write each prompt as a complete brief: " +
         "goal, relevant paths or facts, constraints and the expected answer format. Use preset \"explorer\" for read-only research."
@@ -31,6 +34,9 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
     override val parametersSchema = """{
         "type":"object",
         "properties":{
+            "background":{"type":"boolean","description":"Default true; false waits for the results"},
+            "timeout_seconds":{"type":"number","description":"Positive wait timeout in seconds; only used when background=false"},
+            "max_turns":{"type":"integer","description":"Optional positive turn limit for each subagent"},
             "tasks":{
                 "type":"array",
                 "description":"1 to ${SubagentLimits.MAX_PARALLEL} independent tasks",
@@ -59,7 +65,8 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
         )
         val stepId = context.toolStepId ?: "agent_task_${System.currentTimeMillis()}"
         val runs = try {
-            launcher().launch(context, stepId, specs)
+            launcher().launch(context, stepId, specs, background = (args["background"] as? JsonPrimitive)?.booleanOrNull ?: true,
+                timeoutMillis = subagentWaitTimeout(args), maxTurns = (args["max_turns"] as? JsonPrimitive)?.intOrNull)
         } catch (unavailable: SubagentModelUnavailable) {
             // 只回显启动器给出的固定原因；其它异常交给工具执行器统一脱敏。
             return failure(unavailable.message ?: "Subagents are unavailable in this session.")
@@ -67,12 +74,14 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
         return ToolResult(
             id = "agent_task_${System.currentTimeMillis()}",
             content = formatResults(runs),
-            status = if (runs.all { it.status != SubagentStatus.COMPLETED }) "error" else "success",
+            status = "success",
         )
     }
 
     internal fun parse(args: JsonObject): List<SubagentSpec>? {
         if (validator.validate(parametersSchema, args) is ToolSchemaValidation.Invalid) return null
+        if (args["max_turns"] != null && ((args["max_turns"] as? JsonPrimitive)?.intOrNull ?: 0) <= 0) return null
+        if (!validSubagentWaitTimeout(args)) return null
         val tasks = args["tasks"] as? JsonArray ?: return null
         if (tasks.size !in 1..SubagentLimits.MAX_PARALLEL) return null
         return tasks.map { element ->
@@ -104,20 +113,19 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
     companion object {
         internal const val MAX_DESCRIPTION_CHARS = 60
 
-        /** 交回主 Agent 的结果：每个子代理一节，总长度按子代理数平分上限。 */
-        internal fun formatResults(runs: List<SubagentRun>): String {
-            val budget = SubagentLimits.MAX_RESULT_CHARS / runs.size.coerceAtLeast(1)
-            return runs.joinToString("\n\n") { run ->
-                val title = "## Subagent ${run.index + 1}: ${run.description}"
-                val body = when (run.status) {
-                    SubagentStatus.COMPLETED -> run.result.orEmpty().let {
-                        if (it.length <= budget) it else it.take(budget) + "\n…(truncated)"
-                    }
-                    SubagentStatus.CANCELLED -> "Status: cancelled."
-                    else -> "Status: failed. ${run.error.orEmpty()}".trim()
-                }
-                "$title\n$body"
+        /** 同一返回格式用于后台进度、等待回执和已结束结论，正文不截断。 */
+        internal fun formatResults(runs: List<SubagentRun>): String = runs.joinToString("\n\n") { run ->
+            val detached = run.events.lastOrNull { it.kind == com.promenar.nexara.data.subagent.SubagentEvent.Kind.DETACH }
+            val note = when (detached?.by) {
+                com.promenar.nexara.data.subagent.SubagentEvent.Actor.USER -> "\n用户已将子代理转入后台。"
+                com.promenar.nexara.data.subagent.SubagentEvent.Actor.TIMEOUT -> "\n等待超时，子代理继续在后台运行。"
+                else -> ""
             }
+            "## Subagent ${run.index + 1}: ${run.description}\nID: ${run.id}\nStatus: ${run.status.name.lowercase()}." +
+                " Steps: ${run.step}; tokens: ${run.totalTokens}." + note +
+                (run.result?.let { "\n$it" } ?: run.error?.let { "\n$it" }.orEmpty()) +
+                (run.resultPath?.let { "\nResult path: $it" }.orEmpty())
         }
+
     }
 }
