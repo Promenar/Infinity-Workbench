@@ -670,7 +670,7 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                     artifacts = com.promenar.nexara.ui.canvas.LocalCanvasSession.current?.let { canvasSession ->
-                        chatTopBarArtifacts(inspectorMode, canvasSession.canvases.size, canvasSession.openList)
+                        chatTopBarArtifacts(inspectorMode, canvasSession.artifacts.size, canvasSession.openList)
                     },
                     git = state.gitSummary,
                     onOpenGit = if (inspectorMode) ({ toggleInspectorPage(ChatPage.Git) }) else actions.onOpenGit,
@@ -771,7 +771,8 @@ fun ChatScreenContent(
             val canvasSession = com.promenar.nexara.ui.canvas.LocalCanvasSession.current
             // 侧栏计划区与运行坞同一可见规则：隐藏或自动收起的计划不占侧栏。
             val sidePlan = taskPanel?.takeIf { planBarVisible && it.totalCount > 0 }
-            val sideCanvases = canvasSession?.canvases.orEmpty()
+            val sideArtifacts = canvasSession?.artifacts.orEmpty()
+            val sideCandidates = canvasSession?.candidates.orEmpty()
             val sideBoard = state.stateBoard?.takeIf { it.board != null }
             val hasRunContent = sidePlan != null || sideBoard != null || activitySummary?.visible == true || uiState.isGenerating
             val inspectorBadges = ChatInspectorBadges(
@@ -780,7 +781,7 @@ fun ChatScreenContent(
                 hasRunContent = hasRunContent,
                 gitAvailable = state.gitSummary != null,
                 gitChanges = state.gitSummary?.changeCount ?: 0,
-                canvases = sideCanvases.size,
+                canvases = sideArtifacts.size,
                 browser = state.browser?.mode,
                 browserEntry = true,
             )
@@ -1318,13 +1319,15 @@ fun ChatScreenContent(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                ChatPage.Canvas -> if (sideCanvases.isEmpty()) {
+                                ChatPage.Canvas -> if (sideArtifacts.isEmpty() && sideCandidates.isEmpty()) {
                                     ChatInspectorCanvasEmpty()
                                 } else {
-                                    com.promenar.nexara.ui.canvas.CanvasListContent(
-                                        canvases = sideCanvases,
-                                        onOpen = { id -> canvasSession?.open?.invoke(id) },
-                                        showHeading = false,
+                                    com.promenar.nexara.ui.canvas.ArtifactsContent(
+                                        artifacts = sideArtifacts,
+                                        candidates = sideCandidates,
+                                        onOpen = { artifact -> canvasSession?.openArtifact?.invoke(artifact) },
+                                        onClaim = { candidate -> canvasSession?.claimCandidate?.invoke(candidate) },
+                                        onIgnore = { candidate -> canvasSession?.ignoreCandidate?.invoke(candidate) },
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }

@@ -110,26 +110,6 @@ class CanvasComponentsTest {
     }
 
     @Test
-    fun listOpensTheChosenCanvas() {
-        val calculator = canvas.copy(id = "canvas-test-calculator", title = "费用计算器", currentVersion = 1, versions = listOf(1))
-        var selectedId: String? = null
-        rule.setContent {
-            NexaraTheme {
-                CanvasListContent(
-                    canvases = listOf(canvas, calculator),
-                    onOpen = { selectedId = it },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
-
-        rule.onNodeWithTag(UiTags.CANVAS_LIST).assertIsDisplayed()
-        rule.onNodeWithText(resources.getString(R.string.canvas_current_version, 3)).assertIsDisplayed()
-        rule.onNodeWithText(calculator.title).assertIsDisplayed().performClick()
-        rule.runOnIdle { assertEquals(calculator.id, selectedId) }
-    }
-
-    @Test
     fun historySelectorRemainsReachableAtLargeFontAndNarrowWidth() {
         var selected: Int? = null
         rule.setContent {

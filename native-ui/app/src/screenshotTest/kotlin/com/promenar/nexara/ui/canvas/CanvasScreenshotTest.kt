@@ -17,7 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
+import com.promenar.nexara.data.artifact.ArtifactCandidate
+import com.promenar.nexara.data.artifact.ArtifactKind
+import com.promenar.nexara.data.artifact.ArtifactOrigin
+import com.promenar.nexara.data.artifact.ArtifactSummary
+import com.promenar.nexara.data.canvas.CanvasDocument
+import com.promenar.nexara.data.canvas.CanvasKind
 import com.promenar.nexara.data.canvas.CanvasMetadata
+import com.promenar.nexara.data.canvas.CanvasScreenSource
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTheme
@@ -136,32 +143,64 @@ fun canvasInlineCardDarkEnglishLargeFontPreview() = CanvasPreviewFrame(dark = tr
     )
 }
 
+private fun previewArtifact(id: String, kind: ArtifactKind, title: String, version: Int = 1, screens: Int = 0, fileName: String? = null, size: Long? = null) =
+    ArtifactSummary(
+        id = id, kind = kind, origin = if (fileName == null) ArtifactOrigin.CANVAS else ArtifactOrigin.DECLARED, title = title,
+        createdAt = 1_792_000_000_000L, updatedAt = 1_792_000_060_000L, currentVersion = version, createdByMessageId = "message-preview",
+        screenCount = screens, fileName = fileName, sizeBytes = size,
+    )
+
+private fun previewArtifacts(english: Boolean) = listOf(
+    previewArtifact("p1", ArtifactKind.PROTOTYPE, if (english) "Budget app prototype" else "记账 App 原型", version = 2, screens = 5),
+    previewArtifact("p2", ArtifactKind.PROTOTYPE, if (english) "Onboarding flow" else "首次引导流程", screens = 3),
+    previewArtifact("g1", ArtifactKind.PAGE, if (english) "Quarterly business dashboard" else "季度经营看板", version = 3),
+    previewArtifact("g2", ArtifactKind.PAGE, if (english) "Travel expense calculator" else "差旅费用计算器"),
+    previewArtifact("d1", ArtifactKind.DOCUMENT, if (english) "Requirements.md" else "需求说明.md", fileName = "需求说明.md", size = 6_300),
+    previewArtifact("i1", ArtifactKind.IMAGE, if (english) "Cover illustration.png" else "封面插画.png", fileName = "cover.png", size = 845_000),
+    previewArtifact("o1", ArtifactKind.OTHER, if (english) "Sales detail.csv" else "销售明细.csv", version = 2, fileName = "sales.csv", size = 52_000),
+)
+
+private val previewCandidates = listOf(
+    ArtifactCandidate("/home/session/out/chart_q3.png", "chart_q3.png", ArtifactKind.IMAGE, 120_000, "message-preview", 0),
+    ArtifactCandidate("/home/session/draft_notes.md", "draft_notes.md", ArtifactKind.DOCUMENT, 2_000, "message-preview", 0),
+)
+
 @PreviewTest
-@Preview(name = "画布列表 浅中360", widthDp = 360, heightDp = 600, locale = "zh-rCN")
+@Preview(name = "产物分类 浅中360", widthDp = 360, heightDp = 900, locale = "zh-rCN")
 @Composable
-fun canvasListLightChinesePreview() = CanvasPreviewFrame(dark = false) {
-    CanvasListContent(
-        canvases = listOf(
-            previewMetadata("季度经营看板"),
-            previewMetadata("差旅费用计算器", "canvas-preview-calculator").copy(currentVersion = 1, versions = listOf(1)),
-            previewMetadata("项目任务与依赖关系示意图", "canvas-preview-map"),
-        ),
-        onOpen = {},
+fun artifactsPageLightChinesePreview() = CanvasPreviewFrame(dark = false) {
+    ArtifactsContent(
+        artifacts = previewArtifacts(english = false),
+        candidates = previewCandidates,
+        onOpen = {}, onClaim = {}, onIgnore = {},
         modifier = Modifier.fillMaxSize(),
     )
 }
 
 @PreviewTest
-@Preview(name = "画布列表 深英360 大字体", widthDp = 360, heightDp = 600, locale = "en", fontScale = 1.3f)
+@Preview(name = "产物分类 深英360 大字体", widthDp = 360, heightDp = 900, locale = "en", fontScale = 1.3f)
 @Composable
-fun canvasListDarkEnglishLargeFontPreview() = CanvasPreviewFrame(dark = true) {
-    CanvasListContent(
-        canvases = listOf(
-            previewMetadata("Quarterly business dashboard"),
-            previewMetadata("Travel expense calculator", "canvas-preview-calculator").copy(currentVersion = 1, versions = listOf(1)),
-            previewMetadata("Project tasks and dependencies", "canvas-preview-map"),
-        ),
-        onOpen = {},
+fun artifactsPageDarkEnglishLargeFontPreview() = CanvasPreviewFrame(dark = true) {
+    ArtifactsContent(
+        artifacts = previewArtifacts(english = true),
+        candidates = previewCandidates,
+        onOpen = {}, onClaim = {}, onIgnore = {},
         modifier = Modifier.fillMaxSize(),
+    )
+}
+
+@PreviewTest
+@Preview(name = "原型画板 浅中390", widthDp = 390, heightDp = 760, locale = "zh-rCN")
+@Composable
+fun prototypeBoardLightChinesePreview() = CanvasPreviewFrame(dark = false) {
+    val metadata = previewMetadata("记账 App 原型").copy(kind = CanvasKind.PROTOTYPE)
+    val screens = listOf("首页", "记一笔", "统计", "账单详情", "设置").mapIndexed { index, title ->
+        CanvasScreenSource("s${index + 1}", title, "<p>$title</p>")
+    }
+    PrototypeBoardContent(
+        document = CanvasDocument(metadata, screens.first().html, 3, screens),
+        metadata = metadata,
+        selectedVersion = null,
+        onSelectVersion = {}, onCopy = {}, onClose = {}, onInsertText = {},
     )
 }

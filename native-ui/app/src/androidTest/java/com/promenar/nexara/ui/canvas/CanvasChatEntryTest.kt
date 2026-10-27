@@ -58,7 +58,7 @@ class CanvasChatEntryTest {
     }
 
     @Test fun artifactsPage_listsSessionArtifacts() {
-        runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
+        val canvas = runBlocking { store.create("session", "图表", "<p>1</p>", "message") }
         rule.setContent {
             NexaraTheme {
                 CanvasSessionHost("session", store, onInsertText = {}, onOpenList = {}) {
@@ -67,7 +67,7 @@ class CanvasChatEntryTest {
             }
         }
         rule.onNodeWithTag(UiTags.CANVAS_PAGE).assertIsDisplayed()
-        rule.waitUntil(5_000) { rule.onAllNodesWithTag(UiTags.CANVAS_LIST_ITEM).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag(UiTags.artifactItem(canvas.metadata.id)).fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test fun successfulToolCard_opensLatestAndRefreshesWhileVisible() {

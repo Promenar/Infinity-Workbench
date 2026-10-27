@@ -315,7 +315,10 @@ fun PipelineBubble(
             }
         }
         if (renderPlan.showStandaloneCursor) GenerationIndicator()
-        if (!isGenerating) CanvasInvocationCards(allSteps.filterIsInstance<PipelineStep.ToolExec>().flatMap { it.steps })
+        if (!isGenerating) CanvasInvocationCards(
+            allSteps.filterIsInstance<PipelineStep.ToolExec>().flatMap { it.steps },
+            messageIds = remember(group.messages) { group.messages.map { it.id }.toSet() },
+        )
         if (footerContent != null) {
             pipelineContentOwner(group.messages, footerContent)?.let { lastMsg ->
                 val context = LocalContext.current

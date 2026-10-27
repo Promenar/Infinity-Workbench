@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="artifact_filter_all">All</string>
+    <string name="artifact_section_prototype">Prototypes</string>
+    <string name="artifact_section_page">Pages</string>
+    <string name="artifact_section_document">Documents</string>
+    <string name="artifact_section_image">Images</string>
+    <string name="artifact_section_other">Other</string>
+    <string name="artifact_kind_prototype">Prototype</string>
+    <string name="artifact_kind_page">Page</string>
+    <string name="artifact_kind_document">Document</string>
+    <string name="artifact_kind_image">Image</string>
+    <string name="artifact_kind_other">File</string>
+    <string name="artifact_prototype_hint">Multiple screens, opens on a board</string>
+    <plurals name="artifact_screen_count">
+        <item quantity="one">%d screen</item>
+        <item quantity="other">%d screens</item>
+    </plurals>
+    <string name="artifact_meta_version">v%1$d</string>
+    <string name="artifact_category_empty">Nothing in this category yet</string>
+    <string name="artifact_candidates_title">New workspace files · not added</string>
+    <string name="artifact_candidates_description">Files the agent created or changed in the workspace without publishing them. Add one to file it under its category above.</string>
+    <string name="artifact_candidate_claim">Add</string>
+    <string name="artifact_candidate_ignore">Ignore</string>
+    <string name="artifact_candidate_claim_cd">Add %1$s as an artifact</string>
+    <string name="artifact_candidate_ignore_cd">Ignore %1$s</string>
+    <string name="artifact_action_failed">Couldn\'t complete that: %1$s</string>
+    <plurals name="artifact_turn_candidates">
+        <item quantity="one">%d more new file in the workspace isn\'t an artifact yet</item>
+        <item quantity="other">%d more new files in the workspace aren\'t artifacts yet</item>
+    </plurals>
+    <string name="artifact_turn_candidates_view">View</string>
+    <string name="artifact_open_with">Open with another app</string>
+    <string name="artifact_no_app">No app can open this file</string>
+    <string name="artifact_file_load_error">Couldn\'t read this artifact</string>
+    <string name="artifact_preview_unavailable">This file can\'t be previewed here.</string>
+    <string name="prototype_zoom_in">Zoom in</string>
+    <string name="prototype_zoom_out">Zoom out</string>
+    <string name="prototype_fit">Fit</string>
+    <string name="prototype_play">Play</string>
+    <string name="prototype_back_to_board">Back to board</string>
+    <string name="prototype_screen_position">%1$d / %2$d · %3$s</string>
+    <string name="prototype_previous_screen">Previous screen</string>
+    <string name="prototype_next_screen">Next screen</string>
+    <string name="prototype_open_screen">Open screen %1$d, %2$s</string>
+    <string name="prototype_board_subtitle">v%1$d · %2$s</string>
+</resources>

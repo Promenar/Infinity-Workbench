@@ -34,7 +34,7 @@ class CanvasInvocationTest {
         fun source(path: String) = Files.readAllBytes(ui.resolve(path)).toString(Charsets.UTF_8)
         val bubble = source("chat/PipelineBubble.kt")
         assertThat(bubble).contains("if (isGenerating) CanvasInvocationCards(step.steps, inline = true)")
-        assertThat(bubble).contains("if (!isGenerating) CanvasInvocationCards(allSteps")
+        assertThat(bubble).contains("if (!isGenerating) CanvasInvocationCards(\n            allSteps")
         // 缩略图按固定手机宽度排版再整体缩小，卡片宽度不影响网页布局。
         assertThat(source("canvas/CanvasThumbnail.kt")).contains("internal val CanvasThumbnailVirtualWidth = 400.dp")
         val card = source("canvas/CanvasComponents.kt")

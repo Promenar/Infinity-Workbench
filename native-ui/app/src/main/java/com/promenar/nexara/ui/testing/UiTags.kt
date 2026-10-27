@@ -564,4 +564,17 @@ object UiTags {
     fun ltmItem(id: String) = "ltm_item:$id"
     fun ltmKind(kind: String) = "ltm_kind:$kind"
     fun chatMemoryUndo(callId: String) = "chat_memory_undo:$callId"
+    // 产物分类与原型画板
+    fun artifactFilter(name: String) = "artifact_filter:$name"
+    fun artifactItem(id: String) = "artifact_item:$id"
+    fun artifactCandidate(path: String) = "artifact_candidate:$path"
+    fun artifactClaim(path: String) = "artifact_claim:$path"
+    fun artifactIgnore(path: String) = "artifact_ignore:$path"
+    const val ARTIFACT_TURN_CANDIDATES = "artifact_turn_candidates"
+    const val ARTIFACT_FILE_VIEWER = "artifact_file_viewer"
+    const val PROTOTYPE_BOARD = "prototype_board"
+    const val PROTOTYPE_PLAY = "prototype_play"
+    const val PROTOTYPE_DEMO = "prototype_demo"
+    const val PROTOTYPE_BACK_TO_BOARD = "prototype_back_to_board"
+    fun prototypeScreen(id: String) = "prototype_screen:$id"
 }

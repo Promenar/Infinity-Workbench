@@ -334,87 +334,6 @@ private fun CanvasCardMenuItem(label: Int, icon: ImageVector, onClick: () -> Uni
 }
 
 /** 列表自身管理纵向滚动，宿主只需提供可用高度。 */
-@Composable
-fun CanvasListContent(
-    canvases: List<CanvasMetadata>,
-    onOpen: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    /** 检视器页签已写明“画布”，不再重复标题。 */
-    showHeading: Boolean = true,
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxWidth().testTag(UiTags.CANVAS_LIST),
-        contentPadding = PaddingValues(vertical = NexaraSpacing.Small),
-    ) {
-        if (showHeading) item(key = "heading") {
-            Text(
-                text = stringResource(R.string.canvas_title),
-                modifier = Modifier
-                    .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small)
-                    .semantics { heading() },
-                style = NexaraTypography.titleLarge,
-            )
-        }
-        if (canvases.isEmpty()) {
-            item(key = "empty") {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.XLarge),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Dashboard,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(40.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.canvas_empty_title),
-                        style = NexaraTypography.titleMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = stringResource(R.string.canvas_empty_description),
-                        style = NexaraTypography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        } else {
-            items(canvases, key = { it.id }) { canvas ->
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = canvas.title,
-                            style = NexaraTypography.titleSmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.canvas_current_version, canvas.currentVersion),
-                            style = NexaraTypography.bodySmall,
-                        )
-                    },
-                    leadingContent = {
-                        Icon(imageVector = Icons.Rounded.Dashboard, contentDescription = null)
-                    },
-                    trailingContent = {
-                        Icon(imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .clickable { onOpen(canvas.id) }
-                        .testTag(UiTags.CANVAS_LIST_ITEM),
-                )
-            }
-        }
-    }
-}
-
 /** 全屏窗口由宿主管理；固定历史版本只提供查看和复制能力。 */
 @Composable
 fun CanvasFullscreenContent(
@@ -527,7 +446,7 @@ fun CanvasFullscreenContent(
 }
 
 @Composable
-private fun CanvasVersionSelector(
+internal fun CanvasVersionSelector(
     metadata: CanvasMetadata?,
     selectedVersion: Int?,
     onSelectVersion: (Int?) -> Unit,
@@ -600,7 +519,7 @@ private fun CanvasVersionSelector(
 }
 
 @Composable
-private fun CanvasLoading() {
+internal fun CanvasLoading() {
     Column(
         modifier = Modifier.padding(NexaraSpacing.Large),
         horizontalAlignment = Alignment.CenterHorizontally,

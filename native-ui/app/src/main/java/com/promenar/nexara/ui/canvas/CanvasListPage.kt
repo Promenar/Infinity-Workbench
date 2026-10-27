@@ -64,10 +64,12 @@ internal fun CanvasListPage(onBack: (() -> Unit)?, modifier: Modifier = Modifier
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(NexaraSpacing.Large),
             )
-            else -> CanvasListContent(
-                canvases = session.canvases,
-                onOpen = session.open,
-                showHeading = false,
+            else -> ArtifactsContent(
+                artifacts = session.artifacts,
+                candidates = session.candidates,
+                onOpen = session.openArtifact,
+                onClaim = session.claimCandidate,
+                onIgnore = session.ignoreCandidate,
                 modifier = Modifier.weight(1f),
             )
         }

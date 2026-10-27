@@ -50,6 +50,8 @@ fun CanvasWebView(
     interactive: Boolean = true,
     readOnly: Boolean = false,
     onInsertText: (String) -> Unit = {},
+    /** 原型屏间链接（`nexara-screen:<屏幕 ID>`）被点按时回调；为空时这类链接与其它导航一样被拦下。 */
+    onScreenLink: ((String) -> Unit)? = null,
 ) {
     if (LocalInspectionMode.current) {
         Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerLow))
@@ -62,8 +64,9 @@ fun CanvasWebView(
     }
     val palette = rememberRichContentPalette()
     val currentInsert by rememberUpdatedState(onInsertText)
+    val currentScreenLink by rememberUpdatedState(onScreenLink)
     // 主题切换会重建 WebView，旧实例释放时会废弃它的 client，所以 client 随主题一起重建。
-    val client = remember(palette.isDark) { CanvasWebViewClient { currentInsert(it) } }
+    val client = remember(palette.isDark) { CanvasWebViewClient(onInsertText = { currentInsert(it) }, onScreenLink = { id -> currentScreenLink?.invoke(id) }) }
     val theme = remember(palette, html) { canvasTheme(palette, html) }
     val background = MaterialTheme.colorScheme.background.toArgb()
     Column(modifier.background(MaterialTheme.colorScheme.background)) {
@@ -139,7 +142,10 @@ private class CanvasNativeWebView(context: Context) : WebView(context) {
     }
 }
 
-private class CanvasWebViewClient(private val onInsertText: (String) -> Unit) : WebViewClient() {
+private class CanvasWebViewClient(
+    private val onInsertText: (String) -> Unit,
+    private val onScreenLink: (String) -> Unit,
+) : WebViewClient() {
     private val documents = CanvasDocumentSession()
     private var gate: CanvasBridgeGate? = null
     private var nativePort: WebMessagePort? = null
@@ -188,7 +194,13 @@ private class CanvasWebViewClient(private val onInsertText: (String) -> Unit) : 
         view.postWebMessage(WebMessage(token, arrayOf(ports[1])), Uri.parse("*"))
     }
 
-    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = true
+    // 一切导航都拦下；只有主框架里的原型屏间链接转交宿主切屏。
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        if (!disposed && request?.isForMainFrame == true) {
+            com.promenar.nexara.data.canvas.CanvasScreenLinks.screenId(request.url.toString())?.let(onScreenLink)
+        }
+        return true
+    }
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = true
 

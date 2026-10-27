@@ -1,6 +1,25 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import com.promenar.nexara.ui.canvas.ArtifactKindIcon
+import com.promenar.nexara.ui.canvas.labelRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
@@ -57,10 +76,20 @@ internal fun canvasInvocation(invocation: ToolInvocationPresentation): CanvasInv
  * 回合结束后在正文之后汇总为“本轮产物”，独立于执行过程折叠，避免已完成轮次把画布入口一同隐藏。
  */
 @Composable
-internal fun CanvasInvocationCards(steps: List<ExecutionStep>, inline: Boolean = false) {
+internal fun CanvasInvocationCards(
+    steps: List<ExecutionStep>,
+    inline: Boolean = false,
+    /** 本轮的消息 ID；结束后据此列出本轮写入但未收录的工作区文件。 */
+    messageIds: Set<String> = emptySet(),
+) {
     val access = LocalCanvasSession.current ?: return
-    val references = remember(steps) { canvasTimelineReferences(toolInvocations(steps)) }
-    if (references.isEmpty()) return
+    val invocations = remember(steps) { toolInvocations(steps) }
+    val references = remember(invocations) { canvasTimelineReferences(invocations) }
+    val files = remember(invocations, inline) {
+        if (inline) emptyList() else invocations.mapNotNull(::artifactInvocation).asReversed().distinctBy { it.id }.asReversed()
+    }
+    val turnCandidates = if (inline) 0 else access.candidates.count { it.changedByMessageId in messageIds }
+    if (references.isEmpty() && files.isEmpty() && turnCandidates == 0) return
     if (inline) {
         Column(modifier = Modifier.padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             references.forEachIndexed { index, reference -> key(index, reference.id) { CanvasReferenceCard(access, reference, inline = true) } }
@@ -79,6 +108,65 @@ internal fun CanvasInvocationCards(steps: List<ExecutionStep>, inline: Boolean =
             modifier = Modifier.semantics { heading() },
         )
         references.forEachIndexed { index, reference -> key(index, reference.id) { CanvasReferenceCard(access, reference, inline = false) } }
+        files.forEach { file -> key(file.id) { FileArtifactCard(file, onOpen = { access.openFile(file.id, file.version) }) } }
+        if (turnCandidates > 0) TurnCandidatesHint(turnCandidates, onView = access.openList)
+    }
+}
+
+@Composable
+private fun FileArtifactCard(file: ArtifactInvocation, onOpen: () -> Unit) {
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().testTag(UiTags.artifactItem(file.id)),
+    ) {
+        Row(
+            modifier = Modifier.heightIn(min = 56.dp).padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ArtifactKindIcon(file.kind, size = 36.dp)
+            Column(Modifier.weight(1f)) {
+                Text(file.title, style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = "${stringResource(file.kind.labelRes)} · ${stringResource(R.string.artifact_meta_version, file.version)}",
+                    style = NexaraTypography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** 本轮写入工作区却没有声明的文件数，点“查看”进入产物页的候选区。 */
+@Composable
+private fun TurnCandidatesHint(count: Int, onView: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClick = onView)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag(UiTags.ARTIFACT_TURN_CANDIDATES),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Text(
+            text = pluralStringResource(R.plurals.artifact_turn_candidates, count, count),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = stringResource(R.string.artifact_turn_candidates_view),
+            style = NexaraTypography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

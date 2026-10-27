@@ -654,9 +654,16 @@ fun ChatRoute(
             onOpen = { stepId, index -> onOpenSubagent?.invoke(sessionId, stepId, index) },
         )
     }
+    // 只在消息或其步骤数变化时重新解析工具结果，流式正文更新不触发。
+    val stepsKey = uiState.messages.map { it.id to (it.executionSteps?.size ?: 0) }
+    val workspaceChanges = remember(stepsKey) {
+        uiState.messages.flatMap { message -> workspaceChangedFiles(message.id, message.executionSteps.orEmpty()) }
+    }
     com.promenar.nexara.ui.canvas.CanvasSessionHost(
         sessionId = sessionId,
         store = application.canvasStore,
+        artifactRepository = application.sessionArtifacts,
+        workspaceChanges = workspaceChanges,
         onInsertText = { text -> chatViewModel.appendCanvasText(sessionId, text) },
         onOpenList = { openChatPage(ChatPage.Canvas) },
         onRevealInWorkspace = { path ->
