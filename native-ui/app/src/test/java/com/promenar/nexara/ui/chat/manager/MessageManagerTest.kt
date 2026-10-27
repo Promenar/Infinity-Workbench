@@ -54,6 +54,7 @@ class MessageManagerTest {
     private val testScope = TestScope()
     private lateinit var sessionManager: SessionManager
     private val partialUpdates = mutableListOf<Map<String, Any?>>()
+    private val sessionPartialUpdates = mutableListOf<Pair<String, Map<String, Any?>>>()
     private var persistedMessage: Message? = null
     private var persistedSessionId: String? = null
     private var failScopedDelete = false
@@ -63,7 +64,9 @@ class MessageManagerTest {
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {}
-        override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {}
+        override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
+            sessionPartialUpdates += id to updates
+        }
         override suspend fun delete(id: String) {}
         override suspend fun getById(id: String): Session? = null
         override suspend fun getAll(): List<Session> = emptyList()
@@ -123,6 +126,7 @@ class MessageManagerTest {
     @Before
     fun setUp() {
         partialUpdates.clear()
+        sessionPartialUpdates.clear()
         persistedMessage = null
         persistedSessionId = null
         failScopedDelete = false
@@ -151,6 +155,26 @@ class MessageManagerTest {
         val session = store.getSession("s1")!!
         assertThat(session.messages).hasSize(1)
         assertThat(session.messages[0].content).isEqualTo("hello")
+    }
+
+    @Test
+    fun `新增消息把会话最近活动时间推到消息时间并写库`() = testScope.runTest {
+        sessionManager.addSession(Session(id = "s1", agentId = "a1", title = "Test", updatedAt = 100L))
+        messageManager.addMessage("s1", Message(id = "m1", role = MessageRole.USER, content = "hello", createdAt = 5_000L))
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.updatedAt).isEqualTo(5_000L)
+        assertThat(sessionPartialUpdates).contains("s1" to mapOf<String, Any?>("lastMessage" to "hello"))
+    }
+
+    @Test
+    fun `镜像已持久化的消息同样推进最近活动时间且不倒退`() = testScope.runTest {
+        sessionManager.addSession(Session(id = "s1", agentId = "a1", title = "Test", updatedAt = 100L))
+        messageManager.mirrorPersistedMessage("s1", Message(id = "t1", role = MessageRole.TOOL, content = "ok", createdAt = 7_000L))
+        assertThat(store.getSession("s1")!!.updatedAt).isEqualTo(7_000L)
+
+        messageManager.mirrorPersistedMessage("s1", Message(id = "t0", role = MessageRole.TOOL, content = "late", createdAt = 6_000L))
+        assertThat(store.getSession("s1")!!.updatedAt).isEqualTo(7_000L)
     }
 
     @Test

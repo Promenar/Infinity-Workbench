@@ -42,8 +42,6 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -100,6 +98,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 
 private const val TERMUX_RUN_PERMISSION = "com.termux.permission.RUN_COMMAND"
 private const val TERMUX_DOCUMENTS_AUTHORITY = "com.termux.documents"
@@ -473,9 +473,9 @@ internal fun TermuxSettingsContent(
                                 Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             },
                         )
-                        DropdownMenu(expanded = keyMenuOpen, onDismissRequest = { keyMenuOpen = false }) {
+                        NexaraDropdownMenu(expanded = keyMenuOpen, onDismissRequest = { keyMenuOpen = false }) {
                             state.keyHosts.forEach { host ->
-                                DropdownMenuItem(
+                                NexaraMenuItem(
                                     text = { NexaraIdentifierText(host.alias) },
                                     onClick = { actions.onSelectKeyHost(host.id); keyMenuOpen = false },
                                 )

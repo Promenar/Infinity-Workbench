@@ -28,9 +28,7 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,6 +73,20 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.delay
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import androidx.compose.animation.AnimatedContent
+import com.promenar.nexara.ui.theme.NexaraMotion
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.semantics.contentDescription
+import com.promenar.nexara.domain.jobs.BackgroundJob
+import com.promenar.nexara.ui.theme.NexaraMonospace
 
 enum class RunDetailTab { PLAN, BACKGROUND, STATE }
 
@@ -162,6 +174,7 @@ internal fun RunDetailContent(
             plan = plan,
             isGenerating = isGenerating,
             elapsedMillis = turnStartedAt?.takeIf { isGenerating }?.let { (now - it).coerceAtLeast(0) },
+            activity = activity,
             onHidePlan = onHidePlan.takeIf { plan != null && !plan.isCompleted },
             onClearPlan = onClearPlan.takeIf { plan?.isCompleted == true && !isGenerating },
         )
@@ -174,8 +187,15 @@ internal fun RunDetailContent(
                 onSelect = { selected = it },
             )
         }
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            when (tab) {
+        // 计划、后台与状态之间按页签顺序横向过渡，与检视器页签一致。
+        AnimatedContent(
+            targetState = tab,
+            transitionSpec = { NexaraMotion.sharedAxisX(forward = (targetState?.ordinal ?: 0) > (initialState?.ordinal ?: 0)) },
+            label = "run_detail_tab",
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        ) { shownTab ->
+        Box(Modifier.fillMaxSize()) {
+            when (shownTab) {
                 RunDetailTab.PLAN -> plan?.let {
                     RunPlanTab(it, isGenerating, onContinue = { onDismiss(); onContinue() }, onComplete = onComplete)
                 }
@@ -194,86 +214,157 @@ internal fun RunDetailContent(
                 null -> Unit
             }
         }
+        }
     }
 }
 
+/** 状态卡的状态标签：进行中带呼吸圆点，完成用成功色，暂停用中性色。 */
+private enum class RunStatus { RUNNING, DONE, PAUSED }
+
+/**
+ * 状态卡：左上状态标签、右上大号用时，下面是标题与一行摘要（计划步数、后台任务运行中与已结束数），
+ * 有计划时底部是进度条；隐藏或清除计划收在右上角菜单。
+ */
 @Composable
 private fun RunDetailHeader(
     plan: TaskPanelUiState?,
     isGenerating: Boolean,
     elapsedMillis: Long?,
+    activity: AgentActivityState?,
     onHidePlan: (() -> Unit)?,
     onClearPlan: (() -> Unit)?,
 ) {
     val status = when {
-        isGenerating -> stringResource(R.string.run_detail_status_running)
-        plan?.isCompleted == true -> stringResource(R.string.run_detail_status_done)
-        plan != null -> stringResource(R.string.run_detail_status_paused)
+        isGenerating -> RunStatus.RUNNING
+        plan?.isCompleted == true -> RunStatus.DONE
+        plan != null -> RunStatus.PAUSED
         else -> null
     }
-    val subtitle = listOfNotNull(
-        status,
+    val jobs = activity?.jobs.orEmpty()
+    val groups = backgroundJobGroups(jobs)
+    val summary = listOfNotNull(
         plan?.let {
             if (it.isCompleted) stringResource(R.string.run_detail_steps_done, it.doneCount, it.totalCount)
             else stringResource(R.string.run_detail_step_of, (it.doneCount + 1).coerceAtMost(it.totalCount), it.totalCount)
         },
-        elapsedMillis?.let { runElapsedText(it) },
+        groups.running.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.run_detail_jobs_running, it, it) },
+        groups.finished.size.takeIf { it > 0 }?.let { stringResource(R.string.run_detail_jobs_finished, it) },
     ).joinToString(" · ")
-    Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp),
-        verticalAlignment = Alignment.Top,
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp).testTag(UiTags.CHAT_RUN_STATUS_CARD),
     ) {
-        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                status?.let { RunStatusPill(it) }
+                Spacer(Modifier.weight(1f))
+                elapsedMillis?.let {
+                    val spoken = runElapsedText(it)
+                    Text(
+                        runClockText(it),
+                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = NexaraMonospace, fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .padding(end = if (onHidePlan != null || onClearPlan != null) 0.dp else 12.dp)
+                            .semantics { contentDescription = spoken },
+                    )
+                }
+                if (onHidePlan != null || onClearPlan != null) {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp).testTag(UiTags.CHAT_RUN_SHEET_MENU)) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.run_detail_more))
+                        }
+                        NexaraDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            onHidePlan?.let { hide ->
+                                NexaraMenuItem(
+                                    text = { Text(stringResource(R.string.chat_task_hide)) },
+                                    onClick = { menu = false; hide() },
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_CLOSE),
+                                )
+                            }
+                            onClearPlan?.let { clear ->
+                                NexaraMenuItem(
+                                    text = { Text(stringResource(R.string.chat_task_clear_completed)) },
+                                    onClick = { menu = false; clear() },
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_CLOSE),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Text(
                 text = plan?.title?.takeIf(String::isNotBlank) ?: stringResource(R.string.run_detail_title_default),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 10.dp, end = 12.dp),
             )
-            if (subtitle.isNotBlank()) {
+            if (summary.isNotBlank()) {
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                    summary,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp, end = 12.dp),
+                )
+            }
+            plan?.takeIf { it.totalCount > 0 }?.let {
+                LinearProgressIndicator(
+                    progress = { it.doneCount.toFloat() / it.totalCount },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, end = 12.dp).height(4.dp),
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                 )
             }
         }
-        if (onHidePlan != null || onClearPlan != null) {
-            var menu by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp).testTag(UiTags.CHAT_RUN_SHEET_MENU)) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.run_detail_more))
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    onHidePlan?.let { hide ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_task_hide)) },
-                            onClick = { menu = false; hide() },
-                            modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_CLOSE),
-                        )
-                    }
-                    onClearPlan?.let { clear ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_task_clear_completed)) },
-                            onClick = { menu = false; clear() },
-                            modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.CHAT_TASK_CLOSE),
-                        )
-                    }
-                }
-            }
+    }
+}
+
+@Composable
+private fun RunStatusPill(status: RunStatus) {
+    val scheme = MaterialTheme.colorScheme
+    val (label, container, content) = when (status) {
+        RunStatus.RUNNING -> Triple(stringResource(R.string.run_detail_status_running), scheme.primaryContainer, scheme.onPrimaryContainer)
+        RunStatus.DONE -> Triple(stringResource(R.string.run_detail_status_done), MaterialTheme.nexaraDomainColors.successContainer, MaterialTheme.nexaraDomainColors.onSuccessContainer)
+        RunStatus.PAUSED -> Triple(stringResource(R.string.run_detail_status_paused), scheme.surfaceContainerHighest, scheme.onSurfaceVariant)
+    }
+    val dotAlpha = if (status == RunStatus.RUNNING) {
+        val pulse = rememberInfiniteTransition(label = "run_status_pulse")
+        pulse.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.35f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "run_status_dot",
+        ).value
+    } else 1f
+    Surface(shape = CircleShape, color = container, contentColor = content) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(6.dp).graphicsLayer { alpha = dotAlpha }.background(content, CircleShape))
+            Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 6.dp))
         }
     }
-    plan?.takeIf { it.totalCount > 0 }?.let {
-        LinearProgressIndicator(
-            progress = { it.doneCount.toFloat() / it.totalCount },
-            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp).height(4.dp),
-            strokeCap = StrokeCap.Round,
-            gapSize = 0.dp,
-            drawStopIndicator = {},
-            trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-        )
-    }
+}
+
+/** 状态卡大号用时：不足一小时为“分:秒”，否则“时:分:秒”。 */
+internal fun runClockText(millis: Long): String {
+    val total = (millis / 1_000).coerceAtLeast(0)
+    val hours = total / 3_600
+    val minutes = total % 3_600 / 60
+    val seconds = total % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
+}
+
+/** 后台任务分组：运行中在前、已结束在后，组内保持原顺序。 */
+internal data class BackgroundJobGroups(val running: List<BackgroundJob>, val finished: List<BackgroundJob>)
+
+internal fun backgroundJobGroups(jobs: List<BackgroundJob>): BackgroundJobGroups {
+    val (finished, running) = jobs.partition { it.state.isTerminal }
+    return BackgroundJobGroups(running, finished)
 }
 
 @Composable

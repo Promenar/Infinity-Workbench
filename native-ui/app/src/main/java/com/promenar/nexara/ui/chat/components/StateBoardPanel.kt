@@ -47,6 +47,8 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 
 /**
  * 运行详情“状态”页：面板标题与更新时间、按字段类型排版的卡片（数值与进度两两并排，文本与列表占整行），
@@ -177,8 +179,8 @@ fun StateBoardDetails(
                 IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp).testTag(UiTags.CHAT_STATE_MENU)) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.state_board_more))
                 }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(
+                NexaraDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    NexaraMenuItem(
                         text = { Text(stringResource(R.string.state_remove), color = MaterialTheme.colorScheme.error) },
                         leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                         onClick = { menu = false; onRemove() },

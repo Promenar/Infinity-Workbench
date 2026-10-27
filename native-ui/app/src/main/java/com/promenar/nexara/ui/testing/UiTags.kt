@@ -54,6 +54,7 @@ object UiTags {
     const val CHAT_EXECUTION_MODE = "chat_execution_mode"
     const val CHAT_ATTACHMENT_MENU = "chat_attachment_menu"
     const val CHAT_ATTACHMENT_DISMISS_LAYER = "chat_attachment_dismiss_layer"
+    const val CHAT_RUN_STATUS_CARD = "chat_run_status_card"
     const val CHAT_ATTACH_MENU_IMAGE = "chat_attach_menu_image"
     const val CHAT_ATTACH_MENU_DOCUMENT = "chat_attach_menu_document"
     const val CHAT_DOCUMENT_CHIPS = "chat_document_chips"

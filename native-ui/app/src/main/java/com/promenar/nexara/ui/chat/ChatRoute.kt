@@ -718,6 +718,14 @@ fun ChatRoute(
             // 检视器根层由页签与收起按钮离开，不再显示返回。
             val inInspector = com.promenar.nexara.ui.common.LocalNexaraPanePresentation.current ==
                 com.promenar.nexara.ui.common.NexaraPanePresentation.Inspector
+            // 检视器换页签时按底栏顺序横向过渡；推入、弹出仍是层级过渡。方向在下次换页签前保持不变，退场动画中途不改向。
+            var trackedPages by remember { mutableStateOf(shownChatPages) }
+            var rootSwitch by remember { mutableStateOf<InspectorRootSwitch?>(null) }
+            if (trackedPages != shownChatPages) {
+                rootSwitch = inspectorRootSwitch(trackedPages, shownChatPages)
+                trackedPages = shownChatPages
+            }
+            val tabSwitch = rootSwitch.takeIf { inInspector }
             // 按层级顺序叠放；刚弹出的页排在最上，退场动画盖在下层之上。
             ChatPage.entries
                 .filter { it.isPage }
@@ -728,6 +736,14 @@ fun ChatRoute(
                             key = page.token,
                             visible = page in shownChatPages,
                             top = page == shownChatPages.lastOrNull(),
+                            enter = if (tabSwitch != null && page == shownChatPages.firstOrNull()) {
+                                com.promenar.nexara.ui.theme.NexaraMotion.sharedAxisXEnter(forward = tabSwitch.forward)
+                            } else {
+                                com.promenar.nexara.ui.theme.NexaraMotion.sharedAxisXEnter(forward = true)
+                            },
+                            exit = com.promenar.nexara.ui.theme.NexaraMotion.sharedAxisXExit(
+                                forward = tabSwitch?.takeIf { page in it.leaving }?.forward ?: false,
+                            ),
                         ) {
                             when (page) {
                                 ChatPage.Explorer -> ResourceExplorerPage(

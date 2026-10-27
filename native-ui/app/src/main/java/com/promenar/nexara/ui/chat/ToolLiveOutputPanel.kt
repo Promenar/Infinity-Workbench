@@ -54,7 +54,7 @@ internal fun ToolLiveOutputPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest, RoundedCornerShape(10.dp))
             .padding(start = 10.dp, end = 4.dp, bottom = 10.dp)
             .testTag("CHAT_TOOL_LIVE_OUTPUT"),
         verticalArrangement = Arrangement.spacedBy(2.dp),

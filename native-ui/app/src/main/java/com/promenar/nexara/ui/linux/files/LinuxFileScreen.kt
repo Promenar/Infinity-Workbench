@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -90,6 +89,7 @@ import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 超过此长度的文本只为开头部分上色，其余保持纯文本，避免大文件卡顿。 */
 private const val HIGHLIGHT_MAX_CHARS = 64 * 1024
@@ -269,8 +269,8 @@ private fun LinuxFileMoreMenu(state: LinuxFileUiState, actions: LinuxFileActions
             ),
         ) { Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.linux_files_more), modifier = Modifier.size(20.dp)) }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.linux_file_reload)) }, onClick = { expanded = false; actions.onReload() })
-            DropdownMenuItem(
+            NexaraMenuItem(text = { Text(stringResource(R.string.linux_file_reload)) }, onClick = { expanded = false; actions.onReload() })
+            NexaraMenuItem(
                 text = { Text(stringResource(R.string.linux_files_chmod)) },
                 enabled = state.entry?.type.let { it != null && it != LinuxFileType.SYMLINK },
                 onClick = { expanded = false; actions.onChmod() },

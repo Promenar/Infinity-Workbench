@@ -46,9 +46,10 @@ open class SessionRepository(
     }
 
     override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
-        val now = System.currentTimeMillis()
         val existing = sessionDao.getById(id) ?: return
-        val updated = applyPartialUpdates(existing.copy(updatedAt = now), updates)
+        // updatedAt 是首页排序与显示的最近消息时间：只随新消息推进，草稿、置顶、运行状态等元数据不改它。
+        val touched = if ("lastMessage" in updates) existing.copy(updatedAt = System.currentTimeMillis()) else existing
+        val updated = applyPartialUpdates(touched, updates)
         if (updates.containsKey("summary")) {
             val summary = updates["summary"]
             require(summary == null || summary is String) { "上下文摘要类型无效" }

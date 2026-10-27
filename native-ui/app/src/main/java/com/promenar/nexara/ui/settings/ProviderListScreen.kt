@@ -29,8 +29,6 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +72,7 @@ import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 @Composable
 fun ProviderListScreen(
@@ -263,7 +262,7 @@ private fun UnsupportedProviderCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteOutline,
@@ -427,7 +426,7 @@ private fun ProviderCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Edit,
@@ -452,7 +451,7 @@ private fun ProviderCard(
                             .semantics { role = Role.Button },
                     )
                     if (onDelete != null) {
-                        DropdownMenuItem(
+                        NexaraMenuItem(
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Rounded.DeleteOutline,

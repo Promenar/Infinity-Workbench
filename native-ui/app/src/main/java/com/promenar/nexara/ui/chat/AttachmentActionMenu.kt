@@ -10,10 +10,16 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,11 +52,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 
-private const val MenuAnimationDurationMillis = 160
+private const val MenuAnimationDurationMillis = 180
 
 /** 锚定在父布局内的附件动作菜单；位置参数均使用父布局局部坐标。 */
 @Composable
@@ -98,45 +105,39 @@ internal fun AttachmentActionMenu(
                 AnimatedVisibility(
                     visibleState = visibilityState,
                     enter = fadeIn(tween(MenuAnimationDurationMillis)) + scaleIn(
-                        animationSpec = tween(MenuAnimationDurationMillis),
+                        animationSpec = tween(MenuAnimationDurationMillis, easing = NexaraMotion.EmphasizedDecelerate),
+                        initialScale = 0.86f,
                         transformOrigin = transformOrigin,
                     ) + slideInVertically(tween(MenuAnimationDurationMillis)) { anchorTravel },
                     exit = fadeOut(tween(MenuAnimationDurationMillis)) + scaleOut(
-                        animationSpec = tween(MenuAnimationDurationMillis),
+                        animationSpec = tween(MenuAnimationDurationMillis, easing = NexaraMotion.EmphasizedAccelerate),
+                        targetScale = 0.94f,
                         transformOrigin = transformOrigin,
                     ) + slideOutVertically(tween(MenuAnimationDurationMillis)) { anchorTravel },
                 ) {
                     Surface(
                         modifier = Modifier
-                            .widthIn(min = 180.dp, max = 320.dp)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(16.dp)
-                            )
+                            .widthIn(min = 220.dp, max = 320.dp)
                             .testTag(UiTags.CHAT_ATTACHMENT_MENU),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
-                        shadowElevation = 6.dp,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        shadowElevation = 8.dp,
                         tonalElevation = 0.dp,
                     ) {
                         Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                                .width(IntrinsicSize.Max)
+                                .padding(6.dp)
                                 .verticalScroll(rememberScrollState()),
                         ) {
                             AttachmentAction(
                                 label = stringResource(R.string.chat_menu_attach_image),
-                                icon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Image,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
+                                hint = stringResource(R.string.chat_menu_attach_image_hint),
+                                icon = Icons.Rounded.Image,
+                                tileColor = MaterialTheme.colorScheme.primaryContainer,
+                                iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 enabled = enabled,
                                 modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_IMAGE),
                                 onClick = {
@@ -146,14 +147,10 @@ internal fun AttachmentActionMenu(
                             )
                             AttachmentAction(
                                 label = stringResource(R.string.chat_menu_attach_document),
-                                icon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Description,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
+                                hint = stringResource(R.string.chat_menu_attach_document_hint),
+                                icon = Icons.Rounded.Description,
+                                tileColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
                                 enabled = enabled,
                                 modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT),
                                 onClick = {
@@ -198,10 +195,14 @@ internal fun AttachmentActionMenu(
     }
 }
 
+/** 一项附件来源：彩色图标块、名称与一行说明，10dp 圆角按压高亮。 */
 @Composable
 private fun AttachmentAction(
     label: String,
-    icon: @Composable () -> Unit,
+    hint: String,
+    icon: ImageVector,
+    tileColor: Color,
+    iconColor: Color,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -209,17 +210,21 @@ private fun AttachmentAction(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        icon()
-        Text(
-            text = label,
-            style = NexaraTypography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 12.dp),
-        )
+        Box(
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(tileColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.padding(start = 12.dp, end = 8.dp)) {
+            Text(text = label, style = NexaraTypography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(text = hint, style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }

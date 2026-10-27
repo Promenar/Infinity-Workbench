@@ -102,4 +102,7 @@
     <string name="agent_jobs_log_truncated">只显示最近的输出。</string>
     <string name="agent_jobs_log_failed">无法读取日志。</string>
     <string name="agent_jobs_log_empty">暂无输出。</string>
+    <string name="agent_jobs_group_running">运行中 · %1$d</string>
+    <string name="agent_jobs_group_finished">已结束 · %1$d</string>
+    <string name="agent_jobs_exit_badge">退出 %1$d</string>
 </resources>

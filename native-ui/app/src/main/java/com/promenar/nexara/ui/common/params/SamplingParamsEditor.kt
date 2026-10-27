@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -107,6 +106,7 @@ import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 参数值来自哪一层：本层写入、沿用上一层（会话沿用助手），或不发送、由模型按默认处理。 */
 enum class ParamSource { OWN, INHERITED, DEFAULT }
@@ -289,14 +289,14 @@ fun ParameterSchemeSection(
                             },
                             menu = { dismiss ->
                                 if (selected && selection.modified) {
-                                    DropdownMenuItem(text = { Text(stringResource(R.string.params_scheme_revert)) }, onClick = {
+                                    NexaraMenuItem(text = { Text(stringResource(R.string.params_scheme_revert)) }, onClick = {
                                         dismiss(); own { actions.onApplyScheme(scheme) }
                                     })
                                 }
-                                DropdownMenuItem(text = { Text(stringResource(R.string.params_scheme_rename)) }, onClick = {
+                                NexaraMenuItem(text = { Text(stringResource(R.string.params_scheme_rename)) }, onClick = {
                                     dismiss(); naming = SchemeNaming.Rename(scheme)
                                 })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.params_scheme_delete), color = MaterialTheme.colorScheme.error) }, onClick = {
+                                NexaraMenuItem(text = { Text(stringResource(R.string.params_scheme_delete), color = MaterialTheme.colorScheme.error) }, onClick = {
                                     dismiss(); deleting = scheme
                                 })
                             },

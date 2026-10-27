@@ -21,6 +21,6 @@ internal fun browserAddressTarget(input: String): String? {
     return when {
         WEB_URL.matches(text) -> text
         BARE_HOST.matches(text) -> "https://$text"
-        else -> SEARCH_URL + URLEncoder.encode(text, Charsets.UTF_8)
+        else -> SEARCH_URL + URLEncoder.encode(text, "UTF-8")
     }
 }

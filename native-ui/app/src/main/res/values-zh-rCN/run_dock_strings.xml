@@ -35,4 +35,8 @@
     <string name="state_board_tag_recent">刚更新</string>
     <string name="state_board_manual_note">你改过的项，Agent 再更新前会先看到你的修改。</string>
     <string name="state_board_edit_note">状态由 Agent 维护，点按任一项可以修改。</string>
+    <plurals name="run_detail_jobs_running">
+        <item quantity="other">%1$d 个后台任务运行中</item>
+    </plurals>
+    <string name="run_detail_jobs_finished">%1$d 个已结束</string>
 </resources>

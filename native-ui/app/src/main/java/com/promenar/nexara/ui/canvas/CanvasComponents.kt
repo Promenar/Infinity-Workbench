@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +70,9 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.rememberNexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuTouch
 
 /**
  * 本轮产物区的画布卡：上方灰底预览区里放一张按手机宽度排版后缩小的缩略图，下方一行标题与版本路径。
@@ -93,6 +95,7 @@ fun CanvasCard(
     onRevealInWorkspace: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     val hasMenu = onOpenLatest != null || onCopySource != null || onRevealInWorkspace != null
     val shape = RoundedCornerShape(16.dp)
     val newer = metadata.currentVersion > version
@@ -104,6 +107,7 @@ fun CanvasCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(shape)
+                .nexaraMenuTouch(menuTouch)
                 .combinedClickable(
                     onClickLabel = stringResource(R.string.canvas_open),
                     onLongClickLabel = if (hasMenu) stringResource(R.string.canvas_card_more_actions) else null,
@@ -181,7 +185,7 @@ fun CanvasCard(
                 }
             }
         }
-        NexaraDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }, modifier = Modifier.testTag(UiTags.CANVAS_CARD_MENU)) {
+        NexaraDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }, touch = menuTouch, modifier = Modifier.testTag(UiTags.CANVAS_CARD_MENU)) {
             if (newer && onOpenLatest != null) {
                 CanvasCardMenuItem(R.string.canvas_card_open_latest, Icons.Rounded.OpenInFull) { menuExpanded = false; onOpenLatest() }
             }
@@ -321,7 +325,7 @@ private fun CanvasNewerTag(currentVersion: Int) {
 
 @Composable
 private fun CanvasCardMenuItem(label: Int, icon: ImageVector, onClick: () -> Unit) {
-    DropdownMenuItem(
+    NexaraMenuItem(
         text = { Text(stringResource(label), style = NexaraTypography.labelLarge) },
         leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(NexaraSpacing.RowIconSize)) },
         onClick = onClick,
@@ -558,7 +562,7 @@ private fun CanvasVersionSelector(
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (metadata != null) {
-                DropdownMenuItem(
+                NexaraMenuItem(
                     text = {
                         Text(
                             text = stringResource(R.string.canvas_follow_latest, metadata.currentVersion),
@@ -574,7 +578,7 @@ private fun CanvasVersionSelector(
                         .semantics { selected = selectedVersion == null },
                 )
                 metadata.versions.distinct().sortedDescending().forEach { version ->
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         text = {
                             Text(
                                 text = stringResource(R.string.canvas_history_version, version),

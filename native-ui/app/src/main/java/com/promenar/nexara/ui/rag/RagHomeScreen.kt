@@ -91,8 +91,6 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -162,6 +160,7 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
 import java.text.SimpleDateFormat
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 internal enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
 
@@ -612,7 +611,7 @@ private fun RagAddAction(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 leadingIcon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                 text = { Text(stringResource(R.string.rag_folder_upload), style = NexaraTypography.labelLarge) },
                 onClick = {
@@ -621,7 +620,7 @@ private fun RagAddAction(
                 },
                 modifier = Modifier.testTag(UiTags.RAG_HOME_UPLOAD),
             )
-            DropdownMenuItem(
+            NexaraMenuItem(
                 leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null, modifier = Modifier.size(20.dp)) },
                 text = { Text(stringResource(R.string.rag_home_new_folder_title), style = NexaraTypography.labelLarge) },
                 onClick = {
@@ -681,7 +680,7 @@ internal fun RagWorkspaceSourceSelector(
                 onDismissRequest = { expanded = false },
             ) {
                 sources.forEach { source ->
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Storage,

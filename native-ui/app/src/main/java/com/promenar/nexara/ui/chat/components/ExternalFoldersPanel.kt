@@ -45,7 +45,6 @@ import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.SdStorage
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,6 +125,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 挂载状态按当前会话隔离；管理、添加、浏览与回收区在同一个全高面板内逐页切换。 */
 @Composable
@@ -610,23 +610,23 @@ private fun ExternalMountRow(
                     Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.mount_more_actions, mount.alias))
                 }
                 NexaraDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         text = { Text(stringResource(R.string.mount_browse)) },
                         leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
                         enabled = !unavailable,
                         onClick = { menuOpen = false; onBrowse(mount) },
                     )
-                    if (mount.sourceType == "saf_tree") DropdownMenuItem(
+                    if (mount.sourceType == "saf_tree") NexaraMenuItem(
                         text = { Text(stringResource(R.string.mount_reauthorize)) },
                         leadingIcon = { Icon(Icons.Rounded.Key, null) },
                         onClick = { menuOpen = false; onReauthorize(mount) },
                     )
-                    if (mount.sourceType == "real_path" && onGrantRealPath != null) DropdownMenuItem(
+                    if (mount.sourceType == "real_path" && onGrantRealPath != null) NexaraMenuItem(
                         text = { Text(stringResource(R.string.mount_grant_access)) },
                         leadingIcon = { Icon(Icons.Rounded.Key, null) },
                         onClick = { menuOpen = false; onGrantRealPath() },
                     )
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         text = { Text(stringResource(R.string.mount_remove), color = MaterialTheme.colorScheme.error) },
                         leadingIcon = { Icon(Icons.Rounded.LinkOff, null, tint = MaterialTheme.colorScheme.error) },
                         onClick = { menuOpen = false; onRemove(mount) },

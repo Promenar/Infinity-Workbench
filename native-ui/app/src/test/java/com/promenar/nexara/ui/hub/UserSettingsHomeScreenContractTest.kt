@@ -173,7 +173,7 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).doesNotContain("ListItem(")
         assertThat(providerListSource).contains("Icons.Rounded.MoreVert")
         assertThat(providerListSource).contains("DropdownMenu(")
-        assertThat(providerListSource).contains("DropdownMenuItem(")
+        assertThat(providerListSource).contains("NexaraMenuItem(")
         assertThat(providerListSource).contains("UiTags.settingsProviderCard(")
         assertThat(providerListSource).contains("UiTags.settingsProviderActions(")
         assertThat(providerListSource).contains("settings_provider_status_summary")

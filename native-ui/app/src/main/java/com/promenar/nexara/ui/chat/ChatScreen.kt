@@ -104,8 +104,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -194,6 +192,13 @@ import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraPopover
+import com.promenar.nexara.ui.common.NexaraPopoverSide
+import com.promenar.nexara.ui.common.NexaraPopoverAlign
+import androidx.compose.material3.FilledTonalButton
+import com.promenar.nexara.ui.theme.nexaraDomainColors
+import androidx.compose.material.icons.rounded.Compress
 
 /** 未配置嵌入模型或无检索范围的历史轨迹表示检索未执行，不单独构成检索步骤。 */
 internal fun Message.hasRagArtifacts(): Boolean =
@@ -1273,7 +1278,16 @@ fun ChatScreenContent(
                             onCollapse = { actions.onSetInspectorPages(emptyList()) },
                             onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
                         ) {
-                            when (shownRoot) {
+                            // 跨组换页签整体横向过渡；同组（文件、Git、浏览器）由页面层自己过渡，页面层只组合一份。
+                            AnimatedContent(
+                                targetState = shownRoot,
+                                contentKey = { it.inspectorGroup },
+                                transitionSpec = { NexaraMotion.sharedAxisX(forward = inspectorTabForward(initialState, targetState)) },
+                                label = "inspector_tab",
+                                modifier = Modifier.fillMaxSize(),
+                            ) { root ->
+                            Box(Modifier.fillMaxSize()) {
+                            when (root) {
                                 ChatPage.Run -> ChatInspectorRunTab(
                                     pendingApprovals = pendingApprovals,
                                     onJumpToApproval = {
@@ -1310,6 +1324,8 @@ fun ChatScreenContent(
                                     )
                                 }
                                 ChatPage.Explorer, ChatPage.Git, ChatPage.Browser -> inspectorPageContent()
+                            }
+                            }
                             }
                         }
                     }
@@ -1604,56 +1620,62 @@ private fun TokenIndicator(
     onManualSummary: () -> Unit,
     isCompressing: Boolean,
 ) {
-    var showTooltip by remember { mutableStateOf(false) }
+    var showPanel by remember { mutableStateOf(false) }
+    val anchor = rememberNexaraPopoverAnchor()
 
     val progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f)
     val percentage = (state.used.toDouble() / state.max.coerceAtLeast(1) * 100).toInt()
     val description = stringResource(R.string.chat_context_usage_percent, percentage)
-    Box {
-        Row(
-            modifier = Modifier.height(40.dp).clickable(role = Role.Button) { showTooltip = !showTooltip }
-                .semantics { contentDescription = description }
-                .testTag(UiTags.CHAT_TOKEN_INDICATOR)
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            ContextCircularIndicator(
-                progress = progress,
-                color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = stringResource(R.string.chat_context_percentage, percentage),
-                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-
-        if (showTooltip) {
-            DropdownMenu(
-                expanded = showTooltip,
-                onDismissRequest = { showTooltip = false },
-                offset = DpOffset(x = (-60).dp, y = (-8).dp),
-                modifier = Modifier.width(300.dp),
-                shape = MaterialTheme.shapes.large,
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = NexaraElevation.Level2,
-            ) {
-                ContextUsagePanel(
-                    state = state,
-                    isCompressing = isCompressing,
-                    onManualSummary = {
-                        onManualSummary()
-                        showTooltip = false
-                    },
-                )
-            }
-        }
+    Row(
+        modifier = Modifier.height(40.dp)
+            .nexaraPopoverAnchor(anchor)
+            .clickable(role = Role.Button) { if (!anchor.consumeRecentDismiss()) showPanel = !showPanel }
+            .semantics { contentDescription = description }
+            .testTag(UiTags.CHAT_TOKEN_INDICATOR)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ContextCircularIndicator(
+            progress = progress,
+            color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = stringResource(R.string.chat_context_percentage, percentage),
+            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+    // 贴着圆环向上弹出，从圆环处长出；不再用下拉菜单承载面板。
+    NexaraPopover(
+        show = showPanel,
+        anchor = anchor,
+        onDismissRequest = { showPanel = false },
+        side = NexaraPopoverSide.Above,
+        align = NexaraPopoverAlign.Auto,
+        width = 320.dp,
+        title = stringResource(R.string.chat_context_usage_title),
+    ) {
+        ContextUsagePanel(
+            state = state,
+            isCompressing = isCompressing,
+            onManualSummary = {
+                onManualSummary()
+                showPanel = false
+            },
+        )
     }
 }
 
+/** 上下文构成的一段：名称、Token 数与在构成条上的颜色。 */
+private data class ContextSegment(val label: String, val tokens: Int, val color: Color)
+
+/**
+ * 上下文用量面板：左侧环形总览（带自动压缩阈值刻度），右侧写清已用、上限与剩余；
+ * 下方一条分色构成条与图例列出系统指令、历史摘要、对话与知识增强，最后是立即压缩。
+ */
 @Composable
 internal fun ContextUsagePanel(
     state: ChatViewModel.TokenIndicatorState,
@@ -1665,9 +1687,14 @@ internal fun ContextUsagePanel(
     val threshold = state.autoCompactionThreshold.toFloat().coerceIn(0.5f, 0.95f)
     val thresholdLabel = stringResource(R.string.chat_context_threshold, (threshold * 100).toInt())
     val usageLabel = stringResource(R.string.chat_context_usage_percent, (progress * 100).toInt())
-    val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    val progressColor = if (progress > threshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-    val markerColor = MaterialTheme.colorScheme.onSurface
+    val scheme = MaterialTheme.colorScheme
+    val progressColor = if (progress > threshold) scheme.tertiary else scheme.primary
+    val segments = listOf(
+        ContextSegment(stringResource(R.string.chat_context_label_system), state.systemTokens, scheme.secondary),
+        ContextSegment(stringResource(R.string.chat_context_label_summary), state.summaryTokens, scheme.tertiary),
+        ContextSegment(stringResource(R.string.chat_context_label_active), state.activeTokens, scheme.primary),
+        ContextSegment(stringResource(R.string.chat_context_label_rag), state.ragTokens, MaterialTheme.nexaraDomainColors.success),
+    )
     val compressionUnavailableReason = when {
         isCompressing -> stringResource(R.string.chat_context_compress_unavailable_running)
         state.isGenerating -> stringResource(R.string.chat_context_compress_unavailable_generating)
@@ -1675,84 +1702,143 @@ internal fun ContextUsagePanel(
     }
     Column(
         modifier = modifier.padding(NexaraSpacing.Large).testTag("context_usage_panel"),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
-        Text(
-            stringResource(R.string.chat_context_usage_title),
-            style = NexaraTypography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = stringResource(
-                R.string.chat_context_usage_total,
-                ChatViewModel.formatTokenCount(state.used),
-                ChatViewModel.formatTokenCount(state.max),
-            ),
-            style = NexaraTypography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Canvas(
-            modifier = Modifier.fillMaxWidth().height(NexaraSpacing.Large).semantics {
-                contentDescription = thresholdLabel
-                stateDescription = usageLabel
-            },
-        ) {
-            val inset = NexaraSpacing.XSmall.toPx()
-            val trackWidth = (size.width - inset * 2).coerceAtLeast(0f)
-            val trackY = size.height / 2
-            val strokeWidth = NexaraSpacing.Small.toPx()
-            drawLine(
-                color = trackColor,
-                start = Offset(inset, trackY),
-                end = Offset(inset + trackWidth, trackY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round,
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
+            ContextUsageRing(
+                progress = progress,
+                threshold = threshold,
+                color = progressColor,
+                label = stringResource(R.string.chat_context_percentage, (progress * 100).toInt()),
+                modifier = Modifier.size(64.dp).semantics {
+                    contentDescription = thresholdLabel
+                    stateDescription = usageLabel
+                },
             )
-            if (progress > 0f) {
-                drawLine(
-                    color = progressColor,
-                    start = Offset(inset, trackY),
-                    end = Offset(inset + trackWidth * progress, trackY),
-                    strokeWidth = strokeWidth,
-                    cap = StrokeCap.Round,
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    stringResource(R.string.chat_context_usage_title),
+                    style = NexaraTypography.labelMedium,
+                    color = scheme.onSurfaceVariant,
                 )
+                Text(
+                    text = stringResource(
+                        R.string.chat_context_usage_total,
+                        ChatViewModel.formatTokenCount(state.used),
+                        ChatViewModel.formatTokenCount(state.max),
+                    ),
+                    style = NexaraTypography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                    color = scheme.onSurface,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.chat_context_remaining,
+                        ChatViewModel.formatTokenCount((state.max - state.used).coerceAtLeast(0)),
+                    ),
+                    style = NexaraTypography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+                Text(text = thresholdLabel, style = NexaraTypography.bodySmall, color = scheme.onSurfaceVariant)
             }
-            val thresholdX = inset + trackWidth * threshold
-            drawLine(
-                color = markerColor,
-                start = Offset(thresholdX, 0f),
-                end = Offset(thresholdX, size.height),
-                strokeWidth = 2.dp.toPx(),
+        }
+        ContextCompositionBar(segments = segments, max = state.max)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            segments.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
+                    pair.forEach { segment -> ContextLegendItem(segment, Modifier.weight(1f)) }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        // 折叠与保留各占一行，窄面板里也不会在词中间断行。
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = stringResource(R.string.chat_context_folded, state.foldedToolResults),
+                style = NexaraTypography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.chat_context_keep_recent, state.keepRecentTurns),
+                style = NexaraTypography.bodySmall,
+                color = scheme.onSurfaceVariant,
             )
         }
-        Text(
-            text = thresholdLabel,
-            style = NexaraTypography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
-        TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
-        TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
-        TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
-        HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.XSmall))
-        TokenDetailRow(stringResource(R.string.chat_context_label_folded_tools), state.foldedToolResults)
-        Button(
+        FilledTonalButton(
             onClick = onManualSummary,
             enabled = compressionUnavailableReason == null,
+            shape = CircleShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag("context_usage_compact_now"),
         ) {
+            Icon(Icons.Rounded.Compress, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(NexaraSpacing.Small))
             Text(stringResource(R.string.chat_context_btn_compress))
         }
         if (compressionUnavailableReason != null) {
             Text(
                 text = compressionUnavailableReason,
                 style = NexaraTypography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = scheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/** 环形总览：底环、用量弧与一道自动压缩阈值刻度，中间写百分比。 */
+@Composable
+private fun ContextUsageRing(progress: Float, threshold: Float, color: Color, label: String, modifier: Modifier = Modifier) {
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val marker = MaterialTheme.colorScheme.onSurface
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 7.dp.toPx()
+            val inset = stroke / 2
+            val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+            val topLeft = Offset(inset, inset)
+            drawArc(track, startAngle = 0f, sweepAngle = 360f, useCenter = false, topLeft = topLeft, size = arcSize, style = Stroke(stroke))
+            if (progress > 0f) {
+                drawArc(color, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false, topLeft = topLeft, size = arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+            }
+            val angle = Math.toRadians((-90.0 + 360.0 * threshold))
+            val radius = size.minDimension / 2
+            val outer = Offset(center.x + (radius * kotlin.math.cos(angle)).toFloat(), center.y + (radius * kotlin.math.sin(angle)).toFloat())
+            val inner = Offset(center.x + ((radius - stroke) * kotlin.math.cos(angle)).toFloat(), center.y + ((radius - stroke) * kotlin.math.sin(angle)).toFloat())
+            drawLine(marker, inner, outer, strokeWidth = 1.5.dp.toPx(), cap = StrokeCap.Round)
+        }
+        Text(label, style = NexaraTypography.labelLarge.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** 分色构成条：各段按占上限的比例排开，未用部分是底色。 */
+@Composable
+private fun ContextCompositionBar(segments: List<ContextSegment>, max: Int) {
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    Canvas(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)) {
+        drawRect(track)
+        var x = 0f
+        val total = max.coerceAtLeast(1).toFloat()
+        segments.forEach { segment ->
+            val width = size.width * (segment.tokens / total).coerceIn(0f, 1f)
+            if (width > 0f) {
+                drawRect(segment.color, topLeft = Offset(x, 0f), size = androidx.compose.ui.geometry.Size(width.coerceAtMost(size.width - x), size.height))
+                x += width
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContextLegendItem(segment: ContextSegment, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(segment.color))
+        Text(segment.label, style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(
+            ChatViewModel.formatTokenCount(segment.tokens),
+            style = NexaraTypography.bodySmall.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -1799,17 +1885,6 @@ internal fun ContextCompactionFeedback(
                 Text(stringResource(R.string.common_dismiss))
             }
         }
-    }
-}
-
-@Composable
-private fun TokenDetailRow(label: String, value: Int) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-    ) {
-        Text(label, modifier = Modifier.weight(1f), style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = NexaraMonospace), color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -2022,14 +2097,14 @@ fun ChatTopBar(
                     minWidth = 190.dp,
                 ) {
                     onCanvases?.let { open ->
-                        DropdownMenuItem(
+                        NexaraMenuItem(
                             text = { Text(stringResource(R.string.canvas_title), style = NexaraTypography.labelLarge) },
                             leadingIcon = { Icon(Icons.Rounded.Description, contentDescription = null) },
                             modifier = Modifier.testTag(UiTags.CANVAS_ENTRY),
                             onClick = { showMenu = false; open() },
                         )
                     }
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Tune,
@@ -2045,7 +2120,7 @@ fun ChatTopBar(
                             onSettings()
                         }
                     )
-                    if (runMode != null) DropdownMenuItem(
+                    if (runMode != null) NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Terminal,
@@ -2066,7 +2141,7 @@ fun ChatTopBar(
                             onRunMode()
                         }
                     )
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Psychology,
@@ -2081,7 +2156,7 @@ fun ChatTopBar(
                             onSessionPrompt()
                         }
                     )
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.CleaningServices,
@@ -2100,7 +2175,7 @@ fun ChatTopBar(
                         modifier = Modifier.padding(vertical = 4.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Edit,
@@ -2115,7 +2190,7 @@ fun ChatTopBar(
                             onRename()
                         }
                     )
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteForever,

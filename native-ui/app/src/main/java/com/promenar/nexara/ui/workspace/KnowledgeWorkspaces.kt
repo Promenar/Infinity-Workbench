@@ -29,7 +29,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -85,6 +84,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 private const val TEXT_PREVIEW_BYTES = 256 * 1024
 
@@ -342,12 +342,12 @@ fun KnowledgeWorkspaceListContent(
                             Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.workspace_kb_more, workspace.displayName))
                         }
                         NexaraDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(
+                            NexaraMenuItem(
                                 text = { Text(stringResource(R.string.workspace_kb_rename)) },
                                 leadingIcon = { Icon(Icons.Rounded.DriveFileRenameOutline, null) },
                                 onClick = { menu = false; onRename(workspace) },
                             )
-                            DropdownMenuItem(
+                            NexaraMenuItem(
                                 text = { Text(stringResource(R.string.workspace_kb_delete), color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; onDelete(workspace) },

@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GppGood
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GppMaybe
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +29,7 @@ import com.promenar.nexara.ui.common.ExecutionMode
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 浮岛工具行上的执行模式切换：只显示盾牌图标，完全访问时换成警示图标与第三色，点按弹出两种模式。 */
 @Composable
@@ -56,7 +56,7 @@ internal fun ExecutionModeButton(
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             ExecutionMode.entries.forEach { option ->
-                DropdownMenuItem(
+                NexaraMenuItem(
                     text = {
                         // 浮层只放标题和一行短说明，完整解释在“Agent 可达范围”面板。
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -71,7 +71,7 @@ internal fun ExecutionModeButton(
                     },
                     leadingIcon = { Icon(option.icon(), contentDescription = null, tint = option.tint()) },
                     trailingIcon = if (option == mode) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                     onClick = {
                         expanded = false
                         if (option != mode) onSelect(option)

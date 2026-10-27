@@ -111,4 +111,7 @@
     <string name="agent_jobs_log_truncated">Showing the most recent output only.</string>
     <string name="agent_jobs_log_failed">Could not read the log.</string>
     <string name="agent_jobs_log_empty">No output yet.</string>
+    <string name="agent_jobs_group_running">Running · %1$d</string>
+    <string name="agent_jobs_group_finished">Finished · %1$d</string>
+    <string name="agent_jobs_exit_badge">Exit %1$d</string>
 </resources>

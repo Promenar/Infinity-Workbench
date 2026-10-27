@@ -1767,4 +1767,9 @@
     <plurals name="chat_runtime_changes_more">
         <item quantity="other">另有 %d 项</item>
     </plurals>
+    <string name="chat_context_remaining">还可用 %1$s</string>
+    <string name="chat_context_folded">已折叠 %1$d 条工具结果</string>
+    <string name="chat_context_keep_recent">最近 %1$d 轮始终保留</string>
+    <string name="chat_menu_attach_image_hint">从相册选择</string>
+    <string name="chat_menu_attach_document_hint">PDF、Word、文本等</string>
 </resources>

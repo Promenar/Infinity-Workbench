@@ -69,7 +69,7 @@ class ChatRenderStateContractTest {
     }
 
     @Test
-    fun `Token 明细使用单层 Material3 DropdownMenu`() {
+    fun `上下文用量面板贴着圆环以单层弹出层展示`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
         }
@@ -80,15 +80,11 @@ class ChatRenderStateContractTest {
             .substringAfter("private fun TokenIndicator(")
             .substringBefore("internal fun ContextUsagePanel(")
 
-        assertThat(tokenIndicator).contains("DropdownMenu(")
-        assertThat(tokenIndicator).doesNotContain("shapes.copy(extraSmall")
-        assertThat(tokenIndicator).doesNotContain("RoundedCornerShape(24.dp)")
+        assertThat(tokenIndicator).contains("NexaraPopover(")
+        assertThat(tokenIndicator).contains("nexaraPopoverAnchor(anchor)")
+        assertThat(tokenIndicator).contains("consumeRecentDismiss()")
+        assertThat(tokenIndicator).doesNotContain("DropdownMenu(")
         assertThat(tokenIndicator).doesNotContain("Surface(")
-        assertThat(tokenIndicator).doesNotContain("background(Color.Transparent)")
-        assertThat(tokenIndicator).contains(
-            "containerColor = MaterialTheme.colorScheme.surfaceContainer",
-        )
-        assertThat(tokenIndicator).contains("tonalElevation = NexaraElevation.Level2")
         assertThat(tokenIndicator).contains("ContextUsagePanel(")
     }
 

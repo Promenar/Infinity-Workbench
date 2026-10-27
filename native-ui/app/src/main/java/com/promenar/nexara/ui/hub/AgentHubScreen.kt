@@ -65,6 +65,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.common.rememberNexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuHost
+import com.promenar.nexara.ui.common.NexaraMenuDivider
 
 // =====================================================================================
 // Route —— 拥有 ViewModel、localized preset display 映射与 overlay 状态
@@ -701,7 +707,7 @@ private fun HubNewChatAction(
                 modifier = Modifier.padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
             )
             agents.forEach { item ->
-                DropdownMenuItem(
+                NexaraMenuItem(
                     leadingIcon = {
                         AgentAvatar(
                             icon = agentIconVector(item.agent.icon),
@@ -725,7 +731,7 @@ private fun HubNewChatAction(
                     modifier = Modifier.testTag(UiTags.hubNewChatAgent(item.agent.id)),
                 )
             }
-            DropdownMenuItem(
+            NexaraMenuItem(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Add,
@@ -757,6 +763,7 @@ private fun HubSessionRow(
     startIndent: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     val pinLabel = stringResource(if (session.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin)
     val deleteLabel = stringResource(R.string.shared_btn_delete)
     val pinnedState = stringResource(R.string.sessions_tag_pinned)
@@ -778,6 +785,8 @@ private fun HubSessionRow(
                         CustomAccessibilityAction(deleteLabel) { onRequestDelete(); true },
                     )
                 }
+                .nexaraMenuHost(menuExpanded)
+                .nexaraMenuTouch(menuTouch)
                 .combinedClickable(
                     onClick = onOpen,
                     onLongClick = { menuExpanded = true },
@@ -823,11 +832,13 @@ private fun HubSessionRow(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
             offset = androidx.compose.ui.unit.DpOffset(NexaraSpacing.RowHorizontal, 0.dp),
+            touch = menuTouch,
         ) {
             HubPinMenuItem(isPinned = session.isPinned) {
                 menuExpanded = false
                 onTogglePin()
             }
+            NexaraMenuDivider()
             HubDeleteMenuItem {
                 menuExpanded = false
                 onRequestDelete()
@@ -848,6 +859,7 @@ private fun HubAgentRow(
 ) {
     val agent = entry.item.agent
     var menuExpanded by remember { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     val pinLabel = stringResource(if (agent.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin)
     val editLabel = stringResource(R.string.shared_btn_edit)
     val deleteLabel = stringResource(R.string.shared_btn_delete)
@@ -867,6 +879,8 @@ private fun HubAgentRow(
                         CustomAccessibilityAction(deleteLabel) { onDelete(); true },
                     )
                 }
+                .nexaraMenuHost(menuExpanded)
+                .nexaraMenuTouch(menuTouch)
                 .combinedClickable(
                     onClick = onToggleExpand,
                     onLongClick = { menuExpanded = true },
@@ -911,12 +925,13 @@ private fun HubAgentRow(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
             offset = androidx.compose.ui.unit.DpOffset(NexaraSpacing.RowHorizontal, 0.dp),
+            touch = menuTouch,
         ) {
             HubPinMenuItem(isPinned = agent.isPinned, modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)) {
                 menuExpanded = false
                 onTogglePin()
             }
-            DropdownMenuItem(
+            NexaraMenuItem(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
@@ -932,6 +947,7 @@ private fun HubAgentRow(
                 },
                 modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
             )
+            NexaraMenuDivider()
             HubDeleteMenuItem(modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_DELETE)) {
                 menuExpanded = false
                 onDelete()
@@ -1081,7 +1097,7 @@ private fun HubRowLayout(
 
 @Composable
 private fun HubPinMenuItem(isPinned: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    DropdownMenuItem(
+    NexaraMenuItem(
         leadingIcon = {
             Icon(
                 imageVector = Icons.Rounded.PushPin,
@@ -1103,7 +1119,7 @@ private fun HubPinMenuItem(isPinned: Boolean, modifier: Modifier = Modifier, onC
 
 @Composable
 private fun HubDeleteMenuItem(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    DropdownMenuItem(
+    NexaraMenuItem(
         leadingIcon = {
             Icon(
                 imageVector = Icons.Rounded.DeleteOutline,

@@ -139,6 +139,13 @@ class MessageManager(
 
     suspend fun addMessage(sessionId: String, message: Message) {
         messageRepository.insert(message, sessionId)
+        // 首页按最近消息时间排序；这笔记账失败不影响消息本身。
+        try {
+            sessionRepository.updatePartial(sessionId, mapOf("lastMessage" to message.content))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+        }
         store.update { state ->
             state.copy(
                 sessions = state.sessions.map { s ->
@@ -147,7 +154,8 @@ class MessageManager(
                         s.copy(
                             messages = s.messages + message,
                             lastMessage = message.content,
-                            time = timeFormatter.format(Date(message.createdAt))
+                            time = timeFormatter.format(Date(message.createdAt)),
+                            updatedAt = maxOf(s.updatedAt, message.createdAt),
                         )
                     } else s
                 }
@@ -171,6 +179,7 @@ class MessageManager(
                             messages = session.messages + message,
                             lastMessage = message.content,
                             time = timeFormatter.format(Date(message.createdAt)),
+                            updatedAt = maxOf(session.updatedAt, message.createdAt),
                         )
                     }
                 },

@@ -5,6 +5,8 @@ import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.EnterTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -105,19 +107,21 @@ fun NexaraAdaptivePaneHost(
 
 /**
  * 二级内容中的一层。层级按组合顺序叠放，后组合的在上；[top] 为 false 的层被上层遮住，不接收返回。
- * 推入时自右侧滑入，弹出时向右滑出；随宿主一起首次出现时不另做动画。
+ * 默认推入时自右侧滑入，弹出时向右滑出；[enter]/[exit] 可按场景替换（如检视器换页签）。随宿主一起首次出现时不另做动画。
  */
 @Composable
 fun BoxScope.NexaraPaneLevel(
     key: String,
     visible: Boolean,
     top: Boolean,
+    enter: EnterTransition = NexaraMotion.sharedAxisXEnter(forward = true),
+    exit: ExitTransition = NexaraMotion.sharedAxisXExit(forward = false),
     content: @Composable () -> Unit,
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = NexaraMotion.sharedAxisXEnter(forward = true),
-        exit = NexaraMotion.sharedAxisXExit(forward = false),
+        enter = enter,
+        exit = exit,
         modifier = Modifier.matchParentSize(),
     ) {
         Surface(

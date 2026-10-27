@@ -71,6 +71,12 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.theme.NexaraMotion
 
 // ─────────────────────────────── 后台任务面板 ───────────────────────────────
 
@@ -88,11 +94,16 @@ internal fun BackgroundJobsContent(
     modifier: Modifier = Modifier,
     liveOutput: @Composable (BackgroundJob) -> Unit = {},
 ) {
-    var expandedId by rememberSaveable { mutableStateOf(jobs.firstOrNull { !it.state.isTerminal }?.id) }
-    LazyColumn(modifier = modifier.fillMaxWidth().testTag(UiTags.BACKGROUND_JOBS_SHEET)) {
-        item(key = "header") {
-            SheetHeader(title = stringResource(R.string.agent_jobs_title)) {
-                if (!keepAliveAvailable) {
+    val groups = remember(jobs) { backgroundJobGroups(jobs) }
+    var expandedId by rememberSaveable { mutableStateOf(groups.running.firstOrNull()?.id) }
+    val toggle = { id: String -> expandedId = if (expandedId == id) null else id }
+    LazyColumn(
+        modifier = modifier.fillMaxWidth().testTag(UiTags.BACKGROUND_JOBS_SHEET),
+        contentPadding = PaddingValues(start = NexaraSpacing.Medium, end = NexaraSpacing.Medium, bottom = NexaraSpacing.Large),
+    ) {
+        if (!keepAliveAvailable) {
+            item(key = "limit") {
+                Row(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small), horizontalArrangement = Arrangement.End) {
                     ChannelLimitChip(
                         label = stringResource(R.string.agent_jobs_limit_label),
                         title = stringResource(R.string.agent_jobs_limit_title),
@@ -105,19 +116,180 @@ internal fun BackgroundJobsContent(
         if (jobs.isEmpty()) {
             item(key = "empty") { EmptyHint(Icons.Rounded.Terminal, stringResource(R.string.agent_jobs_empty)) }
         }
-        items(jobs, key = { it.id }) { job ->
-            BackgroundJobRow(
-                job = job,
-                nowMillis = nowMillis,
-                expanded = expandedId == job.id,
-                onToggle = { expandedId = if (expandedId == job.id) null else job.id },
-                onStop = { onStop(job.id) },
-                onOpenLog = job.logWorkspacePath?.let { path -> { onOpenLog(path) } },
-                liveOutput = { liveOutput(job) },
-            )
+        if (groups.running.isNotEmpty()) {
+            item(key = "running_label") { JobGroupLabel(stringResource(R.string.agent_jobs_group_running, groups.running.size)) }
+            items(groups.running, key = { it.id }) { job ->
+                RunningJobCard(
+                    job = job,
+                    nowMillis = nowMillis,
+                    expanded = expandedId == job.id,
+                    onToggle = { toggle(job.id) },
+                    onStop = { onStop(job.id) },
+                    onOpenLog = job.logWorkspacePath?.let { path -> { onOpenLog(path) } },
+                    liveOutput = { liveOutput(job) },
+                    modifier = Modifier.padding(bottom = NexaraSpacing.Small),
+                )
+            }
+        }
+        if (groups.finished.isNotEmpty()) {
+            item(key = "finished_label") { JobGroupLabel(stringResource(R.string.agent_jobs_group_finished, groups.finished.size)) }
+            item(key = "finished") {
+                Surface(shape = JobGroupShape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Column {
+                        groups.finished.forEachIndexed { index, job ->
+                            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            FinishedJobRow(
+                                job = job,
+                                nowMillis = nowMillis,
+                                expanded = expandedId == job.id,
+                                onToggle = { toggle(job.id) },
+                                onOpenLog = job.logWorkspacePath?.let { path -> { onOpenLog(path) } },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun JobGroupLabel(text: String) {
+    Text(
+        text,
+        style = NexaraTypography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = NexaraSpacing.XSmall, top = NexaraSpacing.Medium, bottom = NexaraSpacing.Small),
+    )
+}
+
+/** 运行中的任务：命令、执行环境与已运行时长，右侧停止；展开时下面是终端风格的实时输出与查看日志。 */
+@Composable
+private fun RunningJobCard(
+    job: BackgroundJob,
+    nowMillis: Long,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onOpenLog: (() -> Unit)?,
+    liveOutput: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = JobGroupShape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            Modifier
+                .clickable(role = Role.Button, onClick = onToggle)
+                .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Small, top = NexaraSpacing.Small, bottom = NexaraSpacing.Medium)
+                .testTag(UiTags.backgroundJob(job.id)),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(NexaraSpacing.Medium))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = job.summary,
+                        style = NexaraTypography.bodyMedium.copy(fontFamily = NexaraMonospace),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SmallTag(jobRunnerName(job), MaterialTheme.colorScheme.surfaceContainerHighest)
+                        Text(
+                            jobStateText(job, nowMillis),
+                            style = NexaraTypography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                OutlinedIconButton(
+                    onClick = onStop,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline),
+                    modifier = Modifier.testTag(UiTags.backgroundJobStop(job.id)),
+                ) {
+                    Icon(Icons.Rounded.Stop, contentDescription = stringResource(R.string.agent_jobs_stop), modifier = Modifier.size(18.dp))
+                }
+            }
+            AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                Column(Modifier.padding(top = NexaraSpacing.Small, end = NexaraSpacing.XSmall)) {
+                    liveOutput()
+                    if (onOpenLog != null) {
+                        TextButton(
+                            onClick = onOpenLog,
+                            modifier = Modifier.align(Alignment.End).heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                        ) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(NexaraSpacing.RowIconSize))
+                            Text(stringResource(R.string.agent_jobs_open_log), modifier = Modifier.padding(start = NexaraSpacing.Small))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 已结束的任务：状态图标、命令与用时；非零退出码换成红色“退出 N”标签，展开后给出完整说明与查看日志。 */
+@Composable
+private fun FinishedJobRow(
+    job: BackgroundJob,
+    nowMillis: Long,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenLog: (() -> Unit)?,
+) {
+    val failedExit = job.state == BackgroundJobState.EXITED && job.exitCode != null && job.exitCode != 0
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(start = NexaraSpacing.Medium, end = NexaraSpacing.Medium, top = 10.dp, bottom = 10.dp)
+            .testTag(UiTags.backgroundJob(job.id)),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            JobStateIcon(job, Modifier.size(18.dp))
+            Spacer(Modifier.width(NexaraSpacing.Medium))
+            Text(
+                text = job.summary,
+                style = NexaraTypography.bodyMedium.copy(fontFamily = NexaraMonospace),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(NexaraSpacing.Small))
+            if (failedExit) {
+                SmallTag(
+                    stringResource(R.string.agent_jobs_exit_badge, job.exitCode ?: -1),
+                    MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            } else {
+                Text(
+                    durationText(compactDuration((job.endedAtMillis ?: nowMillis) - job.startedAtMillis)),
+                    style = NexaraTypography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+            Column(Modifier.padding(start = 18.dp + NexaraSpacing.Medium, top = NexaraSpacing.XSmall)) {
+                Text(jobMeta(job, nowMillis), style = NexaraTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (onOpenLog != null) {
+                    TextButton(onClick = onOpenLog, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(NexaraSpacing.RowIconSize))
+                        Text(stringResource(R.string.agent_jobs_open_log), modifier = Modifier.padding(start = NexaraSpacing.Small))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val JobGroupShape = RoundedCornerShape(14.dp)
 
 /** [sessionTitle] 仅在跨会话列表中给出，追加在说明行末尾。 */
 @Composable
@@ -197,17 +369,22 @@ private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
 }
 
 @Composable
-private fun jobMeta(job: BackgroundJob, nowMillis: Long): String {
-    val runner = stringResource(
-        when (job.runner) {
-            BackgroundJobRunner.SHELL -> R.string.agent_jobs_runner_shell
-            BackgroundJobRunner.LINUX -> R.string.linux_runner_name
-            BackgroundJobRunner.PYTHON -> R.string.agent_jobs_runner_python
-            BackgroundJobRunner.TERMUX -> R.string.agent_jobs_runner_termux
-        },
-    )
+private fun jobMeta(job: BackgroundJob, nowMillis: Long): String = "${jobRunnerName(job)} · ${jobStateText(job, nowMillis)}"
+
+@Composable
+private fun jobRunnerName(job: BackgroundJob): String = stringResource(
+    when (job.runner) {
+        BackgroundJobRunner.SHELL -> R.string.agent_jobs_runner_shell
+        BackgroundJobRunner.LINUX -> R.string.linux_runner_name
+        BackgroundJobRunner.PYTHON -> R.string.agent_jobs_runner_python
+        BackgroundJobRunner.TERMUX -> R.string.agent_jobs_runner_termux
+    },
+)
+
+@Composable
+private fun jobStateText(job: BackgroundJob, nowMillis: Long): String {
     val duration = durationText(compactDuration((job.endedAtMillis ?: nowMillis) - job.startedAtMillis))
-    val state = when (job.state) {
+    return when (job.state) {
         BackgroundJobState.RUNNING -> stringResource(R.string.agent_jobs_state_running, duration)
         BackgroundJobState.EXITED -> stringResource(R.string.agent_jobs_state_exited, job.exitCode ?: -1, duration)
         BackgroundJobState.STOPPED -> stringResource(R.string.agent_jobs_state_stopped, duration)
@@ -215,7 +392,6 @@ private fun jobMeta(job: BackgroundJob, nowMillis: Long): String {
         BackgroundJobState.INTERRUPTED -> stringResource(R.string.agent_jobs_state_interrupted)
         BackgroundJobState.FAILED -> stringResource(R.string.agent_jobs_state_failed)
     }
-    return "$runner · $state"
 }
 
 @Composable
@@ -412,7 +588,7 @@ private fun SheetHeader(title: String, trailing: @Composable () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        Text(title, style = NexaraTypography.titleLarge, modifier = Modifier.weight(1f, fill = false))
+        Text(title, style = NexaraTypography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false))
         trailing()
     }
 }
@@ -430,8 +606,12 @@ private fun EmptyHint(icon: ImageVector, text: String) {
 }
 
 @Composable
-private fun SmallTag(text: String, color: androidx.compose.ui.graphics.Color) {
-    Surface(shape = CircleShape, color = color) {
+private fun SmallTag(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Surface(shape = CircleShape, color = color, contentColor = contentColor) {
         Text(text, style = NexaraTypography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
     }
 }

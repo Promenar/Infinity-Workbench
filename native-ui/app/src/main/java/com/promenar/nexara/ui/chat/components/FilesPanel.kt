@@ -62,9 +62,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -122,6 +120,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.rememberNexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuHost
 
 internal enum class FileNodeActivation {
     ToggleSelection,
@@ -624,6 +626,7 @@ private fun FileTreeRow(
 ) {
     val file = node.file
     var showMenu by rememberSaveable(file.uuid, "menu") { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     var showRenameDialog by rememberSaveable(file.uuid, "rename") { mutableStateOf(false) }
     var showMoveSheet by rememberSaveable(file.uuid, "move") { mutableStateOf(false) }
     val isSelected = if (onToggleSelection != null) file.uuid in selectionKeys else file.uuid in selectedIds
@@ -692,13 +695,15 @@ private fun FileTreeRow(
                 if (!checked) selectedIds.remove(file.uuid)
             }
         },
-        onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
+        onOpenMenu = if (hasMenuActions) ({ menuTouch.clear(); showMenu = true }) else null,
         onToggleExpanded = onToggleExpanded,
         // 多选期间点按目录图标也只切换选择，不进入目录。
         onFolderClick = if (onToggleSelection != null && isMultiSelectMode) ({ _, _ -> onToggleSelection(file) }) else onFolderClick,
         allowTreeExpansion = allowTreeExpansion,
         modifier = Modifier
             .testTag("files_panel_node_${file.uuid}")
+            .nexaraMenuHost(showMenu && hasMenuActions)
+            .nexaraMenuTouch(menuTouch)
             .then(
                 if (selectable) {
                     Modifier.combinedClickable(
@@ -725,10 +730,11 @@ private fun FileTreeRow(
             NexaraDropdownMenu(
                 expanded = showMenu && hasMenuActions,
                 onDismissRequest = { showMenu = false },
+                touch = menuTouch,
             ) {
                 if (!file.isDirectory) {
                     if (onReindex != null && !isSessionFile) {
-                        DropdownMenuItem(
+                        NexaraMenuItem(
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Rounded.Refresh,
@@ -743,7 +749,7 @@ private fun FileTreeRow(
                         )
                     }
                     if (onExtractKG != null && !isSessionFile && com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(file)) {
-                        DropdownMenuItem(
+                        NexaraMenuItem(
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Rounded.Hub,
@@ -758,7 +764,7 @@ private fun FileTreeRow(
                         )
                     }
                     if (onViewKG != null && !isSessionFile) {
-                        DropdownMenuItem(
+                        NexaraMenuItem(
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Rounded.AccountTree,
@@ -773,7 +779,7 @@ private fun FileTreeRow(
                         )
                     }
                 } else if (onViewKG != null && !isVirtualRoot && !isVirtualSession) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.AccountTree,
@@ -788,7 +794,7 @@ private fun FileTreeRow(
                     )
                 }
                 if (onRename != null && !isVirtualRoot) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Edit,
@@ -803,7 +809,7 @@ private fun FileTreeRow(
                     )
                 }
                 if (onMove != null && !file.isDirectory && !isVirtualNode) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
@@ -819,7 +825,7 @@ private fun FileTreeRow(
                 }
                 if (onCopy != null && !file.isDirectory) {
                     val isSessionCopy = file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = if (isSessionCopy) Icons.Rounded.CloudUpload else Icons.Rounded.ContentCopy,
@@ -842,7 +848,7 @@ private fun FileTreeRow(
                     )
                 }
                 if (!isMultiSelectMode && supportsMultiSelect && !isVirtualNode) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Checklist,
@@ -860,7 +866,7 @@ private fun FileTreeRow(
                     )
                 }
                 if (onDelete != null && !isVirtualNode) {
-                    DropdownMenuItem(
+                    NexaraMenuItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteOutline,

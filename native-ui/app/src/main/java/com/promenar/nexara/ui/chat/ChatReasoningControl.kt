@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Lightbulb
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +46,7 @@ import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 输入区推理强度控件的数据：模型支持的档位，以及会话（或助手）保存的档位。 */
 @Immutable
@@ -262,7 +262,7 @@ internal fun ReasoningMenuContent(control: ChatReasoningControl, onSelect: (Reas
 @Composable
 private fun ReasoningMenuItem(title: String, detail: String?, checked: Boolean, tag: String, onClick: () -> Unit) {
     val selectedState = stringResource(R.string.common_state_selected)
-    DropdownMenuItem(
+    NexaraMenuItem(
         text = {
             Column {
                 Text(

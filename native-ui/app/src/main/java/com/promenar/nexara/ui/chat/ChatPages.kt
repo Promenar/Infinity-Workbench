@@ -42,3 +42,27 @@ internal fun toggleChatInspector(pages: List<ChatPage>, page: ChatPage): List<Ch
 /** 展开检视器时的页签：沿用上次的页签；没有时有运行内容先看运行，否则看文件。 */
 internal fun defaultChatInspectorRoot(last: ChatPage?, hasRunContent: Boolean): ChatPage =
     last ?: if (hasRunContent) ChatPage.Run else ChatPage.Explorer
+
+/** 检视器根层内容的分组：组内换页签由页面层自己过渡，跨组由外层整体过渡，页面层始终只组合一份。 */
+internal enum class InspectorContentGroup { Run, Canvas, Pages }
+
+internal val ChatPage.inspectorGroup: InspectorContentGroup
+    get() = when (this) {
+        ChatPage.Run -> InspectorContentGroup.Run
+        ChatPage.Canvas -> InspectorContentGroup.Canvas
+        ChatPage.Explorer, ChatPage.Git, ChatPage.Browser -> InspectorContentGroup.Pages
+    }
+
+/** 页签切换方向：目标在底栏中更靠后时向前，新内容自右侧进入。 */
+internal fun inspectorTabForward(from: ChatPage, to: ChatPage): Boolean = to.ordinal > from.ordinal
+
+/** 检视器根层换了页签时离开的页面与切换方向。 */
+internal data class InspectorRootSwitch(val leaving: Set<ChatPage>, val forward: Boolean)
+
+/** 根页没变（推入、弹出）或检视器整体开合时返回 null，各层沿用层级过渡。 */
+internal fun inspectorRootSwitch(before: List<ChatPage>, after: List<ChatPage>): InspectorRootSwitch? {
+    val from = before.firstOrNull() ?: return null
+    val to = after.firstOrNull() ?: return null
+    if (from == to) return null
+    return InspectorRootSwitch(before.toSet() - after.toSet(), inspectorTabForward(from, to))
+}

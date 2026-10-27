@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.VerticalAlignTop
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +55,7 @@ import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraHapticEvent
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraMotion
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 /** 收起时最多显示的排队条数，其余折叠为“展开全部”。 */
 private const val CollapsedQueueItems = 3
@@ -276,7 +276,7 @@ private fun AttachmentCount(icon: ImageVector, count: Int) {
 
 @Composable
 private fun QueueMenuItem(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    DropdownMenuItem(
+    NexaraMenuItem(
         text = { Text(label) },
         leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
         enabled = enabled,

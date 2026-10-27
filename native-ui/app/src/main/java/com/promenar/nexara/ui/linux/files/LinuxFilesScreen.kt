@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -104,6 +103,7 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.hierarchicalTransition
 import com.promenar.nexara.ui.workspace.WorkspaceNameDialog
 import kotlinx.coroutines.delay
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 private const val OUTCOME_VISIBLE_MS = 4_000L
 
@@ -365,7 +365,7 @@ private fun LinuxSortButton(sort: LinuxFileSort, onSort: (LinuxFileSort) -> Unit
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             LinuxFileSort.entries.forEach { option ->
-                DropdownMenuItem(
+                NexaraMenuItem(
                     text = { Text(sortLabel(option)) },
                     onClick = {
                         expanded = false
@@ -400,7 +400,7 @@ private fun LinuxCreateButton(enabled: Boolean, onCreate: (folder: Boolean) -> U
             Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.linux_files_new))
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 text = { Text(stringResource(R.string.linux_files_new_file)) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.NoteAdd, contentDescription = null) },
                 onClick = {
@@ -408,7 +408,7 @@ private fun LinuxCreateButton(enabled: Boolean, onCreate: (folder: Boolean) -> U
                     onCreate(false)
                 },
             )
-            DropdownMenuItem(
+            NexaraMenuItem(
                 text = { Text(stringResource(R.string.linux_files_new_folder)) },
                 leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, contentDescription = null) },
                 onClick = {
@@ -433,7 +433,7 @@ private fun LinuxMoreMenu(state: LinuxFilesUiState, actions: LinuxFilesActions) 
             Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.linux_files_more))
         }
         NexaraDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 text = { Text(stringResource(R.string.linux_files_show_hidden)) },
                 leadingIcon = { Icon(if (state.showHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, contentDescription = null) },
                 trailingIcon = { Checkbox(checked = state.showHidden, onCheckedChange = null) },
@@ -442,7 +442,7 @@ private fun LinuxMoreMenu(state: LinuxFilesUiState, actions: LinuxFilesActions) 
                     .semantics { stateDescription = hiddenState }
                     .testTag(UiTags.LINUX_FILES_HIDDEN_TOGGLE),
             )
-            DropdownMenuItem(
+            NexaraMenuItem(
                 text = { Text(stringResource(R.string.linux_files_open_terminal_here)) },
                 leadingIcon = { Icon(Icons.Rounded.Terminal, contentDescription = null) },
                 enabled = !state.selecting,

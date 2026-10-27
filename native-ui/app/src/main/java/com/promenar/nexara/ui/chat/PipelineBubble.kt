@@ -21,8 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +83,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.rememberNexaraMenuTouch
+import com.promenar.nexara.ui.common.nexaraMenuTouch
+import com.promenar.nexara.ui.common.NexaraMenuTouch
+import com.promenar.nexara.ui.common.NexaraMenuDivider
 
 // ─────────────────────────────────────────────────────────────────
 //  Pipeline 数据结构
@@ -397,6 +400,7 @@ private fun ErrorMessageSegment(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     Box(modifier = Modifier.padding(top = NexaraSpacing.Small)) {
         Surface(
             shape = MaterialTheme.shapes.medium,
@@ -405,7 +409,8 @@ private fun ErrorMessageSegment(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                // 长按只弹菜单，不铺按压涟漪；长按震动由 combinedClickable 自带。
+                // 长按只弹菜单，不铺按压涟漪；长按震动由 combinedClickable 自带。菜单从按住的位置长出。
+                .nexaraMenuTouch(menuTouch)
                 .combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = { showMenu = true }),
         ) {
             Box(
@@ -431,6 +436,7 @@ private fun ErrorMessageSegment(
         MessageContextMenu(
             expanded = showMenu,
             onDismiss = { showMenu = false },
+            touch = menuTouch,
             onCopy = { copyToClipboard(context, text) },
             onDelete = {
                 onDelete?.invoke(messageId)
@@ -883,7 +889,7 @@ internal fun AssistantActionRow(
                         }
                         NexaraDropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                             if (onCopyAllProcess != null) {
-                                DropdownMenuItem(
+                                NexaraMenuItem(
                                     text = { Text(stringResource(R.string.turn_collapse_copy_all_process)) },
                                     leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
                                     modifier = Modifier.testTag(TURN_COPY_ALL_PROCESS_TAG),
@@ -891,7 +897,7 @@ internal fun AssistantActionRow(
                                 )
                             }
                             if (onBranch != null) {
-                                DropdownMenuItem(
+                                NexaraMenuItem(
                                     text = { Text(stringResource(R.string.chat_action_branch)) },
                                     leadingIcon = { Icon(Icons.Rounded.ForkRight, null, modifier = Modifier.size(18.dp)) },
                                     modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
@@ -899,7 +905,7 @@ internal fun AssistantActionRow(
                                 )
                             }
                             if (onDelete != null) {
-                                DropdownMenuItem(
+                                NexaraMenuItem(
                                     text = { Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error) },
                                     leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
                                     onClick = { onDelete(); showMore = false },
@@ -1420,6 +1426,7 @@ fun UserMessageBubble(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    val menuTouch = rememberNexaraMenuTouch()
     var showSelection by remember { mutableStateOf(false) }
     val timestamp = remember(message.createdAt) {
         java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(message.createdAt))
@@ -1437,7 +1444,7 @@ fun UserMessageBubble(
         val bubbleMaxWidth = maxWidth * 0.82f
         Box(modifier = Modifier.align(Alignment.TopEnd).widthIn(max = bubbleMaxWidth)) {
             Column(
-                modifier = Modifier.combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = { showMenu = true }),
+                modifier = Modifier.nexaraMenuTouch(menuTouch).combinedClickable(interactionSource = null, indication = null, onClick = {}, onLongClick = { showMenu = true }),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -1477,6 +1484,7 @@ fun UserMessageBubble(
             MessageContextMenu(
                 expanded = showMenu,
                 onDismiss = { showMenu = false },
+                touch = menuTouch,
                 onCopy = { onCopy?.invoke() ?: copyToClipboard(context, message.content); showMenu = false },
                 onSelectText = if (message.content.isNotBlank()) ({ showSelection = true }) else null,
                 onRegenerate = onRegenerate,
@@ -1640,17 +1648,19 @@ fun MessageContextMenu(
     isUser: Boolean = false,
     offset: DpOffset = DpOffset.Zero,
     timestamp: String? = null,
+    touch: NexaraMenuTouch? = null,
 ) {
     val haptics = LocalNexaraHaptics.current
     NexaraDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         offset = offset,
+        touch = touch,
     ) {
         if (timestamp != null) {
-            DropdownMenuItem(text = { Text(timestamp, style = NexaraTypography.labelSmall) }, onClick = {}, enabled = false)
+            NexaraMenuItem(text = { Text(timestamp, style = NexaraTypography.labelSmall) }, onClick = {}, enabled = false)
         }
-        DropdownMenuItem(
+        NexaraMenuItem(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.ContentCopy,
@@ -1667,7 +1677,7 @@ fun MessageContextMenu(
             }
         )
         if (onSelectText != null) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_SELECT_TEXT),
                 leadingIcon = {
                     Icon(
@@ -1686,7 +1696,7 @@ fun MessageContextMenu(
         }
         
         if (onRegenerate != null) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
@@ -1713,7 +1723,7 @@ fun MessageContextMenu(
         }
 
         if (onBranch != null) {
-            DropdownMenuItem(
+            NexaraMenuItem(
                 modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
                 leadingIcon = {
                     Icon(
@@ -1736,7 +1746,8 @@ fun MessageContextMenu(
             )
         }
 
-        DropdownMenuItem(
+        NexaraMenuDivider()
+        NexaraMenuItem(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,

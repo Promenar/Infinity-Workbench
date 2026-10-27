@@ -46,8 +46,6 @@ import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.theme.NexaraTypography
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -99,6 +97,7 @@ import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.forInput
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
@@ -601,7 +600,7 @@ internal fun ProviderModelsTopActions(
                 expanded = overflowExpanded,
                 onDismissRequest = { overflowExpanded = false },
             ) {
-                DropdownMenuItem(
+                NexaraMenuItem(
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.Block,
@@ -622,7 +621,7 @@ internal fun ProviderModelsTopActions(
                     },
                     modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
                 )
-                DropdownMenuItem(
+                NexaraMenuItem(
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.DeleteOutline,

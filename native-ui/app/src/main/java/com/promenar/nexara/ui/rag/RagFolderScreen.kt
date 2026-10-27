@@ -33,8 +33,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -83,6 +81,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import com.promenar.nexara.ui.common.NexaraMenuItem
 
 internal enum class RagFolderContentState { Loading, Error, Empty, Content }
 
@@ -306,7 +305,7 @@ internal fun RagFolderScreenContent(
                                 Icon(Icons.Rounded.MoreVert, stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all))
                             }
                             NexaraDropdownMenu(expanded = showTopMenu, onDismissRequest = { showTopMenu = false }) {
-                                DropdownMenuItem(
+                                NexaraMenuItem(
                                     leadingIcon = {
                                         Icon(
                                             imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
