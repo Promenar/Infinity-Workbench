@@ -209,6 +209,22 @@ class CanvasSkillsTest {
         assertSchemaAccepted(CanvasListSkill(store), "{}")
     }
 
+    @Test fun `原型工具创建更新并读取指定屏幕`() = runTest {
+        val store = FileCanvasStore(folder.root, StandardTestDispatcher(testScheduler))
+        val created = CanvasCreateSkill(store).execute(args("""{"title":"原型","kind":"prototype","screens":[{"id":"one","title":"首页","html":"one"},{"id":"two","title":"详情","html":"two"}]}"""), context)
+        assertThat(created.body()["kind"]!!.jsonPrimitive.content).isEqualTo("prototype")
+        assertThat(created.body()["screens"]!!.jsonArray).hasSize(2)
+        val id = created.body()["canvasId"]!!.jsonPrimitive.content
+        val updated = CanvasUpdateSkill(store).execute(args("""{"canvas_id":"$id","screen_id":"two","screen_title":"新标题","html":"new"}"""), context)
+        assertThat(updated.status).isEqualTo("success")
+        val read = CanvasReadSkill(store).execute(args("""{"canvas_id":"$id","screen_id":"two"}"""), context)
+        assertThat(read.body()["html"]!!.jsonPrimitive.content).isEqualTo("new")
+        assertThat(read.body()["screens"]!!.jsonArray).hasSize(1)
+        assertError(CanvasCreateSkill(store).execute(args("""{"title":"x","kind":"prototype","html":"x","screens":[]}"""), context), "INVALID_ARGUMENTS")
+        assertError(CanvasUpdateSkill(store).execute(args("""{"canvas_id":"$id","screens":[],"screen_id":"one"}"""), context), "INVALID_ARGUMENTS")
+        assertSchemaAccepted(CanvasCreateSkill(store), """{"title":"x","kind":"prototype","screens":[{"id":"one","title":"一","html":"x"}]}""")
+    }
+
     private fun assertSchemaAccepted(skill: SkillDefinition, vararg rawArguments: String) {
         val validator = ToolSchemaValidator()
         assertThat(validator.validateDefinition(skill.parametersSchema)).isInstanceOf(ToolSchemaValidation.Valid::class.java)

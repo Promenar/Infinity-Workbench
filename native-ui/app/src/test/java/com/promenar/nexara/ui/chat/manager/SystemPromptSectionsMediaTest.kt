@@ -61,4 +61,10 @@ class SystemPromptSectionsMediaTest {
         assertThat(prompt).doesNotContain("`/session`")
     }
 
+    @Test fun `产物发布提示按工具可用性出现`() {
+        assertThat(SystemPromptSections.toolGuidance(setOf("media_fetch", "artifact_publish"), false)).contains("artifact_publish")
+        assertThat(SystemPromptSections.toolGuidance(setOf("media_fetch"), false)).doesNotContain("artifact_publish")
+        assertThat(SystemPromptSections.toolGuidance(setOf("artifact_publish"), true)).doesNotContain("artifact_publish")
+    }
+
 }

@@ -91,6 +91,7 @@ class FileCanvasStore(
         val state = load(sessionId)
         val synced = syncLocked(sessionId, id) ?: throw CanvasException("NOT_FOUND", "本会话中不存在该画布。")
         val current = synced.metadata
+        if (current.kind == CanvasKind.PROTOTYPE) throw CanvasException("IS_PROTOTYPE", "原型请使用原型更新方式。")
         if (expectedVersion != null && current.currentVersion != expectedVersion) {
             throw CanvasException("VERSION_CONFLICT", "画布当前为第 ${current.currentVersion} 版，与 expected_version 不一致。")
         }
@@ -122,6 +123,7 @@ class FileCanvasStore(
         val selected = version ?: metadata.currentVersion
         if (selected !in metadata.versions) return@locked null
         val dir = canvasDirectory(sessionId, id)
+        if (metadata.kind == CanvasKind.PROTOTYPE) return@locked readPrototype(dir, metadata, selected)
         val source = child(dir, "$selected.html")
         if (!source.isFile) return@locked null
         CanvasDocument(presentMetadata(sessionId, metadata), readSource(dir, selected), selected)
@@ -141,6 +143,93 @@ class FileCanvasStore(
 
     private suspend fun presentDocument(sessionId: String, document: CanvasDocument): CanvasDocument =
         document.copy(metadata = presentMetadata(sessionId, document.metadata))
+
+    override suspend fun createPrototype(sessionId: String, title: String, screens: List<CanvasScreenSource>, createdByMessageId: String): CanvasDocument = locked {
+        ensureActive(sessionId)
+        validateTitle(title)
+        invalidIf(createdByMessageId.isBlank(), "创建原型需要有效的消息 ID。")
+        validateScreens(screens)
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
+        val state = load(sessionId)
+        val now = System.currentTimeMillis()
+        val metadata = CanvasMetadata(UUID.randomUUID().toString(), title.trim(), now, now, 1, createdByMessageId, listOf(1), kind = CanvasKind.PROTOTYPE, screens = screens.map { CanvasScreen(it.id, it.title) })
+        val dir = canvasDirectory(sessionId, metadata.id)
+        try { publishPrototype(dir, metadata, screens) } catch (failure: Exception) { dir.deleteRecursively(); throw failure }
+        state.value = sorted(state.value + metadata)
+        CanvasDocument(metadata, screens.first().html, 1, screens)
+    }
+
+    override suspend fun updatePrototype(sessionId: String, id: String, update: PrototypeUpdate, expectedVersion: Int?): CanvasDocument = locked {
+        ensureActive(sessionId)
+        com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId)
+        validateId(id)
+        invalidIf(expectedVersion != null && expectedVersion < 1, "expected_version 必须是正整数。")
+        val state = load(sessionId)
+        val current = state.value.find { it.id == id } ?: throw CanvasException("NOT_FOUND", "本会话中不存在该画布。")
+        if (current.kind != CanvasKind.PROTOTYPE) throw CanvasException("NOT_PROTOTYPE", "页面请使用页面更新方式。")
+        if (expectedVersion != null && expectedVersion != current.currentVersion) throw CanvasException("VERSION_CONFLICT", "原型版本与 expected_version 不一致。")
+        invalidIf(current.currentVersion == Int.MAX_VALUE, "画布版本号已达到上限。")
+        val dir = canvasDirectory(sessionId, id)
+        val existing = readPrototype(dir, current, current.currentVersion).screens
+        val screens = when (update) {
+            is PrototypeUpdate.ReplaceAll -> update.screens
+            is PrototypeUpdate.EditScreen -> {
+                invalidIf(update.html != null && update.patches != null, "html 与 patches 不能同时提供。")
+                invalidIf(update.html == null && update.patches == null && update.title == null, "请提供 html、patches 或 screen_title。")
+                invalidIf(existing.none { it.id == update.screenId }, "找不到指定屏幕 ID。")
+                existing.map { screen -> if (screen.id != update.screenId) screen else screen.copy(
+                    title = update.title ?: screen.title,
+                    html = update.html ?: update.patches?.let { applyPatches(screen.html, it) } ?: screen.html,
+                ) }
+            }
+        }
+        validateScreens(screens)
+        val next = current.currentVersion + 1
+        val versions = (current.versions + next).takeLast(maxVersions)
+        val metadata = current.copy(updatedAt = maxOf(current.updatedAt, System.currentTimeMillis()), currentVersion = next,
+            versions = versions, screens = screens.map { CanvasScreen(it.id, it.title) },
+            versionSources = current.versionSources.filterKeys { it in versions } + (next to CanvasVersionSource.CANVAS))
+        publishPrototype(dir, metadata, screens)
+        state.value = sorted(state.value.map { if (it.id == id) metadata else it })
+        dir.listFiles().orEmpty().filter { it.isDirectory && it.name.toIntOrNull()?.let { v -> v !in versions } == true }.forEach { it.deleteRecursively() }
+        CanvasDocument(metadata, screens.first().html, next, screens)
+    }
+
+    private fun validateScreens(screens: List<CanvasScreenSource>) {
+        invalidIf(screens.size !in 1..12, "原型需要 1 到 12 屏。")
+        invalidIf(screens.any { !CanvasScreenLinks.ID_PATTERN.matches(it.id) || it.title.isBlank() || it.title.length > 40 }, "屏幕 ID 或标题无效。")
+        invalidIf(screens.map { it.id }.distinct().size != screens.size, "屏幕 ID 不能重复。")
+        screens.forEach { validateSource(it.html) }
+        if (screens.sumOf { it.html.toByteArray(Charsets.UTF_8).size.toLong() } > 4L * 1024 * 1024) throw CanvasException("SOURCE_TOO_LARGE", "原型全部屏幕源码合计不能超过 4 MiB。")
+    }
+
+    private fun publishPrototype(dir: File, metadata: CanvasMetadata, screens: List<CanvasScreenSource>) {
+        validateScreens(screens)
+        ensureDirectory(dir)
+        val versionDir = child(dir, metadata.currentVersion.toString())
+        var published = false
+        try {
+            ensureDirectory(versionDir)
+            screens.forEach { writeAtomic(child(versionDir, "${it.id}.html"), it.html.toByteArray(Charsets.UTF_8)) }
+            writeAtomic(child(versionDir, "screens.json"), json.encodeToString(screens.map { CanvasScreen(it.id, it.title) }).toByteArray(Charsets.UTF_8))
+            writeAtomic(child(dir, "metadata.json"), metadataBytes(metadata, null))
+            published = true
+        } finally { if (!published) versionDir.deleteRecursively() }
+    }
+
+    private fun readPrototype(dir: File, metadata: CanvasMetadata, version: Int): CanvasDocument {
+        val versionDir = child(dir, version.toString())
+        val manifest = child(versionDir, "screens.json")
+        if (!manifest.isFile || manifest.length() > MAX_METADATA_BYTES) throw CanvasException("STORAGE_ERROR", "原型屏幕清单缺失或损坏。")
+        val screens = json.decodeFromString<List<CanvasScreen>>(manifest.readText(Charsets.UTF_8)).map {
+            if (!CanvasScreenLinks.ID_PATTERN.matches(it.id)) throw CanvasException("STORAGE_ERROR", "原型屏幕 ID 无效。")
+            val file = child(versionDir, "${it.id}.html")
+            if (!file.isFile || file.length() > maxSourceBytes) throw CanvasException("STORAGE_ERROR", "原型源码缺失或超限。")
+            CanvasScreenSource(it.id, it.title, file.readText(Charsets.UTF_8))
+        }
+        validateScreens(screens)
+        return CanvasDocument(metadata, screens.first().html, version, screens)
+    }
 
     override suspend fun deleteSession(sessionId: String) = locked {
         val dir = sessionDirectory(sessionId)
@@ -164,7 +253,9 @@ class FileCanvasStore(
         try {
             ensureDirectory(staging)
             source.forEach { metadata ->
-                val html = readSource(canvasDirectory(sourceSessionId, metadata.id), metadata.currentVersion)
+                val sourceDir = canvasDirectory(sourceSessionId, metadata.id)
+                val prototype = if (metadata.kind == CanvasKind.PROTOTYPE) readPrototype(sourceDir, metadata, metadata.currentVersion) else null
+                val html = prototype?.html ?: readSource(sourceDir, metadata.currentVersion)
                 val remapped = metadata.copy(
                     createdByMessageId = messageIdMap.getValue(metadata.createdByMessageId),
                     versions = listOf(metadata.currentVersion),
@@ -174,7 +265,8 @@ class FileCanvasStore(
                     workspaceSync = CanvasWorkspaceSync.NOT_WRITTEN,
                     workspaceDestination = null,
                 )
-                publish(child(staging, metadata.id), remapped, html, workspaceHash = null)
+                if (prototype != null) publishPrototype(child(staging, metadata.id), remapped, prototype.screens)
+                else publish(child(staging, metadata.id), remapped, html, workspaceHash = null)
                 copied += remapped
             }
             Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -187,6 +279,7 @@ class FileCanvasStore(
     private suspend fun syncLocked(sessionId: String, id: String): CanvasDocument? {
         var current = load(sessionId).value.find { it.id == id } ?: return null
         val dir = canvasDirectory(sessionId, id)
+        if (current.kind == CanvasKind.PROTOTYPE) return readPrototype(dir, current, current.currentVersion)
         var document = CanvasDocument(current, readSource(dir, current.currentVersion), current.currentVersion)
         val files = workspaceFiles ?: return document
         val hash = workspaceHash(dir)
@@ -325,8 +418,13 @@ class FileCanvasStore(
                     if (!metadataFile.isFile || metadataFile.length() > MAX_METADATA_BYTES) return@mapNotNull null
                     val metadata = json.decodeFromString<CanvasMetadata>(metadataFile.readText(Charsets.UTF_8))
                     if (metadata.id != entry.name || !validMetadata(metadata)) return@mapNotNull null
-                    if (Files.isSymbolicLink(File(entry, "${metadata.currentVersion}.html").toPath())) return@mapNotNull null
-                    if (!child(entry, "${metadata.currentVersion}.html").isFile) return@mapNotNull null
+                    if (metadata.kind == CanvasKind.PROTOTYPE) {
+                        val restored = readPrototype(entry, metadata, metadata.currentVersion)
+                        if (restored.screens.map { CanvasScreen(it.id, it.title) } != metadata.screens) return@mapNotNull null
+                    } else {
+                        if (Files.isSymbolicLink(File(entry, "${metadata.currentVersion}.html").toPath())) return@mapNotNull null
+                        if (!child(entry, "${metadata.currentVersion}.html").isFile) return@mapNotNull null
+                    }
                     metadata
                 } catch (_: SerializationException) {
                     null

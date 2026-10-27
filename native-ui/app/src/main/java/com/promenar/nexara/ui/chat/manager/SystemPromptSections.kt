@@ -109,12 +109,14 @@ object SystemPromptSections {
             appendLine("- " + shellRuntimeGuidance(linuxState, runMode))
             if (!usesLinux) appendLine("- python_exec 与 python_sandbox 使用打包 Python。")
         }
+        if ("artifact_publish" in toolNames) appendLine("- 交付文件完成后调用 artifact_publish 声明。" + if ("canvas_create" in toolNames) "页面与原型使用画布工具。" else "")
         if (toolNames.any { it.startsWith("canvas_") }) {
             appendLine()
             appendLine("### 会话画布")
             appendLine("- 需要图表、看板、交互小工具或反复修改的可视化时用具有固定身份的 HTML 画布；一次性小图可直接写回复代码块。当前可用画布工具：${toolNames.filter { it.startsWith("canvas_") }.sorted().joinToString("、")}。")
+            if ("canvas_create" in toolNames) appendLine("- 多屏原型用 canvas_create 的 kind: \"prototype\"，屏间以 nexara-screen:屏幕ID 链接。")
             if ("canvas_update" in toolNames) appendLine("- 小改动优先用 canvas_update 的 patches；find 必须唯一，并传 expected_version 避免覆盖新内容。")
-            appendLine("- 画布当前版本位于工作区 workspace_path 指定的 canvas/<名称>.html，可直接用文件工具读写；修改会在下次读取或更新画布时成为新版本。")
+            appendLine("- 页面画布当前版本位于工作区 workspace_path 指定的 canvas/<名称>.html，可直接用文件工具读写；修改会在下次读取或更新画布时成为新版本。")
             appendLine("- 画布仅在支持原生网络隔离的 WebView 上运行脚本，不能联网、读取本地文件或使用外部脚本；请把 HTML、样式、脚本写在源码中。window.nexara.insertText(text) 仅把不超过 8000 字符的文字追加到当前会话草稿，由用户发送；预览及历史版本没有此能力。")
         }
         if (toolNames.any(WORKSPACE_TOOLS::contains)) {

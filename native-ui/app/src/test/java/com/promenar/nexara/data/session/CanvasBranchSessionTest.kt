@@ -15,6 +15,7 @@ import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import java.io.IOException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -66,6 +67,50 @@ class CanvasBranchSessionTest {
     }
 
     @After fun tearDown() { database.close() }
+
+    @Test fun `分支复制前缀与用户收录的文件快照并映射消息`() = runBlocking {
+        val resolver = object : com.promenar.nexara.domain.media.WorkspaceMediaResolver {
+            override suspend fun resolve(sessionId: String, path: String): com.promenar.nexara.domain.media.MediaResolution =
+                com.promenar.nexara.domain.media.MediaResolution.Available(
+                    com.promenar.nexara.domain.media.MediaRef(path, "text/plain", com.promenar.nexara.domain.media.MediaKind.FILE, 1),
+                    com.promenar.nexara.domain.media.MediaSource.LocalFile(java.io.File(files.root, "source")))
+            override suspend fun open(resolution: com.promenar.nexara.domain.media.MediaResolution.Available) = "x".byteInputStream()
+        }
+        val artifacts = com.promenar.nexara.data.artifact.FileSessionArtifacts(files.newFolder(), canvases, resolver)
+        val store = com.promenar.nexara.data.artifact.ArtifactLifecycleCanvasStore(canvases) { artifacts }
+        val first = artifacts.publishFile("source", "/first.txt", origin = com.promenar.nexara.data.artifact.ArtifactOrigin.DECLARED, messageId = "first")
+        artifacts.publishFile("source", "/later.txt", origin = com.promenar.nexara.data.artifact.ArtifactOrigin.DECLARED, messageId = "later")
+        val claimed = artifacts.publishFile("source", "/claimed.txt", origin = com.promenar.nexara.data.artifact.ArtifactOrigin.CLAIMED)
+        var serial = 0
+        val result = BranchSessionUseCase(database, canvasStore = store, newId = { "branch-${serial++}" }).branch("source", "first") as BranchSessionResult.Success
+        val branchItems = artifacts.observe(result.sessionId).first()
+        assertThat(branchItems.map { it.id }).containsExactly(first.id, claimed.id)
+        assertThat(branchItems.single { it.id == first.id }.createdByMessageId).isEqualTo("branch-1")
+        store.deleteSession(result.sessionId)
+        assertThat(artifacts.readFile(result.sessionId, first.id)).isNull()
+    }
+
+    @Test fun `分支Room写入失败补偿删除文件快照`() = runBlocking {
+        val resolver = object : com.promenar.nexara.domain.media.WorkspaceMediaResolver {
+            override suspend fun resolve(sessionId: String, path: String): com.promenar.nexara.domain.media.MediaResolution =
+                com.promenar.nexara.domain.media.MediaResolution.Available(
+                    com.promenar.nexara.domain.media.MediaRef(path, "text/plain", com.promenar.nexara.domain.media.MediaKind.FILE, 1),
+                    com.promenar.nexara.domain.media.MediaSource.LocalFile(java.io.File(files.root, "source")))
+            override suspend fun open(resolution: com.promenar.nexara.domain.media.MediaResolution.Available) = "x".byteInputStream()
+        }
+        val artifacts = com.promenar.nexara.data.artifact.FileSessionArtifacts(files.newFolder(), canvases, resolver)
+        val store = com.promenar.nexara.data.artifact.ArtifactLifecycleCanvasStore(canvases) { artifacts }
+        val item = artifacts.publishFile("source", "/first.txt", origin = com.promenar.nexara.data.artifact.ArtifactOrigin.DECLARED, messageId = "first")
+        val messages = object : MessageDao by database.messageDao() {
+            override suspend fun insertAll(messages: List<MessageEntity>) { throw IOException("database") }
+        }
+        var serial = 0
+        val error = runCatching { BranchSessionUseCase(database, messageDao = messages, canvasStore = store, newId = { "failed-${serial++}" }).branch("source", "first") }.exceptionOrNull()
+        assertThat(error).isInstanceOf(IOException::class.java)
+        assertThat(database.sessionDao().getById("failed-0")).isNull()
+        assertThat(artifacts.readFile("failed-0", item.id)).isNull()
+        assertThat(artifacts.readFile("source", item.id)).isNotNull()
+    }
 
     @Test fun `复制画布期间不持有Room事务避免与工作区同步反向等待`() = runBlocking {
         canvases.create("source", "图表", "内容", "first")

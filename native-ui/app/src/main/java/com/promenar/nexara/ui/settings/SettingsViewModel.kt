@@ -687,6 +687,8 @@ class SettingsViewModel(
             Triple("canvas_update", R.string.canvas_tool_update, R.string.canvas_tool_update_description),
             Triple("canvas_read", R.string.canvas_tool_read, R.string.canvas_tool_read_description),
             Triple("canvas_list", R.string.canvas_tool_list, R.string.canvas_tool_list_description),
+            Triple("artifact_publish", R.string.artifact_tool_publish, R.string.artifact_tool_publish_description),
+            Triple("artifact_list", R.string.artifact_tool_list, R.string.artifact_tool_list_description),
             Triple("media_fetch", R.string.skill_media_fetch, R.string.skill_media_fetch_desc),
             Triple("browser_open", R.string.skill_browser_open, R.string.skill_browser_open_desc),
             Triple("browser_snapshot", R.string.skill_browser_snapshot, R.string.skill_browser_snapshot_desc),

@@ -1,0 +1,6 @@
+<resources>
+    <string name="artifact_tool_publish">Publish artifact</string>
+    <string name="artifact_tool_publish_description">Save a workspace file as a session artifact snapshot</string>
+    <string name="artifact_tool_list">List artifacts</string>
+    <string name="artifact_tool_list_description">List session artifact summaries</string>
+</resources>

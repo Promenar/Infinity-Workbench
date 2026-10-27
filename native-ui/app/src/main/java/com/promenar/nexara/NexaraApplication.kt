@@ -705,7 +705,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     /** 各聊天会话的 Agent 浏览器页面，WebView 只在主线程创建。 */
     val agentBrowser: com.promenar.nexara.ui.browser.AgentBrowserHost by lazy { com.promenar.nexara.ui.browser.AgentBrowserHost(this) }
     val canvasStore: com.promenar.nexara.data.canvas.CanvasStore by lazy {
-        com.promenar.nexara.data.canvas.FileCanvasStore(
+        com.promenar.nexara.data.artifact.ArtifactLifecycleCanvasStore(com.promenar.nexara.data.canvas.FileCanvasStore(
             java.io.File(filesDir, "session_canvases"),
             workspaceFiles = com.promenar.nexara.data.canvas.WorkspaceCanvasFiles(
                 com.promenar.nexara.data.workspace.WorkspaceFileTargetResolver(
@@ -716,11 +716,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 ),
                 workspaceRepository, fileOperationRepository, externalFolderManager, pendingDocumentIndexCoordinator,
             ),
-        )
+        )) { fileSessionArtifacts }
+    }
+    private val fileSessionArtifacts by lazy {
+        com.promenar.nexara.data.artifact.FileSessionArtifacts(java.io.File(filesDir, "session_artifacts"), canvasStore, workspaceMediaResolver)
     }
     /** 会话产物：画布与文件快照合并后的列表，产物页与本轮产物卡读取。 */
     val sessionArtifacts: com.promenar.nexara.data.artifact.SessionArtifactRepository by lazy {
-        com.promenar.nexara.data.artifact.CanvasOnlySessionArtifacts(canvasStore)
+        fileSessionArtifacts
     }
     val composerQueueStore: com.promenar.nexara.data.chat.queue.ComposerQueueStore by lazy {
         com.promenar.nexara.data.chat.queue.FileComposerQueueStore(
@@ -1496,6 +1499,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.nexara.ui.chat.manager.skills.CanvasUpdateSkill(canvasStore))
             register(com.promenar.nexara.ui.chat.manager.skills.CanvasReadSkill(canvasStore))
             register(com.promenar.nexara.ui.chat.manager.skills.CanvasListSkill(canvasStore))
+            register(com.promenar.nexara.ui.chat.manager.skills.ArtifactPublishSkill(sessionArtifacts))
+            register(com.promenar.nexara.ui.chat.manager.skills.ArtifactListSkill(sessionArtifacts))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))
             register(com.promenar.nexara.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))
