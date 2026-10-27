@@ -25,6 +25,8 @@ class SystemTurnDispatcherTest {
         var rejectedSource: String? = null
         var rejectionGate: CompletableDeferred<Unit>? = null
         var cancelled = false
+        val completionCalls = mutableListOf<String>()
+        var completionFinish: CompletableDeferred<Unit>? = null
         override suspend fun awaitReady() { ready.await() }
         override suspend fun sessionExists(sessionId: String): Boolean {
             sessionChecks[sessionId]?.await()
@@ -33,6 +35,11 @@ class SystemTurnDispatcherTest {
         }
         override suspend fun loadSession(sessionId: String): Boolean { loads++; loadWait?.await(); return exists }
         override suspend fun isBusy(sessionId: String) = busy || sessionId in busySessions
+        override suspend fun runSubagentCompletion(request: SystemTurnRequest, ticket: SystemTurnAdmissionTicket): SystemTurnOutcome? {
+            completionCalls += request.sourceId
+            completionFinish?.await()
+            return if (ticket.tryAccept("completion-${request.sourceId}")) SystemTurnOutcome.Completed else null
+        }
         override suspend fun run(request: SystemTurnRequest, ticket: SystemTurnAdmissionTicket): SystemTurnOutcome? {
             beforeStart?.await()
             if (request.sourceId == rejectedSource) {
@@ -49,6 +56,37 @@ class SystemTurnDispatcherTest {
     }
     private fun request(source: String = "a", body: String = "检查", session: String = "session") =
         SystemTurnRequest(session, SystemTurnKind.SCHEDULE, source, "检查", body)
+
+    @Test fun `忙碌父会话的多个完成通知均进入步骤边界桥且不受三十分钟超时影响`() = runTest {
+        val runtime = Runtime().apply { ready.complete(Unit); busy = true; completionFinish = CompletableDeferred() }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val first = async { dispatcher.request(request("sa_first").copy(kind = SystemTurnKind.SUBAGENT_DONE)) }
+        val second = async { dispatcher.request(request("sa_second").copy(kind = SystemTurnKind.SUBAGENT_DONE)) }
+        runCurrent()
+        assertThat(runtime.completionCalls).containsExactly("sa_first", "sa_second").inOrder()
+        advanceTimeBy(30 * 60 * 1000L); runCurrent()
+        assertThat(first.isCompleted).isFalse()
+        assertThat(second.isCompleted).isFalse()
+        runtime.completionFinish!!.complete(Unit); runCurrent()
+        assertThat(first.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(second.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(runtime.calls).isEmpty()
+    }
+
+    @Test fun `同一子代理恢复后的新通知不会覆盖尚未送达的旧通知`() = runTest {
+        val runtime = Runtime().apply { ready.complete(Unit); busy = true; completionFinish = CompletableDeferred() }
+        val dispatcher = DefaultSystemTurnDispatcher(backgroundScope, runtime, "未完成", "系统中断")
+        val request = request("sa_same").copy(kind = SystemTurnKind.SUBAGENT_DONE, sequence = 1)
+        val first = async { dispatcher.request(request) }
+        val resumed = async { dispatcher.request(request.copy(sequence = 2)) }
+        runCurrent()
+        assertThat(first.isCompleted).isFalse()
+        assertThat(resumed.isCompleted).isFalse()
+        assertThat(runtime.completionCalls).containsExactly("sa_same", "sa_same")
+        runtime.completionFinish!!.complete(Unit); runCurrent()
+        assertThat(first.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(resumed.await()).isEqualTo(SystemTurnOutcome.Completed)
+    }
 
     @Test fun `其它会话繁忙不阻挡空闲会话的系统轮`() = runTest {
         val runtime = Runtime().apply { ready.complete(Unit); busySessions += "a" }

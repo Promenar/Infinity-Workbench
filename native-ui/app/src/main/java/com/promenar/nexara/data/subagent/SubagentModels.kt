@@ -101,6 +101,18 @@ data class SubagentRun(
     val outputTokens: Int = 0,
     val totalTokens: Int = 0,
     val tokensEstimated: Boolean = false,
+    /** 每次交回结果或重启中断的稳定通知序号。 */
+    val completionSequence: Int = 0,
+    /** 已由等待回执或持久消息消费的通知序号。 */
+    val deliveredSequence: Int = 0,
+    /** 未确认送达的每次结论，按完成顺序保留。 */
+    val pendingNotices: List<SubagentCompletionNotice> = emptyList(),
+    /** 每日实际消费增量；恢复不会把既有消费移动到新的日期。 */
+    val dailyUsage: Map<String, com.promenar.nexara.data.model.TokenUsage> = emptyMap(),
+    /** 启动时接受的工具名白名单；null 沿用档位工具，空列表禁用全部工具。 */
+    val allowedTools: List<String>? = null,
+    /** 启动时不存在或超出档位的请求工具名，供工具回执说明。 */
+    val ignoredTools: List<String> = emptyList(),
 )
 
 /** 父会话一次 `agent_task` 调用派生的全部子代理，按该调用的执行步骤 id 归档。 */
@@ -137,6 +149,7 @@ data class SubagentSpec(
     val prompt: String,
     val preset: SubagentPreset?,
     val toolProfile: SubagentToolProfile,
+    val allowedTools: List<String>? = null,
 )
 
 object SubagentLimits {

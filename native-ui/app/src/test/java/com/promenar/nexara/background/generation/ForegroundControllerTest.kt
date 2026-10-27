@@ -17,6 +17,19 @@ import java.nio.file.Path
 @Config(sdk = [33])
 class ForegroundControllerTest {
     @Test
+    fun `子代理独立提交保活命令且不伪造会话生成快照`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        shadowOf(context).denyPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val result = AndroidGenerationForegroundController(context).trackSubagents()
+
+        val intent = shadowOf(context).nextStartedService
+        assertThat(result).isEqualTo(ForegroundStartResult.StartedWithoutNotifications)
+        assertThat(intent.action).isEqualTo(GenerationForegroundService.ACTION_TRACK_SUBAGENTS)
+        assertThat(intent.hasExtra(GenerationForegroundService.EXTRA_TASK_ID)).isFalse()
+        assertThat(intent.component?.className).isEqualTo(GenerationForegroundService::class.java.name)
+    }
+
+    @Test
     fun `通知权限未授予也照常提交TRACK前台服务命令`() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         shadowOf(context).denyPermissions(android.Manifest.permission.POST_NOTIFICATIONS)

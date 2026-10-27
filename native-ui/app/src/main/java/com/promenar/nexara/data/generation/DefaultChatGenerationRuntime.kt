@@ -69,6 +69,7 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.utils.NexaraLogger
+import com.promenar.nexara.data.trigger.isUnstartedCompletionPlaceholder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -178,6 +179,7 @@ internal class DefaultChatGenerationRuntime(
     private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
     private val linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     private val askUserLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
+    private val subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
 ) : ChatGenerationRuntime {
     private var interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE
     private val compactionTurnState = ContextCompactionTurnState()
@@ -474,6 +476,11 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
         interactionMode = request.interactionMode
+        subagentCompletions?.let { bridge ->
+            val target = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) }
+            bridge.deliver(request.sessionId, store, messageManager,
+                consumerAssistantId = target?.takeIf { it.isUnstartedCompletionPlaceholder() }?.id)
+        }
         runModeCheck?.invoke(request.sessionId)?.let { failure ->
             handlePreparationFailure(request, failure, null)
             return GenerationPreparationOutcome.Handled(failure)

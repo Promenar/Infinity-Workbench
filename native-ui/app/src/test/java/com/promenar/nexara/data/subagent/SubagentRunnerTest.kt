@@ -2,10 +2,13 @@ package com.promenar.nexara.data.subagent
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.generation.ApproximateTokenEstimator
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.data.remote.protocol.ProtocolUsage
+import com.promenar.nexara.data.remote.protocol.ReasoningReplay
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.domain.generation.CompletionReason
 import com.promenar.nexara.domain.tool.ToolRisk
@@ -25,6 +28,234 @@ import org.junit.Test
 
 /** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
+    @Test fun `流式用量只按时间节流检查点且结束强制保存最终用量`() = runTest {
+        val model = SubagentModelClient { _, _, _, _, _, _ -> flow {
+            repeat(100) { emit(usage(it + 1, it + 1)) }
+            emit(text("完成"))
+            emit(StreamChunk.Completed(CompletionReason.END_TURN))
+        } }
+        val persisted = mutableListOf<SubagentRun>()
+        val saved = mutableListOf<SubagentExecutionState>()
+        val result = runner(model, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null,
+            SubagentExecution(save = { saved += it })) { run, persist -> if (persist) persisted += run }
+        assertThat(persisted.size).isAtMost(6)
+        assertThat(saved.size).isAtMost(6)
+        assertThat(saved.last().inputTokens).isEqualTo(result.inputTokens.toLong())
+        assertThat(persisted.last().totalTokens).isEqualTo(result.totalTokens)
+    }
+
+    @Test
+    fun `不限步数和token时超过十二步与四十万token仍可调用工具`() = runTest {
+        val rounds = (1..14).map { listOf(toolCall("c$it", "read_file", "{}"), usage(40_000, 1)) } + listOf(listOf(text("完整完成")))
+        val models = ScriptedModels(*rounds.toTypedArray())
+        val result = runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0, maxTokens = 0), null) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        assertThat(result.result).isEqualTo("完整完成")
+        assertThat(result.step).isEqualTo(15)
+        assertThat(models.requests).hasSize(15)
+        assertThat(models.requests.all { it.tools.isNotEmpty() }).isTrue()
+    }
+
+    @Test
+    fun `maxTurns用最终无工具轮交回未完成前缀`() = runTest {
+        val models = ScriptedModels(listOf(toolCall("c1", "read_file", "{}")), listOf(toolCall("c2", "read_file", "{}")), listOf(text("已经核对两个文件")))
+        val result = runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0).copy(maxTurns = 2), null) { _, _ -> }
+        assertThat(models.requests).hasSize(3)
+        assertThat(models.requests.last().tools).isEmpty()
+        assertThat(result.result).isEqualTo("未完成：已到达轮数上限\n\n已经核对两个文件")
+    }
+
+    @Test
+    fun `结论不按一万二千字裁切`() = runTest {
+        val conclusion = "完整结论".repeat(4_000)
+        val result = runner(ScriptedModels(listOf(text(conclusion))), FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
+        assertThat(result.result).isEqualTo(conclusion)
+    }
+
+    @Test
+    fun `下一步消费父指令并持久化全文且不重复消费相同id`() = runTest {
+        val models = ScriptedModels(listOf(toolCall("c1", "read_file", "{}")), listOf(toolCall("c2", "read_file", "{}")), listOf(text("完成")))
+        val saved = mutableListOf<SubagentExecutionState>()
+        val instruction = SubagentInstruction("核对配置文件", at = 22L, id = "inbox-1")
+        var boundaries = 0
+        val execution = SubagentExecution(save = { saved += it }, drainInbox = { if (++boundaries >= 2) listOf(instruction) else emptyList() })
+        val result = runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0), null, execution) { _, _ -> }
+        assertThat(models.requests[1].messages.last().content).isEqualTo("核对配置文件")
+        assertThat(models.requests.last().messages.count { it.content == "核对配置文件" }).isEqualTo(1)
+        val event = result.events.single { it.kind == SubagentEvent.Kind.PARENT_MESSAGE }
+        assertThat(event.by).isEqualTo(SubagentEvent.Actor.PARENT)
+        assertThat(event.at).isEqualTo(22L)
+        assertThat(saved.last().consumedInstructionIds).contains("inbox-1")
+        assertThat(saved.last().messages.last().content).isEqualTo("完成")
+        assertThat(saved.all { it.pendingInstructions.isEmpty() }).isTrue()
+    }
+
+    @Test
+    fun `结论返回期间收到的指令在完成前进入下一步`() = runTest {
+        var inbox = emptyList<SubagentInstruction>()
+        var requests = 0
+        val messages = mutableListOf<List<ProtocolMessage>>()
+        val models = SubagentModelClient { _, history, _, _, _, _ -> flow {
+            messages += history.toList()
+            if (++requests == 1) {
+                inbox = listOf(SubagentInstruction("追加核对", id = "late-1"))
+                emit(text("初次结论"))
+            } else emit(text("追加指令已完成"))
+            emit(StreamChunk.Completed(CompletionReason.END_TURN))
+        } }
+        val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(drainInbox = { inbox })) { _, _ -> }
+        assertThat(requests).isEqualTo(2)
+        assertThat(messages.last().last().content).isEqualTo("追加核对")
+        assertThat(result.result).isEqualTo("追加指令已完成")
+    }
+
+    @Test
+    fun `软停止至多两正常步后只允许最终结论且保持收尾状态`() = runTest {
+        val models = ScriptedModels(listOf(toolCall("c1", "read_file", "{}")), listOf(toolCall("c2", "read_file", "{}")), listOf(text("阶段结论")))
+        val states = mutableListOf<SubagentRun>()
+        val saved = mutableListOf<SubagentExecutionState>()
+        val instruction = SubagentInstruction("已经取得足够证据", wrapUp = true, at = 3L, id = "wrap-1")
+        val execution = SubagentExecution(save = { saved += it }, drainInbox = { listOf(instruction) })
+        val result = runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0), null, execution) { run, _ -> states += run }
+        assertThat(models.requests.take(2).all { it.tools.isNotEmpty() }).isTrue()
+        assertThat(models.requests.last().tools).isEmpty()
+        assertThat(models.requests.first().messages.last().content).contains("停止当前工作，交回阶段结论")
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        assertThat(result.events.single { it.kind == SubagentEvent.Kind.WRAP_UP }.by).isEqualTo(SubagentEvent.Actor.PARENT)
+        assertThat(states.filter { it.status.isActive }.all { it.status == SubagentStatus.WRAPPING_UP }).isTrue()
+        assertThat(saved.last().wrapUpAfterStep).isEqualTo(2)
+    }
+
+    @Test
+    fun `完整工具结果和协议思考状态持久化并从原上下文恢复`() = runTest {
+        val full = "原始工具正文".repeat(7_000)
+        val host = FakeHost(listOf(read)).apply { resultContent = full }
+        val replay = ReasoningReplay.ChatField("reasoning_content")
+        var saved: SubagentExecutionState? = null
+        val models = ScriptedModels(listOf(toolCall("c1", "read_file", "{}"), StreamChunk.ReasoningState(replay)), listOf(text("初次结论")))
+        val first = runner(models, host).run(parent(), session("auto"), "step", run(maxSteps = 0), null, SubagentExecution(save = { saved = it })) { _, _ -> }
+        assertThat(saved!!.messages.single { it.role == "tool" }.content).isEqualTo(full)
+        assertThat(first.events.single { it.kind == SubagentEvent.Kind.TOOL_RESULT }.text.length).isEqualTo(SubagentLimits.MAX_EVENT_CHARS)
+        assertThat(saved!!.messages.first { it.role == "assistant" }.reasoningReplay).isEqualTo(replay)
+        val encoded = kotlinx.serialization.json.Json.encodeToString(SubagentExecutionState.serializer(), saved!!)
+        val restored = kotlinx.serialization.json.Json.decodeFromString(SubagentExecutionState.serializer(), encoded)
+        val resumed = ScriptedModels(listOf(text("补充结论")))
+        val instruction = SubagentInstruction("补充核对", id = "resume-1")
+        val result = runner(resumed, host).run(parent(), session("auto"), "step", first.copy(status = SubagentStatus.RUNNING, maxTurns = 1), null,
+            SubagentExecution(load = { restored }, save = { saved = it }, drainInbox = { listOf(instruction) }, contextWindow = { 128_000 }, resume = true)) { _, _ -> }
+        assertThat(resumed.requests.single().messages.map { it.content }).containsAtLeast(full, "初次结论", "补充核对")
+        assertThat(resumed.requests.single().tools).isNotEmpty()
+        assertThat(result.result).isEqualTo("补充结论")
+        assertThat(result.step).isEqualTo(3)
+    }
+
+    @Test
+    fun `接近上下文窗口只压缩发送副本的较早工具结果并保持配对`() = runTest {
+        val full = "a".repeat(40_000)
+        val history = listOf(ProtocolMessage("system", "system"), ProtocolMessage("user", "任务")) + (1..4).flatMap {
+            listOf(ProtocolMessage("assistant", "", toolCalls = listOf(ProtocolToolCall("c$it", "read_file", "{}"))), ProtocolMessage("tool", if (it == 1) full else "ok", toolCallId = "c$it", name = "read_file"))
+        }
+        val models = ScriptedModels(listOf(text("完成")))
+        var saved: SubagentExecutionState? = null
+        runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(load = { SubagentExecutionState(messages = history, completedSteps = 4) }, save = { saved = it }, contextWindow = { 12_000 })) { _, _ -> }
+        val sent = models.requests.single().messages
+        assertThat(sent.single { it.toolCallId == "c1" }.content.length).isLessThan(full.length)
+        assertThat(sent.single { it.toolCallId == "c1" }.content).contains("original_chars=40000")
+        assertThat(saved!!.messages.single { it.toolCallId == "c1" }.content).isEqualTo(full)
+        assertThat(sent.flatMap { it.toolCalls.orEmpty().map(ProtocolToolCall::id) }).containsExactlyElementsIn(sent.filter { it.role == "tool" }.map { it.toolCallId })
+    }
+
+    @Test
+    fun `最近三轮巨型结果也逐步折叠且请求与输出总量不越窗`() = runTest {
+        val full = "完整工具正文".repeat(6_000)
+        val history = listOf(ProtocolMessage("system", "system"), ProtocolMessage("user", "任务")) + (1..3).flatMap {
+            listOf(ProtocolMessage("assistant", "", toolCalls = listOf(ProtocolToolCall("c$it", "read_file", "{}"))),
+                ProtocolMessage("tool", full, toolCallId = "c$it", name = "read_file"))
+        }
+        val models = ScriptedModels(listOf(text("完成")))
+        var saved: SubagentExecutionState? = null
+        val result = runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(load = { SubagentExecutionState(messages = history) }, save = { saved = it }, contextWindow = { 4_096 })) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        val request = models.requests.single()
+        val input = request.messages.sumOf { ApproximateTokenEstimator.estimate(it) } + request.tools.sumOf {
+            ApproximateTokenEstimator.estimate(it.function.name + it.function.description + it.function.parameters)
+        }
+        assertThat(input + request.maxOutputTokens).isAtMost(4_096)
+        assertThat(request.maxOutputTokens).isAtMost(1_024)
+        assertThat(request.messages.flatMap { it.toolCalls.orEmpty().map(ProtocolToolCall::id) })
+            .containsExactlyElementsIn(request.messages.filter { it.role == "tool" }.map { it.toolCallId })
+        assertThat(saved!!.messages.filter { it.role == "tool" }.map { it.content }).containsExactly(full, full, full)
+    }
+
+    @Test
+    fun `历史助手正文超窗时只折叠请求副本`() = runTest {
+        val full = "历史助手正文".repeat(5_000)
+        val history = listOf(ProtocolMessage("system", "system"), ProtocolMessage("user", "最初任务"),
+            ProtocolMessage("assistant", full, reasoning = full), ProtocolMessage("user", "当前指令"))
+        val models = ScriptedModels(listOf(text("完成")))
+        var saved: SubagentExecutionState? = null
+        val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(load = { SubagentExecutionState(messages = history) }, save = { saved = it }, contextWindow = { 4_096 })) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        assertThat(models.requests.single().messages.sumOf { ApproximateTokenEstimator.estimate(it) } + models.requests.single().maxOutputTokens).isAtMost(4_096)
+        assertThat(models.requests.single().messages.last().content).isEqualTo("当前指令")
+        assertThat(saved!!.messages.first { it.role == "assistant" }.content).isEqualTo(full)
+        assertThat(saved!!.messages.first { it.role == "assistant" }.reasoning).isEqualTo(full)
+    }
+
+    @Test
+    fun `巨型工具参数整轮折叠时不删除同id后续轮的配对结果`() = runTest {
+        val arguments = """{"text":"${"完整参数".repeat(3_000)}"}"""
+        val history = listOf(ProtocolMessage("system", "system"), ProtocolMessage("user", "任务"),
+            ProtocolMessage("assistant", "", toolCalls = listOf(ProtocolToolCall("same", "read_file", arguments))),
+            ProtocolMessage("tool", "早期结果", toolCallId = "same", name = "read_file"),
+            ProtocolMessage("assistant", "", toolCalls = listOf(ProtocolToolCall("same", "read_file", "{}"))),
+            ProtocolMessage("tool", "近期结果", toolCallId = "same", name = "read_file"))
+        val models = ScriptedModels(listOf(text("完成")))
+        var saved: SubagentExecutionState? = null
+        runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(load = { SubagentExecutionState(messages = history) }, save = { saved = it }, contextWindow = { 4_096 })) { _, _ -> }
+        val sent = models.requests.single().messages
+        assertThat(sent.flatMap { it.toolCalls.orEmpty().map(ProtocolToolCall::id) }).containsExactly("same")
+        assertThat(sent.filter { it.role == "tool" }.map { it.content }).containsExactly("近期结果")
+        assertThat(saved!!.messages.first { !it.toolCalls.isNullOrEmpty() }.toolCalls!!.single().arguments).isEqualTo(arguments)
+    }
+
+    @Test
+    fun `必要系统和当前指令放不下时明确失败且不发模型请求`() = runTest {
+        val models = ScriptedModels(listOf(text("不应调用")))
+        val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(maxSteps = 0).copy(prompt = "当前必要指令".repeat(2_000)), null,
+            SubagentExecution(contextWindow = { 4_096 })) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.FAILED)
+        assertThat(result.error).contains("上下文")
+        assertThat(models.requests).isEmpty()
+    }
+
+    @Test
+    fun `恢复中断的工具调用补充未知结果且不自动重做工具`() = runTest {
+        val history = listOf(ProtocolMessage("system", "system"), ProtocolMessage("user", "任务"),
+            ProtocolMessage("assistant", "", toolCalls = listOf(ProtocolToolCall("c1", "read_file", "{}"))))
+        val host = FakeHost(listOf(read))
+        val models = ScriptedModels(listOf(text("说明中断状态")))
+        runner(models, host).run(parent(), session("auto"), "step", run(maxSteps = 0), null,
+            SubagentExecution(load = { SubagentExecutionState(messages = history) }, resume = true)) { _, _ -> }
+        assertThat(models.requests.single().messages.last().toolCallId).isEqualTo("c1")
+        assertThat(models.requests.single().messages.last().content).contains("状态未知")
+        assertThat(host.executed).isEmpty()
+    }
+
+    @Test
+    fun `子代理不提供所有新增控制工具及其别名`() = runTest {
+        val controls = listOf("agent_wait", "session_read", "session_send", "session_stop")
+        val host = FakeHost(listOf(read) + controls.map { tool(it, ToolRisk.SAFE_READ) } + tool("control_alias", ToolRisk.SAFE_READ).copy(runtimeToolId = "session_send"))
+        val models = ScriptedModels(listOf(text("完成")))
+        runner(models, host).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
+        assertThat(models.requests.single().tools.map { it.function.name }).containsExactly("read_file")
+    }
+
     @Test fun `子代理隐藏提问工具并对误调用返回可继续的结构化错误`() = runTest {
         val host = FakeHost(listOf(read, tool("ask_user", ToolRisk.SAFE_READ)))
         val models = ScriptedModels(listOf(toolCall("q", "ask_user", "{}")), listOf(text("按默认方案完成")))
@@ -213,7 +444,7 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `父轮取消时停止模型请求并记录为已停止`() = runTest {
+    fun `执行协程取消时停止模型请求并记录为取消`() = runTest {
         val started = CompletableDeferred<Unit>()
         val models = SubagentModelClient { _, _, _, _, _, _ -> flow { started.complete(Unit); awaitCancellation() } }
         val published = mutableListOf<SubagentRun>()
@@ -226,6 +457,133 @@ class SubagentRunnerTest {
         assertThat(job.isCancelled).isTrue()
         assertThat(published.last().status).isEqualTo(SubagentStatus.CANCELLED)
         assertThat(published.last().endedAt).isNotNull()
+    }
+
+    @Test
+    fun `取消模型请求也保存已报告用量且完成后不重复累计快照`() = runTest {
+        val reported = CompletableDeferred<Unit>()
+        val models = SubagentModelClient { _, _, _, _, _, _ -> flow {
+            emit(usage(80, 20))
+            emit(usage(100, 30))
+            reported.complete(Unit)
+            awaitCancellation()
+        } }
+        var saved: SubagentExecutionState? = null
+        val published = mutableListOf<SubagentRun>()
+        val initial = run().copy(inputTokens = 10, outputTokens = 5, totalTokens = 15)
+        val job = launch {
+            runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", initial, null,
+                SubagentExecution(save = { saved = it })) { run, _ -> published += run }
+        }
+        reported.await()
+        job.cancel()
+        job.join()
+        assertThat(saved!!.inputTokens).isEqualTo(110L)
+        assertThat(saved!!.outputTokens).isEqualTo(35L)
+        assertThat(published.last().totalTokens).isEqualTo(145)
+
+        val completed = ScriptedModels(listOf(text("完成"), usage(80, 20), usage(100, 30)))
+        val result = runner(completed, FakeHost(emptyList())).run(parent(), session("auto"), "step", initial, null) { _, _ -> }
+        assertThat(result.totalTokens).isEqualTo(145)
+    }
+
+    @Test
+    fun `完整助手历史落盘前先持久化本轮最终用量`() = runTest {
+        listOf(listOf(text("完整结论")), listOf(usage(100, 30), text("快照后的新增正文"))).forEach { chunks ->
+            val persisted = mutableListOf<SubagentRun>()
+            val checkpoints = mutableListOf<Pair<SubagentExecutionState, SubagentRun?>>()
+            val initial = run().copy(inputTokens = 10, outputTokens = 5, totalTokens = 15)
+            val result = runner(ScriptedModels(chunks), FakeHost(emptyList())).run(parent(), session("auto"), "step", initial, null,
+                SubagentExecution(save = { state ->
+                    if (state.messages.any { it.role == "assistant" }) checkpoints += state to persisted.lastOrNull()
+                })) { run, persist -> if (persist) persisted += run }
+
+            assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+            assertThat(checkpoints).isNotEmpty()
+            checkpoints.forEach { (state, durableRun) ->
+                assertThat(durableRun).isNotNull()
+                assertThat(durableRun!!.inputTokens.toLong()).isEqualTo(state.inputTokens)
+                assertThat(durableRun.outputTokens.toLong()).isEqualTo(state.outputTokens)
+                assertThat(durableRun.totalTokens.toLong()).isEqualTo(state.inputTokens + state.outputTokens)
+                assertThat(durableRun.tokensEstimated).isTrue()
+            }
+            assertThat(result.totalTokens).isEqualTo(checkpoints.last().second!!.totalTokens)
+        }
+    }
+
+    @Test
+    fun `未报告Usage时取消也估算已发送输入和已观察输出`() = runTest {
+        val observed = CompletableDeferred<Unit>()
+        var inputEstimate = 0
+        val output = "已观察输出".repeat(30)
+        val models = SubagentModelClient { _, messages, tools, _, _, _ -> flow {
+            inputEstimate = messages.sumOf { ApproximateTokenEstimator.estimate(it) } + tools.sumOf {
+                ApproximateTokenEstimator.estimate(it.function.name + it.function.description + it.function.parameters)
+            }
+            emit(text(output))
+            observed.complete(Unit)
+            awaitCancellation()
+        } }
+        var saved: SubagentExecutionState? = null
+        val published = mutableListOf<SubagentRun>()
+        val job = launch {
+            runner(models, FakeHost(listOf(read))).run(parent(), session("auto"), "step", run(), null,
+                SubagentExecution(save = { saved = it })) { run, _ -> published += run }
+        }
+        observed.await()
+        job.cancel()
+        job.join()
+        assertThat(saved!!.inputTokens).isEqualTo(inputEstimate.toLong())
+        assertThat(saved!!.outputTokens).isEqualTo(ApproximateTokenEstimator.estimate(output).toLong())
+        assertThat(saved!!.tokensEstimated).isTrue()
+        assertThat(published.last().totalTokens).isEqualTo(inputEstimate + ApproximateTokenEstimator.estimate(output))
+        assertThat(published.last().tokensEstimated).isTrue()
+    }
+
+    @Test
+    fun `取消时真实Usage只叠加快照之后未覆盖的输出估算`() = runTest {
+        val observed = CompletableDeferred<Unit>()
+        val suffix = "新增未覆盖正文"
+        val models = SubagentModelClient { _, _, _, _, _, _ -> flow {
+            emit(text("已覆盖正文"))
+            emit(usage(80, 20))
+            emit(usage(100, 30))
+            emit(text(suffix))
+            observed.complete(Unit)
+            awaitCancellation()
+        } }
+        var saved: SubagentExecutionState? = null
+        val initial = run().copy(inputTokens = 10, outputTokens = 5, totalTokens = 15)
+        val job = launch {
+            runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", initial, null,
+                SubagentExecution(save = { saved = it })) { _, _ -> }
+        }
+        observed.await()
+        job.cancel()
+        job.join()
+        assertThat(saved!!.inputTokens).isEqualTo(110L)
+        assertThat(saved!!.outputTokens).isEqualTo(35L + ApproximateTokenEstimator.estimate(suffix))
+        assertThat(saved!!.tokensEstimated).isTrue()
+    }
+
+    @Test
+    fun `工具已返回后取消也保留完整结果检查点`() = runTest {
+        val full = "完整工具结果".repeat(6_000)
+        val host = FakeHost(listOf(read)).apply { resultContent = full }
+        val resultPublished = CompletableDeferred<Unit>()
+        var saved: SubagentExecutionState? = null
+        val job = launch {
+            runner(ScriptedModels(listOf(toolCall("c1", "read_file", "{}"))), host).run(parent(), session("auto"), "step", run(), null,
+                SubagentExecution(save = { saved = it })) { run, _ ->
+                    if (run.events.lastOrNull()?.kind == SubagentEvent.Kind.TOOL_RESULT && run.status.isActive) {
+                        resultPublished.complete(Unit)
+                        throw kotlinx.coroutines.CancellationException("测试取消")
+                    }
+                }
+        }
+        resultPublished.await()
+        job.join()
+        assertThat(saved!!.messages.single { it.role == "tool" }.content).isEqualTo(full)
     }
 
     @Test
@@ -372,7 +730,7 @@ class SubagentRunnerTest {
     private fun usage(input: Int, output: Int) = StreamChunk.Usage(ProtocolUsage(input = input, output = output, total = input + output))
     private fun toolCall(id: String, name: String, args: String) = StreamChunk.ToolCallDelta(id, name, args, 0)
 
-    private class Request(val messages: List<ProtocolMessage>, val tools: List<ProtocolTool>)
+    private class Request(val messages: List<ProtocolMessage>, val tools: List<ProtocolTool>, val maxOutputTokens: Int)
 
     /** 每次请求按顺序返回一轮脚本，并在末尾补上显式完成分片。 */
     private class ScriptedModels(vararg rounds: List<StreamChunk>) : SubagentModelClient {
@@ -386,7 +744,7 @@ class SubagentRunnerTest {
             reasoningEffort: com.promenar.nexara.data.model.params.ReasoningEffort?,
             sessionId: String,
         ): Flow<StreamChunk> {
-            requests += Request(messages.toList(), tools)
+            requests += Request(messages.toList(), tools, maxOutputTokens)
             val round = pending.removeFirstOrNull() ?: listOf(StreamChunk.TextDelta("（脚本结束）"))
             val reason = if (round.any { it is StreamChunk.ToolCallDelta }) CompletionReason.TOOL_CALLS else CompletionReason.END_TURN
             return flowOf(*(round + StreamChunk.Completed(reason)).toTypedArray())
@@ -400,6 +758,7 @@ class SubagentRunnerTest {
         var previewText: (String) -> String = { "preview:$it" }
         var toolsCalls = 0
         var failToolsOnCall: Int? = null
+        var resultContent: String? = null
         override suspend fun tools(session: Session): List<ProtocolTool> {
             if (++toolsCalls == failToolsOnCall) throw java.io.IOException("/data/user/0/secret/path")
             return tools
@@ -411,7 +770,7 @@ class SubagentRunnerTest {
         override suspend fun execute(tool: ProtocolTool, arguments: JsonObject, context: SkillExecutionContext): SubagentToolOutcome {
             executed += tool.function.name to context
             val path = (arguments["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-            return SubagentToolOutcome(if (path != null) "read:$path" else "ok", failed = false)
+            return SubagentToolOutcome(resultContent ?: if (path != null) "read:$path" else "ok", failed = false)
         }
     }
 

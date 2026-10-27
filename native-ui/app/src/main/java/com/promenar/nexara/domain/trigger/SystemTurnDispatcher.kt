@@ -20,6 +20,7 @@ enum class SystemTurnKind(val wireName: String) {
  *
  * 同一 [sourceId] 最多排队一个待发请求；新的请求到达时替换尚未发出的旧请求，旧请求以
  * [SystemTurnSkipReason.SUPERSEDED] 结束。
+ * 子代理完成通知按来源与 [sequence] 区分，恢复运行后的结论不会覆盖前一次尚未送达的结论。
  */
 data class SystemTurnRequest(
     val sessionId: String,
@@ -30,10 +31,16 @@ data class SystemTurnRequest(
     val title: String,
     /** 发给模型的正文，不含触发标记行。 */
     val body: String,
-    /** 第几次触发；后台任务为 null。 */
+    /** 第几次触发；子代理通知重试时保持不变，恢复运行后的新通知递增；后台任务为 null。 */
     val sequence: Int? = null,
     /** 错过触发后的补发。 */
     val catchUp: Boolean = false,
+    /** 完成通知的持久送达标识；合并通知时保留全部来源与通知序号。 */
+    val deliveryIds: List<String> = emptyList(),
+    /** 运行内送达租约；消息持久化前与工具等待互斥，失败后释放以便重试。 */
+    val delivery: SystemTurnDelivery? = null,
+    /** 完成通知在生成首步插入时，记录将消费该通知的空助手占位。 */
+    val consumerAssistantId: String? = null,
 )
 
 enum class SystemTurnSkipReason {

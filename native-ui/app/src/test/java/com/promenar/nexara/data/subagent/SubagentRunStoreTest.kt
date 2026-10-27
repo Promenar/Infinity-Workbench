@@ -89,19 +89,20 @@ class SubagentRunStoreTest {
             SubagentSpec("任务二", "问题二", null, SubagentToolProfile.INHERIT),
         )
 
-        val runs = launcher.launch(context(), "step", specs)
+        val runs = launcher.launch(context(), "step", specs, background = false)
 
         assertThat(runs.map { it.result }).containsExactly("答案：问题一", "答案：问题二").inOrder()
         val archived = store.load("s1", "step")!!
         assertThat(archived.runs.map { it.status }).containsExactly(SubagentStatus.COMPLETED, SubagentStatus.COMPLETED)
         assertThat(archived.runs.first().preset).isEqualTo("explorer")
         assertThat(archived.runs.first().modelId).isEqualTo("provider::model")
-        assertThat(store.drain("s1")).isEqualTo(TokenUsage(input = 20, output = 10, total = 30))
+        assertThat(archived.runs.sumOf { it.totalTokens }).isEqualTo(30)
+        assertThat(store.drain("s1")).isNull()
     }
 
     @Test
     fun `agent_task 校验任务数量与必填字段，探索者档位不能被放宽`() {
-        val skill = AgentTaskSkill { launcher(SubagentModelClient { _, _, _, _, _, _ -> error("不应请求") }) }
+        val skill = AgentTaskSkill { error("参数解析不应启动运行器") }
         fun parse(json: String) = skill.parse(Json.parseToJsonElement(json).jsonObject)
 
         assertThat(parse("""{"tasks":[]}""")).isNull()
@@ -114,7 +115,7 @@ class SubagentRunStoreTest {
     }
 
     @Test
-    fun `交回主 Agent 的结果按子代理分节，失败注明原因并截断超长正文`() {
+    fun `交回主 Agent 的结果按子代理分节并保留完整结论`() {
         val long = "x".repeat(SubagentLimits.MAX_RESULT_CHARS)
         val text = AgentTaskSkill.formatResults(
             listOf(
@@ -123,9 +124,10 @@ class SubagentRunStoreTest {
             ),
         )
         assertThat(text).contains("## Subagent 1: 任务")
-        assertThat(text).contains("…(truncated)")
-        assertThat(text).contains("Status: failed. ${SubagentRunner.APPROVAL_TIMEOUT}")
-        assertThat(text.length).isLessThan(SubagentLimits.MAX_RESULT_CHARS)
+        assertThat(text).contains(long)
+        assertThat(text).contains("Status: failed.")
+        assertThat(text).contains(SubagentRunner.APPROVAL_TIMEOUT)
+        assertThat(text.length).isGreaterThan(SubagentLimits.MAX_RESULT_CHARS)
     }
 
     @Test
@@ -163,25 +165,27 @@ class SubagentRunStoreTest {
                 emit(StreamChunk.Completed(CompletionReason.END_TURN))
             }
         }
-        val launcher = SubagentLauncher(SubagentRunner(models, host, SubagentApprovalBroker(), clock = { 5L }), store, { id -> Session(id = id, agentId = "agent", executionMode = "auto") }, { "m" }, clock = { 5L })
+        val launcher = SubagentLauncher(SubagentRunner(models, host, SubagentApprovalBroker(), clock = { 5L }), store, { id -> Session(id = id, agentId = "agent", executionMode = "auto") }, { "m" }, clock = { 5L }, applicationScope = backgroundScope)
         val runs = launcher.launch(context(), "step", listOf(
             SubagentSpec("a", "坏任务", null, SubagentToolProfile.INHERIT),
             SubagentSpec("b", "好任务", null, SubagentToolProfile.INHERIT),
-        ))
+        ), background = false)
         assertThat(runs.map { it.status }).containsExactly(SubagentStatus.FAILED, SubagentStatus.COMPLETED).inOrder()
         assertThat(runs.first().error).doesNotContain("secret")
         assertThat(runs.last().result).isEqualTo("好结果")
     }
 
     @Test
-    fun `取消派生时尚未结束的子代理都记为已停止`() = runTest {
+    fun `父轮取消时已派生子代理继续运行并由删除父会话清理`() = runTest {
         val models = SubagentModelClient { _, _, _, _, _, _ -> flow { kotlinx.coroutines.awaitCancellation() } }
         val launcher = launcher(models)
         val job = launch { launcher.launch(context(), "step", listOf(SubagentSpec("a", "p", null, SubagentToolProfile.INHERIT), SubagentSpec("b", "q", null, SubagentToolProfile.INHERIT))) }
         testScheduler.runCurrent()
         job.cancel()
         job.join()
-        assertThat(store.load("s1", "step")!!.runs.map { it.status }).containsExactly(SubagentStatus.CANCELLED, SubagentStatus.CANCELLED)
+        assertThat(store.snapshot("s1", "step")!!.runs.all { it.status.isActive }).isTrue()
+        launcher.deleteSession("s1")
+        assertThat(store.load("s1", "step")).isNull()
     }
 
     @Test
@@ -204,11 +208,12 @@ class SubagentRunStoreTest {
         assertThat(outcome.await()).isEqualTo(SubagentApprovalOutcome.APPROVED)
     }
 
-    private fun launcher(models: SubagentModelClient) = SubagentLauncher(
+    private fun kotlinx.coroutines.test.TestScope.launcher(models: SubagentModelClient) = SubagentLauncher(
         runner = SubagentRunner(models, NoTools, SubagentApprovalBroker(), clock = { 5L }),
         store = store,
         session = { id -> Session(id = id, agentId = "agent", executionMode = "auto") },
         modelFor = { "provider::model" },
+        applicationScope = backgroundScope,
         clock = { 5L },
     )
 
