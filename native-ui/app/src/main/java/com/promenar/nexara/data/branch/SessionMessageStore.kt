@@ -39,7 +39,7 @@ class SessionMessageStore(
                 val previous = database.messageDao().getBySession(sourceId).filter { it.name == SENT_MESSAGE_NAME }
                     .mapNotNull { runCatching { json.decodeFromString<SessionMessageOutbox>(it.content).sequence }.getOrNull() }.maxOrNull() ?: 0
                 val sequence = Math.addExact(previous, 1)
-                val message = Message(id = "session_mail_${UUID.randomUUID()}", role = MessageRole.USER,
+                val message = Message(id = "session_mail_${UUID.randomUUID()}", role = MessageRole.SYSTEM,
                     name = SENT_MESSAGE_NAME, content = json.encodeToString(SessionMessageOutbox(targetId, entry, wrapUp, sequence, sourceSubagentId, sourceTitle ?: source.title)))
                 database.messageDao().insert(message.toEntity(sourceId))
                 Triple(source, target, message)
@@ -110,7 +110,7 @@ class SessionMessageStore(
     }
     suspend fun recordSubagentSend(sourceId: String, runId: String, title: String, text: String) = withContext(Dispatchers.IO) {
         val entry = SessionMessageEntry(SessionMessageEntry.Direction.SENT, runId, SessionMessageEntry.PeerRelation.SUBAGENT, title, text, System.currentTimeMillis())
-        val message = Message("session_record_${UUID.randomUUID()}", MessageRole.USER, json.encodeToString(entry), name = RECORD_MESSAGE_NAME)
+        val message = Message("session_record_${UUID.randomUUID()}", MessageRole.SYSTEM, json.encodeToString(entry), name = RECORD_MESSAGE_NAME)
         database.messageDao().insert(message.toEntity(sourceId))
         if (store.getSession(sourceId) != null) messages.mirrorPersistedMessage(sourceId, message)
     }
@@ -155,5 +155,10 @@ class SessionMessageStore(
         const val WAKE_MESSAGE_NAME = "session_message_wake"
         const val PAUSED_MESSAGE_NAME = "session_auto_processing_paused"
         fun isInternal(name: String?) = name in setOf(DELIVERY_MESSAGE_NAME, WAKE_MESSAGE_NAME, BranchWorktreeAuthorization.MESSAGE_NAME)
+        /**
+         * 只在会话记录里显示的条目：发送副本、发给子代理的记录与自动处理暂停标记。它们以 SYSTEM 角色写在工具调用与结果之间，
+         * 不能作为用户轮次边界，也不进入模型历史（发送内容已在 `session_send` 调用参数中）。
+         */
+        fun isTimelineRecord(name: String?) = name in setOf(SENT_MESSAGE_NAME, RECORD_MESSAGE_NAME, PAUSED_MESSAGE_NAME)
     }
 }

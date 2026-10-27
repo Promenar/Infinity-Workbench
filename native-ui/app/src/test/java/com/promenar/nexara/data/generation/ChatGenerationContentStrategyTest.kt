@@ -37,6 +37,23 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
+    fun `会话消息发送副本与暂停标记不进入模型历史也不截断工具结果`() {
+        val send = ToolCall("call-s", "session_send", "{\"id\":\"b1\",\"message\":\"进度如何\"}")
+        val session = Session("s", "agent", messages = listOf(
+            Message("u1", MessageRole.USER, "派分支去做"),
+            Message("a1", MessageRole.ASSISTANT, "", toolCalls = listOf(send)),
+            Message("mail", MessageRole.USER, "{\"targetSessionId\":\"b1\"}", name = "session_message_sent"),
+            Message("rec", MessageRole.USER, "{\"peerId\":\"sa_1\"}", name = "session_message_record"),
+            Message("t1", MessageRole.TOOL, "已送达", toolCallId = send.id, name = send.name),
+            Message("pause", MessageRole.SYSTEM, "已暂停自动处理", name = "session_auto_processing_paused"),
+            Message("a2", MessageRole.ASSISTANT, ""),
+        ))
+        val prompt = strategy().buildProtocolMessages(session, "system", "u1")
+        assertThat(prompt.map { it.role }).containsExactly("system", "user", "assistant", "tool").inOrder()
+        assertThat(prompt[3].content).isEqualTo("已送达")
+    }
+
+    @Test
     fun `让出轮无最终回答也保留完整工具结果及随后用户指令`() {
         val session = Session("s", "agent", messages = listOf(
             Message("u1", MessageRole.USER, "查文件"),

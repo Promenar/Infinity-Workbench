@@ -62,7 +62,8 @@ class SessionMessageStoreTest {
         val arrived = CompletableDeferred<SystemTurnRequest>()
         val box = mailbox(object : SystemTurnDispatcher {
             override suspend fun request(request: SystemTurnRequest): SystemTurnOutcome {
-                assertThat(db.messageDao().getBySession("branch").any { it.name == SessionMessageStore.SENT_MESSAGE_NAME }).isTrue()
+                // 发送副本写在工具调用与结果之间，必须是 SYSTEM 角色，不能成为用户轮次边界。
+                assertThat(db.messageDao().getBySession("branch").single { it.name == SessionMessageStore.SENT_MESSAGE_NAME }.role).isEqualTo("system")
                 arrived.complete(request)
                 return SystemTurnOutcome.Completed
             }

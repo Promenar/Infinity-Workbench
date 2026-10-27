@@ -176,10 +176,12 @@ class MessageManager(
                         session
                     } else {
                         val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        // SYSTEM 记录（会话消息发送副本、暂停标记）不作为会话预览，避免首页显示内部 JSON。
+                        val preview = message.role != MessageRole.SYSTEM
                         session.copy(
                             messages = session.messages + message,
-                            lastMessage = message.content,
-                            time = timeFormatter.format(Date(message.createdAt)),
+                            lastMessage = if (preview) message.content else session.lastMessage,
+                            time = if (preview) timeFormatter.format(Date(message.createdAt)) else session.time,
                             updatedAt = maxOf(session.updatedAt, message.createdAt),
                         )
                     }
