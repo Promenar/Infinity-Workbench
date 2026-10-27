@@ -37,6 +37,10 @@ data class SystemTurnRequest(
     val catchUp: Boolean = false,
     /** 完成通知的持久送达标识；合并通知时保留全部来源与通知序号。 */
     val deliveryIds: List<String> = emptyList(),
+    /** 运行内送达租约；消息持久化前与工具等待互斥，失败后释放以便重试。 */
+    val delivery: SystemTurnDelivery? = null,
+    /** 完成通知在生成首步插入时，记录将消费该通知的空助手占位。 */
+    val consumerAssistantId: String? = null,
 )
 
 enum class SystemTurnSkipReason {

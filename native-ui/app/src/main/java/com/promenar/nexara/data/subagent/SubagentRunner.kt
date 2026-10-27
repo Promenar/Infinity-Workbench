@@ -111,6 +111,7 @@ class SubagentRunner(
                 state = state.copy(messages = messages.toList(), pendingInstructions = emptyList(), consumedInstructionIds = consumed.toList())
                 execution.save(state)
             }
+            var lastUsageCheckpoint: Long? = null
             var firstBoundary = true
             saveState()
             while (true) {
@@ -158,12 +159,14 @@ class SubagentRunner(
                 update(run.copy(status = if (state.wrapUpAfterStep != null) SubagentStatus.WRAPPING_UP else SubagentStatus.RUNNING, step = round, currentTool = null, liveOutputKey = null), persist = false)
                 val roundInput = state.inputTokens
                 val roundOutput = state.outputTokens
-                val response = streamRound(modelSessionId, run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), request.messages, roundTools, request.maxOutputTokens) { input, output, estimated ->
-                    // 用量是流内累计快照，立即落盘，以便请求取消后仍可结算已报告的部分。
+                val response = streamRound(modelSessionId, run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), request.messages, roundTools, request.maxOutputTokens) { input, output, estimated, force ->
+                    // 流内用量立即更新内存，每秒保存检查点；步骤结束或取消时强制结算。
                     state = state.copy(inputTokens = roundInput + input, outputTokens = roundOutput + output, tokensEstimated = state.tokensEstimated || estimated)
                     withContext(NonCancellable) {
-                        update(run.copy(inputTokens = state.inputTokens.clamp(), outputTokens = state.outputTokens.clamp(), totalTokens = (state.inputTokens + state.outputTokens).clamp(), tokensEstimated = state.tokensEstimated))
-                        saveState()
+                        val now = clock()
+                        val checkpoint = force || (lastUsageCheckpoint?.let { now - it >= 1_000L } ?: true)
+                        update(run.copy(inputTokens = state.inputTokens.clamp(), outputTokens = state.outputTokens.clamp(), totalTokens = (state.inputTokens + state.outputTokens).clamp(), tokensEstimated = state.tokensEstimated), persist = checkpoint)
+                        if (checkpoint) { saveState(); lastUsageCheckpoint = now }
                     }
                 }
                 val calls = if (finalRound || response.failure != null) emptyList() else response.toolCalls
@@ -181,11 +184,11 @@ class SubagentRunner(
                         toolCalls = response.toolCalls.takeIf { it.isNotEmpty() },
                         reasoningReplay = response.replay,
                     )
-                    saveState()
                     update(
                         run.copy(inputTokens = state.inputTokens.clamp(), outputTokens = state.outputTokens.clamp(), totalTokens = (state.inputTokens + state.outputTokens).clamp(), tokensEstimated = state.tokensEstimated),
-                        persist = false,
+                        persist = true,
                     )
+                    saveState()
                 }
                 currentCoroutineContext().ensureActive()
                 response.failure?.let { failure ->
@@ -466,7 +469,7 @@ class SubagentRunner(
         messages: List<ProtocolMessage>,
         tools: List<ProtocolTool>,
         maxOutputTokens: Int,
-        onUsage: suspend (Long, Long, Boolean) -> Unit,
+        onUsage: suspend (Long, Long, Boolean, Boolean) -> Unit,
     ): RoundResponse {
         val content = StringBuilder()
         val reasoning = StringBuilder()
@@ -503,7 +506,7 @@ class SubagentRunner(
                         output = maxOf(output, chunk.usage.output)
                         total = maxOf(total, chunk.usage.total, input + output)
                         observedAtUsage = observedOutput()
-                        onUsage(maxOf(input, total - output).toLong(), output.toLong(), false)
+                        onUsage(maxOf(input, total - output).toLong(), output.toLong(), false, false)
                     }
                     is StreamChunk.ReasoningState -> replay = chunk.replay
                     is StreamChunk.Error -> if (failure == null) failure = "模型请求失败（${chunk.code.name}）"
@@ -514,7 +517,7 @@ class SubagentRunner(
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 val (inputTokens, outputTokens, estimated) = snapshot()
-                onUsage(inputTokens, outputTokens, estimated)
+                onUsage(inputTokens, outputTokens, estimated, true)
             }
             throw cancelled
         } catch (error: Exception) {
@@ -524,7 +527,7 @@ class SubagentRunner(
         if (failure == null && !completed) failure = "模型输出意外中断"
         val toolCalls = calls.map { (id, value) -> ProtocolToolCall(id, value.first, value.second.toString().ifBlank { "{}" }) }
         val (inputTokens, outputTokens, estimated) = snapshot()
-        withContext(NonCancellable) { onUsage(inputTokens, outputTokens, estimated) }
+        withContext(NonCancellable) { onUsage(inputTokens, outputTokens, estimated, true) }
         return RoundResponse(content.toString(), reasoning.toString(), toolCalls, replay, inputTokens, outputTokens, estimated, failure)
     }
 

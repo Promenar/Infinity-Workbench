@@ -96,6 +96,9 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(fixture.store.getSession("skills-session")!!.messages.count {
             it.name == com.promenar.nexara.domain.trigger.SystemTriggerMessage.MESSAGE_NAME
         }).isEqualTo(1)
+        val completion = fixture.store.getSession("skills-session")!!.messages.last()
+        assertThat(com.promenar.nexara.domain.trigger.SystemTriggerMessage.parse(completion.content)!!.consumerAssistantId)
+            .isEqualTo("assistant")
     }
 
     @Test fun `提问事务返回时取消也关闭已创建的待回答状态`() = runTest {

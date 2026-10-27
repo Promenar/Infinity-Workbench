@@ -28,6 +28,22 @@ import org.junit.Test
 
 /** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
+    @Test fun `流式用量只按时间节流检查点且结束强制保存最终用量`() = runTest {
+        val model = SubagentModelClient { _, _, _, _, _, _ -> flow {
+            repeat(100) { emit(usage(it + 1, it + 1)) }
+            emit(text("完成"))
+            emit(StreamChunk.Completed(CompletionReason.END_TURN))
+        } }
+        val persisted = mutableListOf<SubagentRun>()
+        val saved = mutableListOf<SubagentExecutionState>()
+        val result = runner(model, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null,
+            SubagentExecution(save = { saved += it })) { run, persist -> if (persist) persisted += run }
+        assertThat(persisted.size).isAtMost(6)
+        assertThat(saved.size).isAtMost(6)
+        assertThat(saved.last().inputTokens).isEqualTo(result.inputTokens.toLong())
+        assertThat(persisted.last().totalTokens).isEqualTo(result.totalTokens)
+    }
+
     @Test
     fun `不限步数和token时超过十二步与四十万token仍可调用工具`() = runTest {
         val rounds = (1..14).map { listOf(toolCall("c$it", "read_file", "{}"), usage(40_000, 1)) } + listOf(listOf(text("完整完成")))

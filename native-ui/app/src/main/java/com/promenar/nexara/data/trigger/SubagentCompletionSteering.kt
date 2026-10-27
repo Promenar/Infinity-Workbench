@@ -3,6 +3,8 @@ package com.promenar.nexara.data.trigger
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.domain.trigger.SystemTriggerMessage
+import com.promenar.nexara.domain.trigger.SystemTurnDelivery
+import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.domain.trigger.SystemTurnOutcome
 import com.promenar.nexara.domain.trigger.SystemTurnRequest
 import com.promenar.nexara.ui.chat.ChatStore
@@ -58,20 +60,38 @@ class SubagentCompletionSteering(private val applicationScope: CoroutineScope) {
     }
 
     /** 接受之后的写入与回执不可被调用方取消拆开；重复请求通过持久消息标记直接回执。 */
-    internal suspend fun deliver(sessionId: String, store: ChatStore, messages: MessageManager): Delivered? {
+    internal suspend fun deliver(sessionId: String, store: ChatStore, messages: MessageManager, consumerAssistantId: String? = null): Delivered? {
         val lane = synchronized(lock) { lanes.getOrPut(sessionId) { Mutex() } }
         return lane.withLock {
             withContext(NonCancellable) {
                 val entries = synchronized(lock) { pending[sessionId]?.toList().orEmpty() }
-                    .filter { it.ticket.tryAccept("subagent-delivery:${it.request.deliveryIds.first()}") }
+                    .filter { !it.ticket.isWithdrawn }
                 if (entries.isEmpty()) return@withContext null
+                val claims = mutableListOf<SystemTurnDelivery.Claim>()
+                val accepted = mutableListOf<Pending>()
                 try {
+                    for (entry in entries) {
+                        val claim = entry.request.delivery?.claim()
+                        if (entry.request.delivery != null && claim == null) {
+                            entry.outcome.complete(SystemTurnOutcome.Completed)
+                            synchronized(lock) { detach(entry) }
+                            continue
+                        }
+                        if (entry.ticket.isOpen) entry.ticket.tryAccept("subagent-delivery:${entry.request.deliveryIds.first()}")
+                        if (entry.ticket.isWithdrawn) {
+                            claim?.release()
+                            continue
+                        }
+                        if (claim != null) claims += claim
+                        accepted += entry
+                    }
+                    if (accepted.isEmpty()) return@withContext null
                     val session = checkNotNull(store.getSession(sessionId)) { "完成通知的父会话不存在" }
                     val deliveredIds = session.messages.asSequence()
                         .filter { it.name == SystemTriggerMessage.MESSAGE_NAME }
                         .flatMap { SystemTriggerMessage.parse(it.content)?.deliveryIds.orEmpty().asSequence() }
                         .toMutableSet()
-                    val fresh = entries.filter { entry ->
+                    val fresh = accepted.filter { entry ->
                         val unseen = entry.request.deliveryIds.any { it !in deliveredIds }
                         deliveredIds.addAll(entry.request.deliveryIds)
                         unseen
@@ -84,6 +104,7 @@ class SubagentCompletionSteering(private val applicationScope: CoroutineScope) {
                                 "[${it.sourceId}] ${it.title}\n${it.body}"
                             },
                             deliveryIds = requests.flatMap { it.deliveryIds }.distinct(),
+                            consumerAssistantId = consumerAssistantId,
                         )
                         val text = SystemTriggerMessage.compose(combined, OffsetDateTime.now())
                         val userId = "user_${UUID.randomUUID()}"
@@ -93,13 +114,22 @@ class SubagentCompletionSteering(private val applicationScope: CoroutineScope) {
                         ))
                         Delivered(combined, userId, text)
                     }
-                    entries.forEach { it.outcome.complete(SystemTurnOutcome.Completed) }
+                    claims.forEach { claim ->
+                        try { claim.confirmPersistedMessage() }
+                        catch (failure: Exception) {
+                            NexaraLogger.log("[SubagentCompletion] 消息已送达，持久水位将在后续检查点或启动时复核：${failure::class.java.simpleName}")
+                        }
+                    }
+                    accepted.forEach { it.outcome.complete(SystemTurnOutcome.Completed) }
+                    synchronized(lock) { accepted.forEach(::detach) }
                     delivered
                 } catch (failure: Throwable) {
-                    entries.forEach { it.outcome.completeExceptionally(failure) }
-                    throw failure
+                    NexaraLogger.log("[SubagentCompletion] 完成通知送达失败，将重试：${failure::class.java.simpleName}")
+                    accepted.forEach { it.outcome.complete(SystemTurnOutcome.Failed("完成通知持久化失败")) }
+                    synchronized(lock) { accepted.forEach(::detach) }
+                    null
                 } finally {
-                    synchronized(lock) { entries.forEach(::detach) }
+                    claims.asReversed().forEach { it.release() }
                 }
             }
         }

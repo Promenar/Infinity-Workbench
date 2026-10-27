@@ -20,8 +20,9 @@ class BackgroundSubagentTest {
         val root = Files.createTempDirectory("bg-subagent-test").toFile()
         val store = SubagentRunStore(root, UnconfinedTestDispatcher(scope.testScheduler))
         val notices = mutableListOf<SystemTurnRequest>()
+        var onNotice: suspend (SystemTurnRequest) -> SystemTurnOutcome = { SystemTurnOutcome.Completed }
         val dispatcher = object : SystemTurnDispatcher {
-            override suspend fun request(request: SystemTurnRequest): SystemTurnOutcome { notices += request; return SystemTurnOutcome.Completed }
+            override suspend fun request(request: SystemTurnRequest): SystemTurnOutcome { notices += request; return onNotice(request) }
         }
         var writer: suspend (Session, SubagentRun, String) -> String = { _, _, _ -> "/subagent-results/result.md" }
         val runtime = create(store)
@@ -268,6 +269,241 @@ class BackgroundSubagentTest {
         assertThat(runCatching { stats.resetStats() }.isFailure).isTrue()
         assertThat(stats.getTotalUsage().totalTokens).isEqualTo(110)
     }
+    @Test fun `等待已交回结论时撤回已入步骤队列的同序号通知`() = runTest {
+        val f = Fixture(this, answer())
+        val bridge = com.promenar.nexara.data.trigger.SubagentCompletionSteering(backgroundScope)
+        val chat = com.promenar.nexara.ui.chat.ChatStore().apply { upsertSession(Session("parent", "a")) }
+        val messages = io.mockk.mockk<com.promenar.nexara.ui.chat.manager.MessageManager>(relaxed = true)
+        f.onNotice = { request ->
+            bridge.enqueue(request, com.promenar.nexara.data.trigger.SystemTurnAdmissionTicket()).outcome.await()
+        }
+        val run = f.runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        assertThat(f.notices).hasSize(1)
+        assertThat(f.runtime.waitFor("parent", listOf(run.id)).single().result).isEqualTo("结论：任务")
+        assertThat(bridge.deliver("parent", chat, messages)).isNull()
+        io.mockk.coVerify(exactly = 0) { messages.addMessage(any(), any()) }
+    }
+
+    @Test fun `通知先确认后等待不重复交回相同结论`() = runTest {
+        val f = Fixture(this, answer())
+        val run = f.runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        assertThat(f.notices).hasSize(1)
+        val waited = f.runtime.waitFor("parent", listOf(run.id)).single()
+        assertThat(waited.result).isNull()
+        assertThat(waited.resultPath).isNull()
+    }
+
+    @Test fun `失败通知指数退避且长时间等待不持续空转`() = runTest {
+        val f = Fixture(this, answer())
+        f.onNotice = { SystemTurnOutcome.Failed("暂不可送达") }
+        f.runtime.launch(parent(), "s", listOf(spec())); runCurrent()
+        advanceTimeBy(60_000); runCurrent()
+        assertThat(f.notices.size).isAtMost(8)
+        assertThat(f.notices.size).isAtLeast(3)
+        assertThat(f.store.snapshot("parent", "s")!!.runs.single().pendingNotices).hasSize(1)
+    }
+
+    @Test fun `持久化暂停不占用Launcher全局状态锁`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val f = Fixture(this, answer(gate))
+        val queued = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
+        var blocked = false
+        val disk = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                if (blocked) queued.add(block) else block.run()
+            }
+        }
+        val runtime = f.create(SubagentRunStore(f.root, disk))
+        val run = runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        blocked = true
+        val waiting = backgroundScope.async { runtime.waitFor("parent", listOf(run.id)) }; runCurrent()
+        val reading = backgroundScope.async { runtime.read("parent", run.id) }; runCurrent()
+        val readable = reading.isCompleted
+        blocked = false
+        while (true) (queued.poll() ?: break).run()
+        waiting.cancel(); runCurrent()
+        runtime.stop("parent", run.id); runCurrent()
+        assertThat(readable).isTrue()
+    }
+
+    @Test fun `等待确认持久化失败不交回结论且保留未交付通知`() = runTest {
+        val f = Fixture(this, answer())
+        f.onNotice = { SystemTurnOutcome.Failed("暂不可送达") }
+        lateinit var storage: SubagentRunStore
+        var failConfirmation = false
+        val disk = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                val batch = storage.snapshot("parent", "s")
+                if (failConfirmation && batch?.wait != null && batch.runs.single().pendingNotices.isEmpty()) {
+                    failConfirmation = false
+                    val file = f.root.walkTopDown().first { it.isFile && it.extension == "json" }
+                    file.delete(); file.mkdir()
+                }
+                block.run()
+            }
+        }
+        storage = SubagentRunStore(f.root, disk)
+        val runtime = f.create(storage)
+        val run = runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        failConfirmation = true
+        val waited = runtime.waitFor("parent", listOf(run.id)).single()
+        assertThat(waited.result).isNull()
+        assertThat(waited.error).contains("持久化失败")
+        assertThat(runtime.read("parent", run.id).pendingNotices).hasSize(1)
+        assertThat(storage.snapshot("parent", "s")!!.wait).isNull()
+    }
+
+    @Test fun `创建检查点失败的派生不会在磁盘恢复后被其它批次启动`() = runTest {
+        val started = mutableListOf<String>()
+        val f = Fixture(this, SubagentModelClient { _, messages, _, _, _, _ -> flow {
+            started += messages.last().content
+            emit(StreamChunk.TextDelta("完成")); emit(StreamChunk.Completed(CompletionReason.END_TURN))
+        } })
+        f.runtime.recover()
+        f.root.delete(); f.root.writeText("不可写的根")
+        assertThat(runCatching { f.runtime.launch(parent(), "failed-create", listOf(spec("失败派生"))) }.isFailure).isTrue()
+        f.root.delete(); f.root.mkdir()
+        f.runtime.launch(parent(), "valid-create", listOf(spec("正常派生"))); runCurrent()
+        assertThat(started).containsExactly("正常派生")
+        assertThat(f.runtime.activeRuns.value).isEmpty()
+    }
+
+    @Test fun `恢复检查点失败的子代理不会被其它批次带入运行队列`() = runTest {
+        val started = mutableListOf<String>()
+        val f = Fixture(this, SubagentModelClient { _, messages, _, _, _, _ -> flow {
+            started += messages.last().content
+            emit(StreamChunk.TextDelta("完成")); emit(StreamChunk.Completed(CompletionReason.END_TURN))
+        } })
+        val run = f.runtime.launch(parent(), "s", listOf(spec("初次派生"))).single(); runCurrent()
+        val file = f.root.walkTopDown().first { it.isFile && it.extension == "json" }
+        file.delete(); file.mkdir()
+        assertThat(runCatching { f.runtime.send("parent", run.id, "失败恢复") }.isFailure).isTrue()
+        file.delete()
+        f.runtime.launch(parent(), "valid", listOf(spec("正常派生"))); runCurrent()
+        assertThat(started).containsExactly("初次派生", "正常派生").inOrder()
+        assertThat(f.runtime.activeRuns.value).isEmpty()
+    }
+
+    @Test fun `通知正在写入时等待在回执后不重复交回结论`() = runTest {
+        val f = Fixture(this, answer())
+        val bridge = com.promenar.nexara.data.trigger.SubagentCompletionSteering(backgroundScope)
+        val chat = com.promenar.nexara.ui.chat.ChatStore().apply { upsertSession(Session("parent", "a")) }
+        val disk = CompletableDeferred<Unit>()
+        val messages = io.mockk.mockk<com.promenar.nexara.ui.chat.manager.MessageManager>(relaxed = true)
+        io.mockk.coEvery { messages.addMessage(any(), any()) } coAnswers {
+            val message = secondArg<Message>()
+            disk.await()
+            chat.updateSession("parent") { it.copy(messages = it.messages + message) }
+        }
+        f.onNotice = { request ->
+            bridge.enqueue(request, com.promenar.nexara.data.trigger.SystemTurnAdmissionTicket()).outcome.await()
+        }
+        val run = f.runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        val delivering = backgroundScope.async { bridge.deliver("parent", chat, messages) }; runCurrent()
+        val waiting = backgroundScope.async { f.runtime.waitFor("parent", listOf(run.id)) }; runCurrent()
+        assertThat(waiting.isCompleted).isFalse()
+        disk.complete(Unit); runCurrent()
+        assertThat(delivering.await()).isNotNull()
+        assertThat(waiting.await().single().result).isNull()
+        assertThat(chat.getSession("parent")!!.messages).hasSize(1)
+    }
+
+    @Test fun `多个等待目标部分确认失败仍交回成功目标并保留失败目标通知`() = runTest {
+        val f = Fixture(this, answer())
+        f.onNotice = { SystemTurnOutcome.Failed("暂不可送达") }
+        lateinit var storage: SubagentRunStore
+        var failConfirmation = false
+        val disk = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                val batch = storage.snapshot("parent", "s")
+                if (failConfirmation && batch?.wait != null && batch.runs.all { it.pendingNotices.isEmpty() }) {
+                    failConfirmation = false
+                    val file = f.root.walkTopDown().first { it.isFile && it.extension == "json" }
+                    file.delete(); file.mkdir()
+                }
+                block.run()
+            }
+        }
+        storage = SubagentRunStore(f.root, disk)
+        val runtime = f.create(storage)
+        val runs = runtime.launch(parent(), "s", listOf(spec("目标一"), spec("目标二"))); runCurrent()
+        failConfirmation = true
+        val waited = runtime.waitFor("parent", runs.map { it.id })
+        assertThat(waited[0].result).isEqualTo("结论：目标一")
+        assertThat(waited[1].result).isNull()
+        assertThat(waited[1].error).contains("持久化失败")
+        assertThat(runtime.read("parent", runs[0].id).pendingNotices).isEmpty()
+        assertThat(runtime.read("parent", runs[1].id).pendingNotices).hasSize(1)
+    }
+
+    @Test fun `注册等待检查点失败不会在finally消费尚未交回的结论`() = runTest {
+        val f = Fixture(this, answer())
+        f.onNotice = { SystemTurnOutcome.Failed("暂不可送达") }
+        lateinit var storage: SubagentRunStore
+        var failRegistration = false
+        var broken: java.io.File? = null
+        val disk = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                if (broken != null) { broken!!.delete(); broken = null }
+                val batch = storage.snapshot("parent", "s")
+                if (failRegistration && batch?.wait != null) {
+                    failRegistration = false
+                    broken = f.root.walkTopDown().first { it.isFile && it.extension == "json" }
+                    broken!!.delete(); broken!!.mkdir()
+                }
+                block.run()
+            }
+        }
+        storage = SubagentRunStore(f.root, disk)
+        val runtime = f.create(storage)
+        val run = runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        failRegistration = true
+        assertThat(runCatching { runtime.waitFor("parent", listOf(run.id)) }.isFailure).isTrue()
+        assertThat(runtime.read("parent", run.id).pendingNotices).hasSize(1)
+        assertThat(runtime.waitFor("parent", listOf(run.id)).single().result).isEqualTo("结论：任务")
+    }
+
+    @Test fun `通知消息已写但outbox确认失败后等待不会重新领取同一结论`() = runTest {
+        val f = Fixture(this, answer())
+        val bridge = com.promenar.nexara.data.trigger.SubagentCompletionSteering(backgroundScope)
+        val chat = com.promenar.nexara.ui.chat.ChatStore().apply { upsertSession(Session("parent", "a")) }
+        val messages = io.mockk.mockk<com.promenar.nexara.ui.chat.manager.MessageManager>(relaxed = true)
+        io.mockk.coEvery { messages.addMessage(any(), any()) } coAnswers {
+            val message = secondArg<Message>()
+            chat.updateSession("parent") { it.copy(messages = it.messages + message) }
+        }
+        val dispatcherReceipt = CompletableDeferred<Unit>()
+        f.onNotice = { request ->
+            val pending = bridge.enqueue(request, com.promenar.nexara.data.trigger.SystemTurnAdmissionTicket())
+            pending.outcome.await()
+            dispatcherReceipt.await()
+            SystemTurnOutcome.Completed
+        }
+        lateinit var storage: SubagentRunStore
+        var failAck = false
+        val disk = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                val batch = storage.snapshot("parent", "s")
+                if (failAck && batch != null && batch.runs.single().pendingNotices.isEmpty()) {
+                    failAck = false
+                    val file = f.root.walkTopDown().first { it.isFile && it.extension == "json" }
+                    file.delete(); file.mkdir()
+                }
+                block.run()
+            }
+        }
+        storage = SubagentRunStore(f.root, disk)
+        val runtime = f.create(storage)
+        val run = runtime.launch(parent(), "s", listOf(spec())).single(); runCurrent()
+        failAck = true
+        assertThat(bridge.deliver("parent", chat, messages)).isNotNull()
+        f.root.walkTopDown().filter { it.isDirectory && it.extension == "json" }.toList().forEach { it.delete() }
+        val waited = runtime.waitFor("parent", listOf(run.id)).single()
+        assertThat(waited.result).isNull()
+        assertThat(chat.getSession("parent")!!.messages).hasSize(1)
+        dispatcherReceipt.complete(Unit); runCurrent()
+    }
+
     private fun com.promenar.nexara.domain.repository.DailyTokenStats.totalTokens() = inputTokens + outputTokens
 
     private object NoTools : SubagentToolHost {

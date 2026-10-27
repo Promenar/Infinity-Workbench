@@ -10,11 +10,13 @@ class SystemTriggerMessageTest {
 
     @Test fun `合并完成通知的全部送达标识可往返且旧消息兼容`() {
         val request = SystemTurnRequest("s", SystemTurnKind.SUBAGENT_DONE, "sa_a", "结论", "正文",
-            sequence = 2, deliveryIds = listOf("sa_a:2", "sa_b:1"))
+            sequence = 2, deliveryIds = listOf("sa_a:2", "sa_b:1"), consumerAssistantId = "assistant")
         assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(request, firedAt))!!.deliveryIds)
             .containsExactly("sa_a:2", "sa_b:1").inOrder()
-        val legacy = request.copy(deliveryIds = emptyList())
+        assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(request, firedAt))!!.consumerAssistantId).isEqualTo("assistant")
+        val legacy = request.copy(deliveryIds = emptyList(), consumerAssistantId = null)
         assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(legacy, firedAt))!!.deliveryIds).isEmpty()
+        assertThat(SystemTriggerMessage.parse(SystemTriggerMessage.compose(legacy, firedAt))!!.consumerAssistantId).isNull()
     }
 
     @Test

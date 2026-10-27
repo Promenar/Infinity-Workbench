@@ -5,6 +5,7 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.domain.trigger.SystemTriggerMessage
+import com.promenar.nexara.domain.trigger.SystemTurnDelivery
 import com.promenar.nexara.domain.trigger.SystemTurnKind
 import com.promenar.nexara.domain.trigger.SystemTurnOutcome
 import com.promenar.nexara.domain.trigger.SystemTurnRequest
@@ -86,15 +87,31 @@ class SubagentCompletionSteeringTest {
         coEvery { failing.addMessage(any(), any()) } throws IllegalStateException("持久化失败")
         val pending = bridge.enqueue(request("sa_retry", "可重试结论"), SystemTurnAdmissionTicket())
 
-        assertThat(runCatching { bridge.deliver("s", store, failing) }.isFailure).isTrue()
-        assertThat(runCatching { pending.outcome.await() }.isFailure).isTrue()
+        assertThat(bridge.deliver("s", store, failing)).isNull()
+        assertThat(pending.outcome.await()).isInstanceOf(SystemTurnOutcome.Failed::class.java)
         assertThat(store.getSession("s")!!.messages).isEmpty()
         bridge.remove(pending)
-
         val retry = bridge.enqueue(request("sa_retry", "可重试结论"), SystemTurnAdmissionTicket())
         bridge.deliver("s", store, messages(store))
         assertThat(retry.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
         assertThat(store.getSession("s")!!.messages).hasSize(1)
+    }
+
+    @Test fun `消息已持久化但outbox回执写入失败仍交回已送达消息启动父轮`() = runTest {
+        val store = store()
+        var released = false
+        val guard = object : SystemTurnDelivery {
+            override suspend fun claim() = object : SystemTurnDelivery.Claim {
+                override suspend fun confirm() { error("outbox写入失败") }
+                override fun release() { released = true }
+            }
+        }
+        val bridge = SubagentCompletionSteering(backgroundScope)
+        val pending = bridge.enqueue(request("sa_ack", "已落盘结论").copy(delivery = guard), SystemTurnAdmissionTicket())
+        assertThat(bridge.deliver("s", store, messages(store))).isNotNull()
+        assertThat(pending.outcome.await()).isEqualTo(SystemTurnOutcome.Completed)
+        assertThat(store.getSession("s")!!.messages).hasSize(1)
+        assertThat(released).isTrue()
     }
 
     private fun store() = ChatStore().apply { upsertSession(Session("s", "a")) }

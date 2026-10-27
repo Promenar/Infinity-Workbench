@@ -868,10 +868,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     val systemTriggerNotifications by lazy {
         com.promenar.nexara.background.trigger.SystemTriggerNotifications(this, sessionOpenIntentFactory) { visibleSessionId }
     }
-    val systemTurnDispatcher: com.promenar.nexara.domain.trigger.SystemTurnDispatcher by lazy {
-        com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher(
-            generationScope,
-            com.promenar.nexara.data.trigger.ApplicationSystemTurnRuntime(
+    private val systemTurnRuntime by lazy {
+        com.promenar.nexara.data.trigger.ApplicationSystemTurnRuntime(
                 startup = startupState, store = chatStore,
                 subagentCompletions = subagentCompletions,
                 findSession = ::loadGenerationSession,
@@ -889,7 +887,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                         com.promenar.nexara.ui.chat.GenerationFailureNotice.from(it.failure),
                     ).let { text -> getString(text.resourceId, *text.args.toTypedArray()) }
                 } ?: getString(R.string.schedule_notification_failed_reason) },
-            ),
+        )
+    }
+    val systemTurnDispatcher: com.promenar.nexara.domain.trigger.SystemTurnDispatcher by lazy {
+        com.promenar.nexara.data.trigger.DefaultSystemTurnDispatcher(
+            generationScope, systemTurnRuntime,
             failureMessage = getString(R.string.schedule_notification_failed_reason),
             interruptedMessage = getString(R.string.schedule_interrupted),
         )
@@ -1880,7 +1882,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 }
                 startupIssueManager.recover(StartupStep.MODEL_CATALOG, StartupIssueScope.subsystem(StartupSubsystem.MODEL_CATALOG)) { startModelCatalogUpdates() }
                 _startupState.value = BackupStartupState.Ready
-                generationScope.launch { subagentLauncher.recover() }
+                generationScope.launch {
+                    try {
+                        val sessionIds = withContext(Dispatchers.IO) { database.sessionDao().getAll().map { it.id } }
+                        systemTurnRuntime.recoverSubagentCompletions(sessionIds)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        NexaraLogger.logError("SubagentCompletionRecovery", failure)
+                    }
+                    subagentLauncher.recover()
+                }
                 generationScope.launch(Dispatchers.IO) {
                     startupIssueManager.recover(StartupStep.MEMORY_CLEANUP, StartupIssueScope.subsystem(StartupSubsystem.MEMORY_CLEANUP)) {
                         conversationMemoryLifecycle.purgeExpired()

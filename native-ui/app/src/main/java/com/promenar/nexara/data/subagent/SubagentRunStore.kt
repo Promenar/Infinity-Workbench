@@ -60,8 +60,17 @@ class SubagentRunStore(
     suspend fun update(batch: SubagentBatch, persist: Boolean) {
         if (batch.sessionId in deleted) return
         if (persist) write(batch)
+        publish(batch)
+    }
+
+    /** Launcher 的状态锁内只发布内存，磁盘写者不得回写旧快照。 */
+    internal fun publish(batch: SubagentBatch) {
         if (batch.sessionId !in deleted) live.update { it + (key(batch.sessionId, batch.stepId) to batch) }
     }
+
+    internal suspend fun persist(batch: SubagentBatch) = write(batch)
+
+    internal fun markDeleted(sessionId: String) { deleted += sessionId }
 
     suspend fun finish(batch: SubagentBatch) {
         if (batch.sessionId in deleted) return
