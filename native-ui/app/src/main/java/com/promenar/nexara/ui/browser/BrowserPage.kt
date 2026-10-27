@@ -5,6 +5,26 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -91,6 +111,7 @@ fun BrowserPage(sessionId: String, onBack: (() -> Unit)?) {
         onPageBack = { session?.goBack() },
         onPageForward = { session?.goForward() },
         onUpdateWebView = { openWebViewStore(context) },
+        onNavigate = { target: String -> host.openByUser(sessionId, target) }.takeIf { host.availability() is BrowserAvailability.Supported },
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -116,10 +137,12 @@ fun BrowserPageContent(
     onPageForward: () -> Unit,
     onUpdateWebView: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 用户在地址栏前往时收到解析后的地址；为空时地址栏只显示不可编辑。 */
+    onNavigate: ((String) -> Unit)? = null,
     web: @Composable () -> Unit,
 ) {
     Column(modifier.testTag(BrowserTags.PAGE)) {
-        BrowserUrlBar(state, onBack, onReload, onPageBack, onPageForward)
+        BrowserUrlBar(state, onBack, onReload, onPageBack, onPageForward, onNavigate)
         when {
             availability is BrowserAvailability.Unsupported -> BrowserUnsupported(availability.currentVersion, onUpdateWebView)
             state == null -> BrowserEmpty()
@@ -151,14 +174,18 @@ private fun BrowserUrlBar(
     onReload: () -> Unit,
     onPageBack: () -> Unit,
     onPageForward: () -> Unit,
+    onNavigate: ((String) -> Unit)?,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val url = state?.url.orEmpty().takeUnless { it == "about:blank" }.orEmpty()
+    var editing by remember { mutableStateOf(false) }
+    BackHandler(enabled = editing) { editing = false }
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 离开浏览器用关闭图标，和网页内的“后退”箭头区分开。
-        if (onBack != null) {
+        if (onBack != null && !editing) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, stringResource(R.string.browser_cd_close)) }
         } else {
             Spacer(Modifier.size(8.dp))
@@ -166,43 +193,98 @@ private fun BrowserUrlBar(
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = scheme.surfaceContainerHigh,
+            border = if (editing) BorderStroke(1.5.dp, scheme.primary) else null,
             modifier = Modifier.weight(1f).height(40.dp),
         ) {
-            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                val url = state?.url.orEmpty()
-                val secure = url.startsWith("https://")
-                Icon(
-                    if (secure) Icons.Rounded.Lock else Icons.Rounded.Public,
-                    contentDescription = null,
-                    tint = scheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
+            if (editing && onNavigate != null) {
+                BrowserAddressField(
+                    initial = url,
+                    onGo = { input ->
+                        editing = false
+                        browserAddressTarget(input)?.let(onNavigate)
+                    },
+                    onDismiss = { editing = false },
                 )
-                Spacer(Modifier.size(8.dp))
-                Text(
-                    text = displayUrl(url).ifEmpty { stringResource(R.string.browser_title) },
-                    style = NexaraTypography.bodyMedium,
-                    color = if (url.isEmpty()) scheme.onSurfaceVariant else scheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.testTag(BrowserTags.URL),
-                )
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (onNavigate != null) Modifier.clickable(role = Role.Button) { editing = true } else Modifier)
+                        .testTag(BrowserTags.ADDRESS)
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val placeholder = url.isEmpty() && onNavigate != null
+                    Icon(
+                        when {
+                            placeholder -> Icons.Rounded.Search
+                            url.startsWith("https://") -> Icons.Rounded.Lock
+                            else -> Icons.Rounded.Public
+                        },
+                        contentDescription = null,
+                        tint = scheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = displayUrl(url).ifEmpty {
+                            stringResource(if (placeholder) R.string.browser_address_hint else R.string.browser_title)
+                        },
+                        style = NexaraTypography.bodyMedium,
+                        color = if (url.isEmpty()) scheme.onSurfaceVariant else scheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(BrowserTags.URL),
+                    )
+                }
             }
         }
-        // 打开过网页后后退、前进、刷新常驻，不可用的按钮置灰；还没打开网页时都不显示。
-        if (state != null) {
-            val navColors = IconButtonDefaults.iconButtonColors(contentColor = scheme.onSurfaceVariant)
-            IconButton(onClick = onPageBack, enabled = state.canGoBack, colors = navColors) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.browser_cd_back))
+        when {
+            editing -> TextButton(onClick = { editing = false }) { Text(stringResource(R.string.browser_address_cancel)) }
+            // 打开过网页后后退、前进、刷新常驻，不可用的按钮置灰；还没打开网页时都不显示。
+            state != null -> {
+                val navColors = IconButtonDefaults.iconButtonColors(contentColor = scheme.onSurfaceVariant)
+                IconButton(onClick = onPageBack, enabled = state.canGoBack, colors = navColors) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.browser_cd_back))
+                }
+                IconButton(onClick = onPageForward, enabled = state.canGoForward, colors = navColors) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, stringResource(R.string.browser_cd_forward))
+                }
+                IconButton(onClick = onReload, colors = navColors) {
+                    Icon(Icons.Rounded.Refresh, stringResource(R.string.browser_cd_reload))
+                }
             }
-            IconButton(onClick = onPageForward, enabled = state.canGoForward, colors = navColors) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, stringResource(R.string.browser_cd_forward))
-            }
-            IconButton(onClick = onReload, colors = navColors) {
-                Icon(Icons.Rounded.Refresh, stringResource(R.string.browser_cd_reload))
-            }
-        } else {
-            Spacer(Modifier.size(12.dp))
+            else -> Spacer(Modifier.size(12.dp))
         }
+    }
+}
+
+/** 编辑中的地址框：进入时全选当前网址，键盘“前往”提交，失去焦点即退出编辑。 */
+@Composable
+private fun BrowserAddressField(initial: String, onGo: (String) -> Unit, onDismiss: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var value by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
+    val focusRequester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Box(Modifier.fillMaxSize().padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
+        if (value.text.isEmpty()) {
+            Text(stringResource(R.string.browser_address_hint), style = NexaraTypography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1)
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = { value = it },
+            singleLine = true,
+            textStyle = NexaraTypography.bodyMedium.copy(color = scheme.onSurface),
+            cursorBrush = SolidColor(scheme.primary),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+            keyboardActions = KeyboardActions(onGo = { onGo(value.text) }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged { if (focused && !it.isFocused) onDismiss() else focused = it.isFocused }
+                .testTag(BrowserTags.ADDRESS_INPUT),
+        )
     }
 }
 
@@ -364,6 +446,8 @@ private fun openWebViewStore(context: Context) {
 object BrowserTags {
     const val PAGE = "browser_page"
     const val URL = "browser_url"
+    const val ADDRESS = "browser_address"
+    const val ADDRESS_INPUT = "browser_address_input"
     const val STATUS = "browser_status"
     const val TAKE_OVER = "browser_take_over"
     const val HAND_BACK = "browser_hand_back"

@@ -45,6 +45,9 @@ class AgentBrowserHost(private val app: Context) : BrowserController {
         _sessionIds.update { it - sessionId }
     }
 
+    /** 用户从地址栏打开网址，会话还没有浏览器时一并创建；仅主线程调用。 */
+    fun openByUser(sessionId: String, url: String) = obtain(sessionId).userOpen(url)
+
     override suspend fun open(sessionId: String, url: String): BrowserSnapshot = withContext(main) { obtain(sessionId).open(url) }
 
     override suspend fun snapshot(sessionId: String, includeText: Boolean, textOffset: Int): BrowserSnapshot =

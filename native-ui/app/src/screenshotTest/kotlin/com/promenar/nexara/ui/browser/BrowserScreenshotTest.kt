@@ -120,6 +120,7 @@ private fun handoffState() = BrowserUiState(
         onPageForward = {},
         onUpdateWebView = {},
         modifier = Modifier.fillMaxSize(),
+        onNavigate = { _: String -> }.takeIf { availability is BrowserAvailability.Supported },
     ) { FakePage(login) }
 }
 

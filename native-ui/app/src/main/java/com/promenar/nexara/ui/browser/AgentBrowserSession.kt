@@ -116,6 +116,7 @@ class AgentBrowserSession(
     fun goBack() { if (webView.canGoBack()) { control.userTakeOver(explicit = false); webView.goBack() } }
     fun goForward() { if (webView.canGoForward()) { control.userTakeOver(explicit = false); webView.goForward() } }
     fun reload() { control.userTakeOver(explicit = false); webView.reload() }
+    fun userOpen(url: String) { control.userTakeOver(explicit = false); webView.loadUrl(url) }
 
     fun destroy() {
         if (destroyed) return
