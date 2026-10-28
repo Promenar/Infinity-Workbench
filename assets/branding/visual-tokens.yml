@@ -1,10 +1,15 @@
 profile: digital
-background_light: "#FFFFFF"
-foreground_light: "#000000"
-background_dark: "#000000"
-foreground_dark: "#FFFFFF"
+background_gradient: ["#18204A", "#0B0F26", "#04050C"]
+dot_blue: "#78ACFF"
+dot_violet: "#BEA8FF"
+dot_cyan: "#BEEEFF"
+highlight_white: "#F0F8FF"
+ambient_glow: "#4FA8FF"
+light_background: "#F4F6FB"
+light_ink: "#1B2350"
 android_canvas_dp: 108
 android_viewport_dp: 72
 safe_zone_diameter_dp: 66
-protected_group: brand-logo
+notification_canvas_dp: 24
+protected_groups: [background, foreground]
 font_dependencies: []

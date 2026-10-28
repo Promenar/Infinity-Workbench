@@ -344,7 +344,9 @@ androidComponents.onVariants { variant ->
         }
     }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}InfinityLauncherIcons") {
-        masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
+        masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/infinity-dots-master.svg"))
+        monochromeSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/infinity-dots-monochrome.svg"))
+        notificationSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/infinity-notification.svg"))
         sourceRoots.from(layout.projectDirectory.dir("src"))
         sourceRoots.from(provider {
             android.sourceSets.flatMap { source -> source.res.directories.map { project.file(it) } }

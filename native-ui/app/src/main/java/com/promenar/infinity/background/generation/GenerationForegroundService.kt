@@ -183,7 +183,7 @@ class GenerationForegroundService : Service() {
 
     private fun startingNotification(subagents: Boolean): Notification =
         NotificationCompat.Builder(this, GenerationNotificationFactory.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(if (subagents) R.string.bg_subagent_notification_title else R.string.generation_notification_title))
             .setContentText(getString(if (subagents) R.string.bg_subagent_notification_starting else R.string.generation_notification_preparing))
             .setOngoing(true)
@@ -245,7 +245,7 @@ class GenerationForegroundService : Service() {
             this, 0, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, GenerationNotificationFactory.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.bg_subagent_notification_title))
             .setContentText(content)
             .setContentIntent(open)

@@ -81,7 +81,7 @@ class SubagentApprovalNotifications(
             ?: Intent(app, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP }
         val open = PendingIntent.getActivity(app, approval.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(app, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(app.getString(R.string.subagent_approval_notification_title))
             .setContentText(app.getString(R.string.subagent_approval_notification_text, approval.toolName))
             .setContentIntent(open)

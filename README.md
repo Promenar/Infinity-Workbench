@@ -1,8 +1,8 @@
 # Infinity Workbench
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/nexara-fold-dark.svg">
-  <img src="assets/branding/nexara-fold-light.svg" alt="Infinity Workbench 折叠 N 图标" width="112" height="112">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/infinity-dots-dark.svg">
+  <img src="assets/branding/infinity-dots-light.svg" alt="Infinity Workbench 点阵无穷图标" width="112" height="112">
 </picture>
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
@@ -197,7 +197,7 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 聊天富内容使用受控 HTTPS 本地资源与公网 HTTPS 子资源；拒绝文件、内容提供器、内网地址与页面跳转。KaTeX、Mermaid、ECharts 和知识图谱模板保留本地加载；预览中的链接直接阻止，不会自动打开外部应用。安全策略及设备验收入口见[构建与渲染说明](docs/distribution-builds.md#富内容-webview)。
 
-应用图标采用[折叠 N 矢量母版](assets/branding/nexara-fold-master.svg)，白底黑标为主，夜间资源为黑底白标，并提供 Android 自适应与单色主题图层。各变体通过 Gradle Variant API 自动生成图标，IDE、ADE、命令行和 CI 的正常构建均使用同一母版；无需本机图像工具。制作规格、覆盖防护和验证方法见[图标契约](assets/branding/design-spec.md)。
+应用图标为[点阵无穷矢量母版](assets/branding/infinity-dots-master.svg)：深蓝径向渐变背景上，扭转的点阵丝带组成无穷符号，亮点用径向渐变光晕模拟发光，日夜一致；另有单色主题图层与实线通知图标。母版由 `scripts/branding/infinity_icon.py` 按参数生成并提交，各变体通过 Gradle Variant API 自动转成 VectorDrawable，IDE、ADE、命令行和 CI 的正常构建均使用同一母版，构建时无需 Python 或图像工具。制作规格、覆盖防护和验证方法见[图标契约](assets/branding/design-spec.md)。
 
 ### Metro CLI/TUI
 

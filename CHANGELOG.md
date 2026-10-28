@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
 - 构建与 CI 的 Gradle 属性 `nexara.*` 改为 `infinity.*`（如 `-Pinfinity.deviceE2eAbi`），签名与测试用环境变量 `NEXARA_*` 改为 `INFINITY_*`。
 - 系统提示词新增 Runtime Environment 小段，只写运行环境 Infinity Workbench 与本轮实际请求的模型 ID，每轮动态取值；主会话与子代理都适用。
 
+### 新应用图标
+
+- 应用图标换成点阵无穷：深蓝夜空背景上，扭转的点阵丝带组成无穷符号，左下交汇段最亮，亮点带径向渐变光晕；主题图标为放大的单色点阵，通知栏改用实线无穷剪影。原折叠 N 图标及其母版移除。
+
 ### 体验改进第二批（第一波）
 
 - 思考按流式显示：浮岛光效与生成状态指示灯在思考阶段与正文流式共用配色，出字速率计入思考字数；只有尚无内容到达时才显示首字前。

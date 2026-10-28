@@ -1,42 +1,27 @@
 {
-  "asset": "Nexara 折叠 N",
-  "adoption_date": "2026-10-16",
+  "asset": "Infinity Workbench 点阵无穷",
+  "adoption_date": "2026-10-29",
   "current_requirements": [
-    "白底黑标主版本",
-    "黑底白标深色版本",
-    "保留三个折面与负形分离缝",
-    "Android 自适应及独立单色图层"
+    "深蓝径向渐变背景上的点阵无穷丝带",
+    "左下交汇段高光偏青白，右环偏紫并渐暗",
+    "亮点以径向渐变光晕模拟发光，全部位于 66dp 安全圆内",
+    "Android 自适应、独立单色主题图层与实线通知图标"
   ],
   "lineage": [
     {
-      "file": "references/root-directions.png",
-      "sha256": "0ac21db208715ab1adc5a4408473bddff8cdef86796abec16a9119195df2abd2",
+      "file": "references/infinity-dotmatrix-concept.png",
+      "sha256": "ab2c1066a571449d436a76e21ba5fcfe2c925d455d29788ec21ec75bba827957",
       "direct_input": null,
-      "root": "references/root-directions.png",
+      "root": "references/infinity-dotmatrix-concept.png",
       "generative_edit": 0,
-      "status": "祖先提案，未作为最终图标"
-    },
-    {
-      "file": "references/fold-direction.png",
-      "sha256": "1dcbc3abacca607ec9d326aa4dea2632742cccfbd73d30100e4d3223dfecc93b",
-      "direct_input": "root-directions.png",
-      "root": "references/root-directions.png",
-      "generative_edit": 1,
-      "status": "第三列 C 折叠 N 被用户选定"
-    },
-    {
-      "file": "approved-fold-concept.png",
-      "sha256": "2a0f859258b3d6016e947dca2893de106c9859ede239fcfbdf5220979b6e435f",
-      "direct_input": "fold-direction.png",
-      "root": "references/root-directions.png",
-      "generative_edit": 2,
-      "status": "用户采用：白底黑标为主、黑底白标为深色"
+      "status": "用户提供的概念图（AI 生成，带烘焙玻璃外框），作为方向参考，不进入构建"
     }
   ],
   "master": {
-    "file": "nexara-fold-master.svg",
-    "source": "approved-fold-concept.png",
-    "method": "人工重建三条闭合贝塞尔路径；确定性矢量制作，不增加生成式编辑次数",
-    "status": "已按用户采用方向制作"
+    "file": "infinity-dots-master.svg",
+    "source": "references/infinity-dotmatrix-concept.png",
+    "generator": "scripts/branding/infinity_icon.py",
+    "method": "按参数重建中心线、丝带扭转、点线、亮度与光晕；确定性矢量制作，不增加生成式编辑次数",
+    "status": "用户于 2026-10-29 看过对比图后采用"
   }
 }

@@ -33,7 +33,7 @@ class BackgroundJobNotifications(
         // 会话令牌同步写入私有存储，需在 IO 上签发。
         val open=withContext(Dispatchers.IO) { openSession()?.create(record.sessionId,"background-job:${record.id}") } ?: PendingIntent.getActivity(app,record.id.hashCode(),Intent(app,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val text=app.getString(R.string.jobs_finished_text,record.summary,record.exitCode?.toString() ?: record.state,BackgroundJobCompletion.elapsedSeconds(record))
-        val notification=NotificationCompat.Builder(app,CHANNEL_ID).setSmallIcon(R.drawable.ic_launcher_foreground)
+        val notification=NotificationCompat.Builder(app,CHANNEL_ID).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(app.getString(R.string.jobs_finished_title)).setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text)).setContentIntent(open).setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()

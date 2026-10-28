@@ -21,22 +21,42 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/** 仅使用 Gradle 与 JDK，从纯矢量母版生成各变体的应用图标。 */
+/**
+ * 仅使用 Gradle 与 JDK，把点阵无穷 SVG 母版转成各变体的应用图标与通知图标。
+ *
+ * 母版是 scripts/branding/infinity_icon.py 生成的受限 SVG 子集：根级说明、径向渐变定义、
+ * background / foreground 分组和其中的直接路径。路径填充为纯色或径向渐变，可带不透明度与描边。
+ */
 public abstract class GenerateLauncherIcons extends DefaultTask {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
+    private static final String AAPT = "http://schemas.android.com/aapt";
     private static final String SVG = "http://www.w3.org/2000/svg";
     private static final String HEADER = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
     private static final Set<String> RESERVED = Set.of("ic_launcher", "ic_launcher_round",
-            "ic_launcher_foreground", "ic_launcher_background", "ic_launcher_monochrome",
+            "ic_launcher_foreground", "ic_launcher_background", "ic_launcher_monochrome", "ic_notification",
             "infinity_launcher_foreground", "infinity_launcher_background");
+    private static final Set<String> PATH_ATTRIBUTES = Set.of("d", "fill", "fill-opacity", "stroke", "stroke-width",
+            "stroke-linejoin");
+    private static final String COLOR = "#[0-9A-F]{6}";
+    private static final String NUMBER = "-?[0-9]+(\\.[0-9]+)?";
 
+    /** 彩色母版：108 × 108，含 background 与 foreground 两个分组。 */
     @InputFile @PathSensitive(PathSensitivity.RELATIVE)
     public abstract RegularFileProperty getMasterSvg();
+
+    /** 主题图标母版：108 × 108，仅 foreground 分组，纯色不透明。 */
+    @InputFile @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract RegularFileProperty getMonochromeSvg();
+
+    /** 通知图标母版：24 × 24，仅 foreground 分组，纯色不透明。 */
+    @InputFile @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract RegularFileProperty getNotificationSvg();
 
     @InputFiles @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSourceRoots();
@@ -46,7 +66,7 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
 
     public GenerateLauncherIcons() {
         setGroup("build setup");
-        setDescription("从折叠 N 母版生成日夜、自适应和单色主题应用图标。");
+        setDescription("从点阵无穷母版生成自适应、单色主题与通知栏图标。");
         // 每次检查来源目录，避免新增覆盖被增量缓存掩盖。
         getOutputs().upToDateWhen(task -> false);
     }
@@ -77,46 +97,16 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
             for (Path file : files) validateSource(resourceFactory, file);
         }
 
-        Element root = factory.newDocumentBuilder().parse(getMasterSvg().get().getAsFile()).getDocumentElement();
-        require("svg".equals(root.getTagName()) && SVG.equals(root.getNamespaceURI()) &&
-                "0 0 108 108".equals(root.getAttribute("viewBox")), "母版必须使用 108 × 108 SVG 画布");
-        attributes(root, Set.of("xmlns", "width", "height", "viewBox"));
-        Element logo = null;
-        for (Element child : children(root)) {
-            if ("g".equals(child.getTagName())) {
-                require(logo == null && "brand-logo".equals(child.getAttribute("id")), "母版必须包含唯一 brand-logo 分组");
-                attributes(child, Set.of("id", "fill"));
-                require("#000000".equals(child.getAttribute("fill")), "母版标志必须为纯黑");
-                logo = child;
-            } else {
-                require(("title".equals(child.getTagName()) || "desc".equals(child.getTagName())) &&
-                        children(child).isEmpty(), "母版仅允许根级说明与直接路径，禁止嵌套视口或隐藏路径");
-                attributes(child, Set.of());
-            }
-        }
-        require(logo != null, "母版必须包含唯一 brand-logo 分组");
-        List<Element> pathElements = children(logo);
-        require(pathElements.size() == 3, "折叠 N 母版必须包含三个折面");
-        List<String> paths = new ArrayList<>();
-        for (Element path : pathElements) {
-            require("path".equals(path.getTagName()) && SVG.equals(path.getNamespaceURI()) && children(path).isEmpty(),
-                    "母版仅允许分组中的三个直接路径，禁止嵌套视口");
-            attributes(path, Set.of("id", "d", "fill"));
-            String data = path.getAttribute("d");
-            require(data.matches("[MLCQZ0-9 .,+\\-]+") && data.trim().endsWith("Z") &&
-                    (!path.hasAttribute("fill") || "#000000".equals(path.getAttribute("fill"))), "母版仅允许纯黑闭合贝塞尔路径");
-            paths.add(data);
-        }
+        Master master = Master.parse(factory, getMasterSvg().get().getAsFile(), 108, Set.of("background", "foreground"), false);
+        Master monochrome = Master.parse(factory, getMonochromeSvg().get().getAsFile(), 108, Set.of("foreground"), true);
+        Master notification = Master.parse(factory, getNotificationSvg().get().getAsFile(), 24, Set.of("foreground"), true);
 
         Map<String, String> files = new LinkedHashMap<>();
-        files.put("drawable/ic_launcher_foreground.xml", vector(paths, "@color/infinity_launcher_foreground", false));
-        files.put("drawable/ic_launcher_monochrome.xml", vector(paths, "#000000", false));
-        files.put("drawable/ic_launcher_background.xml", HEADER + "<shape xmlns:android=\"" + ANDROID +
-                "\" android:shape=\"rectangle\"><solid android:color=\"@color/infinity_launcher_background\" /></shape>\n");
-        files.put("values/launcher_icon_colors.xml", colors("#FFFFFF", "#000000"));
-        files.put("values-night/launcher_icon_colors.xml", colors("#000000", "#FFFFFF"));
+        files.put("drawable/ic_launcher_background.xml", master.vector("background"));
+        files.put("drawable/ic_launcher_foreground.xml", master.vector("foreground"));
+        files.put("drawable/ic_launcher_monochrome.xml", monochrome.vector("foreground"));
+        files.put("drawable/ic_notification.xml", notification.vector("foreground"));
         for (String name : List.of("ic_launcher", "ic_launcher_round")) {
-            files.put("mipmap-anydpi/" + name + ".xml", vector(paths, "@color/infinity_launcher_foreground", true));
             for (int api : List.of(26, 33)) {
                 files.put("mipmap-anydpi-v" + api + "/" + name + ".xml", HEADER +
                         "<adaptive-icon xmlns:android=\"" + ANDROID + "\">\n" +
@@ -140,9 +130,124 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
         }
     }
 
+    /** 已校验的母版：分组名到路径列表，以及按 ID 索引的径向渐变。 */
+    private static final class Master {
+        final int size;
+        final Map<String, List<Element>> groups = new LinkedHashMap<>();
+        final Map<String, Element> gradients = new LinkedHashMap<>();
+
+        private Master(int size) {
+            this.size = size;
+        }
+
+        static Master parse(DocumentBuilderFactory factory, File file, int size, Set<String> groupIds, boolean solid) throws Exception {
+            String name = "母版 " + file.getName();
+            Element root = factory.newDocumentBuilder().parse(file).getDocumentElement();
+            require("svg".equals(root.getTagName()) && SVG.equals(root.getNamespaceURI()) &&
+                    ("0 0 " + size + " " + size).equals(root.getAttribute("viewBox")), name + " 必须使用 " + size + " × " + size + " SVG 画布");
+            attributes(root, Set.of("xmlns", "width", "height", "viewBox"));
+            Master master = new Master(size);
+            for (Element child : children(root)) {
+                switch (child.getTagName()) {
+                    case "title", "desc" -> {
+                        require(children(child).isEmpty(), name + " 的说明不得嵌套元素");
+                        attributes(child, Set.of());
+                    }
+                    case "defs" -> {
+                        require(!solid, name + " 必须是纯色剪影，不允许渐变");
+                        attributes(child, Set.of());
+                        for (Element gradient : children(child)) master.addGradient(name, gradient);
+                    }
+                    case "g" -> {
+                        attributes(child, Set.of("id"));
+                        String id = child.getAttribute("id");
+                        require(groupIds.contains(id) && !master.groups.containsKey(id), name + " 的分组只能是 " + groupIds + " 且各出现一次");
+                        List<Element> paths = children(child);
+                        require(!paths.isEmpty(), name + " 的 " + id + " 分组不能为空");
+                        for (Element path : paths) master.checkPath(name, path, solid);
+                        master.groups.put(id, paths);
+                    }
+                    default -> throw new IllegalArgumentException(name + " 仅允许根级说明、渐变定义与图层分组，禁止嵌套视口、位图或变换");
+                }
+            }
+            require(master.groups.keySet().equals(groupIds), name + " 必须包含分组 " + groupIds);
+            return master;
+        }
+
+        private void addGradient(String name, Element gradient) {
+            require("radialGradient".equals(gradient.getTagName()), name + " 仅允许径向渐变");
+            attributes(gradient, Set.of("id", "cx", "cy", "r", "gradientUnits"));
+            require("userSpaceOnUse".equals(gradient.getAttribute("gradientUnits")), name + " 的渐变必须使用画布坐标");
+            for (String attr : List.of("cx", "cy", "r")) require(gradient.getAttribute(attr).matches(NUMBER), name + " 的渐变坐标必须为数字");
+            List<Element> stops = children(gradient);
+            require(stops.size() >= 2, name + " 的渐变至少需要两个色标");
+            for (Element stop : stops) {
+                require("stop".equals(stop.getTagName()) && children(stop).isEmpty(), name + " 的渐变只能包含色标");
+                attributes(stop, Set.of("offset", "stop-color", "stop-opacity"));
+                require(stop.getAttribute("offset").matches(NUMBER) && stop.getAttribute("stop-color").matches(COLOR) &&
+                        stop.getAttribute("stop-opacity").matches(NUMBER), name + " 的色标格式不正确");
+            }
+            require(gradients.put(gradient.getAttribute("id"), gradient) == null, name + " 的渐变 ID 重复");
+        }
+
+        private void checkPath(String name, Element path, boolean solid) {
+            require("path".equals(path.getTagName()) && SVG.equals(path.getNamespaceURI()) && children(path).isEmpty(),
+                    name + " 的分组只能包含直接路径，禁止嵌套视口");
+            attributes(path, PATH_ATTRIBUTES);
+            require(path.getAttribute("d").matches("[MmLlHhVvCcQqAaZz0-9 .,\\-]+"), name + " 的路径数据只能使用基本绘图命令");
+            String fill = path.getAttribute("fill");
+            String stroke = path.getAttribute("stroke");
+            if (solid) {
+                require(!path.hasAttribute("fill-opacity") && (fill.equals("none") || fill.matches(COLOR)) &&
+                        (stroke.isEmpty() || stroke.matches(COLOR)) && !(fill.equals("none") && stroke.isEmpty()),
+                        name + " 必须是纯色不透明剪影");
+            } else {
+                require(fill.matches(COLOR) || (fill.startsWith("url(#") && fill.endsWith(")") &&
+                        gradients.containsKey(fill.substring(5, fill.length() - 1))), name + " 的填充只能是纯色或已定义的径向渐变");
+                require(stroke.isEmpty(), name + " 的彩色图层不使用描边");
+            }
+            require(!path.hasAttribute("fill-opacity") || path.getAttribute("fill-opacity").matches(NUMBER), name + " 的不透明度必须为数字");
+            require(stroke.isEmpty() == !path.hasAttribute("stroke-width"), name + " 的描边必须同时给出颜色与宽度");
+        }
+
+        String vector(String group) {
+            boolean gradient = groups.get(group).stream().anyMatch(path -> path.getAttribute("fill").startsWith("url("));
+            StringBuilder xml = new StringBuilder(HEADER).append("<vector xmlns:android=\"").append(ANDROID).append('"');
+            if (gradient) xml.append(" xmlns:aapt=\"").append(AAPT).append('"');
+            xml.append(" android:width=\"").append(size).append("dp\" android:height=\"").append(size)
+                    .append("dp\" android:viewportWidth=\"").append(size).append("\" android:viewportHeight=\"").append(size).append("\">\n");
+            for (Element path : groups.get(group)) {
+                String fill = path.getAttribute("fill");
+                xml.append("    <path android:pathData=\"").append(path.getAttribute("d")).append('"');
+                if (fill.matches(COLOR)) xml.append(" android:fillColor=\"").append(fill).append('"');
+                if (path.hasAttribute("fill-opacity")) xml.append(" android:fillAlpha=\"").append(path.getAttribute("fill-opacity")).append('"');
+                if (path.hasAttribute("stroke")) {
+                    xml.append(" android:strokeColor=\"").append(path.getAttribute("stroke")).append("\" android:strokeWidth=\"")
+                            .append(path.getAttribute("stroke-width")).append('"');
+                    if (path.hasAttribute("stroke-linejoin")) xml.append(" android:strokeLineJoin=\"").append(path.getAttribute("stroke-linejoin")).append('"');
+                }
+                if (!fill.startsWith("url(")) {
+                    xml.append(" />\n");
+                    continue;
+                }
+                Element def = gradients.get(fill.substring(5, fill.length() - 1));
+                xml.append(">\n        <aapt:attr name=\"android:fillColor\">\n            <gradient android:type=\"radial\" android:centerX=\"")
+                        .append(def.getAttribute("cx")).append("\" android:centerY=\"").append(def.getAttribute("cy"))
+                        .append("\" android:gradientRadius=\"").append(def.getAttribute("r")).append("\">\n");
+                for (Element stop : children(def)) {
+                    int alpha = (int) Math.round(Math.max(0, Math.min(1, Double.parseDouble(stop.getAttribute("stop-opacity")))) * 255);
+                    xml.append("                <item android:offset=\"").append(stop.getAttribute("offset")).append("\" android:color=\"")
+                            .append(String.format(Locale.ROOT, "#%02X", alpha)).append(stop.getAttribute("stop-color").substring(1)).append("\" />\n");
+                }
+                xml.append("            </gradient>\n        </aapt:attr>\n    </path>\n");
+            }
+            return xml.append("</vector>\n").toString();
+        }
+    }
+
     private static void validateSource(DocumentBuilderFactory factory, Path file) throws Exception {
         String name = file.getFileName().toString();
-        require(!(name.startsWith("ic_launcher") || name.equals("launcher_icon_colors.xml")),
+        require(!(name.startsWith("ic_launcher") || name.startsWith("ic_notification.") || name.equals("launcher_icon_colors.xml")),
                 "图标资源必须由母版生成，请移除来源目录中的覆盖：" + name);
         if (name.endsWith(".xml") && file.getParent().getFileName().toString().startsWith("values")) {
             Element values = factory.newDocumentBuilder().parse(file.toFile()).getDocumentElement();
@@ -166,7 +271,7 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
 
     private static void attributes(Element element, Set<String> allowed) {
         for (int i = 0; i < element.getAttributes().getLength(); i++) {
-            require(allowed.contains(element.getAttributes().item(i).getNodeName()), "母版仅允许无变换、无位图的纯色路径");
+            require(allowed.contains(element.getAttributes().item(i).getNodeName()), "母版仅允许无变换、无位图的路径与径向渐变");
         }
     }
 
@@ -176,19 +281,6 @@ public abstract class GenerateLauncherIcons extends DefaultTask {
             if (child instanceof Element) result.add((Element) child);
         }
         return result;
-    }
-
-    private static String vector(List<String> paths, String fill, boolean background) {
-        StringBuilder xml = new StringBuilder(HEADER).append("<vector xmlns:android=\"").append(ANDROID)
-                .append("\" android:width=\"108dp\" android:height=\"108dp\" android:viewportWidth=\"108\" android:viewportHeight=\"108\">\n");
-        if (background) xml.append("    <path android:fillColor=\"@color/infinity_launcher_background\" android:pathData=\"M0 0 H108 V108 H0 Z\" />\n");
-        for (String path : paths) xml.append("    <path android:fillColor=\"").append(fill).append("\" android:pathData=\"").append(path).append("\" />\n");
-        return xml.append("</vector>\n").toString();
-    }
-
-    private static String colors(String background, String foreground) {
-        return HEADER + "<resources><color name=\"infinity_launcher_background\">" + background +
-                "</color><color name=\"infinity_launcher_foreground\">" + foreground + "</color></resources>\n";
     }
 
     private static void require(boolean condition, String message) {

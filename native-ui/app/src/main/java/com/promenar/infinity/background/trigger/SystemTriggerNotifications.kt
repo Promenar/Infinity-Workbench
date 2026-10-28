@@ -56,7 +56,7 @@ class SystemTriggerNotifications(
                 description = context.getString(R.string.schedule_notification_channel_description)
             })
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title.take(80)).setContentText(text)
                 .setContentIntent(sessionOpen.create(sessionId, "trigger:$sessionId"))
                 .setAutoCancel(true).setSilent(!high)

@@ -39,7 +39,7 @@ class GenerationNotificationFactory(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(applicationContext.getString(R.string.generation_notification_title))
             .setContentText(
                 applicationContext.getString(
@@ -91,7 +91,7 @@ class GenerationNotificationFactory(
             style.addLine(applicationContext.getString(R.string.generation_concurrency_line, name, phase))
         }
         return NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(applicationContext.getString(R.string.generation_concurrency_details))
             .setStyle(style)
