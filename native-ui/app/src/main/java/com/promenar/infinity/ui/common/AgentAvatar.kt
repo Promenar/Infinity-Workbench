@@ -91,8 +91,11 @@ fun parseAgentColor(hex: String): Color? {
     val digits = hex.trim().removePrefix("#")
     if (digits.length != 6 && digits.length != 8) return null
     val value = digits.toLongOrNull(16) ?: return null
-    return if (digits.length == 6) Color(0xFF000000L or value) else Color(value)
+    return if (digits.length == 6) Color(OPAQUE_ALPHA or value) else Color(value)
 }
+
+/** 六位色值补上的不透明 alpha 位。 */
+private const val OPAQUE_ALPHA = 0xFF000000L
 
 /** 头像底色：直接使用智能体主题色原值，解析失败时用 [fallback]。 */
 fun agentAvatarColor(hex: String, fallback: Color): Color = parseAgentColor(hex) ?: fallback

@@ -701,7 +701,7 @@ class ChatViewModelTest {
     private var forcedProviderFailure: ProviderResolution.Failure? = null
 
     @Test
-    fun createNewSessionInheritsAgentExecutionModeAndOrderedToolSelections() = runTest {
+    fun createNewSessionInheritsAgentExecutionModeAndOrderedMcpServersButNotLegacySkills() = runTest {
         stubAgentRepo.create(
             Agent(
                 id = "approval-agent",
@@ -717,7 +717,8 @@ class ChatViewModelTest {
 
         val created = savedSessions.single { it.agentId == "approval-agent" }
         assertThat(created.executionMode).isEqualTo("workspace")
-        assertThat(created.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
+        // 技能只有全局与工作区两层，智能体的旧版技能名单不再复制到新会话。
+        assertThat(created.activeSkillIds).isEmpty()
         assertThat(created.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
 

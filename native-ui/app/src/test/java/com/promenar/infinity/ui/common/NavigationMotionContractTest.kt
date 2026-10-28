@@ -100,7 +100,7 @@ class NavigationMotionContractTest {
 
         val chat = source("chat/ChatScreen.kt")
         assertThat(chat).contains("label = \"chat_send_icon\"")
-        assertThat(chat).contains("visible = dock != null")
+        assertThat(chat).contains("visible = runDockVisible,")
 
         val files = source("chat/components/FilesPanel.kt")
         assertThat(files).contains("label = \"files_panel_state\"")
@@ -156,7 +156,7 @@ class NavigationMotionContractTest {
         assertThat(chat).contains("enabled = true")
         // 宽窗口运行信息收进浮动检视器的“运行”页签，浮岛同时隐藏运行坞；检视器与运行详情面板共用同一份运行详情正文。
         assertThat(chat).contains("com.promenar.infinity.ui.common.LocalInfinityInspectorLayout.current")
-        assertThat(chat).contains("visible = dock != null && !inspectorMode")
+        assertThat(chat).contains("runDockVisible = dock != null && !inspectorMode")
         assertThat(chat).contains("ChatInspectorCard(")
         assertThat(chat).contains("RunDetailContent(")
         assertThat(chat.split("RunDetailSheet(").size - 1).isEqualTo(1)
