@@ -116,7 +116,7 @@ class KnowledgeSearchSkillTest {
         turns.seed(session, "u", refs)
         val first = search("1")
         assertThat(first.body().results.single().citationId).isEqualTo("K1")
-        assertThat(first.content).contains("已在上下文中")
+        assertThat(first.content.lines().filter { it.startsWith("[K") }).containsExactly("[K1] 已在上方参考资料中")
         assertThat(first.content).doesNotContain("命中正文")
         refs = refs + RagReference("new", "新正文", "source")
         val second = search("2")
@@ -132,6 +132,74 @@ class KnowledgeSearchSkillTest {
         val newContext = object : SkillExecutionContext by context("8") { override val assistantMessageId = "m2" }
         assertThat(skill().execute(buildJsonObject { put("query", "q") }, newContext).body().limitReached).isFalse()
         assertThat(toolCalls).isEqualTo(7)
+    }
+
+    @Test fun `内部通知插入后续轮仍沿用用户父消息的编号与去重`() = runTest {
+        val firstReference = RagReference("first", "第一条正文", "文档")
+        turns.seed(session, "u", listOf(firstReference) + refs)
+        assertThat(turns.citation("s", "u", "first")).isEqualTo("K1")
+        assertThat(turns.citation("s", "u", "r")).isEqualTo("K2")
+        session = session.copy(messages = session.messages +
+            Message("tool", MessageRole.TOOL, "工具结果", toolCallId = "call") +
+            Message("notice", MessageRole.USER, "任务通知", name = "system_trigger") +
+            Message("continued", MessageRole.ASSISTANT, "", parentMessageId = "u"))
+        val continued = object : SkillExecutionContext by context("continued-step") {
+            override val assistantMessageId = "continued"
+        }
+        val result = skill().execute(buildJsonObject { put("query", "q") }, continued)
+        assertThat(knowledgeTurnId(session, "continued")).isEqualTo("u")
+        assertThat(result.body().results.single().citationId).isEqualTo("K2")
+        assertThat(result.body().results.single().alreadyInContext).isTrue()
+        assertThat(result.content.lines().filter { it.startsWith("[K") })
+            .containsExactly("[K2] 已在上方参考资料中")
+        assertThat(result.content).doesNotContain("命中正文")
+    }
+
+    @Test fun `系统触发的独立任务和无效父消息仍按用户边界区分轮次`() {
+        session = session.copy(messages = session.messages +
+            Message("notice", MessageRole.USER, "定时任务", name = "system_trigger") +
+            Message("triggered", MessageRole.ASSISTANT, "", parentMessageId = "notice") +
+            Message("invalid-parent", MessageRole.ASSISTANT, "", parentMessageId = "m"))
+        assertThat(knowledgeTurnId(session, "triggered")).isEqualTo("notice")
+        assertThat(knowledgeTurnId(session, "invalid-parent")).isEqualTo("notice")
+        assertThat(knowledgeTurnId(session, "missing-assistant")).isEqualTo("notice")
+    }
+
+    @Test fun `缺失或未来用户父消息不改变既有回溯边界`() {
+        session = session.copy(messages = session.messages +
+            Message("missing-parent", MessageRole.ASSISTANT, "", parentMessageId = "missing") +
+            Message("future-parent", MessageRole.ASSISTANT, "", parentMessageId = "future") +
+            Message("future", MessageRole.USER, "未来用户消息"))
+        assertThat(knowledgeTurnId(session, "missing-parent")).isEqualTo("u")
+        assertThat(knowledgeTurnId(session, "future-parent")).isEqualTo("u")
+        assertThat(knowledgeTurnId(session, "future")).isEqualTo("u")
+    }
+
+    @Test fun `冷恢复读取通知后的同轮工具记录且隔离通知独立任务`() {
+        val sameTurn = KnowledgeSearchData("q", results = listOf(KnowledgeSearchHit("later", "K9")), usage = RagUsage(7, true))
+        val independent = KnowledgeSearchData("q", results = listOf(KnowledgeSearchHit("other", "K80")), usage = RagUsage(99))
+        session = session.copy(messages = session.messages.map { if (it.id == "m") it.copy(executionSteps = (1..5).map { n ->
+            ExecutionStep("step$n", "tool_call", toolName = "knowledge_search", toolCallId = "c$n", timestamp = n.toLong())
+        }) else it } +
+            Message("notice", MessageRole.USER, "通知", name = "system_trigger") +
+            Message("independent", MessageRole.ASSISTANT, "", parentMessageId = "notice", executionSteps = listOf(
+                ExecutionStep("other", "tool_result", toolName = "knowledge_search", data = json.encodeToString(independent)))) +
+            Message("denied-notice", MessageRole.TOOL, "用户未授权", name = "request_knowledge_access") +
+            Message("continued", MessageRole.ASSISTANT, "", parentMessageId = "u", ragReferences = refs, executionSteps = listOf(
+                ExecutionStep("step6", "tool_call", toolName = "knowledge_search", toolCallId = "c6"),
+                ExecutionStep("result6", "tool_result", toolName = "knowledge_search", toolCallId = "c6", data = json.encodeToString(sameTurn)))))
+        val recovered = KnowledgeTurnState()
+        recovered.seed(session, "u")
+        assertThat(recovered.citation("s", "u", "later")).isEqualTo("K9")
+        assertThat(recovered.citation("s", "u", "fresh")).isEqualTo("K10")
+        assertThat(recovered.usage("s", "u")).isEqualTo(RagUsage(7, true))
+        assertThat(recovered.isInjected("s", "u", "r")).isTrue()
+        assertThat(recovered.isDenied("s", "u")).isFalse()
+        assertThat(recovered.consume("s", "u", "step7")).isFalse()
+        session = session.copy(messages = session.messages +
+            Message("denied-original", MessageRole.TOOL, "用户未授权", name = "request_knowledge_access"))
+        recovered.seed(session, "u")
+        assertThat(recovered.isDenied("s", "u")).isTrue()
     }
 
     @Test fun `恢复时当前调用已写入步骤不会重复计数`() = runTest {

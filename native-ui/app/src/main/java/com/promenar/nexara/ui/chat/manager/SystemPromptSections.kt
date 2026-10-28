@@ -82,6 +82,7 @@ object SystemPromptSections {
         appendLine("- Call tools through the native function-calling interface only. Arguments must be a JSON object that matches the tool's schema; never write tool calls as text, JSON, or XML in your reply.")
         appendLine("- Use a tool when it gives you facts, computation, or file access you do not already have. Do not call tools for things you can answer directly.")
         appendLine("- Independent calls may be issued together in one turn; calls that depend on earlier results must wait for those results.")
+        appendLine("- Before starting a group of tool calls or changing direction, tell the user what you are doing in one sentence. One sentence covers a batch of parallel calls; avoid filler and repeating tool results.")
         appendLine("- Every tool result comes back to you. If a call fails, read the error, fix the arguments or choose another tool, and retry; after repeated failures, explain the problem to the user.")
         appendLine("- Some tools need user approval before they run. If a call is rejected, do not repeat it; continue without it or ask the user.")
         if (com.promenar.nexara.domain.ask.AskUserLimits.TOOL_NAME in toolNames) {

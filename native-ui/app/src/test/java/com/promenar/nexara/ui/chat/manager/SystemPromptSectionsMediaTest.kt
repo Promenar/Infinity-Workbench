@@ -30,7 +30,9 @@ class SystemPromptSectionsMediaTest {
     }
     @Test fun `其它分节内容与已锁定基线一致`() {
         val actual = SystemPromptSections.toolGuidance(setOf("read_file", "initialize_plan"), false)
+        val progressGuidance = "- Before starting a group of tool calls or changing direction, tell the user what you are doing in one sentence. One sentence covers a batch of parallel calls; avoid filler and repeating tool results."
         val expected = javaClass.getResource("/media-d-tool-guidance-before.txt")!!.readText()
+            .replace("- Every tool result", "$progressGuidance\n- Every tool result")
         assertThat(actual.substringBefore("\n### Media").trimEnd()).isEqualTo(expected.trimEnd())
     }
 

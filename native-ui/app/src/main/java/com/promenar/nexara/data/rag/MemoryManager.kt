@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.knowledge.KnowledgeCitationScope
+import kotlinx.coroutines.currentCoroutineContext
 import com.promenar.nexara.data.model.ConversationScope
 import com.promenar.nexara.data.model.DocumentScope
 import com.promenar.nexara.data.model.RagOptions
@@ -513,13 +515,16 @@ class MemoryManager(
      * 注入正文：先写当前时间与先后规则，再写当前状态与按时间先后排列的对话记录，最后是按相关度排列的文档。
      * 时间只出现在这里，不进入向量正文。
      */
-    private fun formatRetrievedChunks(
+    private suspend fun formatRetrievedChunks(
         results: List<SearchResult>,
         states: List<ScoredState>,
         occurredAt: Map<String, Long>,
         now: Long,
         zone: ZoneId,
     ): String {
+        val localCitations = linkedMapOf<String, String>()
+        val citation = currentCoroutineContext()[KnowledgeCitationScope]?.citation
+            ?: { id: String -> localCitations.getOrPut(id) { "K${localCitations.size + 1}" } }
         val conversation = results.filter { parseTypeFromMetadata(it.metadata) in CONVERSATION_RECORD_TYPES }
             .sortedWith(compareBy({ occurredAt[it.id] ?: it.createdAt }, { it.id }))
         val documents = results.filter { parseTypeFromMetadata(it.metadata) !in CONVERSATION_RECORD_TYPES }
@@ -533,14 +538,18 @@ class MemoryManager(
             }
             if (states.isNotEmpty()) {
                 add(states.joinToString("\n") { state ->
-                    "[State · updated ${MemoryTimeline.stamp(state.fact.occurredAt, now, zone)}]: ${state.fact.content}"
+                    "[${citation(state.fact.rowId)} · 状态 · 更新于 ${MemoryTimeline.stamp(state.fact.occurredAt, now, zone)}]: ${state.fact.content}"
                 })
             }
             conversation.forEach { r ->
-                val label = if (parseTypeFromMetadata(r.metadata) == "summary") "Event" else "Memory"
-                add("[$label · ${MemoryTimeline.stamp(occurredAt[r.id] ?: r.createdAt, now, zone)}]: ${r.content}")
+                val label = if (parseTypeFromMetadata(r.metadata) == "summary") "事件" else "记忆"
+                add("[${citation(r.id)} · $label · ${MemoryTimeline.stamp(occurredAt[r.id] ?: r.createdAt, now, zone)}]: ${r.content}")
             }
-            documents.forEach { r -> add("[Document]: ${r.content}") }
+            documents.forEach { r ->
+                val name = documentReferenceSource(r.metadata, r.docId.orEmpty()).removePrefix("文档: ").takeIf(String::isNotBlank)
+                val label = name?.let { "文档《$it》" } ?: "文档"
+                add("[${citation(r.id)} · $label]: ${r.content}")
+            }
         }
         return blocks.joinToString("\n\n")
     }

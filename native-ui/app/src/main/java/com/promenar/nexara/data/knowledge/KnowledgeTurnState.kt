@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.knowledge
 
+import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
@@ -9,9 +10,35 @@ import com.promenar.nexara.data.model.Session
 fun knowledgeTurnId(session: Session, assistantMessageId: String? = null): String {
     val end = assistantMessageId?.let { id -> session.messages.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
         ?: session.messages.size
+    val parentId = session.messages.getOrNull(end)?.takeIf { it.role == MessageRole.ASSISTANT }?.parentMessageId
+    if (parentId != null && session.messages.take(end).any { it.id == parentId && it.role == MessageRole.USER }) {
+        return parentId
+    }
     return session.messages.take(end).lastOrNull { it.role == MessageRole.USER }?.id
         ?: session.messages.lastOrNull { it.role == MessageRole.USER }?.id
         ?: assistantMessageId ?: "session:${session.id}"
+}
+
+/** 内部通知可插入用户消息；按助手有效父关系恢复逻辑轮次，工具结果跟随助手。 */
+private fun knowledgeTurnMessages(session: Session, turnId: String): List<Message> {
+    val seenUsers = hashSetOf<String>()
+    var latestUser: String? = null
+    var owner: String? = null
+    return buildList {
+        session.messages.forEach { message ->
+            when (message.role) {
+                MessageRole.USER -> {
+                    seenUsers += message.id
+                    latestUser = message.id
+                    owner = message.id
+                }
+                MessageRole.ASSISTANT -> owner = message.parentMessageId?.takeIf { it in seenUsers }
+                    ?: latestUser ?: message.id
+                else -> Unit
+            }
+            if (owner == turnId) add(message)
+        }
+    }
 }
 
 class KnowledgeTurnState {
@@ -29,9 +56,8 @@ class KnowledgeTurnState {
     fun seed(session: Session, turnId: String, injected: List<RagReference> = emptyList()) {
         val key = session.id to turnId
         if (key !in turns && turns.size >= 128) turns.remove(turns.keys.first())
+        val messages = knowledgeTurnMessages(session, turnId)
         val state = turns.getOrPut(key) {
-            val start = session.messages.indexOfFirst { it.id == turnId }.coerceAtLeast(0)
-            val messages = session.messages.drop(start).let { tail -> listOfNotNull(tail.firstOrNull()) + tail.drop(1).takeWhile { it.role != MessageRole.USER } }
             Turn().apply {
                 this.injected += messages.flatMap { it.ragReferences.orEmpty() }.map { it.id }
                 messages.flatMap { it.executionSteps.orEmpty() }
@@ -53,8 +79,7 @@ class KnowledgeTurnState {
                     }
             }
         }
-        val start = session.messages.indexOfFirst { it.id == turnId }.coerceAtLeast(0)
-        state.denied = state.denied || session.messages.drop(start).drop(1).takeWhile { it.role != MessageRole.USER }.any { it.role == MessageRole.TOOL &&
+        state.denied = state.denied || messages.any { it.role == MessageRole.TOOL &&
             it.name == "request_knowledge_access" && (it.content.contains("用户未授权") || it.content.contains("工具执行已拒绝")) }
         state.injected += injected.map { it.id }
     }

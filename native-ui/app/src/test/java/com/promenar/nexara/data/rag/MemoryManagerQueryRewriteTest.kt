@@ -59,6 +59,7 @@ class MemoryManagerQueryRewriteTest {
         val result = adapter.retrieveForTool("原始查询", "session", options(), null)
 
         assertThat(result.references.map { it.documentId }).containsExactly("doc")
+        assertThat(result.context).contains("[K1 · 文档《资料.md》]: 资料片段")
         coVerify(exactly = 0) { rewriter.rewrite(any(), any(), any(), any()) }
         coVerify(exactly = 1) { embedding.embedQuery("原始查询") }
         coVerify(exactly = 0) { embedding.embedQuery("改写查询") }
@@ -69,6 +70,7 @@ class MemoryManagerQueryRewriteTest {
         val result = adapter.retrieveContext("原始查询", "session", options(), null)
 
         assertThat(result.references.map { it.documentId }).containsExactly("doc")
+        assertThat(result.context).contains("[K1 · 文档《资料.md》]: 资料片段")
         coVerify(exactly = 1) { rewriter.rewrite("原始查询", any(), any(), any()) }
         coVerify(exactly = 1) { embedding.embedQuery("原始查询") }
         coVerify(exactly = 1) { embedding.embedQuery("改写查询") }

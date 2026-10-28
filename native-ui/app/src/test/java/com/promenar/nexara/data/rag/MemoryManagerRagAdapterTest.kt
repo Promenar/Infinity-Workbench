@@ -11,6 +11,20 @@ import org.junit.Test
 
 class MemoryManagerRagAdapterTest {
     @Test
+    fun `会话查询改写空值与旧调优值均不覆盖全局关闭值`() = runTest {
+        val manager = mockk<MemoryManager>()
+        val captured = slot<MemoryManager.RetrieveOptions>()
+        every { manager.ragConfig } returns RagConfiguration()
+        coEvery { manager.retrieveContext(any(), any(), capture(captured), any()) } returns
+            MemoryManager.RetrieveResult("", emptyList(), MemoryManager.RetrieveMetadata())
+        val adapter = MemoryManagerRagAdapter(manager)
+        for (saved in listOf(null, true, false)) {
+            adapter.retrieveContext("q", "s", RagOptions(enableQueryRewrite = saved), null)
+            assertThat(captured.captured.configOverride!!.enableQueryRewrite).isFalse()
+        }
+    }
+
+    @Test
     fun `工具调用关闭改写但自动调用保留全局改写配置`() = runTest {
         val manager = mockk<MemoryManager>()
         val options = mutableListOf<MemoryManager.RetrieveOptions>()

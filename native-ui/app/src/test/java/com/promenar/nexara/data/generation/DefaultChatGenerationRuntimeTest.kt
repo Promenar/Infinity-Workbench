@@ -5,6 +5,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.SessionOptions
@@ -251,6 +252,38 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
         coVerify { builder.buildContext(match { it.retrievalMode == com.promenar.nexara.data.agent.AgentRetrievalMode.TOOL && it.knowledgeCatalog.contains("知识库标题") }) }
         assertThat(turns.isInjected("skills-session", "user", "injected")).isTrue()
+    }
+
+    @Test fun `自动注入取号前恢复同轮编号且缺少用户ID时回溯用户消息`() = runTest {
+        for (userId in listOf("user", null)) {
+            val reference = com.promenar.nexara.data.model.RagReference("injected", "正文", "资料")
+            val builder = mockk<ContextBuilder> {
+                coEvery { buildContext(any()) } coAnswers {
+                    val citation = checkNotNull(kotlinx.coroutines.currentCoroutineContext()[
+                        com.promenar.nexara.data.knowledge.KnowledgeCitationScope])
+                    val number = citation.citation(reference.id)
+                    ContextBuilderResult("[$number · 文档]: 正文", "", emptyList(), listOf(reference), null, "system")
+                }
+            }
+            val skills = mockk<com.promenar.nexara.data.skills.SkillCatalog> {
+                coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList())
+            }
+            val turns = com.promenar.nexara.data.knowledge.KnowledgeTurnState()
+            val fixture = skillsFixture(skills, contextBuilder = builder, knowledgeTurns = turns)
+            val data = com.promenar.nexara.data.knowledge.KnowledgeSearchData("q", results = listOf(
+                com.promenar.nexara.data.knowledge.KnowledgeSearchHit("saved", "K7")))
+            fixture.store.updateSession("skills-session") { session -> session.copy(messages = session.messages.map {
+                if (it.id == "assistant") it.copy(executionSteps = listOf(ExecutionStep("result", "tool_result",
+                    toolName = "knowledge_search", data = com.promenar.nexara.data.model.json.encodeToString(
+                        com.promenar.nexara.data.knowledge.KnowledgeSearchData.serializer(), data), timestamp = 1))) else it
+            }) }
+
+            assertThat(fixture.runtime.buildContext(fixture.request.copy(userMessageId = userId)))
+                .isEqualTo(GenerationPreparationOutcome.Ready)
+            assertThat(turns.citation("skills-session", "user", "injected")).isEqualTo("K8")
+            assertThat(turns.isInjected("skills-session", "user", "injected")).isTrue()
+            assertThat(kotlinx.coroutines.currentCoroutineContext()[com.promenar.nexara.data.knowledge.KnowledgeCitationScope]).isNull()
+        }
     }
 
     @Test fun `知识库审批绑定预览且同轮拒绝后不再创建审批`() = runTest {
@@ -1848,8 +1881,72 @@ class DefaultChatGenerationRuntimeTest {
             .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage())
     }
 
+    @Test
+    fun `四轮无正文工具后提醒只追加协议尾部且不进入会话`() = runTest {
+        var saved: Session? = null
+        val prefixes = mutableListOf<List<com.promenar.nexara.data.remote.protocol.ProtocolMessage>>()
+        var latestPrefix = emptyList<com.promenar.nexara.data.remote.protocol.ProtocolMessage>()
+        val writes = mutableListOf<String>()
+        val (prompts, _, _) = runThreeRoundToolScenario(toolRoundCount = 5,
+            onProtocolMessages = { latestPrefix = it }, onPrompt = { prefixes += latestPrefix }, onPersist = { writes += it },
+            onCompleted = { saved = it.getSession("s1") })
+        assertThat(prompts).hasSize(6)
+        assertThat(prompts.take(4).flatMap { it.messages }.any { it.content.contains("[System reminder]") }).isFalse()
+        for (prompt in prompts.drop(4)) {
+            assertThat(prompt.messages.last().role).isEqualTo("user")
+            assertThat(prompt.messages.last().content).contains("[System reminder]")
+        }
+        assertThat(prefixes).hasSize(prompts.size)
+        prompts.zip(prefixes).forEachIndexed { index, (prompt, prefix) ->
+            assertThat(if (index >= 4) prompt.messages.dropLast(1) else prompt.messages).isEqualTo(prefix)
+        }
+        assertThat(saved!!.messages.none { it.content.contains("[System reminder]") }).isTrue()
+        assertThat(writes.none { it.contains("[System reminder]") }).isTrue()
+    }
+
+    @Test
+    fun `第四轮工具后预算收尾不附加进展提醒`() = runTest {
+        val (prompts, _, _) = runThreeRoundToolScenario(loopLimit = 4, toolRoundCount = 5)
+        assertThat(prompts.last().toolChoice).isEqualTo(ProtocolToolChoice.NONE)
+        assertThat(prompts.last().messages.none { it.content.contains("[System reminder]") }).isTrue()
+    }
+
+    @Test
+    fun `正文重置工具轮数而思考和空白正文不重置`() = runTest {
+        val (prompts, _, _) = runThreeRoundToolScenario(toolRoundCount = 6, progressAtRound = 3, reasoningEveryRound = true)
+        assertThat(prompts.take(6).flatMap { it.messages }.none { it.content.contains("[System reminder]") }).isTrue()
+        assertThat(prompts[6].messages.last().content).contains("[System reminder]")
+    }
+
+    @Test
+    fun `一轮工具期间超过六十秒也在请求末尾提醒`() = runTest {
+        var now = 0L
+        val (prompts, _, _) = runThreeRoundToolScenario(toolRoundCount = 1, reasoningEveryRound = true,
+            reminder = ToolProgressReminder(clock = { now }), onToolsFinished = { now = 60_001L })
+        assertThat(prompts[0].messages.none { it.content.contains("[System reminder]") }).isTrue()
+        assertThat(prompts[1].messages.last().content).contains("[System reminder]")
+    }
+
+    @Test
+    fun `提醒后输出正文但网络重试仍复用相同请求提醒`() = runTest {
+        val (prompts, _, _) = runThreeRoundToolScenario(toolRoundCount = 5, failAfterProgressAtRound = 5)
+        assertThat(prompts).hasSize(7)
+        assertThat(prompts[4].messages.last().content).contains("[System reminder]")
+        assertThat(prompts[5].messages).isEqualTo(prompts[4].messages)
+        assertThat(prompts[6].messages.none { it.content.contains("[System reminder]") }).isTrue()
+    }
+
     private suspend fun kotlinx.coroutines.test.TestScope.runThreeRoundToolScenario(
         loopLimit: Int? = null,
+        toolRoundCount: Int = 2,
+        progressAtRound: Int? = null,
+        failAfterProgressAtRound: Int? = null,
+        reasoningEveryRound: Boolean = false,
+        reminder: ToolProgressReminder = ToolProgressReminder(),
+        onToolsFinished: () -> Unit = {},
+        onProtocolMessages: (List<com.promenar.nexara.data.remote.protocol.ProtocolMessage>) -> Unit = {},
+        onPrompt: (PromptRequest) -> Unit = {},
+        onPersist: (String) -> Unit = {},
         resultContent: String? = null,
         outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
         onCompleted: (ChatStore) -> Unit = {},
@@ -1880,8 +1977,8 @@ class DefaultChatGenerationRuntimeTest {
             }
         }
         val messageRepository = object : IMessageRepository {
-            override suspend fun insert(message: Message, sessionId: String) = Unit
-            override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) = Unit
+            override suspend fun insert(message: Message, sessionId: String) { onPersist(message.content) }
+            override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) { onPersist(updates.toString()) }
             override suspend fun delete(messageId: String) = Unit
             override suspend fun deleteBySessionId(sessionId: String) = Unit
             override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) = Unit
@@ -1898,22 +1995,37 @@ class DefaultChatGenerationRuntimeTest {
         }
         val messageManager = MessageManager(store, messageRepository, sessionRepository, this)
         val prompts = mutableListOf<PromptRequest>()
+        var completedRounds = 0
+        var retryIssued = false
         val protocol = object : LlmProtocol {
             override val protocolType = ProtocolType.Local
             override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
                 prompts += request
-                when (prompts.size) {
-                    1 -> emit(StreamChunk.ToolCallDelta("call-1", "search", "{}", 0))
-                    2 -> emit(StreamChunk.ToolCallDelta("call-2", "read_file", "{}", 0))
-                    else -> emit(StreamChunk.TextDelta("final"))
+                onPrompt(request)
+                val round = completedRounds + 1
+                if (reasoningEveryRound) {
+                    emit(StreamChunk.TextDelta("", reasoning = "正在思考"))
+                    emit(StreamChunk.TextDelta(" \n"))
                 }
+                if (round == progressAtRound) emit(StreamChunk.TextDelta("正在核对资料"))
+                if (round == failAfterProgressAtRound && !retryIssued) {
+                    retryIssued = true
+                    emit(StreamChunk.TextDelta("已取得阶段结果"))
+                    emit(StreamChunk.Error(code = GenerationFailureCode.NETWORK, retryable = true))
+                    return@flow
+                }
+                if (round <= toolRoundCount) {
+                    val name = if (round == 1) "search" else "read_file"
+                    emit(StreamChunk.ToolCallDelta("call-$round", name, """{"round":$round}""", 0))
+                } else emit(StreamChunk.TextDelta("final"))
+                completedRounds++
                 emit(StreamChunk.Completed(
-                    if (prompts.size <= 2) {
+                    if (round <= toolRoundCount) {
                         com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS
                     } else {
                         com.promenar.nexara.domain.generation.CompletionReason.END_TURN
                     },
-                    if (prompts.size <= 2) listOf("call-${prompts.size}") else emptyList(),
+                    if (round <= toolRoundCount) listOf("call-$round") else emptyList(),
                 ))
             }
             override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
@@ -1943,22 +2055,15 @@ class DefaultChatGenerationRuntimeTest {
         val toolExecutor = mockk<ToolExecutor>()
         val executorPreparedSnapshots = mutableListOf<List<ProtocolTool>>()
         coEvery { toolExecutor.rejectTools(any(), any(), any(), any()) } returns Unit
-        coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } coAnswers {
+        coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any(), any()) } coAnswers {
             val sessionId = firstArg<String>()
             val calls = thirdArg<List<com.promenar.nexara.data.model.ToolCall>>()
             executorPreparedSnapshots += arg<List<ProtocolTool>>(4)
             calls.forEach { call ->
-                messageManager.addMessage(
-                    sessionId,
-                    Message(
-                        id = "tool-${call.id}",
-                        role = MessageRole.TOOL,
-                        content = resultContent ?: "result-${call.id}",
-                        toolCallId = call.id,
-                        name = call.name,
-                    ),
-                )
+                messageManager.addMessage(sessionId, Message("tool-${call.id}", MessageRole.TOOL,
+                    resultContent ?: "result-${call.id}", toolCallId = call.id, name = call.name))
             }
+            onToolsFinished()
         }
         val advertisedTools = listOf(
             ProtocolTool(
@@ -1976,6 +2081,13 @@ class DefaultChatGenerationRuntimeTest {
         )
         val skillRegistry = mockk<SkillRegistry>()
         every { skillRegistry.getAllTools(any()) } returns advertisedTools
+        val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry)
+        val recordingStrategy = object : ChatGenerationContentStrategy by contentStrategy {
+            override fun buildProtocolMessages(session: Session, systemPrompt: String, pinnedUserMessageId: String?,
+                excludedMessageIds: Set<String>, replaySource: String?) = contentStrategy.buildProtocolMessages(
+                session, systemPrompt, pinnedUserMessageId, excludedMessageIds, replaySource,
+            ).also(onProtocolMessages)
+        }
         val runtime = DefaultChatGenerationRuntime(
             settings = settings,
             applicationScope = this,
@@ -1993,9 +2105,10 @@ class DefaultChatGenerationRuntimeTest {
             memoryManager = null,
             summaryManager = mockk(relaxed = true),
             sessionManager = SessionManager(store, sessionRepository),
-            contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry),
+            contentStrategy = recordingStrategy,
             ui = mockk(relaxed = true),
             outputStore = outputStore,
+            toolProgressReminder = reminder,
         )
         val request = GenerationRequest(
             "s1", "a0", "u1", "question", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED,

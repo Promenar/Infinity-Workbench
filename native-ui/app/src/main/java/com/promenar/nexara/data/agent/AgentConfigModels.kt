@@ -29,7 +29,7 @@ data class AgentRetrievalConfig(
     val enableRerank: Boolean = true,
     val rerankTopK: Int = 30,
     val rerankFinalK: Int = 5,
-    val enableQueryRewrite: Boolean = true,
+    val enableQueryRewrite: Boolean = false,
     val queryRewriteStrategy: String = "multi-query",
     val queryRewriteCount: Int = 3,
     val enableHybridSearch: Boolean = true,
