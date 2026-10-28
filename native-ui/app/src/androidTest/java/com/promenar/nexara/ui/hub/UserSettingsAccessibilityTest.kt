@@ -145,15 +145,10 @@ class UserSettingsAccessibilityTest {
             }
         }
 
-        rule.onNodeWithContentDescription("github.com/promenar/nexara")
+        rule.onNodeWithContentDescription(resources.getString(R.string.ux2_settings_github_open))
             .assertHasClickAction()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
-            .assert(
-                SemanticsMatcher("GitHub footer has localized onClickLabel") { node ->
-                    runCatching { node.config[SemanticsActions.OnClick].label }.getOrNull() ==
-                        resources.getString(R.string.rag_details_open_link)
-                },
-            )
+            .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         com.google.common.truth.Truth.assertThat(opened.get()).isTrue()

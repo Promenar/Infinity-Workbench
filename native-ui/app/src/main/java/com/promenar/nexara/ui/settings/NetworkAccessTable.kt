@@ -23,9 +23,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.network.AgentNetworkSnapshot
@@ -48,6 +51,22 @@ internal enum class NetworkCellMeaning {
 }
 
 internal data class NetworkCell(val target: NetworkTargetClass, val meaning: NetworkCellMeaning, val tone: NetworkCellTone, val count: Int? = null)
+
+/** 会话的运行模式，决定总表中哪些行对当前会话生效；null 表示不针对具体会话（全局设置页）。 */
+internal enum class NetworkRunMode { BUILTIN, LINUX }
+
+/** 工具行的适用范围标注：与白名单的关系不随会话变化，只随工具自身。 */
+internal enum class NetworkRowScope { ALL_MODES, BUILTIN_ONLY, NOT_BOUND_BY_ALLOWLIST }
+
+internal fun networkRowScope(tool: AgentNetworkTool): NetworkRowScope = when (tool) {
+    AgentNetworkTool.SCRIPT -> NetworkRowScope.BUILTIN_ONLY
+    AgentNetworkTool.BUILTIN_PROCESS -> NetworkRowScope.NOT_BOUND_BY_ALLOWLIST
+    else -> NetworkRowScope.ALL_MODES
+}
+
+/** 当前运行模式下该行是否生效；不生效的行保留在原位置并灰显（设置规范 §3.5）。 */
+internal fun networkRowEffective(tool: AgentNetworkTool, runMode: NetworkRunMode?): Boolean =
+    !(networkRowScope(tool) == NetworkRowScope.BUILTIN_ONLY && runMode == NetworkRunMode.LINUX)
 
 /** 把总表的静态规则与当前设置合成用户能直接读懂的状态，例如白名单为空时局域网实际不可达。 */
 internal fun networkCell(target: NetworkTargetClass, state: NetworkAccessState, snapshot: AgentNetworkSnapshot): NetworkCell = when (state) {
@@ -93,6 +112,18 @@ private fun networkToolHint(tool: AgentNetworkTool): String = stringResource(
 )
 
 @Composable
+private fun networkScopeLabel(scope: NetworkRowScope): String? = when (scope) {
+    NetworkRowScope.ALL_MODES -> null
+    NetworkRowScope.BUILTIN_ONLY -> stringResource(R.string.ux2_network_scope_builtin_only)
+    NetworkRowScope.NOT_BOUND_BY_ALLOWLIST -> stringResource(R.string.ux2_network_scope_not_bound)
+}
+
+/** 总表脚注：沿用原有说明，并写明 Linux 环境中的命令不受白名单限制。 */
+@Composable
+internal fun networkMatrixFooter(): String =
+    stringResource(R.string.network_section_matrix_footer) + "\n" + stringResource(R.string.ux2_network_matrix_footer_linux)
+
+@Composable
 private fun targetLabel(target: NetworkTargetClass): String = stringResource(
     when (target) {
         NetworkTargetClass.PUBLIC -> R.string.network_target_public
@@ -126,12 +157,16 @@ internal fun NetworkAccessRows(
     snapshot: AgentNetworkSnapshot,
     modifier: Modifier = Modifier,
     tools: Set<AgentNetworkTool>? = null,
+    runMode: NetworkRunMode? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
         snapshot.rows.filter { tools == null || it.tool in tools }.forEach { row ->
+            val effective = networkRowEffective(row.tool, runMode)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .alpha(if (effective) 1f else 0.38f)
+                    .semantics { if (!effective) disabled() }
                     .padding(horizontal = NexaraSpacing.RowHorizontal, vertical = NexaraSpacing.Medium)
                     .testTag("network_row_${row.tool.name.lowercase()}"),
                 verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
@@ -146,6 +181,22 @@ internal fun NetworkAccessRows(
                     style = MaterialTheme.typography.bodySmall.forReading(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                networkScopeLabel(networkRowScope(row.tool))?.let { scope ->
+                    Text(
+                        text = stringResource(R.string.ux2_network_scope_prefix, scope),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("network_scope_${row.tool.name.lowercase()}"),
+                    )
+                }
+                if (!effective) {
+                    Text(
+                        text = stringResource(R.string.ux2_network_inactive_linux),
+                        style = MaterialTheme.typography.bodySmall.forReading(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("network_inactive_${row.tool.name.lowercase()}"),
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.padding(top = NexaraSpacing.XSmall),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

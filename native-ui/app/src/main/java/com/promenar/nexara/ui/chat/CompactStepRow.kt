@@ -4,7 +4,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraHapticEvent
 import androidx.compose.foundation.layout.Row
@@ -87,9 +91,38 @@ internal fun Modifier.fadingReasoningTail(enabled: Boolean = true): Modifier {
     }
 }
 
+/** 微光扫过一次的基准时长；[speed] 为倍率时按它换算。 */
+private const val StepShimmerBaseMillis = 1200f
+
 @Composable
-private fun Modifier.stepShimmer(active: Boolean): Modifier {
+private fun Modifier.stepShimmer(active: Boolean, speed: (() -> Float)? = null): Modifier {
     if (!active || rememberStreamAnimationsEnabled() != true) return this
+    if (speed != null) {
+        // 速度随调用方给的倍率连续变化：逐帧累加相位，改变倍率时不会重启动画而跳变。
+        var phase by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(Unit) {
+            var last = 0L
+            while (true) {
+                withFrameNanos { nanos ->
+                    if (last != 0L) phase = (phase + (nanos - last) / 1_000_000f * speed() / StepShimmerBaseMillis) % 1f
+                    last = nanos
+                }
+            }
+        }
+        val highlight = MaterialTheme.colorScheme.onSurface
+        return graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+            drawContent()
+            val band = 48.dp.toPx()
+            val center = -band + (size.width + band * 2) * phase
+            drawRect(
+                brush = Brush.linearGradient(
+                    listOf(Color.Transparent, highlight, Color.Transparent),
+                    start = Offset(center - band, 0f), end = Offset(center + band, 0f),
+                ),
+                blendMode = BlendMode.SrcAtop,
+            )
+        }
+    }
     val transition = rememberInfiniteTransition(label = "stepShimmer")
     val phase = transition.animateFloat(0f, 1f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "stepHighlight")
     val highlight = MaterialTheme.colorScheme.onSurface
@@ -131,6 +164,8 @@ internal fun CompactStepRow(
     tag: String? = null,
     tone: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     preview: (@Composable RowScope.() -> Unit)? = null,
+    /** 非 null 时摘要微光按此倍率变速（1 为基准 1.2 秒一次）；用于思考标题随速率加快。 */
+    shimmerSpeed: (() -> Float)? = null,
     failureText: String? = null,
     /** 摘要前的状态图标，例如检索进行中的放大镜；默认不显示图标。 */
     leading: (@Composable RowScope.() -> Unit)? = null,
@@ -190,7 +225,7 @@ internal fun CompactStepRow(
                         color = textColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).stepShimmer(active).testTag("CHAT_STEP_SUMMARY"),
+                        modifier = Modifier.weight(1f, fill = false).stepShimmer(active, shimmerSpeed).testTag("CHAT_STEP_SUMMARY"),
                     )
                     if (!failureText.isNullOrBlank()) {
                         Text(
@@ -210,7 +245,7 @@ internal fun CompactStepRow(
                     color = textColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = summaryMaxWidth).stepShimmer(active).testTag("CHAT_STEP_SUMMARY"),
+                    modifier = Modifier.widthIn(max = summaryMaxWidth).stepShimmer(active, shimmerSpeed).testTag("CHAT_STEP_SUMMARY"),
                 )
             }
             if (preview != null) {

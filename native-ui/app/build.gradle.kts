@@ -278,6 +278,15 @@ val buildTailnetBinary = tailnetGoTargets.mapValues { (abi, target) ->
     }
 }
 
+// 设置页底部展示的提交短 SHA；源码不在 Git 仓库或没有 git 时写 unknown，不让构建失败。
+val gitCommitShortSha: String = runCatching {
+    providers.exec {
+        commandLine("git", "rev-parse", "--short=7", "HEAD")
+        workingDir = projectDir
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("").takeIf { Regex("[0-9a-f]{7,40}").matches(it) } ?: "unknown"
+
 // Linux 运行时固定构建输入；仅 arm64 侧载变体打包程序与基础系统。
 val linuxRuntimeProperties = LinuxRuntimeInputs.load(file("linux/linux-runtime.properties").toPath())
 android.defaultConfig {
@@ -362,6 +371,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PACKAGED_PYTHON_VERSION", "\"$packagedPythonVersion\"")
+        buildConfigField("String", "GIT_COMMIT_SHORT", "\"$gitCommitShortSha\"")
 
         androidResources {
             localeFilters += listOf("en", "zh-rCN")

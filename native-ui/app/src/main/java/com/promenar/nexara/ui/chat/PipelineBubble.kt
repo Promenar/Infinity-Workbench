@@ -847,6 +847,7 @@ internal fun ThinkingTrace(
         seconds != null -> pluralStringResource(R.plurals.chat_step_thought_duration, seconds, seconds)
         else -> stringResource(R.string.chat_step_thought)
     }
+    val previewRate = remember { ThinkingRateHolder() }
     Column(modifier = modifier.fillMaxWidth().testTag(UiTags.CHAT_THINKING_TRACE)) {
         CompactStepRow(
             segments = listOf(summary),
@@ -858,23 +859,8 @@ internal fun ThinkingTrace(
             tag = UiTags.CHAT_THINKING_TOGGLE,
             clickLabel = stringResource(if (internalExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
             onClick = { internalExpanded = !internalExpanded },
-            preview = if (isGenerating) {{
-                val tail = remember(reasoning) { streamingReasoningPreview(reasoning) }
-                val scroll = rememberScrollState(initial = Int.MAX_VALUE)
-                LaunchedEffect(tail) {
-                    snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) }
-                }
-                Box(modifier = Modifier.weight(1f).fadingReasoningTail(enabled = scroll.maxValue > 0).testTag("CHAT_THINKING_PREVIEW")) {
-                    Text(
-                        text = tail,
-                        softWrap = false,
-                        maxLines = 1,
-                        modifier = Modifier.horizontalScroll(scroll, enabled = false),
-                        style = NexaraTypography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                    )
-                }
-            }} else null,
+            shimmerSpeed = { thinkingShimmerSpeed(previewRate.value) },
+            preview = if (isGenerating) {{ ThinkingPreview(reasoning, previewRate) }} else null,
         )
         AnimatedVisibility(
             visible = internalExpanded && reasoning.isNotBlank(),

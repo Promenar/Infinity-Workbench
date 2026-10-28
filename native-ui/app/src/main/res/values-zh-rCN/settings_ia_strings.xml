@@ -27,7 +27,7 @@
     <string name="settings_ia_ltm_desc">智能体跨会话记住的信息</string>
     <string name="settings_ia_debug_title">调试与高级</string>
     <string name="settings_ia_debug_desc">向量统计、重新向量化与高级参数</string>
-    <string name="settings_ia_home_footer">&brand; AI • Project Narcis</string>
+    <string name="settings_ia_home_footer">&brand; %1$s（%2$d）· %3$s</string>
 
     <!-- 知识库设置 -->
     <string name="settings_ia_new_session_section">新会话默认</string>
