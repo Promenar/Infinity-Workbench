@@ -1,7 +1,7 @@
 # 设置整理与知识检索实施拆波
 
-- 状态：第一波实施中
-- 依据：`docs/superpowers/specs/2026-10-28-settings-ia-audit.md`（问题编号与目标结构）、`docs/superpowers/specs/2026-10-28-agent-knowledge-search-tools.md`（知识检索设计）
+- 状态：第一波实施中；W1-P 原型已确认
+- 依据：`docs/superpowers/specs/2026-10-28-settings-ia-audit.md`（问题编号与目标结构）、`docs/superpowers/specs/2026-10-28-settings-ia-prototype-decisions.md`（已确认的界面决定）、`docs/superpowers/specs/2026-10-28-agent-knowledge-search-tools.md`（知识检索设计）
 - 执行方式：主控会话负责沟通、派发、合并、全量门禁与真机测试；每个工作包由一个分支会话在独立 worktree 中实施。后端工作包由分支会话经 Codex CLI 交 GPT 实现、分支会话复核；前端工作包由分支会话实现，界面先出原型经用户确认
 - 通用约束：`.agent/tmp-agent-reports/common-rules.md`，下文“工作包规则”对其中两条做了覆盖
 
@@ -74,13 +74,13 @@
 
 目标：按知识检索设计稿实现后端：`knowledge_search`、`request_knowledge_access`、知识库只读挂载、检索方式与知识库文件访问两个智能体字段、资料目录注入。
 
-范围与验收：以设计稿第 3 至第 5 节为准。界面展示（工具步骤行、检索详情、审批卡、挂载标识、设置页选项）不在本包，由 W3-F 实现；本包需保证 `ToolResult.data` 结构、审批请求的参数与挂载记录的 `readOnly` 可供界面读取，并在报告中写明数据契约。
+范围与验收：以设计稿第 3 至第 5 节为准。另含界面决定 K3：查询改写模型未单独设置时，按“快速模型 → 主模型”回退，与图谱抽取一致（现状直接回退主模型，见 `NexaraApplication.kt` 中 `QueryRewriter` 的 `modelRouteResolver`），补单元测试。界面展示（工具步骤行、检索详情、审批卡、挂载标识、设置页选项）不在本包，由 W3-F 实现；本包需保证 `ToolResult.data` 结构、审批请求的参数与挂载记录的 `readOnly` 可供界面读取，并在报告中写明数据契约。
 
 文件归属：`ui/chat/manager/skills/KnowledgeSearchSkills.kt`（新）、`domain/tool/ToolExecutionPolicy.kt`、`domain/storage/ExternalMount.kt`、`data/storage/ExternalFolderManager.kt`、`data/storage/ExternalMountPaths.kt`、`data/rag/` 下检索与图谱提供者、`data/generation/SessionToolResolver.kt`、`ui/chat/manager/ContextBuilder.kt`、`data/agent/AgentConfigModels.kt`、备份相关文件及对应测试。
 
 ## W2-F 全局设置与会话面板
 
-目标：按确认后的原型实施全局设置与会话面板部分。
+目标：按已确认的原型实施全局设置与会话面板部分，界面决定 H、K、A、S、T 各条与第 9 节中归属 W2-F 的组件缺口见原型决定文档。
 
 范围：设置首页分组与导航；知识库各页（含检索深度档位、新会话默认开关、调试与高级折叠区与重建索引提示，P4、P9、M2、M4、L5、L6）；执行环境与连接分组（L4、L7、D4）；Web 搜索域名过滤入口（P8）；语言行显示（D8）；会话设置面板工具页与上下文页（P3、P5、L1、M3、D5；P3 含删除 `ChatViewModel.toggleSessionSkill`、`SessionManager.toggleSkill` 与全局旧版自定义工具入口）；Agent 可达范围面板网络白名单改为跳转（L2）。
 
@@ -88,7 +88,7 @@
 
 ## W3-F 智能体页、知识检索界面与文案统一
 
-目标：智能体编辑页按目标结构重排；实现知识检索的全部界面；完成术语与文案统一。
+目标：智能体编辑页按目标结构重排；实现知识检索的全部界面；完成术语与文案统一。界面决定 G、C、R 各条与第 9 节中归属 W3-F 的组件缺口见原型决定文档。
 
 范围：
 
