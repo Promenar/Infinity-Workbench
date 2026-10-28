@@ -63,6 +63,28 @@ import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.roundToInt
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 
 /** 菜单可用的竖向范围（窗口坐标，像素）、横向边距与和锚点的间隔。 */
 internal data class NexaraMenuLimits(
@@ -160,10 +182,12 @@ fun Modifier.nexaraMenuHost(active: Boolean): Modifier {
 
 /**
  * Nexara 全站统一悬浮菜单：
- * - 16dp 圆角，surfaceContainerHigh 底色，0.5dp outlineVariant 描边与浮层阴影；
- * - 内衬 6dp，菜单项用 [NexaraMenuItem]（10dp 圆角按压高亮），分组用 [NexaraMenuDivider]；
+ * - 同心圆角：外圆角 14dp = 内衬 6dp + 菜单项 8dp；
+ * - 浅色用最亮的容器色，深色用比 surfaceContainerHigh 更亮一档的底色并加 0.5dp 顶部高光；0.5dp 描边与两层阴影；
+ * - 菜单项用 [NexaraMenuItem]，分组用 [NexaraMenuDivider]，可选分组小标题 [NexaraMenuHeader]；宽度上限 280dp；
  * - 放在触发控件所在的 Box 内，贴着控件弹出；长按触发时传 [touch]，从按住的位置长出；
- * - 从靠近锚点的角缩放淡入（弹出窗口画出两帧后才开始，避开挂载时的掉帧），关闭时先播放退场再移除。
+ * - 入场：弹出窗口画出 [NexaraMotion.MenuEnterWaitFrames] 帧后开始，透明度 90ms 先到位，缩放 0.92→1 交给弹簧，
+ *   菜单项每项错峰 18ms 淡入上移；退场 100ms 淡出并缩到 0.96，播完再移除。
  * [offset] 在算好的位置上再平移（与 Material 下拉菜单的偏移含义一致）。
  */
 @Composable
@@ -178,17 +202,25 @@ fun NexaraDropdownMenu(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // 弹出窗口挂载、取得焦点与菜单首次组合都在打开后的头几帧里，直接起动画会在这几帧掉帧。
-    // 所以先以透明状态挂上并量好菜单，等弹出窗口画出两帧后再开始入场；关闭时播完退场再移除。
+    // 所以先以透明状态挂上并量好菜单，等弹出窗口画出若干帧后再开始入场；关闭时播完退场再移除。
     val alpha = remember { Animatable(0f) }
-    val scale = remember { Animatable(MenuEnterScale) }
+    val scale = remember { Animatable(NexaraMotion.MenuEnterScale) }
+    // 入场时钟（毫秒）：菜单项按各自序号从这条时钟上取进度，读在绘制层，不触发重组。
+    // 每次打开或关闭换一个实例：序号从 0 重新领取；关闭时新实例的时钟停在终点，菜单项保持完整可见。
+    val stagger = remember(expanded) { NexaraMenuStagger() }
     var mounted by remember { mutableStateOf(false) }
     LaunchedEffect(expanded) {
         if (expanded) {
             mounted = true
         } else if (mounted) {
             coroutineScope {
-                launch { alpha.animateTo(0f, tween(MenuExitMillis)) }
-                launch { scale.animateTo(MenuExitScale, tween(MenuExitMillis, easing = NexaraMotion.EmphasizedAccelerate)) }
+                launch { alpha.animateTo(0f, tween(NexaraMotion.MenuExitMillis, easing = FastOutLinearInEasing)) }
+                launch {
+                    scale.animateTo(
+                        NexaraMotion.MenuExitScale,
+                        tween(NexaraMotion.MenuExitMillis, easing = FastOutLinearInEasing),
+                    )
+                }
             }
             mounted = false
         }
@@ -207,7 +239,7 @@ fun NexaraDropdownMenu(
     var origin by remember { mutableStateOf(TransformOrigin(0f, 0f)) }
     // 只在打开时取按住点，菜单开着时再按别处不会让它跳走。
     val touchPoint = remember(expanded) { touch?.windowPoint?.takeIf { expanded } }
-    val provider = remember(limits, shift, touchPoint) {
+    val provider = remember(limits, shift, touchPoint, stagger) {
         object : PopupPositionProvider {
             override fun calculatePosition(
                 anchorBounds: IntRect,
@@ -224,6 +256,8 @@ fun NexaraDropdownMenu(
                     ltr = layoutDirection == LayoutDirection.Ltr,
                 )
                 origin = TransformOrigin(placement.originX, placement.originY)
+                // 菜单朝上展开时，菜单项错峰从靠近锚点的底部开始。
+                stagger.reversed = placement.originY == 1f
                 // 从按住点长出时偏移已无意义，只对贴锚点的菜单生效。
                 return placement.offset + if (touchPoint == null) shift else IntOffset.Zero
             }
@@ -238,46 +272,159 @@ fun NexaraDropdownMenu(
         properties = properties,
     ) {
         if (expanded) {
-            LaunchedEffect(Unit) {
-                if (alpha.value == 0f) {
-                    scale.snapTo(MenuEnterScale)
-                    withFrameNanos {}
-                    withFrameNanos {}
+            LaunchedEffect(stagger) {
+                val fresh = alpha.value == 0f
+                if (fresh) {
+                    scale.snapTo(NexaraMotion.MenuEnterScale)
+                    stagger.clock.snapTo(0f)
+                    repeat(NexaraMotion.MenuEnterWaitFrames) { withFrameNanos {} }
+                } else {
+                    // 退场途中再次打开：菜单项已完整可见，不重播错峰。
+                    stagger.clock.snapTo(MenuStaggerEndMillis)
                 }
                 coroutineScope {
-                    launch { alpha.animateTo(1f, tween(MenuEnterMillis)) }
-                    launch { scale.animateTo(1f, tween(MenuEnterMillis, easing = NexaraMotion.EmphasizedDecelerate)) }
+                    launch {
+                        alpha.animateTo(1f, tween(NexaraMotion.MenuEnterFadeMillis, easing = LinearOutSlowInEasing))
+                    }
+                    launch { scale.animateTo(1f, MenuEnterSpring) }
+                    if (fresh) {
+                        launch {
+                            stagger.clock.animateTo(
+                                MenuStaggerEndMillis,
+                                tween(MenuStaggerEndMillis.roundToInt(), easing = LinearEasing),
+                            )
+                        }
+                    }
                 }
             }
         }
-        Surface(
-            shape = MenuShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            shadowElevation = 8.dp,
-            modifier = modifier
-                .graphicsLayer {
-                    this.alpha = alpha.value
-                    scaleX = scale.value
-                    scaleY = scale.value
-                    transformOrigin = origin
-                }
-                .testTag(NexaraMenuTags.MENU),
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(IntrinsicSize.Max)
-                    .widthIn(min = minWidth)
-                    .verticalScroll(rememberScrollState())
-                    .padding(MenuInnerPadding),
-                content = content,
-            )
+        val colors = nexaraMenuColors()
+        val shape = MenuShape
+        CompositionLocalProvider(LocalNexaraMenuStagger provides stagger) {
+            Surface(
+                shape = shape,
+                color = colors.container,
+                border = BorderStroke(0.5.dp, colors.edge),
+                shadowElevation = MenuKeyShadowElevation,
+                modifier = modifier
+                    .graphicsLayer {
+                        this.alpha = alpha.value
+                        scaleX = scale.value
+                        scaleY = scale.value
+                        transformOrigin = origin
+                    }
+                    // 第二层贴身阴影，让菜单边缘在浅色背景上也清楚。
+                    .shadow(
+                        elevation = MenuAmbientShadowElevation,
+                        shape = shape,
+                        clip = false,
+                        ambientColor = colors.shadow,
+                        spotColor = colors.shadow,
+                    )
+                    .testTag(NexaraMenuTags.MENU),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .drawWithContent {
+                            drawContent()
+                            // 深色下的顶部高光：0.5dp，沿上缘圆角内侧。
+                            if (colors.highlight.alpha > 0f) {
+                                val stroke = 0.5.dp.toPx()
+                                val inset = MenuCornerRadius.toPx()
+                                drawLine(
+                                    color = colors.highlight,
+                                    start = Offset(inset, stroke / 2f),
+                                    end = Offset(size.width - inset, stroke / 2f),
+                                    strokeWidth = stroke,
+                                )
+                            }
+                        }
+                        .width(IntrinsicSize.Max)
+                        .widthIn(min = minWidth, max = MenuMaxWidth)
+                        .verticalScroll(rememberScrollState())
+                        .padding(MenuInnerPadding),
+                    content = content,
+                )
+            }
         }
     }
 }
 
+/** 菜单底色、描边、高光与阴影色；深浅色按当前配色方案的明暗判断，跟随种子配色。 */
+@Immutable
+internal data class NexaraMenuColors(
+    val container: Color,
+    val edge: Color,
+    val highlight: Color,
+    val shadow: Color,
+)
+
+@Composable
+internal fun nexaraMenuColors(): NexaraMenuColors {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.luminance() < 0.5f
+    return if (dark) {
+        NexaraMenuColors(
+            container = scheme.surfaceContainerHighest,
+            edge = Color.White.copy(alpha = 0.08f),
+            highlight = Color.White.copy(alpha = 0.07f),
+            shadow = Color.Black,
+        )
+    } else {
+        NexaraMenuColors(
+            container = scheme.surfaceContainerLowest,
+            edge = scheme.onSurface.copy(alpha = 0.10f),
+            highlight = Color.Transparent,
+            shadow = scheme.scrim.copy(alpha = 0.55f),
+        )
+    }
+}
+
+/** 菜单项入场错峰：入场时钟与各项按组合顺序领取的序号。 */
+@Stable
+internal class NexaraMenuStagger {
+    val clock = Animatable(MenuStaggerEndMillis)
+    var reversed by mutableStateOf(false)
+    private var count = 0
+    fun nextIndex(): Int = count++
+    val itemCount: Int get() = count
+}
+
+internal val LocalNexaraMenuStagger = staticCompositionLocalOf<NexaraMenuStagger?> { null }
+
+/** 时钟走到这里时所有菜单项都已到位。 */
+private val MenuStaggerEndMillis: Float = (
+    NexaraMotion.MenuItemStaggerMillis * (NexaraMotion.MenuItemStaggerMaxItems - 1) +
+        NexaraMotion.MenuItemEnterMillis
+    ).toFloat()
+
 /**
- * 菜单项：10dp 圆角按压高亮，图标与文字间距 12dp；[destructive] 时文字与图标用错误色。
+ * 第 [index] 个菜单项在入场时钟 [elapsedMillis] 时的进度（0 不可见，1 到位）。
+ * 每项晚 [NexaraMotion.MenuItemStaggerMillis]，序号超过上限的项与最后一档同时出现。
+ */
+internal fun nexaraMenuItemEnterProgress(elapsedMillis: Float, index: Int): Float {
+    val slot = index.coerceIn(0, NexaraMotion.MenuItemStaggerMaxItems - 1)
+    val start = slot * NexaraMotion.MenuItemStaggerMillis
+    return ((elapsedMillis - start) / NexaraMotion.MenuItemEnterMillis).coerceIn(0f, 1f)
+}
+
+/** 菜单项、分组线与小标题共用的错峰入场：淡入并上移 4dp（朝上展开时下移）。 */
+@Composable
+private fun Modifier.nexaraMenuStaggerEnter(): Modifier {
+    val stagger = LocalNexaraMenuStagger.current ?: return this
+    val index = remember(stagger) { stagger.nextIndex() }
+    return graphicsLayer {
+        val order = if (stagger.reversed) (stagger.itemCount - 1 - index).coerceAtLeast(0) else index
+        val p = nexaraMenuItemEnterProgress(stagger.clock.value, order)
+        alpha = LinearOutSlowInEasing.transform(p)
+        val shift = NexaraMotion.MenuItemEnterOffsetDp * (1f - NexaraMotion.EmphasizedDecelerate.transform(p))
+        translationY = shift.dp.toPx() * if (stagger.reversed) -1f else 1f
+    }
+}
+
+/**
+ * 菜单项：8dp 圆角按压高亮，图标与文字间距 14dp，文字 15sp 常规字重；[destructive] 时文字、图标与按压高亮用错误色。
+ * [selected] 不为 null 时在右侧预留选中勾位，为 true 时显示主色勾（与 [trailingIcon] 同时给出时以勾为准）。
  * 参数与 Material 的 DropdownMenuItem 对齐，便于各处直接替换。
  * 点按时按 [haptic] 振动，默认轻 tick；复制等确认动作传确认档，不需要时传 null。
  */
@@ -290,6 +437,7 @@ fun NexaraMenuItem(
     trailingIcon: (@Composable () -> Unit)? = null,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    selected: Boolean? = null,
     contentPadding: PaddingValues = MenuItemPadding,
     haptic: NexaraHapticEvent? = NexaraHapticEvent.SELECTION,
 ) {
@@ -305,31 +453,59 @@ fun NexaraMenuItem(
         destructive -> scheme.error
         else -> scheme.onSurfaceVariant
     }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .sizeIn(minWidth = 112.dp, maxWidth = 300.dp, minHeight = MenuItemMinHeight)
-            .clip(MenuItemShape)
-            .clickable(enabled = enabled, role = Role.Button) {
-                haptic?.let(haptics::perform)
-                onClick()
-            }
-            .padding(contentPadding),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (leadingIcon != null) {
-            CompositionLocalProvider(LocalContentColor provides iconColor) {
-                Box(Modifier.padding(end = 12.dp), contentAlignment = Alignment.Center) { leadingIcon() }
-            }
-        }
-        Box(Modifier.weight(1f)) {
-            CompositionLocalProvider(LocalContentColor provides textColor) {
-                ProvideTextStyle(NexaraTypography.labelLarge, text)
+    val trailing: (@Composable () -> Unit)? = when (selected) {
+        null -> trailingIcon
+        else -> {
+            {
+                Box(Modifier.size(MenuCheckSize), contentAlignment = Alignment.Center) {
+                    if (selected) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = if (enabled) scheme.primary else iconColor,
+                            modifier = Modifier.size(MenuCheckSize),
+                        )
+                    }
+                }
             }
         }
-        if (trailingIcon != null) {
-            CompositionLocalProvider(LocalContentColor provides iconColor) {
-                Box(Modifier.padding(start = 12.dp), contentAlignment = Alignment.Center) { trailingIcon() }
+    }
+    // 按压反馈跟随当前内容色：危险项按下时用错误色高亮。
+    CompositionLocalProvider(LocalContentColor provides textColor) {
+        Row(
+            modifier = modifier
+                .nexaraMenuStaggerEnter()
+                .fillMaxWidth()
+                .sizeIn(minWidth = 112.dp, maxWidth = MenuMaxWidth, minHeight = MenuItemMinHeight)
+                .clip(MenuItemShape)
+                .then(
+                    if (selected != null) {
+                        Modifier.selectable(selected = selected, enabled = enabled, role = Role.Button) {
+                            haptic?.let(haptics::perform)
+                            onClick()
+                        }
+                    } else {
+                        Modifier.clickable(enabled = enabled, role = Role.Button) {
+                            haptic?.let(haptics::perform)
+                            onClick()
+                        }
+                    },
+                )
+                .padding(contentPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leadingIcon != null) {
+                CompositionLocalProvider(LocalContentColor provides iconColor) {
+                    Box(Modifier.padding(end = 14.dp), contentAlignment = Alignment.Center) { leadingIcon() }
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                ProvideTextStyle(MenuItemTextStyle, text)
+            }
+            if (trailing != null) {
+                CompositionLocalProvider(LocalContentColor provides iconColor) {
+                    Box(Modifier.padding(start = 12.dp), contentAlignment = Alignment.Center) { trailing() }
+                }
             }
         }
     }
@@ -340,10 +516,28 @@ fun NexaraMenuItem(
 fun NexaraMenuDivider() {
     Box(
         Modifier
+            .nexaraMenuStaggerEnter()
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 5.dp)
             .height(0.5.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+    )
+}
+
+/** 菜单内可选的分组小标题，读屏视为标题。 */
+@Composable
+fun NexaraMenuHeader(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MenuHeaderTextStyle,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .nexaraMenuStaggerEnter()
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp)
+            .semantics { heading() },
     )
 }
 
@@ -351,12 +545,28 @@ object NexaraMenuTags {
     const val MENU = "nexara_menu"
 }
 
-private val MenuShape = RoundedCornerShape(16.dp)
-private val MenuItemShape = RoundedCornerShape(10.dp)
+private val MenuCornerRadius = 14.dp
+private val MenuShape = RoundedCornerShape(MenuCornerRadius)
+private val MenuItemShape = RoundedCornerShape(8.dp)
 private val MenuInnerPadding = 6.dp
+private val MenuMaxWidth = 280.dp
 private val MenuItemMinHeight = 44.dp
-private val MenuItemPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-private const val MenuEnterMillis = 180
-private const val MenuExitMillis = 110
-private const val MenuEnterScale = 0.86f
-private const val MenuExitScale = 0.94f
+private val MenuItemPadding = PaddingValues(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
+private val MenuCheckSize = 18.dp
+private val MenuKeyShadowElevation = 10.dp
+private val MenuAmbientShadowElevation = 2.dp
+private val MenuItemTextStyle = NexaraTypography.bodyLarge.copy(
+    fontSize = 15.sp,
+    lineHeight = 20.sp,
+    fontWeight = FontWeight.Normal,
+    letterSpacing = 0.sp,
+)
+private val MenuHeaderTextStyle = NexaraTypography.labelSmall.copy(
+    fontSize = 11.5.sp,
+    lineHeight = 16.sp,
+    fontWeight = FontWeight.Medium,
+)
+private val MenuEnterSpring = spring<Float>(
+    dampingRatio = NexaraMotion.MenuEnterSpringDampingRatio,
+    stiffness = NexaraMotion.MenuEnterSpringStiffness,
+)

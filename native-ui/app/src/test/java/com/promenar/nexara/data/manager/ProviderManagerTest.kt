@@ -3,6 +3,9 @@ package com.promenar.nexara.data.manager
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.ProviderConnectionOutcome
+import com.promenar.nexara.data.local.ProviderStatusStore
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.UnsupportedProviderListItem
@@ -52,7 +55,7 @@ class ProviderManagerTest {
     @Before
     fun setUp() {
         app = ApplicationProvider.getApplicationContext()
-        listOf("nexara_provider", "nexara_settings").forEach {
+        listOf("nexara_provider", "nexara_settings", "nexara_provider_status").forEach {
             app.getSharedPreferences(it, 0).edit().clear().commit()
         }
         manager = ProviderManager.createForTest(app, TestSecretStore())
@@ -63,6 +66,50 @@ class ProviderManagerTest {
             "remote-model",
             "同名提供商",
         )
+    }
+
+    @Test
+    fun `删除提供商会清除连接和同步状态并保留主提供商状态`() {
+        addExtraProviderWithModel()
+        manager.recordProviderConnectionTest("extra-a", ProviderConnectionProbeResult.Success)
+        manager.recordProviderModelSync("extra-a")
+        manager.recordProviderConnectionTest("default", ProviderConnectionProbeResult.Unsupported)
+        manager.recordProviderModelSync("default")
+        assertThat(manager.providerStatuses.value["extra-a"]?.lastConnection?.outcome)
+            .isEqualTo(ProviderConnectionOutcome.SUCCESS)
+        assertThat(manager.providerStatuses.value["extra-a"]?.lastModelSyncAtMillis).isNotNull()
+
+        manager.deleteProvider("extra-a")
+        manager.deleteProvider("default")
+
+        assertThat(manager.providerStatuses.value.keys).containsExactly("default")
+        val restored = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(restored.providerStatuses.value.keys).containsExactly("default")
+        assertThat(restored.providerStatuses.value["default"]?.lastConnection?.outcome)
+            .isEqualTo(ProviderConnectionOutcome.UNSUPPORTED)
+        assertThat(restored.providerStatuses.value["default"]?.lastModelSyncAtMillis).isNotNull()
+    }
+
+    @Test
+    fun `重载提供商清理孤儿且保留不支持协议和default的状态`() {
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .putInt("extra_providers_count", 1)
+            .putString("extra_provider_0_id", "unsupported")
+            .putString("extra_provider_0_protocol", "Future_Protocol")
+            .commit()
+        val statusStore = ProviderStatusStore(app.getSharedPreferences("injected_provider_status", 0)) { 42L }
+        listOf("default", "unsupported", "orphan").forEach { statusStore.recordModelSync(it) }
+        val isolated = ProviderManager.createForTest(app, TestSecretStore(), providerStatusStore = statusStore)
+        assertThat(isolated.providerStatuses.value.keys).containsExactly("default", "unsupported")
+        assertThat(isolated.providerStatuses.value["unsupported"]?.lastModelSyncAtMillis).isEqualTo(42L)
+
+        prefs.edit().putInt("extra_providers_count", 0).commit()
+        app.getSharedPreferences("nexara_provider", 0).edit().clear().commit()
+        isolated.loadProviders()
+
+        assertThat(isolated.providerStatuses.value.keys).containsExactly("default")
+        assertThat(statusStore.statuses.value.keys).containsExactly("default")
     }
 
     @Test

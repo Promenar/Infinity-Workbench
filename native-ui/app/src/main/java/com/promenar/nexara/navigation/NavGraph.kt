@@ -604,6 +604,8 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
                     val pid = providerId ?: ""
                     navigator.open(NavDestinations.providerModels(pid)) {
                         popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
+                        // 从模型页“编辑提供商”进入时，保存后回到原模型页而不是再叠一层。
+                        launchSingleTop = true
                     }
                 },
                 onNavigateToLocalModels = {
@@ -631,7 +633,8 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
 
             ProviderModelsScreen(
                 providerId = providerId,
-                onNavigateBack = { navigator.back() }
+                onNavigateBack = { navigator.back() },
+                onNavigateToSecondary = { route -> navigator.open(route) },
             )
         }
     }

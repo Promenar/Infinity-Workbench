@@ -4,6 +4,8 @@ import android.os.SystemClock
 import android.view.WindowInsets as AndroidWindowInsets
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
@@ -100,12 +102,12 @@ class ProviderModelsAccessibilityTest {
         val refreshCount = AtomicInteger()
         rule.setContent {
             NexaraTheme {
-                ProviderModelsTopActions(
+                ProviderModelsSyncBar(
+                    enabledCount = 0,
+                    totalCount = 0,
                     isFetching = true,
+                    lastSyncAtMillis = null,
                     onRefresh = { refreshCount.incrementAndGet() },
-                    onAdd = {},
-                    onDisableAll = {},
-                    onDeleteAll = {},
                 )
             }
         }
@@ -184,13 +186,22 @@ class ProviderModelsAccessibilityTest {
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
                 NexaraTheme {
-                    Box(Modifier.width(360.dp)) {
-                        ProviderModelsTopActions(
+                    // 同步按钮在搜索栏下的状态条里，添加与溢出菜单在顶栏。
+                    Column(Modifier.width(360.dp)) {
+                        Row {
+                            ProviderModelsTopActions(
+                                onAdd = { clicks.incrementAndGet() },
+                                onEditProvider = {},
+                                onDisableAll = { clicks.incrementAndGet() },
+                                onDeleteAll = { clicks.incrementAndGet() },
+                            )
+                        }
+                        ProviderModelsSyncBar(
+                            enabledCount = 1,
+                            totalCount = 2,
                             isFetching = false,
+                            lastSyncAtMillis = null,
                             onRefresh = { clicks.incrementAndGet() },
-                            onAdd = { clicks.incrementAndGet() },
-                            onDisableAll = { clicks.incrementAndGet() },
-                            onDeleteAll = { clicks.incrementAndGet() },
                         )
                     }
                 }
@@ -637,10 +648,13 @@ class ProviderModelsAccessibilityTest {
 
         onModelCard(modelId).performClick()
         rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
-        rule.onNodeWithTag("model_editor_type_picker").performScrollTo().performClick()
+        // 类型与能力是页内平铺的芯片；上下文长度点按规格格子后在底部面板里输入。
+        scrollEditorTo(modelId, UiTags.providerModelsTypeAction(modelId, "reasoning"))
         rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performClick()
+        scrollEditorTo(modelId, UiTags.providerModelsCapabilityAction(modelId, "internet"))
         rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
-        scrollEditorTo(modelId, UiTags.providerModelsContextField(modelId))
+        scrollEditorTo(modelId, UiTags.providerModelsSpecCell(modelId, ModelSpecField.Context.name))
+        rule.onNodeWithTag(UiTags.providerModelsSpecCell(modelId, ModelSpecField.Context.name)).performClick()
         val contextField = rule.onNode(
             matcher = hasSetTextAction() and
                 (hasTestTag(UiTags.providerModelsContextField(modelId)) or
@@ -649,6 +663,7 @@ class ProviderModelsAccessibilityTest {
         )
         contextField.performTextClearance()
         contextField.performTextInput("32768")
+        rule.onNodeWithText(resources.getString(R.string.model_spec_done)).performClick()
         rule.onNodeWithTag(UiTags.providerModelsEditorList(modelId))
             .performScrollToNode(hasTestTag(editorTestActionTag(modelId)))
         rule.onNodeWithTag(editorTestActionTag(modelId)).performClick()
@@ -658,6 +673,42 @@ class ProviderModelsAccessibilityTest {
         assertThat(latestCapability.get()).contains("internet")
         assertThat(latestContext.get()).isEqualTo(32_768)
         assertThat(testCount.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun systemBackClosesInPageEditorAndReturnsToList() {
+        val modelId = "provider-alpha::back-close"
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Back model",
+                                id = modelId,
+                                description = "desc",
+                                enabled = true,
+                                providerId = "provider-alpha",
+                            ),
+                        ),
+                        modelTestStates = emptyMap(),
+                    ),
+                    actions = idleActions(),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        onModelCard(modelId).performClick()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        Espresso.pressBack()
+        rule.waitForIdle()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertDoesNotExist()
+        onModelCard(modelId).assertIsDisplayed()
     }
 
     @Test

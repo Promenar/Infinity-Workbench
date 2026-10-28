@@ -34,6 +34,29 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
+    fun `提供商状态不导出且备份恢复不会写入或覆盖状态文件`() = runBlocking {
+        val status = context.getSharedPreferences("nexara_provider_status", 0)
+        val settings = context.getSharedPreferences("nexara_settings", 0)
+        try {
+            status.edit().putString("statuses", "local-status-before-backup").commit()
+            settings.edit().putInt("loop_limit", 9).commit()
+            val snapshot = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+            assertThat(snapshot.entries.none { it.namespace.contains("status") || it.key == "statuses" }).isTrue()
+
+            status.edit().putString("statuses", "local-status-after-backup").commit()
+            settings.edit().putInt("loop_limit", 5).commit()
+            val before = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+            store().prepare("tx-provider-status", before, snapshot)
+            store().commitPrepared("tx-provider-status")
+
+            assertThat(settings.getInt("loop_limit", -1)).isEqualTo(9)
+            assertThat(status.getString("statuses", null)).isEqualTo("local-status-after-backup")
+        } finally {
+            status.edit().clear().commit()
+        }
+    }
+
+    @Test
     fun `KG高级设置按原始类型备份恢复且不迁移本机用量`() = runBlocking<Unit> {
         val prefs = context.getSharedPreferences("rag_settings", 0)
         val numbers = mapOf(

@@ -284,7 +284,7 @@ fun themeTextScaleBatch1() = Batch1PagesTheme {
 @Preview(name = "模型编辑 深色中文 360", widthDp = 360, heightDp = 914, locale = "zh-rCN")
 @Composable
 fun modelEditorBatch1() = Batch1PagesTheme {
-    ModelEditorSheet(Batch1PreviewModel, ModelTestState.Idle, onDismissRequest = {}, onUpdate = {}, onTest = {}, onCancel = {}, onDelete = {}, renderAsModal = false)
+    ModelEditorScreen(Batch1PreviewModel, ModelTestState.Idle, onClose = {}, onUpdate = {}, onTest = {}, onCancel = {}, onDelete = {})
 }
 
 @PreviewTest

@@ -72,6 +72,8 @@ internal object BackupPreferencePolicy {
     // 权限询问、本地执行能力与一次性提示属于设备状态，不能随备份迁移到能力或授权不同的新设备。
     private val exactDenied = mapOf(
         "provider" to setOf("last_local_model"),
+        // 连接探测结果与模型同步时间仅描述当前设备，不随备份迁移。
+        "provider_status" to setOf("statuses"),
         "settings" to setOf(
             "local_models_enabled", "local_auto_load", "last_local_model", "unlimited_auto_confirmed",
             "termux_integration_enabled", "ssh_agent_host_management", "mcp_allow_loopback_http", "script_lan_hosts", "script_approve_writes",
@@ -143,6 +145,7 @@ internal object BackupPreferencePolicy {
 
     private fun normalizeNamespace(value: String): String = when (normalize(value)) {
         "nexara_provider", "provider", "model" -> "provider"
+        "nexara_provider_status", "provider_status" -> "provider_status"
         "nexara_settings", "settings" -> "settings"
         "rag_settings", "rag" -> "rag"
         "nexara_search", "search" -> "search"

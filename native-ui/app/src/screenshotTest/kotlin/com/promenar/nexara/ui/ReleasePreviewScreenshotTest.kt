@@ -124,7 +124,7 @@ import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsContent
 import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
-import com.promenar.nexara.ui.settings.ModelEditorSheet
+import com.promenar.nexara.ui.settings.ModelEditorScreen
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.ModelWorkload
@@ -1788,7 +1788,7 @@ fun providerModelsReleasePreviewChineseLargeFont() {
 @PreviewTest
 fun providerModelEditorReleasePreviewChineseLargeFont() {
     ReleasePreviewSurface {
-        ModelEditorSheet(
+        ModelEditorScreen(
             model = ModelInfo(
                 name = "超长模型名称示例：多模态推理与结构化输出协同增强版",
                 id = "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
@@ -1806,12 +1806,11 @@ fun providerModelEditorReleasePreviewChineseLargeFont() {
                 userEditedFields = setOf("name", "capabilities"),
             ),
             testState = ModelTestState.Success(298),
-            onDismissRequest = {},
+            onClose = {},
             onUpdate = {},
             onTest = {},
             onCancel = {},
             onDelete = {},
-            renderAsModal = false,
         )
     }
 }

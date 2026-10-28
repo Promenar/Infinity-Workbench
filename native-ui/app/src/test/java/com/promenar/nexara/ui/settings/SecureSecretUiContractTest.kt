@@ -86,9 +86,10 @@ class SecureSecretUiContractTest {
         assertThat(form).contains("NexaraSettingsPageLayout(")
         assertThat(form).contains("contentPadding = contentPadding")
         assertThat(form).contains("LazyColumn(")
-        assertThat(form).contains("ExposedDropdownMenuBox(")
-        assertThat(form).contains("OutlinedTextField(")
-        assertThat(form).contains("TextButton(")
+        // 预设与协议都走统一底部面板；输入为无框字段行（NexaraFieldRow 内部仍是 Material 3 文本框）。
+        assertThat(form).contains("NexaraBottomSheet(")
+        assertThat(form).contains("NexaraFieldRow(")
+        assertThat(form).contains("FilledTonalButton(")
         assertThat(form).contains("Button(")
         assertThat(form).contains("liveRegion = LiveRegionMode.Assertive")
         assertThat(form).doesNotContain("NexaraGlassCard")

@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.settings
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,20 +21,14 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lan
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,9 +37,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -54,11 +46,11 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.tailnet.TailnetEndpoints
 import com.promenar.nexara.data.tailnet.TailnetPeer
 import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraGroupDivider
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.forInput
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import com.promenar.nexara.ui.common.NexaraPopoverSpec
 import com.promenar.nexara.ui.common.nexaraPopoverAnchor
@@ -74,7 +66,7 @@ data class ProviderTailnetInfo(
     val peers: List<TailnetPeer> = emptyList(),
 )
 
-/** “API 源”分组：公网 | Tailscale 内网 分段选择，选中 Tailscale 时显示内置 Tailscale 状态。 */
+/** 独立的“接口来源”分组；提供商表单里改用 [ProviderApiSourceRows] 并入“接口”分组卡片。 */
 @Composable
 internal fun ProviderApiSourceSection(
     source: ProviderApiSourceState,
@@ -86,29 +78,44 @@ internal fun ProviderApiSourceSection(
         title = stringResource(R.string.provider_api_source_title),
         footer = stringResource(R.string.provider_api_source_footer),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ProviderApiSourceRows(source, tailnet, onSourceSelected, onOpenTailscaleSettings)
+    }
+}
+
+/** 公网 | Tailscale 内网 分段选择；选中 Tailscale 时下方展开内置 Tailscale 状态行。用于分组卡片内。 */
+@Composable
+internal fun ProviderApiSourceRows(
+    source: ProviderApiSourceState,
+    tailnet: ProviderTailnetInfo,
+    onSourceSelected: (ProviderApiSource) -> Unit,
+    onOpenTailscaleSettings: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        val options = listOf(
+            Triple(ProviderApiSource.PUBLIC, R.string.provider_api_source_public, Icons.Rounded.Language),
+            Triple(ProviderApiSource.TAILNET, R.string.provider_api_source_tailnet, Icons.Rounded.Lan),
+        )
+        NexaraCapsuleTabRow(
+            tabs = options.map { (option, label, icon) ->
+                NexaraTabItem(title = stringResource(label), icon = icon, testTag = providerApiSourceOptionTag(option))
+            },
+            selectedIndex = options.indexOfFirst { it.first == source.selected },
+            onTabSelected = { index -> onSourceSelected(options[index].first) },
+            modifier = Modifier
+                .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Medium)
+                .testTag(PROVIDER_API_SOURCE_TAG),
+            itemRole = Role.RadioButton,
+        )
+        AnimatedVisibility(
+            visible = source.selected == ProviderApiSource.TAILNET,
+            enter = NexaraMotion.expandIn,
+            exit = NexaraMotion.shrinkOut,
         ) {
-            val options = listOf(
-                Triple(ProviderApiSource.PUBLIC, R.string.provider_api_source_public, Icons.Rounded.Language),
-                Triple(ProviderApiSource.TAILNET, R.string.provider_api_source_tailnet, Icons.Rounded.Lan),
-            )
-            NexaraCapsuleTabRow(
-                tabs = options.map { (option, label, icon) ->
-                    NexaraTabItem(title = stringResource(label), icon = icon, testTag = providerApiSourceOptionTag(option))
-                },
-                selectedIndex = options.indexOfFirst { it.first == source.selected },
-                onTabSelected = { index -> onSourceSelected(options[index].first) },
-                modifier = Modifier.testTag(PROVIDER_API_SOURCE_TAG),
-                itemRole = Role.RadioButton,
-            )
-            AnimatedVisibility(
-                visible = source.selected == ProviderApiSource.TAILNET,
-                enter = NexaraMotion.expandIn,
-                exit = NexaraMotion.shrinkOut,
-            ) {
-                BuiltInTailscaleRow(source.builtIn, tailnet, onOpenTailscaleSettings)
+            Column {
+                NexaraGroupDivider()
+                Box(Modifier.padding(start = NexaraSpacing.RowHorizontal, end = 8.dp, top = 4.dp, bottom = 4.dp)) {
+                    BuiltInTailscaleRow(source.builtIn, tailnet, onOpenTailscaleSettings)
+                }
             }
         }
     }
@@ -262,8 +269,8 @@ internal fun selectableTailnetPeers(peers: List<TailnetPeer>): List<TailnetPeer>
     peers.filter { it.allowed && TailnetEndpoints.peerHost(it) != null }.sortedForDisplay()
 
 /**
- * “tailnet 设备”选择框：外观与表单输入框一致，显示接口地址当前对应的设备；
- * 点按打开底部面板选择设备，选中后把接口地址换成该设备的 https 全名。
+ * “tailnet 设备”选择行：显示接口地址当前对应的设备；点按打开底部面板选择设备，
+ * 选中后把接口地址换成该设备的 https 全名。
  */
 @Composable
 internal fun TailnetPeerPicker(
@@ -276,32 +283,32 @@ internal fun TailnetPeerPicker(
     var open by rememberSaveable { mutableStateOf(false) }
     val anchor = rememberNexaraPopoverAnchor()
     val selected = usable.firstOrNull { TailnetEndpoints.matchesPeer(baseUrl, it) }
-    val interactions = remember { MutableInteractionSource() }
-    LaunchedEffect(interactions) {
-        interactions.interactions.collect { if (it is PressInteraction.Release && !anchor.consumeRecentDismiss()) open = true }
-    }
     val openLabel = stringResource(R.string.provider_tailnet_peer_sheet_title)
-    OutlinedTextField(
-        value = selected?.name.orEmpty(),
-        onValueChange = {},
-        readOnly = true,
-        singleLine = true,
-        textStyle = LocalTextStyle.current.forInput(),
-        label = { Text(stringResource(R.string.provider_tailnet_peer_field_label)) },
-        placeholder = { Text(stringResource(R.string.provider_tailnet_peer_field_placeholder)) },
-        leadingIcon = selected?.let { peer -> { TailscalePeerIcon(peer) } },
-        trailingIcon = { Icon(Icons.Rounded.ExpandMore, contentDescription = null) },
-        supportingText = selected?.let { peer -> { Text(peerDetail(peer), maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        interactionSource = interactions,
+    NexaraSettingsRowLayout(
+        title = stringResource(R.string.provider_tailnet_peer_field_label),
+        subtitle = selected?.let { peerDetail(it) } ?: stringResource(R.string.provider_tailnet_peer_field_placeholder),
+        leadingContent = selected?.let { peer -> { TailscalePeerIcon(peer) } },
         modifier = Modifier
-            .fillMaxWidth()
             .nexaraPopoverAnchor(anchor)
             .testTag(PROVIDER_TAILNET_PEERS_TAG)
-            .semantics {
-                role = Role.DropdownList
-                onClick(label = openLabel) { open = true; true }
-            },
-    )
+            .clickable(role = Role.DropdownList, onClickLabel = openLabel) {
+                if (!anchor.consumeRecentDismiss()) open = true
+            }
+            .semantics { selected?.name?.let { stateDescription = it } },
+        trailingMaxWidthFraction = 0.45f,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                selected?.name.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
     NexaraBottomSheet(
         show = open,
         onDismiss = { open = false },
