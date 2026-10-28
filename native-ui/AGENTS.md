@@ -1,16 +1,16 @@
-# Nexara Kotlin 原生迁移规范
+# Infinity Workbench Kotlin 原生规范
 
 > 本文件是 OpenCode 的项目级指令，定义了从 TypeScript/React Native 迁移到 Kotlin/Compose 的所有规范。
 
 ## 项目概述
 
-Nexara 是一个 AI 助手 Android 应用，正在从 React Native 前端迁移到纯 Kotlin/Jetpack Compose 原生前端。
+Infinity Workbench（原名 Nexara）是一个 AI 助手 Android 应用，正在从 React Native 前端迁移到纯 Kotlin/Jetpack Compose 原生前端。
 本模块 (`native-ui/`) 是完全独立的 Android 项目，零 RN 依赖。
 
 ## 架构约束
 
-- 所有代码位于 `app/src/main/java/com/promenar/nexara/`
-- 包名根：`com.promenar.nexara`（不含 `.native`）
+- 所有代码位于 `app/src/main/java/com/promenar/infinity/`
+- 包名根：`com.promenar.infinity`（应用 ID 同名）
 - UI 层：Jetpack Compose + Material 3
 - 网络：Ktor Client（Multiplatform-Ready）
 - 图片：Coil 3
@@ -21,7 +21,7 @@ Nexara 是一个 AI 助手 Android 应用，正在从 React Native 前端迁移�
 ## 目录结构
 
 ```
-app/src/main/java/com/promenar/nexara/
+app/src/main/java/com/promenar/infinity/
 ├── MainActivity.kt
 ├── navigation/
 ├── ui/theme|common|chat|hub|rag|welcome|renderer

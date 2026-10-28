@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 产品更名为 Infinity Workbench
+
+- 产品名 Nexara 更名为 Infinity Workbench，桌面名称为全名；空会话粒子、灯珠、变形字标与首次引导改拼 INFINITY。仓库迁到 `Promenar/Infinity-Workbench`。
+- 应用 ID 与代码包名改为 `com.promenar.infinity`，与旧版并存，不能覆盖升级；类名前缀、Gradle 工程名与任务名同步改为 Infinity。
+- 新备份为 `infinity_backup_<时间戳>.iwb`，仍识别旧 `.nexara` 备份；备份导出的已知缺陷另行修复。工作区内部标记改用 `.infinity` 前缀，读取与清理兼容旧 `.nexara` 前缀。
+- 命令运行环境的环境变量改为 `INFINITY_WORKSPACE`、`INFINITY_WORKSPACE_KIND`、`INFINITY_SKILLS`，同时导出 `NEXARA_*` 旧名别名；通知深链改为 `infinity-workbench://`。
+- 构建与 CI 的 Gradle 属性 `nexara.*` 改为 `infinity.*`（如 `-Pinfinity.deviceE2eAbi`），签名与测试用环境变量 `NEXARA_*` 改为 `INFINITY_*`。
+- 系统提示词新增 Runtime Environment 小段，只写运行环境 Infinity Workbench 与本轮实际请求的模型 ID，每轮动态取值；主会话与子代理都适用。
+
 ### 体验改进第二批（第一波）
 
 - 思考按流式显示：浮岛光效与生成状态指示灯在思考阶段与正文流式共用配色，出字速率计入思考字数；只有尚无内容到达时才显示首字前。

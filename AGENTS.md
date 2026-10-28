@@ -1,6 +1,6 @@
-# Nexara 开发者/Agent 协同规范 (AGENTS.md)
+# Infinity Workbench 开发者/Agent 协同规范 (AGENTS.md)
 
-本文件遵循 [AGENTS.md 开放标准](https://agents.md/)，为所有参与 Nexara 开发的 AI Agent 和人类开发者提供核心开发规范。
+本文件遵循 [AGENTS.md 开放标准](https://agents.md/)，为所有参与 Infinity Workbench（原名 Nexara）开发的 AI Agent 和人类开发者提供核心开发规范。
 
 ## 1. 核心规则引用
 本项目严格遵循模型全局开发规则，包含：
@@ -33,7 +33,7 @@
 ## 5. 交付 Git 闭环
 
 - 用户已授权：每轮任务完成验证、准备向用户交付前，必须将本轮应纳管成果提交并推送当前工作分支，不再等待用户逐次提醒。
-- 提交前必须复核暂存清单与 diff，排除密钥、签名材料、`secure_env/`、`artifacts/`、构建产物及任何 `.nexara-workspace-*` 临时目录；不得借机纳入无关或无法确认来源的修改。
+- 提交前必须复核暂存清单与 diff，排除密钥、签名材料、`secure_env/`、`artifacts/`、构建产物及任何 `.infinity-*`、`.nexara-*` 测试临时目录（如 `.infinity-workspace-*`、`.nexara-backup-test*`）；不得借机纳入无关或无法确认来源的修改。
 - commit/push 授权不包含 tag、PR、GitHub Release、强推或历史改写；这些操作仍需用户明确授权。用户当轮明确要求暂停提交或不推送时，以最新指令为准。
 
 ## 6. 版本号规则
@@ -49,4 +49,4 @@
 - 交付报告写明版本名、versionCode 与安装包 SHA-256。
 
 ---
-*规范更新于 2026-10-28。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
+*规范更新于 2026-10-29。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
