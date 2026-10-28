@@ -129,11 +129,7 @@ class SessionManager(
     }
 
     suspend fun updateSessionModel(id: String, modelId: String?) {
-        val session = store.getSession(id)
-        val toolsEnabled = modelId != null
-        val newOptions = session?.options?.copy(toolsEnabled = toolsEnabled)
-            ?: SessionOptions(toolsEnabled = toolsEnabled)
-        updateSession(id, mapOf("modelId" to modelId, "options" to newOptions))
+        updateSession(id, mapOf("modelId" to modelId))
     }
 
     suspend fun updateSessionOptions(id: String, options: SessionOptions, ragOptions: RagOptions? = null) {

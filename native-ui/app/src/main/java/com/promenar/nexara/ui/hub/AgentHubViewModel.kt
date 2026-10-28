@@ -22,6 +22,7 @@ class AgentHubViewModel(
     private val agentRepository: AgentRepository,
     private val createAgentUseCase: CreateAgentUseCase,
     private val defaultAgents: List<Agent>,
+    private val deleteAgentUseCase: com.promenar.nexara.domain.usecase.DeleteAgentUseCase? = null,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -61,9 +62,21 @@ class AgentHubViewModel(
         }
     }
 
+    private var releaseSessionCloser: (() -> Unit)? = null
+
+    fun bindSessionCloser(close: (Set<String>) -> Unit) {
+        releaseSessionCloser?.invoke()
+        releaseSessionCloser = deleteAgentUseCase?.registerSessionCloser(close)
+    }
+
+    override fun onCleared() {
+        releaseSessionCloser?.invoke()
+        super.onCleared()
+    }
+
     fun deleteAgent(agentId: String) {
         viewModelScope.launch {
-            agentRepository.delete(agentId)
+            if (deleteAgentUseCase != null) deleteAgentUseCase.invoke(agentId) else agentRepository.delete(agentId)
             _dbAgents.update { it.filter { a -> a.id != agentId } }
         }
     }
@@ -86,6 +99,7 @@ class AgentHubViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return AgentHubViewModel(
+                        deleteAgentUseCase = app.deleteAgentUseCase,
                         agentRepository = app.agentRepository,
                         createAgentUseCase = app.createAgentUseCase,
                         defaultAgents = app.defaultAgents,

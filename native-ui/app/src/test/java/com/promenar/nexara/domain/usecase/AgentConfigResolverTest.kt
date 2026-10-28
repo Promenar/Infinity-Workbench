@@ -54,8 +54,8 @@ class AgentConfigResolverTest {
         assertEquals(0.5, config.inferenceDefaults.temperature)
         assertEquals(0.8, config.inferenceDefaults.topP)
         assertEquals(2048, config.inferenceDefaults.maxTokens)
-        assertEquals(ragConfig, config.ragConfig)
-        assertEquals(retrievalConfig, config.retrievalConfig)
+        assertNull(config.ragConfig)
+        assertNull(config.retrievalConfig)
     }
 
     @Test

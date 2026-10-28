@@ -362,6 +362,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.nexara.domain.usecase.CreateAgentUseCase(agentRepository)
     }
 
+    val deleteAgentUseCase by lazy {
+        com.promenar.nexara.domain.usecase.DeleteAgentUseCase(agentRepository, sessionRepository)
+    }
+
     val sessionRepository: ISessionRepository by lazy {
         SessionRepository(database.sessionDao(), database.messageDao(), newSessionRunMode = sessionRunModes::newSessionMode)
     }
@@ -1053,8 +1057,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
     private val generationContextBuilder by lazy {
         com.promenar.nexara.ui.chat.manager.ContextBuilder(
-            webSearchProvider = webSearchContextProvider,
-            ragProvider = com.promenar.nexara.data.rag.MemoryManagerRagAdapter(memoryManager),
+            ragProvider = com.promenar.nexara.data.rag.MemoryManagerRagAdapter { memoryManager },
             kgProvider = kgProvider,
             taskRepository = taskRepository,
             stateBoardRepository = stateBoardRepository,

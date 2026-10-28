@@ -4,10 +4,24 @@ import android.content.SharedPreferences
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.data.rag.RetrievalDepth
+import com.promenar.nexara.data.rag.retrievalDepth
 
 class RagConfigPersistence(
     private val prefs: SharedPreferences
 ) {
+
+    fun loadRetrievalDepth(): RetrievalDepth? = loadFullConfig().retrievalDepth()
+
+    /** 只写四个原始参数，保留其余设置及已有兼容键。 */
+    fun saveRetrievalDepth(depth: RetrievalDepth) {
+        prefs.edit()
+            .putInt(KEY_MEMORY_LIMIT, depth.memoryLimit)
+            .putInt(KEY_DOC_LIMIT, depth.docLimit)
+            .putInt(KEY_RERANK_TOP_K, depth.rerankTopK)
+            .putInt(KEY_RERANK_FINAL_K, depth.rerankFinalK)
+            .apply()
+    }
 
     /** P0 修复: 将 SharedPreferences 中的用户配置直接构建为 RagConfiguration
      *  解决 MemoryManager 始终使用硬编码默认值的问题 */

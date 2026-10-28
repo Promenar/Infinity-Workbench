@@ -132,6 +132,12 @@ fun AgentHubScreen(
     // 列表本身与它的弹窗：三列时放在列表列里，点会话在会话列选中。
     @Composable
     fun HubListContent(openChat: (String) -> Unit, selectedSessionId: String?, closeSessions: (Set<String>) -> Unit = {}) {
+        SideEffect {
+            viewModel.bindSessionCloser { ids ->
+                closeSessions(ids)
+                threePane?.state?.let { if (it.hubSessionId in ids) it.restoreHubStack(emptyList()) }
+            }
+        }
         var agentToDelete by remember { mutableStateOf<String?>(null) }
         var pendingDeleteSessionId by remember { mutableStateOf<String?>(null) }
         var searchActive by rememberSaveable { mutableStateOf(false) }
@@ -159,7 +165,6 @@ fun AgentHubScreen(
             onRequestDelete = { agentToDelete = it },
             onCancelDelete = { agentToDelete = null },
             onConfirmDelete = { id ->
-                closeSessions(sessionsByAgent[id].orEmpty().mapTo(HashSet()) { it.id })
                 viewModel.deleteAgent(id)
                 agentToDelete = null
             },

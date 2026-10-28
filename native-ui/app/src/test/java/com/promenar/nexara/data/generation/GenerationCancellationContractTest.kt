@@ -26,8 +26,13 @@ class GenerationCancellationContractTest {
     fun `预检索真正停止后不调用模型工具后处理或成功终态`() = runTest {
         val searchEntered = CompletableDeferred<Unit>()
         val builder = com.promenar.nexara.ui.chat.manager.ContextBuilder(
-            webSearchProvider = object : com.promenar.nexara.ui.chat.manager.WebSearchProvider {
-                override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+            ragProvider = object : com.promenar.nexara.ui.chat.manager.RagProvider {
+                override suspend fun retrieveContext(
+                    query: String,
+                    sessionId: String,
+                    options: com.promenar.nexara.data.model.RagOptions,
+                    onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?,
+                ): com.promenar.nexara.ui.chat.manager.RagRetrievalResult {
                     searchEntered.complete(Unit)
                     awaitCancellation()
                 }
@@ -41,7 +46,6 @@ class GenerationCancellationContractTest {
                     assistantMsgId = "assistant",
                     session = com.promenar.nexara.data.model.Session(
                         id = "session", agentId = "agent",
-                        options = com.promenar.nexara.data.model.SessionOptions(webSearch = true),
                     ),
                 ))
             }

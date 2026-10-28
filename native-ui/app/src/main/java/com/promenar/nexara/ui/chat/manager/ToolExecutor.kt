@@ -134,32 +134,30 @@ class ToolExecutor internal constructor(
 
         val targetMsg = session.messages.find { it.id == targetMsgId } ?: return
 
-        if (!session.options.toolsEnabled) {
-            for (tc in toolCalls) {
-                val syntheticContent = "[SYSTEM WARNING]: Tool usage is currently DISABLED by the user configuration.\nYou CANNOT use tools in this turn.\nPlease STOP trying to use tools and answer the user's request directly using your internal knowledge."
-
-                val toolMessage = Message(
-                    id = "tool_shield_${System.currentTimeMillis()}_${tc.id}",
-                    role = MessageRole.TOOL,
-                    toolCallId = tc.id,
-                    parentMessageId = targetMsg.id,
-                    content = syntheticContent,
-                    name = tc.name,
-                    thoughtSignature = targetMsg.thoughtSignature,
-                    createdAt = System.currentTimeMillis()
-                )
-                messageManager.addMessage(sessionId, toolMessage)
-            }
-            return
+        val sessionAllowedTools = if (session.options.toolsEnabled) emptyList() else toolResolver.resolveForExecution(session).filter {
+            com.promenar.nexara.data.generation.SessionToolAvailability.allows(session, it)
         }
+        val admittedCalls = toolCalls.filter { call ->
+            if (session.options.toolsEnabled || sessionAllowedTools.any { it.function.name == call.name }) true
+            else {
+                messageManager.addMessage(sessionId, Message(
+                    id = "tool_shield_${java.util.UUID.randomUUID()}", role = MessageRole.TOOL,
+                    toolCallId = call.id, parentMessageId = targetMsg.id, name = call.name,
+                    content = "[SYSTEM WARNING]: This tool is DISABLED by the user configuration.",
+                    thoughtSignature = targetMsg.thoughtSignature, createdAt = System.currentTimeMillis(),
+                ))
+                false
+            }
+        }
+        if (admittedCalls.isEmpty()) return
 
         if (com.promenar.nexara.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.nexara.startup.StartupSubsystem.TOOL_LEDGER)) {
-            executeDiagnosticsWithoutLedger(session, targetMsg, toolCalls, preparedTools)
+            executeDiagnosticsWithoutLedger(session, targetMsg, admittedCalls, preparedTools)
             return
         }
         val activeLedger = ledger ?: return
 
-        for (tc in toolCalls.distinctBy { it.id }) {
+        for (tc in admittedCalls.distinctBy { it.id }) {
             val key = ToolExecutionKey(sessionId, targetMsgId, tc.id)
             val persistedIdentity = activeLedger.invocationIdentity(key)
             val preflight = preflight(
@@ -259,7 +257,8 @@ class ToolExecutor internal constructor(
         val currentSession = store.getSession(sessionId)
         val currentResolvedTool = currentSession?.let { toolResolver.resolveForExecution(it) }
             ?.singleOrNull { tool ->
-                tool.runtimeToolId == expectedIdentity.runtimeToolId &&
+                com.promenar.nexara.data.generation.SessionToolAvailability.allows(currentSession, tool) &&
+                    tool.runtimeToolId == expectedIdentity.runtimeToolId &&
                     tool.function.name == expectedIdentity.toolName
             }
         val currentResolvedDigest = currentResolvedTool

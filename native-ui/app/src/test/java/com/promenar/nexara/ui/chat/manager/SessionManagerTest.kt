@@ -287,7 +287,7 @@ class SessionManagerTest {
 
     @Test
     fun updateSessionModel() = testScope.runTest {
-        val session = Session(id = "s1", agentId = "a1")
+        val session = Session(id = "s1", agentId = "a1", options = SessionOptions(toolsEnabled = false))
         sessionManager.addSession(session)
         advanceUntilIdle()
 
@@ -296,7 +296,7 @@ class SessionManagerTest {
 
         val result = sessionManager.getSession("s1")!!
         assertThat(result.modelId).isEqualTo("gpt-4o")
-        assertThat(result.options?.toolsEnabled).isTrue()
+        assertThat(result.options.toolsEnabled).isFalse()
     }
 
     @Test

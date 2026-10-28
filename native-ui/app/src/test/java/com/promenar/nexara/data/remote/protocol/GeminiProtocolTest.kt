@@ -214,7 +214,7 @@ class GeminiProtocolTest {
     }
 
     @Test
-    fun `工具以 JSON Schema 声明且 Agent 模式不叠加内置搜索`() = runBlocking {
+    fun `工具以 JSON Schema 声明且所有请求均不叠加内置搜索`() = runBlocking {
         val recorder = Recorder()
         val protocol = gemini(recorder)
         protocol.sendPrompt(prompt(ProtocolMessage("user", "hi"))).toList()
@@ -225,8 +225,18 @@ class GeminiProtocolTest {
         val declaration = withTools.single().jsonObject["functionDeclarations"]!!.jsonArray.single().jsonObject
         assertThat(declaration["parametersJsonSchema"]).isEqualTo(Json.parseToJsonElement(WEATHER_SCHEMA))
         assertThat(declaration.containsKey("parameters")).isFalse()
-        val plain = body(recorder.bodies[1])["tools"]!!.jsonArray
-        assertThat(plain.single().jsonObject.containsKey("googleSearch")).isTrue()
+        assertThat(body(recorder.bodies[1]).containsKey("tools")).isFalse()
+    }
+
+    @Test
+    fun `旧原生搜索字段任意取值都不影响请求体`() = runBlocking {
+        val recorder = Recorder()
+        for (enabled in listOf(true, false, null)) {
+            gemini(recorder).sendPrompt(prompt(ProtocolMessage("user", "hi"), tools = null)
+                .copy(enableGeminiSearch = enabled)).toList()
+        }
+        assertThat(recorder.bodies.distinct()).hasSize(1)
+        recorder.bodies.forEach { assertThat(body(it).containsKey("tools")).isFalse() }
     }
 
     @Test

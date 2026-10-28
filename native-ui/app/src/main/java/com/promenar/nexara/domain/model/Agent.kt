@@ -39,7 +39,7 @@ data class Agent(
     fun samplingValues(): SamplingValues =
         SamplingValues(temperature, topP, maxTokens, frequencyPenalty, presencePenalty, topK, repetitionPenalty)
 
-    /** 继承全局检索参数时 [retrievalConfig] 只承载记忆权限，参数部分不生效。 */
+    /** [retrievalConfig] 在运行时只承载记忆权限，检索参数统一取全局。 */
     val memoryPolicy: AgentMemoryPolicy
         get() = retrievalConfig?.memoryPolicy ?: AgentMemoryPolicy()
 }

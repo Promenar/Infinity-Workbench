@@ -2269,24 +2269,11 @@ class ChatViewModel(
     private suspend fun insertNewSession(agentId: String): String {
         val sessionId = IdGenerator.session()
         val agent = agentRepository.getById(agentId)
-        val defaultOptions = getDefaultRagOptions(agentId)
-        val defaultModelId = agent?.modelId
-            ?.takeIf { it.isNotBlank() }
-            ?: resolveDefaultModelId()
-        val session = Session(
-            id = sessionId,
-            agentId = agentId,
-            modelId = defaultModelId,
-            executionMode = agent?.executionMode
-                ?.let(com.promenar.nexara.domain.model.ExecutionModeCodec::serialize)
-                ?: "workspace",
-            activeSkillIds = agent?.skills.orEmpty(),
-            activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
-            // 新会话复制 Agent 当前默认工作区；之后修改 Agent 默认值只影响新会话。
-            workspaceId = agent?.defaultWorkspaceId,
-            createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            ragOptions = defaultOptions
+        val globalRagConfig = com.promenar.nexara.domain.usecase.RagConfigPersistence(
+            application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE),
+        ).loadFullConfig()
+        val session = com.promenar.nexara.domain.usecase.newSessionDefaults(
+            sessionId, agentId, agent, resolveDefaultModelId(), globalRagConfig, System.currentTimeMillis(),
         )
         sessionManager.addSession(session)
         ensureSessionWorkspace(sessionId)
@@ -2560,6 +2547,7 @@ class ChatViewModel(
         val nextOptions = when (toolName) {
             "timeInjection" -> options.copy(enableTimeInjection = enabled)
             "toolsEnabled" -> options.copy(toolsEnabled = enabled)
+            "keepWebSearchWhenToolsOff" -> options.copy(keepWebSearchWhenToolsOff = enabled)
             "enableGeminiSearch" -> options.copy(enableGeminiSearch = enabled)
             "webSearch" -> options.copy(webSearch = enabled)
             else -> options
@@ -3453,17 +3441,10 @@ class ChatViewModel(
 
     /** 新会话的检索选项：开关取全局 RAG 设置，范围档位取助手默认值。 */
     private suspend fun getDefaultRagOptions(agentId: String): com.promenar.nexara.data.model.RagOptions {
-        val policy = agentRepository.getById(agentId)?.memoryPolicy
-            ?: com.promenar.nexara.data.agent.AgentMemoryPolicy()
-        val ragPrefs = application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE)
-        val persistence = com.promenar.nexara.domain.usecase.RagConfigPersistence(ragPrefs)
-        val fullConfig = persistence.loadFullConfig()
-        return com.promenar.nexara.data.model.RagOptions(
-            enableMemory = fullConfig.enableMemory,
-            enableDocs = fullConfig.enableDocs,
-            enableRerank = fullConfig.enableRerank,
-            enableKnowledgeGraph = fullConfig.enableKnowledgeGraph,
-        ).let(policy::defaultsFor)
+        val global = com.promenar.nexara.domain.usecase.RagConfigPersistence(
+            application.getSharedPreferences("rag_settings", android.content.Context.MODE_PRIVATE),
+        ).loadFullConfig()
+        return com.promenar.nexara.domain.usecase.defaultSessionRagOptions(agentRepository.getById(agentId), global)
     }
 
 }

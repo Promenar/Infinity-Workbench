@@ -18,13 +18,13 @@ class DefaultSessionToolResolver(
     private val mediaCapabilities: (Session) -> com.promenar.nexara.data.model.ModelCapabilities = { com.promenar.nexara.data.model.ModelCapabilities() },
 ) : SessionToolResolver {
     override fun resolve(session: Session): List<ProtocolTool> {
-        if (!session.options.toolsEnabled) return emptyList()
         val allTools = skillRegistry?.getAllTools(null).orEmpty()
         val memoryToolsAllowed = allTools.none { it.sourceId == "builtin" && it.runtimeToolId.ifBlank { it.function.name } in com.promenar.nexara.data.memory.LongTermMemoryPreferences.TOOL_IDS } ||
             (com.promenar.nexara.data.memory.LongTermMemoryPreferences.isEnabled(settings) && longTermMemoryAllowed(session))
         val capabilities = mediaCapabilities(session)
         val canView = capabilities.vision || capabilities.audioInput || capabilities.videoUnderstanding
         return allTools.filter { tool ->
+            if (!SessionToolAvailability.allows(session, tool)) return@filter false
             if (tool.sourceId == "builtin" && tool.function.name == "session_branch" &&
                 (session.parentSessionId != null || session.branchPlanJson != null || session.parentSessionDeleted)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } in com.promenar.nexara.data.memory.LongTermMemoryPreferences.TOOL_IDS && !memoryToolsAllowed) return@filter false
@@ -46,4 +46,11 @@ class DefaultSessionToolResolver(
     companion object {
         val LINUX_HIDDEN_TOOLS = setOf("python_exec", "python_sandbox", "exec_js", "run_script", "termux_exec")
     }
+}
+
+/** 会话工具开关的最小权限门；全局启用状态仍由解析器与执行前重验负责。 */
+object SessionToolAvailability {
+    fun allows(session: Session, tool: ProtocolTool): Boolean = session.options.toolsEnabled ||
+        (session.options.keepWebSearchWhenToolsOff && tool.sourceId == "builtin" &&
+            tool.runtimeToolId.ifBlank { tool.function.name } == "web_search" && tool.function.name == "web_search")
 }

@@ -67,6 +67,22 @@ class DefaultSessionToolResolverTest {
         risk = ToolRisk.FILE_WRITE,
     )
 
+    @Test
+    fun `关闭工具只保留全局启用的内置搜索并支持撤销`() {
+        val web = safeReadTool.copy(function = ProtocolToolFunction("web_search", "搜索", "{}"), runtimeToolId = "web_search")
+        val spoof = web.copy(sourceId = "mcp", mcpServerId = "server")
+        every { skillRegistry.getAllTools(null) } returns listOf(web, spoof, safeReadTool, fileWriteTool)
+        every { settings.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns setOf("web_search", "calculator")
+        every { settings.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns setOf("web_search", "calculator")
+        val resolver = DefaultSessionToolResolver(settings, skillRegistry)
+        val off = Session("s", "a", activeMcpServerIds = listOf("server"),
+            options = com.promenar.nexara.data.model.SessionOptions(toolsEnabled = false))
+        assertThat(resolver.resolve(off)).containsExactly(web)
+        assertThat(resolver.resolve(off.copy(options = off.options.copy(keepWebSearchWhenToolsOff = false)))).isEmpty()
+        every { settings.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns setOf("calculator")
+        assertThat(resolver.resolve(off)).isEmpty()
+    }
+
     @Before
     fun setUp() {
         every { skillRegistry.getAllTools(null) } returns listOf(
