@@ -418,6 +418,7 @@ internal class DefaultChatGenerationRuntime(
             workspace = workspace,
             mounts = visibleMounts(sessionId),
             modelContextTokens = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, preparedRoute?.modelId).modelContextTokens,
+            runtimeModelId = prompt.model,
         ))
         preparedContext = context
         preparedContextSummary = session.summary
@@ -550,6 +551,7 @@ internal class DefaultChatGenerationRuntime(
                 val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
                 val skills = scanSkills(params.workspace)
                 val contextParams = params.copy(
+                    runtimeModelId = requireNotNull(route.remoteModelId),
                     availableToolNames = toolNames,
                     availableSkills = skills,
                     requestedSkill = requestedSkill(session, request.userMessageId, request.userContent, skills),

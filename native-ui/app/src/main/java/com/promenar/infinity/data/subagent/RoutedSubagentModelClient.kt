@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.subagent
 
 import com.promenar.infinity.data.generation.ChatProviderRouteGate
+import com.promenar.infinity.data.generation.ChatProviderRoute
 import com.promenar.infinity.data.generation.ChatRoutePreparation
 import com.promenar.infinity.data.model.params.ReasoningEffort
 import com.promenar.infinity.data.remote.StreamConfig
@@ -22,6 +23,16 @@ internal class RoutedSubagentModelClient(
     private val routeGate: ChatProviderRouteGate,
     private val localProviderFactory: (String) -> LlmProvider,
 ) : SubagentModelClient {
+    override suspend fun prepare(modelId: String): PreparedSubagentModel {
+        val prepared = routeGate.prepareWithRoute(modelId) { it }
+        if (prepared !is ChatRoutePreparation.Success) throw SubagentModelUnavailable("会话模型当前不可用")
+        val route = prepared.route
+        val remoteModelId = route.remoteModelId?.takeIf(String::isNotBlank) ?: throw SubagentModelUnavailable("会话模型当前不可用")
+        return PreparedSubagentModel(remoteModelId, SubagentModelClient { _, messages, tools, maxOutputTokens, reasoningEffort, sessionId ->
+            streamResolved(route, remoteModelId, messages, tools, maxOutputTokens, reasoningEffort, sessionId)
+        })
+    }
+
     override suspend fun stream(
         modelId: String,
         messages: List<ProtocolMessage>,
@@ -30,10 +41,19 @@ internal class RoutedSubagentModelClient(
         reasoningEffort: ReasoningEffort?,
         sessionId: String,
     ): Flow<StreamChunk> {
-        val prepared = routeGate.prepareWithRoute(modelId) { it }
-        if (prepared !is ChatRoutePreparation.Success) throw SubagentModelUnavailable("会话模型当前不可用")
-        val route = prepared.route
-        val remoteModelId = route.remoteModelId?.takeIf(String::isNotBlank) ?: throw SubagentModelUnavailable("会话模型当前不可用")
+        val prepared = prepare(modelId)
+        return prepared.client.stream(prepared.modelId, messages, tools, maxOutputTokens, reasoningEffort, sessionId)
+    }
+
+    private suspend fun streamResolved(
+        route: ChatProviderRoute,
+        remoteModelId: String,
+        messages: List<ProtocolMessage>,
+        tools: List<ProtocolTool>,
+        maxOutputTokens: Int,
+        reasoningEffort: ReasoningEffort?,
+        sessionId: String,
+    ): Flow<StreamChunk> {
         val usable = if (route.supportsToolCalls) tools else emptyList()
         val choice = if (usable.isEmpty()) ProtocolToolChoice.NONE else ProtocolToolChoice.AUTO
         if (route.useLocalProvider) {

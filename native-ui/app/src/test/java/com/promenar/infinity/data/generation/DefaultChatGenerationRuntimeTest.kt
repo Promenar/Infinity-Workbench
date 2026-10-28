@@ -74,6 +74,44 @@ import kotlinx.coroutines.launch
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test fun `主聊天每轮环境模型与实际请求一致且切换后不残留旧ID`() = runTest {
+        val requests = mutableListOf<PromptRequest>()
+        val local = mockk<LlmProvider> {
+            coEvery { sendPrompt(any()) } answers {
+                requests += firstArg<PromptRequest>()
+                kotlinx.coroutines.flow.flowOf(StreamChunk.Completed(com.promenar.infinity.domain.generation.CompletionReason.END_TURN))
+            }
+        }
+        val catalog = mockk<com.promenar.infinity.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.infinity.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog, localProvider = local)
+        for (model in listOf("skills", "switched-model")) {
+            fixture.store.updateSession("skills-session") { it.copy(modelId = "local::$model") }
+            assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+            fixture.runtime.stream(fixture.request, 0).toList()
+            assertThat(requests.last().model).isEqualTo(model)
+            val prompt = requests.last().messages.first().content
+            assertThat(prompt).contains("## Runtime Environment\n- Environment: Infinity Workbench\n- Model: $model\n")
+            assertThat(prompt).doesNotContain("local::")
+        }
+        assertThat(requests.last().messages.first().content).doesNotContain("- Model: skills\n")
+        assertThat(requests.first().messages.first().content).doesNotContain("switched-model")
+    }
+
+    @Test fun `手动估算上下文使用路由后的模型并跟随下一轮切换`() = runTest {
+        val catalog = mockk<com.promenar.infinity.data.skills.SkillCatalog> {
+            coEvery { scan(any()) } returns com.promenar.infinity.data.skills.SkillSnapshot(null, emptyList())
+        }
+        val fixture = skillsFixture(catalog)
+        fixture.runtime.estimateContext("skills-session")
+        assertThat(fixture.prompts.last()).contains("- Model: skills\n")
+        fixture.store.updateSession("skills-session") { it.copy(modelId = "local::new-model") }
+        fixture.runtime.estimateContext("skills-session")
+        assertThat(fixture.prompts.last()).contains("- Model: new-model\n")
+        assertThat(fixture.prompts.last()).doesNotContain("- Model: skills\n")
+    }
+
     @Test fun `下一步骤的上下文包含已合并的子代理完成通知`() = runTest {
         val bridge = com.promenar.infinity.data.trigger.SubagentCompletionSteering(backgroundScope)
         val builder = mockk<ContextBuilder> {
@@ -182,6 +220,7 @@ class DefaultChatGenerationRuntimeTest {
         knowledgePlanner: com.promenar.infinity.data.knowledge.KnowledgeAccessPlanner? = null,
         knowledgeTurns: com.promenar.infinity.data.knowledge.KnowledgeTurnState? = null,
         toolLedger: com.promenar.infinity.data.repository.ToolExecutionLedger = mockk(relaxed = true),
+        localProvider: LlmProvider? = null,
     ): SkillsFixture {
         val settings = mockk<SharedPreferences> {
             every { getInt(any(), any()) } answers { secondArg() }
@@ -195,9 +234,13 @@ class DefaultChatGenerationRuntimeTest {
             messages = listOf(Message("user", MessageRole.USER, content), Message("assistant", MessageRole.ASSISTANT, "")))
         val store = ChatStore().apply { update { ChatState(sessions = listOf(session)) } }
         val router = mockk<ProviderRequestRouter> {
-            every { resolve("local::skills") } returns ProviderResolution.Success(ResolvedProviderModel(
-                "local::skills", "skills", "local", "Local", UnifiedProviderConfig(ProtocolType.Local, "", "", "skills"),
-            ))
+            every { resolve(any()) } answers {
+                val id = firstArg<String>()
+                val remote = id.removePrefix("local::")
+                ProviderResolution.Success(ResolvedProviderModel(
+                    id, remote, "local", "Local", UnifiedProviderConfig(ProtocolType.Local, "", "", remote),
+                ))
+            }
         }
         val prompts = mutableListOf<String>()
         val toolThreads = mutableListOf<Thread>()
@@ -225,7 +268,7 @@ class DefaultChatGenerationRuntimeTest {
             settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns
                 knowledgeConfig?.let { com.promenar.infinity.domain.model.Agent("agent", "智能体", retrievalConfig = it) } },
             AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder, messageManager, { mockk() }, mockk(), toolLedger, executor,
+            contextBuilder, messageManager, { localProvider ?: mockk() }, mockk(), toolLedger, executor,
             mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
             stateBoardRepository = stateBoardRepository,
             askUserLedger = askLedger,

@@ -86,6 +86,8 @@ data class ContextBuilderParams(
     /** 本轮用户以 `/技能名` 点名并已由客户端加载的技能；null 表示本轮没有斜杠技能命令。 */
     val requestedSkill: com.promenar.infinity.ui.chat.manager.skills.RequestedSkill? = null,
     val stateExcludedMessageIds: Set<String> = emptySet(),
+    /** 本轮请求实际发送的模型 ID，已完成提供商路由解析。 */
+    val runtimeModelId: String? = null,
 )
 
 interface WebSearchProvider {
@@ -437,6 +439,8 @@ class ContextBuilder(
         }
 
         if (sb.isNotEmpty()) sb.appendLine()
+        sb.append(SystemPromptSections.runtimeEnvironment(params.runtimeModelId))
+        sb.appendLine()
         sb.append(SystemPromptSections.permissions(
             com.promenar.infinity.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode),
             runMode = session.runMode ?: com.promenar.infinity.domain.model.SessionRunMode.BUILTIN,

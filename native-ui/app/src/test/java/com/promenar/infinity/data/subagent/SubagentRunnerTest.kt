@@ -3,6 +3,17 @@ package com.promenar.infinity.data.subagent
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.model.Session
 import com.promenar.infinity.data.generation.ApproximateTokenEstimator
+import com.promenar.infinity.data.generation.ChatProviderRouteGate
+import com.promenar.infinity.data.remote.ProviderRequestRouter
+import com.promenar.infinity.data.remote.ProviderResolution
+import com.promenar.infinity.data.remote.ResolvedProviderModel
+import com.promenar.infinity.data.remote.UnifiedLlmClient
+import com.promenar.infinity.data.remote.UnifiedProviderConfig
+import com.promenar.infinity.data.remote.protocol.LlmProtocol
+import com.promenar.infinity.data.remote.protocol.PromptRequest
+import com.promenar.infinity.data.remote.protocol.PromptResponse
+import com.promenar.infinity.data.remote.protocol.ProtocolType
+import com.promenar.infinity.data.remote.provider.LlmProvider
 import com.promenar.infinity.data.remote.protocol.ProtocolMessage
 import com.promenar.infinity.data.remote.protocol.ProtocolToolCall
 import com.promenar.infinity.data.remote.protocol.ProtocolTool
@@ -28,6 +39,89 @@ import org.junit.Test
 
 /** 子代理运行循环：受限工具集、继承父会话的范围权限、运行中审批、超时与取消。 */
 class SubagentRunnerTest {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `子代理云端和本地每轮先路由再注入实际模型且发送不重复路由`() = runTest {
+        for (local in listOf(false, true)) {
+            val requests = mutableListOf<PromptRequest>()
+            var resolutions = 0
+            val type = if (local) ProtocolType.Local else ProtocolType.Generic_OpenAI_Compat
+            val protocol = object : LlmProtocol {
+                override val protocolType = type
+                override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
+                    requests += request
+                    return flow {
+                        if (requests.size == 1) {
+                            emit(toolCall("read", "read_file", "{}"))
+                            emit(StreamChunk.Completed(CompletionReason.TOOL_CALLS, listOf("read")))
+                        } else {
+                            emit(text("完成"))
+                            emit(StreamChunk.Completed(CompletionReason.END_TURN))
+                        }
+                    }
+                }
+                override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
+                override fun cancel() = Unit
+            }
+            val config = UnifiedProviderConfig(type, "https://unused.invalid", "", "child")
+            val router = object : ProviderRequestRouter {
+                override fun resolve(modelId: String): ProviderResolution {
+                    assertThat(modelId).isEqualTo("provider::child-key")
+                    resolutions++
+                    return ProviderResolution.Success(ResolvedProviderModel(
+                        modelId, "remote-child-$resolutions", "provider", "Provider", config,
+                    ))
+                }
+                override fun createClient(resolved: ResolvedProviderModel) =
+                    UnifiedLlmClient({ config }, protocolFactory = { protocol })
+            }
+            val models = RoutedSubagentModelClient(ChatProviderRouteGate(router,
+                kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler))) { LlmProvider(protocol) }
+            val result = runner(models, FakeHost(listOf(read))).run(parent(),
+                { sessionOf("auto").copy(modelId = "parent-model") }, "step",
+                run().copy(modelId = "provider::child-key"), null) { _, _ -> }
+            assertThat(result.error).isNull()
+            assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+            assertThat(requests).hasSize(2)
+            assertThat(resolutions).isEqualTo(2)
+            requests.forEachIndexed { index, request ->
+                val modelId = "remote-child-${index + 1}"
+                assertThat(request.model).isEqualTo(modelId)
+                val prompt = request.messages.first().content
+                assertThat(prompt).contains("## Runtime Environment\n- Environment: Infinity Workbench\n- Model: $modelId\n")
+                assertThat(prompt).doesNotContain("provider::child-key")
+                assertThat(prompt).doesNotContain("parent-model")
+                assertThat(prompt.indexOf("## Runtime Environment")).isLessThan(prompt.indexOf("## Permissions and Runtime Data"))
+            }
+            assertThat(requests.last().messages.first().content).doesNotContain("remote-child-1")
+            assertThat(requests.first().messages.first().content).doesNotContain("remote-child-2")
+        }
+    }
+
+    @Test fun `子代理准备路由失败保留可展示原因且不发送请求`() = runTest {
+        var sent = false
+        val models = object : SubagentModelClient {
+            override suspend fun prepare(modelId: String): PreparedSubagentModel = throw SubagentModelUnavailable("会话模型当前不可用")
+            override suspend fun stream(modelId: String, messages: List<ProtocolMessage>, tools: List<ProtocolTool>,
+                maxOutputTokens: Int, reasoningEffort: com.promenar.infinity.data.model.params.ReasoningEffort?, sessionId: String): Flow<StreamChunk> {
+                sent = true
+                error("路由失败不得发送")
+            }
+        }
+        val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.FAILED)
+        assertThat(result.error).isEqualTo("会话模型当前不可用")
+        assertThat(sent).isFalse()
+    }
+
+    @Test fun `子代理系统提示词包含自身运行环境和模型`() = runTest {
+        val models = ScriptedModels(listOf(text("完成")))
+        val initial = run().copy(modelId = "child-model")
+        val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", initial, null) { _, _ -> }
+        assertThat(result.status).isEqualTo(SubagentStatus.COMPLETED)
+        assertThat(models.requests.single().messages.first().content)
+            .contains("## Runtime Environment\n- Environment: Infinity Workbench\n- Model: child-model\n")
+    }
+
     @Test fun `流式用量只按时间节流检查点且结束强制保存最终用量`() = runTest {
         val model = SubagentModelClient { _, _, _, _, _, _ -> flow {
             repeat(100) { emit(usage(it + 1, it + 1)) }

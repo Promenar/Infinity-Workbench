@@ -287,12 +287,12 @@ class ContextBuilderTest {
         assertThat(prompt).doesNotContain("Infinity Workbench,")
         assertThat(prompt).doesNotContain("You are")
         assertThat(prompt).doesNotContain("Be accurate")
-        assertThat(prompt).startsWith("## Permissions and Runtime Data")
+        assertThat(prompt).startsWith("## Runtime Environment\n- Environment: Infinity Workbench\n\n## Permissions and Runtime Data")
     }
 
     @Test
-    fun emptyPromptsWithLinuxToolsNeverNameTheHostApp() = testScope.runTest {
-        // 空提示词时模型没有身份；运行环境说明若写“以 Infinity Workbench 身份运行”，模型会自称 Infinity Workbench 助手。
+    fun `Linux空提示词仅在环境事实段声明产品名而不定义身份`() = testScope.runTest {
+        // 运行环境只声明产品事实，不生成身份或角色要求。
         val project = com.promenar.infinity.data.local.db.entity.WorkspaceEntity("ws", "project", "仓库", "repo", 1)
         val prompt = ContextBuilder().buildContext(
             ContextBuilderParams(
@@ -304,7 +304,8 @@ class ContextBuilderTest {
         ).finalSystemPrompt
 
         assertThat(prompt).contains("shell_exec")
-        assertThat(Regex("Infinity Workbench(?!Error)").find(prompt)?.let { prompt.substring(maxOf(0, it.range.first - 40), minOf(prompt.length, it.range.last + 40)) }).isNull()
+        assertThat(prompt.lineSequence().filter { "Infinity Workbench" in it }.toList())
+            .containsExactly("- Environment: Infinity Workbench")
     }
 
     @Test

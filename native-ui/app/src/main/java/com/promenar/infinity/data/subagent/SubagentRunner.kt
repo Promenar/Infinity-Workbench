@@ -18,6 +18,7 @@ import com.promenar.infinity.domain.tool.ToolExecutionPolicy
 import com.promenar.infinity.domain.tool.ToolExecutionTargets
 import com.promenar.infinity.domain.tool.ToolLiveOutputSink
 import com.promenar.infinity.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.infinity.ui.chat.manager.SystemPromptSections
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -28,6 +29,9 @@ import kotlinx.serialization.json.JsonObject
 
 /** 子代理请求模型的通道；路由失败时抛出带原因的异常。 */
 fun interface SubagentModelClient {
+    /** 每轮先确定实际请求模型；简单客户端直接使用传入的 ID。 */
+    suspend fun prepare(modelId: String): PreparedSubagentModel = PreparedSubagentModel(modelId, this)
+
     suspend fun stream(
         modelId: String,
         messages: List<ProtocolMessage>,
@@ -37,6 +41,9 @@ fun interface SubagentModelClient {
         sessionId: String,
     ): Flow<StreamChunk>
 }
+
+/** 模型元数据与发送器绑定同一条路由，构建提示词后不再解析路由。 */
+data class PreparedSubagentModel(val modelId: String, val client: SubagentModelClient)
 
 /** 子代理模型不可用的原因，可直接展示并交回主 Agent。 */
 class SubagentModelUnavailable(message: String) : IllegalStateException(message)
@@ -99,7 +106,7 @@ class SubagentRunner(
             )
             val messages = restored.messages.toMutableList()
             if (messages.isEmpty()) {
-                messages += ProtocolMessage("system", systemPrompt(preset, availableTools(host.tools(first), initial.toolProfile, initial.allowedTools), first.executionMode, first.runMode))
+                messages += ProtocolMessage("system", systemPrompt(preset, availableTools(host.tools(first), initial.toolProfile, initial.allowedTools), first.executionMode, first.runMode, null))
                 messages += ProtocolMessage("user", initial.prompt)
             } else {
                 // 中断时无法确定未落盘的工具是否已产生副作用，补齐协议配对，不自动重做。
@@ -134,7 +141,8 @@ class SubagentRunner(
                     update(run.copy(status = if (state.wrapUpAfterStep != null) SubagentStatus.WRAPPING_UP else SubagentStatus.RUNNING, events = run.events + additions))
                 }
                 val tools = availableTools(host.tools(current), initial.toolProfile, initial.allowedTools)
-                val system = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode, current.runMode))
+                val preparedModel = models.prepare(run.modelId)
+                val system = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode, current.runMode, preparedModel.modelId))
                 if (messages.firstOrNull()?.role == "system") messages[0] = system else messages.add(0, system)
                 val stepsThisExecution = state.completedSteps - state.executionStartStep
                 val turnLimit = run.maxTurns?.takeIf { it > 0 }
@@ -159,7 +167,7 @@ class SubagentRunner(
                 update(run.copy(status = if (state.wrapUpAfterStep != null) SubagentStatus.WRAPPING_UP else SubagentStatus.RUNNING, step = round, currentTool = null, liveOutputKey = null), persist = false)
                 val roundInput = state.inputTokens
                 val roundOutput = state.outputTokens
-                val response = streamRound(modelSessionId, run.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), request.messages, roundTools, request.maxOutputTokens) { input, output, estimated, force ->
+                val response = streamRound(preparedModel.client, modelSessionId, preparedModel.modelId, ReasoningEffort.fromWireName(run.reasoningEffort), request.messages, roundTools, request.maxOutputTokens) { input, output, estimated, force ->
                     // 流内用量立即更新内存，每秒保存检查点；步骤结束或取消时强制结算。
                     state = state.copy(inputTokens = roundInput + input, outputTokens = roundOutput + output, tokensEstimated = state.tokensEstimated || estimated)
                     withContext(NonCancellable) {
@@ -236,7 +244,7 @@ class SubagentRunner(
             throw cancelled
         } catch (error: Exception) {
             // 只记录异常类型：原文可能含路径或地址；单个子代理失败不影响同批其它子代理。
-            val message = internalError(error)
+            val message = (error as? SubagentModelUnavailable)?.message ?: internalError(error)
             withContext(NonCancellable) {
                 runCatching { event(SubagentEvent.Kind.ERROR, message, failed = true) }
                 runCatching { finish(run, SubagentStatus.FAILED, error = message, publish = ::update) }.getOrElse {
@@ -465,6 +473,7 @@ class SubagentRunner(
     )
 
     private suspend fun streamRound(
+        client: SubagentModelClient,
         sessionId: String,
         modelId: String,
         reasoningEffort: ReasoningEffort?,
@@ -491,7 +500,7 @@ class SubagentRunner(
             return Triple(maxOf(input, total - output).toLong(), output.toLong() + unreported, unreported > 0)
         }
         try {
-            models.stream(modelId, messages, tools, maxOutputTokens, reasoningEffort, sessionId).collect { chunk ->
+            client.stream(modelId, messages, tools, maxOutputTokens, reasoningEffort, sessionId).collect { chunk ->
                 when (chunk) {
                     is StreamChunk.TextDelta -> {
                         content.append(chunk.content)
@@ -533,8 +542,9 @@ class SubagentRunner(
         return RoundResponse(content.toString(), reasoning.toString(), toolCalls, replay, inputTokens, outputTokens, estimated, failure)
     }
 
-    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>, executionMode: String, runMode: com.promenar.infinity.domain.model.SessionRunMode?): String = buildString {
+    private fun systemPrompt(preset: SubagentPreset?, tools: List<ProtocolTool>, executionMode: String, runMode: com.promenar.infinity.domain.model.SessionRunMode?, modelId: String?): String = buildString {
         append(SYSTEM_PROMPT)
+        append("\n\n").append(SystemPromptSections.runtimeEnvironment(modelId))
         append("\n\n").append(com.promenar.infinity.ui.chat.manager.SystemPromptSections.permissions(ExecutionModeCodec.parseOrWorkspace(executionMode), runMode = runMode ?: com.promenar.infinity.domain.model.SessionRunMode.BUILTIN))
         preset?.let { append("\n\n").append(it.instruction) }
         if (tools.isEmpty()) append("\n\n本次没有可用工具，请直接根据任务内容作答。")

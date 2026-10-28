@@ -1,5 +1,6 @@
 package com.promenar.infinity.ui.chat.manager
 
+import com.promenar.infinity.AppBrand
 import com.promenar.infinity.data.skills.DiscoveredSkill
 import com.promenar.infinity.data.skills.SkillMarkdownParser
 import com.promenar.infinity.data.skills.SkillStatus
@@ -13,6 +14,12 @@ import com.promenar.infinity.domain.model.SessionRunMode
  * 段落内容只描述运行时真实提供的能力，新增或删除工具时必须同步这里的契约说明。
  */
 object SystemPromptSections {
+    fun runtimeEnvironment(modelId: String?): String = buildString {
+        appendLine("## Runtime Environment")
+        appendLine("- Environment: ${AppBrand.DISPLAY_NAME}")
+        modelId?.takeIf(String::isNotBlank)?.let { appendLine("- Model: $it") }
+    }
+
     const val LINUX_SHELL_GUIDANCE = "shell_exec 在本会话固定使用 Alpine Linux（musl），使用 apk add 安装软件包；python3 与 pip 需安装对应可选包。" +
         "会话专用空间为 /home/session，基础工作区挂载为 /workspace。INFINITY_WORKSPACE 指向命令的起始工作目录，分支 worktree 使用其绑定目录；普通会话通常使用 /workspace。" +
         "真实路径挂载为 /mnt/<别名>，用户级技能为 /mnt/skills（INFINITY_SKILLS=/mnt/skills）；SAF 挂载不可见。" +
