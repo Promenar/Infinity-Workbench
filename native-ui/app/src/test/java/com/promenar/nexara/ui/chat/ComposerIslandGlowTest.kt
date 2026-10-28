@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.ui.graphics.Color
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.ui.common.motion.GenerationMotion
+import com.promenar.nexara.ui.common.motion.GenerationMotionPhase
 import kotlin.math.max
 import kotlin.math.min
 import org.junit.Test
@@ -51,6 +53,20 @@ class ComposerIslandGlowTest {
         assertThat(advanceGlowAngle(350f, ComposerGlowPeriodSeconds / 36f)).isWithin(1e-3f).of(0f)
         assertThat(advanceGlowAngle(30f, ComposerGlowPeriodSeconds * 3f)).isWithin(1e-2f).of(30f)
         assertThat(advanceGlowAngle(10f, 0f)).isEqualTo(10f)
+    }
+
+    @Test
+    fun `极光光带首字前慢转，流式时随速率加快，工具执行与审批时停下`() {
+        fun speedIn(phase: GenerationMotionPhase, act: Float): Float {
+            val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+            motion.update(phase, retry = null, outputLength = 0, animate = false)
+            return auroraHeadSpeed(motion, act)
+        }
+        assertThat(speedIn(GenerationMotionPhase.WAIT, 1f)).isWithin(1e-3f).of(60f)
+        assertThat(speedIn(GenerationMotionPhase.STREAM, 0f)).isWithin(1e-2f).of(360f / ComposerGlowPeriodSeconds / 2)
+        assertThat(speedIn(GenerationMotionPhase.STREAM, 1f)).isGreaterThan(speedIn(GenerationMotionPhase.STREAM, 0.3f))
+        assertThat(speedIn(GenerationMotionPhase.TOOL, 1f)).isEqualTo(0f)
+        assertThat(speedIn(GenerationMotionPhase.APPROVAL, 1f)).isEqualTo(0f)
     }
 
     private fun value(color: Color) = max(color.red, max(color.green, color.blue))

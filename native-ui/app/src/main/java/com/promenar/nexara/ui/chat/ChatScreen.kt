@@ -247,6 +247,8 @@ data class ChatScreenState(
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
     val postProcessTasks: List<PostProcessTask> = emptyList(),
     val generationRetry: com.promenar.nexara.domain.generation.GenerationRetry? = null,
+    /** 当前生成任务的阶段，驱动生成动效；没有任务时为 null。 */
+    val generationPhase: com.promenar.nexara.domain.generation.GenerationPhase? = null,
     /** 等待内置 Tailscale 接入时的连接浮窗内容。 */
     val tailnetWait: com.promenar.nexara.data.generation.TailnetWaitState? = null,
     val selectedImageUris: List<android.net.Uri> = emptyList(),
@@ -637,9 +639,19 @@ fun ChatScreenContent(
         sessionId = uiState.session?.id,
         onLocate = actions.onLocateWorkspacePath,
     )
+    // 浮岛光效与生成状态指示共用的生成阶段：有待批准的调用或待回答的提问时为等待审批。
+    val generationMotion = com.promenar.nexara.ui.common.motion.rememberGenerationMotion(
+        phase = com.promenar.nexara.ui.common.motion.generationMotionPhase(
+            phase = state.generationPhase,
+            awaitingUser = uiState.approvalRequest != null || state.subagentApprovals.isNotEmpty() || state.pendingQuestion != null,
+        ),
+        retry = state.generationRetry,
+        outputLength = uiState.streamingContent.length,
+    )
     CompositionLocalProvider(
         com.promenar.nexara.ui.media.LocalWorkspaceMedia provides workspaceMedia,
         com.promenar.nexara.ui.media.LocalMediaMessenger provides mediaMessenger,
+        com.promenar.nexara.ui.common.motion.LocalGenerationMotion provides generationMotion,
     ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -2649,7 +2661,10 @@ fun ChatInputBar(
     )
     // 浮岛与底部导航栏同一套材质：抬升底色、半透明描边与投影；生成时外圈流光环绕，出错时整圈泛红。
     val material = composerIslandMaterial()
-    val glow = rememberComposerGlowState(generating = isGenerating, error = status == GenerationStatus.ERROR)
+    // 等待审批时生成已暂停，浮岛仍保持第三色慢闪，提示轮到用户处理。
+    val awaitingUser = com.promenar.nexara.ui.common.motion.LocalGenerationMotion.current.actual ==
+        com.promenar.nexara.ui.common.motion.GenerationMotionPhase.APPROVAL
+    val glow = rememberComposerGlowState(generating = isGenerating || awaitingUser, error = status == GenerationStatus.ERROR)
     // 生成中写好了下一条：主按钮变为排队发送，外圈转动表示本轮仍在进行；长按展开插队、停止并发送与只停止。
     val hasDraft = text.isNotBlank() || hasImages || hasDocuments
     val queueing = isGenerating && hasDraft && status in QueueableStatuses

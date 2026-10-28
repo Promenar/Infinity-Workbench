@@ -1,16 +1,9 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,7 +15,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.motion.GenerationMotionPhase
 import com.promenar.nexara.ui.common.motion.IndicatorPainter
+import com.promenar.nexara.ui.common.motion.LocalGenerationMotion
+import com.promenar.nexara.ui.common.motion.clamp01
+import com.promenar.nexara.ui.common.motion.evenBlink
+import com.promenar.nexara.ui.common.motion.fract
+import com.promenar.nexara.ui.common.motion.slowBlink
 import com.promenar.nexara.ui.common.motion.drawGenerationIndicator
 import com.promenar.nexara.ui.common.motion.indicatorDesignSize
 import com.promenar.nexara.ui.common.motion.rememberMotionClock
@@ -31,6 +30,7 @@ import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.theme.GenerationIndicatorStyle
 import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import kotlin.math.PI
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -85,7 +85,7 @@ private fun Color.toHsv(): Triple<Float, Float, Float> {
 }
 
 /**
- * 生成状态指示：按外观设置选的样式绘制，会话气泡、正文末尾与首页会话列表都经由这里。
+ * 生成状态指示：按外观设置选的样式与当前生成阶段（[LocalGenerationMotion]）绘制，会话气泡、正文末尾与首页会话列表都经由这里。
  * 三点波浪的尺寸由 [dotSize]、[gap]、[lift] 决定；灯语样式按 [dotSize] 相对 6dp 等比缩放。
  * 系统关闭动画或静态预览时显示静止的画面。读屏报“正在生成回复”。
  */
@@ -110,6 +110,7 @@ private fun LedIndicator(style: GenerationIndicatorStyle, scale: Float, modifier
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
     val clock = rememberMotionClock(running = animate)
     val palette = rememberMotionPalette()
+    val motion = LocalGenerationMotion.current
     val painter = remember { IndicatorPainter() }
     val designSize = indicatorDesignSize(style)
     Canvas(
@@ -119,26 +120,25 @@ private fun LedIndicator(style: GenerationIndicatorStyle, scale: Float, modifier
     ) {
         // 静止时停在 0.37 秒：各灯有亮有灭，截图内容固定。
         val time = if (animate) clock.time else 0.37f
-        drawGenerationIndicator(style, time, density * scale, palette, painter)
+        drawGenerationIndicator(style, time, density * scale, palette, painter, motion)
     }
 }
 
-/** 三点波浪：三个小圆点依次上浮变亮，颜色从主色过渡到第三色。 */
+/**
+ * 三点波浪：首字前只用主色、2.4 秒一轮的慢浪；流式时颜色从主色过渡到第三色，速率越高浪越快、跳得越高；
+ * 工具执行时第三色一点一拍依次跳格；等待审批时三点第三色慢闪；重试时三点压暗一起等间隔闪。
+ * 静止时三点不跳，按当前阶段着色。
+ */
 @Composable
 private fun WaveDots(modifier: Modifier, dotSize: Dp, gap: Dp, lift: Dp) {
     val description = stringResource(R.string.chat_cd_generating_response)
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
+    val clock = rememberMotionClock(running = animate)
+    val motion = LocalGenerationMotion.current
     val primary = MaterialTheme.colorScheme.primary
     val tertiary = MaterialTheme.colorScheme.tertiary
     val colors = remember(primary, tertiary) { listOf(primary, hueMidpoint(primary, tertiary), tertiary) }
-    val phaseState = if (animate) {
-        rememberInfiniteTransition(label = "generation_dots").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(GenerationDotsPeriodMillis, easing = LinearEasing), RepeatMode.Restart),
-            label = "generation_dots_phase",
-        )
-    } else null
+    val painter = remember { IndicatorPainter() }
     Canvas(
         modifier
             .size(width = dotSize * 3 + gap * 2, height = dotSize + lift)
@@ -147,17 +147,57 @@ private fun WaveDots(modifier: Modifier, dotSize: Dp, gap: Dp, lift: Dp) {
         val radius = dotSize.toPx() / 2f
         val step = dotSize.toPx() + gap.toPx()
         val restY = size.height - radius
-        // 相位只在绘制阶段读取，动画只触发重绘。
-        val phase = phaseState?.value
-        for (index in 0..2) {
-            val raised = if (phase == null) 0f else generationDotLift(phase, index)
-            val alpha = if (phase == null) 1f else GenerationDotsRestAlpha + (1f - GenerationDotsRestAlpha) * raised
-            drawCircle(
-                color = colors[index],
-                radius = radius,
-                center = Offset(radius + step * index, restY - lift.toPx() * raised),
-                alpha = alpha,
-            )
+        val liftPx = lift.toPx()
+        if (!animate) {
+            val color = when (motion.shown ?: GenerationMotionPhase.STREAM) {
+                GenerationMotionPhase.TOOL, GenerationMotionPhase.APPROVAL -> null
+                else -> colors
+            }
+            for (index in 0..2) drawCircle(color?.get(index) ?: tertiary, radius, Offset(radius + step * index, restY))
+            return@Canvas
+        }
+        // 时间只在绘制阶段读取，动画只触发重绘。
+        val t = clock.time
+        painter.advance(t)
+        val act = motion.act(t)
+        for (phase in GenerationMotionPhase.entries) {
+            val weight = motion.weight(phase)
+            if (weight <= 0.004f) continue
+            for (index in 0..2) {
+                val (raised, color, alpha) = waveDot(phase, index, t, act, painter, colors)
+                drawCircle(
+                    color = color,
+                    radius = radius,
+                    center = Offset(radius + step * index, restY - liftPx * raised),
+                    alpha = clamp01(alpha) * weight,
+                )
+            }
         }
     }
+}
+
+/** 第 [index] 个圆点在 [phase] 下的鼓起程度、颜色与透明度。 */
+private fun waveDot(
+    phase: GenerationMotionPhase,
+    index: Int,
+    t: Float,
+    act: Float,
+    painter: IndicatorPainter,
+    colors: List<Color>,
+): Triple<Float, Color, Float> = when (phase) {
+    GenerationMotionPhase.WAIT -> {
+        val raised = generationDotLift(fract(t / 2.4f), index)
+        Triple(raised * 0.55f, colors[0], 0.3f + 0.5f * raised)
+    }
+    GenerationMotionPhase.STREAM -> {
+        val wave = fract(painter.acc(IndicatorPainter.AccWave, (0.45f + 1.1f * act) * 1000f / GenerationDotsPeriodMillis))
+        val raised = generationDotLift(wave, index) * (0.45f + 0.55f * act)
+        Triple(raised, colors[index], GenerationDotsRestAlpha + (1f - GenerationDotsRestAlpha) * raised)
+    }
+    GenerationMotionPhase.TOOL -> {
+        val on = floor(t * 5).toInt() % 3 == index
+        Triple(if (on) 0.8f else 0f, colors[2], if (on) 1f else 0.3f)
+    }
+    GenerationMotionPhase.APPROVAL -> Triple(0f, colors[2], 0.4f + 0.6f * slowBlink(t))
+    GenerationMotionPhase.RETRY -> Triple(0f, colors[0], 0.15f + 0.35f * evenBlink(t))
 }

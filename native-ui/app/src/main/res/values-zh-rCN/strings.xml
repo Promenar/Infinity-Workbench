@@ -1780,6 +1780,12 @@
     <string name="motion_indicator_title">生成状态指示</string>
     <string name="motion_empty_chat_title">空会话动画</string>
     <string name="motion_preview_placeholder">输入消息…</string>
+    <string name="motion_preview_phase">预览阶段：%1$s</string>
+    <string name="motion_phase_wait">首字前</string>
+    <string name="motion_phase_stream">流式输出</string>
+    <string name="motion_phase_tool">工具执行</string>
+    <string name="motion_phase_approval">等待审批</string>
+    <string name="motion_phase_retry">重试等待</string>
     <string name="motion_composer_aurora">极光环行</string>
     <string name="motion_composer_aurora_desc">光带绕输入框环行，外圈带柔和光晕。</string>
     <string name="motion_composer_breathe">潮汐呼吸</string>

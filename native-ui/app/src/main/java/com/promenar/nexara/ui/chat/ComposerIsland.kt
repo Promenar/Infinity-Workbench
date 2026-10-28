@@ -28,11 +28,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.common.motion.GenerationMotion
+import com.promenar.nexara.ui.common.motion.GenerationMotionPhase
+import com.promenar.nexara.ui.common.motion.LocalGenerationMotion
+import com.promenar.nexara.ui.common.motion.breath
+import com.promenar.nexara.ui.common.motion.evenBlink
 import com.promenar.nexara.ui.common.motion.rememberMotionPalette
+import com.promenar.nexara.ui.common.motion.slowBlink
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.theme.ComposerGlowStyle
 import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
@@ -112,22 +119,48 @@ internal fun sweepRotationForHead(headDegrees: Float): Float = headDegrees - 90f
 internal fun advanceGlowAngle(angle: Float, deltaSeconds: Float, periodSeconds: Float = ComposerGlowPeriodSeconds): Float =
     (angle + deltaSeconds * 360f / periodSeconds).mod(360f)
 
-/** 光效的动画状态：只在绘制阶段读取，变化时只重绘不重组。 */
+/**
+ * 极光光带头部的角速度（度/秒）：首字前 6 秒一圈；流式时随速率加快，满速约 1.9 秒一圈；其余阶段光带停下。
+ * 阶段交叉淡入淡出时按权重混合，光带不会跳位。
+ */
+internal fun auroraHeadSpeed(motion: GenerationMotion, act: Float): Float =
+    motion.weight(GenerationMotionPhase.WAIT) * 60f +
+        motion.weight(GenerationMotionPhase.STREAM) * (360f / ComposerGlowPeriodSeconds) * (0.5f + act)
+
+/** 光效的动画状态：只在绘制阶段读取，变化时只重绘不重组。随速率累积的相位与时间一同逐帧推进。 */
 @Stable
 internal class ComposerGlowState {
     var headDegrees by mutableFloatStateOf(0f)
     var timeSeconds by mutableFloatStateOf(0f)
     val generating = Animatable(0f)
     val error = Animatable(0f)
+    /** 当前流式强度 0..1。 */
+    var act = 0f
+    /** 潮汐呼吸在流式阶段的呼吸相位（圈数）。 */
+    var breathPhase = 0f
+    /** 底沿数据流的流动时间。 */
+    var stripPhase = 0f
+    /** 扫光点阵在流式阶段的扫光相位（圈数）。 */
+    var sweepPhase = 0f
+
+    fun advance(delta: Float, motion: GenerationMotion) {
+        timeSeconds += delta
+        act = motion.act(timeSeconds)
+        headDegrees = (headDegrees + delta * auroraHeadSpeed(motion, act)).mod(360f)
+        breathPhase += delta * (0.6f + 1.4f * act) / 2.6f
+        stripPhase += delta * (0.4f + act)
+        sweepPhase += delta * (0.5f + act) / 2.4f
+    }
 }
 
 /**
- * 生成中光带淡入并绕浮岛环行，结束后淡出；进入错误状态时整圈泛红后退去。
- * 系统关闭动画或静态预览时不环行，光带停在右上方。
+ * 生成中光效淡入并按当前生成阶段（[LocalGenerationMotion]）变化，结束后淡出；进入错误状态时整圈泛红后退去。
+ * [generating] 在等待审批时也应为 true，浮岛保持第三色慢闪。系统关闭动画或静态预览时不推进，光带停在右上方。
  */
 @Composable
 internal fun rememberComposerGlowState(generating: Boolean, error: Boolean): ComposerGlowState {
     val state = remember { ComposerGlowState().apply { headDegrees = 30f } }
+    val motion = LocalGenerationMotion.current
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
     LaunchedEffect(generating, animate) {
         val target = if (generating) 1f else 0f
@@ -140,9 +173,12 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean): Com
             state.error.animateTo(0f, tween(2_200, easing = LinearEasing))
         }
     }
-    LaunchedEffect(animate) {
-        if (!animate) return@LaunchedEffect
-        // 只在光带可见时逐帧推进；空闲时不申请帧。
+    LaunchedEffect(animate, motion) {
+        if (!animate) {
+            state.act = motion.act(0.37f)
+            return@LaunchedEffect
+        }
+        // 只在光效可见时逐帧推进；空闲时不申请帧。
         snapshotFlow { state.generating.value > 0f || state.error.value > 0f }
             .distinctUntilChanged()
             .collectLatest { visible ->
@@ -150,11 +186,7 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean): Com
                 var last = -1L
                 while (true) {
                     withInfiniteAnimationFrameNanos { now ->
-                        if (last > 0) {
-                            val delta = (now - last) / 1_000_000_000f
-                            state.headDegrees = advanceGlowAngle(state.headDegrees, delta)
-                            state.timeSeconds += delta
-                        }
+                        if (last > 0) state.advance((now - last) / 1_000_000_000f, motion)
                         last = now
                     }
                 }
@@ -164,8 +196,10 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean): Com
 }
 
 /**
- * 浮岛外圈光效：按外观设置的样式绘制。极光环行在外侧画沿边缘环行的光晕（Android 13 起用 AGSL）和同角度的流光描边；
- * 潮汐呼吸画随呼吸扩散的外圈光晕与渐变描边；灯语样式只留一圈呼吸描边，灯效由 [ComposerIslandLights] 画在浮岛内。
+ * 浮岛外圈光效：按外观设置的样式与当前生成阶段（[LocalGenerationMotion]）绘制，阶段切换时交叉淡入淡出。
+ * 极光环行：首字前主色光带 6 秒一圈慢转、光晕减半；流式时转速与亮度随速率增加（Android 13 起光晕用 AGSL）；
+ * 工具执行时光带停下、整圈换第三色呼吸；等待审批时整圈第三色慢闪；重试时只剩一圈暗描边等间隔闪。
+ * 潮汐呼吸画随各阶段节奏扩散的外圈光晕与渐变描边；灯语样式只留一圈按阶段换色的描边，灯效由 [ComposerIslandLights] 画在浮岛内。
  * 出错时所有样式都整圈泛红，深色另加顶边高光。光晕画在浮岛自身边界之外，因此本修饰符须放在裁剪与背景之前。
  */
 @Composable
@@ -176,10 +210,12 @@ internal fun Modifier.composerIslandGlow(
 ): Modifier {
     val (colorA, colorB) = composerGlowColors()
     val style = LocalNexaraMotionStyles.current.composer
-    val calmColor = rememberMotionPalette().a
+    val motion = LocalGenerationMotion.current
+    val palette = rememberMotionPalette()
     val outlinePaints = remember { ComposerOutlinePaints() }
     val errorColor = MaterialTheme.nexaraDomainColors.signalDown
     val dark = MaterialTheme.nexaraDomainColors.isDark
+    val colorMid = remember(colorA, colorB) { com.promenar.nexara.ui.common.hueMidpoint(colorA, colorB) }
     // 静态预览不跑着色器；Android 12 只保留描边。着色器按颜色缓存，重组时不重新编译。
     val inspection = LocalInspectionMode.current
     val haloShader: android.graphics.Shader? = remember(colorA, colorB, errorColor, dark, inspection) {
@@ -194,13 +230,17 @@ internal fun Modifier.composerIslandGlow(
         val strokePx = 1.5.dp.toPx()
         val reach = 64.dp.toPx()
         val center = Offset(size.width / 2f, size.height / 2f)
-        val sweep = SweepGradient(
+        fun sweepOf(end: Color) = SweepGradient(
             center.x, center.y,
-            intArrayOf(colorA.copy(alpha = 0f).toArgb(), colorA.toArgb(), colorB.toArgb(), colorB.copy(alpha = 0f).toArgb(), colorB.copy(alpha = 0f).toArgb()),
+            intArrayOf(colorA.copy(alpha = 0f).toArgb(), colorA.toArgb(), end.toArgb(), end.copy(alpha = 0f).toArgb(), end.copy(alpha = 0f).toArgb()),
             floatArrayOf(0f, 70f / 360f, 130f / 360f, 190f / 360f, 1f),
         )
+        // 首字前光带收在主色与两色中间色之间，流式时铺满主色到第三色。
+        val streamSweep = sweepOf(colorB)
+        val waitSweep = sweepOf(colorMid)
         val sweepMatrix = Matrix()
-        val sweepBrush = ShaderBrush(sweep)
+        val streamBrush = ShaderBrush(streamSweep)
+        val waitBrush = ShaderBrush(waitSweep)
         val highlight = topHighlight?.let {
             Brush.verticalGradient(0f to it, 0.4f to Color.Transparent)
         }
@@ -209,14 +249,25 @@ internal fun Modifier.composerIslandGlow(
         onDrawWithContent {
             val generating = state.generating.value
             val error = state.error.value
-            // 环行光晕只属于极光环行；出错时的整圈泛红所有样式共用。
-            val haloGenerating = if (style == ComposerGlowStyle.AURORA) generating else 0f
+            val time = state.timeSeconds
+            val aurora = style == ComposerGlowStyle.AURORA
+            val wait = motion.weight(GenerationMotionPhase.WAIT)
+            val stream = motion.weight(GenerationMotionPhase.STREAM)
+            val tool = motion.weight(GenerationMotionPhase.TOOL)
+            val approval = motion.weight(GenerationMotionPhase.APPROVAL)
+            val retry = motion.weight(GenerationMotionPhase.RETRY)
+            // 环行光晕只属于极光环行的首字前与流式；出错时的整圈泛红所有样式共用。
+            val haloGenerating = if (aurora) generating * (wait * 0.5f + stream * (0.7f + 0.3f * state.act)) else 0f
             if (haloShader != null && (haloGenerating > 0f || error > 0f)) {
-                updateHaloShader(haloShader, state, haloGenerating, error)
+                updateHaloShader(haloShader, state, haloGenerating, error, if (stream + wait > 0f) lerp(colorB, colorMid, wait / (stream + wait)) else colorB)
                 drawRect(haloBrush!!, topLeft = Offset(-reach, -reach), size = Size(size.width + reach * 2, size.height + reach * 2))
             }
+            if (aurora && generating > 0f) {
+                drawHaloRing(generating * tool * (0.12f + 0.45f * breath(time, 1.2f)), 12f, 9f, cornerPx, colorB, colorB, outlinePaints)
+                drawHaloRing(generating * approval * (0.1f + 0.5f * slowBlink(time)), 12f, 9f, cornerPx, colorB, colorB, outlinePaints)
+            }
             if (style == ComposerGlowStyle.BREATHE && generating > 0f) {
-                drawBreatheHalo(generating, state.timeSeconds, cornerPx, colorA, colorB, outlinePaints)
+                drawBreatheHalo(generating, state, motion, cornerPx, palette, colorA, colorB, outlinePaints)
             }
             drawContent()
             if (highlight != null) {
@@ -228,21 +279,29 @@ internal fun Modifier.composerIslandGlow(
                     style = Stroke(1.dp.toPx()),
                 )
             }
-            if (generating > 0f && style == ComposerGlowStyle.BREATHE) {
-                drawBreatheStroke(generating, state.timeSeconds, cornerPx, colorA, colorB, outlinePaints)
-            } else if (generating > 0f && style != ComposerGlowStyle.AURORA) {
-                drawCalmBorder(generating, state.timeSeconds, cornerPx, calmColor, outlinePaints)
-            } else if (generating > 0f) {
-                sweepMatrix.setRotate(sweepRotationForHead(state.headDegrees), center.x, center.y)
-                sweep.setLocalMatrix(sweepMatrix)
-                drawRoundRect(
-                    brush = sweepBrush,
-                    topLeft = Offset(strokePx / 2, strokePx / 2),
-                    size = Size(size.width - strokePx, size.height - strokePx),
-                    cornerRadius = CornerRadius(cornerPx - strokePx / 2),
-                    style = Stroke(strokePx),
-                    alpha = generating,
-                )
+            if (generating <= 0f) return@onDrawWithContent
+            when (style) {
+                ComposerGlowStyle.BREATHE -> drawBreatheStroke(generating, state, motion, cornerPx, palette, colorA, colorB, outlinePaints)
+                ComposerGlowStyle.AURORA -> {
+                    sweepMatrix.setRotate(sweepRotationForHead(state.headDegrees), center.x, center.y)
+                    for (pass in 0 until 2) {
+                        val alpha = if (pass == 0) wait * 0.7f else stream
+                        if (alpha <= 0.004f) continue
+                        (if (pass == 0) waitSweep else streamSweep).setLocalMatrix(sweepMatrix)
+                        drawRoundRect(
+                            brush = if (pass == 0) waitBrush else streamBrush,
+                            topLeft = Offset(strokePx / 2, strokePx / 2),
+                            size = Size(size.width - strokePx, size.height - strokePx),
+                            cornerRadius = CornerRadius(cornerPx - strokePx / 2),
+                            style = Stroke(strokePx),
+                            alpha = generating * alpha,
+                        )
+                    }
+                    drawEdgeStroke(generating * tool * (0.45f + 0.5f * breath(time, 1.2f)), 2f, cornerPx, colorB, colorB, outlinePaints)
+                    drawEdgeStroke(generating * approval * (0.35f + 0.65f * slowBlink(time)), 2f, cornerPx, colorB, colorB, outlinePaints)
+                    drawEdgeStroke(generating * retry * (0.12f + 0.3f * evenBlink(time)), 1.4f, cornerPx, colorA, colorA, outlinePaints)
+                }
+                else -> drawPhaseBorder(generating, time, motion, cornerPx, palette, outlinePaints)
             }
         }
     }
@@ -270,9 +329,10 @@ private fun updateHaloGeometry(shader: android.graphics.Shader, center: Offset, 
     runtime.setFloatUniform("density", density)
 }
 
-private fun updateHaloShader(shader: android.graphics.Shader, state: ComposerGlowState, generating: Float, error: Float) {
+private fun updateHaloShader(shader: android.graphics.Shader, state: ComposerGlowState, generating: Float, error: Float, arcEnd: Color) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     val runtime = shader as RuntimeShader
+    runtime.setColorUniform("colorB", arcEnd.toArgb())
     runtime.setFloatUniform("time", state.timeSeconds)
     runtime.setFloatUniform("gen", generating)
     runtime.setFloatUniform("err", error)

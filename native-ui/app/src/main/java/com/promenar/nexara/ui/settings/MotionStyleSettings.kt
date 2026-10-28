@@ -41,6 +41,9 @@ import com.promenar.nexara.ui.chat.ParticleWordmark
 import com.promenar.nexara.ui.chat.composerIslandGlow
 import com.promenar.nexara.ui.chat.composerIslandMaterial
 import com.promenar.nexara.ui.chat.rememberComposerGlowState
+import com.promenar.nexara.ui.common.motion.GenerationMotionPhase
+import com.promenar.nexara.ui.common.motion.LocalGenerationMotion
+import com.promenar.nexara.ui.common.motion.rememberDemoGenerationMotion
 import com.promenar.nexara.ui.common.GenerationDots
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraBottomSheet
@@ -100,6 +103,7 @@ internal fun MotionStyleRows(
         label = { it.label() },
         tag = "theme_motion_composer",
         onSelect = onComposerSelect,
+        phaseDemo = true,
     ) { ComposerPreview(it) }
     MotionStylePicker(
         title = stringResource(R.string.motion_indicator_title),
@@ -108,6 +112,7 @@ internal fun MotionStyleRows(
         label = { it.label() },
         tag = "theme_motion_indicator",
         onSelect = onIndicatorSelect,
+        phaseDemo = true,
     ) { IndicatorPreview(it) }
     MotionStylePicker(
         title = stringResource(R.string.motion_empty_chat_title),
@@ -127,6 +132,8 @@ private fun <T : Enum<T>> MotionStylePicker(
     label: (T) -> MotionStyleLabel,
     tag: String,
     onSelect: (T) -> Unit,
+    /** 预览按演示脚本轮播各生成阶段，面板顶部显示当前阶段。 */
+    phaseDemo: Boolean = false,
     preview: @Composable (T) -> Unit,
 ) {
     var show by remember { mutableStateOf(false) }
@@ -139,7 +146,17 @@ private fun <T : Enum<T>> MotionStylePicker(
         onClick = { if (!anchor.consumeRecentDismiss()) show = true },
     )
     NexaraBottomSheet(show = show, title = title, onDismiss = { show = false }, scrollContent = true, popover = NexaraPopoverSpec(anchor)) {
+        val demo = if (phaseDemo) rememberDemoGenerationMotion() else LocalGenerationMotion.current
+        CompositionLocalProvider(LocalGenerationMotion provides demo) {
         Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (phaseDemo) {
+                Text(
+                    stringResource(R.string.motion_preview_phase, stringResource((demo.displayed ?: GenerationMotionPhase.STREAM).labelRes())),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp).testTag("${tag}_phase"),
+                )
+            }
             options.forEach { option ->
                 val isSelected = option == selected
                 val text = label(option)
@@ -172,7 +189,17 @@ private fun <T : Enum<T>> MotionStylePicker(
                 }
             }
         }
+        }
     }
+}
+
+/** 生成阶段在设置预览中的名称。 */
+internal fun GenerationMotionPhase.labelRes(): Int = when (this) {
+    GenerationMotionPhase.WAIT -> R.string.motion_phase_wait
+    GenerationMotionPhase.STREAM -> R.string.motion_phase_stream
+    GenerationMotionPhase.TOOL -> R.string.motion_phase_tool
+    GenerationMotionPhase.APPROVAL -> R.string.motion_phase_approval
+    GenerationMotionPhase.RETRY -> R.string.motion_phase_retry
 }
 
 /** 浮岛预览：一个处于生成中的迷你浮岛，右下角画出停止键的位置。 */

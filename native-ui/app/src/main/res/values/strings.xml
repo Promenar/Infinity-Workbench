@@ -1788,6 +1788,12 @@
     <string name="motion_indicator_title">Generating indicator</string>
     <string name="motion_empty_chat_title">Empty chat animation</string>
     <string name="motion_preview_placeholder">Message…</string>
+    <string name="motion_preview_phase">Preview: %1$s</string>
+    <string name="motion_phase_wait">Before first token</string>
+    <string name="motion_phase_stream">Streaming</string>
+    <string name="motion_phase_tool">Running tools</string>
+    <string name="motion_phase_approval">Awaiting approval</string>
+    <string name="motion_phase_retry">Retry wait</string>
     <string name="motion_composer_aurora">Aurora orbit</string>
     <string name="motion_composer_aurora_desc">A light band orbits the composer with a soft halo.</string>
     <string name="motion_composer_breathe">Tidal breath</string>

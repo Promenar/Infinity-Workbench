@@ -311,6 +311,7 @@ fun ChatRoute(
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
     val generationRetry by chatViewModel.generationRetry.collectAsStateWithLifecycle()
+    val generationPhase by chatViewModel.generationPhase.collectAsStateWithLifecycle()
     val tailnetWait by chatViewModel.tailnetWait.collectAsStateWithLifecycle()
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
     val themePreferences by application.themePreferenceStore.state.collectAsStateWithLifecycle()
@@ -832,6 +833,7 @@ fun ChatRoute(
                 compressionState = compressionState,
                 postProcessTasks = postProcessTasks,
                 generationRetry = generationRetry,
+                generationPhase = generationPhase,
                 tailnetWait = tailnetWait,
                 selectedImageUris = selectedImageUris,
                 draftDocuments = draftDocuments,

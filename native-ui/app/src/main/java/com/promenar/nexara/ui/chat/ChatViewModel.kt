@@ -516,6 +516,9 @@ class ChatViewModel(
     private val _generationRetry = MutableStateFlow<com.promenar.nexara.domain.generation.GenerationRetry?>(null)
     /** 当前正在等待的自动重试；为 null 时不显示重试提示。 */
     val generationRetry: StateFlow<com.promenar.nexara.domain.generation.GenerationRetry?> = _generationRetry
+    private val _generationPhase = MutableStateFlow<com.promenar.nexara.domain.generation.GenerationPhase?>(null)
+    /** 当前会话进行中生成任务的阶段，驱动生成动效；没有任务时为 null。 */
+    val generationPhase: StateFlow<com.promenar.nexara.domain.generation.GenerationPhase?> = _generationPhase
     private val _tailnetWait = MutableStateFlow<com.promenar.nexara.data.generation.TailnetWaitState?>(null)
     /** 发送到 tailnet 内的模型时，等待内置 Tailscale 接入的进度；为 null 时不显示连接浮窗。 */
     val tailnetWait: StateFlow<com.promenar.nexara.data.generation.TailnetWaitState?> = _tailnetWait
@@ -841,6 +844,7 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             _currentSessionId.collectLatest { sessionId ->
+                _generationPhase.value = null
                 if (sessionId == null) return@collectLatest
                 var observedTaskId: String? = null
                 run {
@@ -855,6 +859,7 @@ class ChatViewModel(
                                 _replacingMessageIds.value = emptySet()
                             }
                         }
+                        _generationPhase.value = task?.phase
                         if (task == null) {
                             _isGenerating.value = false
                             observedTaskId?.let {
