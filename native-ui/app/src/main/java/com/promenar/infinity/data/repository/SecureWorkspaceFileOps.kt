@@ -1107,7 +1107,7 @@ class SecureWorkspaceFileOps(
 
     private fun readLegacyIdentity(root: SecureDirectoryStream<Path>): String? {
         val records = com.promenar.infinity.domain.workspace.WorkspaceInternalPaths.rootIdentityNames.mapNotNull { readIdentityMarker(root, it) }
-        if (records.map(PersistentFileIdentity::parseMarker).distinct().size > 1) {
+        if (records.size > 1 && records.map(PersistentFileIdentity::parseMarker).distinct().size > 1) {
             throw SecurityException("工作区新旧根身份标记冲突")
         }
         return records.firstOrNull()

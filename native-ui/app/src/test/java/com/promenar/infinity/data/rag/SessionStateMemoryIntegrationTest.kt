@@ -92,8 +92,8 @@ class SessionStateMemoryIntegrationTest {
         assertThat(event.content).isEqualTo("确定了界面主题")
         val states = rows.filter { it.metadata.orEmpty().startsWith("{\"type\":\"state\",\"key\":") }
         assertThat(states.map { it.metadata }).containsExactly(
-            """{"type":"state","key":"infinity\u001ftheme","subject":"Infinity Workbench","attribute":"theme","value":"dark"}""",
-            """{"type":"state","key":"infinity\u001fplan","subject":"Infinity Workbench","attribute":"plan","value":null}""",
+            """{"type":"state","key":"infinity workbench\u001ftheme","subject":"Infinity Workbench","attribute":"theme","value":"dark"}""",
+            """{"type":"state","key":"infinity workbench\u001fplan","subject":"Infinity Workbench","attribute":"plan","value":null}""",
         )
         assertThat(states.map { it.content }).containsExactly("Infinity Workbench · theme: dark", "Infinity Workbench · plan: (no longer applies)")
         rows.forEach { row ->
@@ -601,7 +601,7 @@ class SessionStateMemoryIntegrationTest {
         id: String, attribute: String = "theme", value: String? = "needle state", sessionId: String = "s1",
         userId: String = "u1", assistantId: String = "a1", occurredAt: Long = 100,
     ) = row(id, buildJsonObject {
-        put("type", "state"); put("key", "infinity\u001f$attribute"); put("subject", "Infinity Workbench"); put("attribute", attribute)
+        put("type", "state"); put("key", "infinity workbench\u001f$attribute"); put("subject", "Infinity Workbench"); put("attribute", attribute)
         if (value == null) put("value", JsonNull) else put("value", value)
     }.toString(), "Infinity Workbench · $attribute: ${value ?: "(no longer applies)"}")
         .copy(sessionId = sessionId, startMessageId = userId, endMessageId = assistantId, createdAt = occurredAt)

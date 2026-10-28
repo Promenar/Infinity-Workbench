@@ -58,7 +58,7 @@ class LongTermMemoryRepositoryTest {
     }
     @Test fun `忽略大小写首尾空白的标题在不同助手间去重`() = runBlocking<Unit> {
         val old = repo.save(LongTermMemoryKind.PROJECT, " Infinity Workbench ", "开发中", source = LongTermMemorySource("a", "s1", "m1")).memory
-        val write = repo.save(LongTermMemoryKind.PROJECT, "nExArA", "验收中", source = LongTermMemorySource("b", "s2", "m2"))
+        val write = repo.save(LongTermMemoryKind.PROJECT, "iNfInItY wOrKbEnCh", "验收中", source = LongTermMemorySource("b", "s2", "m2"))
         assertThat(write.previous).isEqualTo(old)
         assertThat(write.memory.id).isEqualTo(old.id)
         assertThat(write.memory.sourceAgentId).isEqualTo("b")

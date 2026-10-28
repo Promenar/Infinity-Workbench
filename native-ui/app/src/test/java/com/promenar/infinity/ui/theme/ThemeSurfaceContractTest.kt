@@ -25,6 +25,8 @@ class ThemeSurfaceContractTest {
             .readLines()
             .map { it.trim() }
             .filter { it.isNotBlank() }
+            // 冻结 manifest 是更名前的历史记录，路径仍带旧包名，比较前换算为当前包路径。
+            .map { it.replace("com/promenar/nexara/", "com/promenar/infinity/") }
             .toSet()
         return manifest
     }
