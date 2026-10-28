@@ -1,15 +1,11 @@
 package com.promenar.nexara.ui.chat.components
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,18 +17,19 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -49,10 +46,12 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.nexaraDomainColors
+import kotlinx.coroutines.delay
 
 /**
- * 输入浮岛顶部的运行坞：一行显示当前在做什么，右侧是待批准、后台任务与状态面板的入口，
- * 点按任意处打开运行详情。下方 2dp 进度线兼作与输入区的分隔；没有计划时画普通分隔线。
+ * 输入浮岛顶层的运行坞：一行显示当前在做什么、计划进度（“2/5”）与本轮用时，右侧是待批准、后台任务与状态面板的入口，
+ * 点按任意处打开运行详情。与输入区之间的细灯带（或顶沿模式的点阵屏）由浮岛绘制。
+ * [startedAt] 为本轮开始时间（毫秒），不为 null 时用时每秒刷新，只重组运行坞这一行。
  */
 @Composable
 internal fun RunDockRow(
@@ -60,17 +59,14 @@ internal fun RunDockRow(
     onOpen: (RunDetailTab?) -> Unit,
     onJumpToApproval: () -> Unit,
     modifier: Modifier = Modifier,
+    startedAt: Long? = null,
     /** 生成中显示锁按钮，点按锁定触摸；为 null 时不显示。 */
     onLockTouch: (() -> Unit)? = null,
 ) {
     val label = runDockLabelText(state.label)
-    val meta = runDockMetaText(state)
+    val elapsedSeconds by rememberRunElapsedSeconds(startedAt)
+    val meta = runDockMetaText(state, elapsedSeconds)
     val openLabel = stringResource(R.string.run_dock_open)
-    val progress by animateFloatAsState(
-        targetValue = state.progress ?: 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "run_dock_progress",
-    )
     Column(modifier.fillMaxWidth().testTag(UiTags.CHAT_RUN_DOCK)) {
         Row(
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(end = 4.dp),
@@ -82,7 +78,8 @@ internal fun RunDockRow(
                     .weight(1f)
                     .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                     .clickable(onClickLabel = openLabel, role = Role.Button) { onOpen(runDockDefaultTab(state.label)) }
-                    .padding(start = 14.dp)
+                    // 与输入区文字左缘对齐。
+                    .padding(start = 12.dp)
                     .semantics(mergeDescendants = true) {
                         contentDescription = listOf(label, meta).filter(String::isNotBlank).joinToString("，")
                     }
@@ -162,23 +159,6 @@ internal fun RunDockRow(
                 )
             }
         }
-        if (state.progress != null) {
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Medium).height(2.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                strokeCap = StrokeCap.Round,
-                gapSize = 0.dp,
-                drawStopIndicator = {},
-            )
-        } else {
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = NexaraSpacing.Medium),
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-            )
-        }
     }
 }
 
@@ -243,8 +223,39 @@ internal fun runDockLabelText(label: RunDockLabel): String = when (label) {
     is RunDockLabel.Board -> label.title
 }
 
-@Composable
-internal fun runDockMetaText(state: RunDockUiState): String = buildList {
+/** 运行坞文字尾部：计划进度“2/5”与本轮用时（[runDockElapsedText]），以“ · ”相连。 */
+internal fun runDockMetaText(state: RunDockUiState, elapsedSeconds: Long?): String = buildList {
     if (state.planTotal != null) add("${state.planDone ?: 0}/${state.planTotal}")
-    state.elapsedMinutes?.let { add(stringResource(R.string.run_dock_elapsed_minutes, it)) }
+    elapsedSeconds?.let { add(runDockElapsedText(it)) }
 }.joinToString(" · ")
+
+/** 本轮用时：不到 1 小时为 m:ss，以上为 h:mm:ss；显示时配等宽数字，逐秒变化不跳动。 */
+internal fun runDockElapsedText(seconds: Long): String {
+    val s = seconds.coerceAtLeast(0)
+    val hours = s / 3600
+    val minutes = s % 3600 / 60
+    val secs = s % 60
+    fun twoDigits(value: Long) = if (value < 10) "0$value" else "$value"
+    return if (hours > 0) "$hours:${twoDigits(minutes)}:${twoDigits(secs)}" else "$minutes:${twoDigits(secs)}"
+}
+
+/** 运行坞用时的刷新间隔（毫秒）。 */
+internal const val RunDockClockTickMillis = 1_000L
+
+/** 从 [startedAt]（毫秒）起算的整秒数，每秒刷新一次并对齐到整秒边界；[startedAt] 为 null 时为 null。 */
+@Composable
+internal fun rememberRunElapsedSeconds(startedAt: Long?): State<Long?> {
+    val elapsed = remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(startedAt) {
+        if (startedAt == null) {
+            elapsed.value = null
+            return@LaunchedEffect
+        }
+        while (true) {
+            val passed = (System.currentTimeMillis() - startedAt).coerceAtLeast(0)
+            elapsed.value = passed / 1000
+            delay(RunDockClockTickMillis - passed % RunDockClockTickMillis)
+        }
+    }
+    return elapsed
+}

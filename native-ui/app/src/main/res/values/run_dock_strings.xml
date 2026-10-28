@@ -11,7 +11,6 @@
     <string name="run_dock_paused">Paused</string>
     <string name="run_dock_paused_step">Paused · %1$s</string>
     <string name="run_dock_background">Background activity</string>
-    <string name="run_dock_elapsed_minutes">%1$d min</string>
     <string name="run_detail_status_running">Running</string>
     <string name="run_detail_status_done">Completed</string>
     <string name="run_detail_status_paused">Paused</string>

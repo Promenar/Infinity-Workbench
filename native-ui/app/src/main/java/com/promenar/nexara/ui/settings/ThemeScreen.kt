@@ -99,6 +99,8 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onComposerGlowSelect = viewModel::setComposerGlowStyle,
         onIndicatorSelect = viewModel::setGenerationIndicatorStyle,
         onEmptyChatSelect = viewModel::setEmptyChatStyle,
+        onScopePlacementSelect = viewModel::setScopePlacement,
+        onScopeDigitsChange = viewModel::setScopeDigits,
     )
 }
 
@@ -121,6 +123,8 @@ fun ThemeScreenContent(
     onComposerGlowSelect: (ComposerGlowStyle) -> Unit = {},
     onIndicatorSelect: (GenerationIndicatorStyle) -> Unit = {},
     onEmptyChatSelect: (EmptyChatStyle) -> Unit = {},
+    onScopePlacementSelect: (com.promenar.nexara.ui.theme.ScopeScreenPlacement) -> Unit = {},
+    onScopeDigitsChange: (Boolean) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -184,6 +188,8 @@ fun ThemeScreenContent(
                         onComposerSelect = onComposerGlowSelect,
                         onIndicatorSelect = onIndicatorSelect,
                         onEmptyChatSelect = onEmptyChatSelect,
+                        onScopePlacementSelect = onScopePlacementSelect,
+                        onScopeDigitsChange = onScopeDigitsChange,
                     )
                 }
             }

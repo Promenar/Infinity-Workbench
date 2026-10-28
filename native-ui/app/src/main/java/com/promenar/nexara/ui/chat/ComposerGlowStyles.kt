@@ -8,6 +8,8 @@ import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.common.motion.GenerationMotion
 import com.promenar.nexara.ui.common.motion.GenerationMotionPhase
 import com.promenar.nexara.ui.common.motion.LedBatch
@@ -36,9 +39,12 @@ import com.promenar.nexara.ui.common.motion.rememberMotionPalette
 import com.promenar.nexara.ui.common.motion.slowBlink
 import com.promenar.nexara.ui.common.motion.smoothStep
 import com.promenar.nexara.ui.theme.ComposerGlowStyle
+import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
+import com.promenar.nexara.ui.theme.ScopeScreenPlacement
 import com.promenar.nexara.ui.theme.NexaraPureWhite
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
@@ -164,35 +170,49 @@ internal class ComposerLightsPainter {
     val packets = FloatArray(15)
     var screenLit = FloatArray(0)
     var screenAmber = BooleanArray(0)
+    /** 点阵屏读数的字符缓冲，逐帧复用。 */
+    val readout = CharArray(ScopeReadoutCapacity)
+    /** 扫光点阵写入行上每颗灯珠最近一次被写入头走过的时间（秒）；只在浮岛宽度变化时重建。 */
+    var trailAt = FloatArray(0)
+    /** 上一帧写入头的位置（格），用来补记这一帧走过的灯珠。 */
+    var lastHead = 0f
 }
 
 /**
- * 浮岛内的灯效层：放在浮岛底色之上、输入内容之下，只在网孔背光、底沿数据流、点阵波形屏与扫光点阵四种样式下绘制，
- * 按当前生成阶段（[LocalGenerationMotion]）分别绘制并交叉淡入淡出。[state] 的生成进度为 0 时什么都不画。
+ * 浮岛内的灯效层：放在浮岛底色之上、输入内容之下，只在网孔背光、底沿数据流、点阵波形屏（输入行右侧）与扫光点阵四种样式下绘制，
+ * 按当前生成阶段（[LocalGenerationMotion]）分别绘制并交叉淡入淡出。[state] 的生成进度为 0 时什么都不画；
+ * 点阵屏在本轮结束后另外停留一会儿显示平均速率。顶沿模式的点阵屏由 [ComposerScopeBand] 单独占一条，这里不画。
+ * 灯珠墙类样式只铺到输入区（[ComposerGlowState.lightsTop] 以下），不铺到运行坞文字下方。
  */
 @Composable
 internal fun ComposerIslandLights(state: ComposerGlowState, style: ComposerGlowStyle, modifier: Modifier = Modifier) {
     if (style == ComposerGlowStyle.AURORA || style == ComposerGlowStyle.BREATHE) return
+    val styles = LocalNexaraMotionStyles.current
+    if (style == ComposerGlowStyle.SCOPE_SCREEN && styles.scopePlacement != ScopeScreenPlacement.INPUT_ROW) return
+    val digits = styles.scopeDigits
     val palette = rememberMotionPalette()
     val motion = LocalGenerationMotion.current
     val painter = remember { ComposerLightsPainter() }
     Canvas(modifier.clearAndSetSemantics {}) {
         val gen = state.generating.value
-        if (gen <= 0f) return@Canvas
+        val summary = if (style == ComposerGlowStyle.SCOPE_SCREEN && digits) motion.summaryAlpha else 0f
+        if (gen <= 0f && summary <= 0f) return@Canvas
         val time = state.timeSeconds
         drawIntoCanvas { canvas ->
-            for (phase in GenerationMotionPhase.entries) {
+            if (gen > 0f) for (phase in GenerationMotionPhase.entries) {
                 val weight = motion.weight(phase)
                 if (weight <= 0.004f) continue
                 val alpha = gen * weight
                 when (style) {
                     ComposerGlowStyle.MESH -> drawMesh(canvas, phase, alpha, time, state, palette, painter)
                     ComposerGlowStyle.BOTTOM_STRIP -> drawBottomStrip(canvas, phase, alpha, time, state, motion, palette, painter)
-                    ComposerGlowStyle.SCOPE_SCREEN -> drawScopeScreen(canvas, phase, alpha, time, motion, palette, painter)
+                    // 平均速率亮起时，阶段画面同步退去，两组数字不长时间叠在一起。
+                    ComposerGlowStyle.SCOPE_SCREEN -> drawInputRowScope(canvas, phase, alpha * (1 - summary), time, motion, palette, painter, digits)
                     ComposerGlowStyle.SWEEP_GRID -> drawSweepGrid(canvas, phase, alpha, time, state, palette, painter)
                     else -> Unit
                 }
             }
+            if (summary > 0f) drawInputRowScope(canvas, null, summary, time, motion, palette, painter, digits)
         }
     }
 }
@@ -207,7 +227,9 @@ private fun DrawScope.drawMesh(canvas: ComposeCanvas, phase: GenerationMotionPha
     val w = size.width
     val h = size.height
     val (sx, sy) = composerStopCenter(w, h, k)
-    val cy = h / 2
+    // 运行坞在浮岛顶层时，网罩只铺在输入区。
+    val top = state.lightsTop.coerceIn(0f, h)
+    val cy = (top + h) / 2
     val x0 = w * 0.46f
     val x1 = sx - 30 * k
     val warm = phase == GenerationMotionPhase.TOOL || phase == GenerationMotionPhase.APPROVAL
@@ -246,7 +268,7 @@ private fun DrawScope.drawMesh(canvas: ComposeCanvas, phase: GenerationMotionPha
     val base = if (phase == GenerationMotionPhase.RETRY) 0.05f else 0.1f
     p.holes.forEach { it.rewind() }
     var row = 0
-    var y = pitch / 2
+    var y = top + pitch / 2
     while (y < h) {
         var x = if (row % 2 == 1) pitch / 2 else 0f
         while (x < w) {
@@ -284,10 +306,35 @@ private fun DrawScope.drawMesh(canvas: ComposeCanvas, phase: GenerationMotionPha
  */
 private fun DrawScope.drawBottomStrip(canvas: ComposeCanvas, phase: GenerationMotionPhase, alpha: Float, t: Float, state: ComposerGlowState, motion: GenerationMotion, palette: MotionPalette, p: ComposerLightsPainter) {
     val k = density
-    val act = state.act
     val (sx, _) = composerStopCenter(size.width, size.height, k)
-    val x0 = ComposerIslandCorner.toPx() * 0.75f
-    val x1 = sx - 26 * k
+    drawLedStrip(
+        canvas.nativeCanvas, k, phase, alpha, t, state, motion, palette, p,
+        x0 = ComposerIslandCorner.toPx() * 0.75f, x1 = sx - 26 * k,
+        yTop = size.height - 11 * k, rowGap = 4 * k, rows = 2,
+    )
+}
+
+/**
+ * 一到两排细灯的数据流，底沿数据流与运行坞细灯带共用：第 0 排在 [yTop]，往下每排隔 [rowGap]。
+ * [phase] 为 null 时只画熄灭的灯珠（不在生成时的分隔线）。
+ */
+private fun drawLedStrip(
+    native: android.graphics.Canvas,
+    k: Float,
+    phase: GenerationMotionPhase?,
+    alpha: Float,
+    t: Float,
+    state: ComposerGlowState,
+    motion: GenerationMotion,
+    palette: MotionPalette,
+    p: ComposerLightsPainter,
+    x0: Float,
+    x1: Float,
+    yTop: Float,
+    rowGap: Float,
+    rows: Int,
+) {
+    val act = state.act
     val pitch = 3.6f * k
     val sz = 1.9f * k
     val gz = 3.8f * k
@@ -304,8 +351,8 @@ private fun DrawScope.drawBottomStrip(canvas: ComposeCanvas, phase: GenerationMo
     val leds = p.leds4
     leds.reset()
     val packets = p.packets
-    for (r in 0 until 2) {
-        val y = size.height - (if (r == 0) 11 else 7) * k
+    for (r in 0 until rows) {
+        val y = yTop + r * rowGap
         if (phase == GenerationMotionPhase.STREAM) {
             for (j in 0 until packetCount) {
                 val len = (2 + floor(motionHash(r.toFloat(), j.toFloat()) * 5)) * pitch
@@ -321,7 +368,9 @@ private fun DrawScope.drawBottomStrip(canvas: ComposeCanvas, phase: GenerationMo
             val x = x0 + px
             var intensity = 0f
             var amber = false
-            if (c == 0) {
+            if (phase == null) {
+                Unit
+            } else if (c == 0) {
                 intensity = when (phase) {
                     GenerationMotionPhase.APPROVAL -> 0f
                     GenerationMotionPhase.RETRY -> 0.5f * evenBlink(t)
@@ -355,10 +404,108 @@ private fun DrawScope.drawBottomStrip(canvas: ComposeCanvas, phase: GenerationMo
             if (intensity < 0.1f) leds.offDot(x, y, sz) else leds.dot(if (amber) 1 else 0, intensity, x, y, sz, gz)
         }
     }
-    leds.draw(canvas.nativeCanvas, palette.leds, palette.dark, blur = 3 * k, offColor = palette.a.copy(alpha = if (palette.dark) 0.1f else 0.16f), alpha = alpha)
+    leds.draw(native, palette.leds, palette.dark, blur = 3 * k, offColor = palette.a.copy(alpha = if (palette.dark) 0.1f else 0.16f), alpha = alpha)
 }
 
-/** 3×5 点阵字形，自上而下，每行三位。 */
+/** 运行坞细灯带的高度与左右留白。 */
+internal val ComposerDockStripHeight = 6.dp
+private const val DockStripHorizontalDp = 14f
+
+/**
+ * 运行坞与输入区之间的一排小灯，与底沿数据流同一套数据包逻辑，随出字速率流动；
+ * 不在生成时只留一排熄灭的灯珠当分隔线。点阵屏为顶沿模式且正在显示时，由点阵屏顶替这排小灯。
+ */
+@Composable
+internal fun ComposerDockStrip(state: ComposerGlowState, modifier: Modifier = Modifier) {
+    val palette = rememberMotionPalette()
+    val motion = LocalGenerationMotion.current
+    val painter = remember { ComposerLightsPainter() }
+    Canvas(modifier.fillMaxWidth().height(ComposerDockStripHeight).clearAndSetSemantics {}) {
+        val gen = state.generating.value
+        val k = density
+        val x0 = DockStripHorizontalDp * k
+        val x1 = size.width - DockStripHorizontalDp * k
+        val y = size.height / 2
+        val time = state.timeSeconds
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            if (gen < 1f) drawLedStrip(native, k, null, 1f - gen, time, state, motion, palette, painter, x0, x1, y, 0f, rows = 1)
+            if (gen > 0f) for (phase in GenerationMotionPhase.entries) {
+                val weight = motion.weight(phase)
+                if (weight <= 0.004f) continue
+                drawLedStrip(native, k, phase, gen * weight, time, state, motion, palette, painter, x0, x1, y, 0f, rows = 1)
+            }
+        }
+    }
+}
+
+/** 点阵波形屏的可调参数；尺寸单位为 dp，真机上再定。 */
+internal object ScopeScreenSpec {
+    /** 输入行右侧模式的行数与最大宽度。 */
+    const val InputRowRows = 7
+    const val InputRowMaxWidthDp = 160f
+    /** 输入行右侧模式最左不越过浮岛宽度的这个比例，给输入文字留出左半边。 */
+    const val InputRowMinStartFraction = 0.5f
+    /** 浮岛顶沿模式的行数与四周留白。 */
+    const val TopEdgeRows = 5
+    const val TopEdgeHorizontalDp = 14f
+    const val TopEdgeTopDp = 10f
+    const val TopEdgeBottomDp = 4f
+    const val PitchDp = 3.2f
+    const val DotDp = 2f
+    const val GlowDp = 3.6f
+    /** 点阵与屏框之间的留白。 */
+    const val InsetDp = 2f
+    /** 数字区固定列宽：放得下最长的读数“99:59”，数字变化时波形区不跟着伸缩。 */
+    const val ReadoutCols = 17
+    /** 数字区与波形区之间空出的列数。 */
+    const val ReadoutGapCols = 2
+    /** 屏宽不足这么多列时不显示数字，波形铺满。 */
+    const val MinColsForReadout = 30
+}
+
+/** 顶沿模式点阵屏占的高度：上留白 + 点阵 + 屏框留白 + 下留白。 */
+internal val ComposerScopeBandHeight =
+    (ScopeScreenSpec.TopEdgeTopDp + ScopeScreenSpec.TopEdgeRows * ScopeScreenSpec.PitchDp + 2 * ScopeScreenSpec.InsetDp + ScopeScreenSpec.TopEdgeBottomDp).dp
+
+/** 读数最长 5 个字符（“99:59”），留些余量。 */
+internal const val ScopeReadoutCapacity = 8
+
+/**
+ * 浮岛顶沿模式的点阵屏：铺满浮岛内宽的 5 行点阵，始终贴在输入区上沿；运行坞出现时它就在运行坞与输入区的接缝处。
+ * 读数与波形同输入行右侧模式，本轮结束后同样停留显示平均速率。
+ */
+@Composable
+internal fun ComposerScopeBand(state: ComposerGlowState, modifier: Modifier = Modifier) {
+    val palette = rememberMotionPalette()
+    val motion = LocalGenerationMotion.current
+    val digits = LocalNexaraMotionStyles.current.scopeDigits
+    val painter = remember { ComposerLightsPainter() }
+    Canvas(modifier.fillMaxWidth().height(ComposerScopeBandHeight).clearAndSetSemantics {}) {
+        val gen = state.generating.value
+        val summary = if (digits) motion.summaryAlpha else 0f
+        if (gen <= 0f && summary <= 0f) return@Canvas
+        val k = density
+        val pitch = ScopeScreenSpec.PitchDp * k
+        val inset = ScopeScreenSpec.InsetDp * k
+        val rows = ScopeScreenSpec.TopEdgeRows
+        val cols = max(12, ((size.width - 2 * ScopeScreenSpec.TopEdgeHorizontalDp * k - 2 * inset) / pitch).toInt())
+        val sx = (size.width - (cols * pitch + 2 * inset)) / 2
+        val sy = ScopeScreenSpec.TopEdgeTopDp * k
+        val time = state.timeSeconds
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            if (gen > 0f) for (phase in GenerationMotionPhase.entries) {
+                val weight = motion.weight(phase)
+                if (weight <= 0.004f) continue
+                drawScopeFrame(native, k, sx, sy, cols, rows, phase, gen * weight * (1 - summary), time, motion, palette, painter, digits)
+            }
+            if (summary > 0f) drawScopeFrame(native, k, sx, sy, cols, rows, null, summary, time, motion, palette, painter, digits)
+        }
+    }
+}
+
+/** 3×5 点阵字形，自上而下；窄字形（“.”与“:”）只占 1 列，取最低位。 */
 private val ScreenGlyphs: Map<Char, IntArray> = mapOf(
     '0' to intArrayOf(0b111, 0b101, 0b101, 0b101, 0b111),
     '1' to intArrayOf(0b010, 0b110, 0b010, 0b010, 0b111),
@@ -371,30 +518,137 @@ private val ScreenGlyphs: Map<Char, IntArray> = mapOf(
     '8' to intArrayOf(0b111, 0b101, 0b111, 0b101, 0b111),
     '9' to intArrayOf(0b111, 0b101, 0b111, 0b001, 0b111),
     '!' to intArrayOf(0b010, 0b010, 0b010, 0b000, 0b010),
+    '#' to intArrayOf(0b101, 0b111, 0b101, 0b111, 0b101),
+    '.' to intArrayOf(0b0, 0b0, 0b0, 0b0, 0b1),
+    ':' to intArrayOf(0b0, 0b1, 0b0, 0b1, 0b0),
 )
 
+/** 点阵屏能画出的字符；读数只会写入这些字符。 */
+internal fun scopeGlyphSupported(ch: Char): Boolean = ch in ScreenGlyphs
+
+private fun glyphWidth(ch: Char): Int = if (ch == '.' || ch == ':') 1 else 3
+
+/** 读数占的列数：各字宽之和加字间 1 列。 */
+internal fun scopeReadoutWidth(text: CharArray, length: Int): Int {
+    var width = 0
+    for (i in 0 until length) width += glyphWidth(text[i]) + if (i > 0) 1 else 0
+    return width
+}
+
+private fun writeInt(value: Int, out: CharArray, start: Int): Int {
+    var digits = 1
+    var v = value
+    while (v >= 10) {
+        v /= 10
+        digits++
+    }
+    var x = value
+    for (i in digits - 1 downTo 0) {
+        out[start + i] = '0' + x % 10
+        x /= 10
+    }
+    return start + digits
+}
+
+/** 秒数读数：100 秒以内为整数秒，以上为 m:ss，封顶 99:59。返回写入后的位置。 */
+internal fun writeSecondsReadout(seconds: Int, out: CharArray, start: Int = 0): Int {
+    val s = seconds.coerceIn(0, 99 * 60 + 59)
+    if (s < 100) return writeInt(s, out, start)
+    var n = writeInt(s / 60, out, start)
+    out[n++] = ':'
+    out[n++] = '0' + (s % 60) / 10
+    out[n++] = '0' + s % 10
+    return n
+}
+
+/** 每秒字数读数：不到 10 保留一位小数，以上取整，封顶 9999。返回写入后的位置。 */
+internal fun writeRateReadout(rate: Float, out: CharArray, start: Int = 0): Int {
+    val r = rate.coerceIn(0f, 9999f)
+    if (r < 9.95f) {
+        val tenths = (r * 10).roundToInt()
+        var n = writeInt(tenths / 10, out, start)
+        out[n++] = '.'
+        out[n++] = '0' + tenths % 10
+        return n
+    }
+    return writeInt(r.roundToInt(), out, start)
+}
+
 /**
- * 点阵波形屏：输入行右侧嵌一块 5 行的小点阵屏，像交换机前面板的流量显示。首字前底行一条带噪声的基线；
- * 流式时柱状图就是实际出字速率，不断左移，最新两列在闪、越旧越暗；工具执行时第三色扫描线来回扫过；
- * 等待审批时屏上显示第三色“!”并慢闪；重试时屏上显示倒计时秒数。
+ * 点阵屏在 [phase] 下的数字读数写入 [out]，返回字符数：首字前为已等待秒数，流式（含思考）为每秒字数，
+ * 工具执行为“#轮次”，等待审批为“!”，重试为倒计时秒数。本轮结束后的平均速率用 [writeRateReadout]。
  */
-private fun DrawScope.drawScopeScreen(canvas: ComposeCanvas, phase: GenerationMotionPhase, alpha: Float, t: Float, motion: GenerationMotion, palette: MotionPalette, p: ComposerLightsPainter) {
+internal fun scopeReadout(
+    phase: GenerationMotionPhase,
+    waitSeconds: Int,
+    rate: Float,
+    toolRound: Int,
+    retrySeconds: Int,
+    out: CharArray,
+): Int = when (phase) {
+    GenerationMotionPhase.WAIT -> writeSecondsReadout(waitSeconds, out)
+    GenerationMotionPhase.STREAM -> writeRateReadout(rate, out)
+    GenerationMotionPhase.TOOL -> {
+        out[0] = '#'
+        writeInt(toolRound.coerceIn(1, 99), out, 1)
+    }
+    GenerationMotionPhase.APPROVAL -> {
+        out[0] = '!'
+        1
+    }
+    GenerationMotionPhase.RETRY -> writeSecondsReadout(retrySeconds, out)
+}
+
+/**
+ * 输入行右侧的点阵屏：嵌在输入行（工具栏正上方那一行）右端的 7 行点阵，与停止键右对齐，宽至多 [ScopeScreenSpec.InputRowMaxWidthDp]。
+ * [phase] 为 null 时画本轮平均速率。
+ */
+private fun DrawScope.drawInputRowScope(canvas: ComposeCanvas, phase: GenerationMotionPhase?, alpha: Float, t: Float, motion: GenerationMotion, palette: MotionPalette, p: ComposerLightsPainter, digits: Boolean) {
+    if (alpha <= 0.004f) return
     val k = density
-    val rows = 5
-    val pitch = 3.2f * k
-    val sz = 2f * k
-    val gz = 3.6f * k
-    // 停在输入行（工具栏正上方那一行）的右端，与停止键右对齐。
+    val rows = ScopeScreenSpec.InputRowRows
+    val pitch = ScopeScreenSpec.PitchDp * k
+    val inset = ScopeScreenSpec.InsetDp * k
     val x1 = size.width - 14 * k
     val cy = size.height - 72 * k
-    val x0 = max(size.width * 0.5f, x1 - 92 * k)
-    val cols = max(12, ((x1 - x0 - 4 * k) / pitch).toInt())
-    val sw = cols * pitch + 4 * k
-    val sh = rows * pitch + 4 * k
-    val sx = x1 - sw
+    val x0 = max(size.width * ScopeScreenSpec.InputRowMinStartFraction, x1 - ScopeScreenSpec.InputRowMaxWidthDp * k)
+    val cols = max(12, ((x1 - x0 - 2 * inset) / pitch).toInt())
+    val sw = cols * pitch + 2 * inset
+    val sh = rows * pitch + 2 * inset
     val sy = cy - sh / 2
     if (sy < 0f) return
-    val native = canvas.nativeCanvas
+    drawScopeFrame(canvas.nativeCanvas, k, x1 - sw, sy, cols, rows, phase, alpha, t, motion, palette, p, digits)
+}
+
+/**
+ * 点阵波形屏的一帧：左上角 ([sx], [sy])、[cols] × [rows] 的点阵，像交换机前面板的流量显示。
+ * 显示数字且屏够宽时左侧是数字区（[scopeReadout]），右侧是波形区；关闭数字时波形铺满整块屏，各阶段只保留图形。
+ * 波形区：首字前底行一条带噪声的基线；流式（含思考）时柱状图就是实际出字速率，不断左移，最新两列在闪、越旧越暗；
+ * 工具执行时第三色扫描线来回扫过；等待审批时第三色“!”慢闪（有数字区时“!”在数字区）；重试时底行是退避倒计时进度条。
+ * [phase] 为 null 时是本轮结束后的停留画面：数字区显示平均速率，波形区只留暗基线。
+ */
+private fun drawScopeFrame(
+    native: android.graphics.Canvas,
+    k: Float,
+    sx: Float,
+    sy: Float,
+    cols: Int,
+    rows: Int,
+    phase: GenerationMotionPhase?,
+    alpha: Float,
+    t: Float,
+    motion: GenerationMotion,
+    palette: MotionPalette,
+    p: ComposerLightsPainter,
+    digits: Boolean,
+) {
+    if (alpha <= 0.004f) return
+    val pitch = ScopeScreenSpec.PitchDp * k
+    val inset = ScopeScreenSpec.InsetDp * k
+    val sz = ScopeScreenSpec.DotDp * k
+    val gz = ScopeScreenSpec.GlowDp * k
+    val sw = cols * pitch + 2 * inset
+    val sh = rows * pitch + 2 * inset
     p.panelPaint.style = Paint.Style.FILL
     p.panelPaint.color = palette.faceplate.copy(alpha = palette.faceplate.alpha * alpha).toArgb()
     native.drawRoundRect(sx, sy, sx + sw, sy + sh, 3 * k, 3 * k, p.panelPaint)
@@ -419,28 +673,51 @@ private fun DrawScope.drawScopeScreen(canvas: ComposeCanvas, phase: GenerationMo
             amber[i] = isAmber
         }
     }
-    fun glyphs(text: String, intensity: Float, isAmber: Boolean) {
-        val width = text.length * 4 - 1
-        val c0 = (cols - width) / 2
-        text.forEachIndexed { n, ch ->
-            val glyph = ScreenGlyphs[ch] ?: return@forEachIndexed
-            for (gy in 0 until 5) for (gx in 0 until 3) {
-                if (glyph[gy] shr (2 - gx) and 1 == 1) set(c0 + n * 4 + gx, rows - 1 - gy, intensity, isAmber)
+    // 字形 5 行高，在屏内垂直居中；[endCol] 为最右一列，读数靠右对齐，数字变宽时向左长。
+    fun glyphs(length: Int, endCol: Int, intensity: Float, isAmber: Boolean) {
+        val text = p.readout
+        val top = (rows - 5) / 2 + 4
+        var c = endCol + 1 - scopeReadoutWidth(text, length)
+        for (n in 0 until length) {
+            val ch = text[n]
+            val glyph = ScreenGlyphs[ch]
+            val width = glyphWidth(ch)
+            if (glyph != null) for (gy in 0 until 5) for (gx in 0 until width) {
+                if (glyph[gy] shr (width - 1 - gx) and 1 == 1) set(c + gx, top - gy, intensity, isAmber)
             }
+            c += width + 1
         }
     }
+    val readout = digits && cols >= ScopeScreenSpec.MinColsForReadout
+    // 波形区起始列；没有数字区时从 0 开始铺满。
+    val w0 = if (readout) ScopeScreenSpec.ReadoutCols + ScopeScreenSpec.ReadoutGapCols else 0
+    val waveCols = cols - w0
+    if (readout) {
+        val length = if (phase == null) writeRateReadout(motion.summaryRate, p.readout)
+        else scopeReadout(phase, motion.waitSeconds, motion.readoutRate, motion.toolRound, motion.retrySeconds, p.readout)
+        val intensity = when (phase) {
+            null, GenerationMotionPhase.STREAM -> 1f
+            GenerationMotionPhase.WAIT -> 0.75f
+            GenerationMotionPhase.TOOL -> 0.9f
+            GenerationMotionPhase.APPROVAL -> if (slowBlink(t) > 0.5f) 1f else 0.35f
+            GenerationMotionPhase.RETRY -> 0.4f + 0.35f * evenBlink(t)
+        }
+        val isAmber = phase == GenerationMotionPhase.TOOL || phase == GenerationMotionPhase.APPROVAL
+        glyphs(length, ScopeScreenSpec.ReadoutCols - 1, intensity, isAmber)
+    }
     when (phase) {
-        GenerationMotionPhase.WAIT -> for (c in 0 until cols) {
+        null -> for (c in w0 until cols) set(c, 0, 0.3f, false)
+        GenerationMotionPhase.WAIT -> for (c in w0 until cols) {
             set(c, 0, 0.35f, false)
             if (motionHash(c.toFloat(), floor(t * 6)) < 0.1f) set(c, 1, 0.3f, false)
         }
         GenerationMotionPhase.STREAM -> {
             val now = floor(t / 0.09f)
-            for (c in 0 until cols) {
+            for (c in w0 until cols) {
                 val back = cols - 1 - c
                 val level = clamp01(motion.historyLevel(back, now - back) + (motionHash(now - back, 1.3f) - 0.5f) * 0.1f)
                 val height = if (level < 0.04f) 0 else max(1, (level * rows).roundToInt())
-                val age = back.toFloat() / cols
+                val age = back.toFloat() / waveCols
                 for (r in 0 until height) {
                     var intensity = (if (r == height - 1) 1f else 0.75f) * (1 - 0.7f * age)
                     if (c >= cols - 2 && motionHash(c * 5f + r, floor(t * 30)) < 0.3f) intensity *= 0.3f
@@ -449,42 +726,105 @@ private fun DrawScope.drawScopeScreen(canvas: ComposeCanvas, phase: GenerationMo
             }
         }
         GenerationMotionPhase.TOOL -> {
-            val pos = (pingPong(t / 1.2f) * (cols - 1)).roundToInt()
-            for (c in 0 until cols) {
+            val pos = w0 + (pingPong(t / 1.2f) * (waveCols - 1)).roundToInt()
+            for (c in w0 until cols) {
                 set(c, 0, 0.25f, false)
                 val d = abs(c - pos)
                 if (d <= 1) for (r in 0 until rows) set(c, r, if (d == 0) 1f else 0.35f, true)
             }
         }
-        GenerationMotionPhase.APPROVAL -> glyphs("!", if (slowBlink(t) > 0.5f) 1f else 0.35f, true)
-        GenerationMotionPhase.RETRY -> glyphs(motion.retrySeconds.coerceIn(0, 99).toString(), 0.4f + 0.35f * evenBlink(t), false)
+        GenerationMotionPhase.APPROVAL -> if (readout) {
+            for (c in w0 until cols) set(c, 0, 0.25f, true)
+        } else {
+            p.readout[0] = '!'
+            glyphs(1, (cols + 3) / 2 - 1, if (slowBlink(t) > 0.5f) 1f else 0.35f, true)
+        }
+        GenerationMotionPhase.RETRY -> {
+            val left = motion.retryLeft
+            val blink = 0.4f + 0.35f * evenBlink(t)
+            for (c in w0 until cols) set(c, 0, if ((c - w0 + 0.5f) / waveCols < left) blink else 0.12f, false)
+        }
     }
     val leds = p.leds5
     leds.reset()
     for (c in 0 until cols) for (r in 0 until rows) {
-        val x = sx + 2 * k + c * pitch + pitch / 2
-        val y = sy + 2 * k + (rows - 1 - r) * pitch + pitch / 2
+        val x = sx + inset + c * pitch + pitch / 2
+        val y = sy + inset + (rows - 1 - r) * pitch + pitch / 2
         val i = c * rows + r
         if (lit[i] < 0.1f) leds.offDot(x, y, sz) else leds.dot(if (amber[i]) 1 else 0, lit[i], x, y, sz, gz)
     }
     leds.draw(native, palette.leds, palette.dark, blur = 3 * k, offColor = palette.a.copy(alpha = if (palette.dark) 0.1f else 0.14f), alpha = alpha)
 }
 
+/** 扫光点阵的可调参数，真机上再定。 */
+internal object SweepGridSpec {
+    /** 速率映射的指数：强度 = (速率 / 满档)^0.6，低速也有可见反馈，中速与满速拉开差距。 */
+    const val RateExponent = 0.6f
+    /** 流式时最多几道光带；同斜率、等距、同速移动，随速率从 1 道增到这个数。 */
+    const val MaxBands = 3
+    /** 写入头所在的固定行数，从输入区顶部数起。 */
+    const val WriteRows = 3
+    /** 每到一个字写入头前进的格数。 */
+    const val CellsPerChar = 1.1f
+    /** 写入头追赶目标位置的时间常数（秒）：一批字到达时平滑前进，不是瞬移。 */
+    const val HeadEaseSeconds = 0.08f
+    /** 余辉时长：低速 0.35 秒，满速 0.6 秒。 */
+    const val TrailMinSeconds = 0.35f
+    const val TrailMaxSeconds = 0.6f
+    /** 余辉起始亮度。 */
+    const val TrailPeak = 0.95f
+    /** 闪点密度（灯珠占比）与亮灯闪烁比例，低速到满速。 */
+    const val SparkleMin = 0.002f
+    const val SparkleMax = 0.014f
+    const val FlickerMin = 0.06f
+    const val FlickerMax = 0.16f
+}
+
+/** 扫光点阵流式阶段的强度 0..1：出字速率强度按 [SweepGridSpec.RateExponent] 次方映射。 */
+internal fun sweepRateLevel(act: Float): Float = clamp01(act).pow(SweepGridSpec.RateExponent)
+
+/** 第 [band] 道（0 起）光带的亮度权重：强度 0 时只有第 0 道，满速时 [SweepGridSpec.MaxBands] 道全亮，中间平滑长出。 */
+internal fun sweepBandWeight(level: Float, band: Int): Float = clamp01(1 + (SweepGridSpec.MaxBands - 1) * clamp01(level) - band)
+
+/** 写入头余辉的时长（秒），随强度变长。 */
+internal fun sweepTrailSeconds(level: Float): Float =
+    SweepGridSpec.TrailMinSeconds + (SweepGridSpec.TrailMaxSeconds - SweepGridSpec.TrailMinSeconds) * clamp01(level)
+
 /**
- * 扫光点阵：浮岛里藏着一整面看不见的灯珠，光带扫到哪里，哪里的灯珠就亮起来。首字前细光带 4.8 秒慢扫一次；
- * 流式时扫速与闪点密度随速率增加；工具执行时第三色竖条来回寻道；等待审批时停止键周围第三色灯慢闪；
- * 重试时光带停住、压暗等间隔闪。
+ * 写入头从上一帧位置走到 [head]（格）时，把途经的灯珠记为 [time] 时刻点亮；写入行共 [cells] 颗，走满一圈后回到第一行开头。
+ * 位置回退（新一轮从头累计）时只更新基准。一帧最多补记一圈，不随积压无限循环。
+ */
+internal fun advanceWriteTrail(trailAt: FloatArray, lastHead: Float, head: Float, time: Float): Float {
+    val cells = trailAt.size
+    if (cells == 0 || head <= lastHead) return head
+    val to = floor(head).toLong()
+    var i = max(floor(lastHead).toLong() + 1, to - cells + 1)
+    while (i <= to) {
+        trailAt[i.mod(cells.toLong()).toInt()] = time
+        i++
+    }
+    return head
+}
+
+/**
+ * 扫光点阵：浮岛输入区里藏着一整面看不见的灯珠，光带扫到哪里，哪里的灯珠就亮起来。首字前细光带 4.8 秒慢扫一次；
+ * 流式（含思考）时一个写入头沿输入区上部固定的几行灯珠前进，每到一批字前进相应格数，走过的灯珠留下余辉，一行走完换下一行；
+ * 同斜率、等距的光带随速率从 1 道增到 3 道、同速移动，闪点与闪烁保持稀疏；速率越高，写入头越快、余辉越长、光带越宽越亮。
+ * 工具执行时第三色竖条来回寻道；等待审批时停止键周围第三色灯慢闪；重试时光带停住、压暗等间隔闪。
  */
 private fun DrawScope.drawSweepGrid(canvas: ComposeCanvas, phase: GenerationMotionPhase, alpha: Float, t: Float, state: ComposerGlowState, palette: MotionPalette, p: ComposerLightsPainter) {
     val k = density
     val w = size.width
     val h = size.height
-    val act = state.act
+    val level = state.sweepLevel
     val (sx, sy) = composerStopCenter(w, h, k)
     val pitch = 4.4f * k
     val sz = 1.5f * k
     val gz = 3.2f * k
-    val cy = h / 2
+    // 运行坞在浮岛顶层时，灯珠墙只铺在输入区。
+    val top = state.lightsTop.coerceIn(0f, h)
+    val cy = (top + h) / 2
+    val span = w + 80 * k
     var bx = 0f
     var band = 14 * k
     var peak = 0.9f
@@ -492,18 +832,18 @@ private fun DrawScope.drawSweepGrid(canvas: ComposeCanvas, phase: GenerationMoti
     var amberBand = false
     var sparkle = 0f
     var flicker = 0f
+    val streaming = phase == GenerationMotionPhase.STREAM
     when (phase) {
         GenerationMotionPhase.WAIT -> {
-            bx = -40 * k + (w + 80 * k) * fract(t / 4.8f)
+            bx = -40 * k + span * fract(t / 4.8f)
             band = 10 * k
             peak = 0.55f
         }
         GenerationMotionPhase.STREAM -> {
-            bx = -40 * k + (w + 80 * k) * fract(state.sweepPhase)
-            band = (10 + 6 * act) * k
-            peak = 0.6f + 0.4f * act
-            sparkle = 0.002f + 0.012f * act
-            flicker = 0.1f + 0.2f * act
+            band = (10 + 6 * level) * k
+            peak = 0.6f + 0.4f * level
+            sparkle = SweepGridSpec.SparkleMin + (SweepGridSpec.SparkleMax - SweepGridSpec.SparkleMin) * level
+            flicker = SweepGridSpec.FlickerMin + (SweepGridSpec.FlickerMax - SweepGridSpec.FlickerMin) * level
         }
         GenerationMotionPhase.TOOL -> {
             bx = 18 * k + (w - 80 * k) * pingPong(t / 1.4f)
@@ -518,18 +858,32 @@ private fun DrawScope.drawSweepGrid(canvas: ComposeCanvas, phase: GenerationMoti
         }
         GenerationMotionPhase.APPROVAL -> Unit
     }
+    val cols = max(1, ((w - pitch / 2) / pitch).toInt() + 1)
+    val firstRow = max(0, ceil((top - pitch / 2) / pitch).toInt())
+    val trailSeconds = sweepTrailSeconds(level)
+    if (streaming) {
+        val cells = SweepGridSpec.WriteRows * cols
+        if (p.trailAt.size != cells) {
+            p.trailAt = FloatArray(cells)
+            p.trailAt.fill(-1e6f)
+            p.lastHead = state.writeHead
+        }
+        p.lastHead = advanceWriteTrail(p.trailAt, p.lastHead, state.writeHead, t)
+    }
     val pulse = if (slowBlink(t) > 0.5f) 0.9f else 0.25f
     val leds = p.leds6
     leds.reset()
-    var id = 0
-    var y = pitch / 2
+    var row = firstRow
+    var y = pitch / 2 + firstRow * pitch
     while (y < h) {
         var x = pitch / 2
+        var c = 0
         while (x < w) {
-            val cell = id++
+            val cell = row * cols + c
             val ds = hypot(x - sx, y - sy)
             if (ds < 21 * k) {
                 x += pitch
+                c++
                 continue
             }
             var intensity: Float
@@ -538,16 +892,34 @@ private fun DrawScope.drawSweepGrid(canvas: ComposeCanvas, phase: GenerationMoti
                 intensity = pulse * exp(-(ds - 21 * k) / (40 * k))
                 isAmber = true
             } else {
-                val d = (x - bx) + (y - cy) * slant
-                intensity = if (abs(d) < band * 2.5f) peak * exp(-(d / band).pow(2)) else 0f
+                val slanted = (y - cy) * slant
+                intensity = 0f
+                if (streaming) {
+                    for (j in 0 until SweepGridSpec.MaxBands) {
+                        val weight = sweepBandWeight(level, j)
+                        if (weight <= 0f) continue
+                        val d = x - (-40 * k + span * fract(state.sweepPhase + j.toFloat() / SweepGridSpec.MaxBands)) + slanted
+                        if (abs(d) < band * 2.5f) intensity = max(intensity, weight * peak * exp(-(d / band).pow(2)))
+                    }
+                    val writeRow = row - firstRow
+                    if (writeRow < SweepGridSpec.WriteRows) {
+                        val age = t - p.trailAt[writeRow * cols + c]
+                        if (age in 0f..trailSeconds) intensity = max(intensity, SweepGridSpec.TrailPeak * (1 - age / trailSeconds).pow(1.5f))
+                    }
+                } else {
+                    val d = (x - bx) + slanted
+                    intensity = if (abs(d) < band * 2.5f) peak * exp(-(d / band).pow(2)) else 0f
+                }
                 if (intensity > 0.1f && flicker > 0f && motionHash(cell.toFloat(), floor(t * 30)) < flicker) intensity *= 0.3f
                 if (intensity < 0.1f && sparkle > 0f && motionHash(cell.toFloat(), floor(t * 4 + motionHash(cell.toFloat(), 3f) * 4)) < sparkle) intensity = 0.6f
-                isAmber = amberBand || (phase == GenerationMotionPhase.STREAM && motionHash(cell.toFloat(), 7.7f) < 0.08f)
+                isAmber = amberBand || (streaming && motionHash(cell.toFloat(), 7.7f) < 0.08f)
             }
             if (intensity >= 0.06f) leds.dot(if (isAmber) 1 else 0, intensity * 0.9f, x, y, sz, gz)
             x += pitch
+            c++
         }
         y += pitch
+        row++
     }
     leds.draw(canvas.nativeCanvas, palette.leds, palette.dark, blur = 3 * k, alpha = alpha)
 }

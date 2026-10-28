@@ -22,6 +22,8 @@ class ThemePreferenceStore(context: Context) {
         const val COMPOSER_GLOW_STYLE_KEY = "motion_composer_glow"
         const val INDICATOR_STYLE_KEY = "motion_generation_indicator"
         const val EMPTY_CHAT_STYLE_KEY = "motion_empty_chat"
+        const val SCOPE_PLACEMENT_KEY = "motion_scope_placement"
+        const val SCOPE_DIGITS_KEY = "motion_scope_digits"
         const val RECENT_CUSTOM_COLORS_KEY = "theme_recent_custom_colors"
         /** 最近使用的自定义色最多保留几个。 */
         const val RECENT_CUSTOM_COLOR_LIMIT = 8
@@ -41,6 +43,8 @@ class ThemePreferenceStore(context: Context) {
             COMPOSER_GLOW_STYLE_KEY,
             INDICATOR_STYLE_KEY,
             EMPTY_CHAT_STYLE_KEY,
+            SCOPE_PLACEMENT_KEY,
+            SCOPE_DIGITS_KEY,
             RECENT_CUSTOM_COLORS_KEY,
         )
     }
@@ -133,6 +137,16 @@ class ThemePreferenceStore(context: Context) {
         preferences.edit().putString(EMPTY_CHAT_STYLE_KEY, style.name.lowercase()).apply()
     }
 
+    fun setScopePlacement(placement: ScopeScreenPlacement) {
+        _state.value = _state.value.copy(motion = _state.value.motion.copy(scopePlacement = placement))
+        preferences.edit().putString(SCOPE_PLACEMENT_KEY, placement.name.lowercase()).apply()
+    }
+
+    fun setScopeDigits(enabled: Boolean) {
+        _state.value = _state.value.copy(motion = _state.value.motion.copy(scopeDigits = enabled))
+        preferences.edit().putBoolean(SCOPE_DIGITS_KEY, enabled).apply()
+    }
+
     /** 把自定义色放到最近使用的最前面，去重后截断到 [RECENT_CUSTOM_COLOR_LIMIT] 个。 */
     fun rememberCustomColor(argb: Int) {
         val recent = pushRecentColor(_state.value.recentCustomColors, argb, RECENT_CUSTOM_COLOR_LIMIT)
@@ -172,6 +186,9 @@ class ThemePreferenceStore(context: Context) {
             composer = ComposerGlowStyle.fromPreferenceValue(preferences.getString(COMPOSER_GLOW_STYLE_KEY, null)),
             indicator = GenerationIndicatorStyle.fromPreferenceValue(preferences.getString(INDICATOR_STYLE_KEY, null)),
             emptyChat = EmptyChatStyle.fromPreferenceValue(preferences.getString(EMPTY_CHAT_STYLE_KEY, null)),
+            scopePlacement = ScopeScreenPlacement.fromPreferenceValue(preferences.getString(SCOPE_PLACEMENT_KEY, null)),
+            // 缺省显示数字。
+            scopeDigits = !preferences.contains(SCOPE_DIGITS_KEY) || preferences.getBoolean(SCOPE_DIGITS_KEY, true),
         ),
         recentCustomColors = decodeRecentColors(preferences.getString(RECENT_CUSTOM_COLORS_KEY, null)),
     )

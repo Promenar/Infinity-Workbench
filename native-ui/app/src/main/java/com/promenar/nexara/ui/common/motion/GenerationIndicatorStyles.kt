@@ -91,7 +91,7 @@ internal class IndicatorPainter {
 /**
  * 以画布中心为原点绘制一种灯语指示。[k] 为每个设计单位（dp）对应的像素数，已含调用方缩放。
  * 交换机面板的灯语：常亮 = 在线，高频随机闪烁 = 正在收发，琥珀（第三色）= 忙碌或告警。
- * 按 [motion] 的各阶段权重分别绘制，阶段切换时交叉淡入淡出。
+ * 按 [motion] 的各阶段权重分别绘制，阶段切换时交叉淡入淡出；思考内容到达后与正文同属流式，配色与节奏一致。
  */
 internal fun DrawScope.drawGenerationIndicator(
     style: GenerationIndicatorStyle,

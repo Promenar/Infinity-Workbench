@@ -10,7 +10,6 @@
     <string name="run_dock_paused">已暂停</string>
     <string name="run_dock_paused_step">已暂停 · %1$s</string>
     <string name="run_dock_background">后台任务</string>
-    <string name="run_dock_elapsed_minutes">%1$d 分</string>
     <string name="run_detail_status_running">进行中</string>
     <string name="run_detail_status_done">已完成</string>
     <string name="run_detail_status_paused">已暂停</string>

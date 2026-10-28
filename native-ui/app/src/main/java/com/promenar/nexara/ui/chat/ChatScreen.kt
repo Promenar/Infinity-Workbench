@@ -148,6 +148,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -648,7 +650,8 @@ fun ChatScreenContent(
             awaitingUser = uiState.approvalRequest != null || state.subagentApprovals.isNotEmpty() || state.pendingQuestion != null,
         ),
         retry = state.generationRetry,
-        outputLength = uiState.streamingContent.length,
+        // 速率按正文加思考内容的到达字数估算：只有思考内容到达时也按流式显示。
+        outputLength = com.promenar.nexara.ui.common.motion.generationOutputLength(uiState.streamingContent, latestAssistantMsg?.reasoning),
     )
     CompositionLocalProvider(
         com.promenar.nexara.ui.media.LocalWorkspaceMedia provides workspaceMedia,
@@ -775,11 +778,8 @@ fun ChatScreenContent(
             val boardTitle = state.stateBoard?.board?.title
             val pendingApprovals = (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting }?.calls?.size?.coerceAtLeast(1) ?: 0) +
                 state.subagentApprovals.size
+            // 本轮用时由运行坞按秒自行刷新，不在这里计时，避免整个会话内容逐秒重组。
             val turnStartedAt = state.generationStartedAt?.takeIf { uiState.isGenerating }
-            var dockNow by remember { mutableStateOf(System.currentTimeMillis()) }
-            LaunchedEffect(uiState.isGenerating) {
-                while (uiState.isGenerating) { dockNow = System.currentTimeMillis(); delay(15_000) }
-            }
             val dock = com.promenar.nexara.ui.chat.components.runDockState(
                 plan = lastVisiblePlan.takeIf { taskPanel != null && planBarVisible },
                 isGenerating = uiState.isGenerating,
@@ -788,19 +788,16 @@ fun ChatScreenContent(
                 enabledSchedules = activitySummary?.enabledSchedules ?: 0,
                 boardTitle = boardTitle,
                 awaitingAnswer = state.pendingQuestion != null,
-                elapsedMillis = turnStartedAt?.let { (dockNow - it).coerceAtLeast(0) },
+                elapsedMillis = null,
             )
             var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
             if (dock != null) lastDock = dock
             if (state.touchLocked) {
-                val lockDock = dock ?: lastDock
-                com.promenar.nexara.ui.chat.TouchLockDialog(
-                    state = com.promenar.nexara.ui.chat.TouchLockUiState(
-                        phase = com.promenar.nexara.ui.chat.touchLockPhase(uiState.isGenerating, pendingApprovals),
-                        label = com.promenar.nexara.ui.chat.touchLockStepTitle(lockDock?.label).orEmpty(),
-                        meta = lockDock?.let { com.promenar.nexara.ui.chat.components.runDockMetaText(it) }.orEmpty(),
-                        progress = lockDock?.progress,
-                    ),
+                TouchLockDialogWithClock(
+                    dock = dock ?: lastDock,
+                    isGenerating = uiState.isGenerating,
+                    pendingApprovals = pendingApprovals,
+                    startedAt = turnStartedAt,
                     unlock = state.touchLockUnlock,
                     onUnlock = actions.onUnlockTouch,
                 )
@@ -1210,28 +1207,24 @@ fun ChatScreenContent(
                             attachmentMenuExpanded = attachmentMenuExpanded,
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
                             onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
-                            topContent = {
-                                // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
-                                AnimatedVisibility(
-                                    visible = dock != null && !inspectorMode,
-                                    enter = fadeIn(tween(220, delayMillis = 60)) +
-                                        expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
-                                    exit = fadeOut(tween(160)) +
-                                        shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
-                                ) {
-                                    lastDock?.let { shown ->
-                                        com.promenar.nexara.ui.chat.components.RunDockRow(
-                                            state = shown,
-                                            onOpen = { tab ->
-                                                hiddenPlanSignature = null
-                                                runSheetTab = tab
-                                                runSheetOpen = true
-                                            },
-                                            onJumpToApproval = jumpToApproval,
-                                            onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
-                                        )
-                                    }
+                            // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
+                            runDockVisible = dock != null && !inspectorMode,
+                            runDock = {
+                                lastDock?.let { shown ->
+                                    com.promenar.nexara.ui.chat.components.RunDockRow(
+                                        state = shown,
+                                        onOpen = { tab ->
+                                            hiddenPlanSignature = null
+                                            runSheetTab = tab
+                                            runSheetOpen = true
+                                        },
+                                        onJumpToApproval = jumpToApproval,
+                                        startedAt = turnStartedAt,
+                                        onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
+                                    )
                                 }
+                            },
+                            topContent = {
                                 // 排队托盘紧贴输入区：自下而上是正在写的、排着的、正在运行的。
                                 val queue = state.composerQueue
                                 var lastQueue by remember { mutableStateOf(queue) }
@@ -2638,7 +2631,10 @@ fun ChatInputBar(
     executionMode: com.promenar.nexara.ui.common.ExecutionMode? = null,
     onExecutionModeChange: (com.promenar.nexara.ui.common.ExecutionMode) -> Unit = {},
     attachmentContent: @Composable () -> Unit = {},
-    /** 浮岛顶部区域（计划条），与输入区共用底色和圆角。 */
+    /** 运行坞是否出现；出现时 [runDock] 作为浮岛顶层，与输入区共用底色、圆角与光效边框。 */
+    runDockVisible: Boolean = false,
+    runDock: @Composable () -> Unit = {},
+    /** 运行坞与输入区之间的内容（排队托盘、斜杠命令候选），与输入区共用底色和圆角。 */
     topContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val haptics = LocalNexaraHaptics.current
@@ -2705,8 +2701,35 @@ fun ChatInputBar(
         ComposerIslandLights(glow, motionStyle, Modifier.matchParentSize())
         // 尺寸动画会按矩形裁剪，放在容器内部；放在外层会把圆角投影切成直角。
         Column(Modifier.animateContentSize()) {
+        // 同一浮岛只保留一条点阵带：运行坞下沿的细灯带，或顶沿模式的点阵屏（贴在输入区上沿，运行坞出现时就在接缝处）。
+        val motionStyles = LocalNexaraMotionStyles.current
+        val scopeLingering = com.promenar.nexara.ui.common.motion.LocalGenerationMotion.current.lingering
+        val bands = composerBandLayout(motionStyles, runDockVisible, screenActive = isGenerating || awaitingUser || scopeLingering)
+        AnimatedVisibility(
+            visible = runDockVisible,
+            enter = fadeIn(tween(220, delayMillis = 60)) + expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+            exit = fadeOut(tween(160)) + shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+        ) {
+            Column {
+                runDock()
+                AnimatedVisibility(
+                    visible = bands.dockStrip,
+                    enter = fadeIn(tween(160)) + expandVertically(TaskPanelSizeSpring),
+                    exit = fadeOut(tween(120)) + shrinkVertically(TaskPanelSizeSpring),
+                ) { ComposerDockStrip(glow) }
+            }
+        }
         topContent()
-        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp)) {
+        AnimatedVisibility(
+            visible = bands.scope == ScopeSlot.ISLAND_TOP || bands.scope == ScopeSlot.DOCK_SEAM,
+            enter = fadeIn(tween(220)) + expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),
+            exit = fadeOut(tween(160)) + shrinkVertically(TaskPanelSizeSpring, shrinkTowards = Alignment.Bottom),
+        ) { ComposerScopeBand(glow) }
+        Column(
+            Modifier
+                .onPlaced { glow.lightsTop = it.positionInParent().y }
+                .padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp),
+        ) {
             attachmentContent()
             BasicTextField(
                 value = text,
@@ -3112,4 +3135,27 @@ internal fun groupHasPendingApproval(
     if (request == null || group.isUser || group.isNotice) return false
     val targetId = request.assistantMessageId ?: return isLastGroup
     return group.messages.any { it.id == targetId }
+}
+
+/** 触摸锁定遮罩：运行坞的当前动作、计划进度与秒级用时；用时在这里逐秒刷新，只重组遮罩本身。 */
+@Composable
+private fun TouchLockDialogWithClock(
+    dock: com.promenar.nexara.ui.chat.components.RunDockUiState?,
+    isGenerating: Boolean,
+    pendingApprovals: Int,
+    startedAt: Long?,
+    unlock: com.promenar.nexara.ui.theme.TouchLockUnlock,
+    onUnlock: () -> Unit,
+) {
+    val elapsedSeconds by com.promenar.nexara.ui.chat.components.rememberRunElapsedSeconds(startedAt)
+    TouchLockDialog(
+        state = TouchLockUiState(
+            phase = touchLockPhase(isGenerating, pendingApprovals),
+            label = touchLockStepTitle(dock?.label).orEmpty(),
+            meta = dock?.let { com.promenar.nexara.ui.chat.components.runDockMetaText(it, elapsedSeconds) }.orEmpty(),
+            progress = dock?.progress,
+        ),
+        unlock = unlock,
+        onUnlock = onUnlock,
+    )
 }
