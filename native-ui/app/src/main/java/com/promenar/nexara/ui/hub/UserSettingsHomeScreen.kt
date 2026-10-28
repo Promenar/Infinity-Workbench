@@ -165,7 +165,7 @@ fun UserSettingsHomeScreen(
                 context.startActivity(
                     android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/Promenar/Nexara"),
+                        android.net.Uri.parse(context.getString(R.string.ux2_project_repository_url)),
                     ),
                 )
             },
@@ -173,7 +173,7 @@ fun UserSettingsHomeScreen(
                 context.startActivity(
                     android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/Promenar/Nexara"),
+                        android.net.Uri.parse(context.getString(R.string.ux2_project_repository_url)),
                     ),
                 )
             },
