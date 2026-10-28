@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey
  * 不可用时拒绝执行而不回退到会话私有工作区。
  *
  * [location] 的含义由 [kind] 决定：[KIND_PROJECT] 为 App 私有项目根下的目录名，不随安装路径变化；
- * [KIND_SHARED] 为共享存储卷上的绝对路径；[KIND_LINUX_HOME] 为 `/root#环境代次标识`，不包含宿主安装路径。
+ * [KIND_SHARED] 为共享存储卷上的绝对路径；[KIND_LINUX_HOME] 为 `容器内绝对路径#环境代次标识`，不包含宿主安装路径。
  */
 @Entity(tableName = "workspaces", indices = [Index(value = ["kind", "location"], unique = true)])
 data class WorkspaceEntity(
@@ -31,7 +31,7 @@ data class WorkspaceEntity(
         fun isValidLocation(kind: String, location: String): Boolean = when (kind) {
             "branch_shared" -> location.isNotBlank() && location.length <= 128 && location.all { it.isLetterOrDigit() || it in "-_:." }
             KIND_PROJECT -> PROJECT_NAME.matches(location) && location != "." && location != ".."
-            KIND_LINUX_HOME -> location.startsWith("/root#") && com.promenar.nexara.data.repository.PersistentFileIdentity.isValid(location.removePrefix("/root#"))
+            KIND_LINUX_HOME -> com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.parse(location) != null
             KIND_SHARED -> location.length in 2..MAX_SHARED_PATH_LENGTH &&
                 location.startsWith("/") && !location.endsWith("/") &&
                 '\u0000' !in location && '\\' !in location &&

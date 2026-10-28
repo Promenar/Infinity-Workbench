@@ -109,6 +109,18 @@ class BranchPlanLedgerTest {
         assertThat(text.length).isLessThan(25_000)
         assertThat(BranchInitialContext.compose(plan.copy(contextMode = BranchContextMode.FRESH), "主会话", "旧内容", history)).doesNotContain("旧内容")
     }
+    @Test fun `Linux目录worktree授权冻结实际起点`() = runBlocking {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        db.workspaceDao().register(com.promenar.nexara.data.local.db.entity.WorkspaceEntity("linux", "linux_home", "site", "/srv/site#$identity", 1))
+        db.sessionDao().updateRow(db.sessionDao().getById("main")!!.copy(workspaceId = "linux"))
+        val plan = BranchPlan("目录分支", "验收", listOf("执行"), workMode = BranchWorkMode.WORKTREE,
+            worktree = BranchWorktree("feat/site", "main", "/srv/worktrees/site", "隔离"), approvalMode = "workspace")
+        val pending = ledger.createBatch("main", "ai", listOf(call.copy(arguments = BranchPlanProtocol.encode(plan))), SessionBranchTool().toProtocolTool()).pending!!
+        val childId = ledger.resolve(pending, answer(BranchDecision.DISPATCH).copy(workMode = BranchWorkMode.WORKTREE))!!.branchSessionId!!
+        val auth = Json.decodeFromString<BranchWorktreeAuthorization>(db.messageDao().getBySession(childId).single { it.name == BranchWorktreeAuthorization.MESSAGE_NAME }.content)
+        assertThat(auth.workingDirectory).isEqualTo("/srv/site")
+    }
+
     @Test fun `worktree仅复制获批目录必要挂载且冻结来源`() = runBlocking {
         db.sessionDao().updateRow(db.sessionDao().getById("main")!!.copy(workspaceRootUuid = "shared-root"))
         val source = com.promenar.nexara.data.local.db.entity.ExternalMountEntity("mount", "data", "real_path", "/approved/data", "main", false, 1)

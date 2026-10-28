@@ -56,8 +56,13 @@ internal data class LinuxFilesUiState(
     /** 运行时状态；非 [LinuxRuntimeState.Ready] 时显示空状态。 */
     val runtime: LinuxRuntimeState? = null,
     val path: String = LINUX_HOME_PATH,
-    /** 当前目录的原始条目（含隐藏项，未排序）。 */
+    /** [listedPath] 目录的原始条目（含隐藏项，未排序）。 */
     val entries: List<LinuxFileEntry> = emptyList(),
+    /**
+     * [entries] 所属目录。进入其它目录时旧列表保留到新目录读完，页面据此做层级切换而不先闪成空白；
+     * 运行时未就绪时为 null。
+     */
+    val listedPath: String? = null,
     val sort: LinuxFileSort = LinuxFileSort.MODIFIED,
     val showHidden: Boolean = true,
     /** 当前目录内的名称筛选；进入其它目录时清空。 */
@@ -81,6 +86,9 @@ internal data class LinuxFilesUiState(
     val visibleEntries: List<LinuxFileEntry> by lazy { filterLinuxEntriesByName(sortLinuxEntries(entries, sort, showHidden), query) }
 
     val selecting: Boolean get() = selection.isNotEmpty()
+
+    /** 已切换到 [path] 但仍显示上一个目录的列表。 */
+    val stale: Boolean get() = listedPath != path
 
     val selectedEntries: List<LinuxFileEntry> get() = entries.filter { it.path in selection }
 
@@ -112,7 +120,7 @@ internal class LinuxFilesViewModel(
                 if (runtimeState is LinuxRuntimeState.Ready && !wasReady) load()
                 if (runtimeState !is LinuxRuntimeState.Ready) {
                     loadJob?.cancel()
-                    _state.update { it.copy(entries = emptyList(), loading = false, error = null, selection = emptySet()) }
+                    _state.update { it.copy(entries = emptyList(), listedPath = null, loading = false, error = null, selection = emptySet()) }
                 }
             }
         }
@@ -122,8 +130,8 @@ internal class LinuxFilesViewModel(
 
     fun navigate(path: String) {
         val target = normalizeLinuxPath(path)
-        _state.update { it.copy(path = target, entries = emptyList(), query = "", selection = emptySet(), error = null, notice = null) }
-        load()
+        _state.update { it.copy(path = target, query = "", selection = emptySet(), error = null, notice = null) }
+        load(keepEntries = true)
     }
 
     /** 回到上一级；已在根目录返回 false，由页面交给外层返回。 */
@@ -193,10 +201,11 @@ internal class LinuxFilesViewModel(
     // ── 选择与剪贴板 ──
 
     fun toggleSelection(path: String) = _state.update { state ->
-        state.copy(selection = if (path in state.selection) state.selection - path else state.selection + path)
+        // 新目录读完前列表仍是上一个目录，不在其中开始选择。
+        if (state.stale) state else state.copy(selection = if (path in state.selection) state.selection - path else state.selection + path)
     }
 
-    fun selectAll() = _state.update { state -> state.copy(selection = state.visibleEntries.map { it.path }.toSet()) }
+    fun selectAll() = _state.update { state -> if (state.stale) state else state.copy(selection = state.visibleEntries.map { it.path }.toSet()) }
 
     fun clearSelection() = _state.update { it.copy(selection = emptySet()) }
 
@@ -302,7 +311,14 @@ internal class LinuxFilesViewModel(
         if (!_state.value.ready) return
         loadJob?.cancel()
         val path = _state.value.path
-        _state.update { it.copy(loading = true, error = null, entries = if (keepEntries) it.entries else emptyList(), nowMs = clock()) }
+        _state.update {
+            it.copy(
+                loading = true, error = null,
+                entries = if (keepEntries) it.entries else emptyList(),
+                listedPath = if (keepEntries) it.listedPath else null,
+                nowMs = clock(),
+            )
+        }
         loadJob = viewModelScope.launch {
             try {
                 val entries = withContext(io) { files.list(path) }
@@ -310,6 +326,7 @@ internal class LinuxFilesViewModel(
                     if (state.path != path) state
                     else state.copy(
                         entries = entries,
+                        listedPath = path,
                         loading = false,
                         error = null,
                         // 刷新后已不存在的条目移出选择。
@@ -320,7 +337,7 @@ internal class LinuxFilesViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _state.update { if (it.path != path) it else it.copy(loading = false, error = error.toLinuxFileErrorCode(), entries = emptyList()) }
+                _state.update { if (it.path != path) it else it.copy(loading = false, error = error.toLinuxFileErrorCode(), entries = emptyList(), listedPath = path) }
             }
         }
     }

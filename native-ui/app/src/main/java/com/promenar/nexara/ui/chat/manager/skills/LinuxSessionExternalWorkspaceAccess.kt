@@ -44,7 +44,16 @@ class LinuxSessionExternalWorkspaceAccess(
 ) : ExternalWorkspaceAccess by original {
     private data class Namespace(val root: FileEntry, val workspace: SessionWorkspace, val mount: ExternalMount,
         val branch: BranchLinuxFileNamespace?, val workspaceOverride: BranchLinuxWorkspaceOperation?) {
-        val workingDirectory: String get() = branch?.commandWorkspace?.workingDirectory ?: LinuxSessionPaths.WORKSPACE_ROOT
+        private val record get() = when (workspace) {
+            is SessionWorkspace.Directory -> workspace.workspace
+            is SessionWorkspace.Unavailable -> workspace.workspace
+            SessionWorkspace.Private -> null
+        }
+        val selectedDirectory: String? get() = record?.takeIf {
+            branch == null && it.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME
+        }?.let { LinuxWorkspaceLocation.workingDirectory(it) }
+        val workingDirectory: String get() = branch?.commandWorkspace?.workingDirectory
+            ?: selectedDirectory ?: LinuxSessionPaths.WORKSPACE_ROOT
     }
     private val versions = linkedMapOf<String, ByteArray>()
 
@@ -67,9 +76,21 @@ class LinuxSessionExternalWorkspaceAccess(
 
     override suspend fun workspaceMount(sessionId: String): ExternalMount = namespace(sessionId).mount
 
+    internal suspend fun toolRootUuid(sessionId: String): String = operation {
+        val current = namespace(sessionId)
+        uuid(current, current.workingDirectory)
+    }
+
+    internal suspend fun workingDirectory(sessionId: String): String = namespace(sessionId).workingDirectory
+
     override suspend fun resolveUuid(sessionId: String, uuid: String): String? = operation {
         val current = namespace(sessionId)
-        ExternalMountPaths.uuidPath(uuid, listOf(current.mount))?.let { return@operation LinuxSessionPaths.normalize(it) }
+        val prefix = "external:${current.mount.id}:"
+        if (uuid.startsWith(prefix)) {
+            val decoded = try { String(Base64.getUrlDecoder().decode(uuid.removePrefix(prefix)), Charsets.UTF_8) }
+                catch (_: IllegalArgumentException) { return@operation null }
+            return@operation normalize(current, decoded)
+        }
         if (uuid.startsWith("external:")) {
             val mounts = withOriginalBindings(current) { original.visible(sessionId).filter(::allowed) + listOfNotNull(original.workspaceMount(sessionId)) }
             return@operation ExternalMountPaths.uuidPath(uuid, mounts)?.let(::fromOriginal)
@@ -85,8 +106,8 @@ class LinuxSessionExternalWorkspaceAccess(
             Sha256Utils.hash(read(sessionId, normalized, VERSION_BYTES))
         } else ""
         FileEntry(
-            uuid = ExternalMountPaths.uuid(current.mount, normalized),
-            parentUuid = normalized.takeUnless { it == "/" }?.let { ExternalMountPaths.uuid(current.mount, parent(it)) },
+            uuid = uuid(current, normalized),
+            parentUuid = normalized.takeUnless { it == "/" || it == current.workingDirectory }?.let { uuid(current, parent(it)) },
             name = if (normalized == "/") "" else normalized.substringAfterLast('/'),
             hash = hash, sizeBytes = stat.size, isDirectory = stat.isDirectory,
             physicalRootPath = "", materializedPath = normalized, createdAt = 0, updatedAt = stat.lastModified,
@@ -105,7 +126,8 @@ class LinuxSessionExternalWorkspaceAccess(
                 .map { it.copy(path = child(path, it.name)) }
             LinuxSessionPathKind.MOUNTS -> visible(sessionId).map { ExternalFolderEntry("/mnt/${it.alias}", it.alias, true, 0, it.createdAt) }
             LinuxSessionPathKind.ROOTFS -> {
-                val existing = if (path == "/home" && rootfs.stat(path) == null) emptyList() else rootfs.list(path)
+                val backend = rootfs(current)
+                val existing = if (path == "/home" && backend.stat(path) == null) emptyList() else backend.list(path)
                 when (path) {
                     "/" -> existing.filterNot { it.name in setOf("workspace", "mnt", "home") } +
                         listOf(directory("/workspace"), directory("/mnt"), directory("/home"))
@@ -114,7 +136,7 @@ class LinuxSessionExternalWorkspaceAccess(
                 }
             }
         }
-        entries.filter { runCatching { LinuxSessionPaths.normalize(it.path) }.isSuccess }
+        entries.filter { runCatching { normalize(current, it.path) }.isSuccess }
     }
 
     override suspend fun read(sessionId: String, virtualPath: String, maxBytes: Long): ByteArray = operation {
@@ -125,7 +147,7 @@ class LinuxSessionExternalWorkspaceAccess(
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).read(target.path, maxBytes)
             LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.read(sessionId, target.path, maxBytes) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.read(sessionId, it, maxBytes) }
-            LinuxSessionPathKind.ROOTFS -> rootfs.read(target.path, maxBytes)
+            LinuxSessionPathKind.ROOTFS -> rootfs(current).read(target.path, maxBytes)
             LinuxSessionPathKind.MOUNTS -> fail("IS_DIRECTORY", "目标是目录")
         }
         remember(current, path, bytes)
@@ -141,7 +163,7 @@ class LinuxSessionExternalWorkspaceAccess(
             LinuxSessionPathKind.PRIVATE -> writePrivate(sessionId, current, target.path, bytes, expectedSha256, createOnly)
             LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.write(sessionId, target.path, bytes, expectedSha256, createOnly) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.write(sessionId, it, bytes, expectedSha256, createOnly) }
-            LinuxSessionPathKind.ROOTFS -> rootfs.write(target.path, bytes, expectedSha256, createOnly)
+            LinuxSessionPathKind.ROOTFS -> rootfs(current).write(target.path, bytes, expectedSha256, createOnly)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能覆盖挂载根目录")
         }
         remember(current, normalized, bytes)
@@ -157,7 +179,7 @@ class LinuxSessionExternalWorkspaceAccess(
             LinuxSessionPathKind.PRIVATE -> privateBackend(current).let { backend -> backend.createDirectory(target.path).also { backend.confirmCreated() } }
             LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.createDirectory(sessionId, target.path) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.createDirectory(sessionId, it) }
-            LinuxSessionPathKind.ROOTFS -> rootfs.createDirectory(target.path)
+            LinuxSessionPathKind.ROOTFS -> rootfs(current).createDirectory(target.path)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能创建挂载根目录")
         }
         entry(sessionId, normalized) ?: fail("NOT_FOUND", "创建后目录不可用")
@@ -176,7 +198,7 @@ class LinuxSessionExternalWorkspaceAccess(
             }
             LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.delete(sessionId, target.path, expectedSha256, irreversible) }
             LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.delete(sessionId, it, expectedSha256, irreversible) }
-            LinuxSessionPathKind.ROOTFS -> rootfs.delete(target.path, expectedSha256)
+            LinuxSessionPathKind.ROOTFS -> rootfs(current).delete(target.path, expectedSha256)
             LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能删除挂载根目录")
         }
     }
@@ -252,17 +274,45 @@ class LinuxSessionExternalWorkspaceAccess(
             val uuid = (normalized[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
             if (uuid.isNotEmpty()) resolved[uuid] = resolveUuid(sessionId, uuid) ?: return@operation null
         }
-        val target = ToolExecutionTargets.extract(tool, normalized.toString(), resolved, usesLinux = true) ?: return@operation null
+        val branchDirectory = current.branch?.commandWorkspace?.workingDirectory?.takeIf(LinuxWorkspaceLocation::isAllowedDirectory)
+        val inputPaths = listOf("path", "parentPath", "newParentPath").mapNotNull { (normalized[it] as? JsonPrimitive)?.content } + resolved.values
+        val derivedNames = listOf("name", "newName").mapNotNull { (normalized[it] as? JsonPrimitive)?.content?.trim() }
+        // 解析器只临时替换可信 cwd 前缀；占位根避开全部输入，不能与真正的 /workspace 共用审批目标。
+        val extractionRoot = generateSequence("/nexara-linux-cwd") { it + "_" }.first { candidate ->
+            val name = candidate.removePrefix("/")
+            name !in derivedNames && inputPaths.none { name in it.split('/') }
+        }
+        fun extractionPath(path: String): String = if (branchDirectory != null &&
+            (path == branchDirectory || path.startsWith("$branchDirectory/")) && route(current, path).kind == LinuxSessionPathKind.ROOTFS)
+            extractionRoot + path.removePrefix(branchDirectory) else workspaceAlias(current, path)
+        val extraction = JsonObject(normalized.mapValues { (key, value) ->
+            if (key in setOf("path", "parentPath", "newParentPath") && value is JsonPrimitive && value.isString)
+                JsonPrimitive(extractionPath(value.content)) else value
+        })
+        val target = ToolExecutionTargets.extract(tool, extraction.toString(), resolved.mapValues { extractionPath(it.value) }, usesLinux = true) ?: return@operation null
         val parts = Json.parseToJsonElement(target) as? JsonArray ?: return@operation null
         val metadata = parts.lastOrNull() as? JsonObject
-        val tuple = if (metadata == null) parts.toList() else parts.dropLast(1)
+        val extractedTuple = if (metadata == null) parts.toList() else parts.dropLast(1)
+        val tuple = extractedTuple.mapIndexed { index, value ->
+            val path = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val selected = current.selectedDirectory
+            if (index == 0 || path == null) value
+            else if (branchDirectory != null && (path == extractionRoot || path.startsWith("$extractionRoot/")))
+                JsonPrimitive(branchDirectory + path.removePrefix(extractionRoot))
+            else if (selected != null && (path == LinuxSessionPaths.WORKSPACE_ROOT || path.startsWith("${LinuxSessionPaths.WORKSPACE_ROOT}/"))) {
+                val relative = path.removePrefix(LinuxSessionPaths.WORKSPACE_ROOT).ifEmpty { "/" }
+                val candidate = selected + relative.takeUnless { it == "/" }.orEmpty()
+                val routed = route(current, candidate)
+                if (routed.kind == LinuxSessionPathKind.WORKSPACE && routed.path == relative) JsonPrimitive(candidate) else value
+            } else value
+        }
         if ((tuple.firstOrNull() as? JsonPrimitive)?.content !in setOf("path", "move")) return@operation target
         val paths = tuple.drop(1).map { (it as? JsonPrimitive)?.content ?: return@operation null }
         paths.forEach { validatePath(sessionId, it) }
         val ids = visible(sessionId).associate { it.alias to it.id } + ("" to current.mount.id)
         val aliases = paths.map(LinuxSessionPaths::aliasOf).toSet() + ""
         val rootfsMutation = ToolExecutionTargets.isPathMutation(tool.function.name) && paths.any { route(current, it).kind == LinuxSessionPathKind.ROOTFS }
-        val skillMutation = ToolExecutionTargets.isPathMutation(tool.function.name) && paths.any(::isSkillsPath)
+        val skillMutation = ToolExecutionTargets.isPathMutation(tool.function.name) && paths.any { isSkillsPath(current, it) }
         JsonArray(tuple + JsonObject(metadata.orEmpty() + buildMap {
             put("linuxMode", JsonPrimitive(true))
             put("mountIds", JsonObject(aliases.sorted().associateWith { JsonPrimitive(ids[it] ?: return@operation null) }))
@@ -279,7 +329,19 @@ class LinuxSessionExternalWorkspaceAccess(
             val uuid = (values[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
             if (uuid.isNotEmpty()) {
                 val path = resolveUuid(sessionId, uuid) ?: fail("NOT_FOUND", "条目不属于当前 Linux 会话")
-                values[key] = JsonPrimitive(entry(sessionId, path)?.uuid ?: fail("NOT_FOUND", "条目不存在"))
+                values[key] = JsonPrimitive(entry(sessionId, workspaceAlias(current, path))?.uuid ?: fail("NOT_FOUND", "条目不存在"))
+            }
+        }
+        listOf("path", "parentPath", "newParentPath").forEach { key ->
+            (values[key] as? JsonPrimitive)?.takeIf { it.isString }?.let { values[key] = JsonPrimitive(workspaceAlias(current, it.content)) }
+        }
+        // 通用工具会 trim 路径参数；以 UUID 传递末尾空白的分支根，防止缺省父目录被改写。
+        if (current.branch != null && current.workingDirectory != current.workingDirectory.trim()) {
+            for ((pathKey, uuidKey) in mapOf("path" to if (tool == "list_files") "parentUuid" else "uuid", "parentPath" to "parentUuid", "newParentPath" to "newParentUuid")) {
+                if ((values[pathKey] as? JsonPrimitive)?.content == current.workingDirectory) {
+                    values[uuidKey] = JsonPrimitive(entry(sessionId, current.workingDirectory)?.uuid ?: fail("NOT_FOUND", "分支目录不存在"))
+                    values.remove(pathKey)
+                }
             }
         }
         JsonObject(values)
@@ -356,7 +418,20 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     private fun normalize(current: Namespace, path: String): String = LinuxSessionPaths.normalize(path, current.workingDirectory)
-    private fun route(current: Namespace, path: String): LinuxSessionPath = LinuxSessionPaths.route(normalize(current, path), current.workspace == SessionWorkspace.Private && current.branch == null).also {
+    private fun uuid(current: Namespace, path: String): String = "external:${current.mount.id}:" +
+        Base64.getUrlEncoder().withoutPadding().encodeToString(normalize(current, path).toByteArray(Charsets.UTF_8))
+    private fun rootfs(current: Namespace): ExternalFolderBackend = (rootfs as? LinuxSessionRootfsBackend)?.forWorkingDirectory(current.workingDirectory) ?: rootfs
+    /** 通用文件工具使用既有挂载别名，审批与回传路径保留实际容器目录。 */
+    private fun workspaceAlias(current: Namespace, path: String): String {
+        if (current.selectedDirectory == null) return path
+        val target = route(current, path)
+        return if (target.kind == LinuxSessionPathKind.WORKSPACE)
+            LinuxSessionPaths.WORKSPACE_ROOT + target.path.takeUnless { it == "/" }.orEmpty() else path
+    }
+
+    private fun route(current: Namespace, path: String): LinuxSessionPath = LinuxSessionPaths.route(
+        normalize(current, path), current.workspace == SessionWorkspace.Private && current.branch == null, current.selectedDirectory, current.workingDirectory,
+    ).also {
         if (it.kind == LinuxSessionPathKind.WORKSPACE && current.workspace is SessionWorkspace.Unavailable) fail("UNAVAILABLE", "会话主工作区不可用，请检查目录与授权")
     }
 
@@ -404,7 +479,7 @@ class LinuxSessionExternalWorkspaceAccess(
                 ExternalFolderEntry(path, it.name, it.isDirectory, it.sizeBytes, it.updatedAt, it.hash)
             }
             LinuxSessionPathKind.MOUNTS -> directory(path)
-            LinuxSessionPathKind.ROOTFS -> if (path == "/home") directory(path) else rootfs.stat(path)
+            LinuxSessionPathKind.ROOTFS -> if (path == "/home") directory(path) else rootfs(current).stat(path)
         }
     }
 
@@ -461,11 +536,12 @@ class LinuxSessionExternalWorkspaceAccess(
         path == "/mnt" || path.startsWith("/mnt/") -> path
         else -> LinuxSessionPaths.WORKSPACE_ROOT + path.takeUnless { it == "/" }.orEmpty()
     }
-    private fun isSkillsPath(path: String): Boolean {
+    private fun isSkillsPath(current: Namespace, path: String): Boolean {
         if (path == LinuxSessionPaths.SKILLS_ROOT || path.startsWith("${LinuxSessionPaths.SKILLS_ROOT}/")) return true
         val relative = when {
-            path == "/workspace" || path.startsWith("/workspace/") -> path.removePrefix("/workspace")
             path == "/home/session" || path.startsWith("/home/session/") -> path.removePrefix("/home/session")
+            path == current.workingDirectory || path.startsWith("${current.workingDirectory}/") -> path.removePrefix(current.workingDirectory)
+            path == "/workspace" || path.startsWith("/workspace/") -> path.removePrefix("/workspace")
             else -> return false
         }.lowercase(java.util.Locale.ROOT)
         return relative == "/.agents" || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")

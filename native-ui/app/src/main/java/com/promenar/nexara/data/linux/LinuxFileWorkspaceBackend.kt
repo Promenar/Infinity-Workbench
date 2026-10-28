@@ -7,9 +7,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 目录工作区协议适配：虚拟 `/` 对应容器 `/root`，假硬链接保持普通文件视图。 */
-internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val available: () -> Boolean) : ExternalFolderBackend {
-    private val files = files.forHome(available)
+/** 目录工作区协议适配：虚拟 `/` 对应选定的容器目录，假硬链接保持普通文件视图。 */
+internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val directory: String = "/root", private val available: () -> Boolean) : ExternalFolderBackend {
+    private val files = files.forDirectory(directory, available)
     override suspend fun stat(path: String): ExternalFolderEntry? = operation {
         val normalized = normalize(path)
         val entry = files.stat(guest(normalized)) ?: return@operation null
@@ -83,7 +83,7 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
     private fun mutation(path: String): String = normalize(path).also { if (it == "/") fail("INVALID_PATH", "不能修改工作区根目录") }
     private fun parent(path: String) = path.substringBeforeLast('/').ifEmpty { "/" }
     private fun join(parent: String, name: String) = parent.trimEnd('/') + "/" + name
-    private fun guest(path: String) = "/root" + path.takeUnless { it == "/" }.orEmpty()
+    private fun guest(path: String) = directory + path.takeUnless { it == "/" }.orEmpty()
     private fun external(path: String, entry: LinuxFileEntry, hash: String? = null) = ExternalFolderEntry(path, if (path == "/") "" else entry.name,
         entry.type == LinuxFileType.DIRECTORY, entry.size, entry.modifiedMs, hash)
     private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }

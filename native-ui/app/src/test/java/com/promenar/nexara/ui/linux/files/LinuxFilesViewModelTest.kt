@@ -104,6 +104,25 @@ class LinuxFilesViewModelTest {
     }
 
     @Test
+    fun `entering a folder keeps the previous listing until the new one is read`() = runTest(dispatcher) {
+        val vm = viewModel()
+        val before = vm.state.value.entries
+        assertThat(vm.state.value.listedPath).isEqualTo("/root/projects")
+        vm.navigate("/root/shared")
+        // 读取完成前仍显示上一目录，避免列表先闪成空白再出现。
+        assertThat(vm.state.value.path).isEqualTo("/root/shared")
+        assertThat(vm.state.value.entries).isEqualTo(before)
+        assertThat(vm.state.value.stale).isTrue()
+        vm.selectAll()
+        vm.toggleSelection(before.first().path)
+        assertThat(vm.state.value.selection).isEmpty()
+        advanceUntilIdle()
+        assertThat(vm.state.value.listedPath).isEqualTo("/root/shared")
+        assertThat(vm.state.value.stale).isFalse()
+        assertThat(vm.state.value.entries).isNotEqualTo(before)
+    }
+
+    @Test
     fun `navigate up stops at root and go home returns to the home folder`() = runTest(dispatcher) {
         val vm = viewModel("/root")
         assertThat(vm.state.value.atHome).isTrue()

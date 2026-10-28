@@ -215,6 +215,7 @@ class BuiltinCommandRunner(
                             }
                             if (count < 0) break
                             val committed = terminalText.accept(String(chunk, 0, count))
+                            answerTerminalQueries(process, terminalText)
                             log?.write(committed.toByteArray(Charsets.UTF_8))
                             val snapshot = terminalText.snapshot().stdout
                             if (onTerminalOutput != null) onTerminalOutput(snapshot)
@@ -319,6 +320,18 @@ class BuiltinCommandRunner(
     internal fun launchCommand(request: BuiltinCommandRequest, pidFile: File, requireIdentity: Boolean): List<String> =
         groupLauncher + listOf(shell, "-c", WRAPPER, "nexara-exec", pidFile.path, bootIdentity().orEmpty(),
             if (requireIdentity) "1" else "0", hostUtility("cat"), hostUtility("mv"), hostUtility("printf")) + request.argv
+
+    /** 把终端查询答复写回伪终端；输入端已关闭（传了 stdin）或进程已结束时放弃答复。 */
+    private fun answerTerminalQueries(process: Process, terminal: com.promenar.nexara.data.linux.LinuxExecTerminalText) {
+        val replies = terminal.takeReplies()
+        if (replies.isEmpty()) return
+        runCatching {
+            synchronized(process.outputStream) {
+                process.outputStream.write(replies.toByteArray(Charsets.UTF_8))
+                process.outputStream.flush()
+            }
+        }
+    }
 
     private fun hostUtility(name: String): String =
         listOfNotNull(File(shell).parentFile, File("/system/bin"), File("/usr/bin"), File("/bin"))

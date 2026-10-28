@@ -82,6 +82,94 @@ class LinuxSessionFileSkillTest {
 
     @After fun cleanup() { com.promenar.nexara.startup.StartupWriteBarrier.resetForTesting(); unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
 
+    @Test fun `Linux目录相对文件使用选中根且绝对别名保持一致`() = runBlocking {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        selected = SessionWorkspace.Directory(WorkspaceEntity("linux", WorkspaceEntity.KIND_LINUX_HOME, "app", "/opt/app#$identity", 0), externalDirectory)
+        coEvery { mounts.read("one", "/same.txt", any()) } returns "selected".toByteArray()
+        assertThat(access.read("one", "same.txt").toString(Charsets.UTF_8)).isEqualTo("selected")
+        assertThat(access.read("one", "/opt/app/same.txt").toString(Charsets.UTF_8)).isEqualTo("selected")
+        assertThat(access.read("one", "/workspace/same.txt").toString(Charsets.UTF_8)).isEqualTo("selected")
+        coVerify(exactly = 3) { mounts.read("one", "/same.txt", any()) }
+        val write = FileWriteSkill(files, workspace)
+        val target = access.executionTarget("one", write.toProtocolTool(), json("path" to ".agents/skills/a.md", "content" to "new"))!!
+        assertThat(target).contains("\"linuxSkills\":true")
+        assertThat(target).contains("\"oneShot\":true")
+        selected = (selected as SessionWorkspace.Directory).let { it.copy(workspace = it.workspace.copy(location = "/home#$identity")) }
+        val privateSkills = access.executionTarget("one", write.toProtocolTool(), json("path" to "/home/session/.agents/skills/a.md", "content" to "new"))!!
+        assertThat(privateSkills).contains("\"linuxSkills\":true")
+        assertThat(privateSkills).contains("\"oneShot\":true")
+    }
+
+    @Test fun `隐藏名称与尾空格的登记根通过工具别名读取且审批保留实际路径`() = runBlocking {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        coEvery { mounts.read("one", "/same.txt", any()) } returns "external-data".toByteArray()
+        listOf("/opt/.nexara-project", "/root/.l2s.project", "/home/code ").forEach { root ->
+            selected = SessionWorkspace.Directory(WorkspaceEntity("linux", WorkspaceEntity.KIND_LINUX_HOME, "app", "$root#$identity", 0), externalDirectory)
+            val read = skill(FileReadSkill(files, workspace)).execute(json("path" to "same.txt"), context())
+            assertThat(read.status).isEqualTo("success")
+            assertThat(read.content).contains("路径: $root/same.txt")
+            val invocation = access.invocationArguments("one", "list_files", JsonObject(emptyMap()))
+            assertThat(invocation["path"]?.jsonPrimitive?.content).isEqualTo("/workspace")
+            val write = access.executionTarget("one", FileWriteSkill(files, workspace).toProtocolTool(), json("path" to "same.txt", "content" to "new"))!!
+            assertThat(write).contains(root)
+        }
+    }
+
+    @Test fun `home工作区别名与会话私有路径不共享审批目标`() = runBlocking {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        selected = SessionWorkspace.Directory(WorkspaceEntity("linux", WorkspaceEntity.KIND_LINUX_HOME, "home", "/home#$identity", 0), externalDirectory)
+        val tool = FileWriteSkill(files, workspace).toProtocolTool()
+        val workspaceTarget = access.executionTarget("one", tool, json("path" to "/workspace/session/same.txt", "content" to "new"))!!
+        val privateTarget = access.executionTarget("one", tool, json("path" to "/home/session/same.txt", "content" to "new"))!!
+        assertThat(workspaceTarget).isNotEqualTo(privateTarget)
+        assertThat(workspaceTarget).contains("/workspace/session/same.txt")
+        assertThat(privateTarget).contains("/home/session/same.txt")
+    }
+
+    @Test fun `特殊登记根下分支工具读取创建和移动保留实际cwd与父挂载区别`() = runBlocking {
+        for (cwd in listOf("/opt/.nexara-project/feature", "/root/.l2s.project", "/home/code ")) {
+            val directory = File(rootfsDirectory, cwd.removePrefix("/")).apply { mkdirs() }
+            File(directory, "same.txt").writeText("branch-data")
+            selected = SessionWorkspace.Directory(WorkspaceEntity("branch", "branch_worktree", "branch", cwd, 0), directory)
+            val branch = com.promenar.nexara.data.branch.BranchLinuxFileNamespace(
+                com.promenar.nexara.data.branch.BranchLinuxCommandWorkspace(externalDirectory, cwd), mockk(),
+            )
+            val fresh = LinuxSessionExternalWorkspaceAccess(mounts, workspace, files, { selected }, LinuxSessionRootfsBackend(fs), branchNamespace = { branch })
+            fun wrapped(original: SkillDefinition) = LinuxSessionFileSkill(original, { mode }, fresh, workspace, files, FileIndexEventSink.None, captureFileChanges = false)
+            val read = FileReadSkill(files, workspace)
+            val result = wrapped(read).execute(json("path" to "same.txt"), context())
+            assertWithMessage("结果=%s", result.content).that(result.status).isEqualTo("success")
+            assertThat(result.content).contains("路径: $cwd/same.txt")
+            assertThat(result.content).contains("branch-data")
+            val relativeTarget = fresh.executionTarget("one", read.toProtocolTool(), json("path" to "same.txt"))!!
+            val parentTarget = fresh.executionTarget("one", read.toProtocolTool(), json("path" to "/workspace/same.txt"))!!
+            assertThat(relativeTarget).isNotEqualTo(parentTarget)
+            assertThat(relativeTarget).contains(cwd)
+            val created = wrapped(CreateFileSkill(workspace, files)).execute(json("name" to "new.txt", "content" to "new"), context())
+            assertWithMessage("结果=%s", created.content).that(created.status).isEqualTo("success")
+            assertThat(File(directory, "new.txt").readText()).isEqualTo("new")
+            val moved = wrapped(MoveFileSkill(workspace, FileIndexEventSink.None)).execute(json("path" to "new.txt", "newName" to "moved.txt"), context())
+            assertWithMessage("结果=%s", moved.content).that(moved.status).isEqualTo("success")
+            assertThat(File(directory, "new.txt").exists()).isFalse()
+            assertThat(File(directory, "moved.txt").readText()).isEqualTo("new")
+            assertThat(fresh.list("one", cwd).map { it.name }).containsAtLeast("same.txt", "moved.txt")
+            val listed = wrapped(FileListSkill(workspace)).execute(JsonObject(emptyMap()), context())
+            assertWithMessage("结果=%s", listed.content).that(listed.status).isEqualTo("success")
+            assertThat(listed.content).contains("moved.txt")
+            assertThat(fresh.resolveUuid("one", fresh.entry("one", "$cwd/moved.txt")!!.uuid)).isEqualTo("$cwd/moved.txt")
+            val searched = wrapped(FileSearchSkill(workspace, files)).execute(json("query" to "new", "mode" to "content"), context())
+            assertWithMessage("结果=%s", searched.content).that(searched.status).isEqualTo("success")
+            assertThat(searched.content).contains("$cwd/moved.txt:1:")
+            val createTarget = fresh.executionTarget("one", CreateDirectorySkill(workspace).toProtocolTool(), json("parentPath" to "/", "name" to "nexara-linux-cwd"))!!
+            assertThat(createTarget).contains("\"/nexara-linux-cwd\"")
+            val moveTarget = fresh.executionTarget("one", MoveFileSkill(workspace, FileIndexEventSink.None).toProtocolTool(), json("path" to "/a", "newName" to "nexara-linux-cwd"))!!
+            assertThat(moveTarget).contains("\"/nexara-linux-cwd\"")
+            val inheritedNameTarget = fresh.executionTarget("one", MoveFileSkill(workspace, FileIndexEventSink.None).toProtocolTool(), json("path" to "/tmp/nexara-linux-cwd", "newParentPath" to "/"))!!
+            assertThat(inheritedNameTarget).contains("\"/nexara-linux-cwd\"")
+        }
+        Unit
+    }
+
     @Test fun `所有Linux路径读取返回Linux路径且保持私有会话隔离`() = runBlocking {
         val read = skill(FileReadSkill(files, workspace))
         mapOf("same.txt" to "one-private", "/workspace/same.txt" to "one-private", "/home/session/same.txt" to "one-private", "/mnt/docs/a.txt" to "external-data", "/mnt/skills/a.md" to "skill-data", "/etc/config" to "rootfs-data").forEach { (path, content) ->

@@ -12,8 +12,9 @@ import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.json.JsonObject
 
-class FileListSkill(
-    private val workspaceRepo: IWorkspaceRepository
+class FileListSkill @JvmOverloads constructor(
+    private val workspaceRepo: IWorkspaceRepository,
+    private val isSystemEntry: (FileEntry) -> Boolean = FileEntry::isSystemEntry,
 ) : SkillDefinition {
     override val id = "list_files"
     override val name = "list_files"
@@ -46,7 +47,7 @@ class FileListSkill(
         var truncated = false
         suspend fun walk(uuid: String, prefix: String, level: Int) {
             val children = workspaceRepo.observeChildren(context.workspaceRootUuid, uuid).firstOrNull().orEmpty()
-                .filterNot(FileEntry::isSystemEntry)
+                .filterNot(isSystemEntry)
             for (entry in children) {
                 if (lines.size >= MAX_ENTRIES) {
                     truncated = true

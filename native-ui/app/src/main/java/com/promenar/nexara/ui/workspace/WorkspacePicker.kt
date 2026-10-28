@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.workspace
 
+import androidx.activity.compose.BackHandler
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Lock
@@ -77,20 +79,27 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
-/** 选择器当前所在层级：起始页、项目根或某个共享卷内的目录。 */
+/** 选择器当前所在层级：起始页、项目根、某个共享卷内的目录或 Linux 环境内的目录。 */
 sealed interface WorkspacePickerPage {
     data object Home : WorkspacePickerPage
     data object Projects : WorkspacePickerPage
     data class Shared(val volume: File, val path: File) : WorkspacePickerPage
+    /** [path] 为容器内目录；null 为可选起点（`/root`、`/home` 等）列表。 */
+    data class Linux(val path: String?) : WorkspacePickerPage
 }
 
-/** 页面层级：首页为 0，项目与存储卷根为 1，共享目录按相对卷根的段数递增。 */
+/** 页面层级：首页为 0，项目、存储卷根与 Linux 起点列表为 1，目录按路径段数递增。 */
 internal val WorkspacePickerPage.depth: Int
     get() = when (this) {
         WorkspacePickerPage.Home -> 0
         WorkspacePickerPage.Projects -> 1
         is WorkspacePickerPage.Shared -> 1 + path.path.removePrefix(volume.path).split('/').count(String::isNotEmpty)
+        is WorkspacePickerPage.Linux -> 1 + linuxSegments(path).size
     }
+
+private fun linuxSegments(path: String?): List<String> = path.orEmpty().split('/').filter(String::isNotEmpty)
+
+private const val LINUX_CRUMB_PREFIX = "linux:"
 
 data class WorkspacePickerUiState(
     val page: WorkspacePickerPage = WorkspacePickerPage.Home,
@@ -111,9 +120,18 @@ data class WorkspacePickerUiState(
     val linuxHome: LinuxHomeAvailability = LinuxHomeAvailability.UNSUPPORTED,
 )
 
+/** Linux 主目录；选中它时沿用“Linux 主目录”显示名，其它目录取目录名。 */
+private const val LINUX_HOME_DIRECTORY = "/root"
+
 /** 选定后由 [WorkspaceDirectoryBrowser] 登记；共享卷之下的路径段转成面包屑，根级“位置”回到起始页。 */
-internal fun WorkspacePickerPage.crumbs(volumeLabel: (File) -> String, projectsLabel: String): List<FolderCrumb> = when (this) {
+internal fun WorkspacePickerPage.crumbs(volumeLabel: (File) -> String, projectsLabel: String, linuxLabel: String = "Linux"): List<FolderCrumb> = when (this) {
     WorkspacePickerPage.Home -> emptyList()
+    is WorkspacePickerPage.Linux -> {
+        val segments = linuxSegments(path)
+        listOf(FolderCrumb(LINUX_CRUMB_PREFIX, linuxLabel)) + segments.mapIndexed { index, name ->
+            FolderCrumb(LINUX_CRUMB_PREFIX + "/" + segments.take(index + 1).joinToString("/"), name)
+        }
+    }
     WorkspacePickerPage.Projects -> listOf(FolderCrumb("projects", projectsLabel))
     is WorkspacePickerPage.Shared -> {
         val relative = volume.toPath().relativize(path.toPath()).toString()
@@ -134,6 +152,8 @@ internal fun List<FolderCrumb>.collapsedForDisplay(): List<FolderCrumb> =
 /** 点击 id 为 [crumbId] 的面包屑（null 为根级“位置”）后所在的页面。 */
 internal fun WorkspacePickerPage.navigateToCrumb(crumbId: String?): WorkspacePickerPage = when {
     crumbId == null || this == WorkspacePickerPage.Home -> WorkspacePickerPage.Home
+    this is WorkspacePickerPage.Linux && crumbId.startsWith(LINUX_CRUMB_PREFIX) ->
+        WorkspacePickerPage.Linux(crumbId.removePrefix(LINUX_CRUMB_PREFIX).ifEmpty { null })
     this is WorkspacePickerPage.Shared -> {
         val target = File(crumbId)
         if (target.toPath().startsWith(volume.toPath())) copy(path = target) else this
@@ -144,6 +164,12 @@ internal fun WorkspacePickerPage.navigateToCrumb(crumbId: String?): WorkspacePic
 internal fun WorkspacePickerPage.parent(): WorkspacePickerPage = when (this) {
     WorkspacePickerPage.Home, WorkspacePickerPage.Projects -> WorkspacePickerPage.Home
     is WorkspacePickerPage.Shared -> if (path == volume) WorkspacePickerPage.Home else copy(path = path.parentFile ?: volume)
+    // 起点目录（如 /home）的上一级回到起点列表，而不是不可选的 `/`。
+    is WorkspacePickerPage.Linux -> when {
+        path == null -> WorkspacePickerPage.Home
+        linuxSegments(path).size <= 1 -> WorkspacePickerPage.Linux(null)
+        else -> WorkspacePickerPage.Linux(path.substringBeforeLast('/'))
+    }
 }
 
 @Composable
@@ -188,7 +214,7 @@ fun WorkspacePickerSheet(
     var createError by remember { mutableStateOf<FolderNameError?>(null) }
     var linuxHome by remember { mutableStateOf(LinuxHomeAvailability.UNSUPPORTED) }
     LaunchedEffect(browser) { linuxHome = browser.linuxHomeAvailability() }
-    val linuxHomeName = stringResource(R.string.workspace_kind_linux_home)
+    val linuxHomeName = stringResource(R.string.workspace_picker_linux_home_name)
 
     val refreshPermission by rememberUpdatedState {
         permission = browser.hasSharedPermission()
@@ -210,6 +236,7 @@ fun WorkspacePickerSheet(
             folders = when (current) {
                 WorkspacePickerPage.Projects -> browser.listProjects()
                 is WorkspacePickerPage.Shared -> browser.listShared(current.path)
+                is WorkspacePickerPage.Linux -> current.path?.let { browser.listLinux(it) } ?: browser.linuxRoots()
                 WorkspacePickerPage.Home -> emptyList()
             }
         } catch (cancelled: CancellationException) {
@@ -252,6 +279,12 @@ fun WorkspacePickerSheet(
         dismissEnabled = !busy,
         dragGesturesEnabled = false,
     ) {
+        // 系统返回先逐级回到上一层目录，回到首页后再关闭面板。
+        BackHandler(enabled = page != WorkspacePickerPage.Home && !busy) {
+            page = page.parent()
+            selectedProject = null
+            error = null
+        }
         WorkspacePickerContent(
             state = state,
             onNavigate = { next ->
@@ -261,7 +294,7 @@ fun WorkspacePickerSheet(
             },
             onPickRegistered = onPicked,
             onPickPrivate = { onPickPrivate?.invoke() },
-            onPickLinuxHome = { register { browser.registerLinuxHome(linuxHomeName) } },
+            onPickLinuxHome = { onPicked(it) },
             onSelectProject = { selectedProject = it },
             onCreate = {
                 createError = null
@@ -271,6 +304,9 @@ fun WorkspacePickerSheet(
                 when (val current = page) {
                     WorkspacePickerPage.Projects -> selectedProject?.let { name -> register { browser.registerProject(name) } }
                     is WorkspacePickerPage.Shared -> register { browser.registerShared(current.path) }
+                    is WorkspacePickerPage.Linux -> current.path?.let { path ->
+                        register { browser.registerLinux(path, linuxHomeName.takeIf { path == LINUX_HOME_DIRECTORY }) }
+                    }
                     WorkspacePickerPage.Home -> Unit
                 }
             },
@@ -303,6 +339,7 @@ fun WorkspacePickerSheet(
                         val result = when (current) {
                             WorkspacePickerPage.Projects -> browser.createProject(name)
                             is WorkspacePickerPage.Shared -> browser.createSharedFolder(current.path, name)
+                            is WorkspacePickerPage.Linux -> current.path?.let { browser.createLinuxFolder(it, name) }
                             WorkspacePickerPage.Home -> null
                         }
                         when (result) {
@@ -311,6 +348,7 @@ fun WorkspacePickerSheet(
                                 reload++
                                 if (current == WorkspacePickerPage.Projects) selectedProject = result.folder.name
                                 else if (current is WorkspacePickerPage.Shared) page = current.copy(path = result.folder.path)
+                                else if (current is WorkspacePickerPage.Linux) page = WorkspacePickerPage.Linux(result.folder.path.path)
                             }
                             is CreateFolderResult.Rejected -> createError = result.error
                             null -> creating = false
@@ -337,7 +375,7 @@ fun WorkspacePickerContent(
     onNavigate: (WorkspacePickerPage) -> Unit = {},
     onPickRegistered: (WorkspaceEntity) -> Unit = {},
     onPickPrivate: () -> Unit = {},
-    onPickLinuxHome: () -> Unit = {},
+    onPickLinuxHome: (WorkspaceEntity) -> Unit = {},
     onSelectProject: (String) -> Unit = {},
     onCreate: () -> Unit = {},
     onUseFolder: () -> Unit = {},
@@ -348,7 +386,7 @@ fun WorkspacePickerContent(
     val projectsLabel = stringResource(R.string.workspace_kind_project)
     val volumeLabels = state.sharedRoots.associateWith { sharedVolumeLabel(state.sharedRoots, it) }
     if (page != WorkspacePickerPage.Home) {
-        val crumbs = page.crumbs({ volumeLabels[it] ?: it.name }, projectsLabel).collapsedForDisplay()
+        val crumbs = page.crumbs({ volumeLabels[it] ?: it.name }, projectsLabel, stringResource(R.string.workspace_picker_linux_root)).collapsedForDisplay()
         FolderBreadcrumbsBar(
             folderStack = crumbs,
             rootTitle = stringResource(R.string.workspace_picker_root),
@@ -359,7 +397,8 @@ fun WorkspacePickerContent(
         )
         TextButton(
             onClick = onCreate,
-            enabled = !state.busy && !state.loading && state.loadError == null,
+            // Linux 起点列表本身不能新建目录（父目录是不可选的 `/`）。
+            enabled = !state.busy && !state.loading && state.loadError == null && page != WorkspacePickerPage.Linux(null),
             modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("workspace_picker_create"),
         ) {
             Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -410,11 +449,29 @@ fun WorkspacePickerContent(
                         leadingContent = { Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary) },
                     )
                 }
+                is WorkspacePickerPage.Linux -> folderItems(state, onRetry, emptyText = R.string.workspace_picker_folder_empty) { folder ->
+                    val path = folder.path.path
+                    NexaraSettingsItem(
+                        // 起点列表显示完整路径（/root、/home），子目录只显示名称。
+                        title = if (page.path == null) path else folder.name,
+                        onClick = { onNavigate(WorkspacePickerPage.Linux(path)) },
+                        showChevron = true,
+                        horizontalPadding = 0.dp,
+                        leadingContent = {
+                            Icon(if (path == LINUX_HOME_DIRECTORY) Icons.Rounded.Home else Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.testTag("workspace_picker_linux_folder_$path"),
+                    )
+                }
             }
         }
     }
     if (page != WorkspacePickerPage.Home) {
-        val ready = page !is WorkspacePickerPage.Projects || state.selectedProject != null
+        val ready = when (page) {
+            WorkspacePickerPage.Projects -> state.selectedProject != null
+            is WorkspacePickerPage.Linux -> page.path != null
+            else -> true
+        }
         Column(Modifier.fillMaxWidth().padding(top = NexaraSpacing.Small), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
             state.error?.let {
                 Text(
@@ -446,7 +503,7 @@ private fun LazyListScope.homeItems(
     onNavigate: (WorkspacePickerPage) -> Unit,
     onPickRegistered: (WorkspaceEntity) -> Unit,
     onPickPrivate: () -> Unit,
-    onPickLinuxHome: () -> Unit,
+    onPickLinuxHome: (WorkspaceEntity) -> Unit,
     onGrantPermission: () -> Unit,
 ) {
     if (state.showPrivate) {
@@ -476,7 +533,7 @@ private fun LazyListScope.homeItems(
             modifier = Modifier.testTag("workspace_picker_projects"),
         )
     }
-    linuxHomeItems(state, onPickLinuxHome)
+    linuxItems(state, onNavigate, onPickLinuxHome)
     if (!state.sharedSupported && shared.isEmpty()) return
     item(key = "shared_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_SHARED) }
     items(shared, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
@@ -510,21 +567,39 @@ private fun LazyListScope.homeItems(
 }
 
 /**
- * Linux 主目录只有一个入口：登记按环境代次去重，重置后旧登记不可用，选择时总是登记当前代次。
- * 当前会话已绑定任一 Linux 主目录登记时显示为已选。
+ * Linux 来源：当前会话已绑定的 Linux 目录排在前面显示为已选，下方入口逐级浏览环境内可选目录。
+ * 登记按环境代次去重，重置后旧登记不可用，因此不列出其它历史登记。
  */
-private fun LazyListScope.linuxHomeItems(state: WorkspacePickerUiState, onPick: () -> Unit) {
+private fun LazyListScope.linuxItems(
+    state: WorkspacePickerUiState,
+    onNavigate: (WorkspacePickerPage) -> Unit,
+    onPickCurrent: (WorkspaceEntity) -> Unit,
+) {
     if (state.linuxHome == LinuxHomeAvailability.UNSUPPORTED) return
     val ready = state.linuxHome == LinuxHomeAvailability.READY
     item(key = "linux_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_LINUX_HOME) }
-    item(key = "linux_home") {
-        PickerRow(
+    state.registered.firstOrNull { it.kind == WorkspaceEntity.KIND_LINUX_HOME && it.id == state.currentWorkspaceId }?.let { current ->
+        item(key = "linux_current") {
+            PickerRow(
+                title = current.displayName,
+                subtitle = workspaceLocationText(current.kind, current.location).takeIf { it != current.displayName },
+                selected = true,
+                enabled = !state.busy,
+                onClick = { onPickCurrent(current) },
+                leading = { WorkspaceKindIcon(WorkspaceEntity.KIND_LINUX_HOME) },
+                modifier = Modifier.testTag("workspace_picker_linux_current"),
+            )
+        }
+    }
+    item(key = "linux_browse") {
+        NexaraSettingsItem(
             title = stringResource(R.string.workspace_picker_linux_home),
             subtitle = if (ready) null else stringResource(R.string.workspace_picker_linux_not_ready),
-            selected = state.registered.any { it.kind == WorkspaceEntity.KIND_LINUX_HOME && it.id == state.currentWorkspaceId },
+            onClick = { onNavigate(WorkspacePickerPage.Linux(null)) },
             enabled = ready && !state.busy,
-            onClick = onPick,
-            leading = { WorkspaceKindIcon(WorkspaceEntity.KIND_LINUX_HOME) },
+            showChevron = true,
+            horizontalPadding = 0.dp,
+            leadingContent = { Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary) },
             modifier = Modifier.testTag("workspace_picker_linux_home"),
         )
     }

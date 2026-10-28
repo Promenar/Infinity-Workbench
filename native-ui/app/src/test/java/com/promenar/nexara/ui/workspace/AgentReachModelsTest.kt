@@ -24,6 +24,15 @@ class AgentReachModelsTest {
     }
 
     @Test
+    fun `linux path footer names the bound linux directory and falls back to the workspace mount`() {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        assertThat(linuxWorkspacePath(SessionWorkspaceUi.Directory("w", "demo", WorkspaceEntity.KIND_LINUX_HOME, "/opt/demo#$identity"))).isEqualTo("/opt/demo")
+        assertThat(linuxWorkspacePath(SessionWorkspaceUi.Directory("w", "repo", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/repo"))).isEqualTo("/workspace")
+        assertThat(linuxWorkspacePath(SessionWorkspaceUi.Directory("w", "bad", WorkspaceEntity.KIND_LINUX_HOME, "/etc#$identity"))).isEqualTo("/workspace")
+        assertThat(linuxWorkspacePath(SessionWorkspaceUi.Private)).isEqualTo("/workspace")
+    }
+
+    @Test
     fun `unavailable and loading workspaces expose no traits`() {
         assertThat(SessionWorkspaceUi.Loading.traits).isNull()
         assertThat(SessionWorkspaceUi.Unavailable("w", null, null, null, "gone").traits).isNull()

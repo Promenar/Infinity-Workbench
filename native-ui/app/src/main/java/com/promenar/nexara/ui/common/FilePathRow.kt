@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /** 路径行的起点片段，例如 Linux 的 `~` 与 `/`、工作区的主页图标。 */
@@ -64,6 +68,7 @@ fun FilePathRow(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
+    val haptics = LocalNexaraHaptics.current
     LaunchedEffect(trail.size, trail.lastOrNull()?.id) { scrollState.animateScrollTo(scrollState.maxValue) }
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
@@ -89,7 +94,10 @@ fun FilePathRow(
                         .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                         .clip(RoundedCornerShape(8.dp))
                         .then(
-                            if (!current && enabled) Modifier.clickable(role = Role.Button) { onNavigateToCrumb(index) }
+                            if (!current && enabled) Modifier.clickable(interactionSource = null, indication = null, role = Role.Button) {
+                                haptics.perform(NexaraHapticEvent.SELECTION)
+                                onNavigateToCrumb(index)
+                            }
                             else Modifier,
                         )
                         .padding(horizontal = NexaraSpacing.Small),
@@ -115,6 +123,7 @@ fun FilePathRow(
 @Composable
 private fun FilePathRootSegments(roots: List<FilePathRoot>, enabled: Boolean) {
     val colors = MaterialTheme.colorScheme
+    val haptics = LocalNexaraHaptics.current
     Box(contentAlignment = Alignment.Center) {
         // 描边只占中间 32dp，外层每段仍有 48dp 触控区。
         if (roots.size > 1) {
@@ -127,13 +136,24 @@ private fun FilePathRootSegments(roots: List<FilePathRoot>, enabled: Boolean) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             roots.forEach { root ->
+                // 48dp 触控区大于 32dp 的可见胶囊，水波纹会溢出胶囊；改由选中底色过渡与触感反馈回应点击。
+                val fill by animateColorAsState(
+                    if (root.selected) colors.secondaryContainer else Color.Transparent,
+                    tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate), label = "pathRootFill",
+                )
+                val tint by animateColorAsState(
+                    if (root.selected) colors.onSecondaryContainer else colors.onSurfaceVariant,
+                    tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate), label = "pathRootTint",
+                )
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                         .widthIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable(enabled = enabled, role = Role.Button, onClick = root.onClick)
+                        .clickable(interactionSource = null, indication = null, enabled = enabled, role = Role.Button) {
+                            haptics.select(root.selected)
+                            root.onClick()
+                        }
                         .semantics {
                             contentDescription = root.contentDescription
                             selected = root.selected
@@ -145,13 +165,9 @@ private fun FilePathRootSegments(roots: List<FilePathRoot>, enabled: Boolean) {
                         modifier = Modifier
                             .heightIn(min = 32.dp)
                             .widthIn(min = 44.dp)
-                            .background(
-                                if (root.selected) colors.secondaryContainer else Color.Transparent,
-                                RoundedCornerShape(16.dp),
-                            )
+                            .background(fill, RoundedCornerShape(16.dp))
                             .padding(horizontal = NexaraSpacing.Medium),
                     ) {
-                        val tint = if (root.selected) colors.onSecondaryContainer else colors.onSurfaceVariant
                         when {
                             root.icon != null -> Icon(root.icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
                             else -> Text(

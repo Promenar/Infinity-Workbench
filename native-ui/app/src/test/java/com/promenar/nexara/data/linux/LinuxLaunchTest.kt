@@ -27,6 +27,21 @@ class LinuxLaunchTest {
         assertEquals(workspace, launch.hostWorkingDirectory)
     }
 
+    @Test fun `含冒号的Linux工作区通过内部别名绑定且cwd保持实际路径`() {
+        val workspace = File(root, "opt/app:demo").apply { mkdirs() }
+        val launch = builder().build(LinuxLaunchSpec(listOf("pwd"), workspace, workingDirectory = "/opt/app:demo"))
+        val bind = launch.arguments.single { it.endsWith(":/workspace") }
+        val source = java.nio.file.Paths.get(bind.removeSuffix(":/workspace"))
+        assertFalse(':' in source.toString())
+        assertTrue(Files.isSymbolicLink(source))
+        assertEquals(workspace.toPath(), Files.readSymbolicLink(source))
+        assertEquals(listOf("-w", "/opt/app:demo", "pwd"), launch.arguments.takeLast(3))
+        assertEquals(bind, builder().build(LinuxLaunchSpec(listOf("pwd"), workspace)).arguments.single { it.endsWith(":/workspace") })
+        Files.delete(source)
+        Files.createSymbolicLink(source, temporary)
+        assertThrows(IllegalArgumentException::class.java) { builder().build(LinuxLaunchSpec(listOf("pwd"), workspace)) }
+    }
+
     @Test fun `拒绝mnt越界路径冒号和无法保证的只读挂载`() {
         val mount = temporary.toFile()
         listOf("/mnt", "/mnt/../etc", "/mnt/a/../../root", "/mnt2/a", "mnt/a", "/mnt/a:b", "/mnt/a\\b").forEach {

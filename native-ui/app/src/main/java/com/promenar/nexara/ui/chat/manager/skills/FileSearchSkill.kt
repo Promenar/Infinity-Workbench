@@ -12,9 +12,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.json.JsonObject
 
-class FileSearchSkill(
+class FileSearchSkill @JvmOverloads constructor(
     private val workspaceRepo: IWorkspaceRepository,
     private val fileOpRepo: IFileOperationRepository? = null,
+    private val isSystemEntry: (FileEntry) -> Boolean = FileEntry::isSystemEntry,
 ) : SkillDefinition {
     override val id = "search_files"
     override val name = "search_files"
@@ -42,7 +43,7 @@ class FileSearchSkill(
 
     private suspend fun searchNames(query: String, context: SkillExecutionContext): ToolResult {
         val matches = workspaceRepo.searchByName(context.workspaceRootUuid, query).firstOrNull().orEmpty()
-            .filter { it.uuid != context.workspaceRootUuid && !it.isSystemEntry() }
+            .filter { it.uuid != context.workspaceRootUuid && !isSystemEntry(it) }
             .sortedBy { it.materializedPath }
         if (matches.isEmpty()) return ToolResult(resultId(), "未找到名称包含 '$query' 的条目。")
         val shown = matches.take(MAX_NAME_RESULTS)
@@ -101,7 +102,7 @@ class FileSearchSkill(
         while (pending.isNotEmpty() && result.size < MAX_SCAN_FILES) {
             val parent = pending.removeFirst()
             workspaceRepo.observeChildren(context.workspaceRootUuid, parent).firstOrNull().orEmpty()
-                .filterNot { it.isSystemEntry() }
+                .filterNot(isSystemEntry)
                 .forEach { entry -> if (entry.isDirectory) pending += entry.uuid else result += entry }
         }
         return result.take(MAX_SCAN_FILES)

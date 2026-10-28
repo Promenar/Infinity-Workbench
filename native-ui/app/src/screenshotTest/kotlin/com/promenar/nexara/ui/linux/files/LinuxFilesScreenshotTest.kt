@@ -60,6 +60,7 @@ private val BrowseState = LinuxFilesUiState(
     runtime = Ready,
     path = "/root/projects",
     entries = Entries,
+    listedPath = "/root/projects",
     sort = LinuxFileSort.MODIFIED,
     nowMs = NowMs,
 )

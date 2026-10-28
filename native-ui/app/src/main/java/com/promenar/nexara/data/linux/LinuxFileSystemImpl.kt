@@ -32,8 +32,9 @@ class LinuxFileSystemImpl internal constructor(
     private val isReady: () -> Boolean,
     private val metadata: LinuxFileMetadata,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    private val homeOnly: Boolean = false,
+    private val directoryRoot: String? = null,
     private val rejectGuestLinks: Boolean = false,
+    private val trustedMutationRoot: String? = directoryRoot,
 ) : LinuxFileSystem {
     constructor(runtime: LinuxRuntime) : this(runtime.paths.rootfs, { runtime.state.value is LinuxRuntimeState.Ready }, LinuxFileAndroidMetadata)
 
@@ -41,10 +42,19 @@ class LinuxFileSystemImpl internal constructor(
     internal val paths by lazy { LinuxFilePaths(rootfs, access, rejectGuestLinks) }
     private val mutex by lazy { locks.getOrPut(paths.root.toString()) { Mutex() } }
 
-    internal fun forHome(available: () -> Boolean = { true }) = LinuxFileSystemImpl(rootfs, { isReady() && available() }, metadata, io, homeOnly = true)
+    internal fun forHome(available: () -> Boolean = { true }) = forDirectory("/root", available)
+
+    internal fun forDirectory(directory: String, available: () -> Boolean = { true }): LinuxFileSystemImpl {
+        com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.requireDirectory(directory)
+        return LinuxFileSystemImpl(rootfs, { isReady() && available() }, metadata, io, directoryRoot = directory)
+    }
 
     /** Agent 文件路径在真正解析时拒绝物理链接，避免预检后被 guest 换成其它目标。 */
-    internal fun forAgentTools() = LinuxFileSystemImpl(rootfs, isReady, metadata, io, homeOnly, rejectGuestLinks = true)
+    internal fun forAgentTools() = forAgentTools(trustedMutationRoot)
+    internal fun forAgentTools(trustedDirectory: String?): LinuxFileSystemImpl {
+        trustedDirectory?.let(com.promenar.nexara.data.workspace.LinuxWorkspaceLocation::requireDirectory)
+        return LinuxFileSystemImpl(rootfs, isReady, metadata, io, directoryRoot, rejectGuestLinks = true, trustedMutationRoot = trustedDirectory)
+    }
 
     override suspend fun list(path: String): List<LinuxFileEntry> = operation {
         val normalized = LinuxFilePaths.normalize(path)
@@ -370,7 +380,9 @@ class LinuxFileSystemImpl internal constructor(
     }
     private fun mutationPath(raw: String): String = LinuxFilePaths.normalize(raw).also {
         if (it == "/") fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
-        if (it.split('/').any(LinuxFilePaths::isLink2SymlinkName)) fail(LinuxFileErrorCode.NAME_INVALID)
+        val root = trustedMutationRoot?.takeIf { root -> it == root || it.startsWith("$root/") }
+        val relative = if (root == null) it else it.removePrefix(root)
+        if (relative.split('/').any(LinuxFilePaths::isLink2SymlinkName)) fail(LinuxFileErrorCode.NAME_INVALID)
     }
     private fun join(parent: String, name: String) = parent.trimEnd('/') + "/" + name
 
@@ -387,11 +399,11 @@ class LinuxFileSystemImpl internal constructor(
 
     internal fun resolvePath(raw: String, followFinal: Boolean = true): Path {
         val normalized = LinuxFilePaths.normalize(raw)
-        if (homeOnly && normalized != "/root" && !normalized.startsWith("/root/")) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
+        if (directoryRoot != null && normalized != directoryRoot && !normalized.startsWith("$directoryRoot/")) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         val resolved = paths.resolve(normalized, followFinal)
-        if (homeOnly && !resolved.startsWith(paths.root.resolve("root"))) {
+        if (directoryRoot != null && !resolved.startsWith(paths.root.resolve(directoryRoot.removePrefix("/")))) {
             val link = paths.resolve(normalized, followFinal = false)
-            if (!followFinal || !link.startsWith(paths.root.resolve("root")) || !paths.isEmulatedHardLink(link)) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
+            if (!followFinal || !link.startsWith(paths.root.resolve(directoryRoot.removePrefix("/"))) || !paths.isEmulatedHardLink(link)) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         }
         return resolved
     }

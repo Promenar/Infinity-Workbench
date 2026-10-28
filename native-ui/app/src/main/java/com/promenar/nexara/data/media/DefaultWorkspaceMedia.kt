@@ -317,12 +317,16 @@ internal class DefaultWorkspaceMedia(
     private suspend fun normalize(sessionId: String, path: String): String {
         if (SCHEME.containsMatchIn(path.trimStart())) fail("INVALID_PATH", "媒体只接受工作区虚拟路径，不接受 URI")
         return if (targets.presenter(sessionId) == com.promenar.nexara.data.workspace.LinuxWorkspaceFilePathPresenter) {
-            com.promenar.nexara.data.workspace.LinuxSessionPaths.normalize(path)
+            com.promenar.nexara.data.workspace.LinuxSessionPaths.normalize(path, targets.linuxWorkingDirectory(sessionId))
         } else ExternalFolderPaths.normalize(path).also { ExternalMountPaths.parse(it) }
     }
 
     private suspend fun protect(sessionId: String, path: String) {
-        val relative = (targets.presenter(sessionId).privateRelativePath(path) ?: if (path == "/mnt/skills" || path.startsWith("/mnt/skills/")) "/skills" else ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
+        val selectedRelative = if (targets.presenter(sessionId) == com.promenar.nexara.data.workspace.LinuxWorkspaceFilePathPresenter) {
+            val cwd = targets.linuxWorkingDirectory(sessionId)
+            path.takeIf { it == cwd || it.startsWith("$cwd/") }?.removePrefix(cwd)
+        } else null
+        val relative = (targets.presenter(sessionId).privateRelativePath(path) ?: selectedRelative ?: if (path == "/mnt/skills" || path.startsWith("/mnt/skills/")) "/skills" else ExternalMountPaths.parse(path)?.second ?: path).lowercase(Locale.ROOT)
         if (path == "/mnt/skills" || path.startsWith("/mnt/skills/") || path == "/skills" || path.startsWith("/skills/") || relative == "/.agents/skills" || relative.startsWith("/.agents/skills/")) {
             fail("PROTECTED_PATH", "技能目录写入需要逐次审批，媒体存储不能直接写入")
         }

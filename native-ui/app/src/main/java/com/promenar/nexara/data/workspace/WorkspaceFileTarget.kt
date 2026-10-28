@@ -141,13 +141,28 @@ internal class WorkspaceFileTargetResolver(
         return privateTarget(sessionId, writing, initializeMissingPrivateRoot = initializeMissingPrivateRoot)
     }
 
+    internal suspend fun linuxWorkingDirectory(sessionId: String): String {
+        val selected = when (val current = sessionWorkspace(sessionId)) {
+            is SessionWorkspace.Directory -> current.workspace
+            is SessionWorkspace.Unavailable -> current.workspace
+            SessionWorkspace.Private -> null
+        }
+        return selected?.let(LinuxWorkspaceLocation::workingDirectory) ?: LinuxSessionPaths.WORKSPACE_ROOT
+    }
+
     private suspend fun linuxTarget(
         sessionId: String, path: String, writing: Boolean, destination: WorkspaceFileDestinationBinding?,
         initializeMissingPrivateRoot: Boolean,
     ): WorkspaceFileTarget {
         val current = sessionWorkspace(sessionId)
-        val normalized = LinuxSessionPaths.normalize(path)
-        val routed = LinuxSessionPaths.route(normalized, current == SessionWorkspace.Private && destination?.destination != WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE)
+        val selectedDirectory = (current as? SessionWorkspace.Directory)?.workspace?.takeIf {
+            it.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME
+        }?.let(LinuxWorkspaceLocation::workingDirectory)
+            ?: (current as? SessionWorkspace.Unavailable)?.workspace?.takeIf {
+                it.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME
+            }?.let(LinuxWorkspaceLocation::workingDirectory)
+        val normalized = LinuxSessionPaths.normalize(path, selectedDirectory ?: LinuxSessionPaths.WORKSPACE_ROOT)
+        val routed = LinuxSessionPaths.route(normalized, current == SessionWorkspace.Private && destination?.destination != WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE, selectedDirectory)
         val target = when (routed.kind) {
             LinuxSessionPathKind.PRIVATE -> privateTarget(sessionId, writing, destination,
                 if (normalized == LinuxSessionPaths.PRIVATE_ROOT || normalized.startsWith("${LinuxSessionPaths.PRIVATE_ROOT}/")) LinuxSessionPaths.PRIVATE_ROOT else LinuxSessionPaths.WORKSPACE_ROOT,
@@ -163,7 +178,7 @@ internal class WorkspaceFileTargetResolver(
                 if (writing) com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = bound.root.canonicalPath)
                 WorkspaceFileTarget(sessionId, null, bound.root, null, directoryBackend = backend,
                     destination = destination ?: WorkspaceFileDestinationBinding(WorkspaceDefaultFileDestination.PRIMARY_WORKSPACE, bound.workspace.id),
-                    privatePathPrefix = LinuxSessionPaths.WORKSPACE_ROOT)
+                    privatePathPrefix = selectedDirectory?.takeIf { normalized == it || normalized.startsWith("$it/") } ?: LinuxSessionPaths.WORKSPACE_ROOT)
             }
             LinuxSessionPathKind.EXTERNAL -> {
                 val alias = ExternalMountPaths.parse(routed.path)?.first ?: unavailable("挂载已失效或不属于当前会话")
@@ -210,7 +225,8 @@ internal class WorkspaceFileTargetResolver(
     suspend fun checkCurrent(target: WorkspaceFileTarget, path: String) {
         val prefix = target.privatePathPrefix
         val presented = if (target.destination == null && prefix != null && path != prefix && !path.startsWith("$prefix/")) prefix + path.takeUnless { it == "/" }.orEmpty() else path
-        if (resolve(target.sessionId, presented, writing = false, target.destination).identity != target.identity) {
+        val logicalPath = if (target.destination != null && prefix != null && (path == prefix || path.startsWith("$prefix/"))) target.relative(path) else presented
+        if (resolve(target.sessionId, logicalPath, writing = false, target.destination).identity != target.identity) {
             unavailable("会话工作区或挂载在操作期间发生变化，已停止访问")
         }
     }

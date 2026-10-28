@@ -259,11 +259,6 @@ fun PipelineBubble(
     }
     // 展开状态只保存在界面层，以组首条消息 ID 为稳定键，不写数据库。
     var processExpanded by rememberSaveable(group.messages.firstOrNull()?.id) { mutableStateOf(initialProcessExpanded) }
-    val visibleSteps = when {
-        collapsePlan == null -> allSteps
-        processExpanded -> collapsePlan.processSteps + collapsePlan.finalContent
-        else -> listOf(collapsePlan.finalContent)
-    }
 
     val footerContent = collapsePlan?.finalContent
         ?: allSteps.filterIsInstance<PipelineStep.Content>().lastOrNull { it.content.isNotBlank() }
@@ -279,16 +274,23 @@ fun PipelineBubble(
                 onToggle = { processExpanded = !processExpanded },
             )
             // 展开后由对应工具行显示，避免同一提示出现两次。
-            if (!processExpanded && collapsePlan.summary.runtimeChanges.isNotEmpty()) {
-                RuntimeChangesNotice(collapsePlan.summary.runtimeChanges, Modifier.padding(top = 4.dp))
-            }
-            if (!processExpanded && collapsePlan.summary.memoryChanges.isNotEmpty()) {
-                MemoryChangeRows(collapsePlan.summary.memoryChanges)
+            AnimatedVisibility(
+                visible = !processExpanded && (collapsePlan.summary.runtimeChanges.isNotEmpty() || collapsePlan.summary.memoryChanges.isNotEmpty()),
+                enter = NexaraMotion.expandIn,
+                exit = NexaraMotion.shrinkOut,
+            ) {
+                Column {
+                    if (collapsePlan.summary.runtimeChanges.isNotEmpty()) {
+                        RuntimeChangesNotice(collapsePlan.summary.runtimeChanges, Modifier.padding(top = 4.dp))
+                    }
+                    if (collapsePlan.summary.memoryChanges.isNotEmpty()) MemoryChangeRows(collapsePlan.summary.memoryChanges)
+                }
             }
         }
-        visibleSteps.forEachIndexed { index, step ->
-            val isLastInGroup = index == visibleSteps.lastIndex
-            val followsContent = visibleSteps.getOrNull(index - 1) is PipelineStep.Content
+        // 单步渲染：间距与“组内末步”按步骤在所属列表中的位置判定，平铺与收起两种布局共用。
+        val renderStep: @Composable (Int, PipelineStep, List<PipelineStep>) -> Unit = { index, step, steps ->
+            val isLastInGroup = index == steps.lastIndex
+            val followsContent = steps.getOrNull(index - 1) is PipelineStep.Content
             if ((index > 0 && (step is PipelineStep.Content || followsContent)) ||
                 (index == 0 && (hasRagContent || collapsePlan != null) && step is PipelineStep.Content)
             ) {
@@ -342,6 +344,16 @@ fun PipelineBubble(
                     is PipelineStep.SessionRecord -> SessionRecordRows(step.message)
                 }
             }
+        }
+        if (collapsePlan == null) {
+            allSteps.forEachIndexed { index, step -> renderStep(index, step, allSteps) }
+        } else {
+            val expandedSteps = remember(collapsePlan) { collapsePlan.processSteps + collapsePlan.finalContent }
+            // 过程步骤随摘要行纵向展开、收起，最终正文始终留在下方原位，不随切换重建。
+            AnimatedVisibility(visible = processExpanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+                Column { collapsePlan.processSteps.forEachIndexed { index, step -> renderStep(index, step, expandedSteps) } }
+            }
+            renderStep(expandedSteps.lastIndex, collapsePlan.finalContent, expandedSteps)
         }
         if (renderPlan.showStandaloneCursor) GenerationIndicator()
         if (!isGenerating) CanvasInvocationCards(

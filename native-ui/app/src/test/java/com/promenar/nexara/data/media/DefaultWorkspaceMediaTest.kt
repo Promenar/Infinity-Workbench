@@ -157,6 +157,22 @@ class DefaultWorkspaceMediaTest {
     }
 
 
+    @Test fun `Linux自选目录媒体使用实际路径且技能路径保持保护`() = runBlocking {
+        val project = bindDirectory()
+        val identity = PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        val selected = SessionWorkspace.Directory(WorkspaceEntity("linux", WorkspaceEntity.KIND_LINUX_HOME, "app", "/opt/app#$identity", 0), project)
+        service = DefaultWorkspaceMedia(context, SessionRepository(db.sessionDao(), db.messageDao()), repo, mounts,
+            { selected }, FileIndexEventSink.None, clock, fs, skillsRoot, LinuxWorkspaceFilePathPresenter,
+            directoryBackend = { real(it.root) })
+        val saved = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/opt/app/picture.png")
+        assertThat(saved.path).isEqualTo("/opt/app/picture.png")
+        assertThat(File(project, "picture.png").readBytes()).isEqualTo(png)
+        assertThat((available("/opt/app/picture.png").source as MediaSource.LocalFile).file).isEqualTo(File(project, "picture.png"))
+        val relative = service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "relative.png")
+        assertThat(relative.path).isEqualTo("/opt/app/relative.png")
+        code("PROTECTED_PATH") { service.save("session", MediaPayload.Bytes(png), MediaOrigin.GENERATED, targetPath = "/opt/app/.agents/skills/a.png") }
+    }
+
     @Test fun `Linux媒体暂存期间主工作区改变时拒绝写入旧根`() = runBlocking {
         db.sessionDao().updateRunMode("session", "LINUX", 2)
         val project = bindDirectory()

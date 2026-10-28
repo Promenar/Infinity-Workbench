@@ -115,7 +115,7 @@ class BranchPlanLedger(private val database: NexaraDatabase, private val gate: S
                 sessions.insert(child)
                 if (finalPlan.workMode == BranchWorkMode.WORKTREE) {
                     val workspace = checkNotNull(sharedWorkspaceId?.let { database.workspaceDao().getById(it) }) { "主会话缺少可冻结的工作区" }
-                    val cwd = if (workspace.kind == WorkspaceEntity.KIND_LINUX_HOME) "/root" else "/workspace"
+                    val cwd = com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(workspace)
                     val command = BranchWorktreeCommands.plan(cwd, finalPlan)
                     val mount = if (command.directory.startsWith("/mnt/")) {
                         val alias = command.directory.removePrefix("/mnt/").substringBefore('/')

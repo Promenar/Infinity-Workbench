@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -523,7 +524,8 @@ internal fun BranchCardContent(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .then(if (onOpen != null) Modifier.clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpen) else Modifier)
             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp)
@@ -747,7 +749,8 @@ internal fun BranchOriginCard(parentTitle: String?, goal: String, modifier: Modi
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .then(if (onOpenParent != null) Modifier.clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpenParent) else Modifier)
             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
             .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp)

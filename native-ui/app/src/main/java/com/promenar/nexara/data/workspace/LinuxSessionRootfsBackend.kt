@@ -12,8 +12,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** 文件工具的 rootfs 后端；复用 Linux 安全文件原语，普通符号链接不作为跨命名空间入口。 */
-class LinuxSessionRootfsBackend(files: LinuxFileSystem) : ExternalFolderBackend {
-    private val files = (files as? LinuxFileSystemImpl)?.forAgentTools() ?: files
+class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, private val workingDirectory: String) : ExternalFolderBackend {
+    constructor(files: LinuxFileSystem) : this(files, LinuxSessionPaths.WORKSPACE_ROOT)
+    private val files = (files as? LinuxFileSystemImpl)?.forAgentTools(workingDirectory.takeIf(LinuxWorkspaceLocation::isAllowedDirectory)) ?: files
+    internal fun forWorkingDirectory(directory: String) = LinuxSessionRootfsBackend(files, directory)
     override suspend fun stat(path: String): ExternalFolderEntry? = operation {
         val normalized = checked(path)
         val entry = files.stat(normalized) ?: return@operation null
@@ -79,8 +81,8 @@ class LinuxSessionRootfsBackend(files: LinuxFileSystem) : ExternalFolderBackend 
     }
 
     private suspend fun checked(raw: String): String {
-        val normalized = LinuxSessionPaths.normalize(raw)
-        if (!raw.startsWith('/') || LinuxSessionPaths.route(normalized, false).kind != LinuxSessionPathKind.ROOTFS) fail("INVALID_PATH", "rootfs 后端不能访问会话绑定目录")
+        val normalized = LinuxSessionPaths.normalize(raw, workingDirectory)
+        if (!raw.startsWith('/') || LinuxSessionPaths.route(normalized, false, null, workingDirectory).kind != LinuxSessionPathKind.ROOTFS) fail("INVALID_PATH", "rootfs 后端不能访问会话绑定目录")
         var prefix = ""
         normalized.split('/').filter(String::isNotEmpty).forEach { name ->
             prefix += "/$name"

@@ -31,8 +31,8 @@ class LinuxLaunchBuilder(
             arguments += listOf("-b", it)
         }
         spec.workspace?.let {
-            require(it.isDirectory && ':' !in it.path && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY) }
-            arguments += listOf("-b", "${it.absolutePath}:/workspace")
+            require(it.isDirectory && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY) }
+            arguments += listOf("-b", "${LinuxWorkspaceBindSource.path(it, cacheDirectory, messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY))}:/workspace")
         }
         spec.sessionHome?.let {
             require(Files.isDirectory(it.toPath(), NOFOLLOW_LINKS) && ':' !in it.path && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.WORKSPACE_DIRECTORY) }

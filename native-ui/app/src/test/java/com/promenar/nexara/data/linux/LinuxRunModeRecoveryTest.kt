@@ -70,6 +70,22 @@ class LinuxRunModeRecoveryTest {
         assertEquals(0, runtime.resets)
     }
 
+    @Test fun `非主目录导出仅包含选中目录且失败使用真实容器路径`() = runTest {
+        source()
+        val project = File(paths.rootfs, "srv/site").apply { mkdirs() }
+        File(project, "data").writeText("selected")
+        Files.createSymbolicLink(File(project, "link").toPath(), java.nio.file.Paths.get("/root/good.txt"))
+        val target = Target()
+        val recovery = LinuxRunModeRecovery(Runtime(paths), { "/srv/site#$token" }, LinuxFileIo(), StandardTestDispatcher(testScheduler))
+        val result = (recovery.export("chat", target).toList().last() as LinuxRecoveryEvent.Finished).result
+        assertEquals(mapOf("data" to "selected"), target.files)
+        assertEquals("/srv/site/link", result.export!!.failures.single().path)
+        Files.delete(project.toPath().resolve("link"))
+        project.deleteRecursively()
+        val missing = (recovery.export("chat", Target()).toList().last() as LinuxRecoveryEvent.Finished).result
+        assertEquals("/srv/site", missing.export!!.failures.single().path)
+    }
+
     @Test fun `环境身份不符不会把重置后的他人数据导出`() = runTest {
         source()
         val runtime = Runtime(paths)

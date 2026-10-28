@@ -3,6 +3,13 @@ package com.promenar.nexara.ui.linux.files
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -106,6 +113,11 @@ import kotlinx.coroutines.delay
 import com.promenar.nexara.ui.common.NexaraMenuItem
 
 private const val OUTCOME_VISIBLE_MS = 4_000L
+/** 读取超过这个时长才显示进度条，常见的毫秒级读取不闪烁。 */
+private const val LOADING_INDICATOR_DELAY_MS = 250
+
+/** 目录层级：根为 0，每级子目录加 1；尚未读到列表时视为根。 */
+private fun linuxPathDepth(path: String?): Int = path?.split('/')?.count(String::isNotEmpty) ?: 0
 
 /**
  * Linux 文件浏览页。
@@ -333,14 +345,21 @@ private fun LinuxPathRow(state: LinuxFilesUiState, actions: LinuxFilesActions) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(start = NexaraSpacing.Large, end = NexaraSpacing.XSmall),
     ) {
-        Text(
-            stringResource(if (state.atHome) R.string.linux_files_subtitle_home else R.string.linux_files_subtitle_root),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        // 起点切换时说明文字淡入淡出，不直接跳字。
+        AnimatedContent(
+            targetState = state.atHome,
+            transitionSpec = { NexaraMotion.fadeThrough() },
             modifier = Modifier.weight(1f),
-        )
+            label = "linux_files_scope",
+        ) { atHome ->
+            Text(
+                stringResource(if (atHome) R.string.linux_files_subtitle_home else R.string.linux_files_subtitle_root),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         LinuxSortButton(state.sort, actions.onSort)
     }
 }
@@ -494,65 +513,92 @@ private fun LinuxFilesMessages(state: LinuxFilesUiState, actions: LinuxFilesActi
 
 @Composable
 private fun LinuxEntriesList(state: LinuxFilesUiState, actions: LinuxFilesActions, modifier: Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Small)) {
-        AnimatedVisibility(visible = state.loading, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.XSmall))
+    Box(modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Small)) {
+        // 进入子目录与返回上级按层级方向横向切换；新目录读完前保留上一目录的列表，切换时不先闪成空白。
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.listedPath },
+            transitionSpec = { hierarchicalTransition { linuxPathDepth(it.listedPath) } },
+            modifier = Modifier.fillMaxSize(),
+            label = "linux_files_directory",
+        ) { listed ->
+            // Box 不向子项传递最小高度，列表分组仍按条目高度收束，而不是撑满整页。
+            Box(Modifier.fillMaxSize()) { LinuxDirectoryListing(listed, actions) }
         }
-        val error = state.error
-        val entries = state.visibleEntries
-        // 主目录与根目录本身由路径行的起点片段到达，不再显示“上一级”。
-        val showUp = state.path != LINUX_HOME_PATH && linuxParentPath(state.path) != null
-        when {
-            error != null -> FolderStatusMessage(
-                text = stringResource(R.string.linux_files_load_failed, linuxErrorText(error)),
-                error = true,
-                modifier = Modifier.testTag(UiTags.LINUX_FILES_STATUS),
-            ) {
-                TextButton(onClick = actions.onRefresh, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                    Text(stringResource(R.string.shared_btn_retry))
-                }
+        // 进度条叠在列表上方而不占布局，短暂读取不显示，避免列表上下跳动。
+        AnimatedVisibility(
+            visible = state.loading,
+            enter = fadeIn(tween(NexaraMotion.DurationShort, delayMillis = LOADING_INDICATOR_DELAY_MS)),
+            exit = fadeOut(tween(NexaraMotion.DurationShort)),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Small))
+        }
+    }
+}
+
+/** 某个目录的列表；[state] 为该目录读完时的快照，切换期间离场页保留自己的条目。 */
+@Composable
+private fun LinuxDirectoryListing(state: LinuxFilesUiState, actions: LinuxFilesActions) {
+    val listedPath = state.listedPath ?: return
+    val error = state.error
+    val entries = state.visibleEntries
+    // 主目录与根目录本身由路径行的起点片段到达，不再显示“上一级”。
+    val parent = linuxParentPath(listedPath)?.takeIf { listedPath != LINUX_HOME_PATH }
+    val upEnabled = !state.selecting && !state.stale
+    when {
+        error != null -> FolderStatusMessage(
+            text = stringResource(R.string.linux_files_load_failed, linuxErrorText(error)),
+            error = true,
+            modifier = Modifier.testTag(UiTags.LINUX_FILES_STATUS),
+        ) {
+            TextButton(onClick = actions.onRefresh, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
+                Text(stringResource(R.string.shared_btn_retry))
             }
-            entries.isEmpty() && !state.loading -> Column {
-                if (showUp) LinuxUpRow(enabled = !state.selecting) { linuxParentPath(state.path)?.let(actions.onNavigate) }
+        }
+        entries.isEmpty() -> Column {
+            if (parent != null) LinuxUpRow(enabled = upEnabled) { actions.onNavigate(parent) }
+            if (!state.loading) {
                 FolderStatusMessage(
                     text = stringResource(if (state.query.isBlank()) R.string.linux_files_empty else R.string.common_search_no_results),
                     modifier = Modifier.testTag(UiTags.LINUX_FILES_STATUS),
                 )
             }
-            entries.isEmpty() -> Unit
-            else -> LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .bettboxListGroup()
-                    .testTag(UiTags.LINUX_FILES_LIST),
-                contentPadding = PaddingValues(vertical = NexaraSpacing.XSmall),
-            ) {
-                if (showUp) {
-                    item(key = "..") {
-                        LinuxUpRow(enabled = !state.selecting) { linuxParentPath(state.path)?.let(actions.onNavigate) }
-                    }
+        }
+        else -> LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .bettboxListGroup()
+                .testTag(UiTags.LINUX_FILES_LIST),
+            contentPadding = PaddingValues(vertical = NexaraSpacing.XSmall),
+        ) {
+            if (parent != null) {
+                item(key = "..") {
+                    LinuxUpRow(enabled = upEnabled, modifier = Modifier.animateItem()) { actions.onNavigate(parent) }
                 }
-                items(entries, key = { it.path }) { entry ->
-                    LinuxFileRow(
-                        entry = entry,
-                        nowMs = state.nowMs,
-                        selecting = state.selecting,
-                        checked = entry.path in state.selection,
-                        onClick = { actions.onOpen(entry) },
-                        onLongClick = { actions.onToggleSelect(entry.path) },
-                    )
-                }
+            }
+            items(entries, key = { it.path }) { entry ->
+                LinuxFileRow(
+                    entry = entry,
+                    nowMs = state.nowMs,
+                    selecting = state.selecting,
+                    checked = entry.path in state.selection,
+                    onClick = { actions.onOpen(entry) },
+                    onLongClick = { actions.onToggleSelect(entry.path) },
+                    // 排序、筛选、隐藏文件与增删时条目平滑换位，而不是整表跳变。
+                    modifier = Modifier.animateItem(),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun LinuxUpRow(enabled: Boolean, onClick: () -> Unit) {
+private fun LinuxUpRow(enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -574,30 +620,42 @@ private fun LinuxFileRow(
     checked: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val (icon, tint) = linuxEntryIcon(entry)
+    val fill by animateColorAsState(
+        if (checked) colors.secondaryContainer.copy(alpha = 0.5f) else colors.secondaryContainer.copy(alpha = 0f),
+        tween(NexaraMotion.DurationShort), label = "linuxRowFill",
+    )
+    // 间距写在各元素上而非 spacedBy：选择圈伸缩时不会因间隔整段出现或消失而跳一下。
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
-            .then(if (checked) Modifier.background(colors.secondaryContainer.copy(alpha = 0.5f)) else Modifier)
+            .background(fill)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics { if (selecting) selected = checked }
             .padding(horizontal = NexaraSpacing.Large, vertical = 6.dp)
             .testTag(UiTags.linuxFileRow(entry.path)),
     ) {
-        if (selecting) {
-            Icon(
-                if (checked) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = if (checked) colors.primary else colors.outline,
-                modifier = Modifier.size(22.dp),
-            )
+        AnimatedVisibility(
+            visible = selecting,
+            enter = fadeIn(tween(NexaraMotion.DurationShort)) + expandHorizontally(tween(NexaraMotion.DurationMedium, easing = NexaraMotion.EmphasizedDecelerate)),
+            exit = fadeOut(tween(NexaraMotion.DurationFadeOut)) + shrinkHorizontally(tween(NexaraMotion.DurationShort, easing = NexaraMotion.EmphasizedAccelerate)),
+        ) {
+            Crossfade(checked, animationSpec = tween(NexaraMotion.DurationShort), label = "linuxRowCheck") { on ->
+                Icon(
+                    if (on) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (on) colors.primary else colors.outline,
+                    modifier = Modifier.padding(end = NexaraSpacing.Medium).size(22.dp),
+                )
+            }
         }
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp).alpha(if (entry.isHidden) 0.6f else 1f))
+        Spacer(Modifier.size(NexaraSpacing.Medium))
         Column(Modifier.weight(1f)) {
             Text(
                 entry.name,
@@ -614,8 +672,8 @@ private fun LinuxFileRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (!selecting && entry.opensAsDirectory) {
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = colors.onSurfaceVariant)
+        AnimatedVisibility(visible = !selecting && entry.opensAsDirectory, enter = fadeIn(tween(NexaraMotion.DurationShort)), exit = fadeOut(tween(NexaraMotion.DurationFadeOut))) {
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.padding(start = NexaraSpacing.Medium))
         }
     }
 }

@@ -183,8 +183,11 @@ class LinuxRunModeRecovery internal constructor(
             var bytes = 0L
             var created = false
             var sourceResolved = false
+            var sourceGuest = "/root"
             try {
-                val source = sessionHomeSource(sessionId)
+                val location = linuxHomeLocation(sessionId) ?: error("会话没有 Linux 工作区")
+                sourceGuest = com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.requireLocation(location).directory
+                val source = sessionHomeSource(location)
                 sourceResolved = true
                 target.createDirectory("")
                 created = true
@@ -193,11 +196,12 @@ class LinuxRunModeRecovery internal constructor(
                     currentCoroutineContext().ensureActive()
                     val path = pending.removeFirst()
                     val relative = source.relativize(path).toString()
-                    if (relative == HOME_IDENTITY) continue
+                    val guestPath = sourceGuest + relative.takeIf(String::isNotEmpty)?.let { "/$it" }.orEmpty()
+                    if (sourceGuest == "/root" && relative == HOME_IDENTITY) continue
                     try {
                         val attributes = access.attributes(path)
                         when {
-                            attributes.isSymbolicLink -> failures += LinuxRunModeExportFailure("/root/$relative", LinuxRunModeExportFailureReason.LINK_SKIPPED)
+                            attributes.isSymbolicLink -> failures += LinuxRunModeExportFailure(guestPath, LinuxRunModeExportFailureReason.LINK_SKIPPED)
                             attributes.isDirectory -> {
                                 if (relative.isNotEmpty()) target.createDirectory(relative)
                                 pending.addAll(access.children(path))
@@ -208,18 +212,18 @@ class LinuxRunModeRecovery internal constructor(
                                     val written = target.writeFile(relative, Channels.newInputStream(handle.channel))
                                     files++
                                     bytes += written
-                                    if (revision != handle.revision()) failures += LinuxRunModeExportFailure("/root/$relative", LinuxRunModeExportFailureReason.CHANGED)
+                                    if (revision != handle.revision()) failures += LinuxRunModeExportFailure(guestPath, LinuxRunModeExportFailureReason.CHANGED)
                                 }
                             }
-                            else -> failures += LinuxRunModeExportFailure("/root/$relative", LinuxRunModeExportFailureReason.UNSUPPORTED_TYPE)
+                            else -> failures += LinuxRunModeExportFailure(guestPath, LinuxRunModeExportFailureReason.UNSUPPORTED_TYPE)
                         }
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { failures += LinuxRunModeExportFailure("/root/$relative", LinuxRunModeExportFailureReason.IO, error.message) }
-                    emit(LinuxRecoveryEvent.Progress(LinuxRecoveryAction.EXPORT, filesCopied = files, bytesCopied = bytes, path = "/root/$relative"))
+                    catch (error: Exception) { failures += LinuxRunModeExportFailure(guestPath, LinuxRunModeExportFailureReason.IO, error.message) }
+                    emit(LinuxRecoveryEvent.Progress(LinuxRecoveryAction.EXPORT, filesCopied = files, bytesCopied = bytes, path = guestPath))
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                failures += LinuxRunModeExportFailure(if (sourceResolved) target.location else "/root",
+                failures += LinuxRunModeExportFailure(if (sourceResolved) target.location else sourceGuest,
                     if (sourceResolved) LinuxRunModeExportFailureReason.IO else LinuxRunModeExportFailureReason.SOURCE_UNAVAILABLE, error.message)
             }
             finally {
@@ -234,24 +238,8 @@ class LinuxRunModeRecovery internal constructor(
         }
     }.flowOn(dispatcher)
 
-    private suspend fun sessionHomeSource(sessionId: String): Path {
-        val location = linuxHomeLocation(sessionId) ?: error("会话没有 Linux 主目录工作区")
-        val token = location.removePrefix("/root#")
-        require(location.startsWith("/root#") && com.promenar.nexara.data.repository.PersistentFileIdentity.isValid(token)) { "Linux 工作区身份无效" }
-        val root = rootfs()
-        val home = root.resolve("root")
-        require(access.isDirectory(home) && !access.isLink(home)) { "Linux 主目录不可读取" }
-        val marker = home.resolve(HOME_IDENTITY)
-        val actual = access.openRead(marker).use { handle ->
-            require(handle.channel.size() in 1..1024) { "Linux 工作区身份无效" }
-            val bytes = java.nio.ByteBuffer.allocate(handle.channel.size().toInt())
-            while (bytes.hasRemaining() && handle.channel.read(bytes) >= 0) Unit
-            require(!bytes.hasRemaining()) { "Linux 工作区身份无效" }
-            bytes.array().toString(Charsets.US_ASCII)
-        }
-        require(com.promenar.nexara.data.repository.PersistentFileIdentity.verifyMarker(actual, access.attributes(home).fileKey()) == token) { "Linux 工作区对应的环境已被重置" }
-        return home
-    }
+    private fun sessionHomeSource(location: String): Path =
+        com.promenar.nexara.data.workspace.LinuxHomeWorkspaceSource(runtime, access).exportRoot(location).toPath()
 
     private fun rootfs(): Path {
         val configured = runtime.paths.rootfs

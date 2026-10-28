@@ -64,11 +64,43 @@ class WorkspaceDirectoryBrowser(
         linuxHome?.availability() ?: LinuxHomeAvailability.UNSUPPORTED
     }
 
-    /** 只登记就绪环境的主目录；相同目录身份重复登记返回已有记录，重置后产生新的登记。 */
-    suspend fun registerLinuxHome(displayName: String = "Linux /root"): WorkspaceEntity = withContext(io) {
-        val source = linuxHome ?: throw ExternalFolderException("UNSUPPORTED", "此发行渠道不支持 Linux 主目录")
-        workspaceDao.register(WorkspaceEntity(idFactory(), WorkspaceEntity.KIND_LINUX_HOME, displayName, source.location(), clock()))
+    /** 顶层候选只包含真实存在且不经过符号链接的目录，/root 始终排在首位。 */
+    suspend fun linuxRoots(): List<WorkspaceFolder> = withContext(io) {
+        val source = requireLinux()
+        source.root()
+        LinuxWorkspaceLocation.roots.mapNotNull { directory ->
+            try { source.directory(directory); WorkspaceFolder(File(directory).name, File(directory)) }
+            catch (_: ExternalFolderException) { null }
+        }
     }
+
+    suspend fun listLinux(directory: String): List<WorkspaceFolder> = withContext(io) {
+        requireLinux().children(directory)
+    }
+
+    suspend fun createLinuxFolder(parent: String, rawName: String): CreateFolderResult = withContext(io) {
+        val source = requireLinux()
+        source.directory(parent)
+        val name = rawName.trim()
+        if (name.isEmpty()) return@withContext CreateFolderResult.Rejected(FolderNameError.EMPTY)
+        if (!isVisibleSharedName(name) || !LinuxWorkspaceLocation.isAllowedDirectory("$parent/$name")) {
+            return@withContext CreateFolderResult.Rejected(FolderNameError.INVALID)
+        }
+        source.createDirectory(parent, name)
+    }
+
+    /** 相同容器路径与环境身份重复登记返回已有记录。 */
+    suspend fun registerLinux(directory: String, displayName: String? = null): WorkspaceEntity = withContext(io) {
+        val source = requireLinux()
+        val location = source.location(directory)
+        workspaceDao.register(WorkspaceEntity(idFactory(), WorkspaceEntity.KIND_LINUX_HOME,
+            displayName ?: File(directory).name, location, clock()))
+    }
+
+    suspend fun registerLinuxHome(displayName: String = "Linux /root"): WorkspaceEntity = registerLinux("/root", displayName)
+
+    private fun requireLinux(): LinuxHomeWorkspaceSource = linuxHome
+        ?: throw ExternalFolderException("UNSUPPORTED", "此发行渠道不支持 Linux 主目录")
 
     suspend fun listProjects(): List<WorkspaceFolder> = withContext(io) {
         val root = canonicalProjectsRoot()

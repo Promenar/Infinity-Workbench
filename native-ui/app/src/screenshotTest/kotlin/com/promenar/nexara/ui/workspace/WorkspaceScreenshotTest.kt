@@ -74,6 +74,33 @@ fun workspacePickerProjectsPreview() = SheetFrame(stringResource(R.string.worksp
     )
 }
 
+@PreviewTest
+@Preview(name = "选择器 Linux 目录 深中411", widthDp = 411, heightDp = 720, locale = "zh-rCN")
+@Preview(name = "选择器 Linux 目录 深中360 大字", widthDp = 360, heightDp = 720, locale = "zh-rCN", fontScale = 1.3f)
+@Composable
+fun workspacePickerLinuxPreview() = SheetFrame(stringResource(R.string.workspace_picker_title)) {
+    WorkspacePickerContent(
+        WorkspacePickerUiState(
+            page = WorkspacePickerPage.Linux("/home/alice"),
+            folders = listOf(".config", "code", "notes").map { WorkspaceFolder(it, File("/home/alice/$it")) },
+            linuxHome = com.promenar.nexara.data.workspace.LinuxHomeAvailability.READY,
+        ),
+    )
+}
+
+@PreviewTest
+@Preview(name = "选择器 Linux 起点列表 深中411", widthDp = 411, heightDp = 720, locale = "zh-rCN")
+@Composable
+fun workspacePickerLinuxRootsPreview() = SheetFrame(stringResource(R.string.workspace_picker_title)) {
+    WorkspacePickerContent(
+        WorkspacePickerUiState(
+            page = WorkspacePickerPage.Linux(null),
+            folders = listOf("/root", "/home", "/opt").map { WorkspaceFolder(it.removePrefix("/"), File(it)) },
+            linuxHome = com.promenar.nexara.data.workspace.LinuxHomeAvailability.READY,
+        ),
+    )
+}
+
 private val PermissionState = WorkspacePickerUiState(
     registered = listOf(Project, Shared),
     currentWorkspaceId = Project.id,

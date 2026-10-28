@@ -114,7 +114,7 @@ class SessionWorkspaceResolver(
 
     fun backend(directory: SessionWorkspace.Directory): ExternalFolderBackend = when (directory.kind) {
         WorkspaceEntity.KIND_SHARED -> sharedAccess.backend(directory.root)
-        WorkspaceEntity.KIND_LINUX_HOME -> com.promenar.nexara.data.storage.LinuxHomeExternalFolderBackend(requireNotNull(linuxHome).files) {
+        WorkspaceEntity.KIND_LINUX_HOME -> com.promenar.nexara.data.storage.LinuxHomeExternalFolderBackend(requireNotNull(linuxHome).files, LinuxWorkspaceLocation.requireLocation(directory.workspace.location).directory) {
             runCatching { linuxHome?.root(directory.workspace.location) == directory.root }.getOrDefault(false)
         }
         com.promenar.nexara.data.branch.BranchWorktreeWorkspaceResolver.KIND -> requireNotNull(branchWorktreeResolver).backend(directory)

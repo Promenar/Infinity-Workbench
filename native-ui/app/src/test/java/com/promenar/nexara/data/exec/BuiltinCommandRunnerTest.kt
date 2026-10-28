@@ -55,6 +55,28 @@ class BuiltinCommandRunnerTest {
     }
 
     @Test
+    fun `终端模式答复光标位置查询，等待答复的交互程序得以继续`() = runBlocking<Unit> {
+        // 以普通管道进程模拟伪终端：程序先查询光标位置，再读取 6 字节答复后才输出结果。
+        val terminalRunner = BuiltinCommandRunner(
+            groupLauncher = listOf(PERL, "-e", "setpgrp(0, 0); exec @ARGV or exit 127"),
+            shell = "/bin/sh",
+            signaller = HostSignaller,
+            scratchDirectory = { File(work, "scratch") },
+            killGraceMillis = 500,
+            terminalFactory = { argv, directory, environment ->
+                ProcessBuilder(argv).directory(directory).redirectErrorStream(true)
+                    .also { it.environment().clear(); it.environment().putAll(environment) }.start()
+            },
+        )
+        val output = terminalRunner.run(
+            request("printf '? 继续 \\033[6n'; reply=\$(head -c 6 | tr '\\033' E); echo; echo \"got:\$reply\"", timeout = 10)
+                .copy(terminal = true),
+        )
+        assertThat(output.timedOut).isFalse()
+        assertThat(output.stdout).contains("got:E[1;6R")
+    }
+
+    @Test
     fun `退出码、两路输出与标准输入原样返回`() = runBlocking<Unit> {
         val output = runner.run(request("read line; echo \"out:\$line\"; echo err >&2; exit 3", stdin = "你好\n"))
         assertThat(output.exitCode).isEqualTo(3)

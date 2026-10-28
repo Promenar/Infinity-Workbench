@@ -83,7 +83,8 @@ class LinuxExecIntegrationTest {
         }
     }
 
-    private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null) = BuiltinExecService(
+    private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null, selected: com.promenar.nexara.data.workspace.SessionWorkspace = com.promenar.nexara.data.workspace.SessionWorkspace.Private,
+        resolveSelected: suspend () -> com.promenar.nexara.data.workspace.SessionWorkspace = { selected }) = BuiltinExecService(
         workspace = host ?: object : WorkspaceCommandHost {
             override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
                 val result = block(workspace)
@@ -93,13 +94,48 @@ class LinuxExecIntegrationTest {
         },
         runner = runner,
         environment = BuiltinExecEnvironment(PackagedPython(File(root, "absent")), File(root, "home"), File(root, "tmp"), { null }, inherited = mapOf("PATH" to "/usr/bin:/bin")),
-        shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance,
+        shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance, sessionWorkspace = { resolveSelected() },
         visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" }, sessionMode = { mode }, sessionHome = { homeResolutions++; workspace },
     )
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
         service.runShell("root", "s", command, null, timeout, live)
 
+
+    @Test fun `Linux自选工作区前台后台命令与环境变量使用登记目录`() = runBlocking<Unit> {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        val selected = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
+            com.promenar.nexara.data.local.db.entity.WorkspaceEntity("linux", "linux_home", "app", "/opt/app#$identity", 0), workspace)
+        val exec = service(selected = selected)
+        assertThat(shell(exec, "echo selected").exitCode).isEqualTo(0)
+        assertThat(runtime.specs.last().workingDirectory).isEqualTo("/opt/app")
+        assertThat(runtime.specs.last().environment["NEXARA_WORKSPACE"]).isEqualTo("/opt/app")
+        val prepared = exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "echo background", null,
+            BackgroundJobLocation(workspace, workspace, true, false, workspaceKindOverride = "project", sessionId = "s"), 1, "s")
+        assertThat(runtime.specs.last().workingDirectory).isEqualTo("/opt/app")
+        assertThat(runtime.specs.last().environment["NEXARA_WORKSPACE"]).isEqualTo("/opt/app")
+        prepared.close()
+    }
+
+    @Test fun `命令准备期间切换Linux目录则拒绝混合宿主根与cwd`() = runBlocking<Unit> {
+        val identity = com.promenar.nexara.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        val first = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(
+            com.promenar.nexara.data.local.db.entity.WorkspaceEntity("one", "linux_home", "a", "/opt/a#$identity", 0), workspace)
+        val otherRoot = File(root, "other").apply { mkdir() }
+        val second = first.copy(workspace = first.workspace.copy(id = "two", location = "/srv/b#$identity"), root = otherRoot)
+        var count = 0
+        val exec = service(resolveSelected = { if (count++ == 0) first else second })
+        assertThat(shell(exec, "echo must-not-run").errorCode).isEqualTo("EXEC_WORKSPACE_UNAVAILABLE")
+        assertThat(runtime.specs).isEmpty()
+        val failure = runCatching { exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "echo never", null,
+            BackgroundJobLocation(workspace, workspace, false, false, sessionId = "s"), 1, "s") }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(runtime.specs).isEmpty()
+        var sameRootCount = 0
+        val sameRoot = service(resolveSelected = { if (sameRootCount++ == 0) first else first.copy(workspace = first.workspace.copy(id = "rebound")) })
+        assertThat(shell(sameRoot, "echo never").errorCode).isEqualTo("EXEC_WORKSPACE_UNAVAILABLE")
+        assertThat(runtime.specs).isEmpty()
+    }
 
     @Test fun `前台让出保留进程和对账直到输入完成且拒绝跨会话输入`() = runBlocking<Unit> {
         val exec = service()

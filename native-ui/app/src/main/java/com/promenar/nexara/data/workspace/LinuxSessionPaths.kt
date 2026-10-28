@@ -33,20 +33,29 @@ object LinuxSessionPaths {
     const val SKILLS_ROOT = "/mnt/skills"
 
     fun normalize(raw: String, workingDirectory: String = WORKSPACE_ROOT): String {
-        val value = raw.trim()
+        val cwd = normalizedWorkingDirectory(workingDirectory)
+        val value = if (raw == cwd || raw.startsWith("$cwd/")) raw else raw.trim()
         if (value.isEmpty() || value.any(Character::isISOControl) || '\\' in value || Regex("^[A-Za-z]:").containsMatchIn(value)) invalid()
-        val absolute = if (value.startsWith('/')) value else "${normalizedWorkingDirectory(workingDirectory)}/$value"
-        val normalized = ExternalFolderPaths.normalize(absolute)
-        if (normalized.split('/').any { it == ".l2s" || it.startsWith(".l2s.") || it.startsWith(".proot.l2s.") }) invalid()
-        return normalized
+        val absolute = if (value.startsWith('/')) value else "$cwd/$value"
+        // 登记根的名称属于可信路径前缀；保留目录与内部硬链接校验只作用于根下的工具路径。
+        val selected = cwd.takeIf { LinuxWorkspaceLocation.isAllowedDirectory(it) && (absolute == it || absolute.startsWith("$it/")) }
+        val relative = ExternalFolderPaths.normalize(if (selected != null) absolute.removePrefix(selected) else absolute)
+        if (relative.split('/').any { it == ".l2s" || it.startsWith(".l2s.") || it.startsWith(".proot.l2s.") }) invalid()
+        return if (selected != null) selected + relative.takeUnless { it == "/" }.orEmpty() else relative
     }
 
-    internal fun route(raw: String, privateWorkspace: Boolean): LinuxSessionPath {
-        val path = normalize(raw)
+    internal fun route(raw: String, privateWorkspace: Boolean): LinuxSessionPath = route(raw, privateWorkspace, null)
+
+    internal fun route(raw: String, privateWorkspace: Boolean, workspaceDirectory: String?): LinuxSessionPath =
+        route(raw, privateWorkspace, workspaceDirectory, workspaceDirectory ?: WORKSPACE_ROOT)
+
+    internal fun route(raw: String, privateWorkspace: Boolean, workspaceDirectory: String?, workingDirectory: String): LinuxSessionPath {
+        val path = normalize(raw, workingDirectory)
         fun below(root: String) = path == root || path.startsWith("$root/")
         fun relative(root: String) = path.removePrefix(root).ifEmpty { "/" }
         return when {
             below(PRIVATE_ROOT) -> LinuxSessionPath(LinuxSessionPathKind.PRIVATE, relative(PRIVATE_ROOT))
+            workspaceDirectory != null && below(workspaceDirectory) -> LinuxSessionPath(LinuxSessionPathKind.WORKSPACE, relative(workspaceDirectory))
             below(WORKSPACE_ROOT) -> LinuxSessionPath(if (privateWorkspace) LinuxSessionPathKind.PRIVATE else LinuxSessionPathKind.WORKSPACE, relative(WORKSPACE_ROOT))
             below(SKILLS_ROOT) -> LinuxSessionPath(LinuxSessionPathKind.EXTERNAL, "/skills" + relative(SKILLS_ROOT).takeUnless { it == "/" }.orEmpty())
             path == "/mnt" -> LinuxSessionPath(LinuxSessionPathKind.MOUNTS, path)
@@ -76,7 +85,7 @@ object LinuxSessionPaths {
 
     private fun normalizedWorkingDirectory(path: String): String {
         if (!path.startsWith('/') || path.any(Character::isISOControl) || '\\' in path) invalid()
-        return ExternalFolderPaths.normalize(path)
+        return if (LinuxWorkspaceLocation.isAllowedDirectory(path)) path else ExternalFolderPaths.normalize(path)
     }
 
     private fun hasString(args: JsonObject, key: String) = (args[key] as? JsonPrimitive)?.let { it.isString && it.content.isNotBlank() } == true

@@ -38,4 +38,24 @@ class WorkspacePickerNavigationTest {
         assertThat(compactSharedPath("/storage/emulated/0/Documents/Projects/thesis/system")).isEqualTo("…/thesis/system")
         assertThat(compactSharedPath("/storage/emulated/0")).isEqualTo("/storage/emulated/0")
     }
+
+    @Test fun `Linux 目录按路径段转为面包屑、层级与返回落点`() {
+        val root = WorkspacePickerPage.Linux(null)
+        val home = WorkspacePickerPage.Linux("/home")
+        val code = WorkspacePickerPage.Linux("/home/alice/code")
+        assertThat(root.depth).isEqualTo(1)
+        assertThat(home.depth).isEqualTo(2)
+        assertThat(code.depth).isEqualTo(4)
+
+        val crumbs = code.crumbs({ "" }, "项目", "Linux")
+        assertThat(crumbs.map { it.name }).containsExactly("Linux", "home", "alice", "code").inOrder()
+        assertThat(code.navigateToCrumb(crumbs[0].id)).isEqualTo(root)
+        assertThat(code.navigateToCrumb(crumbs[2].id)).isEqualTo(WorkspacePickerPage.Linux("/home/alice"))
+        assertThat(code.navigateToCrumb(null)).isEqualTo(WorkspacePickerPage.Home)
+
+        // 起点目录的上一级回到起点列表，不进入不可选的 `/`。
+        assertThat(code.parent()).isEqualTo(WorkspacePickerPage.Linux("/home/alice"))
+        assertThat(home.parent()).isEqualTo(root)
+        assertThat(root.parent()).isEqualTo(WorkspacePickerPage.Home)
+    }
 }

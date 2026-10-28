@@ -240,11 +240,11 @@ object SystemPromptSections {
             val place = when {
                 shared -> "a shared device-storage folder at `${workspace.workspace.location}`"
                 workspace.workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME ->
-                    "the Linux environment's home directory `/root` (cleared when the user resets or uninstalls Linux)"
+                    "Linux 环境目录 `${com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(workspace.workspace)}`（重置或卸载 Linux 时清空）"
                 else -> "a Nexara project folder"
             }
             appendLine("### Current Workspace")
-            appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `${if (usesLinux) "/workspace" else "/"}` is its root; `/mnt/<alias>` mounts stay available.")
+            appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `${if (usesLinux) com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(workspace.workspace) else "/"}` is its root; `/mnt/<alias>` mounts stay available.")
             appendLine("- Nexara does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")
             if (shared) appendLine("- Shared storage is case-insensitive and does not support symbolic links or executable permissions.")
         }

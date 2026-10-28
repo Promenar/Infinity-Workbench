@@ -817,8 +817,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     private val branchWorktrees by lazy {
         com.promenar.nexara.data.branch.BranchWorktreeService(
             resolveDirectory = { session ->
-                session.worktreeDirectory ?: if (session.workspaceId?.let { database.workspaceDao().getById(it) }?.kind ==
-                    com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME) "/root" else "/workspace"
+                session.worktreeDirectory ?: session.workspaceId?.let { database.workspaceDao().getById(it) }
+                    ?.let(com.promenar.nexara.data.workspace.LinuxWorkspaceLocation::workingDirectory) ?: "/workspace"
             },
             execute = { session, cwd, command ->
                 withContext(Dispatchers.IO) {

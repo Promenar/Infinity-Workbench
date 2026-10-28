@@ -65,7 +65,7 @@ class BuiltinExecService(
     val pipAvailable: Boolean get() = environment.pipAvailable
     private val packageProvenance = LinuxExecProvenance(linuxProvenance)
 
-    private suspend fun linuxRequest(root: File, kind: String, sessionId: String?, source: String, stdin: String?, seconds: Int): BuiltinCommandRequest = withContext(Dispatchers.IO) {
+    private suspend fun linuxRequest(root: File, kind: String, sessionId: String?, source: String, stdin: String?, seconds: Int, expectedWorkspace: SessionWorkspace? = null): BuiltinCommandRequest = withContext(Dispatchers.IO) {
         val system = environment.forWorkspace(root, kind)
         // 私有主工作区已持有根写锁，直接复用当前根，避免回调重新申请同一把锁。
         val home = if (kind == SessionWorkspaceResolver.KIND_PRIVATE) root else sessionId?.let { sessionHome(it) }
@@ -74,7 +74,15 @@ class BuiltinExecService(
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = root.canonicalPath)
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = home.canonicalPath)
         launchBinding?.let { com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = it.baseRoot.canonicalPath) }
-        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home, launchBinding)
+        val selected = if (launchBinding == null) sessionWorkspace(sessionId) else null
+        if (selected is SessionWorkspace.Unavailable || selected is SessionWorkspace.Directory && selected.root.canonicalFile != root.canonicalFile ||
+            launchBinding == null && expectedWorkspace != null && selected != expectedWorkspace) {
+            throw SecurityException("会话工作区正在变化，请重新执行文件操作")
+        }
+        val workspaceDirectory = (selected as? SessionWorkspace.Directory)?.takeIf {
+            it.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME
+        }?.let { com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(it.workspace) }
+        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("NEXARA_SKILLS")), home, launchBinding, workspaceDirectory)
         val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
         BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment + ("TERM" to "xterm-256color"), stdin, seconds, terminal = true)
     }
@@ -221,7 +229,7 @@ class BuiltinExecService(
         suspend fun runCommand(root: File): BuiltinCommandOutput {
             attachment?.onDirectory?.invoke(root)
             val base = if (kind == ExecRunKind.LINUX) {
-                linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds)
+                linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds, target)
             } else request(root, workspaceKind)
             val commandRequest = base.copy(environment = base.environment + lease.environment)
             val linux = runtime == "linux"

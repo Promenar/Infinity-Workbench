@@ -31,6 +31,23 @@ class LinuxFileWorkspaceBackendTest {
         assertThrows(ExternalFolderException::class.java) { runBlocking { backend.delete("/.l2s.data0001") } }
     }
 
+    @Test fun `自选目录以虚拟根读写且拒绝相邻目录和跨根链接`() = runBlocking<Unit> {
+        val selected = File(root, "opt/app").apply { mkdirs() }
+        val outside = File(root, "opt/other").apply { mkdir() }
+        File(outside, "secret").writeText("secret")
+        val backend = LinuxFileWorkspaceBackend(fs, "/opt/app") { ready }
+        backend.write("/data", "chosen".toByteArray())
+        assertThat(File(selected, "data").readText()).isEqualTo("chosen")
+        assertThat(File(home, "data").exists()).isFalse()
+        Files.createSymbolicLink(File(selected, "link").toPath(), java.nio.file.Paths.get("/opt/other"))
+        assertThrows(ExternalFolderException::class.java) { runBlocking { backend.read("/link/secret") } }
+        val restricted = fs.forDirectory("/opt/app")
+        listOf("/root", "/opt/application", "/opt/app/../other", "/opt/app/link/secret").forEach { path ->
+            val failure = assertThrows(com.promenar.nexara.domain.linux.LinuxFileException::class.java) { restricted.resolvePath(path) }
+            assertThat(failure.code).isEqualTo(com.promenar.nexara.domain.linux.LinuxFileErrorCode.OUTSIDE_ROOTFS)
+        }
+    }
+
     @Test fun `二进制写入复制移动与版本冲突沿用目录工具协议`() = runBlocking<Unit> {
         val binary = byteArrayOf(0, -1, 3, 0)
         val first = backend.write("/a", binary, createOnly = true)

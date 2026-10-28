@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.workspace
 
+import com.promenar.nexara.data.workspace.LinuxWorkspaceLocation
+import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.ui.theme.NexaraMonospace
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
@@ -227,12 +229,23 @@ private fun PathRow(path: String, meaning: String, tag: String) {
     )
 }
 
+/** 绑定 Linux 目录时命令工作目录就是该目录；其它工作区经绑定挂到 /workspace。 */
+internal fun linuxWorkspacePath(workspace: SessionWorkspaceUi): String =
+    (workspace as? SessionWorkspaceUi.Directory)
+        ?.takeIf { it.kind == WorkspaceEntity.KIND_LINUX_HOME }
+        ?.let { LinuxWorkspaceLocation.parse(it.location)?.directory }
+        ?: "/workspace"
+
 @Composable
 private fun PathSection(state: AgentReachState) {
     NexaraSettingsSection(
         title = stringResource(R.string.agent_reach_section_paths),
         // Linux 接管 shell_exec 时，命令看到的是 Alpine 根目录而不是设备根目录。
-        footer = stringResource(if (state.backends.linuxRunsShell()) R.string.linux_reach_paths_footer else R.string.agent_reach_paths_footer),
+        footer = if (state.backends.linuxRunsShell()) {
+            stringResource(R.string.linux_reach_paths_footer, linuxWorkspacePath(state.workspace))
+        } else {
+            stringResource(R.string.agent_reach_paths_footer)
+        },
     ) {
         PathRow("/", stringResource(R.string.agent_reach_path_root), "agent_reach_path_root")
         PathRow("\$NEXARA_WORKSPACE", stringResource(R.string.agent_reach_path_workspace_var), "agent_reach_path_workspace_var")

@@ -67,6 +67,52 @@ class LinuxHomeWorkspaceTest {
         assertThat(resolver.resolveWorkspace(fresh.id)).isInstanceOf(SessionWorkspace.Directory::class.java)
     }
 
+    @Test fun `非主目录沿用环境身份且返回选中的宿主目录`() {
+        val project = File(rootfs, "opt/app").apply { mkdirs() }
+        val location = "/opt/app#" + access.location().substringAfter('#')
+        assertThat(WorkspaceEntity.isValidLocation(WorkspaceEntity.KIND_LINUX_HOME, location)).isTrue()
+        assertThat(access.root(location)).isEqualTo(project)
+    }
+
+    @Test fun `浏览显示隐藏目录跳过链接并按小写排序登记不写选中目录`() = runBlocking<Unit> {
+        val browser = WorkspaceDirectoryBrowser(File(base, "projects"), mockk(), dao, linuxHome = access)
+        File(rootfs, "home").mkdir()
+        File(rootfs, "srv").mkdir()
+        val opt = File(rootfs, "opt").apply { mkdir() }
+        listOf("z", "Alpha", ".hidden").forEach { File(opt, it).mkdir() }
+        File(opt, "file").writeText("普通文件")
+        Files.createSymbolicLink(File(opt, "link").toPath(), home.toPath())
+        assertThat(browser.linuxRoots().map { it.path.path }).containsExactly("/root", "/home", "/opt", "/srv").inOrder()
+        assertThat(browser.listLinux("/opt").map { it.name }).containsExactly(".hidden", "Alpha", "z").inOrder()
+        val record = browser.registerLinux("/opt/Alpha")
+        assertThat(record.displayName).isEqualTo("Alpha")
+        assertThat(browser.registerLinux("/opt/Alpha", "另一个显示名")).isEqualTo(record)
+        assertThat(record.location.substringAfter('#')).isEqualTo(access.location().substringAfter('#'))
+        assertThat(File(opt, "Alpha").list()).isEmpty()
+        val created = browser.createLinuxFolder("/opt", "new") as CreateFolderResult.Created
+        assertThat(created.folder.path).isEqualTo(File("/opt/new"))
+        assertThat(browser.createLinuxFolder("/opt", "new")).isEqualTo(CreateFolderResult.Rejected(FolderNameError.EXISTS))
+        assertThat(browser.createLinuxFolder("/opt", "../etc")).isEqualTo(CreateFolderResult.Rejected(FolderNameError.INVALID))
+    }
+
+    @Test fun `浏览登记与新建拒绝系统绑定点缺失目录及祖先链接`() = runBlocking<Unit> {
+        val browser = WorkspaceDirectoryBrowser(File(base, "projects"), mockk(), dao, linuxHome = access)
+        File(rootfs, "home/session").mkdirs()
+        val opt = File(rootfs, "opt").apply { mkdir() }
+        Files.createSymbolicLink(File(opt, "alias").toPath(), home.toPath())
+        listOf("/etc", "/", "/workspace", "/home/session", "/home/session/data", "/opt/missing", "/opt/alias", "/opt/alias/child", "/opt/../root").forEach { path ->
+            assertThrows(ExternalFolderException::class.java) { runBlocking { browser.listLinux(path) } }
+            assertThrows(ExternalFolderException::class.java) { runBlocking { browser.registerLinux(path) } }
+            assertThrows(ExternalFolderException::class.java) { runBlocking { browser.createLinuxFolder(path, "child") } }
+        }
+        assertThat(records).isEmpty()
+        assertThat(File(home, ".nexara-linux-workspace-id").exists()).isFalse()
+        val record = browser.registerLinux("/opt")
+        File(home, ".nexara-linux-workspace-id").delete()
+        browser.registerLinuxHome()
+        assertThrows(ExternalFolderException::class.java) { access.root(record.location) }
+    }
+
     @Test fun `未安装缺目录与伪造主目录均不可用且不会创建目录`() = runBlocking<Unit> {
         state.value = LinuxRuntimeState.NotInstalled(10)
         assertThat(access.availability()).isEqualTo(LinuxHomeAvailability.NOT_READY)
