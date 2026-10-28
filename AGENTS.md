@@ -36,5 +36,17 @@
 - 提交前必须复核暂存清单与 diff，排除密钥、签名材料、`secure_env/`、`artifacts/`、构建产物及任何 `.nexara-workspace-*` 临时目录；不得借机纳入无关或无法确认来源的修改。
 - commit/push 授权不包含 tag、PR、GitHub Release、强推或历史改写；这些操作仍需用户明确授权。用户当轮明确要求暂停提交或不推送时，以最新指令为准。
 
+## 6. 版本号规则
+
+- 每次构建签名正式版装到真机，或对外发布安装包，都先把 `native-ui/app/build.gradle.kts` 的 `versionCode` 加 1。debug 构建、只跑门禁或重装同一提交的安装包不升版本。
+- `versionName` 采用 `主.次.补丁-beta`：
+  - 包含一组用户可见的新功能时，次版本号加 1，补丁号归零；
+  - 只含修复时，补丁号加 1；
+  - `-beta` 后缀保留到用户决定转为正式版。
+- 升版本与出包在同一提交完成：
+  - 把 `CHANGELOG.md` 顶部 `[Unreleased]` 的内容切为 `## [版本名] - YYYY-MM-DD` 小节，并新开空的 `[Unreleased]`；
+  - 同步 README 与 `.agent/registry.md` 中的当前版本描述。
+- 交付报告写明版本名、versionCode 与安装包 SHA-256。
+
 ---
-*规范更新于 2026-10-17。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
+*规范更新于 2026-10-28。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
