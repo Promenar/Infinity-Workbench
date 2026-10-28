@@ -21,7 +21,7 @@
     <string name="subagent_status_cancelled">已停止</string>
     <string name="subagent_status_interrupted">已中断</string>
     <string name="subagent_open_cd">查看子代理过程</string>
-    <string name="subagent_viewer_task_section">主 Agent 交给它的任务</string>
+    <string name="subagent_viewer_task_section">主智能体交给它的任务</string>
     <string name="subagent_viewer_profile">工具档位</string>
     <string name="subagent_profile_read_only">只读</string>
     <string name="subagent_profile_inherit">沿用会话工具</string>
@@ -30,7 +30,7 @@
     <string name="subagent_viewer_usage">用量</string>
     <string name="subagent_viewer_timeline">过程</string>
     <string name="subagent_viewer_timeline_empty">尚无步骤</string>
-    <string name="subagent_viewer_result">交回主 Agent 的结果</string>
+    <string name="subagent_viewer_result">交回主智能体的结果</string>
     <string name="subagent_viewer_no_result">尚无结果</string>
     <string name="subagent_viewer_missing">该子代理记录已不存在。</string>
     <string name="chat_step_subagent_name">子代理</string>

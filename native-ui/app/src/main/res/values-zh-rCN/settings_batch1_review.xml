@@ -8,7 +8,6 @@
     <string name="settings_batch1_display_style">显示风格</string>
     <string name="settings_batch1_model_purpose">模型用途</string>
     <string name="settings_batch1_generation_template">生成模板</string>
-    <string name="settings_batch1_memory_generation">记忆生成</string>
     <string name="settings_batch1_network_forwarding">网络转发</string>
     <string name="settings_batch1_backup_options">归档选项</string>
     <string name="settings_batch1_termux_intro_footer">按步骤把命令粘贴到 Termux 执行；SSH 和文件夹按需配置。</string>

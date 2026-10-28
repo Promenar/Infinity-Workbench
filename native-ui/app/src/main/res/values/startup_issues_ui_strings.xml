@@ -10,7 +10,7 @@
     <string name="startup_issues_abandon_title">Discard the unfinished operation?</string>
     <string name="startup_issues_abandon_message">Your files stay exactly as they are now. The app only closes out the record, then checks the workspace again. If it still isn\'t consistent, it stays paused.</string>
     <string name="startup_issues_diagnose">Let an agent diagnose</string>
-    <string name="startup_issues_diagnose_unavailable">Create an assistant first to diagnose with an agent.</string>
+    <string name="startup_issues_diagnose_unavailable">Create an agent first to diagnose with it.</string>
     <string name="startup_issues_records">Diagnostic records</string>
     <string name="startup_issues_records_note">Redacted: no keys, message content or file content.</string>
     <string name="startup_issues_no_records">No records yet.</string>

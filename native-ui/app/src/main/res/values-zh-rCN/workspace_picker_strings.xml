@@ -38,14 +38,12 @@
     <string name="workspace_bar_switch">切换</string>
     <string name="workspace_session_busy">生成中，暂不能切换</string>
     <string name="workspace_switch_notice">已从“%1$s”切换到“%2$s”</string>
-    <string name="chat_top_workspace_cd">工作区 %1$s，打开工作区与 Agent 可达范围</string>
+    <string name="chat_top_workspace_cd">工作区 %1$s，打开工作区与智能体可达范围</string>
     <string name="agent_reach_workspace_switch">切换工作区</string>
     <string name="workspace_switch_failed">切换失败，请重试</string>
 
     <string name="workspace_agent_default">默认工作区</string>
     <string name="workspace_agent_default_none">会话私有工作区（默认）</string>
-    <string name="workspace_agent_clear">清除默认工作区</string>
-    <string name="workspace_agent_footer">新建会话时使用此工作区；修改不影响已有会话。</string>
 
     <string name="workspace_kb_entry">工作区</string>
     <plurals name="workspace_kb_count">
@@ -59,7 +57,7 @@
     <string name="workspace_kb_delete">移出列表</string>
     <string name="workspace_kb_delete_title">移出列表？</string>
     <string name="workspace_kb_delete_message">“%1$s”中的文件不受影响。</string>
-    <string name="workspace_kb_delete_referenced">仍有 %1$d 个会话、%2$d 个助手在使用，无法移出。</string>
+    <string name="workspace_kb_delete_referenced">仍有 %1$d 个会话、%2$d 个智能体在使用，无法移出。</string>
     <string name="workspace_kb_operation_failed">操作失败，请重试</string>
     <string name="workspace_kb_folder_empty">这个文件夹是空的</string>
     <string name="workspace_kb_import">加入资料</string>

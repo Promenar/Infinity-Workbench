@@ -29,7 +29,7 @@ class ReleaseReachableUiLocalizationContractTest {
         "ui/common/AgentAvatar.kt",
         "ui/rag/KnowledgeDebugSettingsScreen.kt",
         "ui/rag/KnowledgeBaseSettingsScreen.kt",
-        "ui/hub/AgentAdvancedRetrievalScreen.kt",
+        "ui/hub/AgentEditSections.kt",
         "ui/settings/ProviderModelsScreen.kt",
     )
 
@@ -87,7 +87,6 @@ class ReleaseReachableUiLocalizationContractTest {
         "sheet_settings_rerank_unavailable",
         "retrieval_rerank_model_unconfigured",
         "retrieval_rerank_model_unavailable_message",
-        "agent_retrieval_rerank_model_unavailable_message",
         "chat_tool_error",
         "chat_cd_tool_image",
         "chat_cd_attached_image",

@@ -9,7 +9,7 @@
     <string name="linux_reach_unavailable">此设备不可用</string>
     <string name="linux_reach_scope">在 Alpine 中运行，可访问 /workspace、/home/session 与 /mnt/&lt;别名&gt;</string>
     <string name="chat_approval_kind_linux_command">Linux 命令</string>
-    <string name="chat_approval_kind_linux_command_detail">在 Alpine 中以 &brand; 身份运行，可访问应用数据与网络；工作区外删除的文件无法恢复。</string>
+    <string name="chat_approval_kind_linux_command_detail">在 Alpine 中以本应用权限运行，可访问应用数据与网络；工作区外删除的文件无法恢复。</string>
     <string name="chat_tool_full_output">完整输出</string>
     <string name="workspace_kind_linux_home">Linux 文件系统</string>
     <string name="workspace_picker_linux_home">浏览目录</string>

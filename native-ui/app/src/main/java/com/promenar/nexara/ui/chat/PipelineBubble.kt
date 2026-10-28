@@ -1218,6 +1218,9 @@ internal fun InlineToolRow(
     // 只有浏览器调用时逐条显示“打开网页 · 主机”等步骤行，点按打开浏览器。
     val browserSteps = remember(invocations) { invocations.mapNotNull(::browserStep) }
     val browserOnly = browserSteps.isNotEmpty() && browserSteps.size == invocations.size
+    // 知识检索逐条显示结果数，点按打开检索详情；混合工具时追加在摘要下方。
+    val knowledgeSteps = remember(invocations) { invocations.mapNotNull(::knowledgeSearchStep) }
+    val knowledgeOnly = knowledgeSteps.isNotEmpty() && knowledgeSteps.size == invocations.size
     val segments = buildList<CharSequence> {
         if (stateSummaries.isNotEmpty()) add(stateSummaries.joinToString("，"))
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
@@ -1229,7 +1232,8 @@ internal fun InlineToolRow(
         com.promenar.nexara.ui.chat.diff.FileChangeDiffSheet(change, onDismissRequest = { openedChange = null })
     }
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (memoryOnly) MemoryChangeRows(memoryChanges) else if (browserOnly) BrowserStepRows(browserSteps, fontSize) else CompactStepRow(
+        if (memoryOnly) MemoryChangeRows(memoryChanges) else if (browserOnly) BrowserStepRows(browserSteps, fontSize)
+        else if (knowledgeOnly) KnowledgeSearchStepRows(knowledgeSteps, fontSize) else CompactStepRow(
             segments = segments,
             icon = Icons.Rounded.CheckCircle,
             active = summary.status == ToolSummaryStatus.RUNNING,
@@ -1244,6 +1248,7 @@ internal fun InlineToolRow(
         // 关键数据变化不随详情折叠，避免用户错过。
         if (runtimeChanges.isNotEmpty()) RuntimeChangesNotice(runtimeChanges)
         if (!memoryOnly && memoryChanges.isNotEmpty()) MemoryChangeRows(memoryChanges)
+        if (!knowledgeOnly) knowledgeSteps.filter { it.data != null }.takeIf { it.isNotEmpty() }?.let { KnowledgeSearchStepRows(it, fontSize) }
         // 子代理分组卡始终跟在摘要下方，随轮次一起折叠。
         invocations.filter { it.name == com.promenar.nexara.data.subagent.SubagentLimits.TOOL_NAME }.forEach { invocation ->
             invocation.call?.id?.let { stepId -> key("subagent", stepId) { SubagentGroupCard(unscopedStepId(stepId)) } }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="touch_lock_button_cd">锁定触摸</string>
-    <string name="touch_lock_running">Agent 执行中</string>
+    <string name="touch_lock_running">智能体执行中</string>
     <string name="touch_lock_waiting_approval">需要你批准</string>
     <string name="touch_lock_done">已完成</string>
     <string name="touch_lock_hold_hint">长按锁 1.5 秒解锁</string>

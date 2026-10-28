@@ -6,7 +6,7 @@
     <string name="onboarding_rail_linux">Linux 环境</string>
     <string name="onboarding_rail_provider">连接 AI</string>
     <string name="onboarding_rail_model">选择模型</string>
-    <string name="onboarding_rail_agent">首个 Agent</string>
+    <string name="onboarding_rail_agent">首个智能体</string>
 
     <string name="onboarding_linux_space">可用 %1$s · 需要约 %2$s</string>
     <string name="onboarding_linux_install">安装并继续</string>
@@ -56,7 +56,7 @@
     <string name="local_inference_release_unavailable">此版本不支持本地模型，请改用云端提供商。</string>
 
     <string name="onboarding_model_title">选择模型</string>
-    <string name="onboarding_model_desc">为首个 Agent 选一个对话模型。标“待验证”的模型选中后会先发一条极短的测试请求。</string>
+    <string name="onboarding_model_desc">为首个智能体选一个对话模型。标“待验证”的模型选中后会先发一条极短的测试请求。</string>
     <string name="onboarding_model_loading">正在获取模型列表…</string>
     <string name="onboarding_model_tag_chat">对话</string>
     <string name="onboarding_model_tag_reasoning">推理</string>
@@ -70,10 +70,10 @@
     <string name="onboarding_model_back_provider">返回连接提供商</string>
     <string name="onboarding_model_probe_failed">该模型未通过对话能力验证，请换一个模型。</string>
 
-    <string name="onboarding_agent_title">创建首个 Agent</string>
+    <string name="onboarding_agent_title">创建首个智能体</string>
     <string name="onboarding_agent_desc">先起个名字，指令、工具和知识库之后都能再改。</string>
-    <string name="onboarding_agent_name">Agent 名称</string>
-    <string name="onboarding_agent_default_name">我的 Agent</string>
+    <string name="onboarding_agent_name">智能体名称</string>
+    <string name="onboarding_agent_default_name">我的智能体</string>
     <string name="onboarding_agent_suggestion_research">研究助理</string>
     <string name="onboarding_agent_suggestion_code">编程搭档</string>
     <string name="onboarding_agent_suggestion_writing">写作伙伴</string>
@@ -83,14 +83,14 @@
     <string name="onboarding_agent_env_builtin">内置环境</string>
     <string name="onboarding_agent_env_installing">内置环境（Linux 安装完成后新会话使用 Linux）</string>
     <string name="onboarding_agent_env_stopped">内置环境（Linux 安装中断）</string>
-    <string name="onboarding_agent_action">创建 Agent</string>
+    <string name="onboarding_agent_action">创建智能体</string>
     <string name="onboarding_agent_creating">正在创建…</string>
 
     <string name="onboarding_ready_title">准备就绪</string>
     <string name="onboarding_ready_desc">发送第一条消息，收到回复即完成设置。</string>
     <string name="onboarding_ready_provider">已连接 %1$s</string>
     <string name="onboarding_ready_model">模型 %1$s</string>
-    <string name="onboarding_ready_agent">Agent「%1$s」</string>
+    <string name="onboarding_ready_agent">智能体「%1$s」</string>
     <string name="onboarding_ready_linux_installing">Linux 安装中 %1$d%%，完成后新会话自动使用</string>
     <string name="onboarding_ready_linux_preparing">Linux 正在安装，完成后新会话自动使用</string>
     <string name="onboarding_ready_linux_ok">Linux 环境已就绪</string>

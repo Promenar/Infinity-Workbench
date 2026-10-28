@@ -6,7 +6,7 @@
     <string name="linux_terminal_workspace_untitled">未命名会话</string>
     <string name="linux_terminal_tab">终端 %1$d</string>
     <string name="linux_terminal_tab_exited">终端 %1$d · 已退出</string>
-    <string name="linux_terminal_job_tab">Agent 任务 #%1$d · 只读</string>
+    <string name="linux_terminal_job_tab">智能体任务 #%1$d · 只读</string>
     <string name="linux_terminal_new">新建终端</string>
     <string name="linux_terminal_close">关闭当前页签</string>
     <string name="linux_terminal_close_title">关闭终端 %1$d？</string>

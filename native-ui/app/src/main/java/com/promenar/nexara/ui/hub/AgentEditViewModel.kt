@@ -6,11 +6,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.agent.AgentMemoryPolicy
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.agent.AgentRetrievalMode
+import com.promenar.nexara.data.agent.KnowledgeFileAccess
 import com.promenar.nexara.data.agent.PresetAgents
+import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.model.params.SamplingValues
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
-import com.promenar.nexara.domain.usecase.RagConfigPersistence
+import com.promenar.nexara.domain.model.ExecutionMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -37,7 +42,6 @@ enum class AgentEditErrorCode { NOT_FOUND, LOAD_FAILED, SAVE_FAILED, DELETE_FAIL
 
 class AgentEditViewModel(
     private val agentRepository: AgentRepository,
-    private val ragConfigPersistence: RagConfigPersistence,
     private val avatarImporter: suspend (Uri, String) -> String? = { _, _ -> null },
     private val avatarCleaner: (Uri) -> Unit = {},
     /** 已登记的自选工作区，用于显示默认工作区的名称与路径。 */
@@ -45,6 +49,10 @@ class AgentEditViewModel(
     /** 按模型保存的参数方案；为 null 时不提供方案。 */
     private val parameterSchemeRepository: com.promenar.nexara.data.repository.ParameterSchemeRepository? = null,
     private val deleteAgentUseCase: com.promenar.nexara.domain.usecase.DeleteAgentUseCase? = null,
+    /** 全局 MCP 服务器，供“新会话默认”选择。 */
+    mcpServers: Flow<List<McpServerEntity>> = flowOf(emptyList()),
+    /** 该智能体当前的会话数，删除确认据此写明将关闭几个会话。 */
+    private val countAgentSessions: suspend (String) -> Int = { 0 },
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -62,13 +70,14 @@ class AgentEditViewModel(
     /** 本次编辑中最近选用的方案，只用于标出“已修改”，不落库。 */
     private val _baseSchemeId = MutableStateFlow<String?>(null)
     private val _isPinned = MutableStateFlow(false)
-    private val _useInheritedConfig = MutableStateFlow(true)
-    private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
-    private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
-    /** 记忆权限独立于“继承全局检索参数”：继承时仍按助手单独保存。 */
-    private val _memoryPolicy = MutableStateFlow(com.promenar.nexara.data.agent.AgentMemoryPolicy())
+    /** 智能体检索配置：界面只编辑检索方式与知识库文件访问，其余旧字段原样保留、运行时不读取。 */
+    private val _retrievalConfig = MutableStateFlow(AgentRetrievalConfig())
+    private val _memoryPolicy = MutableStateFlow(AgentMemoryPolicy())
     private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
     private val _defaultWorkspaceId = MutableStateFlow<String?>(null)
+    private val _executionMode = MutableStateFlow(ExecutionMode.WORKSPACE)
+    private val _mcpServerIds = MutableStateFlow<List<String>>(emptyList())
+    private val _sessionCount = MutableStateFlow(0)
 
     val name: StateFlow<String> = _name.asStateFlow()
     val description: StateFlow<String> = _description.asStateFlow()
@@ -77,12 +86,12 @@ class AgentEditViewModel(
     val selectedColor: StateFlow<String> = _selectedColor.asStateFlow()
     val selectedIcon: StateFlow<String> = _selectedIcon.asStateFlow()
     val avatarPath: StateFlow<String?> = _avatarPath.asStateFlow()
-    /** 助手会话默认的采样参数；为空的项按模型默认。 */
+    /** 智能体会话默认的采样参数；为空的项按模型默认。 */
     val sampling: StateFlow<SamplingValues> = _sampling.asStateFlow()
     val reasoningEffort: StateFlow<String?> = _reasoningEffort.asStateFlow()
     val baseSchemeId: StateFlow<String?> = _baseSchemeId.asStateFlow()
 
-    /** 助手当前模型的已存方案。 */
+    /** 智能体当前模型的已存方案。 */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val parameterSchemes: StateFlow<List<com.promenar.nexara.data.model.params.ParameterScheme>> = _selectedModel
         .flatMapLatest { modelKey ->
@@ -92,12 +101,17 @@ class AgentEditViewModel(
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val isPinned: StateFlow<Boolean> = _isPinned.asStateFlow()
-    val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
-    val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
-    val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
-    val memoryPolicy: StateFlow<com.promenar.nexara.data.agent.AgentMemoryPolicy> = _memoryPolicy.asStateFlow()
+    val retrievalConfig: StateFlow<AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
+    val memoryPolicy: StateFlow<AgentMemoryPolicy> = _memoryPolicy.asStateFlow()
     val saveError: StateFlow<AgentEditErrorCode?> = _saveError.asStateFlow()
     val defaultWorkspaceId: StateFlow<String?> = _defaultWorkspaceId.asStateFlow()
+    /** 新会话默认的执行模式与 MCP 服务器；只影响之后新建的会话。 */
+    val executionMode: StateFlow<ExecutionMode> = _executionMode.asStateFlow()
+    val mcpServerIds: StateFlow<List<String>> = _mcpServerIds.asStateFlow()
+    val sessionCount: StateFlow<Int> = _sessionCount.asStateFlow()
+    val mcpServers: StateFlow<List<McpServerEntity>> = mcpServers
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     /** 默认工作区的登记记录；id 已设置但登记被删除时为 null，界面显示“已删除的工作区”。 */
     val defaultWorkspace: StateFlow<WorkspaceEntity?> = combine(_defaultWorkspaceId, workspaces) { id, all ->
         id?.let { wanted -> all.firstOrNull { it.id == wanted } }
@@ -116,20 +130,20 @@ class AgentEditViewModel(
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
         combine(_sampling, _reasoningEffort) { values, effort -> Pair(values, effort) },
-        combine(_useInheritedConfig, _ragConfig, _retrievalConfig, _defaultWorkspaceId, _memoryPolicy) { u, r, ret, ws, policy ->
-            InheritanceEditState(u, r, ret.copy(memoryPolicy = policy), ws, policy)
+        combine(_retrievalConfig, _defaultWorkspaceId, _memoryPolicy, _executionMode, _mcpServerIds) { ret, ws, policy, mode, mcp ->
+            DefaultsEditState(ret, ws, policy, mode, mcp)
         }
-    ) { text, (prompt, model, color), (icon, path, pin), (values, effort), (useIn, rag, retr, workspace, policy) ->
+    ) { text, (prompt, model, color), (icon, path, pin), (values, effort), defaults ->
         val initial = text.initial
         initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
-        initial.defaultWorkspaceId != workspace ||
+        initial.defaultWorkspaceId != defaults.defaultWorkspaceId ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
-        initial.useInheritedConfig != useIn || initial.memoryPolicy != policy ||
-        (initial.retrievalConfig?.retrievalMode ?: com.promenar.nexara.data.agent.AgentRetrievalMode.AUTO) != retr.retrievalMode ||
-        (initial.retrievalConfig?.knowledgeFileAccess ?: com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST) != retr.knowledgeFileAccess ||
-        initial.samplingValues() != values || initial.reasoningEffort != effort ||
-        (!useIn && (initial.ragConfig != rag || initial.retrievalConfig != retr))
+        initial.memoryPolicy != defaults.memoryPolicy ||
+        initial.executionMode != defaults.executionMode || initial.mcpServerIds != defaults.mcpServerIds ||
+        (initial.retrievalConfig?.retrievalMode ?: AgentRetrievalMode.AUTO) != defaults.retrievalConfig.retrievalMode ||
+        (initial.retrievalConfig?.knowledgeFileAccess ?: KnowledgeFileAccess.ON_REQUEST) != defaults.retrievalConfig.knowledgeFileAccess ||
+        initial.samplingValues() != values || initial.reasoningEffort != effort
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
@@ -164,17 +178,12 @@ class AgentEditViewModel(
                 _isPinned.value = agent.isPinned
                 _sampling.value = agent.samplingValues()
                 _reasoningEffort.value = agent.reasoningEffort
-                _useInheritedConfig.value = agent.useInheritedConfig
                 _defaultWorkspaceId.value = agent.defaultWorkspaceId
                 _memoryPolicy.value = agent.memoryPolicy
-
-                if (agent.useInheritedConfig) {
-                    _ragConfig.value = getGlobalRagConfig()
-                    _retrievalConfig.value = getGlobalRetrievalConfig(agent.retrievalConfig)
-                } else {
-                    _ragConfig.value = agent.ragConfig ?: getGlobalRagConfig()
-                    _retrievalConfig.value = agent.retrievalConfig ?: getGlobalRetrievalConfig(null)
-                }
+                _retrievalConfig.value = agent.retrievalConfig ?: AgentRetrievalConfig()
+                _executionMode.value = agent.executionMode
+                _mcpServerIds.value = agent.mcpServerIds
+                    refreshSessionCount()
                     _saveError.value = null
                     retryAction = null
                 } else {
@@ -188,21 +197,6 @@ class AgentEditViewModel(
                 retryAction = { loadAgent(agentId, localizedPresetName, localizedPresetDescription) }
             }
         }
-    }
-
-    private fun getGlobalRagConfig(): com.promenar.nexara.data.agent.AgentRagConfig {
-        return ragConfigPersistence.loadRagConfig()
-    }
-
-    private fun getGlobalRetrievalConfig(
-        agentOptions: com.promenar.nexara.data.agent.AgentRetrievalConfig? = _retrievalConfig.value,
-    ): com.promenar.nexara.data.agent.AgentRetrievalConfig {
-        val options = agentOptions ?: com.promenar.nexara.data.agent.AgentRetrievalConfig()
-        // 检索方式与文件授权属于智能体，继承只更新全局检索参数。
-        return ragConfigPersistence.loadRetrievalConfig().copy(
-            retrievalMode = options.retrievalMode,
-            knowledgeFileAccess = options.knowledgeFileAccess,
-        )
     }
 
     fun setName(value: String) {
@@ -339,58 +333,55 @@ class AgentEditViewModel(
         scheduleSave()
     }
 
-    fun setUseInheritedConfig(value: Boolean) {
-        _useInheritedConfig.value = value
-        if (value) {
-            _ragConfig.value = getGlobalRagConfig()
-            _retrievalConfig.value = getGlobalRetrievalConfig()
+    /** 检索方式：明确提交，立即持久化。与知识库文件访问互不联动。 */
+    fun setRetrievalMode(mode: AgentRetrievalMode) {
+        _retrievalConfig.update { it.copy(retrievalMode = mode) }
+        commitNow()
+    }
+
+    fun setKnowledgeFileAccess(access: KnowledgeFileAccess) {
+        _retrievalConfig.update { it.copy(knowledgeFileAccess = access) }
+        commitNow()
+    }
+
+    /** 新会话默认的执行模式：明确提交，立即持久化，只影响之后新建的会话。 */
+    fun setExecutionMode(mode: ExecutionMode) {
+        _executionMode.value = mode
+        commitNow()
+    }
+
+    /** 新会话默认连接的 MCP 服务器；保留原有顺序，只增删给出的一项。 */
+    fun setMcpServerEnabled(serverId: String, enabled: Boolean) {
+        _mcpServerIds.update { ids -> if (enabled) (ids + serverId).distinct() else ids - serverId }
+        commitNow()
+    }
+
+    /** 删除确认打开前刷新会话数，避免显示进入编辑页之后新建或删除的会话。 */
+    fun refreshSessionCount() {
+        val agentId = _initialAgent.value?.id ?: return
+        viewModelScope.launch {
+            _sessionCount.value = try {
+                countAgentSessions(agentId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _sessionCount.value
+            }
         }
-        scheduleSave()
-    }
-
-    fun updateRagConfig(transform: (com.promenar.nexara.data.agent.AgentRagConfig) -> com.promenar.nexara.data.agent.AgentRagConfig) {
-        _ragConfig.update(transform)
-        _useInheritedConfig.value = false
-        scheduleSave()
-    }
-
-    fun updateRetrievalConfig(transform: (com.promenar.nexara.data.agent.AgentRetrievalConfig) -> com.promenar.nexara.data.agent.AgentRetrievalConfig) {
-        _retrievalConfig.update(transform)
-        _useInheritedConfig.value = false
-        scheduleSave()
-    }
-
-    fun resetToGlobal() {
-        _useInheritedConfig.value = true
-        _ragConfig.value = getGlobalRagConfig()
-        _retrievalConfig.value = getGlobalRetrievalConfig()
-        scheduleSave()
     }
 
     /** 记忆权限明确提交并立即持久化；上限调低时默认档位随之收紧。只影响之后的检索与新建会话的默认值。 */
     fun updateMemoryPolicy(
-        transform: (com.promenar.nexara.data.agent.AgentMemoryPolicy) -> com.promenar.nexara.data.agent.AgentMemoryPolicy,
+        transform: (AgentMemoryPolicy) -> AgentMemoryPolicy,
     ) {
         _memoryPolicy.update { transform(it).normalized() }
-        val agentId = _initialAgent.value?.id ?: return
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
-            withContext(NonCancellable) {
-                persistCurrentAgent(agentId)
-            }
-        }
+        commitNow()
     }
 
     /** 设置或清除（null）默认工作区：明确提交，立即持久化，离开页面也不取消。只影响之后新建的会话。 */
     fun setDefaultWorkspace(workspaceId: String?) {
         _defaultWorkspaceId.value = workspaceId
-        val agentId = _initialAgent.value?.id ?: return
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
-            withContext(NonCancellable) {
-                persistCurrentAgent(agentId)
-            }
-        }
+        commitNow()
     }
 
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
@@ -428,26 +419,6 @@ class AgentEditViewModel(
         }
     }
 
-    /** Agent RAG Prompt 与系统 Prompt 使用相同的严格持久化契约。 */
-    suspend fun saveRagConfig(
-        transform: (com.promenar.nexara.data.agent.AgentRagConfig) ->
-            com.promenar.nexara.data.agent.AgentRagConfig,
-    ): Result<Unit> {
-        saveJob?.cancelAndJoin()
-        val initial = _initialAgent.value
-            ?: return Result.failure(IllegalStateException("Agent 尚未加载"))
-        val value = transform(_ragConfig.value)
-        val candidate = buildAgent(initial.id).copy(
-            ragConfig = value,
-            retrievalConfig = _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value),
-            useInheritedConfig = false,
-        )
-        return persistCandidate(candidate) {
-            _ragConfig.value = value
-            _useInheritedConfig.value = false
-        }
-    }
-
     private suspend fun persistCurrentAgent(agentId: String): Result<Unit> =
         persistCandidate(buildAgent(agentId))
 
@@ -475,20 +446,15 @@ class AgentEditViewModel(
             presencePenalty = _sampling.value.presencePenalty,
             repetitionPenalty = _sampling.value.repetitionPenalty,
             reasoningEffort = _reasoningEffort.value,
-            ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
-            retrievalConfig = if (_useInheritedConfig.value) {
-                com.promenar.nexara.data.agent.AgentRetrievalConfig(
-                    memoryPolicy = _memoryPolicy.value,
-                    retrievalMode = _retrievalConfig.value.retrievalMode,
-                    knowledgeFileAccess = _retrievalConfig.value.knowledgeFileAccess,
-                ).takeUnless { it == com.promenar.nexara.data.agent.AgentRetrievalConfig() }
-            } else {
-                _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
-            },
-            useInheritedConfig = _useInheritedConfig.value,
-            executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE,
+            // 智能体不再覆盖检索参数：旧的自定义参数原样保留以便旧数据往返，运行时不读取。
+            ragConfig = initial?.ragConfig,
+            retrievalConfig = _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
+                .takeUnless { initial?.retrievalConfig == null && it == AgentRetrievalConfig() },
+            useInheritedConfig = initial?.useInheritedConfig ?: true,
+            executionMode = _executionMode.value,
+            // 技能名单运行时不读取（用户技能按全局启用名单生效），只原样保留。
             skills = initial?.skills ?: emptyList(),
-            mcpServerIds = initial?.mcpServerIds ?: emptyList(),
+            mcpServerIds = _mcpServerIds.value,
             defaultWorkspaceId = _defaultWorkspaceId.value,
             userRules = initial?.userRules.orEmpty(),
             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
@@ -527,12 +493,23 @@ class AgentEditViewModel(
         }
     }
 
-    private data class InheritanceEditState(
-        val useInherited: Boolean,
-        val ragConfig: com.promenar.nexara.data.agent.AgentRagConfig,
-        val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig,
+    /** 明确提交的设置立即持久化；离开页面也不取消。 */
+    private fun commitNow() {
+        val agentId = _initialAgent.value?.id ?: return
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            withContext(NonCancellable) {
+                persistCurrentAgent(agentId)
+            }
+        }
+    }
+
+    private data class DefaultsEditState(
+        val retrievalConfig: AgentRetrievalConfig,
         val defaultWorkspaceId: String?,
-        val memoryPolicy: com.promenar.nexara.data.agent.AgentMemoryPolicy,
+        val memoryPolicy: AgentMemoryPolicy,
+        val executionMode: ExecutionMode,
+        val mcpServerIds: List<String>,
     )
 
     private data class TextEditState(
@@ -553,9 +530,6 @@ class AgentEditViewModel(
                         deleteAgentUseCase = app.deleteAgentUseCase,
                         parameterSchemeRepository = app.parameterSchemeRepository,
                         agentRepository = app.agentRepository,
-                        ragConfigPersistence = RagConfigPersistence(
-                            app.getSharedPreferences("rag_settings", 0)
-                        ),
                         avatarImporter = { uri, slot ->
                             withContext(Dispatchers.IO) {
                                 com.promenar.nexara.ui.settings.AvatarStore(
@@ -575,6 +549,12 @@ class AgentEditViewModel(
                             )
                         },
                         workspaces = app.database.workspaceDao().observeAll(),
+                        mcpServers = app.skillRepository.getAllMcpServers(),
+                        countAgentSessions = { agentId ->
+                            withContext(Dispatchers.IO) {
+                                app.sessionRepository.getAll().count { it.agentId == agentId }
+                            }
+                        },
                     ) as T
                 }
             }

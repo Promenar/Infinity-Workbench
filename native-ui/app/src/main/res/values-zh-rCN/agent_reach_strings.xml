@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
-    <string name="agent_reach_title">Agent 可达范围</string>
+    <string name="agent_reach_title">智能体可达范围</string>
 
     <string name="agent_reach_section_workspace">当前工作区</string>
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
@@ -21,7 +21,7 @@
     <string name="agent_reach_backend_files">文件工具</string>
     <string name="agent_reach_backend_files_scope">工作区、/mnt 与 /skills</string>
     <string name="agent_reach_backend_builtin">内置命令 shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">以 &brand; 身份运行，可访问全部应用数据，不受工作区限制</string>
+    <string name="agent_reach_backend_builtin_scope">以本应用权限运行，可访问全部应用数据，不受工作区限制</string>
     <string name="agent_reach_backend_sandbox">隔离脚本 exec_js · python_sandbox</string>
     <string name="agent_reach_backend_sandbox_scope">隔离运行，只能访问工作区路径</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>

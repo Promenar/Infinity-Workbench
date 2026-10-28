@@ -1072,6 +1072,13 @@ fun ChatScreenContent(
                                                 backgroundRunPreview(it, com.promenar.nexara.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
                                             }
                                         },
+                                        knowledgeAccess = if (call.toolName != REQUEST_KNOWLEDGE_ACCESS_TOOL) null else {
+                                            remember(call, request.assistantMessageId, uiState.messages) {
+                                                val reason = ApprovalPreview.arguments(call, uiState.messages, request.assistantMessageId)
+                                                    ?.get("reason")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+                                                knowledgeAccessApproval(call.toolName, call.executionTarget, reason)
+                                            }
+                                        },
                                     )
                                 }.ifEmpty {
                                     listOf(ApprovalDisplayCall(
@@ -1519,6 +1526,7 @@ internal fun approvalRiskLabel(risk: String): String = stringResource(
         "script" -> R.string.chat_approval_risk_script
         "external_write" -> R.string.chat_approval_risk_external_write
         "schedule" -> R.string.schedule_approval_risk
+        "access_grant" -> R.string.chat_approval_risk_access_grant
         else -> R.string.chat_approval_risk_unknown
     },
 )

@@ -17,14 +17,14 @@ object PresetAgents {
 
     /** 与 Locale 无关的 Room 新装稳定 fallback；实际显示始终走当前 Activity 资源。 */
     fun fallbackName(id: String): String = when (id) {
-        "default" -> "Nexara Assistant"
+        "default" -> "General Agent"
         "coder" -> "Coding Expert"
         "writer" -> "Creative Writer"
         else -> id
     }
 
     fun fallbackDescription(id: String): String = when (id) {
-        "default" -> "General AI assistant with streaming chat and knowledge retrieval"
+        "default" -> "General agent with streaming chat and knowledge retrieval"
         "coder" -> "Full-stack development and software architecture specialist"
         "writer" -> "Creative writing, translation, and editing specialist"
         else -> ""

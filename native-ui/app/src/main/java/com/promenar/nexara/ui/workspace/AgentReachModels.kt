@@ -13,7 +13,7 @@ import com.promenar.nexara.domain.linux.LinuxUnavailableReason
 import com.promenar.nexara.domain.tool.LinuxExecRouting
 
 /**
- * “Agent 可达范围”面板的展示数据：当前会话的 Agent 此刻能碰到的工作区、挂载、执行后端、审批与网络。
+ * “智能体可达范围”面板的展示数据：当前会话的智能体此刻能碰到的工作区、挂载、执行后端、审批与网络。
  * 只描述现状，不参与任何授权判定；判定仍由各工具与执行策略完成。
  */
 internal data class AgentReachState(
@@ -35,6 +35,8 @@ internal data class ReachMount(
     /** 设备路径来源可被命令以真实路径访问；系统授权来源只对文件工具可见。 */
     val commandAccessible: Boolean,
     val unavailable: Boolean,
+    /** 只读挂载的知识库；路径区以“知识库 · 只读”标签代替授权方式。 */
+    val knowledgeBase: Boolean = false,
 )
 
 internal enum class ReachBackendKind { FILES, BUILTIN, SANDBOX, LINUX, TERMUX, SSH }
@@ -100,6 +102,7 @@ internal fun ExternalMount.toReach(): ReachMount = ReachMount(
     source = if (sourceType == "real_path") ReachMountSource.PATH else ReachMountSource.SAF,
     commandAccessible = commandAccessible,
     unavailable = unavailableReason != null,
+    knowledgeBase = sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE,
 )
 
 /** Linux 就绪且开启时 shell_exec 在 Alpine 中运行，命令路径按 guest 视角解释，内置进程只剩 python_exec。 */

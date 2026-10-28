@@ -23,7 +23,7 @@
     <string name="agent_reach_backend_files">File tools</string>
     <string name="agent_reach_backend_files_scope">Workspace, /mnt and /skills</string>
     <string name="agent_reach_backend_builtin">Built-in commands shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">Runs as &brand; and can access all app data, not limited to the workspace</string>
+    <string name="agent_reach_backend_builtin_scope">Runs with this app\'s permissions and can access all app data, not limited to the workspace</string>
     <string name="agent_reach_backend_sandbox">Sandbox exec_js · python_sandbox</string>
     <string name="agent_reach_backend_sandbox_scope">Isolated; workspace paths only</string>
     <string name="agent_reach_backend_termux">Termux termux_exec</string>

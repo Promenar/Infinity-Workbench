@@ -8,7 +8,6 @@
     <string name="settings_batch1_display_style">Display style</string>
     <string name="settings_batch1_model_purpose">Model purpose</string>
     <string name="settings_batch1_generation_template">Generation template</string>
-    <string name="settings_batch1_memory_generation">Memory generation</string>
     <string name="settings_batch1_network_forwarding">Network forwarding</string>
     <string name="settings_batch1_backup_options">Archive options</string>
     <string name="settings_batch1_termux_intro_footer">Paste each command into Termux. SSH and folders are optional.</string>

@@ -13,7 +13,7 @@
     <string name="chat_approval_title_ssh_install_key">Install SSH key</string>
     <string name="chat_approval_title_mcp">MCP tool</string>
     <string name="chat_approval_kind_builtin_command">Built-in command</string>
-    <string name="chat_approval_kind_builtin_command_detail">Runs as &brand; and can access all app data, not limited to the workspace. Deleted files can\'t be recovered.</string>
+    <string name="chat_approval_kind_builtin_command_detail">Runs with this app\'s permissions and can access all app data, not limited to the workspace. Deleted files can\'t be recovered.</string>
     <string name="chat_approval_kind_termux_command">Termux command</string>
     <string name="chat_approval_kind_termux_command_detail">Runs as Termux and reaches only Termux files and shared storage it was granted.</string>
     <string name="chat_approval_kind_ssh_command">Remote command</string>

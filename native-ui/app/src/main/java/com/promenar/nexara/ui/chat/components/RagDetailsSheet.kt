@@ -32,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Source
@@ -170,6 +172,7 @@ fun RagDetailsSheet(
     onDismissRequest: () -> Unit,
     openLink: ((String) -> Unit)? = null,
     trace: RagRetrievalTrace? = null,
+    knowledgeSearch: KnowledgeSearchDetails? = null,
 ) {
     // 外框与内容同为 surfaceContainerLow，顶部拖动条一带不会露出另一层底色。
     NexaraModalSheet(onDismissRequest = onDismissRequest, height = NexaraSheetHeight.Full, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -180,6 +183,7 @@ fun RagDetailsSheet(
             modifier = Modifier.weight(1f),
             openLink = openLink,
             trace = trace,
+            knowledgeSearch = knowledgeSearch,
         )
     }
 }
@@ -193,6 +197,8 @@ fun RagDetailsSheetContent(
     trace: RagRetrievalTrace? = null,
     initialTab: RagDetailsTab = initialRagDetailsTab(references, citations, kgPaths, trace),
     openLink: ((String) -> Unit)? = null,
+    /** 智能体调用知识检索工具的结果：页签上方显示查询词，条目显示引用编号与读取路径。 */
+    knowledgeSearch: KnowledgeSearchDetails? = null,
 ) {
     var selectedTabIndex by rememberSaveable(initialTab) { mutableIntStateOf(initialTab.ordinal) }
     val tabs = RagDetailsTab.entries
@@ -258,6 +264,14 @@ fun RagDetailsSheetContent(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
+            knowledgeSearch?.let { search ->
+                Text(
+                    text = stringResource(R.string.knowledge_search_query_line, search.query),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp).testTag(KNOWLEDGE_SEARCH_QUERY_TAG),
+                )
+            }
             val detailTabs = tabs.map { tab ->
                 NexaraTabItem(
                     title = stringResource(tab.labelRes),
@@ -279,7 +293,7 @@ fun RagDetailsSheetContent(
                 label = "rag_details_tab",
             ) { index ->
                 when (tabs[index.coerceIn(0, tabs.lastIndex)]) {
-                    RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace)
+                    RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace, knowledgeSearch)
                     RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
                     RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths, references)
                 }
@@ -307,7 +321,11 @@ private fun RagDetailsTab.testTag(): String = when (this) {
 }
 
 @Composable
-private fun RetrievedReferencesList(references: List<RagReference>, trace: RagRetrievalTrace?) {
+private fun RetrievedReferencesList(
+    references: List<RagReference>,
+    trace: RagRetrievalTrace?,
+    knowledgeSearch: KnowledgeSearchDetails?,
+) {
     val keyedReferences = remember(references) {
         stableKeyedItems(references, ::ragReferenceStableKey)
     }
@@ -329,7 +347,7 @@ private fun RetrievedReferencesList(references: List<RagReference>, trace: RagRe
             key = { _, keyedReference -> keyedReference.key },
         ) { index, keyedReference ->
             val reference = keyedReference.value
-            RetrievedReferenceRow(reference, index, trace?.scoring)
+            RetrievedReferenceRow(reference, index, trace?.scoring, knowledgeSearch?.hits?.get(reference.id))
             if (index != keyedReferences.lastIndex) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
@@ -413,7 +431,12 @@ private fun RetrievalTraceRows(rows: List<RagTraceRow>, modifier: Modifier = Mod
 }
 
 @Composable
-private fun RetrievedReferenceRow(reference: RagReference, index: Int, scoring: String?) {
+private fun RetrievedReferenceRow(
+    reference: RagReference,
+    index: Int,
+    scoring: String?,
+    hit: com.promenar.nexara.data.knowledge.KnowledgeSearchHit? = null,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,7 +449,7 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int, scoring: 
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            RankLabel(index + 1)
+            RankLabel(hit?.citationId ?: (index + 1).toString(), monospace = hit != null)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -471,6 +494,38 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int, scoring: 
             style = MaterialTheme.typography.bodyMedium.forReading(),
             color = MaterialTheme.colorScheme.onSurface,
         )
+        hit?.let { KnowledgeHitPathRow(it) }
+    }
+}
+
+/** 文档条目的读取路径：已挂载显示路径；未挂载与其他会话工作区只说明原因；历史对话没有这一行。 */
+@Composable
+private fun KnowledgeHitPathRow(hit: com.promenar.nexara.data.knowledge.KnowledgeSearchHit) {
+    val line = knowledgeHitPathLine(hit) ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag(KNOWLEDGE_SEARCH_PATH_TAG),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = if (line.isPath) Icons.Rounded.FolderOpen else Icons.Rounded.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        if (line.isPath) {
+            NexaraIdentifierText(
+                text = line.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        } else {
+            Text(
+                text = stringResource(line.messageRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -526,7 +581,7 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RankLabel(index + 1)
+                    RankLabel((index + 1).toString())
                     Spacer(Modifier.weight(1f))
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
@@ -545,7 +600,7 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    RankLabel(index + 1)
+                    RankLabel((index + 1).toString())
                     Text(
                         text = citation.title.ifBlank { stringResource(R.string.rag_details_unknown_webpage) },
                         style = MaterialTheme.typography.titleSmall,
@@ -684,7 +739,7 @@ private fun KgPathHeader(path: KgPath, pathIndex: Int, references: List<RagRefer
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            RankLabel(pathIndex + 1)
+            RankLabel((pathIndex + 1).toString())
             Text(
                 text = stringResource(R.string.rag_details_path_label, pathIndex + 1),
                 style = MaterialTheme.typography.titleSmall,
@@ -737,15 +792,16 @@ private fun KgRelationshipSentence(
 }
 
 @Composable
-private fun RankLabel(rank: Int) {
+private fun RankLabel(label: String, monospace: Boolean = false) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Text(
-            text = rank.toString(),
-            style = MaterialTheme.typography.labelLarge,
+            text = label,
+            style = if (monospace) MaterialTheme.typography.labelLarge.copy(fontFamily = com.promenar.nexara.ui.theme.NexaraMonospace)
+            else MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )

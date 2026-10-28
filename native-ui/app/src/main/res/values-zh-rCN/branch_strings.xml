@@ -52,5 +52,5 @@
     <string name="git_worktree_unused">没有会话在用</string>
     <string name="git_worktree_current">正在查看</string>
     <string name="git_worktree_open_cd">查看这个 worktree</string>
-    <string name="git_worktree_note">合并、移除由会话里的 Agent 提议，按普通命令审批；删除分支会话时会问你是否一并移除它的 worktree。</string>
+    <string name="git_worktree_note">合并、移除由会话里的智能体提议，按普通命令审批；删除分支会话时会问你是否一并移除它的 worktree。</string>
 </resources>

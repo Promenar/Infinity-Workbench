@@ -23,11 +23,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgents
@@ -62,8 +64,8 @@ private val presetIcons = listOf(
 fun AgentEditScreen(
     agentId: String,
     onNavigateBack: () -> Unit,
-    onNavigateToRagConfig: (String) -> Unit,
-    onNavigateToAdvancedRetrieval: (String) -> Unit
+    onNavigateToSkills: () -> Unit = {},
+    onNavigateToKnowledgeSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: AgentEditViewModel = viewModel(
@@ -89,6 +91,27 @@ fun AgentEditScreen(
     val baseSchemeId by viewModel.baseSchemeId.collectAsState()
     val parameterSchemes by viewModel.parameterSchemes.collectAsState()
     val providers by settingsViewModel.providers.collectAsState()
+    val executionMode by viewModel.executionMode.collectAsState()
+    val retrievalConfig by viewModel.retrievalConfig.collectAsState()
+    val mcpServerIds by viewModel.mcpServerIds.collectAsState()
+    val mcpServers by viewModel.mcpServers.collectAsState()
+    val sessionCount by viewModel.sessionCount.collectAsState()
+    val app = context.applicationContext as? com.promenar.nexara.NexaraApplication
+    val mcpSettings = app?.mcpConnectionSettings
+    val mcpConnectionRevision = mcpSettings?.revision?.collectAsStateWithLifecycle()?.value
+    val mcpRows = remember(mcpServers, mcpServerIds, mcpConnectionRevision) {
+        agentMcpRows(mcpServers, mcpServerIds) { server ->
+            server.enabled && (mcpSettings?.isAllowed(server.id, server.type, server.url)
+                ?: com.promenar.nexara.data.remote.mcp.McpEndpointPolicy.isAllowed(server.type, server.url))
+        }
+    }
+    // 技能摘要只扫描用户级技能：智能体没有会话工作区，项目技能随新会话的工作区决定。
+    val skillCatalog: com.promenar.nexara.ui.skills.SkillCatalogViewModel = viewModel(
+        factory = com.promenar.nexara.ui.skills.SkillCatalogViewModel.factory(context.applicationContext as android.app.Application)
+    )
+    val skillsState by skillCatalog.state.collectAsState()
+    LaunchedEffect(skillCatalog) { skillCatalog.bind(null) }
+    val enabledUserSkills = com.promenar.nexara.ui.chat.sessionSkillsSummary(skillsState)?.enabledUserSkills
 
     val allModels by settingsViewModel.providerModels.collectAsState()
     val resolver = ModelCatalogRuntime.resolver
@@ -182,7 +205,7 @@ fun AgentEditScreen(
             }
         },
         title = stringResource(R.string.agent_edit_delete_title),
-        description = stringResource(R.string.agent_edit_delete_message),
+        description = agentDeleteMessage(sessionCount),
         confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
         confirmColor = MaterialTheme.colorScheme.error,
         destructive = true
@@ -221,6 +244,11 @@ fun AgentEditScreen(
             showWorkspacePicker = false
             viewModel.setDefaultWorkspace(picked.id)
         },
+        onPickPrivate = {
+            showWorkspacePicker = false
+            viewModel.setDefaultWorkspace(null)
+        },
+        privateTitle = stringResource(R.string.workspace_agent_default_none),
     )
 
     NexaraBottomSheet(
@@ -373,11 +401,9 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 2. 基本信息：纯净卡片式无框输入 ───
+            // 基本信息与外观：名称、描述、图标、颜色四行，颜色用色点就地选择。
             item {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_basic)
-                ) {
+                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_basic)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -403,12 +429,6 @@ fun AgentEditScreen(
                             maxLines = 3,
                         )
                     }
-                }
-            }
-
-            // 图标选择在弹层中完成，颜色选择盘保留独立编辑区。
-            item {
-                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_appearance)) {
                     // 行首直接展示当前图标，与下方其它设置行的图标列对齐。
                     NexaraSettingsItem(
                         title = stringResource(R.string.agent_edit_label_icon),
@@ -425,7 +445,13 @@ fun AgentEditScreen(
                             )
                         },
                     )
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(
+                            text = stringResource(R.string.agent_edit_label_color),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         ColorPickerPanel(
                             selectedColor = parsedColor,
                             onColorSelected = { color ->
@@ -437,9 +463,12 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 4. 模型配置：助手专属默认模型 ───
+            // 模型与参数：新会话沿用，会话内可再单独调整。
             item {
-                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_model)) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.agent_edit_section_model),
+                    footer = stringResource(R.string.agent_edit_model_params_footer),
+                ) {
                     NexaraSettingsItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.agent_edit_current_model),
@@ -476,36 +505,32 @@ fun AgentEditScreen(
             }
 
             item {
-                com.promenar.nexara.ui.workspace.AgentDefaultWorkspaceSection(
+                AgentNewSessionDefaultsSection(
+                    executionMode = executionMode,
                     workspaceId = defaultWorkspaceId,
                     workspace = defaultWorkspace,
-                    onChoose = { showWorkspacePicker = true },
-                    onClear = { viewModel.setDefaultWorkspace(null) },
+                    enabledUserSkills = enabledUserSkills,
+                    mcpRows = mcpRows,
+                    onExecutionModeChange = viewModel::setExecutionMode,
+                    onChooseWorkspace = { showWorkspacePicker = true },
+                    onOpenSkills = onNavigateToSkills,
+                    onMcpToggle = viewModel::setMcpServerEnabled,
                 )
             }
 
-            // ─── 6. 知识库与检索配置 ───
             item {
-                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_knowledge)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Storage,
-                        title = stringResource(R.string.agent_edit_rag_config),
-                        subtitle = stringResource(R.string.settings_retrieval_agent_rag_short),
-                        onClick = { onNavigateToRagConfig(agentId) },
-                        showChevron = true,
-                    )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Tune,
-                        title = stringResource(R.string.agent_edit_advanced_retrieval),
-                        subtitle = stringResource(R.string.settings_retrieval_agent_advanced_short),
-                        onClick = { onNavigateToAdvancedRetrieval(agentId) },
-                        showChevron = true,
-                    )
-                }
+                AgentKnowledgeMemorySection(
+                    retrievalMode = retrievalConfig.retrievalMode,
+                    fileAccess = retrievalConfig.knowledgeFileAccess,
+                    policy = memoryPolicy,
+                    onRetrievalModeChange = viewModel::setRetrievalMode,
+                    onFileAccessChange = viewModel::setKnowledgeFileAccess,
+                    onPolicyChange = viewModel::updateMemoryPolicy,
+                )
             }
 
             item {
-                AgentMemoryPolicySection(memoryPolicy, viewModel::updateMemoryPolicy)
+                AgentScopeSection(memoryPolicy, viewModel::updateMemoryPolicy, onNavigateToKnowledgeSettings)
             }
 
             item {
@@ -514,13 +539,23 @@ fun AgentEditScreen(
                         icon = Icons.Rounded.DeleteOutline,
                         title = stringResource(R.string.agent_edit_delete_btn),
                         titleColor = MaterialTheme.colorScheme.error,
-                        onClick = { showDeleteConfirm = true },
+                        onClick = {
+                            viewModel.refreshSessionCount()
+                            showDeleteConfirm = true
+                        },
+                        modifier = Modifier.testTag("agent_edit_delete"),
                     )
                 }
             }
         }
     }
 }
+
+/** 删除确认写明将先关闭的会话数；没有会话时只提示无法撤销。首页删除共用此文案。 */
+@Composable
+internal fun agentDeleteMessage(sessionCount: Int): String =
+    if (sessionCount > 0) pluralStringResource(R.plurals.agent_delete_message_sessions, sessionCount, sessionCount)
+    else stringResource(R.string.agent_edit_delete_message)
 
 @Composable
 private fun InCardInputField(

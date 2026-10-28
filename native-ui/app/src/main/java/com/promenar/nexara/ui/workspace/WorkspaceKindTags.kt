@@ -6,13 +6,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -85,3 +90,26 @@ fun WorkspaceKindHeader(kind: String?, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** 知识库挂载的只读标签：信息色带锁，与授权方式、工具范围等中性标签同排。 */
+@Composable
+fun KnowledgeReadOnlyTag(modifier: Modifier = Modifier) {
+    val domain = MaterialTheme.nexaraDomainColors
+    Surface(
+        color = domain.infoContainer,
+        contentColor = domain.onInfoContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier.testTag(KNOWLEDGE_READ_ONLY_TAG),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(12.dp))
+            Text(stringResource(R.string.knowledge_mount_read_only_tag), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+    }
+}
+
+const val KNOWLEDGE_READ_ONLY_TAG = "knowledge_read_only_tag"

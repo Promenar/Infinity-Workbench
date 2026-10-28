@@ -808,6 +808,8 @@ data class ApprovalDisplayCall(
     val schedule: ScheduleApprovalPreview? = null,
     /** 命令以后台任务启动时的运行方式。 */
     val background: BackgroundRunPreview? = null,
+    /** 知识库访问授权的申请原因与挂载目标；存在时替代参数文本与通用类别说明。 */
+    val knowledgeAccess: KnowledgeAccessApproval? = null,
 )
 
 @Composable
@@ -879,6 +881,7 @@ internal fun approvalToolTitle(name: String): String = when {
     name == "ssh_host_delete" -> stringResource(R.string.chat_approval_title_ssh_host_delete)
     name == "ssh_host_install_key" -> stringResource(R.string.chat_approval_title_ssh_install_key)
     name.startsWith("mcp__") -> stringResource(R.string.chat_approval_title_mcp)
+    name == REQUEST_KNOWLEDGE_ACCESS_TOOL -> stringResource(R.string.chat_approval_title_knowledge_access)
     else -> toolFriendlyName(name)
 }
 
@@ -930,7 +933,11 @@ internal fun ApprovalKindBand(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(
-            imageVector = if (backend != null) Icons.Rounded.Terminal else Icons.Rounded.Extension,
+            imageVector = when {
+                backend != null -> Icons.Rounded.Terminal
+                toolName == REQUEST_KNOWLEDGE_ACCESS_TOOL -> Icons.Rounded.Key
+                else -> Icons.Rounded.Extension
+            },
             contentDescription = null,
             tint = accent,
             modifier = Modifier.size(18.dp),
@@ -953,7 +960,8 @@ internal fun ApprovalKindBand(
                 )
             }
         }
-        if (riskLabel.isNotBlank()) ApprovalTag(riskLabel)
+        // 位置已写明类别（如“访问授权”）时不再重复同名风险标签。
+        if (riskLabel.isNotBlank() && riskLabel != where) ApprovalTag(riskLabel)
     }
 }
 
@@ -1042,6 +1050,8 @@ private fun ApprovalReason(description: String) {
 /** 类别条上的执行位置：命令正文在下方完整展示时只给执行范围，不重复命令。 */
 @Composable
 private fun approvalCallWhere(call: ApprovalDisplayCall): String? {
+    // 授权目标是挂载预览 JSON，不作为位置显示；类别条写“访问授权”。
+    if (call.knowledgeAccess != null) return call.riskLabel
     val preview = call.preview
     val target = call.executionTarget?.let(ToolExecutionTargets::display)
         ?: preview?.target?.takeIf(String::isNotBlank)
@@ -1061,6 +1071,13 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String, pen
     val preview = call.preview
     val target = call.executionTarget?.let(ToolExecutionTargets::display)
         ?: preview?.target?.takeIf(String::isNotBlank)
+    call.knowledgeAccess?.let { access ->
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ApprovalCallTitle(call.name, pending)
+            KnowledgeAccessApprovalBody(access)
+        }
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ApprovalCallTitle(call.name, pending)
         ApprovalReason(description)

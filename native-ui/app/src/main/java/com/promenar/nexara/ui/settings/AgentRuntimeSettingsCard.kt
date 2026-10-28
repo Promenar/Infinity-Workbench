@@ -35,7 +35,7 @@ internal fun AgentRuntimeSettingsCard(
     state: SkillsSettingsVisualState,
     actions: SkillsSettingsVisualActions,
 ) {
-    NexaraSettingsSection(title = stringResource(R.string.settings_execution_budget)) {
+    NexaraSettingsSection(title = stringResource(R.string.settings_execution_limits_section)) {
         LoopLimitCard(state.loopLimit, actions.onLoopLimitChange, icon = Icons.Rounded.Loop)
         NexaraNumericSetting(
             icon = Icons.Rounded.DataUsage,

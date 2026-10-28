@@ -86,3 +86,42 @@ fun approvalCardDarkChinesePreview() = ApprovalPage(NexaraThemeMode.DARK)
 @Preview(name = "审批卡 浅英360 大字", widthDp = 360, heightDp = 1400, locale = "en", fontScale = 1.3f)
 @Composable
 fun approvalCardLightEnglishLargePreview() = ApprovalPage(NexaraThemeMode.LIGHT)
+
+// 知识库访问授权：类别条“内置工具 · 访问授权”，标题“需要批准：读取知识库”，
+// 正文依次为申请原因（引用样式）、知识库与文档数、挂载路径、只读说明。
+@Composable
+private fun KnowledgeAccessApprovalPage(mode: NexaraThemeMode) {
+    NexaraTheme(preferences = NexaraThemePreferences(mode = mode, colorSource = NexaraColorSource.NEXARA)) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                val riskLabel = approvalRiskLabel("access_grant")
+                ApprovalCard(
+                    toolName = REQUEST_KNOWLEDGE_ACCESS_TOOL,
+                    description = "",
+                    calls = listOf(
+                        ApprovalDisplayCall(
+                            name = REQUEST_KNOWLEDGE_ACCESS_TOOL,
+                            argumentsSummary = "{}",
+                            riskLabel = riskLabel,
+                            knowledgeAccess = KnowledgeAccessApproval(
+                                reason = "片段 12 只写了签名配置的位置，需要读部署手册全文，确认 CI 里如何注入签名。",
+                                targets = listOf(
+                                    com.promenar.nexara.data.knowledge.KnowledgeAccessTarget(
+                                        "root", "默认知识库", 128, "knowledge", "/mnt/knowledge",
+                                    ),
+                                ),
+                                allowed = true,
+                            ),
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "审批卡 知识库访问 深中390", widthDp = 390, heightDp = 640, locale = "zh-rCN")
+@Preview(name = "审批卡 知识库访问 浅英360 大字", widthDp = 360, heightDp = 900, locale = "en", fontScale = 1.3f)
+@Composable
+fun approvalCardKnowledgeAccessPreview() = KnowledgeAccessApprovalPage(NexaraThemeMode.DARK)

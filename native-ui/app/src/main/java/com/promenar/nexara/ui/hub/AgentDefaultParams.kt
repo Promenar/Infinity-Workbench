@@ -99,7 +99,10 @@ internal fun AgentDefaultParamsContent(
                 }
             }
         }
-        ParameterSchemeSection(editor, actions, modelName, scrollState = scrollState)
+        ParameterSchemeSection(
+            editor, actions, modelName, scrollState = scrollState,
+            footer = stringResource(R.string.agent_edit_scheme_shared_footer),
+        )
         NexaraSettingsSection(title = stringResource(R.string.params_section_sampling)) {
             SamplingParamRows(editor, actions, ownLabel = null)
         }

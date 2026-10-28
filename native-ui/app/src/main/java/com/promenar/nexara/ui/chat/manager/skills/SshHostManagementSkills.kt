@@ -292,7 +292,7 @@ internal fun authorizedKeyInstallCommand(publicKey: String): String {
 }
 
 internal fun sshHostGuidance(code: String): String = when (code.removePrefix("SSH_")) {
-    "AGENT_HOST_MANAGEMENT_DISABLED" -> "用户尚未允许 Agent 管理 SSH 主机，请提示用户在 设置 → 工具设置 → SSH 主机 中开启。"
+    "AGENT_HOST_MANAGEMENT_DISABLED" -> "用户尚未允许智能体管理 SSH 主机，请提示用户在 设置 → 工具设置 → SSH 主机 中开启。"
     "HOST_KEY_UNTRUSTED" -> "用户没有确认主机指纹，未做任何改动；需要用户核对指纹后再试。"
     "CREDENTIAL_MISSING" -> "没有可用于登录的密码，用户未在弹窗中提供；请让用户稍后重试或在设置中编辑该主机。"
     "KEY_INSTALL_FAILED" -> "公钥写入远端 authorized_keys 失败（可能是主目录不可写），原配置未改变。"

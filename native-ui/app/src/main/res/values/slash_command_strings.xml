@@ -8,7 +8,7 @@
 
     <!-- 内置命令名称与说明 -->
     <string name="slash_cmd_new_name">New chat</string>
-    <string name="slash_cmd_new_desc">Start a new chat with this assistant</string>
+    <string name="slash_cmd_new_desc">Start a new chat with this agent</string>
     <string name="slash_cmd_rename_name">Rename</string>
     <string name="slash_cmd_rename_desc">Rename this chat; add the new title after the command</string>
     <string name="slash_cmd_prompt_name">Chat prompt</string>
@@ -18,7 +18,7 @@
     <string name="slash_cmd_clear_name">Clear history</string>
     <string name="slash_cmd_clear_desc">Delete all messages in this chat after you confirm</string>
     <string name="slash_cmd_mode_name">Execution mode</string>
-    <string name="slash_cmd_mode_desc">Switch tool approval: auto, semi or manual</string>
+    <string name="slash_cmd_mode_desc">Switch execution mode: workspace or full access</string>
     <string name="slash_cmd_tools_name">Tool use</string>
     <string name="slash_cmd_tools_desc">Turn tool use on or off for this chat</string>
     <string name="slash_cmd_export_name">Export chat</string>
@@ -39,7 +39,7 @@
     <!-- 无法执行 -->
     <string name="slash_reject_nothing_to_clear">This chat has no messages to clear</string>
     <string name="slash_reject_nothing_to_export">This chat has no messages to export</string>
-    <string name="slash_reject_unknown_mode">Unknown mode “%1$s”. Use auto, semi or manual</string>
+    <string name="slash_reject_unknown_mode">Unknown mode “%1$s”. Use workspace or full access</string>
     <string name="slash_reject_unknown_toggle">Use /tools on or /tools off</string>
     <string name="slash_reject_unknown_format">Export supports md or txt only</string>
     <string name="slash_block_disabled">Skill /%1$s is off. Turn it on in chat settings under Tools</string>

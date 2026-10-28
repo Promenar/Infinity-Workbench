@@ -561,9 +561,9 @@ class SubagentRunner(
         private const val INTERRUPTED_TOOL_RESULT = "工具执行被中断，状态未知。请先核对实际状态，不要直接重复可能产生副作用的操作。"
         private const val WORKSPACE_PATHS = "工作区文件使用以 / 开头的虚拟路径（相对工作区根目录），文件工具接受 path 或 uuid；" +
             "先用 list_files、search_files 查找，不要猜测路径，也不要使用设备上的绝对路径。"
-        private const val SYSTEM_PROMPT = "你是主 Agent 派生的子代理，在独立上下文中完成交给你的一项子任务。" +
-            "你只与主 Agent 通信：不要向用户提问，信息不足时基于已有信息给出最佳结论并说明假设。" +
-            "完成后只输出交给主 Agent 的结论正文，简洁、结构清楚，包含关键事实、路径与未解决事项。"
+        private const val SYSTEM_PROMPT = "你是主智能体派生的子代理，在独立上下文中完成交给你的一项子任务。" +
+            "你只与主智能体通信：不要向用户提问，信息不足时基于已有信息给出最佳结论并说明假设。" +
+            "完成后只输出交给主智能体的结论正文，简洁、结构清楚，包含关键事实、路径与未解决事项。"
         private const val FINAL_ANSWER_PROMPT = "已达到步数或用量上限。请停止调用工具，根据目前掌握的信息给出最终结论。"
         private const val TURN_LIMIT_RESULT = "未完成：已到达轮数上限"
         private const val TURN_LIMIT_PROMPT = "已到达轮数上限。请停止调用工具，交回阶段结论并说明未完成事项。"

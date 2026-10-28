@@ -44,8 +44,6 @@
 
     <string name="workspace_agent_default">Default workspace</string>
     <string name="workspace_agent_default_none">Session private workspace (default)</string>
-    <string name="workspace_agent_clear">Clear default workspace</string>
-    <string name="workspace_agent_footer">New sessions use this workspace. Existing sessions are not changed.</string>
 
     <string name="workspace_kb_entry">Workspaces</string>
     <plurals name="workspace_kb_count">

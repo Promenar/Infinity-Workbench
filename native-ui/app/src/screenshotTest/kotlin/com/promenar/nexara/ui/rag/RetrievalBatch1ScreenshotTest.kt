@@ -12,14 +12,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
-import com.promenar.nexara.data.agent.AgentRagConfig
-import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.NexaraValuePickerContent
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
-import com.promenar.nexara.ui.hub.AgentRagConfigScreenContent
-import com.promenar.nexara.ui.hub.AgentRagConfigScreenState
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -60,35 +54,6 @@ fun knowledgeDebugSettingsCollapsedPreview() = RetrievalBatch1Surface {
 }
 
 @PreviewTest
-@Preview(name = "助手检索 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
-@Preview(name = "助手检索 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
-@Composable
-fun agentRagBatch1DefaultPreview() = RetrievalBatch1Surface {
-    AgentRagConfigScreenContent(
-        AgentRagConfigScreenState(
-            scopeLabel = "默认助手",
-            useInheritedConfig = true,
-            ragConfig = AgentRagConfig(),
-        ),
-    )
-}
-
-@PreviewTest
-@Preview(name = "助手高级检索 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
-@Preview(name = "助手高级检索 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
-@Composable
-fun agentAdvancedRetrievalBatch1DefaultPreview() = RetrievalBatch1Surface {
-    AgentAdvancedRetrievalScreenContent(
-        AgentAdvancedRetrievalScreenState(
-            scopeLabel = "默认助手",
-            useInheritedConfig = true,
-            retrievalConfig = AgentRetrievalConfig(),
-            isRerankAvailable = false,
-        ),
-    )
-}
-
-@PreviewTest
 @Preview(name = "调试与高级 展开 分块已改 深色 中文 411dp", widthDp = 411, heightDp = 3600, locale = "zh-rCN")
 @Preview(name = "调试与高级 展开 分块已改 深色 中文 360dp", widthDp = 360, heightDp = 3900, locale = "zh-rCN")
 @Composable
@@ -100,21 +65,6 @@ fun knowledgeDebugSettingsExpandedPreview() = RetrievalBatch1Surface {
             indexedChunkSettings = config.chunkSettings().copy(docChunkSize = 800),
             vectorCount = 1024,
             initiallyExpanded = true,
-        ),
-    )
-}
-
-@PreviewTest
-@Preview(name = "助手高级检索 全页 深色 中文 411dp", widthDp = 411, heightDp = 1800, locale = "zh-rCN")
-@Preview(name = "助手高级检索 全页 深色 中文 360dp", widthDp = 360, heightDp = 2000, locale = "zh-rCN")
-@Composable
-fun agentAdvancedRetrievalBatch1FullPagePreview() = RetrievalBatch1Surface {
-    AgentAdvancedRetrievalScreenContent(
-        AgentAdvancedRetrievalScreenState(
-            scopeLabel = "默认助手",
-            useInheritedConfig = false,
-            retrievalConfig = AgentRetrievalConfig(),
-            isRerankAvailable = true,
         ),
     )
 }

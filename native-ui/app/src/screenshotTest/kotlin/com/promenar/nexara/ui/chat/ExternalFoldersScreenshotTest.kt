@@ -14,6 +14,7 @@ import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.ui.chat.components.ExternalMountFormContent
 import com.promenar.nexara.ui.chat.components.ExternalMountManagerContent
 import com.promenar.nexara.ui.chat.components.ExternalMountSource
+import com.promenar.nexara.ui.chat.components.KnowledgeMountOption
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -36,7 +37,11 @@ private fun MountSheetFrame(mode: NexaraThemeMode = NexaraThemeMode.DARK, conten
 }
 
 @Composable
-private fun ManagerPreview(mounts: List<ExternalMount>, mode: NexaraThemeMode = NexaraThemeMode.DARK) = MountSheetFrame(mode) {
+private fun ManagerPreview(
+    mounts: List<ExternalMount>,
+    mode: NexaraThemeMode = NexaraThemeMode.DARK,
+    knowledgeMount: KnowledgeMountOption? = null,
+) = MountSheetFrame(mode) {
     ExternalMountManagerContent(
         mounts = mounts,
         sources = listOf(ExternalMountSource.Saf, ExternalMountSource.RealPath),
@@ -50,6 +55,7 @@ private fun ManagerPreview(mounts: List<ExternalMount>, mode: NexaraThemeMode = 
         onRemove = {},
         onGrantRealPath = {},
         onRecycle = {},
+        knowledgeMount = knowledgeMount,
     )
 }
 
@@ -83,3 +89,22 @@ fun externalMountFormPreview() = MountSheetFrame {
         onConfirm = {},
     )
 }
+
+// 知识库挂载：已挂载行带“知识库 · 只读”信息色标签；添加组末尾的“挂载知识库”在已挂载后置灰。
+@PreviewTest
+@Preview(name = "外部文件夹 知识库只读 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Preview(name = "外部文件夹 知识库只读 浅英360 大字", widthDp = 360, heightDp = 1200, locale = "en", fontScale = 1.3f)
+@Composable
+fun externalMountKnowledgePreview() = ManagerPreview(
+    Mounts.take(1) + ExternalMount("k1", "knowledge", "knowledge_base", "root-1", "s1", createdAt = 4, readOnly = true),
+    knowledgeMount = KnowledgeMountOption.Mounted,
+)
+
+@PreviewTest
+@Preview(name = "外部文件夹 可挂载知识库 浅中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")
+@Composable
+fun externalMountKnowledgeAvailablePreview() = ManagerPreview(
+    emptyList(),
+    NexaraThemeMode.LIGHT,
+    knowledgeMount = KnowledgeMountOption.Available(listOf("/mnt/knowledge")),
+)

@@ -13,7 +13,7 @@
     <string name="chat_approval_title_ssh_install_key">安装 SSH 公钥</string>
     <string name="chat_approval_title_mcp">MCP 工具</string>
     <string name="chat_approval_kind_builtin_command">内置命令</string>
-    <string name="chat_approval_kind_builtin_command_detail">以 &brand; 身份运行，可访问全部应用数据，不受工作区限制；删除的文件无法恢复。</string>
+    <string name="chat_approval_kind_builtin_command_detail">以本应用权限运行，可访问全部应用数据，不受工作区限制；删除的文件无法恢复。</string>
     <string name="chat_approval_kind_termux_command">Termux 命令</string>
     <string name="chat_approval_kind_termux_command_detail">以 Termux 身份运行，只能访问 Termux 自身文件和已授权的共享存储。</string>
     <string name="chat_approval_kind_ssh_command">远程命令</string>
