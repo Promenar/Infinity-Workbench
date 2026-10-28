@@ -54,7 +54,7 @@ class AgentHubScreenContractTest {
     @Test
     fun `agent and session rows expose long press menus with accessibility actions`() {
         val source = hubSource.readText()
-        val agentRow = source.substringAfter("private fun HubAgentRow(").substringBefore("private fun HubAddAgentRow(")
+        val agentRow = source.substringAfter("private fun HubAgentRow(").substringBefore("/** 助手展开区")
         val sessionRow = source.substringAfter("private fun HubSessionRow(").substringBefore("private fun HubAgentRow(")
 
         listOf(agentRow, sessionRow).forEach { row ->
@@ -67,11 +67,11 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `agent rows expand in place to list sessions and create one instead of opening another page`() {
+    fun `agent rows expand in place to list sessions instead of opening another page`() {
         val source = hubSource.readText()
         val content = source.substringAfter("internal fun AgentHubScreenContent(")
         val agentRow = source.substringAfter("private fun HubAgentRow(").substringBefore("/** 头像宽度加间距")
-        val expandedArea = source.substringAfter("private fun HubAgentSessions(").substringBefore("private fun HubAddAgentRow(")
+        val expandedArea = source.substringAfter("private fun HubAgentSessions(").substringBefore("/** 带头像的列表行")
 
         assertThat(content).contains("var expandedAgentId by rememberSaveable")
         assertThat(content).contains("AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut)")
@@ -81,8 +81,10 @@ class AgentHubScreenContractTest {
         assertThat(agentRow).contains("onClick = onToggleExpand")
         assertThat(agentRow).contains("Icons.Rounded.ExpandMore")
         assertThat(agentRow).contains("R.string.common_state_expanded")
-        assertThat(expandedArea).contains("R.string.sessions_btn_new")
-        assertThat(expandedArea).contains("actions.onCreateSession(agentId)")
+        // 展开区只列出会话；新建会话统一走页头 + 菜单，列表里不再有“新建会话”行与底部“添加智能体”行。
+        assertThat(expandedArea).doesNotContain("R.string.sessions_btn_new")
+        assertThat(expandedArea).doesNotContain("onCreateSession")
+        assertThat(source).doesNotContain("HubAddAgentRow")
         assertThat(expandedArea).contains("R.string.hub_sessions_empty")
         assertThat(source).doesNotContain("onOpenAgentSessions")
         assertThat(source).doesNotContain("onNavigateToSessionList")
@@ -114,6 +116,50 @@ class AgentHubScreenContractTest {
         assertThat(source).contains("hubSession")
         assertThat(source).contains("hubAgentSession")
         assertThat(source).contains("hubAgentNewSession")
+    }
+
+    @Test
+    fun `add agent dialog asks for name type model and optional prompt without description`() {
+        val source = hubSource.readText()
+        val dialog = source.substringAfter("private fun AddAgentDialog(").substringBefore("/** 类型两段式按钮")
+
+        val order = listOf(
+            "R.string.hub_dialog_label_name",
+            "AgentTypeSelector(",
+            "R.string.hub_dialog_label_model",
+            "R.string.ux2_agent_dialog_prompt_optional",
+        ).map { dialog.indexOf(it) }
+        assertThat(order).doesNotContain(-1)
+        assertThat(order).isInOrder()
+        assertThat(dialog).doesNotContain("hub_dialog_label_desc")
+        assertThat(dialog).contains("onConfirm(name, type, model, systemPrompt)")
+    }
+
+    @Test
+    fun `hub list has no bottom add agent row and keeps the plus menu and empty state button`() {
+        val source = hubSource.readText()
+        assertThat(source).doesNotContain("HubAddAgentRow")
+        assertThat(source).contains("HubNewChatAction(")
+        assertThat(source).contains("UiTags.HUB_EMPTY_ADD_AGENT")
+        assertThat(source).contains("R.string.hub_btn_add_agent")
+    }
+
+    @Test
+    fun `all four avatar surfaces share the common icon table and color function`() {
+        val hub = hubSource.readText()
+        val three = projectRoot.resolve("src/main/java/com/promenar/nexara/ui/hub/HubThreePane.kt").readText()
+        val edit = projectRoot.resolve("src/main/java/com/promenar/nexara/ui/hub/AgentEditScreen.kt").readText()
+        listOf(hub, three, edit).forEach { source ->
+            assertThat(source).doesNotContain("fun agentIconVector(")
+            assertThat(source).doesNotContain("fun agentAvatarColor(")
+            assertThat(source).doesNotContain("lerp(")
+        }
+        assertThat(hub).contains("agentIconVector(item.agent.icon)")
+        assertThat(hub).contains("agentIconVector(agent.icon)")
+        assertThat(three).contains("agentIconVector(entry.agent.agent.icon)")
+        assertThat(edit).contains("agentIconVector(selectedIcon)")
+        assertThat(edit).contains("AgentPresetIcons")
+        assertThat(edit).contains("agentAvatarColor(selectedColor")
     }
 
     @Test

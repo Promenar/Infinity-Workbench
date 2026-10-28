@@ -46,6 +46,7 @@ internal const val ROOM_SCHEMA_V26_IDENTITY_HASH = com.promenar.nexara.data.loca
 internal const val ROOM_SCHEMA_V27_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V27_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V28_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V28_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V29_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V29_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V30_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V30_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
@@ -513,9 +514,10 @@ class RoomBackupDataSource(
         }
         val upgraded = when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> return decoded
-            9 -> return upgradeV9Payload(decoded)
-            8 -> return upgradeV9Payload(upgradeV8Payload(decoded))
-            7 -> return upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(decoded)))
+            10 -> return upgradeV10Payload(decoded)
+            9 -> return upgradeV10Payload(upgradeV9Payload(decoded))
+            8 -> return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(decoded)))
+            7 -> return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(decoded))))
             1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
             2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
             3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
@@ -525,7 +527,7 @@ class RoomBackupDataSource(
             else -> return decoded
         }
         if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
-        return upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList())))))
+        return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList()))))))
     }
 
     /** 历史包没有运行模式，恢复为未确定状态，首次进入会话时再检查。 */
@@ -552,8 +554,15 @@ class RoomBackupDataSource(
             "session_auto_wake_count" to JsonPrimitive(0),
             "session_auto_processing_paused" to JsonPrimitive(0),
         )
-        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables +
+        return payload.copy(schemaVersion = 10, tables = payload.tables +
             ("sessions" to sessions.map { row -> JsonObject(defaults + row) }))
+    }
+
+    /** 历史备份的智能体沿用新会话默认开启工具的行为，已有显式值保持原样。 */
+    private fun upgradeV10Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val agents = payload.tables["agents"] ?: throw BackupValidationException("数据库 payload 缺少表: agents")
+        return payload.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = payload.tables +
+            ("agents" to agents.map { row -> JsonObject(mapOf("tools_enabled_default" to JsonPrimitive(1)) + row) }))
     }
 
     /** 分支只关联同助手的普通主会话；无效关系保留为带删除标记的独立会话。 */
@@ -893,8 +902,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 29 || identityHash != ROOM_SCHEMA_V29_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v29")
+        if (sqlite.version != 30 || identityHash != ROOM_SCHEMA_V30_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v30")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1695,7 +1704,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 10
+        const val DATABASE_SCHEMA_VERSION = 11
         const val LONG_TERM_MEMORY_TABLE = "long_term_memories"
         const val MAX_LONG_TERM_MEMORIES = LongTermMemoryValidation.MAX_MEMORIES
         const val PARAMETER_SCHEME_TABLE = "parameter_schemes"

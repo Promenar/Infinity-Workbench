@@ -37,27 +37,12 @@ import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
+import com.promenar.nexara.ui.common.AgentIconOption
+import com.promenar.nexara.ui.common.AgentPresetIcons
+import com.promenar.nexara.ui.common.agentAvatarColor
+import com.promenar.nexara.ui.common.agentIconVector
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forInput
-
-data class AgentIconOption(
-    val id: String,
-    val icon: ImageVector,
-    val labelRes: Int
-)
-
-private val presetIcons = listOf(
-    AgentIconOption("✨", Icons.Rounded.AutoAwesome, R.string.settings_retrieval_icon_sparkles),
-    AgentIconOption("💻", Icons.Rounded.Code, R.string.settings_retrieval_icon_code),
-    AgentIconOption("📝", Icons.Rounded.EditNote, R.string.settings_retrieval_icon_note),
-    AgentIconOption("🤖", Icons.Rounded.SmartToy, R.string.settings_retrieval_icon_robot),
-    AgentIconOption("🧠", Icons.Rounded.Psychology, R.string.settings_retrieval_icon_brain),
-    AgentIconOption("⭐", Icons.Rounded.Star, R.string.settings_retrieval_icon_star),
-    AgentIconOption("🔥", Icons.Rounded.LocalFireDepartment, R.string.settings_retrieval_icon_fire),
-    AgentIconOption("💡", Icons.Rounded.Lightbulb, R.string.settings_retrieval_icon_light),
-    AgentIconOption("⚡", Icons.Rounded.Bolt, R.string.settings_retrieval_icon_bolt),
-    AgentIconOption("🎯", Icons.Rounded.TrackChanges, R.string.settings_retrieval_icon_target)
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +77,7 @@ fun AgentEditScreen(
     val parameterSchemes by viewModel.parameterSchemes.collectAsState()
     val providers by settingsViewModel.providers.collectAsState()
     val executionMode by viewModel.executionMode.collectAsState()
+    val toolsEnabledByDefault by viewModel.toolsEnabledByDefault.collectAsState()
     val retrievalConfig by viewModel.retrievalConfig.collectAsState()
     val mcpServerIds by viewModel.mcpServerIds.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
@@ -167,15 +153,9 @@ fun AgentEditScreen(
     }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
-    val parsedColor = remember(selectedColor, defaultPrimary) {
-        try {
-            Color(android.graphics.Color.parseColor(selectedColor))
-        } catch (_: Exception) {
-            defaultPrimary
-        }
-    }
+    val parsedColor = remember(selectedColor, defaultPrimary) { agentAvatarColor(selectedColor, defaultPrimary) }
 
-    val currentIconVector = presetIcons.find { it.id == selectedIcon }?.icon ?: Icons.Rounded.AutoAwesome
+    val currentIconVector = agentIconVector(selectedIcon)
     val avatarCropLauncher = rememberAvatarCropLauncher(
         onCropped = viewModel::importAvatar,
         onFailure = viewModel::reportAvatarImportFailure,
@@ -257,7 +237,7 @@ fun AgentEditScreen(
         title = stringResource(R.string.agent_edit_label_icon),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            presetIcons.chunked(4).forEach { rowIcons ->
+            AgentPresetIcons.chunked(4).forEach { rowIcons ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -433,7 +413,7 @@ fun AgentEditScreen(
                     NexaraSettingsItem(
                         title = stringResource(R.string.agent_edit_label_icon),
                         subtitle = if (avatarPath != null) stringResource(R.string.agent_edit_icon_custom)
-                        else stringResource(presetIcons.find { it.id == selectedIcon }?.labelRes ?: R.string.settings_retrieval_icon_sparkles),
+                        else stringResource(AgentPresetIcons.find { it.id == selectedIcon }?.labelRes ?: R.string.settings_retrieval_icon_sparkles),
                         onClick = { showIconPicker = true },
                         showChevron = true,
                         leadingContent = {
@@ -511,6 +491,8 @@ fun AgentEditScreen(
                     workspace = defaultWorkspace,
                     enabledUserSkills = enabledUserSkills,
                     mcpRows = mcpRows,
+                    toolsEnabledByDefault = toolsEnabledByDefault,
+                    onToolsEnabledByDefaultChange = viewModel::setToolsEnabledByDefault,
                     onExecutionModeChange = viewModel::setExecutionMode,
                     onChooseWorkspace = { showWorkspacePicker = true },
                     onOpenSkills = onNavigateToSkills,

@@ -103,7 +103,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
         ParameterSchemeEntity::class,
         com.promenar.nexara.data.local.db.entity.StateBoardVersionEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -215,3 +215,4 @@ val MIGRATION_25_26 = object : androidx.room.migration.Migration(25, 26) {
 
 internal const val NEXARA_SCHEMA_V28_IDENTITY_HASH = "3ecd53e343d156d2165df7963419da0c"
 internal const val NEXARA_SCHEMA_V29_IDENTITY_HASH = "9d0bef4ef8c9c7850437f0141ebd97b4"
+internal const val NEXARA_SCHEMA_V30_IDENTITY_HASH = "ccac3b935d14b590734779048ef2eaf2"

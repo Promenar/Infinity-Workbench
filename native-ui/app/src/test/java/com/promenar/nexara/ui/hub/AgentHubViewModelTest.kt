@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionMode
+import com.promenar.nexara.domain.usecase.AgentCreationType
 import com.promenar.nexara.domain.usecase.CreateAgentUseCase
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -89,9 +90,9 @@ class AgentHubViewModelTest {
         every { repo.observeAll() } returns flowOf(emptyList())
 
         val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
-        vm.createAgent("Test", "desc", "gpt-4", "prompt")
+        vm.createAgent("Test", AgentCreationType.AGENT, "gpt-4", "prompt")
 
-        coVerify { repo.create(match { it.name == "Test" && it.modelId == "gpt-4" && it.description == "desc" && it.systemPrompt == "prompt" }) }
+        coVerify { repo.create(match { it.name == "Test" && it.modelId == "gpt-4" && it.description.isEmpty() && it.systemPrompt == "prompt" && it.toolsEnabledByDefault }) }
     }
 
     @Test
@@ -100,7 +101,7 @@ class AgentHubViewModelTest {
         every { repo.observeAll() } returns flowOf(emptyList())
 
         val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList())
-        vm.createAgent("Test", "desc", "gpt-4", "prompt")
+        vm.createAgent("Test", AgentCreationType.AGENT, "gpt-4", "prompt")
 
         vm.agents.test {
             val result = awaitItem()

@@ -43,6 +43,7 @@ object AgentMapper {
         mcpServerIds = decodeOrderedIds(entity.mcpServerIds),
         defaultWorkspaceId = entity.defaultWorkspaceId,
         userRules = entity.userRules,
+        toolsEnabledByDefault = entity.toolsEnabledByDefault,
         createdAt = entity.createdAt
     )
 
@@ -74,6 +75,7 @@ object AgentMapper {
         mcpServerIds = encodeOrderedIds(agent.mcpServerIds),
         defaultWorkspaceId = agent.defaultWorkspaceId,
         userRules = agent.userRules,
+        toolsEnabledByDefault = agent.toolsEnabledByDefault,
         createdAt = agent.createdAt
     )
 }

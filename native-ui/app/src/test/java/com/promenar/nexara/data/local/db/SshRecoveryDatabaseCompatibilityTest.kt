@@ -88,7 +88,7 @@ class SshRecoveryDatabaseCompatibilityTest {
                 sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use {
                     check(it.moveToFirst() && it.getInt(0) == 0)
                 }
-                sqlite.version = 29
+                sqlite.version = 30
                 RandomAccessFile(main, "r").use { file -> file.seek(60); assertThat(file.readInt()).isEqualTo(5) }
                 val before = sourceHashes(context)
                 assertThat(before.keys).contains("nexara_v2.db-wal")
@@ -104,8 +104,11 @@ class SshRecoveryDatabaseCompatibilityTest {
     }
 
     @Test
-    fun `WAL隔离副本的当前版本白名单包含完整v25至v29身份`() {
+    fun `WAL隔离副本的当前版本白名单包含完整v25至v30身份`() {
         val accepted = com.promenar.nexara.data.local.db.recovery.CURRENT_RECOVERY_SOURCE_IDENTITIES
+        assertThat(accepted).contains(30 to NEXARA_SCHEMA_V30_IDENTITY_HASH)
+        assertThat(accepted).doesNotContain(30 to "wrong-identity")
+        assertThat(com.promenar.nexara.data.local.db.recovery.isTrustedCurrentRoomSchema(30, NEXARA_SCHEMA_V30_IDENTITY_HASH)).isTrue()
         assertThat(accepted).contains(29 to NEXARA_SCHEMA_V29_IDENTITY_HASH)
         assertThat(accepted).doesNotContain(29 to "wrong-identity")
         assertThat(com.promenar.nexara.data.local.db.recovery.isTrustedCurrentRoomSchema(29, NEXARA_SCHEMA_V29_IDENTITY_HASH)).isTrue()

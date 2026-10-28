@@ -4,7 +4,7 @@
     <string name="hub_section_pinned">置顶</string>
     <string name="hub_section_agents">智能体</string>
     <string name="hub_section_sessions">会话</string>
-    <string name="hub_new_chat">新对话</string>
+    <string name="hub_new_chat">新建会话</string>
     <string name="hub_cd_session_actions">会话操作</string>
     <plurals name="hub_agent_session_count">
         <item quantity="other">%1$d 个会话</item>

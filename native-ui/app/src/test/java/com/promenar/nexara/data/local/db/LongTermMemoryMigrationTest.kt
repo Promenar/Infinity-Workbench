@@ -63,10 +63,10 @@ class LongTermMemoryMigrationTest {
                 sqlite.version = 27
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_27_28, MIGRATION_28_29).allowMainThreadQueries().build()
+                .addMigrations(MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30).allowMainThreadQueries().build()
             try {
                 val sqlite = room.openHelper.writableDatabase
-                assertThat(sqlite.version).isEqualTo(29)
+                assertThat(sqlite.version).isEqualTo(30)
                 assertThat(room.sessionDao().getById("session-before-v28")!!.title).isEqualTo("保留旧会话")
                 sqlite.query("SELECT * FROM long_term_memories").use { assertThat(it.count).isEqualTo(0) }
                 sqlite.query("PRAGMA foreign_key_list(long_term_memories)").use { assertThat(it.count).isEqualTo(0) }
@@ -88,7 +88,7 @@ class LongTermMemoryMigrationTest {
                 }
                 sqlite.query("PRAGMA foreign_key_check").use { assertThat(it.count).isEqualTo(0) }
                 assertThat(SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use {
-                    it.hasCompleteCurrentRoomSchema(29, NEXARA_SCHEMA_V29_IDENTITY_HASH)
+                    it.hasCompleteCurrentRoomSchema(30, NEXARA_SCHEMA_V30_IDENTITY_HASH)
                 }).isTrue()
             } finally {
                 room.close()

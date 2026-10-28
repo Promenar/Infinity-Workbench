@@ -28,6 +28,9 @@ import java.security.MessageDigest
 class NexaraDatabaseBaselineTest {
     @Test
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
+        assertThat(NEXARA_SCHEMA_V30_IDENTITY_HASH).isEqualTo(exportedSchema(30).identityHash)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V30_IDENTITY_HASH).isEqualTo(exportedSchema(30).identityHash)
+        assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V30_IDENTITY).isEqualTo(exportedSchema(30).identityHash)
         assertThat(NEXARA_SCHEMA_V29_IDENTITY_HASH).isEqualTo(exportedSchema(29).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V29_IDENTITY_HASH).isEqualTo(exportedSchema(29).identityHash)
         assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V29_IDENTITY).isEqualTo(exportedSchema(29).identityHash)
@@ -174,7 +177,7 @@ class NexaraDatabaseBaselineTest {
             "MIGRATION_1_2", "MIGRATION_2_3", "MIGRATION_3_4", "MIGRATION_4_5",
             "MIGRATION_5_18", "MIGRATION_17_18", "MIGRATION_18_19", "MIGRATION_19_20", "MIGRATION_20_21", "MIGRATION_21_22",
             "MIGRATION_22_23",
-            "MIGRATION_23_24", "MIGRATION_24_25", "MIGRATION_25_26", "MIGRATION_26_27", "MIGRATION_27_28", "MIGRATION_28_29",
+            "MIGRATION_23_24", "MIGRATION_24_25", "MIGRATION_25_26", "MIGRATION_26_27", "MIGRATION_27_28", "MIGRATION_28_29", "MIGRATION_29_30",
         )
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
@@ -184,7 +187,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 29): ExportedSchema {
+    private fun exportedSchema(version: Int = 30): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -227,8 +230,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(29)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(29L)
+        assertThat(schema.version).isEqualTo(30)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(30L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(

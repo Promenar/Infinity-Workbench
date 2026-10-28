@@ -199,7 +199,6 @@ class SessionManager(
                 "options" -> result.copy(options = (value as? SessionOptions) ?: result.options)
                 "ragOptions" -> result.copy(ragOptions = value as? RagOptions)
                 "activeMcpServerIds" -> result.copy(activeMcpServerIds = value as? List<String> ?: result.activeMcpServerIds)
-                "activeSkillIds" -> result.copy(activeSkillIds = value as? List<String> ?: result.activeSkillIds)
                 "workspacePath" -> result.copy(workspacePath = value as? String)
                 "workspaceRootUuid" -> result.copy(workspaceRootUuid = value as? String)
                 // null 表示改回会话私有工作区。

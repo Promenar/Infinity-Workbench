@@ -57,9 +57,9 @@ class SessionRunModeMigrationTest {
                 sqlite.version = 26
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29).allowMainThreadQueries().build()
+                .addMigrations(MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30).allowMainThreadQueries().build()
             try {
-                assertThat(room.openHelper.writableDatabase.version).isEqualTo(29)
+                assertThat(room.openHelper.writableDatabase.version).isEqualTo(30)
                 assertThat(room.sessionDao().getById("s")!!.title).isEqualTo("保留旧会话😀")
                 assertThat(room.sessionDao().getById("s")!!.runMode).isNull()
                 val activity = room.sessionDao().getById("s")!!.updatedAt
@@ -70,7 +70,7 @@ class SessionRunModeMigrationTest {
                 assertThat(room.sessionDao().getById("s")!!.updatedAt).isEqualTo(activity)
                 assertThat(room.sessionDao().countLinuxSessions()).isEqualTo(1)
                 assertThat(SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.OPEN_READONLY).use {
-                    it.hasCompleteCurrentRoomSchema(29, NEXARA_SCHEMA_V29_IDENTITY_HASH)
+                    it.hasCompleteCurrentRoomSchema(30, NEXARA_SCHEMA_V30_IDENTITY_HASH)
                 }).isTrue()
             } finally { room.close() }
         } finally { context.deleteDatabase(name) }

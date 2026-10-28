@@ -28,6 +28,7 @@ internal const val CURRENT_V26_IDENTITY = com.promenar.nexara.data.local.db.NEXA
 internal const val CURRENT_V27_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V27_IDENTITY_HASH
 internal const val CURRENT_V28_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V28_IDENTITY_HASH
 internal const val CURRENT_V29_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V29_IDENTITY_HASH
+internal const val CURRENT_V30_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V30_IDENTITY_HASH
 internal const val CURRENT_V25_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V25_IDENTITY_HASH
 internal const val CURRENT_V24_IDENTITY = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V24_IDENTITY_HASH
 internal const val DUAL_DATABASE_RECOVERY_INDEX_HOLD = "dual-database-recovery-hold-v1"
@@ -46,7 +47,8 @@ internal fun isTrustedCurrentRoomSchema(version: Int, identity: String): Boolean
         (version == 26 && identity == CURRENT_V26_IDENTITY) ||
         (version == 27 && identity == CURRENT_V27_IDENTITY) ||
         (version == 28 && identity == CURRENT_V28_IDENTITY) ||
-        (version == 29 && identity == CURRENT_V29_IDENTITY)
+        (version == 29 && identity == CURRENT_V29_IDENTITY) ||
+        (version == 30 && identity == CURRENT_V30_IDENTITY)
 
 @Serializable
 enum class DualDatabaseRecoveryStage {

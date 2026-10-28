@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.usecase.AgentCreationType
 import com.promenar.nexara.domain.usecase.CreateAgentUseCase
 import com.promenar.nexara.domain.usecase.IdGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,9 +54,9 @@ class AgentHubViewModel(
         }
     }
 
-    fun createAgent(name: String, description: String, model: String, systemPrompt: String) {
+    fun createAgent(name: String, type: AgentCreationType, model: String, systemPrompt: String) {
         viewModelScope.launch {
-            val agent = createAgentUseCase(name, description, model, systemPrompt)
+            val agent = createAgentUseCase(name, "", model, systemPrompt, type = type)
             _dbAgents.update { agents ->
                 if (agents.any { it.id == agent.id }) agents else agents + agent
             }

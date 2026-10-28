@@ -6,6 +6,28 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
 class AgentMapperTest {
+    @Test
+    fun `工具默认关闭在领域与实体双向往返时保留`() {
+        val entity = createEntity(executionMode = "workspace").copy(toolsEnabledByDefault = false)
+        val domain = AgentMapper.toDomain(entity)
+        assertThat(domain.toolsEnabledByDefault).isFalse()
+        assertThat(AgentMapper.toEntity(domain)).isEqualTo(entity)
+
+        val agent = com.promenar.nexara.domain.model.Agent("disabled", "智能体", toolsEnabledByDefault = false)
+        assertThat(AgentMapper.toEntity(agent).toolsEnabledByDefault).isFalse()
+        assertThat(AgentMapper.toDomain(AgentMapper.toEntity(agent))).isEqualTo(agent)
+    }
+
+    @Test
+    fun `未指定工具默认开关时领域与实体均开启`() {
+        val agent = com.promenar.nexara.domain.model.Agent("default", "智能体")
+        val entity = createEntity()
+        assertThat(agent.toolsEnabledByDefault).isTrue()
+        assertThat(entity.toolsEnabledByDefault).isTrue()
+        assertThat(AgentMapper.toEntity(agent).toolsEnabledByDefault).isTrue()
+        assertThat(AgentMapper.toDomain(entity).toolsEnabledByDefault).isTrue()
+    }
+
 
     private fun createEntity(
         id: String = "test-id",

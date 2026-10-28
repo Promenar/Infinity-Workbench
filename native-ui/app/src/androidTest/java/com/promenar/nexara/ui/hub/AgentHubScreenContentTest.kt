@@ -42,7 +42,7 @@ class AgentHubScreenContentTest {
     )
 
     @Test
-    fun addAgentRowDispatchesWithoutOpeningSession() {
+    fun plusMenuAddAgentItemDispatchesWithoutOpeningSession() {
         val add = AtomicBoolean(false)
         val open = AtomicBoolean(false)
         rule.setContent {
@@ -56,6 +56,8 @@ class AgentHubScreenContentTest {
                 )
             }
         }
+        rule.onNodeWithTag(UiTags.HUB_ADD_AGENT).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.HUB_NEW_CHAT).performClick()
         rule.onNodeWithTag(UiTags.HUB_ADD_AGENT).assertHasClickAction().performClick()
         assertThat(add.get()).isTrue()
         assertThat(open.get()).isFalse()
@@ -100,23 +102,18 @@ class AgentHubScreenContentTest {
     }
 
     @Test
-    fun expandedAgentWithoutSessionsCreatesOneInPlace() {
-        val created = AtomicReference<String>()
+    fun expandedAgentHasNoInlineNewSessionRow() {
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
                     state = AgentHubScreenState(displayAgents = listOf(coder)),
-                    actions = AgentHubScreenActions(onCreateSession = { created.set(it) }),
+                    actions = AgentHubScreenActions(),
                 )
             }
         }
 
         rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder")).performClick()
         rule.onNodeWithText(resources.getString(R.string.hub_sessions_empty)).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.hubAgentNewSession("agent-coder")).assertHasClickAction().performClick()
-        assertThat(created.get()).isEqualTo("agent-coder")
-
-        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder")).performClick()
         rule.onNodeWithTag(UiTags.hubAgentNewSession("agent-coder")).assertDoesNotExist()
     }
 

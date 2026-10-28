@@ -76,6 +76,7 @@ class AgentEditViewModel(
     private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
     private val _defaultWorkspaceId = MutableStateFlow<String?>(null)
     private val _executionMode = MutableStateFlow(ExecutionMode.WORKSPACE)
+    private val _toolsEnabledByDefault = MutableStateFlow(true)
     private val _mcpServerIds = MutableStateFlow<List<String>>(emptyList())
     private val _sessionCount = MutableStateFlow(0)
 
@@ -107,6 +108,7 @@ class AgentEditViewModel(
     val defaultWorkspaceId: StateFlow<String?> = _defaultWorkspaceId.asStateFlow()
     /** 新会话默认的执行模式与 MCP 服务器；只影响之后新建的会话。 */
     val executionMode: StateFlow<ExecutionMode> = _executionMode.asStateFlow()
+    val toolsEnabledByDefault: StateFlow<Boolean> = _toolsEnabledByDefault.asStateFlow()
     val mcpServerIds: StateFlow<List<String>> = _mcpServerIds.asStateFlow()
     val sessionCount: StateFlow<Int> = _sessionCount.asStateFlow()
     val mcpServers: StateFlow<List<McpServerEntity>> = mcpServers
@@ -130,8 +132,8 @@ class AgentEditViewModel(
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
         combine(_sampling, _reasoningEffort) { values, effort -> Pair(values, effort) },
-        combine(_retrievalConfig, _defaultWorkspaceId, _memoryPolicy, _executionMode, _mcpServerIds) { ret, ws, policy, mode, mcp ->
-            DefaultsEditState(ret, ws, policy, mode, mcp)
+        combine(_retrievalConfig, _defaultWorkspaceId, _memoryPolicy, combine(_executionMode, _toolsEnabledByDefault, ::Pair), _mcpServerIds) { ret, ws, policy, (mode, tools), mcp ->
+            DefaultsEditState(ret, ws, policy, mode, tools, mcp)
         }
     ) { text, (prompt, model, color), (icon, path, pin), (values, effort), defaults ->
         val initial = text.initial
@@ -141,6 +143,7 @@ class AgentEditViewModel(
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
         initial.memoryPolicy != defaults.memoryPolicy ||
         initial.executionMode != defaults.executionMode || initial.mcpServerIds != defaults.mcpServerIds ||
+        initial.toolsEnabledByDefault != defaults.toolsEnabledByDefault ||
         (initial.retrievalConfig?.retrievalMode ?: AgentRetrievalMode.AUTO) != defaults.retrievalConfig.retrievalMode ||
         (initial.retrievalConfig?.knowledgeFileAccess ?: KnowledgeFileAccess.ON_REQUEST) != defaults.retrievalConfig.knowledgeFileAccess ||
         initial.samplingValues() != values || initial.reasoningEffort != effort
@@ -182,6 +185,7 @@ class AgentEditViewModel(
                 _memoryPolicy.value = agent.memoryPolicy
                 _retrievalConfig.value = agent.retrievalConfig ?: AgentRetrievalConfig()
                 _executionMode.value = agent.executionMode
+                _toolsEnabledByDefault.value = agent.toolsEnabledByDefault
                 _mcpServerIds.value = agent.mcpServerIds
                 refreshSessionCount()
                 _saveError.value = null
@@ -350,6 +354,12 @@ class AgentEditViewModel(
         commitNow()
     }
 
+    /** 新会话默认是否开启工具：明确提交，立即持久化，只影响之后新建的会话。 */
+    fun setToolsEnabledByDefault(enabled: Boolean) {
+        _toolsEnabledByDefault.value = enabled
+        commitNow()
+    }
+
     /** 新会话默认连接的 MCP 服务器；保留原有顺序，只增删给出的一项。 */
     fun setMcpServerEnabled(serverId: String, enabled: Boolean) {
         _mcpServerIds.update { ids -> if (enabled) (ids + serverId).distinct() else ids - serverId }
@@ -452,6 +462,7 @@ class AgentEditViewModel(
                 .takeUnless { initial?.retrievalConfig == null && it == AgentRetrievalConfig() },
             useInheritedConfig = initial?.useInheritedConfig ?: true,
             executionMode = _executionMode.value,
+            toolsEnabledByDefault = _toolsEnabledByDefault.value,
             // 技能名单运行时不读取（用户技能按全局启用名单生效），只原样保留。
             skills = initial?.skills ?: emptyList(),
             mcpServerIds = _mcpServerIds.value,
@@ -509,6 +520,7 @@ class AgentEditViewModel(
         val defaultWorkspaceId: String?,
         val memoryPolicy: AgentMemoryPolicy,
         val executionMode: ExecutionMode,
+        val toolsEnabledByDefault: Boolean,
         val mcpServerIds: List<String>,
     )
 
