@@ -44,7 +44,6 @@
     <string name="settings_ia_hybrid_title">混合搜索</string>
     <string name="settings_ia_hybrid_desc">融合向量与关键词检索</string>
     <string name="settings_ia_rewrite_title">查询改写</string>
-    <string name="settings_ia_rewrite_desc">每次检索额外调用一次模型</string>
     <string name="settings_ia_retrieval_footer">档位越高，每轮带入的资料越多，消耗的上下文也越多。</string>
     <string name="settings_ia_retrieval_footer_custom">当前数值在“调试与高级”中单独改过，点选一个档位即可恢复。</string>
     <string name="settings_ia_embedding_model">嵌入模型</string>

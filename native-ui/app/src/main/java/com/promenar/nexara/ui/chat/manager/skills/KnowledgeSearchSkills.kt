@@ -80,7 +80,7 @@ class KnowledgeSearchSkill(
                 appendLine("已检索来源：${sources.joinToString()}。")
                 if (data.empty) appendLine("未找到相关内容。")
                 references.zip(results).forEach { (reference, hit) ->
-                    if (hit.alreadyInContext) appendLine("[${hit.citationId}] 已在上下文中") else {
+                    if (hit.alreadyInContext) appendLine("[${hit.citationId}] 已在上方参考资料中") else {
                         val score = String.format(java.util.Locale.ROOT, "%.2f", reference.score)
                         append(if (reference.documentId != null)
                             "[${hit.citationId}] 文档《${reference.source.removePrefix("文档: ")}》 片段 ${reference.chunkIndex} · 相关度 $score"

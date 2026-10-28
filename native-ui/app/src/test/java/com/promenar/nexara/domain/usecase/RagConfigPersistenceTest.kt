@@ -11,6 +11,19 @@ import org.junit.jupiter.api.Test
 
 class RagConfigPersistenceTest {
 
+    @Test
+    fun `未保存查询改写时关闭且已保存值保持原样`() {
+        val prefs = emptyPrefs()
+        val persistence = RagConfigPersistence(prefs)
+        assertThat(persistence.loadRetrievalConfig().enableQueryRewrite).isFalse()
+        assertThat(persistence.loadFullConfig().enableQueryRewrite).isFalse()
+        for (saved in listOf(true, false)) {
+            every { prefs.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, any()) } returns saved
+            assertThat(persistence.loadRetrievalConfig().enableQueryRewrite).isEqualTo(saved)
+            assertThat(persistence.loadFullConfig().enableQueryRewrite).isEqualTo(saved)
+        }
+    }
+
     private fun emptyPrefs(): SharedPreferences {
         val p = mockk<SharedPreferences>(relaxed = true)
         every { p.getInt(any(), any()) } answers { secondArg() }
@@ -88,7 +101,7 @@ class RagConfigPersistenceTest {
         every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_RERANK, true) } returns true
         every { p.getInt(RagConfigPersistence.KEY_RERANK_TOP_K, 30) } returns 30
         every { p.getInt(RagConfigPersistence.KEY_RERANK_FINAL_K, 5) } returns 5
-        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, true) } returns false
+        every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_QUERY_REWRITE, false) } returns false
         every { p.getString(RagConfigPersistence.KEY_QUERY_REWRITE_STRATEGY, "multi-query") } returns "multi-query"
         every { p.getInt(RagConfigPersistence.KEY_QUERY_REWRITE_COUNT, 3) } returns 3
         every { p.getBoolean(RagConfigPersistence.KEY_ENABLE_HYBRID_SEARCH, true) } returns true

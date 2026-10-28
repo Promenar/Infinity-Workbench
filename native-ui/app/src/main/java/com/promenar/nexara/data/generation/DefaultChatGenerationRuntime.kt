@@ -71,6 +71,8 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.utils.NexaraLogger
+import com.promenar.nexara.data.knowledge.KnowledgeCitationScope
+import com.promenar.nexara.data.knowledge.knowledgeTurnId
 import com.promenar.nexara.data.trigger.isUnstartedCompletionPlaceholder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -188,6 +190,7 @@ internal class DefaultChatGenerationRuntime(
     private val knowledgeCatalog: com.promenar.nexara.data.knowledge.KnowledgeCatalogSource? = null,
     private val knowledgeAccessPlanner: com.promenar.nexara.data.knowledge.KnowledgeAccessPlanner? = null,
     private val knowledgeTurns: com.promenar.nexara.data.knowledge.KnowledgeTurnState? = null,
+    private val toolProgressReminder: ToolProgressReminder = ToolProgressReminder(),
 ) : ChatGenerationRuntime {
     private var interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE
     private val compactionTurnState = ContextCompactionTurnState()
@@ -201,6 +204,7 @@ internal class DefaultChatGenerationRuntime(
     private var preparedContextSummary: String? = null
     private var preparedPrompt: PromptRequest? = null
     private var preparedTools: List<ProtocolTool> = emptyList()
+    private var preparedProgressReminder: List<ProtocolMessage>? = null
     private var toolRounds = 0
     private var finalAnswerMode = false
     private var currentAssistantMessageId: String? = null
@@ -456,6 +460,7 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun prepare(request: GenerationRequest) {
+        toolProgressReminder.start()
         interactionMode = request.interactionMode
         val input = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == request.userMessageId }
         if (input?.role == MessageRole.USER && input.name == null && !request.assistantMessageId.startsWith("ask_resume_"))
@@ -532,6 +537,11 @@ internal class DefaultChatGenerationRuntime(
             workspace = sessionWorkspace?.invoke(request.sessionId),
             mounts = visibleMounts(request.sessionId),
         )
+        val turnId = request.userMessageId ?: knowledgeTurnId(session, assistantMessageId(request))
+        knowledgeTurns?.seed(session, turnId)
+        val citationScope = knowledgeTurns?.let { turns ->
+            KnowledgeCitationScope { id -> turns.citation(session.id, turnId, id) }
+        }
         var routeTools: List<ProtocolTool> = emptyList()
         val preparation = try {
             routeGate.prepareWithRoute(model) { route ->
@@ -539,17 +549,18 @@ internal class DefaultChatGenerationRuntime(
                 routeTools = if (route.supportsToolCalls) buildToolsOffMain(session, route.modelId) else emptyList()
                 val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
                 val skills = scanSkills(params.workspace)
-                contextBuilder.buildContext(
-                    params.copy(
-                        availableToolNames = toolNames,
-                        availableSkills = skills,
-                        requestedSkill = requestedSkill(session, request.userMessageId, request.userContent, skills),
-                        modelContextTokens = PreparedPromptBudgetGate.resolveWindow(
-                            session, PromptRequest(model = route.remoteModelId ?: model, messages = emptyList()), settings, route.modelId,
-                        ).modelContextTokens,
-                        cachedRetrieval = reusedRetrieval,
-                    ),
+                val contextParams = params.copy(
+                    availableToolNames = toolNames,
+                    availableSkills = skills,
+                    requestedSkill = requestedSkill(session, request.userMessageId, request.userContent, skills),
+                    modelContextTokens = PreparedPromptBudgetGate.resolveWindow(
+                        session, PromptRequest(model = route.remoteModelId ?: model, messages = emptyList()), settings, route.modelId,
+                    ).modelContextTokens,
+                    cachedRetrieval = reusedRetrieval,
                 )
+                if (citationScope == null) contextBuilder.buildContext(contextParams) else withContext(citationScope) {
+                    contextBuilder.buildContext(contextParams)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -584,7 +595,7 @@ internal class DefaultChatGenerationRuntime(
                 messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
             }
             cachedRetrieval = context.retrieval
-            knowledgeTurns?.seed(session, request.userMessageId ?: com.promenar.nexara.data.knowledge.knowledgeTurnId(session, assistantMessageId(request)), context.ragReferences)
+            knowledgeTurns?.seed(session, turnId, context.ragReferences)
         }
         val tools = routeTools
         val inference = session.inferenceParams.withDefaults(agentConfig.inferenceDefaults())
@@ -647,6 +658,7 @@ internal class DefaultChatGenerationRuntime(
             return GenerationPreparationOutcome.Handled(failure)
         }
         preparedPrompt = budgetedPrompt
+        preparedProgressReminder = null
         return GenerationPreparationOutcome.Ready
     }
 
@@ -656,11 +668,19 @@ internal class DefaultChatGenerationRuntime(
         val route = requireNotNull(preparedRoute) { "生成路由尚未准备完成" }
         val prepared = requireNotNull(preparedPrompt) { "生成请求尚未准备完成" }
         // 网络重试不会重建上下文；每次真正发起请求前都要重新校验工作区媒体。
-        val prompt = if (mediaContextLoader == null) prepared else {
+        val mediaPrompt = if (mediaContextLoader == null) prepared else {
             val currentSession = store.getSession(request.sessionId)
                 ?: com.promenar.nexara.data.model.Session(request.sessionId, "")
             prepared.copy(messages = mediaContextLoader.attach(currentSession, prepared.messages, route.modelId))
         }
+        // 同一请求的重试复用首次判定；流式正文可能已经重置了计数。
+        val reminder = preparedProgressReminder ?: (if (toolProgressReminder.shouldRemind(finalAnswerMode)) {
+            listOf(ProtocolMessage(
+                role = "user",
+                content = "[System reminder]\nBefore continuing, give the user one concise sentence about your current progress or next action. Avoid filler and repeating tool results.",
+            ))
+        } else emptyList()).also { preparedProgressReminder = it }
+        val prompt = if (reminder.isEmpty()) mediaPrompt else mediaPrompt.copy(messages = mediaPrompt.messages + reminder)
         if (!route.useLocalProvider) {
             awaitTailnet(route)?.let { failure -> return kotlinx.coroutines.flow.flowOf(GenerationChunk.Failure(failure)) }
         }
@@ -687,7 +707,11 @@ internal class DefaultChatGenerationRuntime(
                 StreamConfig(sessionId = request.sessionId),
             )
         }
-        return source.mapNotNull(::toGenerationChunk)
+        return source.mapNotNull { chunk ->
+            toGenerationChunk(chunk)?.also {
+                if (it is GenerationChunk.Text) toolProgressReminder.onUserFacingText(it.content)
+            }
+        }
     }
 
     /**
@@ -850,6 +874,13 @@ internal class DefaultChatGenerationRuntime(
         GenerationToolUsage(tokens = summarySpentTokens, tokensEstimated = summaryUsageEstimated)
 
     override suspend fun handleTools(
+        request: GenerationRequest,
+        toolCalls: List<GenerationToolCall>,
+    ): GenerationToolDecision = handleToolRound(request, toolCalls).also { decision ->
+        if (toolCalls.isNotEmpty() && decision == GenerationToolDecision.CONTINUE) toolProgressReminder.onToolsCompleted()
+    }
+
+    private suspend fun handleToolRound(
         request: GenerationRequest,
         toolCalls: List<GenerationToolCall>,
     ): GenerationToolDecision {

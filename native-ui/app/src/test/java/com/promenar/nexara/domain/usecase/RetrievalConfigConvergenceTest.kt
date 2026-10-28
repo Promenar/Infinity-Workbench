@@ -14,6 +14,11 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class RetrievalConfigConvergenceTest {
+    @Test fun `全局与智能体查询改写默认关闭`() {
+        assertThat(RagConfiguration().enableQueryRewrite).isFalse()
+        assertThat(AgentRetrievalConfig().enableQueryRewrite).isFalse()
+    }
+
     @Test fun `智能体旧自定义和会话调优值不影响全局参数且记忆上限不改保存值`() = runTest {
         val policy = AgentMemoryPolicy(memoryCap = ConversationScope.SESSION, graphCap = ConversationScope.AGENT,
             documentCap = DocumentScope.WORKSPACE)

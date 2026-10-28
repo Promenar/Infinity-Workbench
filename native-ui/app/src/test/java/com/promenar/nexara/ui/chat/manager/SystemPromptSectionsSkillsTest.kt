@@ -8,6 +8,15 @@ import com.promenar.nexara.data.skills.SkillStatus
 import org.junit.Test
 
 class SystemPromptSectionsSkillsTest {
+    @Test fun `通用与完整工具引导均要求调用前给出简短进展`() {
+        for (generic in listOf(true, false)) {
+            val prompt = SystemPromptSections.toolGuidance(setOf("read_file"), generic)
+            assertThat(prompt).contains("Before starting a group of tool calls or changing direction")
+            assertThat(prompt).contains("one sentence")
+            assertThat(prompt).contains("parallel calls")
+        }
+    }
+
     private fun skill(
         name: String,
         scope: SkillScope = SkillScope.USER,

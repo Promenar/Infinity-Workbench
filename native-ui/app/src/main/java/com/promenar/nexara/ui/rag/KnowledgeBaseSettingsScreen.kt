@@ -166,7 +166,7 @@ internal fun KnowledgeBaseSettingsContent(
                 )
                 SettingsToggle(
                     title = stringResource(R.string.settings_ia_rewrite_title),
-                    description = stringResource(R.string.settings_ia_rewrite_desc),
+                    description = stringResource(R.string.ux2_rewrite_footnote),
                     icon = Icons.Rounded.EditNote,
                     checked = config.enableQueryRewrite,
                     onCheckedChange = { value -> actions.onConfigChanged { copy(enableQueryRewrite = value) } },

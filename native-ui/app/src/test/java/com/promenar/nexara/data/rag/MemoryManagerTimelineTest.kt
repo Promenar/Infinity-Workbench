@@ -1,6 +1,24 @@
 package com.promenar.nexara.data.rag
 
 import android.content.Context
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.agent.AgentRetrievalMode
+import com.promenar.nexara.data.knowledge.KnowledgeCitationScope
+import com.promenar.nexara.data.knowledge.KnowledgeTurnState
+import com.promenar.nexara.data.knowledge.KnowledgeCatalogSource
+import com.promenar.nexara.data.knowledge.KnowledgeSearchData
+import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.json
+import com.promenar.nexara.ui.chat.manager.RagProvider
+import com.promenar.nexara.ui.chat.manager.RagRetrievalResult
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.skills.KnowledgeSearchSkill
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -125,8 +143,8 @@ class MemoryManagerTimelineTest {
         val context = result.context
         assertThat(context).contains("Current time: 2026-10-22 10:05 Thursday (Asia/Shanghai)")
         assertThat(context).contains("the newer one reflects the current state")
-        val older = context.indexOf("[Memory · 2026-10-13 09:00 · 9 days ago]: User: 用 A")
-        val newer = context.indexOf("[Memory · 2026-10-21 20:00 · yesterday]: User: 改用 B")
+        val older = context.indexOf("[K1 · 记忆 · 2026-10-13 09:00 · 9 days ago]: User: 用 A")
+        val newer = context.indexOf("[K2 · 记忆 · 2026-10-21 20:00 · yesterday]: User: 改用 B")
         assertThat(older).isAtLeast(0)
         assertThat(newer).isGreaterThan(older)
         // 引用仍按得分排列，时间取本轮用户消息。
@@ -168,7 +186,7 @@ class MemoryManagerTimelineTest {
 
         val result = manager().retrieve()
 
-        assertThat(result.context).contains("[State · updated 2026-10-21 20:00 · yesterday]: 用户 ·  编辑器 : VS Code")
+        assertThat(result.context).contains("[K1 · 状态 · 更新于 2026-10-21 20:00 · yesterday]: 用户 ·  编辑器 : VS Code")
         assertThat(result.context).doesNotContain("Vim")
         assertThat(result.context).doesNotContain("Kotlin")
         assertThat(result.references.map { it.kind }).containsExactly(RagReferenceKind.STATE)
@@ -183,9 +201,64 @@ class MemoryManagerTimelineTest {
 
         val result = manager().retrieve()
 
-        assertThat(result.context.indexOf("[Event · 2026-10-21 20:00 · yesterday]: 决定改用 B"))
-            .isGreaterThan(result.context.indexOf("[Memory · 2026-10-13 09:00"))
+        assertThat(result.context.indexOf("[K2 · 事件 · 2026-10-21 20:00 · yesterday]: 决定改用 B"))
+            .isGreaterThan(result.context.indexOf("[K1 · 记忆 · 2026-10-13 09:00"))
         assertThat(result.references.map { it.kind }).containsExactly(RagReferenceKind.MEMORY, RagReferenceKind.SUMMARY)
         assertThat(result.references.first { it.kind == RagReferenceKind.SUMMARY }.source).isEqualTo("对话事件")
     }
+
+    @Test
+    fun `注入与工具共享轮次编号且块内编号独立于相关度排序`() = runTest {
+        row("older", "1", """{"type":"memory"}""", "旧记忆", lastTuesday, floatArrayOf(.9f, .1f))
+        row("newer", "2", """{"type":"memory"}""", "新记忆", yesterday, floatArrayOf(1f, 0f))
+        state("state", "2", "用户", "编辑器", "VS Code", yesterday)
+        val turns = KnowledgeTurnState()
+        val session = Session("s1", "agent", messages = listOf(
+            Message("u2", MessageRole.USER, "q"), Message("assistant", MessageRole.ASSISTANT, "")))
+        turns.seed(session, "u2")
+        assertThat(turns.citation("s1", "u2", "previous-hit")).isEqualTo("K1")
+        val manager = manager()
+        val injected = withContext(KnowledgeCitationScope { id -> turns.citation("s1", "u2", id) }) {
+            manager.retrieve()
+        }
+        assertThat(injected.context).contains("[K2 · 状态 · 更新于 ")
+        assertThat(injected.context).contains("[K3 · 记忆 · 2026-10-13 09:00 · 9 days ago]: 旧记忆")
+        assertThat(injected.context).contains("[K4 · 记忆 · 2026-10-21 20:00 · yesterday]: 新记忆")
+        assertThat(injected.references.map { it.id }).containsExactly("newer", "older", "state").inOrder()
+        turns.seed(session, "u2", injected.references)
+        val catalog = mockk<KnowledgeCatalogSource> { coEvery { documentLocation(any(), any()) } returns null }
+        val rag = mockk<RagProvider>()
+        coEvery { rag.retrieveForTool(any(), any(), any(), any()) } returns
+            RagRetrievalResult(injected.context, injected.references, null)
+        val skill = KnowledgeSearchSkill({ session }, { AgentRetrievalConfig(retrievalMode = AgentRetrievalMode.BOTH) },
+            catalog, rag, null, turns)
+        val context = object : SkillExecutionContext {
+            override val sessionId = "s1"
+            override val agentId = "agent"
+            override val workspaceRootUuid = "root"
+            override val workspacePath: String? = null
+            override val assistantMessageId = "assistant"
+            override val toolStepId = "first"
+        }
+        val args = buildJsonObject { put("query", "q") }
+        val first = skill.execute(args, context)
+        assertThat(json.decodeFromString<KnowledgeSearchData>(first.data!!).results.map { it.citationId })
+            .containsExactly("K4", "K3", "K2").inOrder()
+        assertThat(first.content.lines().filter { it.startsWith("[K") }).containsExactly(
+            "[K4] 已在上方参考资料中", "[K3] 已在上方参考资料中", "[K2] 已在上方参考资料中").inOrder()
+        assertThat(first.content).doesNotContain("新记忆")
+        assertThat(first.content).doesNotContain("旧记忆")
+        assertThat(first.content).doesNotContain("VS Code")
+        coEvery { rag.retrieveForTool(any(), any(), any(), any()) } returns RagRetrievalResult("",
+            listOf(RagReference("fresh", "新检索正文", "资料")) + injected.references.reversed(), null)
+        val secondContext = object : SkillExecutionContext by context { override val toolStepId = "second" }
+        val second = skill.execute(args, secondContext)
+        assertThat(json.decodeFromString<KnowledgeSearchData>(second.data!!).results.map { it.citationId })
+            .containsExactly("K5", "K2", "K3", "K4").inOrder()
+        assertThat(second.content).contains("新检索正文")
+        // 不带协程作用域的调用只使用块内编号，不改变已经分配的轮次编号。
+        assertThat(manager.retrieve().context).contains("[K1 · 状态 · 更新于 ")
+        assertThat(turns.citation("s1", "u2", "state")).isEqualTo("K2")
+    }
+
 }

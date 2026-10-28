@@ -95,7 +95,7 @@ class RagConfigPersistence(
             enableRerank = prefs.getBoolean(KEY_ENABLE_RERANK, true),
             rerankTopK = prefs.getInt(KEY_RERANK_TOP_K, DEFAULT_RERANK_TOP_K),
             rerankFinalK = prefs.getInt(KEY_RERANK_FINAL_K, DEFAULT_RERANK_FINAL_K),
-            enableQueryRewrite = prefs.getBoolean(KEY_ENABLE_QUERY_REWRITE, true),
+            enableQueryRewrite = prefs.getBoolean(KEY_ENABLE_QUERY_REWRITE, false),
             queryRewriteStrategy = prefs.getString(KEY_QUERY_REWRITE_STRATEGY, DEFAULT_QUERY_REWRITE_STRATEGY)
                 ?: DEFAULT_QUERY_REWRITE_STRATEGY,
             queryRewriteCount = prefs.getInt(KEY_QUERY_REWRITE_COUNT, DEFAULT_QUERY_REWRITE_COUNT),

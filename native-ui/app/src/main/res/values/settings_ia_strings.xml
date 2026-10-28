@@ -45,7 +45,6 @@
     <string name="settings_ia_hybrid_title">Hybrid search</string>
     <string name="settings_ia_hybrid_desc">Combines vector and keyword search</string>
     <string name="settings_ia_rewrite_title">Query rewriting</string>
-    <string name="settings_ia_rewrite_desc">One extra model call per search</string>
     <string name="settings_ia_retrieval_footer">A higher level brings more material into each turn and uses more context.</string>
     <string name="settings_ia_retrieval_footer_custom">These values were changed in Debug &amp; advanced. Pick a level to go back to it.</string>
     <string name="settings_ia_embedding_model">Embedding model</string>
