@@ -19,7 +19,7 @@ object SystemPromptSections {
         "文件工具与命令使用相同的 Linux 路径，相对路径相对当前会话的起始工作目录；/root、/etc 等绝对路径指向 Linux rootfs。" +
         "/home/session 保存在 rootfs 之外，重置 Linux 不删除它；/root 不进入备份，重置会清空。文件元数据密集操作较慢。" +
         "Linux 不可用时返回错误，请用户在会话中处理环境，不能自动改用系统 sh、打包 Python 或其它运行环境。" +
-        "Linux 命令以 Nexara 身份运行，工作区档逐条审批，完全访问档免批。" +
+        "Linux 命令以本应用的 Android 用户运行，工作区档逐条审批，完全访问档免批。" +
         "shell_exec 在伪终端运行（TERM=xterm-256color，120列×40行，stderr合并到stdout）。默认15秒让出为后台任务，yield_after_seconds=0 等待到 timeout_seconds；background:true 立即返回任务号。" +
         "命令输出实时显示给用户，模型仅在工具返回或查询任务时看到输出。交互命令让出后，应立即把已有输出中需用户操作的登录链接、验证码转告用户，再用 job_wait 等待或 job_input 回答提示。" +
         "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。"
@@ -42,7 +42,7 @@ object SystemPromptSections {
         appendLine("## Permissions and Runtime Data")
         if (runMode == SessionRunMode.LINUX) appendLine("- 文件工具使用 Linux 路径；工作区档对 rootfs 文件变更逐次审批，完全访问档免批。用户技能目录始终逐次审批。")
         else appendLine("- File tools and isolated scripts can access only workspace paths, including explicitly exposed /mnt/<alias> mounts and /skills. Paths outside this virtual namespace are invisible to them.")
-        appendLine("- Built-in shell_exec and python_exec run as the Nexara app identity. They can access all app data and are not constrained to the workspace; Android does not provide a path-level process sandbox here. termux_exec runs as the Termux identity; SSH commands run on the remote host.")
+        appendLine("- Built-in shell_exec and python_exec run under the host app's Android user ID. They can access all app data and are not constrained to the workspace; Android does not provide a path-level process sandbox here. termux_exec runs as the Termux identity; SSH commands run on the remote host.")
         if (mode == com.promenar.nexara.domain.model.ExecutionMode.WORKSPACE) {
             appendLine("- Current scope: Workspace. Every shell_exec, python_exec, termux_exec, ssh_exec, ssh_session_open, ssh_session_send and job_input call requires user approval. If rejected, do not repeat the command.")
         } else {
@@ -241,11 +241,11 @@ object SystemPromptSections {
                 shared -> "a shared device-storage folder at `${workspace.workspace.location}`"
                 workspace.workspace.kind == com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME ->
                     "Linux 环境目录 `${com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(workspace.workspace)}`（重置或卸载 Linux 时清空）"
-                else -> "a Nexara project folder"
+                else -> "an app-managed project folder"
             }
             appendLine("### Current Workspace")
             appendLine("- This conversation uses the user-selected workspace \"${workspace.workspace.displayName.take(64)}\", $place. `${if (usesLinux) com.promenar.nexara.data.workspace.LinuxWorkspaceLocation.workingDirectory(workspace.workspace) else "/"}` is its root; `/mnt/<alias>` mounts stay available.")
-            appendLine("- Nexara does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")
+            appendLine("- The host app does not index or back up this folder. `shell_exec` and `python_exec` run inside it without change tracking (no `workspace_changes`); use `git status` to review changes, and treat pushing to a remote as the durable backup.")
             if (shared) appendLine("- Shared storage is case-insensitive and does not support symbolic links or executable permissions.")
         }
         is com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable -> buildString {

@@ -346,7 +346,7 @@ class BuiltinExecService(
             ExecForegroundState.UNSUPPORTED -> "当前版本命令期间不启动前台服务，离开 Nexara 后更容易被暂停。"
             ExecForegroundState.NOT_ALLOWED -> "本次系统未允许启动前台服务（应用在后台）。"
         }
-        return "命令运行期间 Nexara 被系统暂停约 $seconds 秒（后台冻结或设备休眠），暂停时间不计入超时。$service" +
+        return "命令运行期间本应用被系统暂停约 $seconds 秒（后台冻结或设备休眠），暂停时间不计入超时。$service" +
             "如需离开 Nexara 时命令继续运行，请在系统的应用耗电管理中把 Nexara 设为“完全允许后台行为”（ColorOS、MIUI 等）。"
     }
 

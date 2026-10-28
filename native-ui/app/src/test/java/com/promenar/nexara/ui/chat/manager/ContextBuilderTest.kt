@@ -270,6 +270,23 @@ class ContextBuilderTest {
     }
 
     @Test
+    fun emptyPromptsWithLinuxToolsNeverNameTheHostApp() = testScope.runTest {
+        // 空提示词时模型没有身份；运行环境说明若写“以 Nexara 身份运行”，模型会自称 Nexara 助手。
+        val project = com.promenar.nexara.data.local.db.entity.WorkspaceEntity("ws", "project", "仓库", "repo", 1)
+        val prompt = ContextBuilder().buildContext(
+            ContextBuilderParams(
+                "s1", "你好", assistantMsgId = "m1",
+                session = Session(id = "s1", agentId = "a1", runMode = com.promenar.nexara.domain.model.SessionRunMode.LINUX),
+                availableToolNames = setOf("read_file", "shell_exec", "python_exec", "termux_exec", "ssh_exec", "memory_save", "canvas_create"),
+                workspace = com.promenar.nexara.data.workspace.SessionWorkspace.Directory(project, java.io.File("/data/user/0/app/files/projects/repo")),
+            ),
+        ).finalSystemPrompt
+
+        assertThat(prompt).contains("shell_exec")
+        assertThat(Regex("Nexara(?!Error)").find(prompt)?.let { prompt.substring(maxOf(0, it.range.first - 40), minOf(prompt.length, it.range.last + 40)) }).isNull()
+    }
+
+    @Test
     fun toolGuidanceDescribesWorkspaceAndPlanContractsOnlyForAdvertisedTools() = testScope.runTest {
         val session = Session(id = "s1", agentId = "a1")
         val withWorkspace = ContextBuilder().buildContext(
@@ -310,7 +327,7 @@ class ContextBuilderTest {
         assertThat(directory).contains("case-insensitive")
         assertThat(directory).doesNotContain("This conversation has a private workspace")
         val project = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Directory(shared.copy(kind = "project", location = "repo"), java.io.File("/data/user/0/app/files/projects/repo")))
-        assertThat(project).contains("Nexara project folder")
+        assertThat(project).contains("app-managed project folder")
         assertThat(project).doesNotContain("/data/user/0")
         assertThat(project).doesNotContain("case-insensitive")
         val unavailable = prompt(com.promenar.nexara.data.workspace.SessionWorkspace.Unavailable("ws", shared, "目录不存在"), setOf("shell_exec"))

@@ -49,7 +49,7 @@ fun sshHostManagementTools(
     SshHostInstallKeySkill(store, runtime, prompts),
 ).onEach { it.isEnabled = isEnabled }
 
-private const val SECRET_RULE = "密码由用户在 Nexara 弹出的安全输入框中填写，不经过对话，也不要向用户索要密码、私钥或口令。"
+private const val SECRET_RULE = "密码由用户在本应用弹出的安全输入框中填写，不经过对话，也不要向用户索要密码、私钥或口令。"
 
 private abstract class SshHostSkill : SkillDefinition {
     override val mcpServerId: String? = null
@@ -92,7 +92,7 @@ private class SshHostListSkill(private val store: SshHostStore) : SshHostSkill()
     override val id = "ssh_host_list"
     override val name = id
     override val risk = ToolRisk.SAFE_READ
-    override val description = "列出 Nexara 中已配置的 SSH 主机：别名、地址、端口、用户名、认证方式、是否已保存凭据、主机指纹是否已信任。不返回任何凭据。"
+    override val description = "列出本应用中已配置的 SSH 主机：别名、地址、端口、用户名、认证方式、是否已保存凭据、主机指纹是否已信任。不返回任何凭据。"
     override val parametersSchema = """{"type":"object","properties":{},"additionalProperties":false}"""
 
     override suspend fun run(args: JsonObject, context: SkillExecutionContext): JsonObject {
@@ -121,7 +121,7 @@ private class SshHostSaveSkill(
     override val id = "ssh_host_save"
     override val name = id
     override val risk = ToolRisk.EXTERNAL_WRITE
-    override val description = "新增或修改 Nexara 的 SSH 主机配置（按别名定位）。别名为 1–48 位小写字母开头的字母、数字、- 或 _；" +
+    override val description = "新增或修改本应用的 SSH 主机配置（按别名定位）。别名为 1–48 位小写字母开头的字母、数字、- 或 _；" +
         "auth_type 为 password 或 key，新建默认 password。password 主机缺少凭据时由用户在弹窗中输入；key 主机缺少私钥时生成新密钥并返回公钥。" +
         "地址、端口、用户名或认证方式变化后需要重新确认主机指纹。$SECRET_RULE"
     override val parametersSchema = """{"type":"object","properties":{"alias":{"type":"string"},"hostname":{"type":"string"},"port":{"type":"integer","description":"1–65535，默认 22"},"username":{"type":"string"},"auth_type":{"type":"string","enum":["password","key"]}},"required":["alias","hostname","username"],"additionalProperties":false}"""
@@ -171,7 +171,7 @@ private class SshHostDeleteSkill(
     override val id = "ssh_host_delete"
     override val name = id
     override val risk = ToolRisk.DELETE
-    override val description = "删除 Nexara 中的一个 SSH 主机配置及其本机凭据，并停止该主机的端口转发。不会改动远端服务器。"
+    override val description = "删除本应用中的一个 SSH 主机配置及其本机凭据，并停止该主机的端口转发。不会改动远端服务器。"
     override val parametersSchema = """{"type":"object","properties":{"alias":{"type":"string"}},"required":["alias"],"additionalProperties":false}"""
 
     override suspend fun run(args: JsonObject, context: SkillExecutionContext): JsonObject {
@@ -193,7 +193,7 @@ private class SshHostInstallKeySkill(
     override val id = "ssh_host_install_key"
     override val name = id
     override val risk = ToolRisk.PROCESS
-    override val description = "为使用密码认证的 SSH 主机配置免密登录：Nexara 生成本机 ed25519 密钥，用现有密码登录后把公钥追加到远端 ~/.ssh/authorized_keys（已存在则跳过，并修正目录与文件权限），" +
+    override val description = "为使用密码认证的 SSH 主机配置免密登录：本应用生成本机 ed25519 密钥，用现有密码登录后把公钥追加到远端 ~/.ssh/authorized_keys（已存在则跳过，并修正目录与文件权限），" +
         "再用新密钥验证登录；成功后该主机改为密钥认证并删除本机保存的密码，失败则恢复原配置。主机指纹未信任时由用户在弹窗中核对确认。$SECRET_RULE"
     override val parametersSchema = """{"type":"object","properties":{"alias":{"type":"string"}},"required":["alias"],"additionalProperties":false}"""
 

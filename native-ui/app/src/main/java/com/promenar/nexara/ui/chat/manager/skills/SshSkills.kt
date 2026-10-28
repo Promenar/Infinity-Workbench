@@ -52,7 +52,7 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
     override val mcpServerId: String? = null
     override val description = operation.summary +
         (if (com.promenar.nexara.domain.tool.CommandToolClassification.backendFor(name) != null)
-            " 命令在远程主机运行，访问范围由远程账号权限决定，不受 Nexara 工作区约束；工作区模式逐条审批，完全访问模式免审批，被拒后不要重复。" else "") + " 仅使用用户在设置中创建的主机别名，禁止地址、用户名、密码、私钥或口令参数；未信任或指纹变化需用户在设置中处理。"
+            " 命令在远程主机运行，访问范围由远程账号权限决定，不受本应用工作区约束；工作区模式逐条审批，完全访问模式免审批，被拒后不要重复。" else "") + " 仅使用用户在设置中创建的主机别名，禁止地址、用户名、密码、私钥或口令参数；未信任或指纹变化需用户在设置中处理。"
     override val parametersSchema = """{"type":"object","properties":{${operation.fields}},"required":[${operation.required}],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 

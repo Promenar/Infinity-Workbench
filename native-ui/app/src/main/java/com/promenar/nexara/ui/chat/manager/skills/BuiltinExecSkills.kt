@@ -16,14 +16,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import java.util.UUID
 
-private fun workspaceNote(linux: Boolean = false): String = "命令以 Nexara 应用身份运行，可访问全部应用数据，不受工作区路径约束；工作区模式逐条审批，完全访问模式免审批，被拒后不要重复。修改 databases/、shared_prefs/、no_backup/、files/agent_skills/ 或诊断日志前，必须向用户说明目的与影响并取得明确书面同意；files/python-user 的 pip 安装属于正常使用。结果 runtime_changes 报告关键数据元数据变化，runtime_scan_notes 说明扫描跳过。" +
+private fun workspaceNote(linux: Boolean = false): String = "命令以本应用的 Android 用户运行，可访问全部应用数据，不受工作区路径约束；工作区模式逐条审批，完全访问模式免审批，被拒后不要重复。修改 databases/、shared_prefs/、no_backup/、files/agent_skills/ 或诊断日志前，必须向用户说明目的与影响并取得明确书面同意；files/python-user 的 pip 安装属于正常使用。结果 runtime_changes 报告关键数据元数据变化，runtime_scan_notes 说明扫描跳过。" +
     "background:true 立即返回后台任务号，任务不随生成取消；检测结果在结束后的 job_status/job_wait 中提供。max_runtime_minutes 默认120、上限1440，后台不使用 timeout_seconds；on_exit 为 none/notify/wake，默认 notify，长任务优先 wake。私有根后台任务在快照中运行，结束合入，冲突保留到 jobs/；运行中日志通过状态查询发布。Play版只在应用前台保证运行。" +
     "命令直接读写会话工作区：删除或覆盖的文件不进回收站、无法恢复；结束后自动对账，结果的 workspace_changes 列出新增、修改、删除与移动的工作区路径。" +
     (if (linux) "工作目录为 /workspace（NEXARA_WORKSPACE=/workspace）；有真实路径的可用挂载位于 /mnt/<别名>，SAF 挂载只供文件工具访问。" else "工作目录即工作区根，命令中请用相对路径或 \$NEXARA_WORKSPACE；/mnt/<别名> 挂载对命令不可见，需要时先用文件工具复制到工作区。") +
     (if (linux) "用户级技能位于 /mnt/skills（NEXARA_SKILLS=/mnt/skills），对应文件工具的 /skills。" else "文件工具中的 /skills 在 shell 与 Python 中对应环境变量 NEXARA_SKILLS（shell 用 \$NEXARA_SKILLS，Python 用 os.environ['NEXARA_SKILLS']），亦可通过 ~/.agents/skills 符号链接访问；已有同名条目冲突时保留原条目，请用环境变量。") +
     "项目级技能位于工作区内 .agents/skills/，请用相对路径访问。" +
     "会话使用自选工作区（项目文件夹或共享文件夹）时，命令直接在该目录运行，不对账，结果不含 workspace_changes，可用 git status 查看改动。" +
-    "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）；Nexara 被系统暂停的时间不计入超时（结果给出 paused_ms）。" +
+    "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）；本应用被系统暂停的时间不计入超时（结果给出 paused_ms）。" +
     "用户可在通知栏停止命令（error_code 为 EXEC_STOPPED，不要自动重试）。stdout、stderr 各保留尾部 32000 字符。"
 
 /** 本机命令由调用所属会话的固定运行模式选择后端。 */

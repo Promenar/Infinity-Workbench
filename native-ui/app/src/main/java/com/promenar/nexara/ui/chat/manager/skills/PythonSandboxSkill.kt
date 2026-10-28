@@ -20,7 +20,7 @@ class PythonSandboxSkill(private val runner: ScriptToolRunner) : SkillDefinition
     override val name = id
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SCRIPT
-    override val description = "在隔离进程运行内置 Python 3.14（仅 arm64 设备）：看不到 Nexara 私有数据与工作区物理目录，没有可写目录，" +
+    override val description = "在隔离进程运行内置 Python 3.14（仅 arm64 设备）：看不到本应用私有数据与工作区物理目录，没有可写目录，" +
         "默认无网络；只有标准库与 dulwich。用 import nexara 访问工作区虚拟路径：nexara.read_text(path)、nexara.read(path)→{content,sha256}、" +
         "nexara.list(path)、nexara.stat(path)（不存在为 None）、nexara.save(path, text)（不存在则新建，存在则覆盖）、" +
         "nexara.write(path, text, expected_sha256)、nexara.create、nexara.mkdir、nexara.delete；allow_network=true 时可用 " +
