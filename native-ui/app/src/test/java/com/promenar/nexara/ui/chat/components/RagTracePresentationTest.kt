@@ -129,7 +129,7 @@ class RagTracePresentationTest {
                 RagText(R.plurals.rag_trace_reach_agents, listOf(3), quantity = 3),
             ),
             listOf(RagText(R.string.rag_trace_scope_graph), RagText(R.string.graph_scope_agent)),
-            listOf(RagText(R.string.rag_trace_scope_documents), RagText(R.string.document_scope_knowledge_base)),
+            listOf(RagText(R.string.rag_trace_scope_documents), RagText(R.string.settings_ia_doc_scope_kb)),
         ).inOrder()
         assertThat(rows.first { it.label == R.string.rag_trace_label_graph }.lines.single())
             .containsExactly(RagText(R.string.rag_trace_jit, listOf(1)), RagText(R.string.rag_trace_jit_model, listOf("glm-flash"))).inOrder()

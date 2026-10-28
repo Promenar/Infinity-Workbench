@@ -366,9 +366,9 @@ internal fun nexaraMenuColors(): NexaraMenuColors {
     return if (dark) {
         NexaraMenuColors(
             container = scheme.surfaceContainerHighest,
-            edge = Color.White.copy(alpha = 0.08f),
-            highlight = Color.White.copy(alpha = 0.07f),
-            shadow = Color.Black,
+            edge = scheme.onSurface.copy(alpha = 0.08f),
+            highlight = scheme.onSurface.copy(alpha = 0.07f),
+            shadow = scheme.scrim,
         )
     } else {
         NexaraMenuColors(

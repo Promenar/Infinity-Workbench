@@ -183,9 +183,9 @@ class AgentEditViewModel(
                 _retrievalConfig.value = agent.retrievalConfig ?: AgentRetrievalConfig()
                 _executionMode.value = agent.executionMode
                 _mcpServerIds.value = agent.mcpServerIds
-                    refreshSessionCount()
-                    _saveError.value = null
-                    retryAction = null
+                refreshSessionCount()
+                _saveError.value = null
+                retryAction = null
                 } else {
                     _saveError.value = AgentEditErrorCode.NOT_FOUND
                     retryAction = { loadAgent(agentId, localizedPresetName, localizedPresetDescription) }

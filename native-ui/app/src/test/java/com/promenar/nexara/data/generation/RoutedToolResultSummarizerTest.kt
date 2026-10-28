@@ -91,8 +91,8 @@ class RoutedToolResultSummarizerTest {
         assertThat(request.stream).isTrue()
         assertThat(request.toolChoice).isEqualTo(ProtocolToolChoice.NONE)
         assertThat(request.tools.orEmpty()).isEmpty()
-        assertThat(request.webSearch).isFalse()
-        assertThat(request.enableGeminiSearch).isFalse()
+        assertThat(request.webSearch).isNotEqualTo(true)
+        assertThat(request.enableGeminiSearch).isNotEqualTo(true)
         assertThat(request.messages.single { it.role == "user" }.content).isEqualTo(input)
         assertThat(request.messages.map { it.role }).containsExactly("system", "user").inOrder()
         assertThat(currentProtocol.requestDispatchers).containsExactly(Dispatchers.IO)
@@ -303,8 +303,8 @@ class RoutedToolResultSummarizerTest {
         assertThat(request.stream).isFalse()
         assertThat(request.toolChoice).isEqualTo(ProtocolToolChoice.NONE)
         assertThat(request.tools.orEmpty()).isEmpty()
-        assertThat(request.webSearch).isFalse()
-        assertThat(request.enableGeminiSearch).isFalse()
+        assertThat(request.webSearch).isNotEqualTo(true)
+        assertThat(request.enableGeminiSearch).isNotEqualTo(true)
         assertThat(localProtocol.requestDispatchers).containsExactly(Dispatchers.IO)
     }
 

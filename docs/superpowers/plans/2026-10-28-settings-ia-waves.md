@@ -1,6 +1,6 @@
 # 设置整理与知识检索实施拆波
 
-- 状态：第一波完成（W1-B 已合并 3ea269dc，W1-P 原型已确认），第二波实施中；W1-P2 原型已确认
+- 状态：全部工作包已合并（W1-B、W2-B、W2-F、W2-M、W3-F），收尾门禁与签名正式版真机验收由主控执行
 - 依据：`docs/superpowers/specs/2026-10-28-settings-ia-audit.md`（问题编号与目标结构）、`docs/superpowers/specs/2026-10-28-settings-ia-prototype-decisions.md`（已确认的界面决定）、`docs/superpowers/specs/2026-10-28-agent-knowledge-search-tools.md`（知识检索设计）
 - 执行方式：主控会话负责沟通、派发、合并、全量门禁与真机测试；每个工作包由一个分支会话在独立 worktree 中实施。后端工作包由分支会话经 Codex CLI 交 GPT 实现、分支会话复核；前端工作包由分支会话实现，界面先出原型经用户确认
 - 通用约束：`.agent/tmp-agent-reports/common-rules.md`，下文“工作包规则”对其中两条做了覆盖
@@ -115,6 +115,12 @@
 - 文案：T1 术语统一（中文“智能体”、英文 Agent，预置“&brand; 助手”改为“通用智能体”）、T2、T3、T6、T7、T8、T9，并检查系统提示词中给模型看的称呼。
 
 文件归属：`ui/hub/AgentEditScreen.kt`、`ui/hub/AgentEditViewModel.kt`、`ui/hub/AgentHubScreen.kt`、移除 `AgentRagConfigScreen.kt`、`AgentAdvancedRetrievalScreen.kt`、`ui/chat/` 中工具步骤与审批卡相关文件、`ui/chat/components/ExternalFoldersPanel.kt`、全部字符串资源文件。
+
+## 后续项（暂不执行）
+
+- 运行时读取智能体与会话的技能名单，再把智能体编辑页“新会话默认”里的技能只读摘要恢复为逐项开关（原型决定 G4）。用户要求本轮不做，留待以后安排。
+- “全部重新向量化”只重建文档分块。改记忆分块大小后同样出现警示条，但已有记忆不会重新切分，重新向量化后基线改写、警示条消失；需要补记忆重切或调整提示范围。
+- 旧版自定义技能的 `SettingsViewModel.addCustomSkill` 等函数与已存数据、原页面遗留的未用字符串尚未清理。
 
 ## 收尾（主控）
 

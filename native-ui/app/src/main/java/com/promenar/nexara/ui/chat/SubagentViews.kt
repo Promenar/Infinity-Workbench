@@ -22,6 +22,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,7 +96,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -775,19 +776,24 @@ private fun SubagentInterventionRow(event: SubagentEvent, startedAt: Long) {
     }
     if (fromParent != null) {
         val accent = MaterialTheme.colorScheme.primary
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(IntrinsicSize.Min)
                 .semantics(mergeDescendants = true) {}
                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp, topStart = 4.dp, bottomStart = 4.dp))
-                .drawBehind { drawRect(accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
-                .padding(start = 15.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
                 .testTag("SUBAGENT_EVENT_PARENT"),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(stringResource(fromParent, elapsed), style = NexaraTypography.labelMedium, color = accent)
-            if (event.text.isNotBlank()) {
-                Text(event.text.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            // 左侧 3dp 主色竖条标出来自主智能体的干预
+            Box(Modifier.width(3.dp).fillMaxHeight().background(accent))
+            Column(
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(stringResource(fromParent, elapsed), style = NexaraTypography.labelMedium, color = accent)
+                if (event.text.isNotBlank()) {
+                    Text(event.text.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
             }
         }
         return

@@ -30,7 +30,7 @@ class KnowledgeSearchSkill(
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
     override val description = "只读检索用户导入的文档、知识库和过往对话，可附带持久知识图谱关系。查询词使用完整问题或关键短语。memory_* 管理用户长期事实与偏好，其目录已在上下文中；需要知识库文档全文时，通过只读挂载后使用 read_file、list_files、search_files。每轮最多检索6次，达到上限后基于已有结果作答。"
-    override val parametersSchema = """{"type":"object","properties":{"query":{"type":"string","description":"完整的问题或关键短语"},"sources":{"type":"array","items":{"type":"string","enum":["documents","history"]}},"limit":{"type":"integer","minimum":1,"maximum":10,"default":5}},"required":["query"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"query":{"type":"string","description":"完整的问题或关键短语"},"sources":{"type":"array","items":{"type":"string","enum":["documents","history"]}},"limit":{"type":"integer","description":"返回条数，1 至 10，默认 5"}},"required":["query"],"additionalProperties":false}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = withContext(Dispatchers.IO) {
         try {

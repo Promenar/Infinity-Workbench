@@ -15,7 +15,7 @@ class SessionBranchTool : SkillDefinition {
     override val description = "提交可独立执行的工作方案，暂停等待用户选择派发到分支、在此执行或拒绝。" +
         "goal 包含目标与验收。必须单独调用；同批其它工具不会执行。分支最多一层。"
     override val parametersSchema = """{"type":"object","additionalProperties":false,"required":["title","goal","steps"],"properties":{
-        "title":{"type":"string"},"goal":{"type":"string"},"steps":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":12},
+        "title":{"type":"string"},"goal":{"type":"string"},"steps":{"type":"array","items":{"type":"string"},"description":"1 至 12 个非空步骤"},
         "exclusions":{"type":"string"},"workMode":{"type":"string","enum":["shared","worktree"]},
         "worktree":{"type":"object","additionalProperties":false,"required":["branch","base","directory","reason"],"properties":{
         "branch":{"type":"string"},"base":{"type":"string"},"directory":{"type":"string"},"reason":{"type":"string"}}},

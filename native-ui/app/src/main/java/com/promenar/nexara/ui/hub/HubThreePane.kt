@@ -379,7 +379,7 @@ internal fun HubThreePaneLayout(
                     .fillMaxSize()
                     .zIndex(3f)
                     .graphicsLayer { alpha = drawerProgress() }
-                    .background(Color.Black.copy(alpha = 0.32f))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissDrawer)
                     .testTag(HubThreePaneTags.SCRIM),
             )
