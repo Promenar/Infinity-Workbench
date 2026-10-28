@@ -1,6 +1,6 @@
 # 设置整理与知识检索实施拆波
 
-- 状态：第一波完成（W1-B 已合并 3ea269dc，W1-P 原型已确认），第二波实施中；W1-P2 原型待确认
+- 状态：第一波完成（W1-B 已合并 3ea269dc，W1-P 原型已确认），第二波实施中；W1-P2 原型已确认
 - 依据：`docs/superpowers/specs/2026-10-28-settings-ia-audit.md`（问题编号与目标结构）、`docs/superpowers/specs/2026-10-28-settings-ia-prototype-decisions.md`（已确认的界面决定）、`docs/superpowers/specs/2026-10-28-agent-knowledge-search-tools.md`（知识检索设计）
 - 执行方式：主控会话负责沟通、派发、合并、全量门禁与真机测试；每个工作包由一个分支会话在独立 worktree 中实施。后端工作包由分支会话经 Codex CLI 交 GPT 实现、分支会话复核；前端工作包由分支会话实现，界面先出原型经用户确认
 - 通用约束：`.agent/tmp-agent-reports/common-rules.md`，下文“工作包规则”对其中两条做了覆盖
@@ -24,7 +24,7 @@
 | 1 | W1-P2 提供商模型页与悬浮菜单原型 | 前端原型 | 无 | 不编译 |
 | 2 | W2-B 知识检索工具 | 后端（Codex） | W1-B 合并 | 与 W2-F 并行 |
 | 2 | W2-F 全局设置与会话面板 | 前端 | W1-B 合并、W1-P 确认 | 与 W2-B 并行 |
-| 2 | W2-M 提供商模型页与悬浮菜单 | 前端 | W1-P2 确认 | W2-B、W2-F 之一完成后开始 |
+| 2 | W2-M 提供商模型页与悬浮菜单 | 前端（含 Codex 后端小项） | W1-P2 确认 | W2-B、W2-F 之一完成后开始 |
 | 3 | W3-F 智能体页、知识检索界面与文案统一 | 前端 | W2-B、W2-F 合并 | 单独 |
 | 收尾 | 合并、全量门禁、签名包、真机测试、文档 | 主控 | 全部 | — |
 
@@ -90,7 +90,19 @@
 
 ## W2-M 提供商模型页与悬浮菜单
 
-目标：按 W1-P2 原型重做提供商列表、提供商编辑、模型列表、模型编辑四页与全站悬浮菜单的外观和动效。范围、新部件与文件清单在原型确认后补入本节。
+目标：按已确认的 W1-P2 原型重做提供商列表、提供商编辑、模型列表、模型编辑四页与全站悬浮菜单的外观和动效。界面决定、新部件、数据来源与风险见 `docs/superpowers/specs/2026-10-28-providers-models-menu-decisions.md`。
+
+范围：
+
+1. 后端小项（经 Codex）：持久化提供商最近一次连接测试的结果与时间、上次同步模型的时间，供列表与模型页读取；保存在提供商配置之外的本地偏好中，不进备份；删除提供商时一并清除。补单元测试。
+2. 前端：决定 D1–D14 全部实施，新增第 5 节列出的通用部件；悬浮菜单只改组件内部的外观与动效，定位逻辑与调用方不动。
+3. 新文案放进本包自己的资源文件，中英文都要有；不改现有 `strings.xml` 条目。
+
+文件归属：`ui/settings/ProviderListScreen.kt`、`ProviderFormScreen.kt`、`ProviderApiSourceSection.kt`、`SessionHeaderSettings.kt`、`ProviderModelsScreen.kt`、`ModelSyncNotice.kt`、`ModelEditorSheet.kt`（可更名为 `ModelEditorScreen.kt`）、`SettingsViewModel.kt` 中提供商与模型相关部分（只做增量改动）、`ui/common/NexaraDropdownMenu.kt`、`ui/theme/` 中的动效常量、第 5 节新部件、`data/manager/ProviderManager.kt` 或新增的提供商状态存储、本包新资源文件及对应测试与截图预览。
+
+验收：连接测试结果与同步时间持久化及清除的单元测试；模型编辑页内切换、返回关闭、同步删除时自动退出编辑的测试；定向测试与三目标编译通过。菜单动效的等帧数与掉帧情况由主控真机取证决定。
+
+开始时机：W2-B、W2-F 中任一个完成后开始；与 W2-F 并行时，`SettingsViewModel.kt` 只做增量改动，合并冲突由主控处理。
 
 ## W3-F 智能体页、知识检索界面与文案统一
 
