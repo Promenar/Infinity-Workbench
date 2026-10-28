@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.linux
 
 import com.promenar.infinity.data.tailnet.InstalledTailnetRouting
+import com.promenar.infinity.data.exec.withLegacyWorkspaceAliases
 import com.promenar.infinity.domain.linux.LinuxLaunchSpec
 import com.promenar.infinity.domain.linux.LinuxProcessLaunch
 import java.io.File
@@ -65,9 +66,10 @@ class LinuxLaunchBuilder(
         if (spec.workspace != null) environment["INFINITY_WORKSPACE"] = "/workspace"
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
         environment.putAll(spec.environment)
+        val runtimeEnvironment = environment.withLegacyWorkspaceAliases()
         // 旧受管忽略区块清理失败不阻止命令启动；修复启动不改 rootfs 配置。
-        if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.cleanupOnce(rootfs, environment) }
-        return LinuxProcessLaunch(proot.executable.path, arguments, environment, spec.workspace ?: rootfs)
+        if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.cleanupOnce(rootfs, runtimeEnvironment) }
+        return LinuxProcessLaunch(proot.executable.path, arguments, runtimeEnvironment, spec.workspace ?: rootfs)
     }
 
     private companion object {

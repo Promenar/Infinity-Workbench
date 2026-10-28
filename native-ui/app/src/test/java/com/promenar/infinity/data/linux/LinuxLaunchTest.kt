@@ -11,6 +11,29 @@ import java.nio.file.Path
 import java.util.TimeZone
 
 class LinuxLaunchTest {
+    @Test fun `默认Linux工作区别名存在且无工作区时不虚构变量`() {
+        val workspace = temporary.resolve("project").toFile().apply { mkdirs() }
+        val environment = builder().build(LinuxLaunchSpec(emptyList(), workspace)).environment
+        assertEquals("/workspace", environment["INFINITY_WORKSPACE"])
+        assertEquals("/workspace", environment["NEXARA_WORKSPACE"])
+        val bare = builder().build(LinuxLaunchSpec(emptyList())).environment
+        assertFalse(bare.containsKey("INFINITY_WORKSPACE"))
+        assertFalse(bare.containsKey("NEXARA_WORKSPACE"))
+    }
+
+    @Test fun `新旧环境变量在最终覆盖后保持一致`() {
+        val workspace = temporary.resolve("project").toFile().apply { mkdirs() }
+        val environment = builder().build(LinuxLaunchSpec(emptyList(), workspace, environment = mapOf(
+            "INFINITY_WORKSPACE" to "/branches/feature", "INFINITY_WORKSPACE_KIND" to "project",
+            "INFINITY_SKILLS" to "/mnt/skills", "NEXARA_WORKSPACE" to "/stale",
+        ))).environment
+        for (suffix in listOf("WORKSPACE", "WORKSPACE_KIND", "SKILLS")) {
+            assertNotNull(environment["INFINITY_$suffix"])
+            assertEquals(environment["INFINITY_$suffix"], environment["NEXARA_$suffix"])
+        }
+        assertEquals("/branches/feature", environment["NEXARA_WORKSPACE"])
+    }
+
     @TempDir lateinit var temporary: Path
     private val root get() = temporary.resolve("alpine").toFile().apply { mkdirs() }
     private fun builder() = LinuxLaunchBuilder(PackagedProot(temporary.resolve("lib").toFile()), root,

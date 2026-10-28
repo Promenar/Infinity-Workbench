@@ -66,7 +66,7 @@ class BuiltinExecEnvironment(
                 environment["PIP_PROGRESS_BAR"] = "off"
             }
         }
-        return environment
+        return environment.withLegacyWorkspaceAliases()
     }
 
     /** 链接冲突只记录状态；保留用户已有文件、目录与符号链接。 */

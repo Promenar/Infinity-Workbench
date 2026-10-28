@@ -34,7 +34,7 @@ internal fun linuxExecSpec(
         "INFINITY_WORKSPACE_KIND" to kind,
         "INFINITY_BACKEND" to "linux",
         "INFINITY_SKILLS" to "/mnt/skills",
-    ))
+    ).withLegacyWorkspaceAliases())
 }
 
 /** 来源检测是尽力记录；命令取消后也完成结束快照，不吞掉执行本身的取消。 */

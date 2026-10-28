@@ -8,6 +8,16 @@ import org.junit.After
 import org.junit.Test
 
 class BuiltinExecEnvironmentTest {
+    @Test fun `shell与Python环境同时导出相同的新旧工作区和技能变量`() {
+        val workspace = File(work, "workspace with spaces")
+        for (env in listOf(environment(null).forWorkspace(workspace, "project"), environment(null).forPython(workspace, "shared"))) {
+            for (suffix in listOf("WORKSPACE", "WORKSPACE_KIND", "SKILLS")) {
+                assertThat(env["INFINITY_$suffix"]).isNotNull()
+                assertThat(env["NEXARA_$suffix"]).isEqualTo(env["INFINITY_$suffix"])
+            }
+        }
+    }
+
     private val work: File = Files.createTempDirectory("builtin-exec-env").toFile()
     private val pythonDir = File(work, "lib").apply {
         mkdirs()
