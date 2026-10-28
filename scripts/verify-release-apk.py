@@ -15,7 +15,8 @@ import sys
 import zipfile
 
 
-MAX_APK_BYTES = 50 * 1024 * 1024
+# 内置 Python、Tailscale 与 Linux 运行时的 arm64 原生库约 24 MiB，侧载包已超过 50 MiB；瘦身另行立项。
+MAX_APK_BYTES = 60 * 1024 * 1024
 READ_CHUNK_BYTES = 1024 * 1024
 SCAN_OVERLAP_BYTES = 512
 MAX_ZIP_ENTRIES = 100_000

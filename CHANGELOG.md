@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - 全站术语统一为“智能体”（英文 Agent），“以 Nexara 身份”类说明改为“以本应用权限”；修正 `/mode` 说明。
 - 提供商管理、提供商编辑、模型列表与模型编辑四页重新设计：列表行显示协议、地址、凭据、模型数与连接状态，模型行用图标组表示能力；模型编辑改为整页并支持预测性返回。连接测试结果与模型同步时间持久化到本机（不进入备份）。统一悬浮菜单调整外观与进出场动效。
 - 修复 `session_branch` 的参数结构使用了工具校验不支持的 `minItems`/`maxItems`，工具被判为无效而无法调用；步骤数量限制仍由方案校验执行。
+- 发行校验脚本 `verify-release-apk.py` 的安装包大小上限由 50 MiB 调为 60 MiB：内置 Python、Tailscale 与 Linux 运行时的 arm64 原生库约 24 MiB，侧载包约 52.4 MB；安装包瘦身另行立项。
 
 ### 提示词：运行环境说明不再用应用名称描述身份
 
