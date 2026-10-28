@@ -5,6 +5,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** 既有智能体保持新会话开启工具的默认行为。 */
+val MIGRATION_29_30 = object : Migration(29, 30) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE agents ADD COLUMN tools_enabled_default INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
 /** 分支关系没有级联外键，删除主会话时由删除事务保留并解除子会话引用。 */
 val MIGRATION_28_29 = object : Migration(28, 29) {
     override fun migrate(db: SupportSQLiteDatabase) {

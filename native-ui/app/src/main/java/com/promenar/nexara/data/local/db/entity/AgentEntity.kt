@@ -59,4 +59,6 @@ data class AgentEntity(
     /** 只经专用单列更新写入；整行更新保留数据库中的现值。 */
     @ColumnInfo(name = "user_rules", defaultValue = "''")
     val userRules: String = "",
+    @ColumnInfo(name = "tools_enabled_default", defaultValue = "1")
+    val toolsEnabledByDefault: Boolean = true,
 )

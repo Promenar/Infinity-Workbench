@@ -34,6 +34,7 @@ data class Agent(
     val descriptionCustomized: Boolean = false,
     val defaultWorkspaceId: String? = null,
     val userRules: String = "",
+    val toolsEnabledByDefault: Boolean = true,
     val createdAt: Long = 0L
 ) {
     fun samplingValues(): SamplingValues =

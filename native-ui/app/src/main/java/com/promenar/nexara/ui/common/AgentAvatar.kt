@@ -9,6 +9,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.TrackChanges
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -35,6 +47,58 @@ import coil3.compose.AsyncImage
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import com.promenar.nexara.ui.testing.UiTags
+
+/** 智能体预设图标：[id] 是写入数据库的标识，[labelRes] 供编辑页选择器与无障碍使用。 */
+data class AgentIconOption(
+    val id: String,
+    val icon: ImageVector,
+    val labelRes: Int,
+)
+
+/** 编辑页可选的预设图标；首页、新建会话菜单、内屏侧边栏与编辑页都按这张表映射。 */
+val AgentPresetIcons: List<AgentIconOption> = listOf(
+    AgentIconOption("✨", Icons.Rounded.AutoAwesome, R.string.settings_retrieval_icon_sparkles),
+    AgentIconOption("💻", Icons.Rounded.Code, R.string.settings_retrieval_icon_code),
+    AgentIconOption("📝", Icons.Rounded.EditNote, R.string.settings_retrieval_icon_note),
+    AgentIconOption("🤖", Icons.Rounded.SmartToy, R.string.settings_retrieval_icon_robot),
+    AgentIconOption("🧠", Icons.Rounded.Psychology, R.string.settings_retrieval_icon_brain),
+    AgentIconOption("⭐", Icons.Rounded.Star, R.string.settings_retrieval_icon_star),
+    AgentIconOption("🔥", Icons.Rounded.LocalFireDepartment, R.string.settings_retrieval_icon_fire),
+    AgentIconOption("💡", Icons.Rounded.Lightbulb, R.string.settings_retrieval_icon_light),
+    AgentIconOption("⚡", Icons.Rounded.Bolt, R.string.settings_retrieval_icon_bolt),
+    AgentIconOption("🎯", Icons.Rounded.TrackChanges, R.string.settings_retrieval_icon_target),
+)
+
+/** 内置预置智能体使用、选择器不提供的标识。 */
+private val LegacyAgentIcons: Map<String, ImageVector> = mapOf(
+    "🌐" to Icons.Rounded.Translate,
+    "A" to Icons.Rounded.Translate,
+)
+
+/** 未知标识回落到与数据库默认值 ✨ 相同的图标。 */
+val DefaultAgentIcon: ImageVector = Icons.Rounded.AutoAwesome
+
+fun agentIconOption(id: String): AgentIconOption? = AgentPresetIcons.firstOrNull { it.id == id }
+
+fun agentIconVector(id: String): ImageVector =
+    agentIconOption(id)?.icon ?: LegacyAgentIcons[id] ?: DefaultAgentIcon
+
+/**
+ * 解析 `#RRGGBB` 或 `#AARRGGBB`；格式不对返回 null。
+ * 不依赖 android.graphics，便于 JVM 单测，也保证各处解析结果一致。
+ */
+fun parseAgentColor(hex: String): Color? {
+    val digits = hex.trim().removePrefix("#")
+    if (digits.length != 6 && digits.length != 8) return null
+    val value = digits.toLongOrNull(16) ?: return null
+    return if (digits.length == 6) Color(0xFF000000L or value) else Color(value)
+}
+
+/** 头像底色：直接使用智能体主题色原值，解析失败时用 [fallback]。 */
+fun agentAvatarColor(hex: String, fallback: Color): Color = parseAgentColor(hex) ?: fallback
+
+@Composable
+fun agentAvatarColor(hex: String): Color = agentAvatarColor(hex, MaterialTheme.colorScheme.primary)
 
 @Composable
 fun AgentAvatar(

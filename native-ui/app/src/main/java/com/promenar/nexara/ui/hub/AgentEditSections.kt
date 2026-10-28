@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderSpecial
@@ -38,6 +39,7 @@ import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.workspace.AgentDefaultWorkspaceRow
 
 /** 单选面板的一项：标题、一句影响说明，默认项在标题后注明“（默认）”。 */
@@ -96,6 +98,8 @@ internal fun AgentNewSessionDefaultsSection(
     /** 已启用的用户技能数；首次扫描完成前为 null。 */
     enabledUserSkills: Int?,
     mcpRows: List<AgentMcpRow>,
+    toolsEnabledByDefault: Boolean,
+    onToolsEnabledByDefaultChange: (Boolean) -> Unit,
     onExecutionModeChange: (ExecutionMode) -> Unit,
     onChooseWorkspace: () -> Unit,
     onOpenSkills: () -> Unit,
@@ -116,6 +120,14 @@ internal fun AgentNewSessionDefaultsSection(
             modifier = Modifier.testTag("agent_edit_execution_mode"),
         )
         AgentDefaultWorkspaceRow(workspaceId = workspaceId, workspace = workspace, onChoose = onChooseWorkspace)
+        SettingsToggle(
+            title = stringResource(R.string.ux2_agent_tools_default),
+            description = stringResource(R.string.ux2_agent_tools_default_desc),
+            icon = Icons.Rounded.Build,
+            checked = toolsEnabledByDefault,
+            onCheckedChange = onToolsEnabledByDefaultChange,
+            modifier = Modifier.testTag(UiTags.AGENT_EDIT_TOOLS_DEFAULT),
+        )
         // 会话的技能名单运行时不生效（用户技能按全局启用名单提供），这里只显示摘要并跳转全局技能包。
         NexaraSettingsItem(
             icon = Icons.Rounded.Extension,

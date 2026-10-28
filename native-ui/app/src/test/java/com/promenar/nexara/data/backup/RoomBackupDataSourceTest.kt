@@ -87,6 +87,61 @@ import kotlinx.serialization.json.jsonPrimitive
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
     @Test
+    fun `历史备份缺工具默认开关时恢复为开启`() = runBlocking {
+        val snapshot = emptyWorkspaceBackup()
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val legacy = JsonObject(root + mapOf(
+            "schemaVersion" to JsonPrimitive(10),
+            "tables" to JsonObject(tables + ("agents" to JsonArray(tables.getValue("agents").jsonArray.map {
+                JsonObject(it.jsonObject - "tools_enabled_default")
+            }))),
+        )).toString().toByteArray()
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot, database = legacy))
+
+        assertThat(db.agentDao().getById("agent-empty")!!.toolsEnabledByDefault).isTrue()
+    }
+
+    @Test
+    fun `工具默认关闭经过完整备份恢复保持关闭`() = runBlocking {
+        db.agentDao().insert(AgentEntity("disabled", "智能体", createdAt = 1, toolsEnabledByDefault = false))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val agent = root.getValue("tables").jsonObject.getValue("agents").jsonArray.single().jsonObject
+        assertThat(agent["tools_enabled_default"]).isEqualTo(JsonPrimitive(0))
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        assertThat(db.agentDao().getById("disabled")!!.toolsEnabledByDefault).isFalse()
+    }
+
+    @Test
+    fun `当前备份缺工具默认开关时拒绝恢复并保留数据`() = runBlocking {
+        val snapshot = emptyWorkspaceBackup()
+        val missing = mutateRows(snapshot, "agents") { rows ->
+            JsonArray(rows.map { JsonObject(it.jsonObject - "tools_enabled_default") })
+        }
+
+        assertThat(runCatching { newDataSource().restore(missing) }.exceptionOrNull())
+            .isInstanceOf(BackupValidationException::class.java)
+        assertThat(db.agentDao().getById("agent-empty")).isNotNull()
+    }
+
+    @Test
+    fun `备份导出包含智能体的新会话工具默认开关`() = runBlocking {
+        db.agentDao().insert(AgentEntity("tools-default", "智能体", createdAt = 1))
+
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val agent = root.getValue("tables").jsonObject.getValue("agents").jsonArray.single().jsonObject
+
+        assertThat(agent["tools_enabled_default"]).isEqualTo(JsonPrimitive(1))
+    }
+
+    @Test
     fun `智能体检索方式与知识库访问设置经过完整备份恢复保持一致`() = runBlocking {
         val configs = com.promenar.nexara.data.agent.AgentRetrievalMode.entries.flatMap { mode ->
             com.promenar.nexara.data.agent.KnowledgeFileAccess.entries.map { access ->
@@ -367,12 +422,12 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v8至v10备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
+    fun `v8至v11备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val tables = root.getValue("tables").jsonObject
-        for (version in 8..10) {
+        for (version in 8..11) {
             val legacyTables = if (version == 8) tables - "long_term_memories" else tables
             val missingMode = JsonObject(root + mapOf(
                 "schemaVersion" to JsonPrimitive(version),
@@ -391,7 +446,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         insertMemory("memory-1", sourceSessionId = "deleted-session")
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
-        assertThat(snapshot.databaseSchemaVersion).isEqualTo(10)
+        assertThat(snapshot.databaseSchemaVersion).isEqualTo(11)
         db.clearAllTables()
         newDataSource().restore(validated(snapshot))
         db.openHelper.writableDatabase.query("SELECT * FROM long_term_memories WHERE id=?", arrayOf(memoryId("memory-1"))).use {
@@ -991,8 +1046,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(10)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("10")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(11)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("11")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",

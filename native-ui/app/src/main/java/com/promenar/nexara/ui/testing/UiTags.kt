@@ -611,4 +611,10 @@ object UiTags {
     const val PROVIDER_MODELS_CATALOG_FOOTER = "provider_models_catalog_footer"
     fun providerModelsSpecCell(modelId: String, field: String) = "provider_models_spec_cell:$modelId:$field"
     fun providerModelsOutputField(modelId: String) = "provider_models_output_field:$modelId"
+
+    // ============ UX2 智能体（W1-H）==========
+    const val HUB_ADD_DIALOG_TYPE = "hub_add_dialog_type"
+    const val HUB_ADD_DIALOG_TYPE_CHAT = "hub_add_dialog_type_chat"
+    const val HUB_ADD_DIALOG_TYPE_AGENT = "hub_add_dialog_type_agent"
+    const val AGENT_EDIT_TOOLS_DEFAULT = "agent_edit_tools_default"
 }

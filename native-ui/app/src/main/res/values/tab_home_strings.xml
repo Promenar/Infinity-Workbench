@@ -4,7 +4,7 @@
     <string name="hub_section_pinned">Pinned</string>
     <string name="hub_section_agents">Agents</string>
     <string name="hub_section_sessions">Sessions</string>
-    <string name="hub_new_chat">New chat</string>
+    <string name="hub_new_chat">New session</string>
     <string name="hub_cd_session_actions">Session actions</string>
     <plurals name="hub_agent_session_count">
         <item quantity="one">%1$d session</item>

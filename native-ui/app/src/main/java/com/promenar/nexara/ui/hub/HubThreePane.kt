@@ -84,6 +84,8 @@ import com.promenar.nexara.navigation.trackSettingsPaneStack
 import com.promenar.nexara.ui.MainTabsState
 import com.promenar.nexara.ui.chat.LocalChatNavigationIcon
 import com.promenar.nexara.ui.common.AgentAvatar
+import com.promenar.nexara.ui.common.agentAvatarColor
+import com.promenar.nexara.ui.common.agentIconVector
 import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlinx.coroutines.flow.first
@@ -483,7 +485,7 @@ private fun HubStripItem(
             AgentAvatar(
                 icon = agentIconVector(entry.agent.agent.icon),
                 customImageUri = entry.agent.agent.avatarPath,
-                backgroundColor = agentAvatarColor(entry.agent.agent),
+                backgroundColor = agentAvatarColor(entry.agent.agent.color),
                 size = 36.dp,
             )
             if (activity != null) {

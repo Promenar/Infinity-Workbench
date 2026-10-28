@@ -38,20 +38,20 @@ class CurrentDatabaseSchemaValidationJvmTest {
     fun tearDown() = deleteDatabases()
 
     @Test
-    fun completeExportedV18ThroughV29DatabasesPassBothProductionGates() = verify(Mutation.NONE)
+    fun completeExportedV18ThroughV30DatabasesPassBothProductionGates() = verify(Mutation.NONE)
 
     @Test
     fun productionMigrationChainFromV18PassesBothProductionGatesAtEveryVersion() {
         createLegacyDatabase()
         createCurrentDatabase(18, Mutation.NONE)
-        for (version in 18..29) {
+        for (version in 18..30) {
             for (gate in Gate.entries) {
                 val source = context.getDatabasePath("nexara_v2.db")
                 val originalBytes = source.readBytes()
                 validate(gate, version)
                 assertThat(source.readBytes()).isEqualTo(originalBytes)
             }
-            if (version < 29) migrateCurrentDatabase(version + 1)
+            if (version < 30) migrateCurrentDatabase(version + 1)
         }
     }
 
@@ -108,7 +108,7 @@ class CurrentDatabaseSchemaValidationJvmTest {
     @Test
     fun matchingIdentityWithWrongFtsDeclarationFailsBothProductionGates() = verify(Mutation.FTS_DECLARATION)
 
-    private fun verify(mutation: Mutation, versions: IntRange = 18..29) {
+    private fun verify(mutation: Mutation, versions: IntRange = 18..30) {
         val failures = mutableListOf<String>()
         for (version in versions) {
             for (gate in Gate.entries) {
@@ -198,6 +198,7 @@ class CurrentDatabaseSchemaValidationJvmTest {
             27 -> MIGRATION_26_27
             28 -> MIGRATION_27_28
             29 -> MIGRATION_28_29
+            30 -> MIGRATION_29_30
             else -> error("数据库测试没有对应的生产迁移")
         }
         val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)

@@ -92,7 +92,8 @@ class SessionListViewModelTest {
         // 会话不复制助手参数，生成时按 会话 → 助手 → 模型默认 解析。
         assertThat(session.inferenceParams).isNull()
         assertThat(session.executionMode).isEqualTo("workspace")
-        assertThat(session.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
+        // 技能只有全局与工作区两层：智能体的旧技能名单不再带入新会话。
+        assertThat(session.activeSkillIds).isEmpty()
         assertThat(session.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
 

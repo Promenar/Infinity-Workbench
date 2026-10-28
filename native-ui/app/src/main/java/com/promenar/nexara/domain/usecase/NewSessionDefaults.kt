@@ -3,6 +3,7 @@ package com.promenar.nexara.domain.usecase
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionModeCodec
@@ -28,7 +29,7 @@ fun newSessionDefaults(
     agentId = agentId,
     modelId = agent?.modelId?.takeIf { it.isNotBlank() } ?: fallbackModelId,
     executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "workspace",
-    activeSkillIds = agent?.skills.orEmpty(),
+    options = SessionOptions(toolsEnabled = agent?.toolsEnabledByDefault ?: true),
     activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
     workspaceId = agent?.defaultWorkspaceId,
     ragOptions = defaultSessionRagOptions(agent, globalRagConfig),

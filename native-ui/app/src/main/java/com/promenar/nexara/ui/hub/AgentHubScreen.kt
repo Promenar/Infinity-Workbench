@@ -31,9 +31,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -48,7 +48,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
@@ -60,6 +59,10 @@ import com.promenar.nexara.ui.common.toModelSelectionUiModel
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.data.agent.AgentRetrievalMode
+import com.promenar.nexara.data.agent.KnowledgeFileAccess
+import com.promenar.nexara.domain.usecase.AgentCreationType
+import com.promenar.nexara.domain.usecase.template
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.nexaraDomainColors
@@ -158,8 +161,8 @@ fun AgentHubScreen(
             onSearchActiveChange = { searchActive = it },
             onRequestAdd = { showAddDialog = true },
             onCancelAdd = { showAddDialog = false },
-            onCreateAgent = { name, desc, model, systemPrompt ->
-                viewModel.createAgent(name, desc, model, systemPrompt)
+            onCreateAgent = { name, type, model, systemPrompt ->
+                viewModel.createAgent(name, type, model, systemPrompt)
                 showAddDialog = false
             },
             onRequestDelete = { agentToDelete = it },
@@ -271,13 +274,13 @@ fun AgentHubScreen(
 @Composable
 private fun AddAgentDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String) -> Unit
+    onConfirm: (String, AgentCreationType, String, String) -> Unit
 ) {
     val pm = ProviderManager.getInstance()
     val defaultModel by pm.summaryModelId.collectAsState()
 
     var name by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf(AgentCreationType.CHAT) }
     var model by remember { mutableStateOf(defaultModel) }
     var systemPrompt by remember { mutableStateOf("") }
     var showPromptEditor by remember { mutableStateOf(false) }
@@ -324,7 +327,7 @@ private fun AddAgentDialog(
         message = "",
         confirmText = stringResource(R.string.shared_btn_add),
         cancelText = stringResource(R.string.common_btn_cancel),
-        onConfirm = { onConfirm(name, description, model, systemPrompt) },
+        onConfirm = { onConfirm(name, type, model, systemPrompt) },
         onCancel = onDismiss,
         confirmEnabled = name.isNotBlank(),
         content = {
@@ -336,13 +339,7 @@ private fun AddAgentDialog(
                     label = { Text(stringResource(R.string.hub_dialog_label_name)) },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    textStyle = LocalTextStyle.current.forInput(),
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.hub_dialog_label_desc)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                AgentTypeSelector(type = type, onSelect = { type = it })
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -397,7 +394,7 @@ private fun AddAgentDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = stringResource(R.string.hub_dialog_label_prompt),
+                            text = stringResource(R.string.ux2_agent_dialog_prompt_optional),
                             style = NexaraTypography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -414,6 +411,95 @@ private fun AddAgentDialog(
             }
         },
     )
+}
+
+/** 类型两段式按钮、一行说明，以及该类型写入的三项参数；类型只是一次性模板。 */
+@Composable
+private fun AgentTypeSelector(
+    type: AgentCreationType,
+    onSelect: (AgentCreationType) -> Unit,
+) {
+    val template = type.template()
+    val on = stringResource(R.string.ux2_agent_param_on)
+    val off = stringResource(R.string.ux2_agent_param_off)
+    val rows = listOf(
+        stringResource(R.string.ux2_agent_param_tools) to if (template.toolsEnabledByDefault) on else off,
+        stringResource(R.string.agent_edit_retrieval_mode) to stringResource(
+            when (template.retrievalMode) {
+                AgentRetrievalMode.AUTO -> R.string.agent_edit_retrieval_auto
+                AgentRetrievalMode.TOOL -> R.string.agent_edit_retrieval_tool
+                AgentRetrievalMode.BOTH -> R.string.agent_edit_retrieval_both
+            },
+        ),
+        stringResource(R.string.agent_edit_file_access) to stringResource(
+            when (template.knowledgeFileAccess) {
+                KnowledgeFileAccess.OFF -> R.string.agent_edit_file_access_off
+                KnowledgeFileAccess.ON_REQUEST -> R.string.agent_edit_file_access_on_request
+                KnowledgeFileAccess.ALWAYS -> R.string.agent_edit_file_access_always
+            },
+        ),
+    )
+    Column(
+        modifier = Modifier.testTag(UiTags.HUB_ADD_DIALOG_TYPE),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.ux2_agent_dialog_type),
+            style = NexaraTypography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        NexaraSegmentedControl(
+            segments = listOf(
+                NexaraSegment(AgentCreationType.CHAT, stringResource(R.string.ux2_agent_type_chat), tag = UiTags.HUB_ADD_DIALOG_TYPE_CHAT),
+                NexaraSegment(AgentCreationType.AGENT, stringResource(R.string.ux2_agent_type_agent), tag = UiTags.HUB_ADD_DIALOG_TYPE_AGENT),
+            ),
+            selected = type,
+            onSelect = onSelect,
+            fillWidth = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = stringResource(
+                if (type == AgentCreationType.CHAT) R.string.ux2_agent_type_chat_desc else R.string.ux2_agent_type_agent_desc,
+            ),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            rows.forEach { (label, value) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = label,
+                        style = NexaraTypography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = value,
+                        style = NexaraTypography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.ux2_agent_type_params_footer),
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
 }
 
 // =====================================================================================
@@ -463,7 +549,7 @@ internal data class AgentHubScreenActions(
     val onSearchActiveChange: (Boolean) -> Unit = {},
     val onRequestAdd: () -> Unit = {},
     val onCancelAdd: () -> Unit = {},
-    val onCreateAgent: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    val onCreateAgent: (String, AgentCreationType, String, String) -> Unit = { _, _, _, _ -> },
     val onRequestDelete: (String) -> Unit = {},
     val onCancelDelete: () -> Unit = {},
     val onConfirmDelete: (String) -> Unit = {},
@@ -709,7 +795,6 @@ internal fun AgentHubScreenContent(
                                     )
                                     AnimatedVisibility(visible = expanded, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
                                         HubAgentSessions(
-                                            agentId = agentId,
                                             sessions = state.sessionsByAgent[agentId].orEmpty(),
                                             activity = state.sessionActivity,
                                             selectedSessionId = state.selectedSessionId,
@@ -718,7 +803,6 @@ internal fun AgentHubScreenContent(
                                     }
                                     }
                                 }
-                                if (!searching) HubAddAgentRow(onClick = actions.onRequestAdd)
                             }
                         }
                     }
@@ -821,7 +905,7 @@ internal fun HubNewChatMenu(
                     AgentAvatar(
                         icon = agentIconVector(item.agent.icon),
                         customImageUri = item.agent.avatarPath,
-                        backgroundColor = agentAvatarColor(item.agent),
+                        backgroundColor = agentAvatarColor(item.agent.color),
                         size = 28.dp,
                     )
                 },
@@ -854,6 +938,7 @@ internal fun HubNewChatMenu(
                 onDismiss()
                 onRequestAdd()
             },
+            modifier = Modifier.testTag(UiTags.HUB_ADD_AGENT),
         )
     }
 }
@@ -1042,7 +1127,7 @@ private fun HubAgentRow(
                     AgentAvatar(
                         icon = agentIconVector(agent.icon),
                         customImageUri = agent.avatarPath,
-                        backgroundColor = agentAvatarColor(agent),
+                        backgroundColor = agentAvatarColor(agent.color),
                         size = 40.dp,
                     )
                 }
@@ -1100,10 +1185,9 @@ private fun HubAgentRow(
     }
 }
 
-/** 助手展开区：该助手的全部会话（长按置顶/删除）与“新建会话”。 */
+/** 助手展开区：该助手的全部会话（长按置顶/删除）；新建会话统一走页头“新建会话”菜单。 */
 @Composable
 private fun HubAgentSessions(
-    agentId: String,
     sessions: List<Session>,
     activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
@@ -1137,43 +1221,7 @@ private fun HubAgentSessions(
                 tag = UiTags.hubAgentSession(session.id),
             )
         }
-        NexaraSettingsRowLayout(
-            title = stringResource(R.string.sessions_btn_new),
-            titleColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .testTag(UiTags.hubAgentNewSession(agentId))
-                .clickable(role = androidx.compose.ui.semantics.Role.Button) { actions.onCreateSession(agentId) }
-                // 加号与下方“添加助手”的加号竖向对齐（后者居中在 40dp 头像位里）。
-                .padding(start = (40.dp - NexaraSpacing.RowIconSize) / 2),
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-            },
-        )
     }
-}
-
-@Composable
-private fun HubAddAgentRow(onClick: () -> Unit) {
-    HubRowLayout(
-        modifier = Modifier
-            .testTag(UiTags.HUB_ADD_AGENT)
-            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
-        leading = {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp),
-            )
-        },
-        title = stringResource(R.string.hub_btn_add_agent),
-        titleColor = MaterialTheme.colorScheme.primary,
-    )
 }
 
 /** 带头像的列表行：几何与设置行一致，头像位放大到 40dp。 */
@@ -1399,21 +1447,3 @@ internal fun filterAgentDisplays(items: List<AgentDisplayItem>, query: String): 
         it.title.contains(query, ignoreCase = true) ||
             it.subtitle.contains(query, ignoreCase = true)
     }
-
-/** 助手主题色向次要文字色靠拢 35%，头像底色不抢标题。 */
-@Composable
-internal fun agentAvatarColor(agent: Agent): Color {
-    val parsed = try {
-        Color(agent.color.toColorInt())
-    } catch (_: Exception) {
-        MaterialTheme.colorScheme.primary
-    }
-    return lerp(parsed, MaterialTheme.colorScheme.onSurfaceVariant, 0.35f)
-}
-
-internal fun agentIconVector(icon: String): ImageVector = when (icon) {
-    "💻" -> Icons.Rounded.Code
-    "📝" -> Icons.Rounded.EditNote
-    "🌐", "A" -> Icons.Rounded.Translate
-    else -> Icons.Rounded.SmartToy
-}
