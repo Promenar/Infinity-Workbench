@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
@@ -94,7 +96,8 @@ class ProviderFormInteractionTest {
         }
 
         val testing = resources.getString(R.string.provider_form_testing)
-        rule.onNodeWithText(testing)
+        // “测试中”同时出现在按钮与按钮上方的状态条里，按可点击节点取按钮。
+        rule.onNode(hasText(testing) and hasClickAction())
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, testing))
             .assertIsNotEnabled()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
@@ -189,9 +192,9 @@ class ProviderFormInteractionTest {
         }
 
         val failed = resources.getString(R.string.common_cd_failed)
-        rule.onNodeWithText(failed)
-            .performScrollTo()
+        rule.onNodeWithTag(UiTags.PROVIDER_FORM_STATUS_STRIP)
             .assertIsDisplayed()
+        rule.onNodeWithText(failed).assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, failed))
             .assertIsEnabled()
@@ -213,9 +216,9 @@ class ProviderFormInteractionTest {
         }
 
         val unavailable = resources.getString(R.string.provider_form_connection_unavailable)
-        rule.onNodeWithText(unavailable)
-            .performScrollTo()
+        rule.onNodeWithTag(UiTags.PROVIDER_FORM_STATUS_STRIP)
             .assertIsDisplayed()
+        rule.onNodeWithText(unavailable).assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, unavailable))
             .assertIsEnabled()
@@ -253,7 +256,7 @@ class ProviderFormInteractionTest {
             }
         }
 
-        rule.onNodeWithText("DeepSeek").performClick()
+        rule.onNodeWithTag("provider_preset:DeepSeek").performClick()
         assertThat(selectedPreset.get()?.name).isEqualTo("DeepSeek")
 
         rule.runOnIdle {
@@ -297,7 +300,7 @@ class ProviderFormInteractionTest {
                 .performScrollTo()
                 .assertIsDisplayed()
         }
-        rule.onNodeWithText("****").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.field_row_secret_saved)).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)

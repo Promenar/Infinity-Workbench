@@ -24,13 +24,16 @@ class NexaraDropdownMenuContractTest {
     ).readText()
 
     @Test
-    fun `NexaraDropdownMenu 满足 16dp 圆角、表面底色与半透明微描边规范`() {
+    fun `NexaraDropdownMenu 使用 14dp 同心圆角、随明暗切换的容器底色与半透明分组线`() {
         val source = commonSource("NexaraDropdownMenu")
-        assertThat(source).contains("RoundedCornerShape(16.dp)")
-        assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainer")
+        // 外圆角 14dp = 内衬 6dp + 菜单项 8dp。
+        assertThat(source).contains("MenuCornerRadius = 14.dp")
+        assertThat(source).contains("RoundedCornerShape(8.dp)")
+        assertThat(source).contains("scheme.surfaceContainerLowest")
+        assertThat(source).contains("scheme.surfaceContainerHighest")
         assertThat(source).contains("outlineVariant.copy(alpha = 0.5f)")
         assertThat(source).contains("minWidth: Dp = 160.dp")
-        assertThat(source).contains("DropdownMenu(")
+        assertThat(source).contains("Popup(")
     }
 
     @Test

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 通用组件 -->
+    <string name="field_row_secret_saved">Saved</string>
+    <string name="status_strip_dismiss">Dismiss</string>
+    <string name="relative_time_just_now">Just now</string>
+    <plurals name="relative_time_minutes">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="relative_time_hours">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
+    <plurals name="relative_time_days">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+
+    <!-- 连接测试记录 -->
+    <string name="provider_connection_ok">Connected</string>
+    <string name="provider_connection_untestable">Can\'t be tested</string>
+    <string name="provider_connection_failed_key_missing">Key missing</string>
+    <string name="provider_connection_failed_auth">Key rejected</string>
+    <string name="provider_connection_failed_network">Network unreachable</string>
+    <string name="provider_connection_failed_endpoint">Endpoint invalid</string>
+    <string name="provider_connection_failed">Connection failed</string>
+    <string name="provider_connection_never_tested">Not tested yet</string>
+
+    <!-- 提供商列表 -->
+    <plurals name="provider_list_summary">
+        <item quantity="one">%1$d provider · %2$d enabled</item>
+        <item quantity="other">%1$d providers · %2$d enabled</item>
+    </plurals>
+    <plurals name="provider_list_model_count">
+        <item quantity="one">%1$d/%2$d model</item>
+        <item quantity="other">%1$d/%2$d models</item>
+    </plurals>
+    <string name="provider_list_tailnet_tag">Tailnet</string>
+    <string name="provider_list_unsupported_hint">This protocol is no longer supported. Open it to migrate or delete it.</string>
+    <string name="provider_list_empty_title">No providers yet</string>
+    <string name="provider_list_empty_body">Add a provider to give Agents access to models.</string>
+
+    <!-- 提供商编辑 -->
+    <string name="provider_form_group_provider">Provider</string>
+    <string name="provider_form_group_interface">Interface</string>
+    <string name="provider_form_group_credentials">Credentials</string>
+    <string name="provider_form_credentials_footer">The key is kept in this device\'s secure storage. Lists only show whether it is set.</string>
+    <string name="provider_form_group_advanced">Advanced</string>
+    <string name="provider_form_session_header_description">Send the session ID with each request</string>
+    <string name="provider_form_session_header_footer">Lets the provider group requests from one session, for example to reuse prompt caching.</string>
+    <string name="provider_form_connection_ok">Connection OK</string>
+    <string name="provider_form_delete">Delete provider</string>
+
+    <!-- 模型列表 -->
+    <string name="provider_models_enabled_count">%1$d / %2$d enabled</string>
+    <string name="provider_models_last_sync">Synced %s</string>
+    <string name="provider_models_never_synced">Never synced</string>
+    <string name="provider_models_syncing">Syncing…</string>
+    <string name="provider_models_sync_action">Sync</string>
+    <string name="provider_models_retry">Retry</string>
+    <string name="provider_models_add_manually">Add manually</string>
+    <string name="provider_models_search_empty">No models match “%s”</string>
+    <string name="provider_models_loading">Loading models</string>
+    <string name="provider_models_capabilities_description">Capabilities: %s</string>
+    <string name="provider_models_context_description">Context %s tokens</string>
+    <string name="provider_models_edit_provider">Edit provider</string>
+
+    <!-- 模型编辑 -->
+    <string name="model_editor_group_identity">Identity</string>
+    <string name="model_editor_group_specs">Specs</string>
+    <string name="model_editor_specs_footer">Tap a value to set it yourself. Your value overrides the catalog.</string>
+    <string name="model_editor_capabilities_selected">%d selected</string>
+    <string name="model_editor_group_test">Test</string>
+    <string name="model_editor_test_idle">Send a short request to check this model responds</string>
+    <string name="model_editor_test_running">Testing…</string>
+    <string name="model_editor_test_action">Test</string>
+    <string name="model_editor_delete">Delete model</string>
+    <string name="model_editor_autosave_hint">Changes are saved automatically</string>
+    <string name="model_editor_list_separator">", "</string>
+    <string name="model_spec_edit_action">Edit %s</string>
+    <string name="model_spec_source_catalog">Catalog</string>
+    <string name="model_spec_source_provider">Provider</string>
+    <string name="model_spec_source_manual">Manual</string>
+    <string name="model_spec_source_inferred">Inferred</string>
+    <string name="model_spec_done">Done</string>
+    <string name="model_spec_unknown">Unknown</string>
+    <string name="model_spec_input_label">Input</string>
+    <string name="model_spec_cutoff_label">Knowledge cutoff</string>
+</resources>

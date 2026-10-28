@@ -59,17 +59,20 @@ class ProviderModelReleaseBlockersTest {
         val cloudSection = form.substringAfter("private fun CloudProviderSection")
             .substringBefore("private fun ProviderFormActionsSection")
         val actionsSection = form.substringAfter("private fun ProviderFormActionsSection")
-            .substringBefore("private fun LocalProviderSection")
+            .substringBefore("private fun ProviderFormNotice")
         val localSection = form.substringAfter("private fun LocalProviderSection")
-            .substringBefore("private fun ProviderFormErrorText")
+            .substringBefore("internal fun isSecureProviderEndpoint")
 
         assertThat(cloudSection).doesNotContain("Surface(")
+        assertThat(cloudSection).contains("frameless = true")
         assertThat(localSection).doesNotContain("Surface(")
+        // 底栏：测试结果状态条在上，“测试连接”为色调按钮、“保存”为唯一实心按钮。
+        assertThat(actionsSection).contains("NexaraStatusStrip(")
         assertThat(actionsSection).contains("Row(")
-        assertThat(actionsSection).contains("TextButton(")
+        assertThat(actionsSection).contains("FilledTonalButton(")
+        assertThat(actionsSection).doesNotContain("TextButton(")
         assertThat(actionsSection).doesNotContain("OutlinedButton(")
         assertThat(actionsSection).contains("Button(")
-        assertThat(actionsSection).doesNotContain("Column(")
     }
 
     @Test

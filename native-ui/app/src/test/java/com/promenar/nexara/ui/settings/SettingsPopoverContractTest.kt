@@ -19,7 +19,6 @@ class SettingsPopoverContractTest {
             "settings/ThemeScreen.kt" to "modesAnchor",
             "hub/UserSettingsHomeScreen.kt" to "languageAnchor",
             "settings/ProviderFormScreen.kt" to "anchor",
-            "settings/ModelEditorSheet.kt" to "typePickerAnchor",
             "settings/ProviderApiSourceSection.kt" to "anchor",
             "settings/SkillsScreen.kt" to "depthAnchor",
             "rag/RetrievalSettingControls.kt" to "anchor",
@@ -33,27 +32,12 @@ class SettingsPopoverContractTest {
     }
 
     @Test
-    fun `模型类型弹出层与编辑器同处一个窗口`() {
-        // 弹出层挂在调用处的窗口上：放在编辑器对话框之外会被对话框盖住，锚点坐标也不在同一窗口。
-        val editor = source("settings/ModelEditorSheet.kt")
-        val open = editor.indexOf("val editorContent: @Composable () -> Unit = {") +
-            "val editorContent: @Composable () -> Unit = ".length
-        val close = matchingBrace(editor, open)
-        val picker = editor.indexOf("popover = NexaraPopoverSpec(typePickerAnchor)")
-        assertWithMessage("类型面板应在 editorContent 内").that(picker).isGreaterThan(open)
-        assertWithMessage("类型面板应在 editorContent 内").that(picker).isLessThan(close)
-    }
-
-    /** 与 [open] 处 `{` 配对的 `}` 位置（字符串模板中的花括号同样成对）。 */
-    private fun matchingBrace(text: String, open: Int): Int {
-        var depth = 0
-        for (i in open until text.length) {
-            when (text[i]) {
-                '{' -> depth++
-                '}' -> if (--depth == 0) return i
-            }
-        }
-        error("unbalanced")
+    fun `模型编辑页为页内全屏且类型改为分段芯片不再弹出层`() {
+        // 编辑器不再是对话框，类型选择直接平铺为单选芯片，不需要弹出层锚点。
+        val editor = source("settings/ModelEditorScreen.kt")
+        assertWithMessage("ModelEditorScreen").that(editor).contains("NexaraSettingsPageLayout(")
+        assertWithMessage("ModelEditorScreen").that(editor).contains("NexaraChoiceChips(")
+        assertWithMessage("ModelEditorScreen").that(editor).doesNotContain("NexaraPopoverSpec(")
     }
 
     @Test

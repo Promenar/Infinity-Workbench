@@ -2,6 +2,8 @@ package com.promenar.nexara.data.manager
 
 import android.app.Application
 import android.content.SharedPreferences
+import com.promenar.nexara.data.local.ProviderStatus
+import com.promenar.nexara.data.local.ProviderStatusStore
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
@@ -25,6 +27,7 @@ import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.data.remote.ModelTimeoutKind
 import com.promenar.nexara.data.remote.ModelTimeoutPreferenceStore
 import com.promenar.nexara.data.remote.ModelRequestTimeouts
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
@@ -57,6 +60,9 @@ class ProviderManager private constructor(
     private val beforeModelPersistenceLock: () -> Unit = {},
     private val beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
     private val afterProviderConfigurationWriteStarted: () -> Unit = {},
+    private val providerStatusStore: ProviderStatusStore = ProviderStatusStore(
+        app.getSharedPreferences("nexara_provider_status", 0),
+    ),
 ) {
     private val suppressedProviderModelsKey = "suppressed_provider_models"
     private val modelPersistenceLock = Any()
@@ -71,6 +77,15 @@ class ProviderManager private constructor(
     val modelTimeouts = modelTimeoutStore.settings
 
     fun setModelTimeout(kind: ModelTimeoutKind, seconds: Int) = modelTimeoutStore.set(kind, seconds)
+
+    val providerStatuses: StateFlow<Map<String, ProviderStatus>> = providerStatusStore.statuses
+
+    fun recordProviderConnectionTest(providerId: String, result: ProviderConnectionProbeResult) =
+        providerStatusStore.recordConnectionTest(providerId, result)
+
+    fun recordProviderModelSync(providerId: String) = providerStatusStore.recordModelSync(providerId)
+
+    fun clearProviderConnectionTest(providerId: String) = providerStatusStore.clearConnectionTest(providerId)
 
     // ── StateFlow: 提供商列表 ────────────────────────────────────────
     private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
@@ -320,6 +335,9 @@ class ProviderManager private constructor(
         }
         _providers.value = items
         _unsupportedProviders.value = unsupportedItems
+        providerStatusStore.retainOnly(
+            items.mapTo(mutableSetOf("default")) { it.id } + unsupportedItems.map { it.id },
+        )
     }
 
     @Synchronized
@@ -387,6 +405,7 @@ class ProviderManager private constructor(
                 .mapTo(mutableSetOf()) { model -> model.id }
             secretStore.remove(SecretCatalog.providerApiKey(providerId))
             secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
+            providerStatusStore.remove(providerId)
             _providers.update { it.filter { p -> p.id != providerId } }
             _unsupportedProviders.update { it.filter { p -> p.id != providerId } }
             if (removedModelIds.isNotEmpty()) {
@@ -1264,6 +1283,9 @@ class ProviderManager private constructor(
             beforeModelPersistenceLock: () -> Unit = {},
             beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
             afterProviderConfigurationWriteStarted: () -> Unit = {},
+            providerStatusStore: ProviderStatusStore = ProviderStatusStore(
+                app.getSharedPreferences("nexara_provider_status", 0),
+            ),
         ): ProviderManager = ProviderManager(
             app,
             secretStore,
@@ -1271,6 +1293,7 @@ class ProviderManager private constructor(
             beforeModelPersistenceLock,
             beforeModelPersistenceApply,
             afterProviderConfigurationWriteStarted,
+            providerStatusStore,
         )
 
         fun getInstance(): ProviderManager {

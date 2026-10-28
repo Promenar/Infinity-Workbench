@@ -3,6 +3,10 @@ package com.promenar.nexara.ui.common
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,6 +53,7 @@ import kotlinx.coroutines.withContext
 
 internal const val SECRET_REVEAL_TIMEOUT_MILLIS = 15_000L
 private const val STORED_SECRET_MASK = "****"
+private const val STORED_SECRET_FRAMELESS_MASK = "••••••••"
 
 /**
  * 密钥与口令输入的键盘选项。不使用 [KeyboardType.Password]：多数输入法与 ColorOS 会对
@@ -103,6 +108,11 @@ fun SecretField(
     supportingText: String? = null,
     isError: Boolean = false,
     revealTimeoutMillis: Long = SECRET_REVEAL_TIMEOUT_MILLIS,
+    /**
+     * 无框形态：放进分组卡片，外观同 [NexaraFieldRow]。已保存密钥显示为遮罩占位与“已保存”标签，
+     * 直接输入即替换；显示与清除的安全语义与描边形态一致。
+     */
+    frameless: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val fieldFocusRequester = remember { FocusRequester() }
@@ -158,102 +168,145 @@ fun SecretField(
         hasStoredSecret -> STORED_SECRET_MASK
         else -> ""
     }
-    SecretTextInput {
-        OutlinedTextField(
-            value = displayValue,
-            onValueChange = { next ->
-                hide()
-                onValueChange(next)
-            },
-            modifier = modifier
-                .fillMaxWidth()
-                .focusRequester(fieldFocusRequester)
-                .semantics { contentDescription = label ?: placeholder }
-                .onFocusChanged {
-                    if (focused && !it.isFocused) focusGeneration += 1
-                    focused = it.isFocused
-                    if (!it.isFocused) hide()
-                },
-            singleLine = true,
-            readOnly = hasStoredSecret && value.isEmpty(),
-            placeholder = { androidx.compose.material3.Text(placeholder) },
-            label = label?.let { value -> { androidx.compose.material3.Text(value) } },
-            supportingText = supportingText?.let { value -> { androidx.compose.material3.Text(value) } },
-            isError = isError,
-            visualTransformation = if (visible || (hasStoredSecret && value.isEmpty())) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
-            textStyle = MaterialTheme.typography.bodyLarge.forInput(),
-            shape = MaterialTheme.shapes.medium,
-            keyboardOptions = SecretKeyboardOptions,
-            trailingIcon = {
-                if (value.isNotEmpty() || hasStoredSecret) {
-                    Row {
-                        IconButton(
-                            onClick = {
-                                if (visible) {
-                                    hide()
-                                } else {
-                                    fieldFocusRequester.requestFocus()
-                                    keyboardController?.hide()
-                                    if (value.isNotEmpty()) {
-                                        visible = true
-                                        scheduleRevealTimeout()
-                                    } else {
-                                        revealJob?.cancel()
-                                        revealGeneration += 1
-                                        val token = revealGeneration
-                                        val focusToken = focusGeneration
-                                        revealRequested = true
-                                        revealJob = scope.launch {
-                                            var loaded: CharArray? = null
-                                            var accepted = false
-                                            try {
-                                                loaded = withContext(NonCancellable) { onRevealRequest() }
-                                                if (token == revealGeneration && focusToken == focusGeneration &&
-                                                    pageActive && revealRequested && loaded != null
-                                                ) {
-                                                    transientSecret?.fill('\u0000')
-                                                    transientSecret = loaded
-                                                    loaded = null
-                                                    visible = true
-                                                    accepted = true
-                                                    scheduleRevealTimeout()
-                                                }
-                                            } finally {
-                                                if (!accepted) loaded?.fill('\u0000')
-                                            }
+    val fieldModifier = modifier
+        .fillMaxWidth()
+        .focusRequester(fieldFocusRequester)
+        .semantics { contentDescription = label ?: placeholder }
+        .onFocusChanged {
+            if (focused && !it.isFocused) focusGeneration += 1
+            focused = it.isFocused
+            if (!it.isFocused) hide()
+        }
+    val onEdit: (String) -> Unit = { next ->
+        hide()
+        onValueChange(next)
+    }
+    val transformation = if (visible || (hasStoredSecret && value.isEmpty())) {
+        VisualTransformation.None
+    } else {
+        PasswordVisualTransformation()
+    }
+    val trailingActions: @Composable () -> Unit = {
+        if (value.isNotEmpty() || hasStoredSecret) {
+            Row {
+                IconButton(
+                    onClick = {
+                        if (visible) {
+                            hide()
+                        } else {
+                            fieldFocusRequester.requestFocus()
+                            keyboardController?.hide()
+                            if (value.isNotEmpty()) {
+                                visible = true
+                                scheduleRevealTimeout()
+                            } else {
+                                revealJob?.cancel()
+                                revealGeneration += 1
+                                val token = revealGeneration
+                                val focusToken = focusGeneration
+                                revealRequested = true
+                                revealJob = scope.launch {
+                                    var loaded: CharArray? = null
+                                    var accepted = false
+                                    try {
+                                        loaded = withContext(NonCancellable) { onRevealRequest() }
+                                        if (token == revealGeneration && focusToken == focusGeneration &&
+                                            pageActive && revealRequested && loaded != null
+                                        ) {
+                                            transientSecret?.fill('\u0000')
+                                            transientSecret = loaded
+                                            loaded = null
+                                            visible = true
+                                            accepted = true
+                                            scheduleRevealTimeout()
                                         }
+                                    } finally {
+                                        if (!accepted) loaded?.fill('\u0000')
                                     }
                                 }
-                            },
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                contentDescription = stringResource(
-                                    if (visible) R.string.secret_field_hide else R.string.secret_field_show,
-                                ),
-                            )
+                            }
                         }
-                        IconButton(
-                            onClick = {
-                                hide()
-                                onValueChange("")
-                                onClear()
-                            },
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Clear,
-                                contentDescription = stringResource(R.string.secret_field_clear),
-                            )
-                        }
-                    }
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = stringResource(
+                            if (visible) R.string.secret_field_hide else R.string.secret_field_show,
+                        ),
+                    )
                 }
-            },
-        )
+                IconButton(
+                    onClick = {
+                        hide()
+                        onValueChange("")
+                        onClear()
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Clear,
+                        contentDescription = stringResource(R.string.secret_field_clear),
+                    )
+                }
+            }
+        }
     }
+    SecretTextInput {
+        if (frameless) {
+            // 已保存且未显示时输入框留空、以遮罩作占位，直接输入即替换；显示出的已保存密钥不可就地编辑。
+            val storedIdle = hasStoredSecret && value.isEmpty()
+            NexaraFieldRowTextField(
+                value = if (storedIdle && !visible) "" else displayValue,
+                onValueChange = onEdit,
+                modifier = fieldModifier,
+                label = label,
+                placeholder = if (storedIdle) STORED_SECRET_FRAMELESS_MASK else placeholder,
+                supportingText = supportingText,
+                isError = isError,
+                monospace = true,
+                singleLine = true,
+                readOnly = storedIdle && visible,
+                keyboardOptions = SecretKeyboardOptions,
+                visualTransformation = transformation,
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (storedIdle && !visible) StoredSecretBadge()
+                        trailingActions()
+                    }
+                },
+            )
+        } else {
+            OutlinedTextField(
+                value = displayValue,
+                onValueChange = onEdit,
+                modifier = fieldModifier,
+                singleLine = true,
+                readOnly = hasStoredSecret && value.isEmpty(),
+                placeholder = { androidx.compose.material3.Text(placeholder) },
+                label = label?.let { value -> { androidx.compose.material3.Text(value) } },
+                supportingText = supportingText?.let { value -> { androidx.compose.material3.Text(value) } },
+                isError = isError,
+                visualTransformation = transformation,
+                textStyle = MaterialTheme.typography.bodyLarge.forInput(),
+                shape = MaterialTheme.shapes.medium,
+                keyboardOptions = SecretKeyboardOptions,
+                trailingIcon = trailingActions,
+            )
+        }
+    }
+}
+
+/** 无框形态里已保存密钥的小标签。 */
+@Composable
+private fun StoredSecretBadge() {
+    androidx.compose.material3.Text(
+        text = stringResource(R.string.field_row_secret_saved),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(end = 4.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(6.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    )
 }

@@ -180,7 +180,8 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).doesNotContain("TopAppBar(")
         assertThat(providerListSource).contains("onClick = actions.onAddProvider")
         assertThat(providerListSource).contains("UiTags.SETTINGS_ADD_PROVIDER")
-        assertThat(providerListSource).contains("settings_provider_empty")
+        assertThat(providerListSource).contains("provider_list_empty_title")
+        assertThat(providerListSource).contains("UiTags.PROVIDER_LIST_EMPTY_ADD")
         assertThat(providerListSource).contains("MaterialTheme.typography")
         assertThat(providerListSource).contains("NexaraSpacing.XLarge")
         assertThat(providerListSource).doesNotContain("NexaraTypography")
@@ -196,10 +197,11 @@ class UserSettingsHomeScreenContractTest {
 
     @Test
     fun `provider row has one manage target and overflow owns edit and delete`() {
-        assertThat(providerListSource).contains("NexaraSettingsItem(")
+        // 三段式提供商行（D2）：整行点按进入模型管理，编辑、管理模型与删除都在溢出菜单里。
+        assertThat(providerListSource).contains("ProviderRowFrame(")
         assertThat(providerListSource).doesNotContain("ListItem(")
         assertThat(providerListSource).contains("Icons.Rounded.MoreVert")
-        assertThat(providerListSource).contains("DropdownMenu(")
+        assertThat(providerListSource).contains("NexaraDropdownMenu(")
         assertThat(providerListSource).contains("NexaraMenuItem(")
         assertThat(providerListSource).contains("UiTags.settingsProviderCard(")
         assertThat(providerListSource).contains("UiTags.settingsProviderActions(")
@@ -216,20 +218,20 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).contains("style = MaterialTheme.typography.bodyMedium")
         assertThat(providerListSource).doesNotContain("useLargeTextLayout")
         assertThat(providerListSource).doesNotContain("leadingContent = leadingContent")
-        assertThat(providerListSource).contains("subtitle = listOfNotNull(localizedTypeName")
+        assertThat(providerListSource).contains("providerHostLabel(")
+        assertThat(providerListSource).contains("NexaraMonospace")
         assertThat(providerListSource).doesNotContain("NexaraGlassCard")
     }
 
     @Test
-    fun `提供商同处一个分组且地址与状态写在行内`() {
+    fun `提供商同处一个分组且主机名凭证模型数与连接状态写在行内`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
-        val section = providerListSource.substringAfter("title = stringResource(R.string.settings_section_ai_models),")
-            .substringBefore(") {")
-        assertThat(section).contains(".padding(horizontal = 16.dp)")
+        assertThat(providerListSource).contains("BettboxListGroup(")
         assertThat(providerListSource).doesNotContain("footer = provider.baseUrl")
-        assertThat(providerListSource).contains(".joinToString(\" · \") + \"\\n\" + provider.baseUrl")
         assertThat(providerListSource).contains("R.string.settings_provider_status_summary")
-        assertThat(providerListSource).contains("unsupportedDescription + \"\\n\" + provider.rawProtocolId")
+        assertThat(providerListSource).contains("R.plurals.provider_list_model_count")
+        assertThat(providerListSource).contains("ProviderConnectionLine(")
+        assertThat(providerListSource).contains("provider.rawProtocolId")
         assertThat(providerListSource).doesNotContain("state.providers.map")
     }
 

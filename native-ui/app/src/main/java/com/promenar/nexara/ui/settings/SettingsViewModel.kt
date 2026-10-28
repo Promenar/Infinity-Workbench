@@ -347,6 +347,16 @@ class SettingsViewModel(
 
     val providers: StateFlow<List<ProviderListItem>> = pm.providers
     val unsupportedProviders: StateFlow<List<UnsupportedProviderListItem>> = pm.unsupportedProviders
+    /** 各提供商最近一次连接测试与模型同步记录（本机状态，不进备份）。 */
+    val providerStatuses: StateFlow<Map<String, com.promenar.nexara.data.local.ProviderStatus>> = pm.providerStatuses
+
+    fun recordProviderConnectionTest(
+        providerId: String,
+        result: com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult,
+    ) = pm.recordProviderConnectionTest(providerId, result)
+
+    /** 连接参数改动后未重新测试即保存时，清掉已过期的连接记录。 */
+    fun clearProviderConnectionTest(providerId: String) = pm.clearProviderConnectionTest(providerId)
 
     val currentModelSummary: StateFlow<String> = pm.currentModelSummary
 
@@ -534,6 +544,8 @@ class SettingsViewModel(
                             com.promenar.nexara.data.manager.ModelSyncResult.UNCHANGED -> Unit
                         }
                     }
+                    // 只有真正从提供商拉到列表并合并完成才算一次同步；内置回退不更新“上次同步”时间。
+                    if (!usedBuiltInFallback) pm.recordProviderModelSync(providerId)
 
                     // 构造结构化反馈：新增/更新计数进入 typed args，展示层负责本地化
                     if (newCount > 0 || updatedCount > 0) {

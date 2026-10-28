@@ -84,6 +84,25 @@ object NexaraMotion {
         shrinkVertically(tween(DurationShort + DurationFadeOut, easing = EmphasizedAccelerate)) +
             fadeOut(tween(DurationShort, easing = FastOutLinearInEasing))
 
+    // ── 悬浮菜单（NexaraDropdownMenu）──────────────────────────────
+    /** 弹出窗口挂载后等待的帧数，再开始入场；默认 1 帧，以真机 gfxinfo framestats 对比结果为准。 */
+    const val MenuEnterWaitFrames = 1
+    /** 入场透明度时长：先于缩放到位，让菜单尽早可见。 */
+    const val MenuEnterFadeMillis = 90
+    /** 入场缩放起点与弹簧（阻尼比 0.8 回弹约 0.12%，肉眼不可见）。 */
+    const val MenuEnterScale = 0.92f
+    const val MenuEnterSpringDampingRatio = 0.8f
+    const val MenuEnterSpringStiffness = 700f
+    /** 菜单项错峰：每项晚 18ms，最多前 6 项错开，之后同时出现。 */
+    const val MenuItemStaggerMillis = 18
+    const val MenuItemStaggerMaxItems = 6
+    /** 单个菜单项淡入与上移的时长、位移。 */
+    const val MenuItemEnterMillis = 160
+    const val MenuItemEnterOffsetDp = 4f
+    /** 退场：淡出并缩到 0.96。 */
+    const val MenuExitMillis = 100
+    const val MenuExitScale = 0.96f
+
     private fun sizeTransform(): SizeTransform =
         SizeTransform(clip = false) { _: IntSize, _: IntSize -> tween(DurationMedium, easing = EmphasizedDecelerate) }
 }

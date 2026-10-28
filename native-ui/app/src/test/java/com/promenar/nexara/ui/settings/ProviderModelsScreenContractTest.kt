@@ -7,21 +7,30 @@ import org.junit.jupiter.api.Test
 
 class ProviderModelsScreenContractTest {
     @Test
-    fun `顶部操作使用M3主次层级且批量动作进入overflow`() {
+    fun `顶栏只放添加与溢出菜单且同步移到搜索栏下的状态条`() {
         val source = readProviderModelsSource()
         val topActions = extractBetween(
             source,
             "internal fun ProviderModelsTopActions(",
-            "@Composable\ninternal fun ProviderModelsModelRow(",
+            "@Composable\ninternal fun ProviderModelsSyncBar(",
         )
 
-        assertThat(topActions).contains("TextButton(")
-        assertThat(topActions).doesNotContain("FilledTonalButton(")
-        assertThat(topActions).contains("Button(")
-        assertThat(topActions).contains("DropdownMenu(")
+        assertThat(topActions).contains("IconButton(")
+        assertThat(topActions).doesNotContain("UiTags.PROVIDER_MODELS_ACTION_SYNC")
+        assertThat(topActions).contains("NexaraDropdownMenu(")
+        assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_EDIT_PROVIDER")
         assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_OVERFLOW")
         assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL")
         assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL")
+        val syncBar = extractBetween(
+            source,
+            "internal fun ProviderModelsSyncBar(",
+            "@Composable\ninternal fun ProviderModelsModelRow(",
+        )
+        assertThat(syncBar).contains("FilledTonalButton(")
+        assertThat(syncBar).contains("UiTags.PROVIDER_MODELS_ACTION_SYNC")
+        assertThat(syncBar).contains("enabled = !isFetching")
+        assertThat(syncBar).contains("UiTags.PROVIDER_MODELS_LAST_SYNC")
         assertThat(source).doesNotContain("ProviderModelsActionsGrid(")
         assertThat(source).doesNotContain("internal fun ActionChip(")
         assertThat(source).doesNotContain("NexaraBottomSheet")
@@ -38,17 +47,17 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `列表行使用连续文本能力摘要而非标签墙`() {
+    fun `列表行用紧凑能力图标组而非标签墙`() {
         val source = readProviderModelsSource()
         val row = extractBetween(
             source,
             "internal fun ProviderModelsModelRow(",
-            "private fun capabilityLabelResource(",
+            "private fun ModelCatalogStatusLine(",
         )
 
-        // 能力摘要是连续的分段文本行（段内不断行、分隔符不落在行首），不是标签墙。
-        assertThat(row).contains("NexaraMetaLine(")
-        assertThat(row).contains("segments = localizedCapabilities")
+        // 能力摘要是一行图标组（读屏合并为一句描述），不是可换行的标签墙。
+        assertThat(row).contains("ModelCapabilityBadges(")
+        assertThat(row).contains("R.string.provider_models_capabilities_description")
         assertThat(row).contains("model.remoteModelId.ifBlank")
         assertThat(row).contains("UiTags.providerModelsModelCard(model.id)")
         assertThat(row).contains("UiTags.providerModelsRemoteId(model.id)")
@@ -63,7 +72,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `列表行点击打开独立编辑面板且Switch使用独立回调`() {
+    fun `列表行点击打开页内编辑页且系统返回与预测性返回关闭编辑页`() {
         val source = readProviderModelsSource()
         val content = extractBetween(
             source,
@@ -74,24 +83,23 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("var selectedModelId by rememberSaveable")
         assertThat(content).contains("state.models.firstOrNull { it.id == selectedModelId }")
         assertThat(content).contains("ProviderModelsModelRow(")
-        val rowClick = extractBetween(
-            content,
-            "onRowClick = {",
-            "onToggle = { actions.onToggle(model.id) }",
-        )
+        val rowClick = extractBetween(content, "onRowClick = { model ->", "            )")
         assertThat(rowClick).contains("focusManager.clearFocus()")
         assertThat(rowClick).contains("keyboardController?.hide()")
         assertThat(rowClick).contains("selectedModelId = model.id")
         assertThat(content).contains("onToggle = { actions.onToggle(model.id) }")
-        assertThat(content).contains("ModelEditorSheet(")
-        assertThat(content).contains("onDismissRequest = { selectedModelId = null }")
+        assertThat(content).contains("ModelEditorScreen(")
+        assertThat(content).contains("onClose = { selectedModelId = null }")
+        assertThat(content).contains("PredictiveBackHandler(enabled = selectedModel != null)")
+        // 同步删掉正在编辑的模型时自动退出编辑页。
+        assertThat(content).contains("reconcileEditingModelId(selectedModelId, state.models)")
     }
 
     @Test
     fun `独立编辑面板承载编辑测试删除和真实用户覆盖来源`() {
         val source = readEditorSource()
-        assertThat(source).contains("internal fun ModelEditorSheet(")
-        val editor = source.substring(source.indexOf("internal fun ModelEditorSheet("))
+        assertThat(source).contains("internal fun ModelEditorScreen(")
+        val editor = source.substring(source.indexOf("internal fun ModelEditorScreen("))
 
         assertThat(editor).contains("var selectedType by remember(model.id)")
         assertThat(editor).contains("var editName by remember(model.id)")
@@ -128,7 +136,7 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("itemsIndexed(")
         assertThat(content).contains("key = { _, model -> model.id }")
         assertThat(content).contains("ProviderModelsModelRow(")
-        val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "private fun capabilityLabelResource(")
+        val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "private fun ModelCatalogStatusLine(")
         assertThat(row).contains("bettboxListGroupItem(groupIndex, groupSize)")
     }
 
@@ -203,7 +211,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `同步反馈条使用MaterialTheme排版而非固定字号`() {
+    fun `同步反馈条复用统一状态条而非固定字号`() {
         val source = readProviderModelsSource()
         val notice = extractBetween(
             source,
@@ -211,7 +219,8 @@ class ProviderModelsScreenContractTest {
             "private fun ProviderModelsListMessage(",
         )
 
-        assertThat(notice).contains("style = MaterialTheme.typography.bodySmall")
+        assertThat(notice).contains("NexaraStatusStrip(")
+        assertThat(notice).contains("UiTags.PROVIDER_MODELS_NOTICE_DISMISS")
         assertThat(notice).doesNotContain("fontSize = 12.sp")
         assertThat(notice).doesNotContain("NexaraTypography")
     }
@@ -230,7 +239,7 @@ class ProviderModelsScreenContractTest {
     )
 
     private fun readEditorSource(): String = read(
-        "app/src/main/java/com/promenar/nexara/ui/settings/ModelEditorSheet.kt",
+        "app/src/main/java/com/promenar/nexara/ui/settings/ModelEditorScreen.kt",
     )
 
     private fun readUiTags(): String = read(

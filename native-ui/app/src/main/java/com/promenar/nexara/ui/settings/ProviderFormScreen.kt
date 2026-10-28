@@ -25,17 +25,21 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.Button
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.ui.Alignment
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraFieldRow
+import com.promenar.nexara.ui.common.NexaraGroupDivider
+import com.promenar.nexara.ui.common.NexaraSettingsGroup
+import com.promenar.nexara.ui.common.NexaraStatusKind
+import com.promenar.nexara.ui.common.NexaraStatusStrip
+import com.promenar.nexara.ui.testing.UiTags
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +61,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.inference.SlotState
@@ -77,10 +80,7 @@ import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SecretField
-import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -127,6 +127,8 @@ internal data class ProviderFormUiState(
     /** 云端提供商的 API 源（公网或 Tailscale 内网）；本地推理为 null。 */
     val apiSource: ProviderApiSourceState? = null,
     val tailnetInfo: ProviderTailnetInfo = ProviderTailnetInfo(),
+    /** 已保存的提供商（非内置默认）显示“删除提供商”行。 */
+    val deletable: Boolean = false,
 )
 
 internal data class ProviderFormActions(
@@ -148,6 +150,7 @@ internal data class ProviderFormActions(
     val onApiSourceSelected: (ProviderApiSource) -> Unit = {},
     val onTailnetPeerSelected: (com.promenar.nexara.data.tailnet.TailnetPeer) -> Unit = {},
     val onOpenTailscaleSettings: () -> Unit = {},
+    val onDelete: () -> Unit = {},
 )
 
 internal suspend fun persistVerifiedProviderConnection(
@@ -248,6 +251,10 @@ fun ProviderFormScreen(
     var recoveringUnknownProtocol by remember { mutableStateOf(false) }
     // API 源不保存：未手动切换时跟随地址自动识别。
     var manualApiSource by remember { mutableStateOf<ProviderApiSource?>(null) }
+    // 新建提供商时测试结果在保存拿到 ID 后再记录；编辑时记录载入时的连接参数，用于判断保存是否改了连接。
+    var lastProbeResult by remember { mutableStateOf<ProviderConnectionProbeResult?>(null) }
+    var loadedConnection by remember { mutableStateOf<Pair<ProtocolType, String>?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val tailnetState by app.tailnetManager.state.collectAsStateWithLifecycle()
     val connectionProbe = ProviderConnectionProbe.processScoped
     val scope = rememberCoroutineScope()
@@ -285,6 +292,7 @@ fun ProviderFormScreen(
                         it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
                     } ?: ProtocolType.Generic_OpenAI_Compat
                 }
+                loadedConnection = config.protocolType to config.baseUrl
             } else {
                 viewModel.getUnsupportedProviderSummary(providerId)?.let { unsupported ->
                     recoveringUnknownProtocol = true
@@ -348,13 +356,22 @@ fun ProviderFormScreen(
             saveFailed = false
             scope.launch {
                 try {
-                    saveWithSessionHeaders(
+                    val testedCurrentInput = connectionTestState != ProviderConnectionTestState.Idle
+                    val connectionChanged = loadedConnection != (effectiveProtocol to baseUrl) ||
+                        credentialUpdate !is CredentialUpdate.Preserve
+                    val savedId = saveWithSessionHeaders(
                         effectiveProtocol,
                         baseUrl,
                         credentialUpdate,
                         "",
                         name.ifBlank { null },
                     )
+                    if (providerId == null && testedCurrentInput) {
+                        lastProbeResult?.let { viewModel.recordProviderConnectionTest(savedId, it) }
+                    } else if (providerId != null && !testedCurrentInput && connectionChanged) {
+                        // 连接参数已变而没有重新测试：旧的测试结果不再代表当前配置。
+                        viewModel.clearProviderConnectionTest(savedId)
+                    }
                     if (providerId != null) {
                         onNavigateToModels()
                     } else {
@@ -416,6 +433,8 @@ fun ProviderFormScreen(
                         )
                     }
                 }
+                lastProbeResult = probeResult
+                providerId?.let { viewModel.recordProviderConnectionTest(it, probeResult) }
                 connectionTestState = when (probeResult) {
                     ProviderConnectionProbeResult.Success -> {
                         connectionTestFailureMessage = null
@@ -533,6 +552,7 @@ fun ProviderFormScreen(
                 tailnetName = tailnetState.summary?.tailnetName,
                 peers = tailnetState.peers,
             ),
+            deletable = providerId != null && providerId != "default",
         ),
         actions = ProviderFormActions(
             onBack = onNavigateBack,
@@ -596,8 +616,24 @@ fun ProviderFormScreen(
                 }
             },
             onOpenTailscaleSettings = onOpenTailscaleSettings,
+            onDelete = { showDeleteConfirm = true },
         ),
     )
+    if (showDeleteConfirm && providerId != null) {
+        NexaraConfirmDialog(
+            title = stringResource(R.string.settings_delete_provider_title),
+            message = stringResource(R.string.settings_delete_provider_message),
+            confirmText = stringResource(R.string.settings_btn_delete),
+            onConfirm = {
+                showDeleteConfirm = false
+                viewModel.deleteProvider(providerId)
+                onNavigateBack()
+            },
+            onCancel = { showDeleteConfirm = false },
+            isDestructive = true,
+            modifier = Modifier.testTag(UiTags.PROVIDER_FORM_DELETE_CONFIRM),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -627,25 +663,30 @@ internal fun ProviderFormContent(
             ) {
                 if (state.unavailableLocalConfiguration) {
                     animatedFormItem("local-unavailable") {
-                        ProviderFormErrorText(stringResource(R.string.local_inference_release_unavailable))
+                        ProviderFormNotice(stringResource(R.string.local_inference_release_unavailable))
                     }
-                }
-                animatedFormItem("preset") {
-                    NexaraSettingsSection(
-                        title = stringResource(R.string.settings_batch1_connection_template),
-                    ) { ProviderPresetSelector(state = state, actions = actions) }
                 }
                 if (state.legacyMigrationBlocked) {
                     animatedFormItem("legacy-migration") {
-                        ProviderFormErrorText(
-                            stringResource(R.string.provider_form_legacy_migration_required),
-                        )
+                        ProviderFormNotice(stringResource(R.string.provider_form_legacy_migration_required))
                     }
                 }
-                if (state.selectedPreset.name == "Custom") {
-                    animatedFormItem("protocol") {
-                        NexaraSettingsSection(title = stringResource(R.string.provider_form_protocol_type)) {
+                // 提供商：预设、自定义协议与显示名称。
+                animatedFormItem("preset") {
+                    NexaraSettingsSection(title = stringResource(R.string.provider_form_group_provider)) {
+                        ProviderPresetSelector(state = state, actions = actions)
+                        if (state.selectedPreset.name == "Custom") {
+                            NexaraGroupDivider()
                             ProviderProtocolSelector(state = state, actions = actions)
+                        }
+                        if (!state.isLocal) {
+                            NexaraGroupDivider()
+                            NexaraFieldRow(
+                                label = stringResource(R.string.provider_form_label_name),
+                                value = state.name,
+                                onValueChange = actions.onNameChange,
+                                placeholder = stringResource(R.string.provider_form_placeholder_name),
+                            )
                         }
                     }
                 }
@@ -654,44 +695,33 @@ internal fun ProviderFormContent(
                         LocalProviderSection(state = state, actions = actions)
                     }
                 } else {
-                    state.apiSource?.let { source ->
-                        animatedFormItem("api-source") {
-                            ProviderApiSourceSection(
-                                source = source,
-                                tailnet = state.tailnetInfo,
-                                onSourceSelected = actions.onApiSourceSelected,
-                                onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
-                            )
-                        }
+                    animatedFormItem("interface-section") {
+                        ProviderInterfaceSection(state = state, actions = actions)
                     }
                     animatedFormItem("cloud-section") {
                         CloudProviderSection(state = state, actions = actions)
                     }
-                    when (state.connectionTestState) {
-                        ProviderConnectionTestState.Success -> animatedFormItem("connection-status") {
-                            ProviderFormStatusText(
-                                stringResource(R.string.common_cd_success),
-                                success = true,
-                            )
-                        }
-                        ProviderConnectionTestState.Error -> animatedFormItem("connection-status") {
-                            ProviderFormStatusText(
-                                state.connectionTestFailureMessage
-                                    ?: stringResource(R.string.common_cd_failed),
-                                success = false,
-                            )
-                        }
-                        ProviderConnectionTestState.Unavailable -> animatedFormItem("connection-status") {
-                            ProviderFormStatusText(
-                                stringResource(R.string.provider_form_connection_unavailable),
-                                success = null,
-                            )
-                        }
-                        else -> Unit
+                    animatedFormItem("advanced-section") {
+                        ProviderSessionHeaderFields(
+                            enabled = state.sessionHeadersEnabled,
+                            name = state.sessionHeaderName,
+                            onEnabled = actions.onSessionHeadersEnabled,
+                            onName = actions.onSessionHeaderName,
+                        )
                     }
                 }
-                if (state.saveFailed) {
-                    animatedFormItem("save-failed") { ProviderFormErrorText(stringResource(R.string.provider_form_save_failed)) }
+                if (state.deletable) {
+                    animatedFormItem("delete") {
+                        NexaraSettingsGroup {
+                            NexaraSettingsItem(
+                                title = stringResource(R.string.provider_form_delete),
+                                icon = Icons.Rounded.Delete,
+                                titleColor = MaterialTheme.colorScheme.error,
+                                onClick = actions.onDelete,
+                                modifier = Modifier.testTag(UiTags.PROVIDER_FORM_DELETE),
+                            )
+                        }
+                    }
                 }
             }
             AnimatedVisibility(visible = !state.isLocal, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
@@ -753,36 +783,57 @@ private fun ProviderProtocolSelector(state: ProviderFormUiState, actions: Provid
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 预设提供商：与协议类型一致，点按打开底部面板（宽窗口下贴着本行弹出）选择。 */
 @Composable
 private fun ProviderPresetSelector(state: ProviderFormUiState, actions: ProviderFormActions) {
-    ExposedDropdownMenuBox(
-        expanded = state.presetMenuExpanded,
-        onExpandedChange = actions.onPresetMenuExpandedChange,
-    ) {
-        NexaraValueRow(
-            title = stringResource(R.string.provider_form_preset_title),
-            value = state.selectedPreset.name,
-            onClick = { actions.onPresetMenuExpandedChange(!state.presetMenuExpanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
-            expanded = state.presetMenuExpanded,
-            onDismissRequest = { actions.onPresetMenuExpandedChange(false) },
-        ) {
-            state.availablePresets.forEach { preset ->
-                val selected = preset == state.selectedPreset
-                DropdownMenuItem(
-                    text = { Text(preset.name) },
-                    leadingIcon = { ProviderPresetIcon(preset, selected) },
-                    trailingIcon = {
-                        if (selected) {
-                            Icon(Icons.Rounded.Check, contentDescription = null)
-                        }
-                    },
-                    onClick = { actions.onPresetSelected(preset) },
+    val anchor = rememberNexaraPopoverAnchor()
+    val title = stringResource(R.string.provider_form_preset_title)
+    NexaraSettingsItem(
+        title = title,
+        leadingContent = { ProviderPresetIcon(state.selectedPreset, selected = false) },
+        onClick = { if (!anchor.consumeRecentDismiss()) actions.onPresetMenuExpandedChange(true) },
+        modifier = Modifier
+            .nexaraPopoverAnchor(anchor)
+            .testTag(UiTags.PROVIDER_FORM_PRESET_PICKER)
+            .semantics { stateDescription = state.selectedPreset.name },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.selectedPreset.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        },
+    )
+    NexaraBottomSheet(
+        show = state.presetMenuExpanded,
+        scrollContent = true,
+        title = title,
+        onDismiss = { actions.onPresetMenuExpandedChange(false) },
+        popover = NexaraPopoverSpec(anchor),
+    ) {
+        state.availablePresets.forEach { preset ->
+            val selected = preset == state.selectedPreset
+            NexaraSettingsItem(
+                horizontalPadding = 0.dp,
+                title = preset.name,
+                leadingContent = { ProviderPresetIcon(preset, selected) },
+                onClick = { actions.onPresetSelected(preset) },
+                role = Role.RadioButton,
+                selected = selected,
+                modifier = Modifier.testTag("provider_preset:${preset.name}"),
+                trailingContent = {
+                    if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                },
+            )
         }
     }
 }
@@ -805,61 +856,63 @@ private fun ProviderPresetIcon(preset: ProviderPreset, selected: Boolean) {
     )
 }
 
+/** 接口：公网 / Tailscale 内网分段与状态行、tailnet 设备、接口地址与地址提示；仅内网时显示脚注。 */
 @Composable
-private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
+private fun ProviderInterfaceSection(state: ProviderFormUiState, actions: ProviderFormActions) {
+    val tailnet = state.apiSource?.selected == ProviderApiSource.TAILNET
     NexaraSettingsSection(
-        title = stringResource(R.string.provider_form_config_section),
-        footer = stringResource(R.string.provider_form_secure_storage),
+        title = stringResource(R.string.provider_form_group_interface),
+        footer = if (tailnet) stringResource(R.string.provider_api_source_footer) else null,
     ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        OutlinedTextField(
-            textStyle = LocalTextStyle.current.forInput(),
-            value = state.name,
-            onValueChange = actions.onNameChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.provider_form_label_name)) },
-            placeholder = { Text(stringResource(R.string.provider_form_placeholder_name)) },
-            singleLine = true,
-        )
+        state.apiSource?.let { source ->
+            ProviderApiSourceRows(
+                source = source,
+                tailnet = state.tailnetInfo,
+                onSourceSelected = actions.onApiSourceSelected,
+                onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
+            )
+            NexaraGroupDivider()
+        }
         // 选 Tailscale 内网时先选设备，接口地址随之填好。
-        if (state.apiSource?.selected == ProviderApiSource.TAILNET) {
+        if (tailnet && selectableTailnetPeers(state.tailnetInfo.peers).isNotEmpty()) {
             TailnetPeerPicker(
                 peers = state.tailnetInfo.peers,
                 baseUrl = state.baseUrl,
                 onPeerSelected = actions.onTailnetPeerSelected,
             )
+            NexaraGroupDivider()
         }
-        OutlinedTextField(
-            textStyle = LocalTextStyle.current.forInput(),
+        NexaraFieldRow(
+            label = stringResource(R.string.provider_form_label_url),
             value = state.baseUrl,
             onValueChange = actions.onBaseUrlChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.provider_form_label_url)) },
-            placeholder = { Text(stringResource(R.string.provider_form_placeholder_url)) },
+            placeholder = stringResource(R.string.provider_form_placeholder_url),
+            monospace = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            singleLine = true,
-            isError = !state.endpointValid,
-            supportingText = if (!state.endpointValid) {
-                {
-                    ProviderFormErrorText(
-                        stringResource(
-                            when {
-                                state.protocolUnsupported -> R.string.provider_form_protocol_unsupported
-                                state.apiSource?.hint == ProviderApiSourceHint.TAILNET_NEEDS_HTTPS ->
-                                    R.string.provider_form_tailnet_https_required
-                                else -> R.string.provider_form_https_required
-                            },
-                        ),
-                    )
-                }
+            error = if (!state.endpointValid) {
+                stringResource(
+                    when {
+                        state.protocolUnsupported -> R.string.provider_form_protocol_unsupported
+                        state.apiSource?.hint == ProviderApiSourceHint.TAILNET_NEEDS_HTTPS ->
+                            R.string.provider_form_tailnet_https_required
+                        else -> R.string.provider_form_https_required
+                    },
+                )
             } else {
                 null
             },
         )
         ProviderAddressHint(hint = state.apiSource?.hint, onSourceSelected = actions.onApiSourceSelected)
+    }
+}
+
+/** 凭证：无框密钥行；“密钥保存在本机安全存储中”作为脚注。 */
+@Composable
+private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
+    NexaraSettingsSection(
+        title = stringResource(R.string.provider_form_group_credentials),
+        footer = stringResource(R.string.provider_form_credentials_footer),
+    ) {
         SecretField(
             value = state.secretInput,
             onValueChange = actions.onSecretChange,
@@ -887,18 +940,12 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             ),
             supportingText = if (state.credentialKindMismatch) stringResource(R.string.provider_form_credential_kind_changed) else null,
             isError = state.credentialKindMismatch,
-        )
-        // 会话请求头属于请求行为，放在地址与密钥这组连接信息之后。
-        ProviderSessionHeaderFields(
-            enabled = state.sessionHeadersEnabled,
-            name = state.sessionHeaderName,
-            onEnabled = actions.onSessionHeadersEnabled,
-            onName = actions.onSessionHeaderName,
+            frameless = true,
         )
     }
 }
-}
 
+/** 底部操作栏：测试结果以状态条贴在“测试连接 / 保存”上方。 */
 @Composable
 private fun ProviderFormActionsSection(
     state: ProviderFormUiState,
@@ -913,57 +960,91 @@ private fun ProviderFormActionsSection(
         ProviderConnectionTestState.Unavailable -> stringResource(R.string.provider_form_connection_unavailable)
         ProviderConnectionTestState.Error -> stringResource(R.string.common_cd_failed)
     }
-    Row(
-        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Max),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        TextButton(
-            onClick = actions.onTestConnection,
-            enabled = !testing && !state.isSaving && state.endpointValid &&
-                !state.protocolUnsupported && !state.legacyMigrationBlocked &&
-                !state.credentialKindMismatch && state.sessionHeaderNameValid,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .heightIn(min = 48.dp)
-                .semantics {
-                    connectionStatusDescription?.let { stateDescription = it }
-                },
-        ) {
-            if (testing) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            }
-            Text(
-                text = stringResource(
-                    if (testing) R.string.provider_form_testing else R.string.provider_form_btn_test,
-                ),
-                modifier = if (testing) Modifier.padding(start = 8.dp) else Modifier,
-            )
-        }
-        Button(
-            onClick = actions.onSave,
-            enabled = state.endpointValid && !state.protocolUnsupported &&
-                !state.legacyMigrationBlocked && !state.credentialKindMismatch && state.sessionHeaderNameValid && !state.isSaving &&
-                state.connectionTestState != ProviderConnectionTestState.Testing,
-            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
-        ) {
-            if (state.isSaving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-            }
-            Text(
-                text = stringResource(
-                    if (state.isSaving) R.string.provider_form_saving else R.string.provider_form_btn_save,
-                ),
-                modifier = Modifier.padding(start = 8.dp),
-            )
+    val strip: Pair<NexaraStatusKind, String>? = when {
+        state.saveFailed -> NexaraStatusKind.Error to stringResource(R.string.provider_form_save_failed)
+        else -> when (state.connectionTestState) {
+            ProviderConnectionTestState.Idle -> null
+            ProviderConnectionTestState.Testing -> NexaraStatusKind.Info to stringResource(R.string.provider_form_testing)
+            ProviderConnectionTestState.Success -> NexaraStatusKind.Success to stringResource(R.string.provider_form_connection_ok)
+            ProviderConnectionTestState.Unavailable ->
+                NexaraStatusKind.Info to stringResource(R.string.provider_form_connection_unavailable)
+            ProviderConnectionTestState.Error -> NexaraStatusKind.Error to
+                (state.connectionTestFailureMessage ?: stringResource(R.string.common_cd_failed))
         }
     }
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
+        AnimatedVisibility(visible = strip != null, enter = NexaraMotion.expandIn, exit = NexaraMotion.shrinkOut) {
+            strip?.let { (kind, message) ->
+                NexaraStatusStrip(
+                    kind = kind,
+                    message = message,
+                    busy = testing,
+                    modifier = Modifier.testTag(UiTags.PROVIDER_FORM_STATUS_STRIP),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FilledTonalButton(
+                onClick = actions.onTestConnection,
+                enabled = !testing && !state.isSaving && state.endpointValid &&
+                    !state.protocolUnsupported && !state.legacyMigrationBlocked &&
+                    !state.credentialKindMismatch && state.sessionHeaderNameValid,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        connectionStatusDescription?.let { stateDescription = it }
+                    },
+            ) {
+                if (testing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+                Text(
+                    text = stringResource(
+                        if (testing) R.string.provider_form_testing else R.string.provider_form_btn_test,
+                    ),
+                    modifier = if (testing) Modifier.padding(start = 8.dp) else Modifier,
+                )
+            }
+            Button(
+                onClick = actions.onSave,
+                enabled = state.endpointValid && !state.protocolUnsupported &&
+                    !state.legacyMigrationBlocked && !state.credentialKindMismatch && state.sessionHeaderNameValid && !state.isSaving &&
+                    state.connectionTestState != ProviderConnectionTestState.Testing,
+                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
+            ) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = stringResource(
+                        if (state.isSaving) R.string.provider_form_saving else R.string.provider_form_btn_save,
+                    ),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 表单顶部的阻断提示（本地推理不可用、旧协议需迁移凭证）。 */
+@Composable
+private fun ProviderFormNotice(message: String) {
+    NexaraStatusStrip(
+        kind = NexaraStatusKind.Error,
+        message = message,
+        modifier = Modifier.padding(bottom = NexaraSpacing.Large),
+    )
 }
 
 @Composable
@@ -984,30 +1065,6 @@ private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFo
         }
     }
 }
-}
-
-@Composable
-private fun ProviderFormErrorText(message: String) {
-    Text(
-        text = message,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
-    )
-}
-
-@Composable
-private fun ProviderFormStatusText(message: String, success: Boolean?) {
-    Text(
-        text = message,
-        style = MaterialTheme.typography.bodySmall,
-        color = when (success) {
-            true -> MaterialTheme.colorScheme.primary
-            false -> MaterialTheme.colorScheme.error
-            null -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
-    )
 }
 
 internal fun isSecureProviderEndpoint(value: String): Boolean = runCatching {

@@ -38,7 +38,7 @@ class SettingsAiAppearanceVisualContractTest {
         val models = source("ProviderModelsScreen.kt")
 
         assertThat(list).contains("NexaraSettingsPageLayout(")
-        assertThat(list).contains("NexaraSettingsItem(")
+        assertThat(list).contains("BettboxListGroup(")
         assertThat(list).doesNotContain("ListItem(")
         assertThat(list).doesNotContain("leadingContent = leadingContent")
         assertThat(list).doesNotContain("val providerIcon")
@@ -52,10 +52,10 @@ class SettingsAiAppearanceVisualContractTest {
     }
 
     @Test
-    fun `模型编辑面板使用小号紫色分组标题并保持透明内容表面`() {
-        val source = source("ModelEditorSheet.kt")
+    fun `模型编辑页使用小号紫色分组标题并保持透明内容表面`() {
+        val source = source("ModelEditorScreen.kt")
 
-        assertThat(source).contains("SettingsSectionHeader(")
+        assertThat(source).contains("NexaraSettingsSection(")
         assertThat(source).contains("MaterialTheme.colorScheme.background")
         assertThat(source).doesNotContain("style = MaterialTheme.typography.titleSmall")
     }

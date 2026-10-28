@@ -8,6 +8,14 @@ import java.nio.file.Path
 
 class BackupPreferenceInventoryTest {
     @Test
+    fun `提供商连接与同步状态显式登记为本机状态且不参与备份`() {
+        assertThat(BackupPreferencePolicy.isKnown("nexara_provider_status", "statuses")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_provider_status", "statuses")).isFalse()
+        assertThat(BackupPreferencePolicy.isAllowed("provider", "statuses")).isFalse()
+        assertThat(BackupPreferencePolicy.isAllowed("settings", "statuses")).isFalse()
+    }
+
+    @Test
     fun `长期记忆开关作为用户偏好参与备份且不放宽凭据限制`() {
         assertThat(BackupPreferencePolicy.isKnown("nexara_settings", "long_term_memory_enabled")).isTrue()
         assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "long_term_memory_enabled")).isTrue()
@@ -46,6 +54,7 @@ class BackupPreferenceInventoryTest {
                 "\\(\\s*\"([^\"]+)\""
         )
         val injectedNamespaces = mapOf(
+            "data/local/ProviderStatusStore.kt#preferences" to "nexara_provider_status",
             "data/local/SessionHeaderPreferences.kt#preferences" to "nexara_settings",
             "data/memory/LongTermMemoryAccess.kt#settings" to "nexara_settings",
             "data/remote/mcp/McpConnectionSettings.kt#preferences" to "nexara_settings",

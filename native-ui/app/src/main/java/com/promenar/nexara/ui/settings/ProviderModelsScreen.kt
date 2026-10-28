@@ -1,16 +1,13 @@
 package com.promenar.nexara.ui.settings
 
-import com.promenar.nexara.ui.theme.NexaraMotion
-import com.promenar.nexara.ui.common.NexaraSwitch
-import com.promenar.nexara.ui.common.NexaraSheetHeight
-import com.promenar.nexara.ui.common.NexaraModalSheet
-import androidx.compose.foundation.layout.heightIn
-import com.promenar.nexara.data.model.ModelInfo
-import com.promenar.nexara.ui.common.NexaraMetaLine
-import androidx.annotation.StringRes
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,113 +15,96 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import com.promenar.nexara.ui.common.verticalFadingEdges
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
-import com.promenar.nexara.ui.common.NexaraDropdownMenu
-import com.promenar.nexara.ui.theme.NexaraTypography
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.ModelBrandTile
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
-import com.promenar.nexara.ui.common.bettboxListGroupItem
-import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.ModelBrandIcon
+import com.promenar.nexara.ui.common.ModelCapabilityBadges
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.common.NexaraGroupDivider
+import com.promenar.nexara.ui.common.NexaraMenuDivider
+import com.promenar.nexara.ui.common.NexaraMenuItem
+import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.common.NexaraModalSheet
 import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSheetHeight
+import com.promenar.nexara.ui.common.NexaraStatusKind
+import com.promenar.nexara.ui.common.NexaraStatusStrip
+import com.promenar.nexara.ui.common.NexaraSwitch
+import com.promenar.nexara.ui.common.bettboxListGroupItem
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.common.verticalFadingEdges
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraMonospace
+import com.promenar.nexara.ui.theme.NexaraMotion
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forInput
-import com.promenar.nexara.ui.common.NexaraMenuItem
-
-
-private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
-private val ModelTypeLabelResources = listOf(
-    R.string.provider_models_type_chat,
-    R.string.provider_models_type_reasoning,
-    R.string.provider_models_type_image,
-    R.string.provider_models_type_embedding,
-    R.string.provider_models_type_rerank,
-)
-
-private data class CapabilityTag(
-    val key: String,
-    @param:StringRes val labelRes: Int,
-)
-
-private val CapabilityTags = listOf(
-    CapabilityTag("toolcalling", R.string.provider_models_capability_tools),
-    CapabilityTag("vision", R.string.provider_models_capability_vision),
-    CapabilityTag("internet", R.string.provider_models_capability_internet),
-    CapabilityTag("audioinput", R.string.provider_models_capability_audio_input),
-    CapabilityTag("audiooutput", R.string.provider_models_capability_audio_output),
-    CapabilityTag("videounderstanding", R.string.provider_models_capability_video),
-    CapabilityTag("structuredoutput", R.string.provider_models_capability_structured_output),
-    CapabilityTag("promptcaching", R.string.provider_models_capability_prompt_caching),
-    CapabilityTag("computeruse", R.string.provider_models_capability_computer_use),
-)
+import kotlin.coroutines.cancellation.CancellationException
 
 internal data class ProviderModelsScreenState(
     val providerName: String,
@@ -134,6 +114,8 @@ internal data class ProviderModelsScreenState(
     val models: List<ModelInfo>,
     val modelTestStates: Map<String, ModelTestState>,
     val catalogStatus: com.promenar.nexara.data.model.catalog.CatalogUpdateStatus? = null,
+    /** 上次成功同步模型的时间；从未同步为 null。 */
+    val lastSyncAtMillis: Long? = null,
 )
 
 internal data class ProviderModelsScreenActions(
@@ -148,14 +130,15 @@ internal data class ProviderModelsScreenActions(
     val onDelete: (String) -> Unit,
     val onClearNotice: () -> Unit,
     val onRefreshCatalog: () -> Unit = {},
+    val onEditProvider: () -> Unit = {},
 )
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ProviderModelsScreen(
     providerName: String = "",
     providerId: String = "",
     onNavigateBack: () -> Unit,
+    onNavigateToSecondary: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -165,9 +148,19 @@ fun ProviderModelsScreen(
     val isFetching by viewModel.isFetchingModels.collectAsState()
     val syncNotice by viewModel.modelSyncNotice.collectAsState()
     val catalogStatus by viewModel.modelCatalogStatus.collectAsState()
+    val providerStatuses by viewModel.providerStatuses.collectAsState()
 
     val provider = remember(providers, providerId) {
         providers.find { it.id == providerId }
+    }
+    // 提供商在别处（编辑页的“删除提供商”）被删掉后，模型页不再有归属，自动返回。
+    var providerSeen by remember(providerId) { mutableStateOf(false) }
+    LaunchedEffect(provider != null) {
+        if (provider != null) {
+            providerSeen = true
+        } else if (providerSeen) {
+            onNavigateBack()
+        }
     }
     val effectiveTitle = provider?.name
         ?: providerName.takeIf { it.isNotBlank() }
@@ -186,6 +179,7 @@ fun ProviderModelsScreen(
         models = scopedModels,
         modelTestStates = modelTestStates,
         catalogStatus = catalogStatus,
+        lastSyncAtMillis = providerStatuses[providerId]?.lastModelSyncAtMillis,
     )
 
     val actions = ProviderModelsScreenActions(
@@ -200,6 +194,7 @@ fun ProviderModelsScreen(
         onDelete = { modelId -> viewModel.deleteModel(modelId) },
         onClearNotice = { viewModel.clearSyncNotice() },
         onRefreshCatalog = { viewModel.refreshModelCatalog() },
+        onEditProvider = { onNavigateToSecondary(NavDestinations.providerForm(providerId)) },
     )
 
     ProviderModelsScreenContent(
@@ -209,6 +204,10 @@ fun ProviderModelsScreen(
     )
 }
 
+/**
+ * 模型列表与模型编辑页同屏切换（沿 X 轴共享切换）：编辑页打开时系统返回与预测性返回先关闭编辑页；
+ * 同步移除了正在编辑的模型时自动退出编辑。
+ */
 @Composable
 internal fun ProviderModelsScreenContent(
     state: ProviderModelsScreenState,
@@ -221,6 +220,9 @@ internal fun ProviderModelsScreenContent(
     var selectedModelId by rememberSaveable(state.providerId) { mutableStateOf<String?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    // 列表滚动位置提到切换容器之外，从编辑页返回时停在原处。
+    val listState = rememberLazyListState()
 
     // 选中项始终从最新同步结果派生，删除或同步移除后不会继续编辑旧快照。
     val selectedModel = remember(state.models, selectedModelId) {
@@ -228,7 +230,17 @@ internal fun ProviderModelsScreenContent(
     }
     LaunchedEffect(selectedModelId, selectedModel) {
         if (selectedModelId != null && selectedModel == null) {
+            selectedModelId = reconcileEditingModelId(selectedModelId, state.models)
+        }
+        if (selectedModelId == null) backProgress = 0f
+    }
+    PredictiveBackHandler(enabled = selectedModel != null) { progress ->
+        try {
+            progress.collect { backProgress = it.progress }
             selectedModelId = null
+        } catch (cancelled: CancellationException) {
+            backProgress = 0f
+            throw cancelled
         }
     }
 
@@ -241,137 +253,51 @@ internal fun ProviderModelsScreenContent(
         }
     }
 
-    NexaraSettingsPageLayout(
-        title = state.providerName,
-        onBack = onNavigateBack,
-        modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SCREEN_ROOT),
-    ) { contentPadding ->
-        // 只固定搜索栏；操作、目录信息、同步提示与模型随同一列表滚动，列表底部延伸到系统导航栏后方。
-        val listState = rememberLazyListState()
-        val layoutDirection = LocalLayoutDirection.current
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    start = contentPadding.calculateStartPadding(layoutDirection),
-                    top = contentPadding.calculateTopPadding(),
-                    end = contentPadding.calculateEndPadding(layoutDirection),
-                )
-                .imePadding(),
-        ) {
-        NexaraSearchBar(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = stringResource(R.string.provider_models_search),
-            modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD),
-        )
-
-        LazyColumn(
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(0.dp),
-            contentPadding = PaddingValues(top = 12.dp, bottom = contentPadding.calculateBottomPadding()),
-            modifier = Modifier
-                .weight(1f)
-                .verticalFadingEdges(top = listState.canScrollBackward)
-                .testTag(UiTags.PROVIDER_MODELS_LIST),
-        ) {
-            item("actions") {
-                ProviderModelsTopActions(
-                    isFetching = state.isFetching,
-                    onRefresh = actions.onRefresh,
-                    onAdd = { showAddDialog = true },
-                    onDisableAll = actions.onDisableAll,
-                    onDeleteAll = { showDeleteAllDialog = true },
-                )
-            }
-
-            state.catalogStatus?.let { catalog ->
-                item("catalog") {
-                    ModelCatalogStatusLine(catalog = catalog, onRefresh = actions.onRefreshCatalog)
-                }
-            }
-
-            val listState = reduceProviderModelsListState(
-                isLoading = state.isFetching,
-                modelCount = state.models.size,
-                filteredCount = filteredModels.size,
-                searchQuery = searchQuery,
-                notice = state.syncNotice,
+    AnimatedContent(
+        targetState = selectedModelId,
+        transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState != null) },
+        contentAlignment = Alignment.TopStart,
+        label = "provider_models_editor_switch",
+    ) { editingId ->
+        val editing = editingId?.let { id -> state.models.firstOrNull { it.id == id } }
+        if (editing != null) {
+            val density = LocalDensity.current
+            ModelEditorScreen(
+                model = editing,
+                testState = state.modelTestStates[editing.id] ?: ModelTestState.Idle,
+                onClose = { selectedModelId = null },
+                onUpdate = actions.onUpdate,
+                onTest = { actions.onTest(editing.id) },
+                onCancel = { actions.onCancelTest(editing.id) },
+                onDelete = {
+                    actions.onDelete(editing.id)
+                    selectedModelId = null
+                },
+                // 预测性返回：随手势右移并略微缩小，松手后由切换动效退回列表。
+                modifier = Modifier.graphicsLayer {
+                    val p = backProgress
+                    translationX = with(density) { 32.dp.toPx() } * p
+                    scaleX = 1f - 0.06f * p
+                    scaleY = 1f - 0.06f * p
+                },
             )
-            // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化；列表已表达的状态不重复提示。
-            val effectiveSyncNotice = visibleSyncNotice(state.syncNotice, listState)
-            if (effectiveSyncNotice != null) {
-                item("notice") {
-                    Box(modifier = Modifier.animateItem().testTag(UiTags.PROVIDER_MODELS_NOTICE)) {
-                        ModelSyncNoticeBanner(
-                            notice = effectiveSyncNotice,
-                            dismissEnabled = !state.isFetching,
-                            onDismiss = actions.onClearNotice,
-                        )
-                    }
-                }
-            }
-
-            when (listState) {
-                ProviderModelsListState.Loading -> item("loading") {
-                    Box(Modifier.animateItem()) {
-                        ProviderModelsListMessage(
-                            message = stringResource(R.string.shared_loading),
-                            tag = UiTags.PROVIDER_MODELS_STATE_LOADING,
-                        )
-                    }
-                }
-
-                ProviderModelsListState.Error -> item("error") {
-                    Box(Modifier.animateItem()) {
-                        ProviderModelsListMessage(
-                            message = stringResource(R.string.provider_models_sync_failed),
-                            tag = UiTags.PROVIDER_MODELS_STATE_ERROR,
-                            assertive = true,
-                        )
-                    }
-                }
-
-                ProviderModelsListState.Empty -> item("empty") {
-                    Box(Modifier.animateItem()) {
-                        ProviderModelsListMessage(
-                            message = stringResource(R.string.provider_models_sync_no_models),
-                            tag = UiTags.PROVIDER_MODELS_STATE_EMPTY,
-                        )
-                    }
-                }
-
-                ProviderModelsListState.SearchEmpty -> item("search-empty") {
-                    Box(Modifier.animateItem()) {
-                        ProviderModelsListMessage(
-                            message = stringResource(R.string.provider_models_search) +
-                                " · " + stringResource(R.string.common_model_picker_empty), // wrap-check: allow 完整提示句
-                            tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
-                        )
-                    }
-                }
-
-                ProviderModelsListState.Content -> itemsIndexed(
-                    filteredModels,
-                    key = { _, model -> model.id },
-                ) { index, model ->
-                    // 搜索过滤、启用全部、删除时模型行平滑补位。
-                    Box(Modifier.animateItem()) {
-                        ProviderModelsModelRow(
-                            model = model,
-                            groupIndex = index,
-                            groupSize = filteredModels.size,
-                            onRowClick = {
-                                focusManager.clearFocus()
-                                keyboardController?.hide()
-                                selectedModelId = model.id
-                            },
-                            onToggle = { actions.onToggle(model.id) },
-                        )
-                    }
-                }
-            }
-        }
+        } else {
+            ProviderModelsListPage(
+                state = state,
+                actions = actions,
+                filteredModels = filteredModels,
+                searchQuery = searchQuery,
+                onSearchQuery = { searchQuery = it },
+                listState = listState,
+                onNavigateBack = onNavigateBack,
+                onAdd = { showAddDialog = true },
+                onDeleteAll = { showDeleteAllDialog = true },
+                onRowClick = { model ->
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    selectedModelId = model.id
+                },
+            )
         }
     }
 
@@ -405,20 +331,153 @@ internal fun ProviderModelsScreenContent(
             onAdded = { showAddDialog = false },
         )
     }
+}
 
-    selectedModel?.let { model ->
-        ModelEditorSheet(
-            model = model,
-            testState = state.modelTestStates[model.id] ?: ModelTestState.Idle,
-            onDismissRequest = { selectedModelId = null },
-            onUpdate = actions.onUpdate,
-            onTest = { actions.onTest(model.id) },
-            onCancel = { actions.onCancelTest(model.id) },
-            onDelete = {
-                actions.onDelete(model.id)
-                selectedModelId = null
-            },
-        )
+@Composable
+private fun ProviderModelsListPage(
+    state: ProviderModelsScreenState,
+    actions: ProviderModelsScreenActions,
+    filteredModels: List<ModelInfo>,
+    searchQuery: String,
+    onSearchQuery: (String) -> Unit,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    onNavigateBack: () -> Unit,
+    onAdd: () -> Unit,
+    onDeleteAll: () -> Unit,
+    onRowClick: (ModelInfo) -> Unit,
+) {
+    NexaraSettingsPageLayout(
+        title = state.providerName,
+        onBack = onNavigateBack,
+        modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SCREEN_ROOT),
+        actions = {
+            ProviderModelsTopActions(
+                onAdd = onAdd,
+                onEditProvider = actions.onEditProvider,
+                onDisableAll = actions.onDisableAll,
+                onDeleteAll = onDeleteAll,
+            )
+        },
+    ) { contentPadding ->
+        // 固定搜索栏与同步栏；状态条、模型与目录脚注随同一列表滚动，列表底部延伸到系统导航栏后方。
+        val layoutDirection = LocalLayoutDirection.current
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = contentPadding.calculateStartPadding(layoutDirection),
+                    top = contentPadding.calculateTopPadding(),
+                    end = contentPadding.calculateEndPadding(layoutDirection),
+                )
+                .imePadding(),
+        ) {
+            NexaraSearchBar(
+                value = searchQuery,
+                onValueChange = onSearchQuery,
+                placeholder = stringResource(R.string.provider_models_search),
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD),
+            )
+            ProviderModelsSyncBar(
+                enabledCount = state.models.count { it.enabled },
+                totalCount = state.models.size,
+                isFetching = state.isFetching,
+                lastSyncAtMillis = state.lastSyncAtMillis,
+                onRefresh = actions.onRefresh,
+            )
+
+            val reducedState = reduceProviderModelsListState(
+                isLoading = state.isFetching,
+                modelCount = state.models.size,
+                filteredCount = filteredModels.size,
+                searchQuery = searchQuery,
+                notice = state.syncNotice,
+            )
+            // 同步反馈：据 severity 着色，据 code+args 经 stringResource 双语格式化；列表已表达的状态不重复提示。
+            val effectiveSyncNotice = visibleSyncNotice(state.syncNotice, reducedState)
+            LazyColumn(
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = contentPadding.calculateBottomPadding()),
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalFadingEdges(top = listState.canScrollBackward)
+                    .testTag(UiTags.PROVIDER_MODELS_LIST),
+            ) {
+                if (effectiveSyncNotice != null) {
+                    item("notice") {
+                        Box(modifier = Modifier.animateItem().padding(bottom = 12.dp).testTag(UiTags.PROVIDER_MODELS_NOTICE)) {
+                            ModelSyncNoticeBanner(
+                                notice = effectiveSyncNotice,
+                                dismissEnabled = !state.isFetching,
+                                onDismiss = actions.onClearNotice,
+                            )
+                        }
+                    }
+                }
+
+                when (reducedState) {
+                    ProviderModelsListState.Loading -> item("loading") {
+                        Box(Modifier.animateItem()) { ProviderModelsSkeleton() }
+                    }
+
+                    ProviderModelsListState.Error -> item("error") {
+                        Box(Modifier.animateItem()) {
+                            ProviderModelsListMessage(
+                                message = stringResource(R.string.provider_models_sync_failed),
+                                tag = UiTags.PROVIDER_MODELS_STATE_ERROR,
+                                assertive = true,
+                                primaryLabel = stringResource(R.string.provider_models_retry),
+                                onPrimary = actions.onRefresh,
+                                onAdd = onAdd,
+                            )
+                        }
+                    }
+
+                    ProviderModelsListState.Empty -> item("empty") {
+                        Box(Modifier.animateItem()) {
+                            ProviderModelsListMessage(
+                                message = stringResource(R.string.provider_models_sync_no_models),
+                                tag = UiTags.PROVIDER_MODELS_STATE_EMPTY,
+                                primaryLabel = stringResource(R.string.provider_models_sync_action),
+                                onPrimary = actions.onRefresh,
+                                onAdd = onAdd,
+                            )
+                        }
+                    }
+
+                    ProviderModelsListState.SearchEmpty -> item("search-empty") {
+                        Box(Modifier.animateItem()) {
+                            ProviderModelsListMessage(
+                                message = stringResource(R.string.provider_models_search_empty, searchQuery),
+                                tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
+                            )
+                        }
+                    }
+
+                    ProviderModelsListState.Content -> itemsIndexed(
+                        filteredModels,
+                        key = { _, model -> model.id },
+                    ) { index, model ->
+                        // 搜索过滤、启用全部、删除时模型行平滑补位。
+                        Box(Modifier.animateItem()) {
+                            ProviderModelsModelRow(
+                                model = model,
+                                groupIndex = index,
+                                groupSize = filteredModels.size,
+                                onRowClick = { onRowClick(model) },
+                                onToggle = { actions.onToggle(model.id) },
+                            )
+                        }
+                    }
+                }
+
+                state.catalogStatus?.let { catalog ->
+                    item("catalog") {
+                        ModelCatalogStatusLine(catalog = catalog, onRefresh = actions.onRefreshCatalog)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -529,126 +588,125 @@ internal fun AddCustomModelForm(
     }
 }
 
+/** 顶栏动作：+ 添加模型；⋮ 内为编辑提供商、全部禁用、全部删除。 */
 @Composable
 internal fun ProviderModelsTopActions(
-    isFetching: Boolean,
-    onRefresh: () -> Unit,
     onAdd: () -> Unit,
+    onEditProvider: () -> Unit,
     onDisableAll: () -> Unit,
     onDeleteAll: () -> Unit,
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = onAdd,
+        modifier = Modifier.size(48.dp).testTag(UiTags.PROVIDER_MODELS_ACTION_ADD),
+    ) {
+        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.provider_models_add))
+    }
+    Box {
+        IconButton(
+            onClick = { overflowExpanded = true },
+            modifier = Modifier.size(48.dp).testTag(UiTags.PROVIDER_MODELS_ACTION_OVERFLOW),
+        ) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.chat_cd_options))
+        }
+        NexaraDropdownMenu(
+            expanded = overflowExpanded,
+            onDismissRequest = { overflowExpanded = false },
+        ) {
+            NexaraMenuItem(
+                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text(stringResource(R.string.provider_models_edit_provider)) },
+                onClick = {
+                    overflowExpanded = false
+                    onEditProvider()
+                },
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_EDIT_PROVIDER),
+            )
+            NexaraMenuItem(
+                leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text(stringResource(R.string.provider_models_disable_all)) },
+                onClick = {
+                    overflowExpanded = false
+                    onDisableAll()
+                },
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
+            )
+            NexaraMenuDivider()
+            NexaraMenuItem(
+                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text(stringResource(R.string.provider_models_delete_all)) },
+                onClick = {
+                    overflowExpanded = false
+                    onDeleteAll()
+                },
+                destructive = true,
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL),
+            )
+        }
+    }
+}
 
+/** 搜索栏下一行：左侧“x / y 个已启用”与上次同步时间，右侧同步按钮（同步中按钮内转圈）。 */
+@Composable
+internal fun ProviderModelsSyncBar(
+    enabledCount: Int,
+    totalCount: Int,
+    isFetching: Boolean,
+    lastSyncAtMillis: Long?,
+    onRefresh: () -> Unit,
+) {
+    val now = rememberMinuteClock()
     Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.provider_models_enabled_count, enabledCount, totalCount),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ENABLED_COUNT),
+            )
+            Text(
+                text = lastSyncAtMillis?.let {
+                    stringResource(R.string.provider_models_last_sync, relativeTimeLabel(it, now))
+                } ?: stringResource(R.string.provider_models_never_synced),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_LAST_SYNC),
+            )
+        }
+        FilledTonalButton(
             onClick = onRefresh,
             enabled = !isFetching,
+            contentPadding = PaddingValues(horizontal = 14.dp),
             modifier = Modifier
-                .weight(1f)
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .height(48.dp)
                 .testTag(UiTags.PROVIDER_MODELS_ACTION_SYNC),
         ) {
-            androidx.compose.animation.AnimatedContent(
+            AnimatedContent(
                 targetState = isFetching,
                 transitionSpec = { NexaraMotion.fadeThrough() },
                 contentAlignment = Alignment.Center,
                 label = "provider_models_sync_icon",
             ) { fetching ->
                 if (fetching) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Sync,
-                        contentDescription = null,
-                    )
+                    Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.provider_models_auto_fetch), maxLines = 2)
-        }
-        Button(
-            onClick = onAdd,
-            modifier = Modifier
-                .weight(1f)
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                .testTag(UiTags.PROVIDER_MODELS_ACTION_ADD),
-        ) {
-            Icon(imageVector = Icons.Rounded.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.provider_models_add), maxLines = 2)
-        }
-        Box {
-            IconButton(
-                onClick = { overflowExpanded = true },
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag(UiTags.PROVIDER_MODELS_ACTION_OVERFLOW),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.MoreVert,
-                    contentDescription = stringResource(R.string.chat_cd_options),
-                )
-            }
-            NexaraDropdownMenu(
-                expanded = overflowExpanded,
-                onDismissRequest = { overflowExpanded = false },
-            ) {
-                NexaraMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Block,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = stringResource(R.string.provider_models_disable_all),
-                            style = NexaraTypography.labelLarge,
-                        )
-                    },
-                    onClick = {
-                        overflowExpanded = false
-                        onDisableAll()
-                    },
-                    modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
-                )
-                NexaraMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = stringResource(R.string.provider_models_delete_all),
-                            style = NexaraTypography.labelLarge,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    onClick = {
-                        overflowExpanded = false
-                        onDeleteAll()
-                    },
-                    modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL),
-                )
-            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                stringResource(if (isFetching) R.string.provider_models_syncing else R.string.provider_models_sync_action),
+                maxLines = 1,
+            )
         }
     }
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun ProviderModelsModelRow(
     model: ModelInfo,
@@ -661,63 +719,82 @@ internal fun ProviderModelsModelRow(
     val remoteModelId = remember(model.id, model.remoteModelId) {
         model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
     }
-    val summaryCapabilities = remember(model.capabilities, model.type) {
-        model.capabilities
-            .filterNot { it == "chat" }
-            .ifEmpty { listOf(model.type) }
-            .distinct()
-    }
-    val localizedCapabilities = mutableListOf<String>()
-    for (capability in summaryCapabilities) {
-        val labelResource = capabilityLabelResource(capability)
-        localizedCapabilities += if (labelResource != null) stringResource(labelResource) else capability
-    }
-
-    // 全部模型拼成一个连续分组；能力摘要在卡片内、对齐正文起点。
-    Column(modifier = modifier.fillMaxWidth().bettboxListGroupItem(groupIndex, groupSize)) {
-        NexaraSettingsItem(
-            title = model.name,
-            subtitle = remoteModelId,
-            subtitleIsIdentifier = true,
-            leadingContent = { ModelBrandTile(modelId = remoteModelId, size = 20.dp, contentDescription = model.name) },
-            onClick = onRowClick,
-            modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
-            subtitleModifier = Modifier.testTag(UiTags.providerModelsRemoteId(model.id))
-                .semantics { contentDescription = remoteModelId },
-            trailingContent = {
-                NexaraSwitch(
-                    checked = model.enabled,
-                    onCheckedChange = { onToggle() },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),
-                )
-            },
-        )
-        NexaraMetaLine(
-            segments = localizedCapabilities,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(
-                start = NexaraSpacing.RowHorizontal + NexaraSpacing.RowIconSize + NexaraSpacing.RowIconGap,
-                end = NexaraSpacing.RowHorizontal,
-                bottom = NexaraSpacing.Medium,
-            ),
-        )
-    }
-}
-
-private fun capabilityLabelResource(capability: String): Int? {
-    if (capability.equals("unknown", ignoreCase = true)) {
-        return R.string.provider_models_type_unknown
-    }
-    val typeIndex = ModelTypes.indexOf(capability.lowercase())
-    return if (typeIndex >= 0) {
-        ModelTypeLabelResources[typeIndex]
+    val badges = modelCapabilityBadges(model)
+    val capabilitiesDescription = if (badges.isEmpty()) {
+        ""
     } else {
-        CapabilityTags.firstOrNull { it.key.equals(capability, ignoreCase = true) }?.labelRes
+        stringResource(
+            R.string.provider_models_capabilities_description,
+            badges.joinToString(stringResource(R.string.model_editor_list_separator)) { it.label },
+        )
+    }
+    val contextShort = formatTokenShort(model.contextLength)
+
+    // 全部模型拼成一个连续分组；行间细线从正文起点开始。
+    Column(modifier = modifier.fillMaxWidth().bettboxListGroupItem(groupIndex, groupSize)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onRowClick)
+                .testTag(UiTags.providerModelsModelCard(model.id))
+                .padding(start = NexaraSpacing.RowHorizontal, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(ModelTileSize)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                ModelBrandIcon(modelId = remoteModelId, modifier = Modifier.size(20.dp), contentDescription = null)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    model.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    remoteModelId,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = NexaraMonospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .testTag(UiTags.providerModelsRemoteId(model.id))
+                        .semantics { contentDescription = remoteModelId },
+                )
+                ModelCapabilityBadges(
+                    typeLabel = stringResource(modelTypeLabelRes(model.type)),
+                    capabilities = badges,
+                    contextLabel = contextShort.ifEmpty { null },
+                    capabilitiesDescription = capabilitiesDescription,
+                    contextDescription = contextShort.takeIf { it.isNotEmpty() }?.let {
+                        stringResource(R.string.provider_models_context_description, it)
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            NexaraSwitch(
+                checked = model.enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),
+            )
+        }
+        if (groupIndex < groupSize - 1) {
+            NexaraGroupDivider(startInset = NexaraSpacing.RowHorizontal + ModelTileSize + 12.dp)
+        }
     }
 }
 
-/** 模型目录状态：一行说明加更新入口；失败时在下方补一行错误。 */
+private val ModelTileSize = 36.dp
+
+/** 模型目录脚注：放在列表末尾，一行说明加更新入口；失败时补一行错误。 */
 @Composable
 private fun ModelCatalogStatusLine(
     catalog: com.promenar.nexara.data.model.catalog.CatalogUpdateStatus,
@@ -729,7 +806,12 @@ private fun ModelCatalogStatusLine(
         com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.APPLY_FAILED -> R.string.model_catalog_apply_failed
         else -> null
     }
-    Column(modifier = Modifier.fillMaxWidth().padding(start = 4.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = NexaraSpacing.RowHorizontal, top = 12.dp)
+            .testTag(UiTags.PROVIDER_MODELS_CATALOG_FOOTER),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             NexaraMetaLine(
                 segments = if (catalog.cached) {
@@ -770,128 +852,128 @@ private fun ModelCatalogStatusLine(
     }
 }
 
+/** 同步反馈：四色状态条，错误立即播报；同步进行中不可关闭。 */
 @Composable
 internal fun ModelSyncNoticeBanner(
     notice: UiStatusNotice,
     dismissEnabled: Boolean,
     onDismiss: () -> Unit,
 ) {
-    val color = noticeColor(notice.severity)
     val message = notice.formatSyncMessage(
         unknownFallback = stringResource(R.string.provider_models_sync_failed),
     )
-    Surface(
+    NexaraStatusStrip(
+        kind = notice.severity.statusKind(),
+        message = message,
+        modifier = Modifier.semantics { stateDescription = message },
+        onDismiss = onDismiss,
+        dismissEnabled = dismissEnabled,
+        dismissModifier = Modifier.testTag(UiTags.PROVIDER_MODELS_NOTICE_DISMISS),
+    )
+}
+
+/** 加载中：五行骨架代替单行“加载中”，读屏播报一次正在同步。 */
+@Composable
+private fun ProviderModelsSkeleton() {
+    val loading = stringResource(R.string.provider_models_loading)
+    val transition = rememberInfiniteTransition(label = "provider_models_skeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+        label = "provider_models_skeleton_alpha",
+    )
+    val block = MaterialTheme.colorScheme.surfaceContainerHighest
+    BettboxListGroup(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .semantics {
-                liveRegion = if (notice.severity == NoticeSeverity.Error) {
-                    LiveRegionMode.Assertive
-                } else {
-                    LiveRegionMode.Polite
-                }
-                stateDescription = message
+            .testTag(UiTags.PROVIDER_MODELS_STATE_LOADING)
+            .semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = loading
+                contentDescription = loading
             },
-        color = color.container,
-        shape = MaterialTheme.shapes.medium,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = color.foreground,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(
-                onClick = onDismiss,
-                enabled = dismissEnabled,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag(UiTags.PROVIDER_MODELS_NOTICE_DISMISS),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = stringResource(R.string.shared_btn_close),
-                    tint = color.foreground.copy(alpha = if (dismissEnabled) 0.8f else 0.4f),
-                    modifier = Modifier.size(18.dp),
-                )
+        Column(Modifier.testTag(UiTags.PROVIDER_MODELS_SKELETON).graphicsLayer { this.alpha = alpha }) {
+            repeat(5) { index ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.RowHorizontal, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(ModelTileSize).background(block, RoundedCornerShape(10.dp)))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.fillMaxWidth(if (index % 2 == 0) 0.55f else 0.4f).height(12.dp).background(block, RoundedCornerShape(4.dp)))
+                        Box(Modifier.fillMaxWidth(0.7f).height(10.dp).background(block, RoundedCornerShape(4.dp)))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Box(Modifier.size(width = 40.dp, height = 24.dp).background(block, RoundedCornerShape(12.dp)))
+                }
+                if (index < 4) NexaraGroupDivider(startInset = NexaraSpacing.RowHorizontal + ModelTileSize + 12.dp)
             }
         }
     }
 }
 
+/** 空态与错误态：说明文字加主动作（同步 / 重试）与“手动添加”。 */
 @Composable
 private fun ProviderModelsListMessage(
     message: String,
     tag: String,
     assertive: Boolean = false,
+    primaryLabel: String? = null,
+    onPrimary: (() -> Unit)? = null,
+    onAdd: (() -> Unit)? = null,
 ) {
-    BettboxListGroup(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(tag)
-            .semantics(mergeDescendants = true) {
-                liveRegion = if (assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
-                stateDescription = message
-            },
-    ) {
-        Box(
+    BettboxListGroup(modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            contentAlignment = Alignment.Center,
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics {
+                    liveRegion = if (assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
+                    stateDescription = message
+                },
             )
+            if (primaryLabel != null && onPrimary != null || onAdd != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (primaryLabel != null && onPrimary != null) {
+                        FilledTonalButton(
+                            onClick = onPrimary,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.PROVIDER_MODELS_EMPTY_SYNC),
+                        ) {
+                            Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(primaryLabel)
+                        }
+                    }
+                    if (onAdd != null) {
+                        TextButton(
+                            onClick = onAdd,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.PROVIDER_MODELS_EMPTY_ADD),
+                        ) {
+                            Text(stringResource(R.string.provider_models_add_manually))
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/**
- * 据 [NoticeSeverity] 派生反馈条颜色，**不依赖任何展示字符串**。
- * Success→绿、Warning→琥珀、Error→红、Info→主题色。
- */
-@Composable
-private fun noticeColor(severity: NoticeSeverity): NoticeColor {
-    val colors = MaterialTheme.colorScheme
-    return when (severity) {
-        NoticeSeverity.Success -> NoticeColor(
-            colors.primaryContainer,
-            colors.primary.copy(alpha = 0.3f),
-            colors.onPrimaryContainer,
-        )
-        NoticeSeverity.Warning -> NoticeColor(
-            colors.tertiaryContainer,
-            colors.tertiary.copy(alpha = 0.3f),
-            colors.onTertiaryContainer,
-        )
-        NoticeSeverity.Error -> NoticeColor(
-            colors.errorContainer,
-            colors.error.copy(alpha = 0.3f),
-            colors.onErrorContainer,
-        )
-        NoticeSeverity.Info -> NoticeColor(
-            colors.secondaryContainer,
-            colors.secondary.copy(alpha = 0.3f),
-            colors.onSecondaryContainer,
-        )
-    }
+private fun NoticeSeverity.statusKind(): NexaraStatusKind = when (this) {
+    NoticeSeverity.Success -> NexaraStatusKind.Success
+    NoticeSeverity.Warning -> NexaraStatusKind.Warning
+    NoticeSeverity.Error -> NexaraStatusKind.Error
+    NoticeSeverity.Info -> NexaraStatusKind.Info
 }
-
-private data class NoticeColor(
-    val container: Color,
-    val border: Color,
-    val foreground: Color,
-)
 
 /**
  * 用 stringResource 把结构化 notice 格式化为本地化文案。
