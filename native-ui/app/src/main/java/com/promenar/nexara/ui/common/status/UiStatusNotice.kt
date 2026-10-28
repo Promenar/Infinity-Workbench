@@ -25,10 +25,12 @@ data class UiStatusNotice(
     val code: String,
     val formatArgs: List<Any> = emptyList(),
     val technical: String? = null,
+    /** 已清洗的外部原因（如服务商错误说明），作为本地化文案下方的补充说明原样展示；不含技术诊断。 */
+    val detail: String? = null,
 ) {
     override fun toString(): String =
         "UiStatusNotice(severity=$severity, code=$code, formatArgCount=${formatArgs.size}, " +
-            "hasTechnical=${technical != null})"
+            "hasTechnical=${technical != null}, hasDetail=${detail != null})"
 }
 
 /**

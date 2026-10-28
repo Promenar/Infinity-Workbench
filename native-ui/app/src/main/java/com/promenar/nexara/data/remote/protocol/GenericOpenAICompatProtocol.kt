@@ -368,7 +368,7 @@ class GenericOpenAICompatProtocol(
         toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>,
         reasoningField: ReasoningFieldTracker,
     ): CompletionReason? {
-        check(chunk["error"] == null || chunk["error"] is JsonNull) { "上游流返回错误事件" }
+        chunk["error"]?.takeUnless { it is JsonNull }?.let { throw AbnormalFinishException(streamErrorEvent(chunk)) }
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         if (choice == null) {
             val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -420,9 +421,11 @@ fun PipelineBubble(
             val tailnetKind = remember(lastMsg.errorMessage) {
                 GenerationFailureNotice.tailnetKind(historicalGenerationFailureNotice(lastMsg.errorMessage))
             }
+            val detail = remember(lastMsg.errorMessage) { historicalGenerationFailureNotice(lastMsg.errorMessage).detail }
             ErrorMessageSegment(
                 messageId = lastMsg.id,
                 text = stringResource(resolved.resourceId, *resolved.args.toTypedArray()),
+                detail = detail?.let { stringResource(R.string.generation_failure_provider_detail, it) },
                 fontSize = fontSize,
                 onDelete = onDelete,
                 tailnetKind = tailnetKind,
@@ -439,6 +442,7 @@ private fun ErrorMessageSegment(
     text: String,
     fontSize: Int,
     onDelete: ((String) -> Unit)?,
+    detail: String? = null,
     tailnetKind: TailnetFailureKind? = null,
     actions: GenerationFailureActions? = null,
 ) {
@@ -471,6 +475,17 @@ private fun ErrorMessageSegment(
                             fontSize = (fontSize - 2).coerceAtLeast(10).sp,
                         ),
                     )
+                    // 服务商原因原样附在下方，便于判断限流、额度或参数问题。
+                    if (detail != null) {
+                        Text(
+                            text = detail,
+                            style = NexaraTypography.bodySmall.copy(
+                                fontSize = (fontSize - 4).coerceAtLeast(10).sp,
+                            ),
+                            color = LocalContentColor.current.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(top = 2.dp).testTag(UiTags.CHAT_FAILURE_PROVIDER_DETAIL),
+                        )
+                    }
                     if (tailnetKind != null && actions != null) {
                         TailnetFailureActionRow(tailnetKind, actions)
                     }
@@ -481,7 +496,7 @@ private fun ErrorMessageSegment(
             expanded = showMenu,
             onDismiss = { showMenu = false },
             touch = menuTouch,
-            onCopy = { copyToClipboard(context, text) },
+            onCopy = { copyToClipboard(context, listOfNotNull(text, detail).joinToString("\n")) },
             onDelete = {
                 onDelete?.invoke(messageId)
                 showMenu = false

@@ -1436,7 +1436,8 @@ internal class DefaultChatGenerationRuntime(
                 formatArgs = chunk.retryAfterSeconds
                     ?.takeIf { it > 0 }
                     ?.let { mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to it.toString()) }
-                    .orEmpty(),
+                    .orEmpty() +
+                    chunk.providerMessage?.let { mapOf(GenerationFailure.KEY_PROVIDER_MESSAGE to it) }.orEmpty(),
                 technical = chunk.technical,
                 cause = chunk.cause,
                 retryable = chunk.retryable,

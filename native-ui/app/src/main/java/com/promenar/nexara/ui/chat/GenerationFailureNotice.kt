@@ -12,7 +12,8 @@ import com.promenar.nexara.ui.common.status.UiStatusNotice
  * 生成失败的纯 UI 映射边界。
  *
  * 用户可见层只消费稳定 code、资源 ID 与经过白名单筛选的格式参数；诊断信息、异常原文、
- * 持久化信封和未知旧字符串都不会成为展示模板或参数。
+ * 持久化信封和未知旧字符串都不会成为展示模板或参数。服务商错误说明经清洗后只作为 [UiStatusNotice.detail]
+ * 补充展示，不参与模板。
  */
 object GenerationFailureNotice {
     private const val CODE_NETWORK = "generation.failure.network"
@@ -82,6 +83,7 @@ object GenerationFailureNotice {
                 else -> emptyList()
             },
             technical = failure.technical,
+            detail = failure.providerMessage,
         )
     }
 

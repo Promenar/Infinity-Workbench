@@ -201,6 +201,8 @@ sealed class StreamChunk {
         val cause: Throwable? = null,
         val message: String = "",
         val category: String? = null,
+        /** 已清洗的服务商原因，见 ProviderErrorMessage。 */
+        val providerMessage: String? = null,
     ) : StreamChunk() {
         override fun toString(): String =
             "Error(code=$code, retryable=$retryable, retryAfterSeconds=$retryAfterSeconds)"
@@ -450,6 +452,7 @@ fun NormalizedError.toStreamChunkError(cause: Throwable? = null): StreamChunk.Er
         retryAfterSeconds = failure.retryAfterSeconds,
         technical = failure.technical,
         cause = failure.cause,
+        providerMessage = failure.providerMessage,
     )
 }
 
@@ -484,6 +487,26 @@ internal fun abnormalFinishError(label: String, reason: String): StreamChunk.Err
 
 /** 流解析过程中遇到非正常结束原因时携带对应失败，由流循环直接发出。 */
 internal class AbnormalFinishException(val error: StreamChunk.Error) : Exception(error.technical)
+
+/**
+ * 流内错误事件（HTTP 200 后在 SSE 里返回 `error` 对象）：按事件自带的状态码与说明分类并保留服务商原因。
+ * 无法归类的按可重试的服务端错误处理，由生成层自动重发本轮。
+ */
+internal fun streamErrorEvent(chunk: kotlinx.serialization.json.JsonObject): StreamChunk.Error {
+    val error = chunk["error"]
+    val status = (error as? kotlinx.serialization.json.JsonObject)?.let { obj ->
+        listOf("status", "code", "status_code").firstNotNullOfOrNull { key ->
+            (obj[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()?.takeIf { it in 400..599 }
+        }
+    } ?: 0
+    val normalized = com.promenar.nexara.data.remote.parser.ErrorNormalizer.normalize(
+        com.promenar.nexara.data.remote.parser.HttpStatusException(status, chunk.toString()),
+    )
+    val chunkError = normalized.toStreamChunkError()
+    return if (normalized is com.promenar.nexara.data.remote.parser.NormalizedError.Unknown) {
+        chunkError.copy(code = GenerationFailureCode.SERVER, retryable = true)
+    } else chunkError
+}
 
 /** 在发出成功 terminal 前集中核验工具调用的完整性。 */
 internal fun validatedCompletion(

@@ -181,6 +181,21 @@ class GenerationFailureNoticeTest {
     }
 
     @Test
+    fun `服务商原因只作为补充说明并能从历史信封还原`() {
+        val failure = com.promenar.nexara.domain.generation.GenerationFailure.rateLimited(30).let {
+            it.copy(formatArgs = it.formatArgs + (com.promenar.nexara.domain.generation.GenerationFailure.KEY_PROVIDER_MESSAGE to "当前分组上游负载已饱和"))
+        }
+        val live = GenerationFailureNotice.from(failure)
+        assertThat(live.detail).isEqualTo("当前分组上游负载已饱和")
+        assertThat(GenerationFailureNotice.template(live).args).containsExactly(30)
+
+        val persisted = GenerationFailureNotice.fromPersisted(com.promenar.nexara.domain.generation.GenerationFailureCodec.encode(failure))
+        assertThat(persisted.detail).isEqualTo("当前分组上游负载已饱和")
+        assertThat(persisted.code).isEqualTo(live.code)
+        assertThat(GenerationFailureNotice.fromPersisted("@nexara/failure:SERVER").detail).isNull()
+    }
+
+    @Test
     fun `中英文生成失败资源key完全一致`() {
         val english = resourceFile("values/strings.xml").readText()
         val chinese = resourceFile("values-zh-rCN/strings.xml").readText()
@@ -231,6 +246,7 @@ class GenerationFailureNoticeTest {
 
     private companion object {
         val REQUIRED_RESOURCE_KEYS = setOf(
+            "generation_failure_provider_detail",
             "generation_failure_network",
             "generation_failure_auth",
             "generation_failure_rate_limit",

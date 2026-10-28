@@ -54,6 +54,10 @@ data class GenerationFailure(
     val retryAfterSeconds: Int?
         get() = formatArgs[KEY_RETRY_AFTER_SECONDS]?.toIntOrNull()
 
+    /** 服务商响应里的错误说明，已经 [ProviderErrorMessage.sanitize] 清洗；不存在时为 null。 */
+    val providerMessage: String?
+        get() = formatArgs[KEY_PROVIDER_MESSAGE]
+
     override fun toString(): String = buildString {
         append("GenerationFailure(code=")
         append(code)
@@ -66,6 +70,8 @@ data class GenerationFailure(
 
     companion object {
         const val KEY_RETRY_AFTER_SECONDS = "retryAfterSeconds"
+        /** 服务商原因，见 [ProviderErrorMessage]；任何失败码都可携带，作为本地化提示下方的补充说明。 */
+        const val KEY_PROVIDER_MESSAGE = "providerMessage"
         const val KEY_REQUIRED_TOKENS = "requiredTokens"
         const val KEY_AVAILABLE_TOKENS = "availableTokens"
         /** 上下文超限时本轮是否携带完整上下文文档："false" 表示仅对话本身超限，提示应引导压缩而非移除文档。 */

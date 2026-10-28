@@ -525,6 +525,11 @@ fun ChatRoute(
     val generationErrorMessage = uiState.generationNotice
         ?.let(GenerationFailureNotice::template)
         ?.let { resolved -> stringResource(resolved.resourceId, *resolved.args.toTypedArray()) }
+        ?.let { message ->
+            uiState.generationNotice?.detail
+                ?.let { message + "\n" + stringResource(R.string.generation_failure_provider_detail, it) }
+                ?: message
+        }
     LaunchedEffect(
         uiState.generationNotice,
         generationErrorMessage,
@@ -707,8 +712,8 @@ fun ChatRoute(
             liveOutput = { job -> RunningToolLiveOutput(job.liveOutputKey, showStop = false) },
         )
     }
-    // 会话工作区是 Git 仓库时顶栏显示分支与改动；进入会话、每轮生成结束与关闭 Git 面板时各读一次。
-    LaunchedEffect(sessionId, uiState.isGenerating, gitRefresh) {
+    // 会话工作区是 Git 仓库时顶栏显示分支与改动；进入会话、切换工作区、每轮生成结束与关闭 Git 面板时各读一次。
+    LaunchedEffect(sessionId, boundWorkspaceId, workspaceRefresh, uiState.isGenerating, gitRefresh) {
         if (uiState.isGenerating) return@LaunchedEffect
         // 工作区解析与 .git 判定含文件访问，整体放到 IO。
         val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { application.gitChangesService.status(sessionId) }

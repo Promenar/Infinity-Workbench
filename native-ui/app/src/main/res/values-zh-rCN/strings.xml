@@ -1510,6 +1510,7 @@
     <string name="generation_failure_quota">提供商额度已用尽，请检查账户限额。</string>
     <string name="generation_failure_timeout">请求超时，请重试。</string>
     <string name="generation_failure_invalid_request">当前请求无法处理，请调整后重试。</string>
+    <string name="generation_failure_provider_detail">服务商返回：%1$s</string>
     <string name="generation_failure_output_limit">回复达到模型单次输出上限被截断。可在会话参数中调大最大 Token 数，或让 AI 分步完成。</string>
     <string name="generation_failure_content_filtered">回复被提供商的内容安全策略拦截，请调整内容后重试。</string>
     <string name="generation_failure_server">提供商暂时不可用，请稍后重试。</string>

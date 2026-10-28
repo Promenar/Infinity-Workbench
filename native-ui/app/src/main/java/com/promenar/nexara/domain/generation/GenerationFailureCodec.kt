@@ -1,5 +1,8 @@
 package com.promenar.nexara.domain.generation
 
+import java.net.URLDecoder
+import java.net.URLEncoder
+
 /**
  * 结构化失败与持久化 String 列之间的稳定编解码。
  *
@@ -9,7 +12,8 @@ package com.promenar.nexara.domain.generation
  *
  *   `@nexara/failure:CODE?k1=v1&k2=v2`
  *
- * - 仅写入 [GenerationFailure.code] 与白名单内的 [GenerationFailure.formatArgs]（限流秒数、tailnet 原因）；
+ * - 仅写入 [GenerationFailure.code] 与白名单内的 [GenerationFailure.formatArgs]（限流秒数、tailnet 原因、
+ *   经 [ProviderErrorMessage.sanitize] 清洗并百分号编码的服务商原因）；
  * - 严禁写入 [GenerationFailure.technical] / [GenerationFailure.cause]（仅诊断，不入库展示列）；
  * - 下一批次的 UI mapper 识别该前缀后映射资源，未识别或未知串一律回落到通用安全文案。
  */
@@ -17,7 +21,7 @@ object GenerationFailureCodec {
 
     const val ENVELOPE_PREFIX = "@nexara/failure:"
 
-    private const val MAX_ENVELOPE_LENGTH = 128
+    private const val MAX_ENVELOPE_LENGTH = 2048
     private val codeByName = GenerationFailureCode.entries.associateBy { it.name }
 
     /**
@@ -61,34 +65,52 @@ object GenerationFailureCodec {
             GenerationFailure(code = code)
         } else {
             val query = withoutPrefix.substring(questionIdx + 1)
-            if (query.isEmpty() || query.contains('&') || query.count { it == '=' } != 1) return null
-            val (key, value) = query.split('=', limit = 2)
-            when {
-                key == GenerationFailure.KEY_TAILNET_REASON && code == GenerationFailureCode.TAILNET_UNAVAILABLE -> {
-                    if (value !in GenerationFailure.TAILNET_REASONS) return null
-                    GenerationFailure(code = code, formatArgs = mapOf(key to value))
+            if (query.isEmpty()) return null
+            val args = linkedMapOf<String, String>()
+            for (pair in query.split('&')) {
+                if (pair.count { it == '=' } != 1) return null
+                val (key, value) = pair.split('=', limit = 2)
+                if (key in args) return null
+                when {
+                    key == GenerationFailure.KEY_TAILNET_REASON && code == GenerationFailureCode.TAILNET_UNAVAILABLE -> {
+                        if (value !in GenerationFailure.TAILNET_REASONS) return null
+                        args[key] = value
+                    }
+                    key == GenerationFailure.KEY_RETRY_AFTER_SECONDS && code == GenerationFailureCode.RATE_LIMIT -> {
+                        if (value.isEmpty() || value.any { !it.isDigit() }) return null
+                        val seconds = value.toIntOrNull()?.takeIf { it > 0 } ?: return null
+                        if (seconds.toString() != value) return null
+                        args[key] = value
+                    }
+                    key == GenerationFailure.KEY_PROVIDER_MESSAGE -> {
+                        val text = runCatching { URLDecoder.decode(value, Charsets.UTF_8.name()) }.getOrNull() ?: return null
+                        val clean = ProviderErrorMessage.sanitize(text) ?: return null
+                        if (clean != text) return null
+                        args[key] = clean
+                    }
+                    else -> return null
                 }
-                key == GenerationFailure.KEY_RETRY_AFTER_SECONDS && code == GenerationFailureCode.RATE_LIMIT -> {
-                    if (value.isEmpty() || value.any { !it.isDigit() }) return null
-                    val seconds = value.toIntOrNull()?.takeIf { it > 0 } ?: return null
-                    if (seconds.toString() != value) return null
-                    GenerationFailure.rateLimited(seconds)
-                }
-                else -> return null
             }
+            GenerationFailure(code = code, formatArgs = args)
         }
         return decoded.takeIf { encode(it) == raw }
     }
 
-    private fun allowedArgs(failure: GenerationFailure): Map<String, String> = when (failure.code) {
-        GenerationFailureCode.RATE_LIMIT -> failure.retryAfterSeconds?.takeIf { it > 0 }
-            ?.let { mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to it.toString()) }
-            .orEmpty()
-        // tailnet 原因决定提示与入口（去登录或重试），历史消息也要能还原。
-        GenerationFailureCode.TAILNET_UNAVAILABLE -> failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]
-            ?.takeIf { it in GenerationFailure.TAILNET_REASONS }
-            ?.let { mapOf(GenerationFailure.KEY_TAILNET_REASON to it) }
-            .orEmpty()
-        else -> emptyMap()
+    private fun allowedArgs(failure: GenerationFailure): Map<String, String> {
+        val args = when (failure.code) {
+            GenerationFailureCode.RATE_LIMIT -> failure.retryAfterSeconds?.takeIf { it > 0 }
+                ?.let { mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to it.toString()) }
+                .orEmpty()
+            // tailnet 原因决定提示与入口（去登录或重试），历史消息也要能还原。
+            GenerationFailureCode.TAILNET_UNAVAILABLE -> failure.formatArgs[GenerationFailure.KEY_TAILNET_REASON]
+                ?.takeIf { it in GenerationFailure.TAILNET_REASONS }
+                ?.let { mapOf(GenerationFailure.KEY_TAILNET_REASON to it) }
+                .orEmpty()
+            else -> emptyMap()
+        }
+        // 服务商原因让历史失败也能说明“为什么”；只存清洗后的文本，编码后入串。
+        val provider = failure.providerMessage?.let(ProviderErrorMessage::sanitize)
+            ?.let { URLEncoder.encode(it, Charsets.UTF_8.name()) }
+        return if (provider == null) args else args + (GenerationFailure.KEY_PROVIDER_MESSAGE to provider)
     }
 }
