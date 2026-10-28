@@ -114,7 +114,7 @@ internal fun NetworkAccessSettingsContent(
         }
         NexaraSettingsSection(
             title = stringResource(R.string.network_section_matrix),
-            footer = stringResource(R.string.network_section_matrix_footer),
+            footer = networkMatrixFooter(),
         ) {
             NetworkAccessRows(snapshot)
         }

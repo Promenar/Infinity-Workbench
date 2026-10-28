@@ -10,6 +10,7 @@ import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.data.termux.TermuxPreferences
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.distribution.DistributionCapabilities
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.domain.network.AgentNetworkSnapshot
 import com.promenar.nexara.domain.storage.ExternalMount
 import kotlinx.coroutines.CancellationException
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
@@ -36,6 +38,7 @@ internal class AgentReachViewModel(
     private val termuxEnabled: () -> Boolean,
     private val termuxAvailability: suspend () -> TermuxAvailability,
     private val sideload: Boolean,
+    runModeFlow: Flow<SessionRunMode?> = flowOf(null),
 ) : ViewModel() {
     private val workspace = MutableStateFlow<SessionWorkspaceUi>(SessionWorkspaceUi.Loading)
     private val termux = MutableStateFlow<TermuxAvailability?>(null)
@@ -60,6 +63,10 @@ internal class AgentReachViewModel(
             sideload = sideload,
         )
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AgentReachState(sideload = sideload))
+
+    /** 会话保存的运行模式，网络可达范围据此灰显不生效的行；尚未选择时为 null。 */
+    val runMode: StateFlow<SessionRunMode?> = runModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun refresh() {
         viewModelScope.launch {
@@ -91,6 +98,7 @@ internal class AgentReachViewModel(
                     termuxEnabled = { TermuxPreferences.isEnabled(preferences) },
                     termuxAvailability = { app.termuxRuntime.availability() },
                     sideload = DistributionCapabilities.channel == "sideload",
+                    runModeFlow = app.sessionRunModes.observe(sessionId).map { it.mode },
                 ) as T
             }
         }

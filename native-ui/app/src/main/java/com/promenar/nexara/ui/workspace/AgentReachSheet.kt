@@ -41,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.model.SessionRunMode
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraValueRow
@@ -48,6 +49,8 @@ import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSheetHeight
 import com.promenar.nexara.ui.settings.NetworkAccessRows
+import com.promenar.nexara.ui.settings.NetworkRunMode
+import com.promenar.nexara.ui.settings.networkMatrixFooter
 import com.promenar.nexara.ui.settings.tailnetSummary
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
@@ -89,6 +92,7 @@ internal fun AgentReachSheet(
     )
     LaunchedEffect(viewModel, workspaceKey) { viewModel.refresh() }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val runMode by viewModel.runMode.collectAsStateWithLifecycle()
     val linuxNavigation = com.promenar.nexara.ui.linux.LocalLinuxNavigation.current
     val sessionSettingsNavigation = com.promenar.nexara.ui.chat.LocalSessionSettingsNavigation.current
     NexaraBottomSheet(
@@ -99,6 +103,7 @@ internal fun AgentReachSheet(
     ) {
         AgentReachContent(
             state = state.copy(executionMode = ExecutionModeCodec.parseOrWorkspace(executionMode)),
+            runMode = runMode,
             actions = AgentReachActions(
                 onOpenNetworkAccess = sessionSettingsNavigation?.let { navigation -> { onDismiss(); navigation.openNetworkAccess() } },
                 onOpenTailscale = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
@@ -118,6 +123,8 @@ internal fun AgentReachContent(
     state: AgentReachState,
     actions: AgentReachActions,
     modifier: Modifier = Modifier,
+    /** 会话保存的运行模式；未取得时按 Linux 环境是否接管 shell 推断。 */
+    runMode: SessionRunMode? = null,
 ) {
     Column(
         modifier = modifier
@@ -131,8 +138,15 @@ internal fun AgentReachContent(
         PathSection(state)
         BackendSection(state, actions)
         ApprovalSection(state)
-        NetworkSection(state, actions)
+        NetworkSection(state, actions, reachNetworkRunMode(runMode, state))
     }
+}
+
+/** 网络可达范围按会话运行模式灰显：会话未保存模式时以 Linux 环境是否接管 shell 为准。 */
+internal fun reachNetworkRunMode(runMode: SessionRunMode?, state: AgentReachState): NetworkRunMode = when (runMode) {
+    SessionRunMode.LINUX -> NetworkRunMode.LINUX
+    SessionRunMode.BUILTIN -> NetworkRunMode.BUILTIN
+    null -> if (state.backends.linuxRunsShell()) NetworkRunMode.LINUX else NetworkRunMode.BUILTIN
 }
 
 @Composable
@@ -351,8 +365,8 @@ private fun ApprovalSection(state: AgentReachState) {
 }
 
 @Composable
-private fun NetworkSection(state: AgentReachState, actions: AgentReachActions) {
-    NexaraSettingsSection(title = stringResource(R.string.agent_reach_section_network)) {
+private fun NetworkSection(state: AgentReachState, actions: AgentReachActions, runMode: NetworkRunMode) {
+    NexaraSettingsSection(title = stringResource(R.string.agent_reach_section_network), footer = networkMatrixFooter()) {
         val network = state.network
         if (network == null) {
             NexaraSettingsRowLayout(title = stringResource(R.string.settings_status_loading))
@@ -395,6 +409,6 @@ private fun NetworkSection(state: AgentReachState, actions: AgentReachActions) {
                 subtitleMaxLines = 2,
             )
         }
-        NetworkAccessRows(network)
+        NetworkAccessRows(network, runMode = runMode)
     }
 }

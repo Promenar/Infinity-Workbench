@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -171,7 +173,7 @@ fun UserSettingsHomeScreen(
                 context.startActivity(
                     android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/promenar/nexara"),
+                        android.net.Uri.parse("https://github.com/Promenar/Nexara"),
                     ),
                 )
             },
@@ -574,35 +576,67 @@ private fun UserProfileListItem(
     }
 }
 
+/**
+ * 设置首页底部：左侧一行“Nexara 版本名（versionCode）· 渠道”，点击复制版本信息；
+ * 行尾 GitHub 标志按钮打开项目主页。两个点击目标各自满足 48dp 触控区。
+ */
 @Composable
-internal fun GitHubProjectFooter(onOpen: () -> Unit) {
-    val openLinkLabel = stringResource(R.string.rag_details_open_link)
-    val githubAddress = "github.com/promenar/nexara"
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .semantics(mergeDescendants = true) {
-                contentDescription = githubAddress
-            }
-            .clickable(
-                role = Role.Button,
-                onClickLabel = openLinkLabel,
-                onClick = onOpen,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+internal fun GitHubProjectFooter(
+    onOpen: () -> Unit,
+    versionInfo: AppVersionInfo = AppVersionInfo.current(),
+) {
+    val context = LocalContext.current
+    val channelLabel = stringResource(
+        if (versionInfo.isSideload) R.string.ux2_settings_channel_sideload else R.string.ux2_settings_channel_play,
+    )
+    val footerText = appVersionFooterText(versionInfo, stringResource(R.string.settings_ia_home_footer), channelLabel)
+    val copyText = appVersionCopyText(versionInfo, stringResource(R.string.ux2_settings_version_copy_text), channelLabel)
+    val copyLabel = stringResource(R.string.ux2_settings_version_copy_action)
+    val copiedToast = stringResource(R.string.ux2_settings_version_copied)
+    val githubLabel = stringResource(R.string.ux2_settings_github_open)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.settings_ia_home_footer),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = githubAddress,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        Box(
+            modifier = Modifier
+                .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                .clip(MaterialTheme.shapes.small)
+                .clickable(role = Role.Button, onClickLabel = copyLabel) {
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(copyLabel, copyText))
+                    // Android 13 起系统自带复制提示，只在更早版本补一条。
+                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                        android.widget.Toast.makeText(context, copiedToast, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .padding(horizontal = NexaraSpacing.Small)
+                .testTag("settings_version_footer"),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = footerText,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(NexaraSpacing.MinimumTouchTarget)
+                .clip(CircleShape)
+                .clickable(role = Role.Button, onClickLabel = githubLabel, onClick = onOpen)
+                .semantics { contentDescription = githubLabel }
+                .testTag("settings_github_button"),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_github_mark),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
