@@ -7,7 +7,7 @@
 
 #include "llama.h"
 
-#define LOG_TAG "NexaraLlama"
+#define LOG_TAG "InfinityLlama"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
@@ -35,7 +35,7 @@ static llama_token greedy_sample(const llama_vocab *vocab, const float *logits) 
 // 1. Model loading
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeLoadModel(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeLoadModel(
         JNIEnv *env, jobject /* this */,
         jstring modelPath, jint nCtx, jint nThreads, jboolean useGpu) {
 
@@ -86,7 +86,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeLoadModel(
 // 2. Tokenize
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeTokenize(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeTokenize(
         JNIEnv *env, jobject, jlong ptr, jstring text, jboolean addBos) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -124,7 +124,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeTokenize(
 // 3. Detokenize
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeDetokenize(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeDetokenize(
         JNIEnv *env, jobject, jlong ptr, jintArray tokens) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -163,7 +163,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeDetokenize(
 //    generates logits (default when logits == nullptr).
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeIngestPrompt(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeIngestPrompt(
         JNIEnv *env, jobject, jlong ptr, jintArray tokens) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -195,7 +195,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeIngestPrompt(
 //    generated token.
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jint JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeSample(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeSample(
         JNIEnv *, jobject, jlong ptr) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -214,7 +214,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeSample(
 //    Input: one token; Returns: next token id
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jint JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeDecode(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeDecode(
         JNIEnv *, jobject, jlong ptr, jint token) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -241,7 +241,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeDecode(
 // 7. Embedding
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeEmbed(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeEmbed(
         JNIEnv *env, jobject, jlong ptr, jstring text) {
 
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
@@ -316,7 +316,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeEmbed(
 // 8. Get EOS token
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT jint JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeGetEosToken(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeGetEosToken(
         JNIEnv *, jobject, jlong ptr) {
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
     return static_cast<jint>(llama_vocab_eos(session->vocab));
@@ -326,7 +326,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeGetEosToken(
 // 9. Clear KV cache
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeClear(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeClear(
         JNIEnv *, jobject, jlong ptr) {
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
     llama_memory_t mem = llama_get_memory(session->ctx);
@@ -337,7 +337,7 @@ Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeClear(
 // 10. Release
 // ═══════════════════════════════════════════════
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_local_inference_LlamaContext_nativeFree(
+Java_com_promenar_infinity_data_local_inference_LlamaContext_nativeFree(
         JNIEnv *, jobject, jlong ptr) {
     auto *session = reinterpret_cast<LlamaSession *>(ptr);
     if (session->ctx)   llama_free(session->ctx);

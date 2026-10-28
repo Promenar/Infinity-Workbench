@@ -1,4 +1,4 @@
-# Nexara — 产品需求文档 (PRD)
+# Infinity Workbench — 产品需求文档 (PRD)
 
 > **版本**: 2.1.0（Kotlin 原生发行候选）
 > **更新时间**: 2026-08-25
@@ -13,15 +13,15 @@
 
 | 属性 | 值 |
 |------|-----|
-| **名称** | Nexara |
+| **名称** | Infinity Workbench |
 | **定位** | Android 端 BYOK 开源 AI 客户端 — 对标桌面端 LobeHub / Cherry Studio |
 | **平台** | Android（Kotlin/Jetpack Compose 原生），远期渐进式迁移 CMP 跨端 |
 | **许可证** | GPL-3.0 |
 | **当前版本** | `0.2.1-beta`（versionCode 3，`B-native-refactor`） |
 
-### 1.2 项目精神（Why Nexara）
+### 1.2 项目精神（Why Infinity Workbench）
 
-Nexara 诞生于一个明确的市场空白：
+Infinity Workbench 诞生于一个明确的市场空白：
 
 > **桌面端**有 LobeHub、Cherry Studio 等界面精美、自由接入第三方 API 的开源 AI 客户端。但 **Android 端**缺少同时满足以下三者的产品：
 > 1. **BYOK**（Bring Your Own Key）— 自由接入第三方模型 API
@@ -30,7 +30,7 @@ Nexara 诞生于一个明确的市场空白：
 
 LobeHub 的 WebApp 可在移动端使用，但纯网页架构的性能牺牲过大。大部分本地客户端（包括 Cherry Studio）也未能将 RAG 和知识图谱完美结合。
 
-**Nexara 的核心命题**：做 Android 端的 "LobeHub + Cherry Studio 融合体"，BYOK 自由、MD3 视觉、RAG+KG 记忆引擎三位一体。
+**Infinity Workbench 的核心命题**：做 Android 端的 "LobeHub + Cherry Studio 融合体"，BYOK 自由、MD3 视觉、RAG+KG 记忆引擎三位一体。
 
 ### 1.3 目标用户画像
 
@@ -41,7 +41,7 @@ LobeHub 的 WebApp 可在移动端使用，但纯网页架构的性能牺牲过�
 | **轻量开发者** | SSH 运维、HTML/JS 小工具、脚本生成 | Agent 工具调用、代码高亮、Artifacts 预览 |
 | **AI 爱好者** | 日常闲聊、模型对比、提示词工程 | 多模型自由切换、推理过程可视化、模型能力透明化 |
 
-### 1.4 能力边界（What Nexara is NOT）
+### 1.4 能力边界（What Infinity Workbench is NOT）
 
 | 不做 | 原因 |
 |------|------|
@@ -197,7 +197,7 @@ Welcome（首次引导）
 | **会话导出** | P1 | 导出为 TXT/Markdown |
 | **WebDAV 备份** | P2 | 用户显式触发的上传、列表与恢复；不声明后台同步 |
 | **完整数据恢复** | P2 | 清单与逐项 SHA-256 验证、事务恢复；核心数据可独立加密，完整密钥备份强制密码 |
-| **跨版本数据继承** | P0 | 当前库 v1→v5→v18 前进迁移，以及公开 `nexara.db` v17→`nexara_v2.db` v18 的精确 identity 接管与同签名 `adb install -r` 覆盖升级哨兵；Android FTS 校验使用私有可写副本并保持源库零写入，旧工作区兼容系统私有目录 bind-mount 别名但拒绝符号链接和越界路径；v17+v5 双库歧义在写入前 fail-close，待独立恢复工具闭环；禁止卸载/清数据回退 |
+| **跨版本数据继承** | P0 | 当前库 v1→v5→v18 前进迁移，以及公开 `infinity.db` v17→`infinity_v2.db` v18 的精确 identity 接管与同签名 `adb install -r` 覆盖升级哨兵；Android FTS 校验使用私有可写副本并保持源库零写入，旧工作区兼容系统私有目录 bind-mount 别名但拒绝符号链接和越界路径；v17+v5 双库歧义在写入前 fail-close，待独立恢复工具闭环；禁止卸载/清数据回退 |
 | **设备本地媒体边界** | P1 | 个人与 Agent 自定义头像不跨设备备份；同一安装覆盖升级由 Android 私有目录保留 |
 | **开发中面板** | P1 | 日志导出、崩溃诊断 |
 

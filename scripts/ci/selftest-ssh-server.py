@@ -25,7 +25,7 @@ def main():
                "-o", "IdentityAgent=none", "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password",
                "-o", "NumberOfPasswordPrompts=1", "-o", "ConnectTimeout=5"]
     destination = session["username"] + "@127.0.0.1"
-    with tempfile.TemporaryDirectory(prefix="nexara-ssh-selftest-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="infinity-ssh-selftest-") as temporary:
         temporary = Path(temporary)
         askpass = temporary / "askpass"
         askpass.write_text("#!/usr/bin/env python3\nimport json\n"
@@ -33,7 +33,7 @@ def main():
                            "    print(json.load(source)['password'])\n", encoding="utf-8")
         askpass.chmod(0o700)
         environment = dict(os.environ, SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE="force",
-                           DISPLAY="nexara-ssh-test", TERM="xterm-256color")
+                           DISPLAY="infinity-ssh-test", TERM="xterm-256color")
         environment.pop("SSH_AUTH_SOCK", None)
         ssh = ["ssh", *options, "-p", str(session["port"])]
 

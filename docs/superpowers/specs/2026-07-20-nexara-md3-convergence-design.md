@@ -1,4 +1,4 @@
-# Nexara Material 3 交互、设置与主题总收敛设计
+# Infinity Workbench Material 3 交互、设置与主题总收敛设计
 
 > 日期：2026-07-20
 > 分支：`codex/md3-redesign`
@@ -8,19 +8,19 @@
 
 ## 1. 目的
 
-本规格收敛 Nexara 当前仍混用的三套界面语言：稳定 Material 3 组件、自定义 Glass/描边容器，以及缺少统一规则的自绘交互。目标不是逐页缩字号或替换颜色，而是建立可贯穿主导航、会话输入、搜索、模型选择和全部设置层级的 Android 原生产品语言。
+本规格收敛 Infinity Workbench 当前仍混用的三套界面语言：稳定 Material 3 组件、自定义 Glass/描边容器，以及缺少统一规则的自绘交互。目标不是逐页缩字号或替换颜色，而是建立可贯穿主导航、会话输入、搜索、模型选择和全部设置层级的 Android 原生产品语言。
 
-完成后的 Nexara 应保持以下产品感受：
+完成后的 Infinity Workbench 应保持以下产品感受：
 
 - 像成熟 Android 工具一样清楚、克制、连续和可预测；
 - 以内容、排版、间距和 tonal surface 建立层级，不以每项成卡建立层级；
-- 主会话保留少量 Nexara 专属动效，管理页面优先使用标准 Material 3 语义；
+- 主会话保留少量 Infinity Workbench 专属动效，管理页面优先使用标准 Material 3 语义；
 - 深色、浅色、系统主题和动态色使用同一组语义色彩角色；
 - 普通字号、大字体、横屏、平板、IME、系统栏和 TalkBack 都是设计输入，不是实现后的补丁。
 
 ## 2. 与既有设计的关系
 
-本规格保留 2026-07-16 总设计已经冻结的稳定 Material 3 `1.4.0`、Compose BOM `2026.06.00`、连续列表、48dp 触控目标和“90% Material 3 + 10% Nexara 特征”原则。
+本规格保留 2026-07-16 总设计已经冻结的稳定 Material 3 `1.4.0`、Compose BOM `2026.06.00`、连续列表、48dp 触控目标和“90% Material 3 + 10% Infinity Workbench 特征”原则。
 
 本规格增量覆盖旧设计的两项边界：
 
@@ -37,11 +37,11 @@
 
 ### 3.2 模型选择
 
-`ModelPicker` 和会话设置中的模型面板虽已使用 `ModalBottomSheet + LazyColumn`，但每个模型仍套 `NexaraGlassCard`、描边、图标容器和多枚彩色能力标签。它们提高了视觉噪声，也让“选择模型”和“阅读模型数据库”混成同一任务。
+`ModelPicker` 和会话设置中的模型面板虽已使用 `ModalBottomSheet + LazyColumn`，但每个模型仍套 `InfinityGlassCard`、描边、图标容器和多枚彩色能力标签。它们提高了视觉噪声，也让“选择模型”和“阅读模型数据库”混成同一任务。
 
 ### 3.3 搜索与会话列表
 
-`AgentSessionsScreen` 使用固定搜索栏和逐项 Glass 卡片。固定搜索占据常态首屏高度；逐项卡片让两条会话也呈现为稀疏卡片墙。项目的 `NexaraSearchBar` 是自定义 `BasicTextField + Surface`，缺少“常态顶栏动作 / 搜索模式”这一页面级状态。
+`AgentSessionsScreen` 使用固定搜索栏和逐项 Glass 卡片。固定搜索占据常态首屏高度；逐项卡片让两条会话也呈现为稀疏卡片墙。项目的 `InfinitySearchBar` 是自定义 `BasicTextField + Surface`，缺少“常态顶栏动作 / 搜索模式”这一页面级状态。
 
 ### 3.4 主导航
 
@@ -50,7 +50,7 @@
 ### 3.5 设置体系
 
 - 设置首页已经使用 `TopAppBar`、`TabRow` 和 `ListItem`，但“应用 / 提供商”双 Tab、用户横幅和大量一级分组让它更像管理仪表盘；
-- `GlobalRagConfigScreen` 仍使用多层 `NexaraGlassCard`，包括卡片套卡片；
+- `GlobalRagConfigScreen` 仍使用多层 `InfinityGlassCard`，包括卡片套卡片；
 - `SearchConfigScreen` 的 Switch、RadioButton 和 Slider 是 Material 组件，但外层仍是描边选择块和静态颜色；
 - Provider 表单使用标准字段，但整组字段再次包入大 `Surface`，测试与保存以两条巨型按钮堆叠；
 - Provider Models 把搜索、同步、添加、通知、能力 Chip、启用 Switch 和完整内联编辑放在同一视觉层级；
@@ -58,7 +58,7 @@
 
 ### 3.6 主题系统
 
-`NexaraTheme(darkTheme = ...)` 当前在非动态色路径始终返回 `NexaraDarkColorScheme`，系统栏图标也被强制为深色背景模式。`ThemeScreen` 的模式和强调色只存于 `remember`，不会驱动根主题。大量 UI 和 WebView/图表渲染器直接读取静态 `NexaraColors` 或深色十六进制值，因此不能靠一个浅色开关完成可靠主题切换。
+`InfinityTheme(darkTheme = ...)` 当前在非动态色路径始终返回 `InfinityDarkColorScheme`，系统栏图标也被强制为深色背景模式。`ThemeScreen` 的模式和强调色只存于 `remember`，不会驱动根主题。大量 UI 和 WebView/图表渲染器直接读取静态 `InfinityColors` 或深色十六进制值，因此不能靠一个浅色开关完成可靠主题切换。
 
 ## 4. 总体设计原则
 
@@ -77,9 +77,9 @@ Material 3 是语义和层级系统，不是“使用了 Switch 就自动成为 
 
 ### 4.2.1 文本换行
 
-- 所有 typography 角色显式声明换行策略：界面文本为平衡行长、严格 CJK 避头尾与短语断词（`NexaraUiLineBreak`），不得出现末行孤字、行首标点或短语被拆断；聊天、Markdown 与检索正文等阅读文本用 `forReading()`；输入框用 `forInput()`。
-- 多段元数据使用 `NexaraMetaLine`，段内不断行、段间分隔符不落在行首或行尾；不得用 `·`/`•` 拼接成单个字符串。
-- 文件名、URL、路径与模型 ID 使用 `NexaraIdentifierText`，只在分隔符处折行；单行省略显示除外。
+- 所有 typography 角色显式声明换行策略：界面文本为平衡行长、严格 CJK 避头尾与短语断词（`InfinityUiLineBreak`），不得出现末行孤字、行首标点或短语被拆断；聊天、Markdown 与检索正文等阅读文本用 `forReading()`；输入框用 `forInput()`。
+- 多段元数据使用 `InfinityMetaLine`，段内不断行、段间分隔符不落在行首或行尾；不得用 `·`/`•` 拼接成单个字符串。
+- 文件名、URL、路径与模型 ID 使用 `InfinityIdentifierText`，只在分隔符处折行；单行省略显示除外。
 - `scripts/ci/check-text-wrapping.py` 静态门禁与 `TextWrappingDeviceTest` 设备门禁共同防止回退。
 
 ### 4.3 卡片使用边界
@@ -185,7 +185,7 @@ Backup、Skills、Token Usage、Local Models、Developer 和 Theme 使用同一�
 
 ### 8.1 手机
 
-- 2026-07-20 实机反馈后，手机导航改为 Material 语义上的 Nexara 流体导航坞：保留 `Role.Tab`、选中态、48dp 触控目标、主题角色与系统 Insets，不再受官方 `NavigationBarItem` 的高纵向布局约束；
+- 2026-07-20 实机反馈后，手机导航改为 Material 语义上的 Infinity Workbench 流体导航坞：保留 `Role.Tab`、选中态、48dp 触控目标、主题角色与系统 Insets，不再受官方 `NavigationBarItem` 的高纵向布局约束；
 - 外层使用完整 `CircleShape` 的低层级浮动 `Surface`，视觉高度保持 64dp，形成更矮、更饱满的立体大胶囊；
 - 容器距屏幕左右和系统手势区保留稳定间距；
 - 当前目的地使用一个完整 `CircleShape` 的流体指示块并显示“图标 + 标签”，未选目的地只显示图标但必须保留完整可访问名称；
@@ -232,7 +232,7 @@ data class ModelSelectionUiModel(
 ### 10.1 用户可见选项
 
 - 模式：系统、浅色、深色；
-- 色彩来源：Nexara 默认、系统动态色；
+- 色彩来源：Infinity Workbench 默认、系统动态色；
 - 动态色只在 Android 12+ 可选，不支持时显示不可用状态；
 - 本阶段不提供任意 HEX 或多套手工强调色预设，避免只改变 `primary` 而破坏完整 tonal palette；
 - 默认继续为深色，避免覆盖安装后突然改变既有用户外观；用户主动选择系统或浅色后持久生效。
@@ -242,39 +242,39 @@ data class ModelSelectionUiModel(
 冻结以下生产接口：
 
 ```kotlin
-enum class NexaraThemeMode { SYSTEM, LIGHT, DARK }
+enum class InfinityThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class NexaraColorSource { NEXARA, DYNAMIC }
+enum class InfinityColorSource { INFINITY, DYNAMIC }
 
-data class NexaraThemePreferences(
-    val mode: NexaraThemeMode = NexaraThemeMode.DARK,
-    val colorSource: NexaraColorSource = NexaraColorSource.NEXARA,
+data class InfinityThemePreferences(
+    val mode: InfinityThemeMode = InfinityThemeMode.DARK,
+    val colorSource: InfinityColorSource = InfinityColorSource.INFINITY,
 )
 
 class ThemePreferenceStore(context: Context) {
-    val state: StateFlow<NexaraThemePreferences>
-    fun setMode(mode: NexaraThemeMode)
-    fun setColorSource(source: NexaraColorSource)
+    val state: StateFlow<InfinityThemePreferences>
+    fun setMode(mode: InfinityThemeMode)
+    fun setColorSource(source: InfinityColorSource)
 }
 ```
 
 SharedPreferences 键固定为：
 
 - `theme_mode`: `system | light | dark`；
-- `theme_color_source`: `nexara | dynamic`。
+- `theme_color_source`: `infinity | dynamic`。
 
-未知或损坏值回退到 `dark` / `nexara`。这两个键加入 UI 备份白名单；恢复后根主题无需重启即可更新。
+未知或损坏值回退到 `dark` / `infinity`。这两个键加入 UI 备份白名单；恢复后根主题无需重启即可更新。
 
-`ThemePreferenceStore` 是唯一主题事实源，由 `NexaraApplication` 持有一个进程级实例。Store 必须监听同一 `nexara_settings` SharedPreferences 的外部变化，使备份恢复或兼容写入能立即反映到 `state`。现有 `SettingsViewModel.themeMode` 在迁移期只允许从 Store 派生并把写入委托给 Store，不得继续维护独立 `MutableStateFlow` 或直接写 `theme_mode`；外观页面接通后移除该兼容桥。
+`ThemePreferenceStore` 是唯一主题事实源，由 `InfinityApplication` 持有一个进程级实例。Store 必须监听同一 `infinity_settings` SharedPreferences 的外部变化，使备份恢复或兼容写入能立即反映到 `state`。现有 `SettingsViewModel.themeMode` 在迁移期只允许从 Store 派生并把写入委托给 Store，不得继续维护独立 `MutableStateFlow` 或直接写 `theme_mode`；外观页面接通后移除该兼容桥。
 
 ### 10.3 ColorScheme
 
-- 提供完整 `NexaraLightColorScheme` 和 `NexaraDarkColorScheme`；
+- 提供完整 `InfinityLightColorScheme` 和 `InfinityDarkColorScheme`；
 - Android 12+ 且用户选择动态色时使用 `dynamicLightColorScheme` / `dynamicDarkColorScheme`；
 - 系统模式只决定亮暗，不自动启用动态色；
 - 状态栏和导航栏图标依据 `colorScheme` 明暗切换；
 - 所有正式页面通过 `MaterialTheme.colorScheme` 读取颜色；
-- `NexaraColors` 只允许在迁移期间作为兼容桥，完成定义要求正式 UI 不再依赖静态深色值。
+- `InfinityColors` 只允许在迁移期间作为兼容桥，完成定义要求正式 UI 不再依赖静态深色值。
 
 ### 10.4 富文本和 WebView
 
@@ -332,7 +332,7 @@ Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML Artifact、表格和代�
 - Agent 会话列表为连续 `ListItem`，低频搜索进入顶栏搜索模式；
 - 模型选择器为连续列表，选择与完整编辑分离；
 - 设置首页取消双 Tab，二三级设置使用统一列表/表单语言；
-- `GlobalRagConfigScreen`、`SearchConfigScreen` 和正式设置页面不再依赖 `NexaraGlassCard`；
+- `GlobalRagConfigScreen`、`SearchConfigScreen` 和正式设置页面不再依赖 `InfinityGlassCard`；
 - 深色、浅色、系统和动态色在支持设备上真实生效并可持久恢复；
 - UI、Markdown 和 WebView/图表在两种亮暗方案下均满足对比和可读性；
 - 360dp、普通手机、2.0x、横屏、平板、IME、减少动效、中文和英文矩阵通过；

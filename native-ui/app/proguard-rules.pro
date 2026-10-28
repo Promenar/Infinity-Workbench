@@ -1,14 +1,14 @@
-# Nexara Native ProGuard Rules
+# Infinity Workbench Native ProGuard Rules
 -keepattributes *Annotation*
 -keepattributes SourceFile,LineNumberTable
 -keep class kotlinx.serialization.** { *; }
 
 # 保留应用栈帧的包归属和异常类型名；类及普通成员仍可混淆、优化和裁剪。
--keeppackagenames com.promenar.nexara,com.promenar.nexara.**
--keepnames class com.promenar.nexara.** extends java.lang.Throwable
+-keeppackagenames com.promenar.infinity,com.promenar.infinity.**
+-keepnames class com.promenar.infinity.** extends java.lang.Throwable
 
 # 发行版只剥离普通调试输出，logError 的私有诊断写入必须保留。
--assumenosideeffects class com.promenar.nexara.utils.NexaraLogger {
+-assumenosideeffects class com.promenar.infinity.utils.InfinityLogger {
     public void log(java.lang.String);
     public void metro(java.lang.String, java.lang.String);
 }
@@ -53,7 +53,7 @@
 }
 -keep,allowoptimization class org.openxmlformats.schemas.officeDocument.x2006.relationships.** { *; }
 
-# 以下类型均属于依赖库的可选集成，Nexara 的 Android 文本提取路径不可达：
+# 以下类型均属于依赖库的可选集成，Infinity Workbench 的 Android 文本提取路径不可达：
 # Log4j OSGi 发现注解、PDFBox JP2 图像解码、POI AWT 桌面渲染、
 # XMLBeans StAX/Saxon XPath/XQuery，以及 SLF4J 的可选静态 binder。
 # 保持精确类名，严禁扩大为整库或全局 -dontwarn。

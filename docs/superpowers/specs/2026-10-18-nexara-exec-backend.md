@@ -1,4 +1,4 @@
-# Nexara 命令执行后端规格
+# Infinity Workbench 命令执行后端规格
 
 - 状态：待评审
 - 范围：`native-ui`（Android，targetSdk 36，minSdk 31）
@@ -42,8 +42,8 @@
 | 亮屏后台（命令前台服务） | 正式包在真机上运行 `sleep 90` 时回到桌面，`specialUse` 前台服务在前台、通知计时持续，约 50 秒内 Hans 无冻结记录；通知“停止”后模型收到 `EXEC_STOPPED` 并按指引不重试 |
 | 后台（“完全允许后台行为”，未充电锁屏 15 分钟） | 不再被冻结，前台服务内的子进程运行到结束；但 CPU 会深度休眠，每 5 秒一次的心跳只写了 49/约 175 行，最长间隔 66 秒。持续计算需要 `PARTIAL_WAKE_LOCK` |
 | 对账耗时 | 2 万个 4 KB 文件：元数据遍历 171 ms，size+mtime 差异检测并重算差异文件哈希 266 ms；全量 SHA-256 483 ms |
-| Termux SAF 挂载 | 读写挂载 Termux 主目录后双向可用：Termux 新建的文件立即在 Nexara `/mnt/<别名>` 可见；Nexara 经 `create_file` 写入的文件在 Termux 主目录可见，属主为 Termux uid |
-| 共享存储 | Termux（`termux-setup-storage` 后）、adb 与 Nexara（“挂载存储路径”，需所有文件访问）在同一 `Download` 子目录中互相读写可见，内容一致 |
+| Termux SAF 挂载 | 读写挂载 Termux 主目录后双向可用：Termux 新建的文件立即在 Infinity Workbench `/mnt/<别名>` 可见；Infinity Workbench 经 `create_file` 写入的文件在 Termux 主目录可见，属主为 Termux uid |
+| 共享存储 | Termux（`termux-setup-storage` 后）、adb 与 Infinity Workbench（“挂载存储路径”，需所有文件访问）在同一 `Download` 子目录中互相读写可见，内容一致 |
 
 ## 3. 总体结构
 
@@ -76,8 +76,8 @@ ToolExecutor
 | `stdout_truncated` / `stderr_truncated` | 各输出流是否截断 |
 | `truncated` / `truncation` | 是否截断及去掉的部分（`head_removed`、`tail_removed`、`none`） |
 | `workspace_changes` | 仅内置后端：命令结束对账得到的 `added`、`modified`、`removed`（整目录删除只列最上层）与 `moved`（`{from,to}`，整目录移动只列最上层）虚拟路径，`counts` 给各类总数，四类合计超过 200 项时按此顺序截断并置 `truncated`；对账失败时为 null |
-| `workspace_warnings` | 仅内置后端，可省略：`[{code, count, paths}]`，`code` 为 `WORKSPACE_RESERVED_PATH`（改动 `.nexara*`、`.recycle_bin` 或新建顶层 `mnt`）或 `WORKSPACE_UNSUPPORTED_ENTRY`（新建或改动的符号链接、特殊文件、文件工具不接受的名称），`paths` 最多 20 项 |
-| `paused_ms` | 仅内置后端，可省略：等待期间 Nexara 被系统暂停（后台冻结或深度休眠）的累计毫秒数，达到 3 秒才给出；暂停时间不计入超时 |
+| `workspace_warnings` | 仅内置后端，可省略：`[{code, count, paths}]`，`code` 为 `WORKSPACE_RESERVED_PATH`（改动 `.infinity*`、`.recycle_bin` 或新建顶层 `mnt`）或 `WORKSPACE_UNSUPPORTED_ENTRY`（新建或改动的符号链接、特殊文件、文件工具不接受的名称），`paths` 最多 20 项 |
+| `paused_ms` | 仅内置后端，可省略：等待期间 Infinity Workbench 被系统暂停（后台冻结或深度休眠）的累计毫秒数，达到 3 秒才给出；暂停时间不计入超时 |
 
 `status` 规则统一为：`error_code == null && !timed_out && exit_code == 0` 为 `success`，否则 `error`。因此 `ssh_exec` 退出码非 0（如 `grep` 无匹配、`diff` 有差异）也记为失败步骤，模型收到第 6 节的失败摘要（不超过 4,000 字符，保留根因字段与输出尾部），与 `termux_exec` 一致。
 
@@ -90,11 +90,11 @@ ToolExecutor
 
 ### 3.2 统一路径与环境
 
-- 命令的工作目录是会话当前工作区的物理根目录，文件工具与 `workspace_changes` 仍以 `/` 表示工作区根。会话绑定自选工作区（项目文件夹或侧载共享文件夹）时，命令直接在该目录运行：不持工作区锁、不做 Room 对账，结果不含 `workspace_changes`，改以 `workspace_kind` 与 `workspace_tracking: "none"` 标明，改动用 `git status` 查看；目录不可用时返回 `EXEC_WORKSPACE_UNAVAILABLE`，不回退到私有工作区。内置后端把 stdout、stderr 中的工作区物理路径替换为 `$NEXARA_WORKSPACE` 而不是 `/`：替换后既不暴露应用目录，又能原样用于下一条命令；以 `/` 开头的虚拟路径在命令里会指向设备根目录。
+- 命令的工作目录是会话当前工作区的物理根目录，文件工具与 `workspace_changes` 仍以 `/` 表示工作区根。会话绑定自选工作区（项目文件夹或侧载共享文件夹）时，命令直接在该目录运行：不持工作区锁、不做 Room 对账，结果不含 `workspace_changes`，改以 `workspace_kind` 与 `workspace_tracking: "none"` 标明，改动用 `git status` 查看；目录不可用时返回 `EXEC_WORKSPACE_UNAVAILABLE`，不回退到私有工作区。内置后端把 stdout、stderr 中的工作区物理路径替换为 `$INFINITY_WORKSPACE` 而不是 `/`：替换后既不暴露应用目录，又能原样用于下一条命令；以 `/` 开头的虚拟路径在命令里会指向设备根目录。
 - `/mnt/<别名>` 是 SAF 挂载，只对文件工具可见，命令不可见。内置后端在 `guidance` 中说明需要先用文件工具复制到工作区。
-- `/skills` 是固定内部挂载，文件工具与脚本网关在所有工作区模式下均映射到用户级技能真实目录。内置 shell、Python 与 git 使用 `NEXARA_SKILLS` 环境变量访问该目录；HOME 下维护 `.agents/skills` 符号链接，已有正确链接时保持不变，已有其它文件、目录或链接时保留并记录日志。项目级技能位于工作区内 `.agents/skills/`，使用相对路径。文件工具中的保留虚拟根会遮蔽工作区同名 `skills/`；命令在物理工作区创建的同名条目不进入私有工作区虚拟索引。
+- `/skills` 是固定内部挂载，文件工具与脚本网关在所有工作区模式下均映射到用户级技能真实目录。内置 shell、Python 与 git 使用 `INFINITY_SKILLS` 环境变量访问该目录；HOME 下维护 `.agents/skills` 符号链接，已有正确链接时保持不变，已有其它文件、目录或链接时保留并记录日志。项目级技能位于工作区内 `.agents/skills/`，使用相对路径。文件工具中的保留虚拟根会遮蔽工作区同名 `skills/`；命令在物理工作区创建的同名条目不进入私有工作区虚拟索引。
 - 文件工具与脚本网关对 `/skills`、工作区 `/.agents/skills` 的变更，以及可能连带移除项目技能的父目录操作，在全部执行模式下逐次审批；UUID 按解析后的路径判断，审批目标不可记忆，旧路径白名单不适用。真实进程的技能目录写入沿用命令执行审批，不按文件路径拦截。
-- 环境变量统一：`HOME`（后端各自的家目录）、`TMPDIR`、`NEXARA_WORKSPACE`（工作区物理根）、`NEXARA_BACKEND`（`builtin` / `sandbox` / `termux` / `ssh`）、`NEXARA_WORKSPACE_KIND`（`private` / `project` / `shared`，内置 git 据此给出私有工作区 clone 提示与共享存储兼容配置）、`LANG=C.UTF-8`。内置后端额外设置 `PYTHONHOME`、`PYTHONPATH`、`NEXARA_PYEXT_DIR`、`NEXARA_PYTHON`、`SSL_CERT_FILE`、`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`、`PYTHONUTF8=1`，并从主进程只继承 `PATH` 与 `ANDROID_ROOT` 等系统路径变量。`LD_LIBRARY_PATH` 只在启动解释器时设置（`python_exec` 与 shell 函数 `python3`），不影响 shell 中的系统命令。
+- 环境变量统一：`HOME`（后端各自的家目录）、`TMPDIR`、`INFINITY_WORKSPACE`（工作区物理根）、`INFINITY_BACKEND`（`builtin` / `sandbox` / `termux` / `ssh`）、`INFINITY_WORKSPACE_KIND`（`private` / `project` / `shared`，内置 git 据此给出私有工作区 clone 提示与共享存储兼容配置）、`LANG=C.UTF-8`。内置后端额外设置 `PYTHONHOME`、`PYTHONPATH`、`INFINITY_PYEXT_DIR`、`INFINITY_PYTHON`、`SSL_CERT_FILE`、`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`、`PYTHONUTF8=1`，并从主进程只继承 `PATH` 与 `ANDROID_ROOT` 等系统路径变量。`LD_LIBRARY_PATH` 只在启动解释器时设置（`python_exec` 与 shell 函数 `python3`），不影响 shell 中的系统命令。
 
 ## 4. 内置后端（B）
 
@@ -106,10 +106,10 @@ ToolExecutor
 | --- | --- | --- |
 | shell | 系统 `/system/bin/sh` | 不打包 busybox/toybox；命令文案声明“POSIX sh + 系统 toybox，具体命令随设备不同” |
 | Python 3.14 | `libnxpython.so`、`libpython3.14.so`、`lib*_python.so`、`libpystdlib.so`、`libpyext_*.so` | 打包库方案；stdlib 裁剪同第 2 节 |
-| `python3` / `python`、`git`、`pip`/`pip3` 入口 | `shell_exec` 预置的 `sh` 函数 | 数据目录里的包装脚本无法经 PATH 执行（execve 被拒），因此以函数提供；函数只在该次 `sh -c` 内有效，子 `sh` 脚本、`xargs`、`find -exec` 与 Python 的 `subprocess` 找不到，可改用 `python3 -m nexara_git` / `python3 -m nexara_pip` 或以 `.` 在当前 shell 执行脚本 |
-| 纯 Python 依赖 | `libpysite.so`：dulwich 1.2.17、urllib3 2.8.0 的 PyPI wheel（版本、地址与 SHA-256 见 `app/python/python-site.properties`）与 `app/python/site/` 中的 Nexara 模块合成的不压缩 zip | 排在标准库之后进入 `PYTHONPATH`；`python_exec` 中可直接 `import dulwich.porcelain`。用户用 pip 装的同名包排在其后，不会覆盖打包版本 |
-| git | `nexara_git`：把子命令转交 `dulwich.cli` | 开放 add、blame、branch、cat-file、checkout、cherry-pick、clean、clone、commit、config、describe、diff、fetch、for-each-ref、grep、init、log、ls-files、ls-remote、ls-tree、merge、merge-base、mv、pull、push、rebase、reflog、remote、reset、restore、rev-list、rev-parse、revert、rm、shortlog、show、show-ref、stash、status、switch、tag；全局选项只支持 `-C <目录>`。其它子命令与全局选项、SSH 远端（`ssh://`、`user@host:path`）返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引，退出码 2；其它失败输出单行 `fatal:`，退出码 128。补齐 dulwich 缺少的写法：`add -A`、`commit -F <文件>`、`log -<N>`（dulwich 会把 `-5` 当成路径而静默输出空结果）、`branch -a`/`-r`、`remote [-v]`/`get-url`/`set-url`/`remove`，本地克隆源记为绝对路径。stderr 不接终端时只保留以回车刷新的进度行的最终状态（实测一次克隆的进度由约 514 KB 降到约 300 字节）。`clone`、`fetch` 默认只请求 `HEAD`、`refs/heads/`、`refs/tags/`：dulwich 默认要远端通告的全部引用，GitHub 会通告每个 PR 的 `refs/pull/*`，真机上 `--depth 1` 克隆 octocat/Spoon-Knife 因此在 120 秒超时前仍在下载（宿主实测约 636 MiB），限制后约 60 KB、2 秒。没有编辑器，`commit` 缺少 `-m`/`-F` 时直接报错；未配置 `user.name`/`user.email`（仓库、`$HOME/.gitconfig` 或 `GIT_AUTHOR_*`/`GIT_COMMITTER_*`）时 commit、merge、cherry-pick、revert、rebase、stash 返回 `GIT_IDENTITY_MISSING`，不使用 `u0_aNNN@localhost` 兜底 |
-| pip（仅侧载） | `nexara_pip`：运行标准库 `ensurepip/_bundled` 中的 pip wheel（首次使用时复制到 `noBackupFilesDir/python-pip`，zip 中的 zip 无法直接导入） | 包安装到用户站点 `filesDir/python-user`（`PYTHONUSERBASE`，侧载渠道不设 `PYTHONNOUSERSITE`），缓存在 `cacheDir/pip`，关闭版本检查与交互输入。安装后若新出现原生扩展文件，在 stderr 提醒其无法导入。Play 渠道不设 `NEXARA_PIP`，`pip` 返回 `PIP_UNSUPPORTED`，退出码 2 |
+| `python3` / `python`、`git`、`pip`/`pip3` 入口 | `shell_exec` 预置的 `sh` 函数 | 数据目录里的包装脚本无法经 PATH 执行（execve 被拒），因此以函数提供；函数只在该次 `sh -c` 内有效，子 `sh` 脚本、`xargs`、`find -exec` 与 Python 的 `subprocess` 找不到，可改用 `python3 -m infinity_git` / `python3 -m infinity_pip` 或以 `.` 在当前 shell 执行脚本 |
+| 纯 Python 依赖 | `libpysite.so`：dulwich 1.2.17、urllib3 2.8.0 的 PyPI wheel（版本、地址与 SHA-256 见 `app/python/python-site.properties`）与 `app/python/site/` 中的 Infinity Workbench 模块合成的不压缩 zip | 排在标准库之后进入 `PYTHONPATH`；`python_exec` 中可直接 `import dulwich.porcelain`。用户用 pip 装的同名包排在其后，不会覆盖打包版本 |
+| git | `infinity_git`：把子命令转交 `dulwich.cli` | 开放 add、blame、branch、cat-file、checkout、cherry-pick、clean、clone、commit、config、describe、diff、fetch、for-each-ref、grep、init、log、ls-files、ls-remote、ls-tree、merge、merge-base、mv、pull、push、rebase、reflog、remote、reset、restore、rev-list、rev-parse、revert、rm、shortlog、show、show-ref、stash、status、switch、tag；全局选项只支持 `-C <目录>`。其它子命令与全局选项、SSH 远端（`ssh://`、`user@host:path`）返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引，退出码 2；其它失败输出单行 `fatal:`，退出码 128。补齐 dulwich 缺少的写法：`add -A`、`commit -F <文件>`、`log -<N>`（dulwich 会把 `-5` 当成路径而静默输出空结果）、`branch -a`/`-r`、`remote [-v]`/`get-url`/`set-url`/`remove`，本地克隆源记为绝对路径。stderr 不接终端时只保留以回车刷新的进度行的最终状态（实测一次克隆的进度由约 514 KB 降到约 300 字节）。`clone`、`fetch` 默认只请求 `HEAD`、`refs/heads/`、`refs/tags/`：dulwich 默认要远端通告的全部引用，GitHub 会通告每个 PR 的 `refs/pull/*`，真机上 `--depth 1` 克隆 octocat/Spoon-Knife 因此在 120 秒超时前仍在下载（宿主实测约 636 MiB），限制后约 60 KB、2 秒。没有编辑器，`commit` 缺少 `-m`/`-F` 时直接报错；未配置 `user.name`/`user.email`（仓库、`$HOME/.gitconfig` 或 `GIT_AUTHOR_*`/`GIT_COMMITTER_*`）时 commit、merge、cherry-pick、revert、rebase、stash 返回 `GIT_IDENTITY_MISSING`，不使用 `u0_aNNN@localhost` 兜底 |
+| pip（仅侧载） | `infinity_pip`：运行标准库 `ensurepip/_bundled` 中的 pip wheel（首次使用时复制到 `noBackupFilesDir/python-pip`，zip 中的 zip 无法直接导入） | 包安装到用户站点 `filesDir/python-user`（`PYTHONUSERBASE`，侧载渠道不设 `PYTHONNOUSERSITE`），缓存在 `cacheDir/pip`，关闭版本检查与交互输入。安装后若新出现原生扩展文件，在 stderr 提醒其无法导入。Play 渠道不设 `INFINITY_PIP`，`pip` 返回 `PIP_UNSUPPORTED`，退出码 2 |
 | CA bundle | 首次运行由 `/apex/com.android.conscrypt/cacerts`（不存在时为 `/system/etc/security/cacerts`）中的 PEM 块拼出，存于 `noBackupFilesDir/exec-ca` | 证书目录的文件名、大小或修改时间变化时重建 |
 
 ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过滤打包；发行产物是不按 ABI 拆分的通用 APK，只带 arm64-v8a Python（x86_64 约 11.5 MB 只服务 x86_64 设备）。armeabi-v7a、x86 与 x86_64 设备上的 Release 中 `PackagedPython.isAvailable` 为 false，内置后端须给出不可用指引。
@@ -118,10 +118,10 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 ### 4.2 进程与安全
 
-- 命令是主进程的子进程（非 isolated），以 Nexara uid 运行。没有单独的 `:exec` 进程：工具结果、审批账本与工作区对账都在主进程，主进程死亡时本次工具调用随之失效，`:exec` 进程不能让命令结果送达；ColorOS 冻结的是整个 uid，单独进程也不能避开。子进程位于应用的进程 cgroup 内，应用进程被结束时随之结束。
+- 命令是主进程的子进程（非 isolated），以 Infinity Workbench uid 运行。没有单独的 `:exec` 进程：工具结果、审批账本与工作区对账都在主进程，主进程死亡时本次工具调用随之失效，`:exec` 进程不能让命令结果送达；ColorOS 冻结的是整个 uid，单独进程也不能避开。子进程位于应用的进程 cgroup 内，应用进程被结束时随之结束。
 - 启动方式：`/system/bin/setsid /system/bin/sh -c '<写出 $$ 到临时文件>; exec "$@"' …`，命令成为新会话首进程，进程组号即其 pid（API 31 toybox 0.8.4、API 35 toybox 0.8.11 实测）。信号经 `Os.kill(-pgid, …)` 发给整个进程组；命令自行 `setsid` 脱离的进程不在其中。
 - 命令可读写应用私有目录，包括 Room 数据库与配置；密钥由 Android Keystore 保护，命令无法直接取得明文，但不能视为强隔离。
-- 因此 `shell_exec` 与 `python_exec` 的风险等级为 `ToolRisk.PROCESS`，沿用现有审批（半自动与手动模式逐次审批，全自动模式不审批，与 `termux_exec` 相同）；审批卡片展示完整命令或代码（收起时显示前 6 行，“展开全部”后在限高 360dp 的框内滚动查看全文）及“可访问 Nexara 私有数据与网络、删除或覆盖的文件不进回收站”的提示。审批目标为 `["process","builtin",<命令>]` 与 `["process","python",<代码>]`；工作目录固定为本会话工作区根，不作为参数，因此不进入审批目标。非内置来源的同名工具不使用这两个目标。
+- 因此 `shell_exec` 与 `python_exec` 的风险等级为 `ToolRisk.PROCESS`，沿用现有审批（半自动与手动模式逐次审批，全自动模式不审批，与 `termux_exec` 相同）；审批卡片展示完整命令或代码（收起时显示前 6 行，“展开全部”后在限高 360dp 的框内滚动查看全文）及“可访问 Infinity Workbench 私有数据与网络、删除或覆盖的文件不进回收站”的提示。审批目标为 `["process","builtin",<命令>]` 与 `["process","python",<代码>]`；工作目录固定为本会话工作区根，不作为参数，因此不进入审批目标。非内置来源的同名工具不使用这两个目标。
 - 环境变量白名单启动，不继承主进程环境。
 - 参数上限：`command` 32,000 字符；`code` 40,000 字符且 UTF-8 不超过 120,000 字节（经 `python -c` 传入，单个 execve 参数上限 128 KiB），更长的代码先写入工作区文件再运行。
 - 网络：默认允许（pip、git 需要）。是否增加“仅局域网白名单”开关与脚本运行时保持一致，不单独设计。
@@ -129,13 +129,13 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 ### 4.3 沙箱后端
 
-状态：已实施（`data/script/PythonSandboxEngine.kt`、`app/python/site/nexara_sandbox.py`，工具 `ui/chat/manager/skills/PythonSandboxSkill.kt`）。
+状态：已实施（`data/script/PythonSandboxEngine.kt`、`app/python/site/infinity_sandbox.py`，工具 `ui/chat/manager/skills/PythonSandboxSkill.kt`）。
 
 独立工具 `python_sandbox(code, stdin, allow_network, timeout_seconds)`，风险等级 `SCRIPT`（与 `run_script` 相同；工具风险是静态属性，因此不做成 `python_exec` 的参数）。审批目标为 `["tool","python_sandbox"]`。
 
-- 进程：复用 `exec_js` 的隔离服务 `ScriptRuntimeService`（`:script_runtime`，`isolatedProcess`），`ScriptRequest.language = "python"` 时由 `PythonSandboxEngine` 启动打包 Python 子进程（`-c` 只导入 `nexara_sandbox`，用户代码经控制通道传入，不受 execve 参数上限约束）。子进程继承隔离 UID：读不到应用数据（含 Room 数据库），无可写目录，套接字被拒绝；`PYTHONNOUSERSITE` 开启，侧载 pip 安装的包不可见。
-- 控制通道：子进程原始 stdin/stdout，每行一个 JSON 帧（start、out、cap、cap_result、done），单帧上限 260 KiB。`nexara_sandbox` 在执行用户代码前把 fd 0/1/2 换成管道并转发为 out 帧，C 扩展与 `os.write` 的输出不会混入控制帧。
-- 能力：`import nexara` 的 read、read_text、stat、list、write、create、save、mkdir、delete、fetch 经隔离服务的 Binder 会话交给主进程 `ScriptWorkspaceGateway` 与 `ScriptHttpClient`，与 JavaScript 共用文件审批（含“脚本写入审批”设置）、挂载身份校验、64 KiB 文本文件上限、联网开关与局域网白名单、128 次能力调用上限；`module` 能力对 Python 不开放。以 `_LIMIT` 结尾的失败终止整次执行，其它失败以 `nexara.NexaraError(code)` 交给用户代码。
+- 进程：复用 `exec_js` 的隔离服务 `ScriptRuntimeService`（`:script_runtime`，`isolatedProcess`），`ScriptRequest.language = "python"` 时由 `PythonSandboxEngine` 启动打包 Python 子进程（`-c` 只导入 `infinity_sandbox`，用户代码经控制通道传入，不受 execve 参数上限约束）。子进程继承隔离 UID：读不到应用数据（含 Room 数据库），无可写目录，套接字被拒绝；`PYTHONNOUSERSITE` 开启，侧载 pip 安装的包不可见。
+- 控制通道：子进程原始 stdin/stdout，每行一个 JSON 帧（start、out、cap、cap_result、done），单帧上限 260 KiB。`infinity_sandbox` 在执行用户代码前把 fd 0/1/2 换成管道并转发为 out 帧，C 扩展与 `os.write` 的输出不会混入控制帧。
+- 能力：`import infinity` 的 read、read_text、stat、list、write、create、save、mkdir、delete、fetch 经隔离服务的 Binder 会话交给主进程 `ScriptWorkspaceGateway` 与 `ScriptHttpClient`，与 JavaScript 共用文件审批（含“脚本写入审批”设置）、挂载身份校验、64 KiB 文本文件上限、联网开关与局域网白名单、128 次能力调用上限；`module` 能力对 Python 不开放。以 `_LIMIT` 结尾的失败终止整次执行，其它失败以 `infinity.InfinityError(code)` 交给用户代码。
 - 结果：沿用第 3.1 节命令结果格式，`backend` 为 `sandbox`；stdout 保留尾部 32 KiB、stderr 尾部 12 KiB（按 UTF-8 字节，整体结果不超过脚本服务的 64 KiB 上限），`result` 变量 JSON 化后不超过 16 KiB，超出时以 `result_error` 说明。
 - 超时与取消：引擎按 `timeout_seconds` 自行终止子进程并带回已有输出（`error_code = TIMEOUT`），主进程另加 3 秒余量兜底；服务终止前先 SIGKILL 子进程。设备测试确认超时后没有残留的 Python 进程。
 
@@ -145,10 +145,10 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 1. 命令运行期间持有该工作区的写锁（`WorkspaceMutationCoordinator`，与文件工具同一把锁）。文件工具的写入与内容读取（`read_file`、`diff_file` 等也在锁内）都排队等待，最长约为命令超时加对账耗时；列表、搜索等只查 Room 的读取不受影响。
 2. 启动前经 `SecureDirectoryStream` 逐级遍历物理树（不跟随符号链接），记录每个条目的类型、size、mtime（纳秒）与 inode（`fileKey`）。Room 不保存 mtime，因此前快照只能来自现场遍历。
-3. 命令结束（含失败、超时、取消）后在不可取消上下文中再遍历一次，以 Room 索引为准计算差异：size、mtime、inode 均未变且 size 与索引一致的文件不重算哈希；其余文件重算 SHA-256，内容不同则更新哈希、大小与修改时间并清空向量化状态。前快照中某条已删除条目的 inode 出现在新路径、类型相同且（文件）size 与 mtime 未变时视为移动，保留条目 uuid、版本历史与派生数据；同 inode 但内容已变按删除加新增处理。新增文件的 MIME 按扩展名判定，未知扩展名且不超过 256 KiB 的文件按 UTF-8 文本嗅探。删除经与永久删除相同的派生数据事务与向量化屏障提交，并清理对应 `.nexara_versions` 快照；新增与更新在一个 Room 事务中提交。随后为索引管线支持的 MIME 发布 `FileIndexEvent.Changed`，再释放写锁。
-4. 命令直接删除或覆盖的文件不进入回收区，也不生成版本快照（覆盖前的内容已不可得），审批卡片写明这一点。命令改动 `.nexara*`、`.recycle_bin`（任意层级的保留名称）或新建顶层 `mnt`（挂载命名空间，同名目录会被挂载遮蔽）时，对账不写入索引并给出 `WORKSPACE_RESERVED_PATH` 警告；回收区或版本历史可能因此损坏，界面不自动修复。
-5. 根身份标记 `.nexara_root_identity` 被命令删除或改写会让后续全部工作区操作失败：命令前读取原始字节，结束后在根目录 fileKey 未变时写回，并列入保留路径警告；标记被替换为目录时对账失败。
-6. 命令运行期间工作区根存在 `.nexara_command_pending` 标记，对账成功后删除。进程在命令中途被杀时标记残留，下一次经工作区仓储的修改（新建、移动、回收、删除或再次运行命令）前先以无前快照方式对账（全部文件重算哈希、不识别移动）；恢复对账失败只记日志，不阻断后续修改。`write_file`、`patch_file` 不经工作区仓储，在恢复对账之前对已被改动的文件会因哈希与索引不一致而拒绝写入。
+3. 命令结束（含失败、超时、取消）后在不可取消上下文中再遍历一次，以 Room 索引为准计算差异：size、mtime、inode 均未变且 size 与索引一致的文件不重算哈希；其余文件重算 SHA-256，内容不同则更新哈希、大小与修改时间并清空向量化状态。前快照中某条已删除条目的 inode 出现在新路径、类型相同且（文件）size 与 mtime 未变时视为移动，保留条目 uuid、版本历史与派生数据；同 inode 但内容已变按删除加新增处理。新增文件的 MIME 按扩展名判定，未知扩展名且不超过 256 KiB 的文件按 UTF-8 文本嗅探。删除经与永久删除相同的派生数据事务与向量化屏障提交，并清理对应 `.infinity_versions` 快照；新增与更新在一个 Room 事务中提交。随后为索引管线支持的 MIME 发布 `FileIndexEvent.Changed`，再释放写锁。
+4. 命令直接删除或覆盖的文件不进入回收区，也不生成版本快照（覆盖前的内容已不可得），审批卡片写明这一点。命令改动 `.infinity*`、`.recycle_bin`（任意层级的保留名称）或新建顶层 `mnt`（挂载命名空间，同名目录会被挂载遮蔽）时，对账不写入索引并给出 `WORKSPACE_RESERVED_PATH` 警告；回收区或版本历史可能因此损坏，界面不自动修复。
+5. 根身份标记 `.infinity_root_identity` 被命令删除或改写会让后续全部工作区操作失败：命令前读取原始字节，结束后在根目录 fileKey 未变时写回，并列入保留路径警告；标记被替换为目录时对账失败。
+6. 命令运行期间工作区根存在 `.infinity_command_pending` 标记，对账成功后删除。进程在命令中途被杀时标记残留，下一次经工作区仓储的修改（新建、移动、回收、删除或再次运行命令）前先以无前快照方式对账（全部文件重算哈希、不识别移动）；恢复对账失败只记日志，不阻断后续修改。`write_file`、`patch_file` 不经工作区仓储，在恢复对账之前对已被改动的文件会因哈希与索引不一致而拒绝写入。
 7. 共享存储是 FUSE，不支持符号链接与可执行位，不适合放 git 仓库或虚拟环境；内置后端只把会话工作区作为工作目录。
 8. `.git` 目录之下的条目照常入索引（工作区与磁盘一致，移动、删除仓库时一并处理），但不发布向量化事件：仓库元数据对检索无用，`.git/config` 的远端地址可能带令牌，不应发给嵌入服务。命令结果的 `workspace_changes` 不逐条列出这些路径，只给 `git_internal_changes` 计数；`.git` 目录本身照常列出。
 
@@ -156,13 +156,13 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 状态：已实施（`background/exec/AndroidExecKeepAlive.kt`、`background/exec/ExecForegroundService.kt`、`data/exec/ExecKeepAlive.kt`）。
 
-- 每条命令从等待工作区写锁到对账结束都持有 `PARTIAL_WAKE_LOCK`（标签 `Nexara:builtin-exec`，超时上限加 5 分钟兜底，结束、超时、停止或取消时在 finally 中释放）。
-- 侧载渠道同时启动 `ExecForegroundService`（`specialUse`，子类型说明写在清单 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`）：通知显示“Shell/Python · 命令首行”与计时，锁屏只显示“Nexara 正在运行命令”；按钮“停止”（多条命令时“全部停止”）只结束通知渲染时列出的命令。登记表清空即退出前台。服务不持有命令，主进程被结束时命令随之结束。
+- 每条命令从等待工作区写锁到对账结束都持有 `PARTIAL_WAKE_LOCK`（标签 `Infinity Workbench:builtin-exec`，超时上限加 5 分钟兜底，结束、超时、停止或取消时在 finally 中释放）。
+- 侧载渠道同时启动 `ExecForegroundService`（`specialUse`，子类型说明写在清单 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`）：通知显示“Shell/Python · 命令首行”与计时，锁屏只显示“Infinity Workbench 正在运行命令”；按钮“停止”（多条命令时“全部停止”）只结束通知渲染时列出的命令。登记表清空即退出前台。服务不持有命令，主进程被结束时命令随之结束。
 - 生成任务自身的前台服务在等待审批时退出；半自动与手动模式下批准后的命令在界面协程中执行，正是这里的命令前台服务提供保活与停止入口。全自动模式下两者可能同时显示，各自的停止分别作用于生成与命令。
 - Play 渠道不声明命令前台服务与 `FOREGROUND_SERVICE_SPECIAL_USE`（政策待评审），只持有唤醒锁；`scripts/ci/check-distribution-manifests.py` 校验该渠道差异。
 - 系统拒绝启动前台服务（应用在后台且无豁免）时命令照常运行，只有唤醒锁。
 - 停止：通知按钮或聊天界面实时输出区的“停止”经 `BuiltinCommandControl` 请求停止，等待循环（250 ms 步长）发现后 SIGTERM→2 秒→SIGKILL 整个进程组，返回 `EXEC_STOPPED` 并照常对账；模型据此继续本轮，而不是整轮生成被取消。
-- 实时输出：读取线程每读到一块输出即经 `SkillExecutionContext.liveOutput` 推送到内存中的 `ToolLiveOutputStore`（按工具调用步骤 id 登记，命令结束即移除，每条命令保留尾部 16 KB，不写数据库），推送前同样把工作区物理路径替换为 `$NEXARA_WORKSPACE`（块尾若是被切开的路径前缀则暂存到下一块，命令结束时补发）；只有执行方实际使用过的通道才在界面显示，其它工具不出现空终端区。启动前已请求停止的命令不再启动。聊天界面在运行中的工具行下方显示最后 12 行，每 100 ms 刷新一次。交给模型的结果与上述截断规则不变。`ssh_exec` 把通道输出同时写入采集缓冲与按连接凭据遮蔽的流式过滤器，聊天界面停止时断开通道并返回 `SSH_STOPPED`；沙箱 Python 与 `exec_js` 的输出由隔离进程每 100 ms 合并为一条 `OUTPUT` 消息（每个窗口只保留尾部 16 K 字符，相邻同一路输出合并、片段数不超过 256）回传，宿主每次运行最多处理 4000 条，超出只丢弃实时展示，停止时取消执行并终止隔离进程，返回 `STOPPED`；`termux_exec` 结果一次性回传，界面注明不提供实时输出。
+- 实时输出：读取线程每读到一块输出即经 `SkillExecutionContext.liveOutput` 推送到内存中的 `ToolLiveOutputStore`（按工具调用步骤 id 登记，命令结束即移除，每条命令保留尾部 16 KB，不写数据库），推送前同样把工作区物理路径替换为 `$INFINITY_WORKSPACE`（块尾若是被切开的路径前缀则暂存到下一块，命令结束时补发）；只有执行方实际使用过的通道才在界面显示，其它工具不出现空终端区。启动前已请求停止的命令不再启动。聊天界面在运行中的工具行下方显示最后 12 行，每 100 ms 刷新一次。交给模型的结果与上述截断规则不变。`ssh_exec` 把通道输出同时写入采集缓冲与按连接凭据遮蔽的流式过滤器，聊天界面停止时断开通道并返回 `SSH_STOPPED`；沙箱 Python 与 `exec_js` 的输出由隔离进程每 100 ms 合并为一条 `OUTPUT` 消息（每个窗口只保留尾部 16 K 字符，相邻同一路输出合并、片段数不超过 256）回传，宿主每次运行最多处理 4000 条，超出只丢弃实时展示，停止时取消执行并终止隔离进程，返回 `STOPPED`；`termux_exec` 结果一次性回传，界面注明不提供实时输出。
 - 冻结检测：等待循环的时钟为 `SystemClock.elapsedRealtimeNanos`（含深度休眠）。相邻两次轮询间隔超出步长 2 秒以上即视为本进程被暂停，超出部分计入 `paused_ms` 而不消耗超时；累计达到 3 秒时 `guidance` 说明暂停时长、前台服务状态，并提示在应用耗电管理中设为“完全允许后台行为”。
 - 进程被系统结束时返回 `error_code = EXEC_PROCESS_KILLED`，对账照常执行。
 
@@ -185,7 +185,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 ## 5. Termux 与 SSH 后端（D）
 
 - `termux_exec`、`ssh_exec` 保持现有接口，结果按第 3.1 节对齐。
-- Termux 主目录与 Nexara 工作区互不可见。双向交换文件的方式：读写挂载 Termux 主目录到 `/mnt/<别名>`，文件工具在两边复制；Termux 侧命令看不到 Nexara 工作区。
+- Termux 主目录与 Infinity Workbench 工作区互不可见。双向交换文件的方式：读写挂载 Termux 主目录到 `/mnt/<别名>`，文件工具在两边复制；Termux 侧命令看不到 Infinity Workbench 工作区。
 - 模型选择后端的规则写进工具描述：需要完整 Linux、apt 包、原生 Python 扩展或编译时用 Termux/SSH；其余优先内置后端。
 
 ## 6. 失败文案结构化
@@ -226,8 +226,8 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | Play Feature Delivery 按需模块中的原生库是否进入可执行的 `nativeLibraryDir`，可否把 Python 改为按需下载 | 未测 |
 | Play 政策对解释器加载 pip 包的适用性 | 未评审 |
 | dulwich 经 HTTPS 推送与认证（已实测：HTTPS 浅克隆公开仓库；本地裸仓库的 push、pull；init、add、commit、log、diff、status、branch、remote） | HTTPS push 未测；私有仓库只能把令牌写进远端 URL（会存入工作区的 `.git/config`），未接入凭据存储 |
-| shell 函数在子 `sh` 脚本与 `subprocess` 中不可见 | 已知限制；工具说明给出 `python3 -m nexara_git` 等替代写法（真机实测模型会先尝试 `subprocess.run(['git', ...])`，失败后改用 `dulwich.porcelain`） |
-| dulwich 没有单分支克隆 | 已由 `nexara_git` 包装层补齐：`--depth` 隐含 `--single-branch`，支持 `--single-branch`/`--no-single-branch`/`--no-tags`，单分支克隆收窄远端 fetch refspec，标签自动跟随（Mac 上对 GitHub 实测协议 v2 下浅克隆、`-b <标签>` 与后续 fetch 范围正确） |
+| shell 函数在子 `sh` 脚本与 `subprocess` 中不可见 | 已知限制；工具说明给出 `python3 -m infinity_git` 等替代写法（真机实测模型会先尝试 `subprocess.run(['git', ...])`，失败后改用 `dulwich.porcelain`） |
+| dulwich 没有单分支克隆 | 已由 `infinity_git` 包装层补齐：`--depth` 隐含 `--single-branch`，支持 `--single-branch`/`--no-single-branch`/`--no-tags`，单分支克隆收窄远端 fetch refspec，标签自动跟随（Mac 上对 GitHub 实测协议 v2 下浅克隆、`-b <标签>` 与后续 fetch 范围正确） |
 | `log` 不支持 `--all`、`--format` 等选项；`tag` 不支持无参数列出标签 | 已知限制 |
 | 用户 pip 安装的包排在打包依赖之后（如更新的 urllib3 被打包版本遮蔽） | 已知限制；保证内置 git 行为稳定 |
 | 沙箱模式单个文件只支持不超过 64 KiB 的 UTF-8 文本（与 JavaScript 脚本相同，受 Binder 消息上限约束） | 已知限制；大文件与二进制改用 `python_exec` |
@@ -236,6 +236,6 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒（被系统暂停的时间另计） | 已知限制；侧载渠道可从通知停止，两个渠道都可在聊天界面实时输出区停止该命令 |
 | 命令自行 `setsid`/守护化的进程不在进程组内，结束后可能继续改动工作区 | 未处理；对账只反映结束时刻的磁盘状态 |
 | 对账重算大文件哈希的耗时（数 GB 文件需数秒）与 inode 复用导致的误判移动（要求文件 size 与 mtime 同时未变） | 已知限制 |
-| 命令在对账之后才写入的文件、或进程被杀后到下一次修改之间的磁盘变化 | 由 `.nexara_command_pending` 恢复对账收敛；根身份标记若在进程被杀前已被删除则无法自动恢复 |
+| 命令在对账之后才写入的文件、或进程被杀后到下一次修改之间的磁盘变化 | 由 `.infinity_command_pending` 恢复对账收敛；根身份标记若在进程被杀前已被删除则无法自动恢复 |
 | ColorOS 默认电池策略下前台服务在熄屏后仍被冻结（探针实测） | 不能由应用解决；结果的 `paused_ms` 与指引提示用户设为“完全允许后台行为” |
 | `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |

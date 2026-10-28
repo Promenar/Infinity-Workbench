@@ -11,11 +11,11 @@ SETTINGS="${REPO_ROOT}/native-ui/settings.gradle.kts"
 FIXTURE_ROOT="${REPO_ROOT}/native-ui/blackbox-fixture"
 FIXTURE_BUILD="${FIXTURE_ROOT}/build.gradle.kts"
 FIXTURE_MANIFEST="${FIXTURE_ROOT}/src/main/AndroidManifest.xml"
-FIXTURE_PROVIDER="${FIXTURE_ROOT}/src/main/java/com/promenar/nexara/blackboxfixture/BlackBoxFixtureProvider.java"
-FIXTURE_SENDER="${FIXTURE_ROOT}/src/main/java/com/promenar/nexara/blackboxfixture/BlackBoxFixtureShareActivity.java"
-UI_TAGS="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/ui/testing/UiTags.kt"
-SHARE_SHEET="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/share/ui/ShareImportSheet.kt"
-MAIN_ACTIVITY="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/MainActivity.kt"
+FIXTURE_PROVIDER="${FIXTURE_ROOT}/src/main/java/com/promenar/infinity/blackboxfixture/BlackBoxFixtureProvider.java"
+FIXTURE_SENDER="${FIXTURE_ROOT}/src/main/java/com/promenar/infinity/blackboxfixture/BlackBoxFixtureShareActivity.java"
+UI_TAGS="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/infinity/ui/testing/UiTags.kt"
+SHARE_SHEET="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/infinity/share/ui/ShareImportSheet.kt"
+MAIN_ACTIVITY="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/infinity/MainActivity.kt"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
 
 fail() {
@@ -60,7 +60,7 @@ assert_contains "${FIXTURE_BUILD}" 'id("com.android.application")'
 assert_not_contains "${FIXTURE_BUILD}" 'project(":app")'
 assert_not_contains "${FIXTURE_BUILD}" 'androidTest'
 assert_not_contains "${FIXTURE_BUILD}" 'org.jetbrains.kotlin'
-assert_contains "${FIXTURE_MANIFEST}" 'com.promenar.nexara.blackboxfixture.documents'
+assert_contains "${FIXTURE_MANIFEST}" 'com.promenar.infinity.blackboxfixture.documents'
 assert_contains "${FIXTURE_MANIFEST}" 'android:exported="true"'
 assert_contains "${FIXTURE_MANIFEST}" 'android:grantUriPermissions="true"'
 assert_not_contains "${FIXTURE_MANIFEST}" 'android.intent.action.MAIN'
@@ -143,10 +143,10 @@ sheet_resource_id_line="$(grep -nF '.semantics { testTagsAsResourceId = true }' 
 for smoke_contract in \
     ':app:assembleSideloadMinifiedTest' \
     ':blackbox-fixture:assembleDebug' \
-    'NEXARA_MINIFIED_TARGET_APK' \
-    'NEXARA_MINIFIED_TARGET_PACKAGE' \
-    'NEXARA_MINIFIED_SKIP_BUILD' \
-    'NEXARA_MINIFIED_E2E_ABI' \
+    'INFINITY_MINIFIED_TARGET_APK' \
+    'INFINITY_MINIFIED_TARGET_PACKAGE' \
+    'INFINITY_MINIFIED_SKIP_BUILD' \
+    'INFINITY_MINIFIED_E2E_ABI' \
     'ANDROID_MINIFIED_BLACKBOX_ARTIFACT_DIR' \
     'run-with-timeout.py' \
     'com.google.android.marvin.talkback' \
@@ -215,7 +215,7 @@ assert_not_contains "${BLACKBOX_SCRIPT}" '--eu android.intent.extra.STREAM'
 assert_not_contains "${BLACKBOX_SCRIPT}" '-f 0x10000001'
 assert_count "${BLACKBOX_SCRIPT}" '-a android.intent.action.MAIN' 4
 assert_count "${BLACKBOX_SCRIPT}" '-c android.intent.category.LAUNCHER' 4
-assert_contains "${BLACKBOX_SCRIPT}" 'com.promenar.nexara.native.test'
+assert_contains "${BLACKBOX_SCRIPT}" 'com.promenar.infinity.test'
 assert_not_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:size'
 assert_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:_size:mime_type'
 assert_contains "${BLACKBOX_SCRIPT}" 'mime_type=${mime}'
@@ -332,7 +332,7 @@ host_anr_coordinates_block="$(
 XML
     cat > "${temp_dir}/target-anr.xml" <<'XML'
 <hierarchy>
-  <node text="Nexara isn't responding" resource-id="android:id/alertTitle" package="android"
+  <node text="Infinity Workbench isn't responding" resource-id="android:id/alertTitle" package="android"
         enabled="true" clickable="false" bounds="[0,0][100,20]" />
   <node text="Wait" resource-id="android:id/aerr_wait" package="android"
         enabled="true" clickable="true" bounds="[10,20][50,60]" />
@@ -385,7 +385,7 @@ XML
 
     HOST_SYSTEM_ANR_RECOVERED=false
     if recover_host_system_anr_once "${temp_dir}/target-anr.xml" 9999999999; then
-        fail "目标 Nexara ANR 不得进入宿主恢复路径"
+        fail "目标 Infinity Workbench ANR 不得进入宿主恢复路径"
     fi
 
     MOCK_FRESH_XML="${temp_dir}/wait-missing.xml"
@@ -425,6 +425,6 @@ assert_contains "${RELEASE_WORKFLOW}" 'scripts/ci/android-minified-blackbox-smok
 assert_contains "${RELEASE_WORKFLOW}" 'release-minified-blackbox-api-${{ matrix.api-level }}-${{ github.run_attempt }}'
 assert_contains "${RELEASE_WORKFLOW}" 'artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/'
 assert_contains "${RELEASE_WORKFLOW}" 'needs: [device-e2e, minified-blackbox]'
-assert_not_contains "${RELEASE_WORKFLOW}" 'NEXARA_DEVICE_E2E_BUILD_TYPE: minifiedTest'
+assert_not_contains "${RELEASE_WORKFLOW}" 'INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest'
 
 echo "minified release-equivalent black-box 架构契约通过。"

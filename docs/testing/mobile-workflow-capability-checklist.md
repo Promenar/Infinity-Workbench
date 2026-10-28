@@ -1,10 +1,10 @@
-# Nexara 移动工作流能力测试清单
+# Infinity Workbench 移动工作流能力测试清单
 
 日期：2026-10-24。适用环境：Android 手机、同网络环境下的既有服务，以及开发契约允许的本机模拟器。文档性质：测试设计与执行入口，不是能力通过声明。
 
 ## 1. 目标与范围
 
-验证使用者能否在 Nexara 中完成原由桌面 ADE 承担的项目开发、经营资料处理、内容创作和日常服务协作：接收材料、加载技能与规则、规划、调用工具、检查结果、修订、导出和恢复任务。
+验证使用者能否在 Infinity Workbench 中完成原由桌面 ADE 承担的项目开发、经营资料处理、内容创作和日常服务协作：接收材料、加载技能与规则、规划、调用工具、检查结果、修订、导出和恢复任务。
 
 环境前提由使用者提供：手机与开发笔记本处于同一网络环境，可测试的既有远端服务池相同。将桌面已能调用的服务纳入迁移目标；实际连接、认证、协议和文件传递是否等价，由对应测试取证。同网络不代替应用权限、工具接入及运行时兼容性验证。
 
@@ -12,9 +12,9 @@
 
 | 路线 | 含义 | 典型任务 |
 | --- | --- | --- |
-| 手机直接完成 | Nexara 文件工具、隔离脚本、内置命令或手机 Termux 完成处理 | 文本、结构化数据、轻量代码、技能、HTML/SVG、Git |
-| 手机调用服务完成 | Nexara 组织任务，既有服务承担模型、OCR、文档处理或媒体计算 | 搜索、推理、生图、视频、TTS、文档转换 |
-| 手机调度远端完成 | Nexara 经既有 SSH/MCP 等入口管理有界任务并取回结果 | 远端脚本、验证、渲染与服务诊断 |
+| 手机直接完成 | Infinity Workbench 文件工具、隔离脚本、内置命令或手机 Termux 完成处理 | 文本、结构化数据、轻量代码、技能、HTML/SVG、Git |
+| 手机调用服务完成 | Infinity Workbench 组织任务，既有服务承担模型、OCR、文档处理或媒体计算 | 搜索、推理、生图、视频、TTS、文档转换 |
+| 手机调度远端完成 | Infinity Workbench 经既有 SSH/MCP 等入口管理有界任务并取回结果 | 远端脚本、验证、渲染与服务诊断 |
 
 重负载编译、训练、手机本地 GPU 推理、桌面软件的完整功能移植不属于必达目标。可以验证手机发起远端构建与读取结果，但不要求在手机本地完成重型构建。已允许通过服务完成的任务，不强制改为手机本地计算。
 
@@ -35,7 +35,7 @@
 | --- | --- |
 | [README](../../README.md) | 当前能力与使用入口 |
 | [权限实施计划](../../.agent/plans/2026-10-24-scope-permissions.md) | 两档权限、会话挂载与专项审批合同 |
-| [工具执行策略](../../native-ui/app/src/main/java/com/promenar/nexara/domain/tool/ToolExecutionPolicy.kt)与[专项审批规则](../../native-ui/app/src/main/java/com/promenar/nexara/domain/tool/ToolArgumentApprovalRules.kt) | 运行时审批判定 |
+| [工具执行策略](../../native-ui/app/src/main/java/com/promenar/infinity/domain/tool/ToolExecutionPolicy.kt)与[专项审批规则](../../native-ui/app/src/main/java/com/promenar/infinity/domain/tool/ToolArgumentApprovalRules.kt) | 运行时审批判定 |
 | [技能 ADR](../ADR/ADR-022-agent-skills.md) | 技能发现、两级作用域、信任、备份；权限部分结合当前执行策略读取 |
 | [上下文管理](../context-management.md) | 压缩、工具结果折叠和完整轮次 |
 | [发行验证账本](../release/v0.2.2-beta-validation.md) | 查找绑定具体候选的已有验证证据 |
@@ -60,8 +60,8 @@
 | PASS | 指定输入、配置和路线下，技术行为及交付物验收均满足要求 |
 | FAIL | 已具备执行条件，但行为或结果违反验收标准 |
 | BLOCKED_ENV | 目标服务、材料、授权、预算、账号或设备条件未就绪；登记缺项 |
-| GAP_PRODUCT | 桌面目标成立，但 Nexara 缺少完成任务的产品能力或接入链路 |
-| GAP_ADAPTER | Nexara 底座可承担任务，但技能、脚本或协议适配缺失 |
+| GAP_PRODUCT | 桌面目标成立，但 Infinity Workbench 缺少完成任务的产品能力或接入链路 |
+| GAP_ADAPTER | Infinity Workbench 底座可承担任务，但技能、脚本或协议适配缺失 |
 | NOT_APPLICABLE | 明确合同排除，例如 Play 不提供的侧载能力；必须注明依据 |
 
 产品缺口和适配缺口属于待完成范围，不能改记为“不适用”来提高通过率。没有执行全部目标时，只报告已验证范围，不发布“桌面能力完整迁移”结论。

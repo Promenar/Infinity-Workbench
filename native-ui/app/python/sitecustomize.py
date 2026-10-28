@@ -5,7 +5,7 @@ import importlib.util
 import os
 import sys
 
-_EXT_DIR = os.environ.get("NEXARA_PYEXT_DIR")
+_EXT_DIR = os.environ.get("INFINITY_PYEXT_DIR")
 
 
 class _PackagedExtensionFinder:

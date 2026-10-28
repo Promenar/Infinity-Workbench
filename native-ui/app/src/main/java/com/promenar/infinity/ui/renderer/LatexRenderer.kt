@@ -1,0 +1,125 @@
+package com.promenar.infinity.ui.renderer
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+
+@Composable
+fun LatexBlock(
+    latex: String,
+    modifier: Modifier = Modifier,
+    fontSize: Int = 14
+) {
+    val palette = rememberRichContentPalette()
+    val html = remember(latex, fontSize, palette) {
+        buildLatexHtml(latex, fontSize, palette)
+    }
+    RichContentWebView(
+        html = html,
+        modifier = modifier.semantics {
+            contentDescription = "Mathematical formula: $latex"
+        },
+        fontSize = fontSize,
+        minHeight = 30,
+        maxHeight = 400
+    )
+}
+
+private fun buildLatexHtml(
+    latex: String,
+    fontSize: Int,
+    palette: RichContentPalette,
+): String {
+    val encoded = android.util.Base64.encodeToString(
+        latex.toByteArray(), android.util.Base64.NO_WRAP
+    )
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="katex/katex.min.css">
+        <script src="katex/katex.min.js"></script>
+        <style>
+            body {
+                margin: 0; padding: 12px;
+                background: ${palette.background};
+                color: ${palette.foreground};
+                display: flex; justify-content: center; align-items: center;
+                min-height: 20px;
+                font-size: ${fontSize}px;
+            }
+            .katex { font-size: 1.1em; }
+            .error { color: ${palette.error}; font-size: ${fontSize - 2}px; }
+        </style>
+    </head>
+    <body>
+        <div id="math"></div>
+        <script>
+            try {
+                var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+                var latex = new TextDecoder('utf-8').decode(bytes);
+                katex.render(latex, document.getElementById("math"), {
+                    throwOnError: false,
+                    displayMode: true
+                });
+            } catch(e) {
+                document.getElementById("math").innerHTML =
+                    '<span class="error">' + e.message + '</span>';
+            }
+        </script>
+    </body>
+    </html>
+    """.trimIndent()
+}
+
+internal fun buildInlineLatexHtml(
+    latex: String,
+    fontSize: Int,
+    palette: RichContentPalette,
+): String {
+    val encoded = android.util.Base64.encodeToString(
+        latex.toByteArray(), android.util.Base64.NO_WRAP
+    )
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="katex/katex.min.css">
+        <script src="katex/katex.min.js"></script>
+        <style>
+            body {
+                margin: 0; padding: 2px 4px;
+                background: ${palette.background};
+                color: ${palette.foreground};
+                display: inline-block;
+                font-size: ${fontSize}px;
+            }
+            .katex { font-size: 1em; }
+            .error { color: ${palette.error}; font-size: ${fontSize - 2}px; }
+        </style>
+    </head>
+    <body>
+        <span id="math"></span>
+        <script>
+            try {
+                var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+                var latex = new TextDecoder('utf-8').decode(bytes);
+                katex.render(latex, document.getElementById("math"), {
+                    throwOnError: false,
+                    displayMode: false
+                });
+            } catch(e) {
+                document.getElementById("math").innerHTML =
+                    '<span class="error">' + e.message + '</span>';
+            }
+        </script>
+    </body>
+    </html>
+    """.trimIndent()
+}

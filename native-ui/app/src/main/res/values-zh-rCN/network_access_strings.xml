@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE resources [<!ENTITY brand "Nexara">]>
+<!DOCTYPE resources [<!ENTITY brand "Infinity Workbench">]>
 <resources>
     <string name="network_access_title">网络访问</string>
     <string name="network_access_entry_empty">局域网白名单未设置</string>

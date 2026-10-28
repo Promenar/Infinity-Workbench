@@ -91,7 +91,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         publish = workflow_job("publish")
         smoke = workflow_job("signed-apk-smoke")
         for flavor, suffix in (("sideload", ""), ("play", "-play")):
-            asset = f"nexara-v0.2.2-beta{suffix}.apk"
+            asset = f"infinity-v0.2.2-beta{suffix}.apk"
             self.assertIn(f"outputs/apk/{flavor}/release/app-{flavor}-release.apk", build)
             self.assertIn(f"dist/{asset}", publish)
             self.assertIn(f"dist/{asset}.sha256", publish)
@@ -99,7 +99,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             self.assertIn(f"distribution: {flavor}", smoke)
         self.assertIn('matrix.apk-name', smoke)
         self.assertIn('matrix.distribution', smoke)
-        self.assertIn('NEXARA_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}', smoke)
+        self.assertIn('INFINITY_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}', smoke)
         self.assertIn('--distribution "${distribution}"', build)
         self.assertIn('check-distribution-manifests.py', ANDROID_CI)
         self.assertIn('check-distribution-manifests.py', build)
@@ -114,7 +114,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn(f"      - {tag}\n", RELEASE)
         self.assertIn(f'--expected-version-code {version_code} ', RELEASE)
         self.assertIn(f'--expected-version-name {version_name} ', RELEASE)
-        self.assertIn(f'dist/nexara-{tag}.apk', workflow_job("build-release"))
+        self.assertIn(f'dist/infinity-{tag}.apk', workflow_job("build-release"))
         self.assertIn(f'refs/tags/{tag}', workflow_job("publish"))
         self.assertIn(f'--notes-file docs/release/{tag}.md', workflow_job("publish"))
         for suffix in (".md", "-validation.md"):
@@ -131,7 +131,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         shell = assignments + '\nprintf "%s\\n%s\\n" "$EXPECTED_VERSION_CODE" "$EXPECTED_VERSION_NAME"'
         for environment, expected in (
             ({}, [version_code, version_name]),
-            ({"NEXARA_EXPECTED_VERSION_CODE": "99", "NEXARA_EXPECTED_VERSION_NAME": "test-only"}, ["99", "test-only"]),
+            ({"INFINITY_EXPECTED_VERSION_CODE": "99", "INFINITY_EXPECTED_VERSION_NAME": "test-only"}, ["99", "test-only"]),
         ):
             with self.subTest(environment=environment):
                 result = subprocess.run(["/bin/bash", "-c", shell], env=environment, text=True, capture_output=True)
@@ -150,8 +150,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn('git cat-file -t "refs/tags/${GITHUB_REF_NAME}"', RELEASE)
         self.assertIn('"tag"', RELEASE)
         self.assertIn("verification.verified", RELEASE)
-        self.assertIn("NEXARA_ALLOW_UNSIGNED_ANNOTATED_TAG", RELEASE)
-        self.assertIn("NEXARA_RELEASE_COMMIT_SHA", RELEASE)
+        self.assertIn("INFINITY_ALLOW_UNSIGNED_ANNOTATED_TAG", RELEASE)
+        self.assertIn("INFINITY_RELEASE_COMMIT_SHA", RELEASE)
         self.assertIn("origin/B-native-refactor", RELEASE)
         self.assertIn("origin/codex/v0.2.2-beta", RELEASE)
         self.assertIn('git rev-parse "${reviewed_branch}"', RELEASE)
@@ -177,7 +177,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             'test "${GITHUB_REF_TYPE}" = "branch"',
             'test "${GITHUB_REF_NAME}" = "B-native-refactor"',
             'candidate_head="$(git rev-parse HEAD)"',
-            'controlled_sha="${NEXARA_RELEASE_COMMIT_SHA:-}"',
+            'controlled_sha="${INFINITY_RELEASE_COMMIT_SHA:-}"',
             '[[ ! "${controlled_sha}" =~ ^[0-9a-fA-F]{40}$ ]]',
             'test "${GITHUB_SHA}" = "${candidate_head}"',
             'test "${GITHUB_SHA,,}" = "${controlled_sha,,}"',
@@ -238,7 +238,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("Release 等价 minifiedTest 黑盒回归", RELEASE)
         self.assertIn("scripts/ci/android-minified-blackbox-smoke.sh", RELEASE)
         self.assertIn("artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/", RELEASE)
-        self.assertNotIn("NEXARA_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
+        self.assertNotIn("INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
         self.assertIn("build-release:", RELEASE)
         self.assertIn("needs: [device-e2e, minified-blackbox]", RELEASE)
 
@@ -305,9 +305,9 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         upgrade_job = workflow_job("signed-apk-upgrade-smoke")
         self.assertIn("0dfe33b280af97b94c27203b9e66691ff8e41af237777a93d21d2b27907b9291", upgrade_job)
         self.assertIn("android-release-upgrade-smoke.sh", upgrade_job)
-        self.assertIn("dist/nexara-v0.1.apk", upgrade_job)
-        self.assertIn("dist/nexara-v0.2.2-beta.apk", upgrade_job)
-        self.assertIn("(cd dist && sha256sum -c nexara-v0.2.2-beta.apk.sha256)", upgrade_job)
+        self.assertIn("dist/infinity-v0.1.apk", upgrade_job)
+        self.assertIn("dist/infinity-v0.2.2-beta.apk", upgrade_job)
+        self.assertIn("(cd dist && sha256sum -c infinity-v0.2.2-beta.apk.sha256)", upgrade_job)
         self.assertIn("64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232", UPGRADE_SMOKE)
         self.assertIn("UPGRADE_WORKSPACE_SENTINEL", UPGRADE_SMOKE)
         self.assertNotIn("sentinel-hash", UPGRADE_SMOKE)
@@ -349,7 +349,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         expression = r"s/^package:.*[[:space:]]name='\([^']*\)'.*$/\1/p"
         self.assertIn("[[:space:]]${field}=", UPGRADE_SMOKE)
         sample = (
-            "package: name='com.promenar.nexara.native' versionCode='1' "
+            "package: name='com.promenar.infinity' versionCode='1' "
             "versionName='0.1' compileSdkVersionCodename='16'\n"
         )
         completed = subprocess.run(
@@ -359,14 +359,14 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.assertEqual(completed.stdout.strip(), "com.promenar.nexara.native")
+        self.assertEqual(completed.stdout.strip(), "com.promenar.infinity")
 
     def test_upgrade_smoke_uses_public_v17_database_contract_and_current_v21_target(self) -> None:
-        self.assertIn('remote_db="${data_dir}/databases/nexara.db"', UPGRADE_SMOKE)
+        self.assertIn('remote_db="${data_dir}/databases/infinity.db"', UPGRADE_SMOKE)
         self.assertIn("公开旧版 Room schema 不是实测 v17", UPGRADE_SMOKE)
         self.assertIn("3311ec5f07e8df42c02fd09163c49f6e", UPGRADE_SMOKE)
         self.assertNotIn("name_customized,description_customized", UPGRADE_SMOKE)
-        self.assertIn('upgraded_remote_db="${data_dir}/databases/nexara_v2.db"', UPGRADE_SMOKE)
+        self.assertIn('upgraded_remote_db="${data_dir}/databases/infinity_v2.db"', UPGRADE_SMOKE)
         self.assertIn("覆盖升级后 Room schema 不是 v21", UPGRADE_SMOKE)
         self.assertIn("b59d4265cdf25db536fb91226cd85ab3", UPGRADE_SMOKE)
         self.assertIn("UPGRADE_ATTACHMENT_SENTINEL", UPGRADE_SMOKE)
@@ -375,9 +375,9 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("向量任务工作区哨兵丢失", UPGRADE_SMOKE)
         self.assertIn('workspace_root="${data_dir}/files/workspaces/upgrade-session"', UPGRADE_SMOKE)
         self.assertIn("公开 v17 工作区根未经过真实仓库身份认领", UPGRADE_SMOKE)
-        self.assertIn('${workspace_root}/.nexara_root_identity', UPGRADE_SMOKE)
+        self.assertIn('${workspace_root}/.infinity_root_identity', UPGRADE_SMOKE)
         self.assertIn("wait_for_upgraded_startup", UPGRADE_SMOKE)
-        self.assertIn("NEXARA_UPGRADE_STARTUP_TIMEOUT_SECONDS", UPGRADE_SMOKE)
+        self.assertIn("INFINITY_UPGRADE_STARTUP_TIMEOUT_SECONDS", UPGRADE_SMOKE)
         self.assertIn("PRAGMA user_version", UPGRADE_SMOKE)
         self.assertNotIn('adb_cmd shell sleep 4', UPGRADE_SMOKE)
 
@@ -406,7 +406,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("zipalign", SMOKE)
         self.assertIn("-c -P 16 4 \"${APK_PATH}\"", SMOKE)
 
-    def run_smoke_resumed_activity_match(self, dump_line: str, package: str = "com.promenar.nexara.native") -> bool:
+    def run_smoke_resumed_activity_match(self, dump_line: str, package: str = "com.promenar.infinity") -> bool:
         function_match = re.search(
             r"(?ms)^is_expected_resumed_activity\(\) \{\n.*?^\}",
             SMOKE,
@@ -431,9 +431,9 @@ is_expected_resumed_activity "$2"
     def test_smoke_resumed_activity_parser_accepts_api31_and_modern_formats(self) -> None:
         accepted = (
             "topResumedActivity: ActivityRecord{a1 u0 "
-            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "com.promenar.infinity/com.promenar.infinity.MainActivity}",
             "mResumedActivity = ActivityRecord{a2 u0 "
-            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "com.promenar.infinity/com.promenar.infinity.MainActivity}",
         )
         for dump_line in accepted:
             with self.subTest(dump_line=dump_line):
@@ -442,13 +442,13 @@ is_expected_resumed_activity "$2"
     def test_smoke_resumed_activity_parser_rejects_wrong_package_and_non_resumed_records(self) -> None:
         rejected = (
             "topResumedActivity: ActivityRecord{a1 u0 "
-            "com.promenar.other/com.promenar.nexara.MainActivity}",
+            "com.promenar.other/com.promenar.infinity.MainActivity}",
             "mResumedActivity=ActivityRecord{a2 u0 "
-            "com.promenar.nexara.native2/com.promenar.nexara.MainActivity}",
+            "com.promenar.infinity2/com.promenar.infinity.MainActivity}",
             "mFocusedActivity: ActivityRecord{a3 u0 "
-            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "com.promenar.infinity/com.promenar.infinity.MainActivity}",
             "mLastResumedActivity: ActivityRecord{a4 u0 "
-            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "com.promenar.infinity/com.promenar.infinity.MainActivity}",
         )
         for dump_line in rejected:
             with self.subTest(dump_line=dump_line):
@@ -635,7 +635,7 @@ is_expected_resumed_activity "$2"
         self.assertIn("permissions:\n  contents: read", RELEASE)
         self.assertIn("permissions:\n      contents: write", RELEASE)
         self.assertIn("if: always()", RELEASE)
-        self.assertIn('rm -f "${RUNNER_TEMP}/nexara-release.jks"', RELEASE)
+        self.assertIn('rm -f "${RUNNER_TEMP}/infinity-release.jks"', RELEASE)
 
     def test_every_gradle_job_installs_registered_go_for_tailnet(self) -> None:
         version = re.search(r'val tailnetGoVersion = "([0-9.]+)"', APP_BUILD)

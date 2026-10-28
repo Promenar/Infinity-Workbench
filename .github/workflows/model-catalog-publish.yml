@@ -48,14 +48,14 @@ jobs:
 
       - name: 抓取四个必需源并构建签名目录
         env:
-          NEXARA_MODEL_CATALOG_SIGNING_KEY: ${{ secrets.NEXARA_MODEL_CATALOG_SIGNING_KEY }}
+          INFINITY_MODEL_CATALOG_SIGNING_KEY: ${{ secrets.INFINITY_MODEL_CATALOG_SIGNING_KEY }}
         run: |
           python3 scripts/model-catalog/build-published-catalog.py \
             --output-root public \
-            --key-id nexara-catalog-p256-20260922 \
+            --key-id infinity-catalog-p256-20260922 \
             --catalog-version "${{ steps.timestamp.outputs.unix }}" \
             --generated-at "${{ steps.timestamp.outputs.iso }}" \
-            --signing-key-env NEXARA_MODEL_CATALOG_SIGNING_KEY
+            --signing-key-env INFINITY_MODEL_CATALOG_SIGNING_KEY
 
       - name: 添加 Pages 说明文件
         run: |
@@ -63,8 +63,8 @@ jobs:
           from pathlib import Path
           Path("public/.nojekyll").touch()
           Path("public/index.html").write_text(
-              "<!doctype html><meta charset=\"utf-8\"><title>Nexara Model Catalog</title>"
-              "<p>Nexara signed model catalog: <a href=\"model-catalog/v1/manifest.json\">v1 manifest</a></p>\n",
+              "<!doctype html><meta charset=\"utf-8\"><title>Infinity Workbench Model Catalog</title>"
+              "<p>Infinity Workbench signed model catalog: <a href=\"model-catalog/v1/manifest.json\">v1 manifest</a></p>\n",
               encoding="utf-8",
           )
           PY

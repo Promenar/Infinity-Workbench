@@ -9,7 +9,7 @@
 ## 1. 当前文档结构
 
 ```
-Nexara/
+Infinity Workbench/
 │
 ├── docs/                              ← 公共项目文档（唯一出口）
 │   ├── PRD.md                         # 产品需求文档 v2.0

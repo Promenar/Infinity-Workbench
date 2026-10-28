@@ -19,12 +19,12 @@ class DistributionManifestTest(unittest.TestCase):
         self.play = Path(self.tmp.name) / "play.xml"
         self.sideload = Path(self.tmp.name) / "sideload.xml"
 
-    def write(self, path, permission=False, package="com.promenar.nexara.native.debug", special_use=None, service=None, network_state=None):
+    def write(self, path, permission=False, package="com.promenar.infinity.debug", special_use=None, service=None, network_state=None):
         special_use = permission if special_use is None else special_use
         service = permission if service is None else service
         network_state = permission if network_state is None else network_state
         items = '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'
-        items += '<application><service android:name="com.promenar.nexara.background.schedule.ScheduledTaskJobService" android:permission="android.permission.BIND_JOB_SERVICE" /></application>'
+        items += '<application><service android:name="com.promenar.infinity.background.schedule.ScheduledTaskJobService" android:permission="android.permission.BIND_JOB_SERVICE" /></application>'
         if network_state:
             items += '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />'
         if permission:
@@ -54,7 +54,7 @@ class DistributionManifestTest(unittest.TestCase):
         for path in (self.play, self.sideload):
             self.write(self.play)
             self.write(self.sideload, True)
-            content = path.read_text().replace('</manifest>', '<application><activity android:name="com.promenar.nexara.debug.linuxprobe.LinuxProbeActivity" /></application></manifest>')
+            content = path.read_text().replace('</manifest>', '<application><activity android:name="com.promenar.infinity.debug.linuxprobe.LinuxProbeActivity" /></application></manifest>')
             path.write_text(content)
             with self.assertRaises(ValueError):
                 check.check_manifests(self.play, self.sideload)

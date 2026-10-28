@@ -1,7 +1,7 @@
 # 设置信息架构原型：界面决定
 
 - 状态：已确认（2026-10-28）
-- 原型：[Nexara 设置信息架构原型](https://claude.ai/artifact/WbqNMZtxPaQRkXCXX1YD9v)（私有 Artifact，含全局设置、智能体编辑页、会话设置面板与知识检索界面）
+- 原型：[Infinity Workbench 设置信息架构原型](https://claude.ai/artifact/WbqNMZtxPaQRkXCXX1YD9v)（私有 Artifact，含全局设置、智能体编辑页、会话设置面板与知识检索界面）
 - 依据：`docs/superpowers/specs/2026-10-28-settings-ia-audit.md` 第 4 节目标结构；`docs/superpowers/specs/2026-10-28-agent-knowledge-search-tools.md`
 - 用途：W2-F、W3-F 的界面依据。编号 H 首页、K 知识库设置、G 智能体编辑页、A 调试与高级、S 会话设置面板、C 对话页知识检索、R 可达范围与外部文件夹、T 智能体运行。括号中的 P、L、D、M、T 编号指审计文档的问题编号。
 
@@ -26,7 +26,7 @@
 
 - A1 高级参数为一个可展开行，展开后分七组：分块、检索数量、相似度阈值、混合搜索、查询改写、图谱检索、图谱抽取；不记住展开状态。
 - A2 分块大小、重叠、记忆分块大小任一项与已建索引的值不同时，页顶显示警示条与“全部重新向量化”按钮；改回原值后提示消失。
-- A3 数值编辑统一用底部面板：大号数值、加减按钮、常用值标签、恢复默认，沿用 `NexaraValuePickerSheet` 的形式。
+- A3 数值编辑统一用底部面板：大号数值、加减按钮、常用值标签、恢复默认，沿用 `InfinityValuePickerSheet` 的形式。
 - A4 “全部重新向量化”同时放在索引数据分组，不改分块也能手动重建。
 
 ## 4. 智能体编辑页
@@ -73,8 +73,8 @@
 
 | 缺口 | 现状 | 归属 |
 | --- | --- | --- |
-| 分段控件不可点段（K1） | `NexaraSegmentedControl` 每段都可点 | W2-F |
-| 设置行式折叠区（A1） | `NexaraCollapsibleSection` 是无底色小标题折叠，不在 `NexaraSettingsGroup` 内 | W2-F |
+| 分段控件不可点段（K1） | `InfinitySegmentedControl` 每段都可点 | W2-F |
+| 设置行式折叠区（A1） | `InfinityCollapsibleSection` 是无底色小标题折叠，不在 `InfinitySettingsGroup` 内 | W2-F |
 | 技能只读摘要（S3） | 会话工具页用 `SessionSkillsSections` 渲染完整列表与开关 | W2-F |
 | 默认工作区改为一行（G4） | `AgentDefaultWorkspaceSection` 是独立分区 | W3-F |
 | 访问授权审批卡（C3） | `ApprovalKindBand` 只区分命令后端与内置工具；`ApprovalCallBody` 无原因、知识库、只读说明 | W3-F（数据契约由 W2-B 提供） |

@@ -1,4 +1,4 @@
-# Nexara 工具调用、工作区与发行契约修复规格
+# Infinity Workbench 工具调用、工作区与发行契约修复规格
 
 > 日期：2026-08-24
 > 分支：`B-native-refactor`

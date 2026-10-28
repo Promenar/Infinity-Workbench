@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 仅解析 am instrument 的已落盘输出；调用方仍需单独验证目标进程状态。
-nexara_assert_normal_instrumentation_output() {
+infinity_assert_normal_instrumentation_output() {
     local output_file="$1"
     local command_status="$2"
     if [[ "${command_status}" != "0" ]]; then
@@ -22,7 +22,7 @@ nexara_assert_normal_instrumentation_output() {
     fi
 }
 
-nexara_assert_expected_process_death_output() {
+infinity_assert_expected_process_death_output() {
     local output_file="$1"
     local command_status="$2"
     if [[ "${command_status}" != "0" ]]; then
@@ -37,7 +37,7 @@ nexara_assert_expected_process_death_output() {
         echo "预期进程死亡阶段意外正常返回：${output_file}" >&2
         return 1
     fi
-    if ! grep -Eq '^INSTRUMENTATION_STATUS: class=com\.promenar\.nexara\.data\.backup\.AndroidRestoreRelayEndToEndTest$' "${output_file}" ||
+    if ! grep -Eq '^INSTRUMENTATION_STATUS: class=com\.promenar\.infinity\.data\.backup\.AndroidRestoreRelayEndToEndTest$' "${output_file}" ||
         ! grep -Eq '^INSTRUMENTATION_STATUS: test=relayPhase$' "${output_file}"; then
         echo "预期进程死亡阶段没有进入目标测试：${output_file}" >&2
         return 1

@@ -9,7 +9,7 @@
 
 | 层级 | 存储 | 作用 |
 | --- | --- | --- |
-| 全局 | `nexara_settings`、`rag_settings`、`nexara_search` 等偏好文件，SecretStore，Room 表（提供商模型、MCP、SSH 主机、长期记忆等） | 整个应用；部分值作为智能体与会话的回退或初值 |
+| 全局 | `infinity_settings`、`rag_settings`、`infinity_search` 等偏好文件，SecretStore，Room 表（提供商模型、MCP、SSH 主机、长期记忆等） | 整个应用；部分值作为智能体与会话的回退或初值 |
 | 智能体 | `agents` 表：模型、提示词、采样默认值、默认工作区、执行模式、技能、MCP、`ragConfig`、`retrievalConfig`（含 `memoryPolicy`）、`useInheritedConfig` | 该智能体的全部会话；部分值只作新会话初值 |
 | 会话 | `sessions` 表：`modelId`、`InferenceParams`、`SessionOptions`、`ragOptions`、`executionMode`、`workspaceId`、`runMode`、`customPrompt`；独立表 `external_mounts` | 单个会话 |
 
@@ -170,7 +170,7 @@
 | T5 | “记忆”三义（D7） | 资料页签改“对话记忆”；全局“记忆设置”改“索引与分块” |
 | T6 | 全局与智能体检索参数名不一致，并混用 Top-K、Top-N、BM25、HyDE | 两侧统一为同一组名称：召回候选数、最终结果数、相似度阈值、关键词权重；英文缩写只留在说明里 |
 | T7 | 采样参数中英混搭：“话题新鲜度 (Presence)”“词频惩罚 (Frequency)” | 中文主名，英文参数名放副标题 |
-| T8 | 设置首页页脚硬编码 “Nexara AI • Project Narcis” | 改为字符串资源，品牌名用 `&brand;` |
+| T8 | 设置首页页脚硬编码 “Infinity Workbench AI • Project Narcis” | 改为字符串资源，品牌名用 `&brand;` |
 | T9 | “私密助手”说明只写“不共享对话记忆，也不读写长期记忆”，未说明会影响其他智能体“全部智能体”档的可见范围 | 补充说明 |
 
 ### 3.6 隐性副作用

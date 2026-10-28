@@ -8,8 +8,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATIONS = ROOT / "native-ui/app/src/main/java/com/promenar/nexara/data/local/db/NexaraDatabaseMigrations.kt"
-SCHEMA = ROOT / "native-ui/app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/28.json"
+MIGRATIONS = ROOT / "native-ui/app/src/main/java/com/promenar/infinity/data/local/db/InfinityDatabaseMigrations.kt"
+SCHEMA = ROOT / "native-ui/app/schemas/com.promenar.infinity.data.local.db.InfinityDatabase/28.json"
 CURRENT_SCHEMA = SCHEMA.with_name("29.json")
 
 

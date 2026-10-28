@@ -38,7 +38,7 @@ KNOWN_SOURCE_FIELDS = {
     "status",
 }
 KNOWN_LIMIT_FIELDS = {"context", "input", "output"}
-USER_AGENT = "NexaraModelCatalogUpdater/1.0 (+https://github.com/Promenar/Nexara)"
+USER_AGENT = "InfinityModelCatalogUpdater/1.0 (+https://github.com/Promenar/Infinity-Workbench)"
 ALLOWED_RECORD_FIELDS = {
     "canonicalModelId",
     "displayName",
@@ -961,7 +961,7 @@ def _iter_exact_model_blocks(source: str) -> list[str]:
     return blocks
 
 
-def parse_nexara_overrides(source_path: Path) -> list[tuple[str, str]]:
+def parse_infinity_overrides(source_path: Path) -> list[tuple[str, str]]:
     raw = source_path.read_text(encoding="utf-8")
     overrides: list[tuple[str, str]] = []
 
@@ -1144,7 +1144,7 @@ def run_update(
         if overrides_source is None:
             raise ModelCatalogError("生成差异报告时必须同时提供 --overrides-source")
         existing_records = load_existing_catalog(output_path)
-        overrides = parse_nexara_overrides(overrides_source)
+        overrides = parse_infinity_overrides(overrides_source)
         overrides_covered_by_upstream = count_overrides_covered_by_upstream(
             current_records,
             overrides,

@@ -1,0 +1,100 @@
+package com.promenar.infinity.data.generation
+
+import com.promenar.infinity.data.model.Session
+import com.promenar.infinity.data.remote.protocol.ProtocolTool
+import com.promenar.infinity.domain.repository.IWorkspaceRepository
+import com.promenar.infinity.domain.tool.ToolArgumentsValidation
+import com.promenar.infinity.domain.tool.ToolArgumentsValidator
+import com.promenar.infinity.domain.tool.ToolExecutionTargets
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonPrimitive
+import com.promenar.infinity.domain.model.SessionRunMode
+import com.promenar.infinity.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess
+
+/** UUID 必须在当前会话工作区内解析；解析失败不产生可记住的授权目标。 */
+suspend fun resolveSessionToolTarget(
+    session: Session,
+    tool: ProtocolTool,
+    arguments: String,
+    repository: IWorkspaceRepository?,
+    mounts: com.promenar.infinity.domain.storage.ExternalWorkspaceAccess? = null,
+    sshHostStore: com.promenar.infinity.data.ssh.SshHostStore? = null,
+    sshSessionHost: ((String, String) -> String?)? = null,
+    linuxFiles: LinuxSessionExternalWorkspaceAccess? = null,
+): String? {
+    val args = (ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid)?.arguments ?: return null
+    val paths = mutableMapOf<String, String>()
+    try {
+        val usesLinux = session.runMode == SessionRunMode.LINUX
+        if (usesLinux && tool.mcpServerId == null && tool.sourceId == "builtin" &&
+            tool.function.name in setOf("read_file", "write_file", "patch_file", "diff_file", "delete_file", "create_file", "create_directory", "move_file", "list_files", "search_files")
+        ) return linuxFiles?.executionTarget(session.id, tool, args)
+        val visibleMounts = mounts?.visible(session.id).orEmpty()
+        // 自选目录工作区以空别名挂载承载 `/`：路径授权绑定工作区身份，切换工作区后旧授权不再适用。
+        val workspaceMount = mounts?.workspaceMount(session.id)
+        val namespaceMounts = visibleMounts + listOfNotNull(workspaceMount)
+        if (tool.function.name == "ssh_session_send") {
+            val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+            sshSessionHost?.invoke("agent:${session.id}", id)?.let { paths["ssh_session:$id"] = it }
+        }
+        val rootUuid = session.workspaceRootUuid
+        listOf("uuid", "parentUuid", "newParentUuid").forEach { key ->
+            val uuid = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+            if (!uuid.isNullOrBlank()) {
+                if (uuid.startsWith("external:")) com.promenar.infinity.data.storage.ExternalMountPaths.uuidPath(uuid, namespaceMounts)?.let { paths[uuid] = it }
+                else if (rootUuid != null && com.promenar.infinity.data.workspace.SessionPrivateWorkspacePaths.privateUuid(uuid) != null) {
+                    repository?.getByUuid(rootUuid, requireNotNull(com.promenar.infinity.data.workspace.SessionPrivateWorkspacePaths.privateUuid(uuid)))
+                        ?.materializedPath?.let { paths[uuid] = com.promenar.infinity.data.workspace.SessionPrivateWorkspacePaths.virtual(it) }
+                }
+                else if (workspaceMount == null && rootUuid != null) repository?.getByUuid(rootUuid, uuid)?.materializedPath?.let { paths[uuid] = it }
+            }
+        }
+        val sshIdentities = if (tool.mcpServerId == null && tool.sourceId != "mcp" && !tool.runtimeToolId.startsWith("mcp:") &&
+            tool.function.name in setOf("ssh_exec", "ssh_session_open", "ssh_session_send", "sftp_list", "sftp_read", "sftp_write")
+        ) {
+            val alias = if (tool.function.name == "ssh_session_send") {
+                val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+                paths["ssh_session:$id"]
+            } else (args["host"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (alias == null) return null
+            val host = sshHostStore?.find(alias) ?: return null
+            mapOf(alias to host.executionIdentity())
+        } else emptyMap()
+        val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities, usesLinux = usesLinux) ?: return null
+        val defaultMediaPath = tool.function.name == "media_fetch" &&
+            com.promenar.infinity.domain.media.MediaFetchPaths.targetPath((args["path"] as? JsonPrimitive)?.takeIf { it.isString }?.content) == null
+        if (mounts == null && !defaultMediaPath) return target
+        val parts = kotlinx.serialization.json.Json.parseToJsonElement(target) as? kotlinx.serialization.json.JsonArray ?: return null
+        val metadata = parts.lastOrNull() as? kotlinx.serialization.json.JsonObject
+        val tuple = if (metadata != null) parts.dropLast(1) else parts.toList()
+        val strings = tuple.map { (it as? JsonPrimitive)?.content ?: return null }
+        if (strings.firstOrNull() !in setOf("path", "move")) return target
+        val defaultMedia = defaultMediaPath
+        val defaultDestination = if (defaultMedia) com.promenar.infinity.data.workspace.defaultWorkspaceFileApprovalTarget(
+            workspaceMount?.sourceId ?: session.workspaceId, visibleMounts, namespaceMounts.associate { it.alias to it.id }) else null
+        val legacyPaths = paths.filter { (uuid, path) -> !uuid.startsWith("external:") && com.promenar.infinity.data.storage.ExternalMountPaths.isMountedPath(path) }
+        val mountIds = strings.drop(1).mapNotNull { path ->
+            val parsed = com.promenar.infinity.data.storage.ExternalMountPaths.parse(path)
+            if (parsed == null) {
+                val defaultPrivateMedia = defaultMedia &&
+                    com.promenar.infinity.data.workspace.defaultWorkspaceFileDestination(workspaceMount != null, visibleMounts) ==
+                    com.promenar.infinity.data.workspace.WorkspaceDefaultFileDestination.SESSION_PRIVATE
+                workspaceMount?.takeIf { !defaultPrivateMedia && com.promenar.infinity.data.storage.ExternalMountPaths.aliasOf(path, rooted = true) == com.promenar.infinity.data.storage.ExternalMountPaths.WORKSPACE_ALIAS }
+                    ?.let { it.alias to it.id }
+            } else parsed.let { (alias, _) ->
+                val mountId = visibleMounts.singleOrNull { it.alias == alias }?.id
+                if (mountId == null && path !in legacyPaths.values) return null
+                mountId?.let { alias to it }
+            }
+        }.toMap().toSortedMap()
+        if (mountIds.isEmpty() && legacyPaths.isEmpty() && defaultDestination == null) return target
+        // 授权绑定挂载身份；移除后复用同名别名也不会继承旧授权。
+        val frozenDefault = defaultDestination?.let { mapOf("defaultFileDestination" to it) }.orEmpty()
+        return kotlinx.serialization.json.JsonArray(tuple + kotlinx.serialization.json.JsonObject(metadata.orEmpty() + frozenDefault + mapOf(
+            "mountIds" to kotlinx.serialization.json.JsonObject(mountIds.mapValues { JsonPrimitive(it.value) }),
+            "legacyWorkspaceUuids" to kotlinx.serialization.json.JsonArray(legacyPaths.keys.sorted().map(::JsonPrimitive)),
+        ))).toString()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) { return null }
+}

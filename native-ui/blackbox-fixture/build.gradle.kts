@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.promenar.nexara.blackboxfixture"
+    namespace = "com.promenar.infinity.blackboxfixture"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.promenar.nexara.blackboxfixture"
+        applicationId = "com.promenar.infinity.blackboxfixture"
         minSdk = 31
         targetSdk = 36
         versionCode = 1

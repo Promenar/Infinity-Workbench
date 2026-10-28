@@ -12,8 +12,8 @@
 #include <unistd.h>
 
 namespace {
-constexpr const char* kIdentityAttribute = "user.nexara_creation_identity";
-constexpr const char* kRootIdentityAttribute = "user.nexara_root_identity";
+constexpr const char* kIdentityAttribute = "user.infinity_creation_identity";
+constexpr const char* kRootIdentityAttribute = "user.infinity_root_identity";
 constexpr size_t kTokenBytes = 36;
 
 void fail(JNIEnv* env, const char* action, int error) {
@@ -84,10 +84,29 @@ jstring readIdentity(JNIEnv* env, jint borrowedFd, const char* attribute, bool r
     if (root && fsync(file.get()) != 0) { fail(env, "同步根身份属性", errno); return nullptr; }
     return env->NewStringUTF(bytes);
 }
+
+jstring readCompatibleIdentity(JNIEnv* env, jint fd, const char* current, const char* legacy, bool root) {
+    jstring value = readIdentity(env, fd, current, root);
+    if (env->ExceptionCheck()) return nullptr;
+    jstring old = readIdentity(env, fd, legacy, root);
+    if (env->ExceptionCheck()) return nullptr;
+    if (value != nullptr && old != nullptr) {
+        const char* left = env->GetStringUTFChars(value, nullptr);
+        if (left == nullptr) return nullptr;
+        const char* right = env->GetStringUTFChars(old, nullptr);
+        if (right == nullptr) { env->ReleaseStringUTFChars(value, left); return nullptr; }
+        const bool same = std::strcmp(left, right) == 0;
+        env->ReleaseStringUTFChars(value, left);
+        env->ReleaseStringUTFChars(old, right);
+        if (!same) { fail(env, "校验新旧身份属性一致性", EINVAL); return nullptr; }
+    }
+    return value != nullptr ? value : old;
+}
+
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileMoves_nativeMoveNoReplace(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeMoveNoReplace(
         JNIEnv* env, jobject, jint sourceFd, jbyteArray sourceName, jint targetFd, jbyteArray targetName) {
     OwnedFile source(sourceFd), target(targetFd);
     if (!source.directory() || !target.directory()) { fail(env, "打开移动目录FD", errno ? errno : EINVAL); return; }
@@ -112,43 +131,43 @@ Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileMoves_nativeMoveNoR
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreate(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeCreate(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
     createIdentity(env, borrowedFd, token, kIdentityAttribute, false, XATTR_CREATE);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeRead(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeRead(
         JNIEnv* env, jobject, jint borrowedFd) {
-    return readIdentity(env, borrowedFd, kIdentityAttribute, false);
+    return readCompatibleIdentity(env, borrowedFd, kIdentityAttribute, "user.nexara_creation_identity", false);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreateRoot(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeCreateRoot(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
     createIdentity(env, borrowedFd, token, kRootIdentityAttribute, true, XATTR_CREATE);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeReadRoot(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeReadRoot(
         JNIEnv* env, jobject, jint borrowedFd) {
-    return readIdentity(env, borrowedFd, kRootIdentityAttribute, true);
+    return readCompatibleIdentity(env, borrowedFd, kRootIdentityAttribute, "user.nexara_root_identity", true);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeRestoreRoot(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeRestoreRoot(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
     createIdentity(env, borrowedFd, token, kRootIdentityAttribute, true, 0);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeCreatePersistent(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeCreatePersistent(
         JNIEnv* env, jobject, jint borrowedFd, jstring token) {
-    createIdentity(env, borrowedFd, token, "user.nexara_persistent_identity", false, XATTR_CREATE);
+    createIdentity(env, borrowedFd, token, "user.infinity_persistent_identity", false, XATTR_CREATE);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_promenar_nexara_data_repository_AndroidWorkspaceFileIdentity_nativeReadPersistent(
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileIdentity_nativeReadPersistent(
         JNIEnv* env, jobject, jint borrowedFd) {
-    return readIdentity(env, borrowedFd, "user.nexara_persistent_identity", false);
+    return readCompatibleIdentity(env, borrowedFd, "user.infinity_persistent_identity", "user.nexara_persistent_identity", false);
 }

@@ -1,0 +1,168 @@
+package com.promenar.infinity.domain.usecase
+
+import android.content.SharedPreferences
+import com.promenar.infinity.data.agent.AgentRagConfig
+import com.promenar.infinity.data.agent.AgentRetrievalConfig
+import com.promenar.infinity.data.model.InferenceParams
+import com.promenar.infinity.domain.model.Agent
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+
+class AgentConfigResolverTest {
+
+    private fun createPrefs(
+        defaultModel: String? = null,
+        defaultTemperature: Float? = null,
+        defaultTopP: Float? = null,
+        defaultMaxTokens: Int? = null
+    ): SharedPreferences {
+        val prefs = mockk<SharedPreferences>()
+        every { prefs.getString("default_model", any()) } returns (defaultModel ?: "")
+        every { prefs.getFloat("default_temperature", any()) } returns (defaultTemperature ?: 0.7f)
+        every { prefs.getFloat("default_top_p", any()) } returns (defaultTopP ?: 0.9f)
+        every { prefs.getInt("default_max_tokens", any()) } returns (defaultMaxTokens ?: 4096)
+        return prefs
+    }
+
+    @Test
+    fun `resolve returns agent fields when agent is fully populated`() {
+        val prefs = createPrefs()
+        val resolver = AgentConfigResolver(prefs)
+        val ragConfig = AgentRagConfig()
+        val retrievalConfig = AgentRetrievalConfig()
+        val agent = Agent(
+            id = "agent_1",
+            name = "Test",
+            systemPrompt = "You are helpful",
+            modelId = "gpt-4",
+            temperature = 0.5,
+            topP = 0.8,
+            maxTokens = 2048,
+            ragConfig = ragConfig,
+            retrievalConfig = retrievalConfig,
+            useInheritedConfig = false,
+        )
+
+        val config = resolver.resolve(agent)
+
+        assertEquals("You are helpful", config.systemPrompt)
+        assertEquals("gpt-4", config.modelId)
+        assertEquals(0.5, config.inferenceDefaults.temperature)
+        assertEquals(0.8, config.inferenceDefaults.topP)
+        assertEquals(2048, config.inferenceDefaults.maxTokens)
+        assertNull(config.ragConfig)
+        assertNull(config.retrievalConfig)
+    }
+
+    @Test
+    fun `resolve falls back to global model but never to stored sampling defaults when agent is null`() {
+        val prefs = createPrefs(defaultModel = "global-model", defaultTemperature = 0.3f, defaultTopP = 0.5f, defaultMaxTokens = 8192)
+        val resolver = AgentConfigResolver(prefs)
+
+        val config = resolver.resolve(null)
+
+        assertEquals("", config.systemPrompt)
+        assertEquals("global-model", config.modelId)
+        assertEquals(InferenceParams(), config.inferenceDefaults)
+        assertNull(config.ragConfig)
+        assertNull(config.retrievalConfig)
+    }
+
+    @Test
+    fun `null agent sampling fields stay null so requests use model defaults`() {
+        val prefs = createPrefs(defaultModel = "global-model")
+        val resolver = AgentConfigResolver(prefs)
+        val agent = Agent(
+            id = "agent_1",
+            name = "Test",
+            temperature = null,
+            topP = null,
+            maxTokens = null
+        )
+
+        val config = resolver.resolve(agent)
+
+        assertEquals("", config.modelId)
+        assertNull(config.inferenceDefaults.temperature)
+        assertNull(config.inferenceDefaults.topP)
+        assertNull(config.inferenceDefaults.maxTokens)
+    }
+
+    @Test
+    fun `resolve uses model defaults when both agent and prefs have no values`() {
+        val prefs = createPrefs()
+        val resolver = AgentConfigResolver(prefs)
+
+        val config = resolver.resolve(null)
+
+        assertEquals("", config.modelId)
+        assertEquals(InferenceParams(), config.inferenceDefaults)
+    }
+
+    @Test
+    fun `resolveName returns agent name when agent exists`() {
+        val resolver = AgentConfigResolver(createPrefs())
+        val agent = Agent(id = "agent_1", name = "My Agent")
+        assertEquals("My Agent", resolver.resolveName(agent))
+    }
+
+    @Test
+    fun `resolveName returns empty string when agent is null`() {
+        val resolver = AgentConfigResolver(createPrefs())
+        assertEquals("", resolver.resolveName(null))
+    }
+
+    @Test
+    fun `resolve preserves rag and retrieval config as null when agent has none`() {
+        val prefs = createPrefs()
+        val resolver = AgentConfigResolver(prefs)
+        val agent = Agent(id = "agent_1", name = "Test")
+
+        val config = resolver.resolve(agent)
+
+        assertNull(config.ragConfig)
+        assertNull(config.retrievalConfig)
+    }
+
+    @Test
+    fun `resolve uses agent system prompt even when global exists`() {
+        val prefs = createPrefs()
+        val resolver = AgentConfigResolver(prefs)
+        val agent = Agent(id = "agent_1", name = "Test", systemPrompt = "Agent prompt")
+
+        val config = resolver.resolve(agent)
+
+        assertEquals("Agent prompt", config.systemPrompt)
+    }
+
+    @Test
+    fun `resolve uses agent model when agent has one`() {
+        val prefs = createPrefs(defaultModel = "global-model")
+        val resolver = AgentConfigResolver(prefs)
+        val agent = Agent(id = "agent_1", name = "Test", modelId = "agent-model")
+
+        val config = resolver.resolve(agent)
+
+        assertEquals("agent-model", config.modelId)
+    }
+
+    @Test
+    fun `继承全局检索参数时只取助手的记忆权限`() {
+        val policy = com.promenar.infinity.data.agent.AgentMemoryPolicy(shareWithOtherAgents = false)
+        val agent = Agent(
+            id = "agent_1",
+            name = "Test",
+            retrievalConfig = AgentRetrievalConfig(memoryLimit = 1, memoryPolicy = policy),
+            useInheritedConfig = true,
+        )
+
+        val config = AgentConfigResolver(createPrefs()).resolve(agent)
+
+        assertEquals(null, config.retrievalConfig)
+        assertEquals(policy, config.memoryPolicy)
+    }
+}

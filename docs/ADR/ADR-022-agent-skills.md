@@ -19,7 +19,7 @@
    - 用户级启用集合沿用偏好键 `agent_skills_enabled`；新出现的用户级技能默认停用，界面导入的技能直接启用。已启用技能在确认后内容发生变化时标为“已修改”，用户确认后清除。
    - 项目级技能按内容哈希信任：首次出现或内容变化时为“待信任”，信任后启用，可单独停用。
    - 删除移入 `skill_state/trash`，30 天后清理。
-4. **文件工具与执行环境。** `/skills` 是与 `/mnt` 同级的保留虚拟根，在根模式与非根模式下都指向用户级技能目录；`skills` 是保留别名，用户挂载不能使用。根模式工作区根下自身的 `skills` 条目在文件工具中被遮蔽，系统提示会说明可在 shell 中以 `./skills` 访问。`shell_exec`、`python_exec` 与内置 git 通过环境变量 `NEXARA_SKILLS` 与符号链接 `~/.agents/skills` 访问同一目录，因此 Agent 可以在技能目录中 clone、pull、push。
+4. **文件工具与执行环境。** `/skills` 是与 `/mnt` 同级的保留虚拟根，在根模式与非根模式下都指向用户级技能目录；`skills` 是保留别名，用户挂载不能使用。根模式工作区根下自身的 `skills` 条目在文件工具中被遮蔽，系统提示会说明可在 shell 中以 `./skills` 访问。`shell_exec`、`python_exec` 与内置 git 通过环境变量 `INFINITY_SKILLS` 与符号链接 `~/.agents/skills` 访问同一目录，因此 Agent 可以在技能目录中 clone、pull、push。
 5. **技能目录写入专项审批。** 对 `/skills` 与 `/.agents/skills` 及其下路径的写入、移动、删除，在任何执行模式下都逐次审批，且不能被“始终允许”记住；只读调用不额外审批。审批侧与执行层使用同一套参数语义：无法解析出目标路径的文件变更在全自动模式下也要求审批，执行层直接以 `INVALID_PATH` 拒绝；`.agents/skills` 按 Unicode 大小写折叠匹配。真实进程中的写入无法按路径拦截，沿用执行工具自身的审批。
 6. **模型侧渐进披露。** 系统提示列出已启用且允许隐式调用的技能，以及本轮用户以 `$名称` 点名的已启用技能；每项含名称、描述（优先 `short_description`）、来源级别与 `SKILL.md` 虚拟路径。预算取上下文窗口折算字符数的 2% 与 8000 字符中的较小值，点名技能优先，其余按名称截断并注明省略数量；只在本轮工具表含 `activate_skill`、`read_skill_file` 或 `read_file` 时输出。
    - `activate_skill` 接受名称或虚拟路径，只加载已启用技能；只按名称且两级同名时报歧义并列出两个路径。返回正文、来源、目录与附带文件清单，并说明附带脚本可经执行工具运行（沿用执行工具的审批）。
@@ -37,6 +37,6 @@
 ## 验证
 
 - JVM：两级扫描与增量重载、`openai.yaml` 子集解析、损坏原因、信任随内容哈希失效、已修改标注、回收与过期清理；`/skills` 路径解析与根模式归属、文件工具与脚本网关读写、技能目录写入审批与不可记忆；执行环境变量与符号链接；清单合并、点名、预算截断与读取工具门槛；`activate_skill`/`read_skill_file` 两级读取与歧义；备份分区往返、v1 兼容与 `.git` 超限降级。
-- 设备：`SkillsDirectoryDeviceTest` 在 API 31/35 ARM64 模拟器上验证 `filesDir` 下技能目录经审批的文件工具读写、目录扫描启停，以及 shell 经 `NEXARA_SKILLS` 与 `~/.agents/skills` 访问同一目录。`SkillRestoreTransactionDeviceTest` 在同样两台模拟器上验证技能分区恢复的暂存、提交与清理（Android 禁止 `Files.getFileStore`，恢复路径不得依赖它）。
-- 真机（Android 16）与真实模型：Agent 经审批在 `/skills` 新建技能后默认停用、启用后按描述隐式加载；`allow_implicit_invocation: false` 的技能只在 `$名称` 点名时使用；shell 中 `git clone` 到 `$NEXARA_SKILLS` 的技能可发现并使用；项目级技能待信任、信任后可用、内容变化后回到待信任，私有工作区会话不可见；本地备份含技能分区与 `.git` 降级元数据，恢复后技能与启用状态一致并弹出重新 clone 提示。
+- 设备：`SkillsDirectoryDeviceTest` 在 API 31/35 ARM64 模拟器上验证 `filesDir` 下技能目录经审批的文件工具读写、目录扫描启停，以及 shell 经 `INFINITY_SKILLS` 与 `~/.agents/skills` 访问同一目录。`SkillRestoreTransactionDeviceTest` 在同样两台模拟器上验证技能分区恢复的暂存、提交与清理（Android 禁止 `Files.getFileStore`，恢复路径不得依赖它）。
+- 真机（Android 16）与真实模型：Agent 经审批在 `/skills` 新建技能后默认停用、启用后按描述隐式加载；`allow_implicit_invocation: false` 的技能只在 `$名称` 点名时使用；shell 中 `git clone` 到 `$INFINITY_SKILLS` 的技能可发现并使用；项目级技能待信任、信任后可用、内容变化后回到待信任，私有工作区会话不可见；本地备份含技能分区与 `.git` 降级元数据，恢复后技能与启用状态一致并弹出重新 clone 提示。
 - 截图：会话“工具”标签与技能视图、设置页技能包、审批白名单页、技能恢复提示，含浅色、深色与 1.3 倍字号。

@@ -28,7 +28,7 @@ class SshDeviceSessionTest(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.session = self.root / "session.json"
         self.password = "test-only-once-password"
-        self.data = {"port": 2222, "echoPort": 2223, "username": "nexara-test",
+        self.data = {"port": 2222, "echoPort": 2223, "username": "infinity-test",
                      "fingerprint": "SHA256:" + "A" * 43, "password": self.password, "transport": "adb-reverse"}
         self.session.write_text(json.dumps(self.data))
         self.session.chmod(0o600)
@@ -124,7 +124,7 @@ from pathlib import Path
 a=sys.argv[1:]
 with open(os.environ['FAKE_AUDIT'],'a') as f: f.write(json.dumps(a)+'\\n')
 password=json.load(open(os.environ['FAKE_SESSION']))['password']
-package='com.promenar.nexara.native.deviceTest'
+package='com.promenar.infinity.deviceTest'
 if a==['shell']:
     parts=shlex.split(sys.stdin.read())
     assert parts[parts.index('sshPassword')+1]==password
@@ -134,10 +134,10 @@ if a==['shell']:
 elif a[:3]==['shell','getprop','ro.build.version.sdk']: print(os.environ['FAKE_API'])
 elif a[:4]==['shell','pm','list','instrumentation']:
     print('instrumentation:fixture/androidx.test.runner.AndroidJUnitRunner (target='+package+')')
-    print('instrumentation:fixture/com.promenar.nexara.MainActivityE2eRunner (target='+package+')')
+    print('instrumentation:fixture/com.promenar.infinity.MainActivityE2eRunner (target='+package+')')
 elif a[:3]==['shell','am','instrument']:
     if 'restoreRelayPhase' in a and a[a.index('restoreRelayPhase')+1] in ['stage','stageNoKey']:
-        print('INSTRUMENTATION_STATUS: class=com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest')
+        print('INSTRUMENTATION_STATUS: class=com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest')
         print('INSTRUMENTATION_STATUS: test=relayPhase')
         print('INSTRUMENTATION_RESULT: shortMsg=Process crashed.\\nINSTRUMENTATION_CODE: 0')
     else: print('OK (1 test)\\nINSTRUMENTATION_CODE: -1')
@@ -147,7 +147,7 @@ elif a[:2]==['shell','find']:
 elif a[:1]==['pull']: Path(a[-1]).touch()
 elif a==['get-state']: print('device')
 elif a[:1]==['logcat'] and '-d' in a:
-    if '-s' in a: print('[NexaraRestoreRelay] relay_pid=200 main_pid=100 payload=none')
+    if '-s' in a: print('[InfinityRestoreRelay] relay_pid=200 main_pid=100 payload=none')
     else: print('safe-log '+password)
 elif a[:2] in [['shell','dumpsys'],['shell','cat']]: print('safe-dump '+password)
 ''')
@@ -155,10 +155,10 @@ elif a[:2] in [['shell','dumpsys'],['shell','cat']]: print('safe-dump '+password
         environment = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"],
                            FAKE_AUDIT=str(audit), FAKE_SESSION=str(self.session), FAKE_API=str(api),
                            FAKE_SKIP="1" if skipped else "0", ANDROID_SERIAL="fixture-serial",
-                           NEXARA_DEVICE_E2E_ABI="arm64-v8a", NEXARA_DEVICE_E2E_SCOPE=scope)
-        environment.pop("NEXARA_SSH_TEST_SESSION", None)
+                           INFINITY_DEVICE_E2E_ABI="arm64-v8a", INFINITY_DEVICE_E2E_SCOPE=scope)
+        environment.pop("INFINITY_SSH_TEST_SESSION", None)
         if ssh:
-            environment["NEXARA_SSH_TEST_SESSION"] = str(self.session)
+            environment["INFINITY_SSH_TEST_SESSION"] = str(self.session)
         result = subprocess.run(["bash", str(ci / "android-device-core-e2e.sh")], cwd=repo, env=environment,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=45)
         calls = [json.loads(line) for line in audit.read_text().splitlines()]
@@ -169,7 +169,7 @@ elif a[:2] in [['shell','dumpsys'],['shell','cat']]: print('safe-dump '+password
         self.assertEqual(result.returncode, 0, result.stdout)
         classes = [call[call.index("class")+1] for call in calls if "class" in call]
         for name in ["ui.renderer.RichContentWebViewDeviceTest", "ui.renderer.RichContentThemeTest", "data.storage.SafExternalFolderDeviceTest", "data.script.ScriptRuntimeDeviceTest"]:
-            self.assertIn("com.promenar.nexara."+name, classes)
+            self.assertIn("com.promenar.infinity."+name, classes)
         self.assertFalse(any(call[:1] == ["reverse"] for call in calls))
         self.assertIn("跳过 SSH 设备用例", result.stdout)
 
@@ -177,8 +177,8 @@ elif a[:2] in [['shell','dumpsys'],['shell','cat']]: print('safe-dump '+password
         result, calls, artifacts = self.run_script_fixture("full", 35, ssh=True)
         self.assertEqual(result.returncode, 0, result.stdout)
         classes = [call[call.index("class")+1] for call in calls if "class" in call]
-        for name in ["data.storage.RealPathExternalFolderDeviceTest", "data.local.db.NexaraDatabaseMigration18To23Test", "data.local.db.LegacyDatabasePromoterInstrumentedTest"]:
-            self.assertIn("com.promenar.nexara."+name, classes)
+        for name in ["data.storage.RealPathExternalFolderDeviceTest", "data.local.db.InfinityDatabaseMigration18To23Test", "data.local.db.LegacyDatabasePromoterInstrumentedTest"]:
+            self.assertIn("com.promenar.infinity."+name, classes)
         self.assertIn(["reverse", "--no-rebind", "tcp:2222", "tcp:2222"], calls)
         self.assertIn(["reverse", "--remove", "tcp:2222"], calls)
         self.assertNotIn(self.password, result.stdout)

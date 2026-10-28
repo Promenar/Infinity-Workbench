@@ -4,7 +4,7 @@
 规则：
 1. 主题目录外不得直接新建 `TextStyle(...)`，除非紧跟 `.forInput()` 或 `.forReading()`；
    界面样式必须来自 typography 角色以继承换行策略。
-2. 界面代码（`ui/` 目录）不得用 " · " 或 " • " 拼接元数据；通知、导出等非排版文本不受此限；多段元数据使用 `NexaraMetaLine`。
+2. 界面代码（`ui/` 目录）不得用 " · " 或 " • " 拼接元数据；通知、导出等非排版文本不受此限；多段元数据使用 `InfinityMetaLine`。
    确属单行省略号、无障碍描述或完整句子时，在同一行注释 `wrap-check: allow <原因>`。
 3. `OutlinedTextField` / `TextField` 必须传入带 `.forInput()` 的 `textStyle`；
    `BasicTextField` 传入的 `textStyle` 必须带 `.forInput()`。
@@ -121,7 +121,7 @@ def check_kotlin(path: Path, relative: str) -> list[str]:
         line = line_text(text, match.start())
         if ALLOW_MARKER in line or line.lstrip().startswith(("//", "*", "/*")):
             continue
-        problems.append(f"{relative}:{line_of(text, match.start())}: 以“·”拼接元数据，改用 NexaraMetaLine")
+        problems.append(f"{relative}:{line_of(text, match.start())}: 以“·”拼接元数据，改用 InfinityMetaLine")
 
     for match in FIELD_CALL.finditer(text):
         prefix = line_text(text, match.start())
@@ -144,7 +144,7 @@ def check_strings(path: Path, relative: str) -> list[str]:
     for match in STRING_ENTRY.finditer(text):
         name, value = match.groups()
         if "·" in value and "%" in value and name not in FORMAT_STRING_ALLOWLIST:
-            problems.append(f"{relative}:{line_of(text, match.start())}: 带占位符的“·”格式串 {name}，拆成分段资源并用 NexaraMetaLine")
+            problems.append(f"{relative}:{line_of(text, match.start())}: 带占位符的“·”格式串 {name}，拆成分段资源并用 InfinityMetaLine")
     return problems
 
 

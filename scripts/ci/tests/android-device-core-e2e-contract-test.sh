@@ -6,11 +6,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEVICE_SCRIPT="${REPO_ROOT}/scripts/ci/android-device-core-e2e.sh"
 APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 MAIN_ACTIVITY_E2E_BUILD="${REPO_ROOT}/native-ui/mainactivity-e2e/build.gradle.kts"
-ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/OnboardingAndroidEndToEndTest.kt"
-WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/WelcomeScreenLayoutTest.kt"
-RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/data/backup/AndroidRestoreRelayEndToEndTest.kt"
-NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNotificationE2eTest.kt"
-NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNewSessionE2eTest.kt"
+ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/onboarding/OnboardingAndroidEndToEndTest.kt"
+WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/onboarding/WelcomeScreenLayoutTest.kt"
+RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/data/backup/AndroidRestoreRelayEndToEndTest.kt"
+NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNotificationE2eTest.kt"
+NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNewSessionE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 
 fail() {
@@ -45,13 +45,13 @@ ANDROID_CI_WORKFLOW="${REPO_ROOT}/.github/workflows/android-ci.yml"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
 
 # 先锁定 white-box 脚本边界，确保旧 minified instrumentation 架构给出直接 RED。
-assert_not_contains "${DEVICE_SCRIPT}" 'NEXARA_DEVICE_E2E_BUILD_TYPE'
+assert_not_contains "${DEVICE_SCRIPT}" 'INFINITY_DEVICE_E2E_BUILD_TYPE'
 assert_not_contains "${DEVICE_SCRIPT}" 'MinifiedTest'
 assert_not_contains "${DEVICE_SCRIPT}" 'minifiedTest'
 
 for workflow in "${ANDROID_CI_WORKFLOW}" "${RELEASE_WORKFLOW}"; do
     assert_count "${workflow}" "- api-level: 31" 1
-    assert_contains "${workflow}" 'NEXARA_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}'
+    assert_contains "${workflow}" 'INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}'
     assert_contains "${workflow}" 'artifacts/android-device-api-${{ matrix.api-level }}-x86_64/'
 done
 assert_count "${ANDROID_CI_WORKFLOW}" "e2e-scope: minimum" 1
@@ -66,7 +66,7 @@ assert_count "${RELEASE_WORKFLOW}" "- api-level: 35" 4
 assert_count "${RELEASE_WORKFLOW}" "- api-level: 36" 4
 assert_contains "${RELEASE_WORKFLOW}" "签名 R8 APK 无密钥冷安装 smoke"
 
-assert_contains "${DEVICE_SCRIPT}" 'NEXARA_DEVICE_E2E_SCOPE:-full'
+assert_contains "${DEVICE_SCRIPT}" 'INFINITY_DEVICE_E2E_SCOPE:-full'
 assert_contains "${DEVICE_SCRIPT}" 'BUILD_TYPE_TASK="DeviceTest"'
 assert_contains "${DEVICE_SCRIPT}" 'DISTRIBUTION_TASK="Sideload"'
 assert_contains "${DEVICE_SCRIPT}" 'outputs/apk/sideload/deviceTest/app-sideload-deviceTest.apk'
@@ -85,7 +85,7 @@ artifact_input_line="$(grep -n '^ARTIFACT_DIR_INPUT=' "${DEVICE_SCRIPT}" | cut -
 native_cd_line="$(grep -n '^[[:space:]]*cd "${NATIVE_ROOT}"' "${DEVICE_SCRIPT}" | head -n 1 | cut -d: -f1)"
 [[ -n "${artifact_input_line}" && -n "${native_cd_line}" && "${artifact_input_line}" -lt "${native_cd_line}" ]] ||
     fail "artifact 目录必须在进入 native-ui 前完成绝对路径规范化"
-assert_not_contains "${DEVICE_SCRIPT}" 'NEXARA_DEVICE_E2E_BUILD_TYPE'
+assert_not_contains "${DEVICE_SCRIPT}" 'INFINITY_DEVICE_E2E_BUILD_TYPE'
 assert_not_contains "${DEVICE_SCRIPT}" 'MinifiedTest'
 assert_not_contains "${DEVICE_SCRIPT}" 'minifiedTest'
 assert_contains "${DEVICE_SCRIPT}" 'minimum|full'
@@ -94,31 +94,31 @@ assert_contains "${DEVICE_SCRIPT}" 'app-sideload-deviceTest.apk'
 assert_contains "${DEVICE_SCRIPT}" 'app-sideload-deviceTest-androidTest.apk'
 assert_contains "${DEVICE_SCRIPT}" 'mainactivity-e2e-deviceTest.apk'
 assert_contains "${DEVICE_SCRIPT}" ':app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.AccessibilitySmokeTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.common.UnifiedPromptEditorE2ETest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.AdaptiveNavigationTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.repository.AndroidSecureWorkspaceFileOpsTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.repository.AndroidSecureWorkspaceCreationRaceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidRecoverySnapshotStoreTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryInterruptionTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseSourceProbeSafetyTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.chat.ChatImageEncoderDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.hub.AgentHubScreenContentTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.exec.PackagedPythonDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.exec.BuiltinExecDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.git.remote.GitRemoteAuthDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.onboarding.WelcomeScreenLayoutTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.TextWrappingDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.AccessibilitySmokeTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.common.UnifiedPromptEditorE2ETest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.AdaptiveNavigationTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.repository.AndroidSecureWorkspaceFileOpsTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.repository.AndroidSecureWorkspaceCreationRaceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidRecoverySnapshotStoreTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseRecoveryInterruptionTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseSourceProbeSafetyTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.chat.LegacyAttachmentDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.chat.ChatImageEncoderDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.rag.RagWorkspaceSourceSelectorDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.hub.AgentHubScreenContentTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.exec.PackagedPythonDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.exec.BuiltinExecDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.git.remote.GitRemoteAuthDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.onboarding.WelcomeScreenLayoutTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.TextWrappingDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUNNER}"'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.share.core.ShareImportAndroidEndToEndTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.rag.RagFilesPanelNavigationTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.rag.DocumentParserDeviceE2eTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.share.core.ShareImportAndroidEndToEndTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.rag.RagFilesPanelNavigationTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test mainactivity-new-session "${MAIN_ACTIVITY_RUNNER}"'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.MainActivityNewSessionE2eTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.MainActivityNewSessionE2eTest'
 assert_contains "${DEVICE_SCRIPT}" 'restore_device_display_state'
 assert_contains "${DEVICE_SCRIPT}" 'if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]'
 assert_contains "${DEVICE_SCRIPT}" 'run_expected_relay_death stageNoKey'
@@ -130,8 +130,8 @@ assert_contains "${DEVICE_SCRIPT}" 'restore-relay-${phase}-after-pids.txt'
 assert_contains "${DEVICE_SCRIPT}" 'restore-relay-${phase}-expected-death.txt'
 assert_contains "${DEVICE_SCRIPT}" 'restore-relay-${phase}-relay-logcat.txt'
 assert_contains "${DEVICE_SCRIPT}" 'adb logcat -b main -c'
-assert_contains "${DEVICE_SCRIPT}" 'adb logcat -b main -d -v threadtime -s NexaraLogger:D'
-assert_contains "${DEVICE_SCRIPT}" '\[NexaraRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none'
+assert_contains "${DEVICE_SCRIPT}" 'adb logcat -b main -d -v threadtime -s InfinityLogger:D'
+assert_contains "${DEVICE_SCRIPT}" '\[InfinityRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none'
 assert_contains "${DEVICE_SCRIPT}" '-e restoreRelayPhase exportNoKey'
 assert_contains "${DEVICE_SCRIPT}" '-e restoreRelayPhase verifyNoKey'
 assert_contains "${DEVICE_SCRIPT}" '-e restoreRelayPhase noReplayNoKey'
@@ -146,7 +146,7 @@ assert_contains "${RESTORE_RELAY_E2E_TEST}" 'validated.manifest.containsSecrets)
 assert_contains "${APP_BUILD}" 'val allowedE2eBuildTypes = setOf("debug", "deviceTest")'
 assert_contains "${APP_BUILD}" '.orElse(if (deviceE2eEnabled) "deviceTest" else "debug")'
 assert_contains "${APP_BUILD}" 'require(!deviceE2eEnabled || selectedDeviceE2eBuildType == "deviceTest")'
-assert_contains "${APP_BUILD}" '启用 nexara.deviceE2e 时，nexara.deviceE2eTestBuildType 必须为 deviceTest'
+assert_contains "${APP_BUILD}" '启用 infinity.deviceE2e 时，infinity.deviceE2eTestBuildType 必须为 deviceTest'
 assert_contains "${APP_BUILD}" 'testBuildType = selectedDeviceE2eBuildType'
 assert_contains "${MAIN_ACTIVITY_E2E_BUILD}" 'create("deviceTest")'
 assert_not_contains "${MAIN_ACTIVITY_E2E_BUILD}" 'create("minifiedTest")'
@@ -232,8 +232,8 @@ host_anr_titles_block="$(sed -n '/HOST_SYSTEM_ANR_TITLES = setOf(/,/^[[:space:]]
 host_anr_title_count="$(grep -Ec '^[[:space:]]+"[^"]+",?$' <<<"${host_anr_titles_block}" || true)"
 [[ "${host_anr_title_count}" == "3" ]] ||
     fail "宿主 ANR 精确允许列表只能包含三个完整标题，实际 ${host_anr_title_count} 个"
-if grep -Fq -- '"Nexara isn'"'"'t responding"' <<<"${host_anr_titles_block}"; then
-    fail "宿主 ANR 允许列表不得包含 Nexara"
+if grep -Fq -- '"Infinity Workbench isn'"'"'t responding"' <<<"${host_anr_titles_block}"; then
+    fail "宿主 ANR 允许列表不得包含 Infinity Workbench"
 fi
 host_anr_match_block="$(sed -n '/private fun isHostSystemAnrTitle/,/^$/p' "${NOTIFICATION_E2E_TEST}")"
 if grep -Fq -- '.contains(' <<<"${host_anr_match_block}"; then

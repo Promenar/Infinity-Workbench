@@ -91,7 +91,7 @@ jobs:
             :app:assemblePlayDebug
           python3 ../scripts/ci/check-distribution-manifests.py
           python3 ../scripts/ci/check-native-page-alignment.py
-          ./gradlew --no-daemon --stacktrace -Pnexara.deviceE2e=true \
+          ./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2e=true \
             :app:assembleSideloadDeviceTest \
             :app:assembleSideloadDeviceTestAndroidTest \
             :mainactivity-e2e:assembleDeviceTest
@@ -208,7 +208,7 @@ jobs:
       - name: 运行核心设备 E2E
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         env:
-          NEXARA_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}
+          INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}
         with:
           api-level: ${{ matrix.api-level }}
           target: default

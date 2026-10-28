@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""验证 Nexara 发行 APK 的渠道制品、完整性、版本、签名与常见秘密泄漏。"""
+"""验证 Infinity Workbench 发行 APK 的渠道制品、完整性、版本、签名与常见秘密泄漏。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("macOS 用户绝对路径", re.compile(rb"/Users/[A-Za-z0-9._-]+/")),
     # /home/session 是 Linux 会话在 Alpine 内的固定会话目录，不是构建机或用户路径。
     ("Linux 用户绝对路径", re.compile(rb"/home/(?!session/)[A-Za-z0-9._-]+/")),
-    ("Windows 本机绝对路径", re.compile(rb"(?i)[A-Z]:[\\/](?:Users|Nexara)[\\/]")),
+    ("Windows 本机绝对路径", re.compile(rb"(?i)[A-Z]:[\\/](?:Users|Infinity Workbench)[\\/]")),
     ("本机 secure_env 路径", re.compile(rb"(?i)(?:secure_env|promenar\.keystore|secure\.properties)")),
     (
         "Authorization Bearer 凭证",
@@ -47,14 +47,14 @@ SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("疑似 Google API 密钥", re.compile(rb"AIza[A-Za-z0-9_-]{35}")),
     ("疑似 Groq API 密钥", re.compile(rb"gsk_[A-Za-z0-9_-]{20,}")),
     ("疑似 xAI API 密钥", re.compile(rb"xai-[A-Za-z0-9_-]{20,}")),
-    ("Prompt 测试 fixture", re.compile(rb"(?i)NEXARA_PROMPT_FIXTURE\s*[:=]")),
-    ("响应测试 fixture", re.compile(rb"(?i)NEXARA_RESPONSE_FIXTURE\s*[:=]")),
+    ("Prompt 测试 fixture", re.compile(rb"(?i)INFINITY_PROMPT_FIXTURE\s*[:=]")),
+    ("响应测试 fixture", re.compile(rb"(?i)INFINITY_RESPONSE_FIXTURE\s*[:=]")),
     ("WebDAV 明文口令 fixture", re.compile(rb"(?i)WEBDAV_PASSWORD_FIXTURE\s*[:=]")),
     (
         "WebDAV 明文口令",
         re.compile(rb'''(?i)webdav[_-]?password["']?\s*[:=]\s*["'][^"'\s]{8,}["']'''),
     ),
-    ("WebDAV 测试 URL fixture", re.compile(rb"(?i)NEXARA_WEBDAV_TEST_URL\s*[:=]")),
+    ("WebDAV 测试 URL fixture", re.compile(rb"(?i)INFINITY_WEBDAV_TEST_URL\s*[:=]")),
     (
         "URL 内嵌明文口令",
         re.compile(rb"(?i)https?://[^\s/:@]{1,64}:[^\s/@]{4,128}@"),
@@ -108,14 +108,14 @@ TAILNET_ELF_MACHINES = {"arm64-v8a": 183, "x86_64": 62}
 # 打包 Python 须带构建期预编译的哈希 pyc：缺少时每次启动解释器都重新编译，内置 git 与 Git 面板在真机上慢约十倍。
 PYTHON_BYTECODE_MODULES: dict[str, tuple[str, ...]] = {
     "libpystdlib.so": ("os.pyc", "encodings/__init__.pyc", "sitecustomize.pyc"),
-    "libpysite.so": ("nexara_git.pyc", "dulwich/__init__.pyc", "dulwich/repo.pyc"),
+    "libpysite.so": ("infinity_git.pyc", "dulwich/__init__.pyc", "dulwich/repo.pyc"),
 }
 PYTHON_BYTECODE_ENTRY_PATTERN = re.compile(r"lib/([^/]+)/(libpystdlib\.so|libpysite\.so)\Z")
 # PEP 552 标志位：bit0 为哈希 pyc、bit1 为需要核对源码；打包 zip 只读安装，使用不核对源码的哈希 pyc。
 UNCHECKED_HASH_PYC_FLAGS = 0b01
 
 LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
-    r"(?:libnexara_llama|libllama.*|libggml.*)\.so\Z",
+    r"(?:libinfinity_llama|libllama.*|libggml.*)\.so\Z",
     re.IGNORECASE,
 )
 

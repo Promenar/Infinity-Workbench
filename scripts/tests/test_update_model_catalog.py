@@ -1185,12 +1185,12 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
 
     def test_parse_overrides_ignores_false_positives_in_comments_and_strings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = Path(tmp) / "NexaraModelOverrides.kt"
+            source_path = Path(tmp) / "InfinityModelOverrides.kt"
             self._build_overrides_source(
                 source_path,
                 textwrap.dedent(
                     r'''
-                    package com.promenar.nexara.data.model.catalog
+                    package com.promenar.infinity.data.model.catalog
 
                     // exactModel(exactAlias = "ignored", canonicalId = "ignored")
                     /*
@@ -1225,17 +1225,17 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
                     ''',
                 ),
             )
-            overrides = MODULE.parse_nexara_overrides(source_path)
+            overrides = MODULE.parse_infinity_overrides(source_path)
             self.assertEqual(overrides, [("vendor/official", "models/vend/official")])
 
     def test_parse_overrides_raises_when_exact_alias_not_literal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = Path(tmp) / "NexaraModelOverrides.kt"
+            source_path = Path(tmp) / "InfinityModelOverrides.kt"
             self._build_overrides_source(
                 source_path,
                 textwrap.dedent(
                     """
-                    package com.promenar.nexara.data.model.catalog
+                    package com.promenar.infinity.data.model.catalog
 
                     fun buildAlias(): String = "vendor/alias"
 
@@ -1252,16 +1252,16 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(MODULE.ModelCatalogError, "exactAlias 不是字符串字面量"):
-                MODULE.parse_nexara_overrides(source_path)
+                MODULE.parse_infinity_overrides(source_path)
 
     def test_parse_overrides_parses_escaped_quotes_in_raw_and_quoted_string(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = Path(tmp) / "NexaraModelOverrides.kt"
+            source_path = Path(tmp) / "InfinityModelOverrides.kt"
             self._build_overrides_source(
                 source_path,
                 textwrap.dedent(
                     r'''
-                    package com.promenar.nexara.data.model.catalog
+                    package com.promenar.infinity.data.model.catalog
 
                     exactModel(
                         exactAlias = "vendor/model\"escaped\"",
@@ -1283,7 +1283,7 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
                     ''',
                 ),
             )
-            overrides = MODULE.parse_nexara_overrides(source_path)
+            overrides = MODULE.parse_infinity_overrides(source_path)
             self.assertEqual(
                 overrides,
                 [
@@ -1294,7 +1294,7 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
 
     def test_parse_overrides_ignores_commented_named_argument_inside_real_call(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = Path(tmp) / "NexaraModelOverrides.kt"
+            source_path = Path(tmp) / "InfinityModelOverrides.kt"
             self._build_overrides_source(
                 source_path,
                 textwrap.dedent(
@@ -1309,13 +1309,13 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
             )
 
             self.assertEqual(
-                MODULE.parse_nexara_overrides(source_path),
+                MODULE.parse_infinity_overrides(source_path),
                 [("real/alias", "real/canonical")],
             )
 
     def test_parse_overrides_skips_function_declaration_with_literal_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = Path(tmp) / "NexaraModelOverrides.kt"
+            source_path = Path(tmp) / "InfinityModelOverrides.kt"
             self._build_overrides_source(
                 source_path,
                 textwrap.dedent(
@@ -1334,7 +1334,7 @@ class KotlinOverrideParsingTestCase(unittest.TestCase):
             )
 
             self.assertEqual(
-                MODULE.parse_nexara_overrides(source_path),
+                MODULE.parse_infinity_overrides(source_path),
                 [("real/alias", "real/canonical")],
             )
 
@@ -1407,7 +1407,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                         manifest_path,
                         diff_report=diff_path,
                         overrides_source=Path(__file__).resolve().parents[2]
-                        / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt",
+                        / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt",
                     )
                     first_snapshot = output_path.read_bytes()
                     first_manifest = manifest_path.read_bytes()
@@ -1418,7 +1418,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                         manifest_path,
                         diff_report=diff_path,
                         overrides_source=Path(__file__).resolve().parents[2]
-                        / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt",
+                        / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt",
                     )
 
             self.assertEqual(output_path.read_bytes(), first_snapshot)
@@ -1587,11 +1587,11 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
 
     def test_parse_overrides_missing_exact_alias_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            overrides_source = Path(tmp) / "NexaraModelOverrides.kt"
+            overrides_source = Path(tmp) / "InfinityModelOverrides.kt"
             overrides_source.write_text(
                 textwrap.dedent(
                     """
-                    package com.promenar.nexara.data.model.catalog
+                    package com.promenar.infinity.data.model.catalog
 
                     private fun exactModel(
                         canonicalId: String = "x/y",
@@ -1686,7 +1686,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                         diff_report=diff_path,
                         overrides_source=Path(
                             __file__,
-                        ).resolve().parents[2] / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt",
+                        ).resolve().parents[2] / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt",
                     )
             rendered = diff_path.read_text(encoding="utf-8")
             for key in DIFF_KEYS:
@@ -1908,7 +1908,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                         overrides_source=Path(
                             __file__,
                         ).resolve().parents[2]
-                        / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt",
+                        / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt",
                     )
                 except MODULE.ModelCatalogError as exc:
                     self.fail(
@@ -1971,7 +1971,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                         diff_report=diff_report,
                         overrides_source=Path(
                             __file__,
-                        ).resolve().parents[2] / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt",
+                        ).resolve().parents[2] / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt",
                     )
             self.assertFalse(output_path.exists())
             self.assertFalse(manifest_path.exists())
@@ -2014,7 +2014,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
                     diff_report=None,
                     overrides_source=str(
                         Path(__file__).resolve().parents[2]
-                        / "native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt"
+                        / "native-ui/app/src/main/java/com/promenar/infinity/data/model/catalog/InfinityModelOverrides.kt"
                     ),
                 ),
             ):
@@ -2101,7 +2101,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
         )
         self.assertIn("python3 scripts/model-catalog/update-model-catalog.py", workflow_text)
         self.assertIn("python3 -m unittest scripts.tests.test_update_model_catalog", workflow_text)
-        self.assertIn("./gradlew :app:testSideloadDebugUnitTest --tests 'com.promenar.nexara.data.model.catalog.*'", workflow_text)
+        self.assertIn("./gradlew :app:testSideloadDebugUnitTest --tests 'com.promenar.infinity.data.model.catalog.*'", workflow_text)
         update_step = re.search(
             r"- name: 更新模型快照并写入差异报告（runner temp）\n(?P<body>(?:\s{8}.*\n)+?)\s+- name: Python 离线校验",
             workflow_text,

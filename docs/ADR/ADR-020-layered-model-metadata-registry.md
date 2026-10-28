@@ -6,7 +6,7 @@
 
 ## 决策
 
-1. 领域入口为 `ModelMetadataResolver.resolve(...)`，逐字段采用用户编辑、实际供应商字段、Nexara 精确修正、匹配作用域的公开目录、保守回退。家族规则只补充展示信息。
+1. 领域入口为 `ModelMetadataResolver.resolve(...)`，逐字段采用用户编辑、实际供应商字段、Infinity Workbench 精确修正、匹配作用域的公开目录、保守回退。家族规则只补充展示信息。
 2. models.dev 提供规范模型；models.dev provider、LiteLLM、OpenRouter 提供具有明确作用域的供应商条目。不同供应商的额度和能力不能合并成基础模型事实。
 3. 原始请求 ID、供应商实例 ID、规范模型 ID 和目录供应商作用域分别保存。只接受精确 ID/别名匹配；未知前缀、版本变体和冲突保持未匹配。仅在列表 owned_by 对应时，newapi/openai-chatgpt 路由前缀可用于生成查找候选；wire ID 保持不变。
 4. 工作负载、推理能力和 Chat endpoint 兼容性相互独立。能力使用 SUPPORTED / UNSUPPORTED / UNKNOWN，缺失不等于不支持，也不默认 chat。
@@ -32,4 +32,4 @@
 - Python 更新脚本 64/64、离线 snapshot/manifest check、Kotlin catalog 26/26 通过。
 - 当前工作树定点模型 JVM 89/89；全量 JVM 1945 项，0 failure/error、14 skip；Lint 0 Error/Fatal；Screenshot 61/61；AndroidTest Kotlin 编译通过。
 - API 35 与 API 36 聚焦设备矩阵各 31 项，均 0 failure/error、1 个设计内 force-stop checkpoint skip。
-- 真实 Provider 当前候选复验未执行，原因是六项 `NEXARA_TEST_LLM_*` 环境变量均未提供；默认测试跳过不能作为网络证据。
+- 真实 Provider 当前候选复验未执行，原因是六项 `INFINITY_TEST_LLM_*` 环境变量均未提供；默认测试跳过不能作为网络证据。

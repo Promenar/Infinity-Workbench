@@ -14,11 +14,11 @@
 
 ## 发布契约（v1 传输，v3 数据）
 
-发布路径为 `https://promenar.github.io/Nexara/model-catalog/v1/`。`manifest.json` 是签名信封：`keyId`、`payload`（原始 UTF-8 JSON 字节的 Base64）、`signature`（SHA256withECDSA / P-256 / DER 的 Base64）。客户端固定公钥，不接受远端公钥。
+发布路径为 `https://promenar.github.io/Infinity-Workbench/model-catalog/v1/`。`manifest.json` 是签名信封：`keyId`、`payload`（原始 UTF-8 JSON 字节的 Base64）、`signature`（SHA256withECDSA / P-256 / DER 的 Base64）。客户端固定公钥，不接受远端公钥。
 
 签名 payload 字段：`schemaVersion:1`、`catalogVersion`（UTC Unix 秒，正整数）、`generatedAt`（UTC ISO8601）、`catalogFile`（`catalog-<64位小写sha256>.json`）、`catalogBytes`、`catalogSha256`、`recordCount`。只允许同一固定 HTTPS 目录内的内容文件；不跟随重定向。manifest 最大 64 KiB，目录最大 16 MiB，记录最大 30000。
 
-目录顶层：`schemaVersion:3`、`generatedAt`、`sources`、`records`。每个 source 包含 `id`、`url`、`fetchedAt`、`sha256`、`license`。每个 record 必含 `canonicalModelId`（稳定记录键）、`displayName`、`source`（MODELS_DEV/LITELLM/OPENROUTER/NEXARA_OVERRIDE）；可选 `providerScope`（非空时是供应商条目，不自动作为基础模型身份）、`exactAliases`、`family`、`workload`（ModelWorkload 枚举名）、`reasoning`、`tool_call`、`structured_output`、`contextTokens`、`inputTokens`、`outputTokens`、`knowledge`、`modalities`、`release_date`、`last_updated`、`status`。未知字段可忽略；已知字段类型错误、同一 (source, providerScope, canonicalModelId) 的重复记录身份或越界额度拒绝整个候选。
+目录顶层：`schemaVersion:3`、`generatedAt`、`sources`、`records`。每个 source 包含 `id`、`url`、`fetchedAt`、`sha256`、`license`。每个 record 必含 `canonicalModelId`（稳定记录键）、`displayName`、`source`（MODELS_DEV/LITELLM/OPENROUTER/INFINITY_OVERRIDE）；可选 `providerScope`（非空时是供应商条目，不自动作为基础模型身份）、`exactAliases`、`family`、`workload`（ModelWorkload 枚举名）、`reasoning`、`tool_call`、`structured_output`、`contextTokens`、`inputTokens`、`outputTokens`、`knowledge`、`modalities`、`release_date`、`last_updated`、`status`。未知字段可忽略；已知字段类型错误、同一 (source, providerScope, canonicalModelId) 的重复记录身份或越界额度拒绝整个候选。
 
 canonical 源保留规范模型；provider 源保留供应商作用域；LiteLLM/OpenRouter 默认也是作用域条目。明确人工别名作为受版本控制的映射，不跨供应商自动取最大额度。多源抓取任一必需源失败时不发布残缺目录，继续提供最后有效发布。
 

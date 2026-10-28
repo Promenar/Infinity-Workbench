@@ -1,0 +1,56 @@
+package com.promenar.infinity.ui.theme
+
+enum class InfinityThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): InfinityThemeMode =
+            values().firstOrNull { it.name.equals(value, ignoreCase = true) } ?: DARK
+    }
+}
+
+enum class InfinityColorSource {
+    INFINITY,
+    DYNAMIC;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): InfinityColorSource =
+            values().firstOrNull { it.name.equals(value, ignoreCase = true) } ?: INFINITY
+    }
+}
+
+/** 触摸锁的解锁方式：长按锁按钮，或把锁滑到轨道尽头。 */
+enum class TouchLockUnlock {
+    HOLD,
+    SLIDE;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): TouchLockUnlock =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: HOLD
+    }
+}
+
+data class InfinityThemePreferences(
+    val mode: InfinityThemeMode = InfinityThemeMode.DARK,
+    val colorSource: InfinityColorSource = InfinityColorSource.INFINITY,
+    val primaryColor: Long? = null,
+    /** 由种子色生成配色的算法；只对预设色与自定义色生效，跟随系统取色时不用。 */
+    val schemeStyle: InfinitySchemeStyle = InfinitySchemeStyle.TONAL_SPOT,
+    val pureBlack: Boolean = false,
+    val textScaleEnabled: Boolean = false,
+    val textScale: Float = 1f,
+    /** 一轮回复完成后把思考与工具过程收为一行摘要，只单独显示最终正文。 */
+    val collapseFinishedTurns: Boolean = true,
+    /** 点按、开关、发送与审批等交互的触感反馈；关闭后状态提醒也不振动。 */
+    val hapticsEnabled: Boolean = true,
+    /** 等待审批、较长生成完成或失败时振动一次。 */
+    val statusHapticsEnabled: Boolean = true,
+    /** 生成中锁定触摸后的解锁方式；生成期间屏幕始终保持常亮。 */
+    val touchLockUnlock: TouchLockUnlock = TouchLockUnlock.HOLD,
+    /** 输入框浮岛、生成状态指示与空会话三处动效的样式，颜色都跟随主题色。 */
+    val motion: InfinityMotionStyles = InfinityMotionStyles(),
+    /** 自定义取色最近用过的颜色（ARGB，最新在前）。 */
+    val recentCustomColors: List<Int> = emptyList(),
+)

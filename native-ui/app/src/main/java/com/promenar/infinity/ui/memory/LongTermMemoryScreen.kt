@@ -1,0 +1,342 @@
+package com.promenar.infinity.ui.memory
+
+import android.app.Application
+import android.text.format.DateUtils
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.promenar.infinity.R
+import com.promenar.infinity.data.memory.LongTermMemory
+import com.promenar.infinity.data.memory.LongTermMemoryKind
+import com.promenar.infinity.ui.common.InfinityCapsuleTabRow
+import com.promenar.infinity.ui.common.InfinityModalSheet
+import com.promenar.infinity.ui.common.InfinityPageSearch
+import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
+import com.promenar.infinity.ui.common.InfinitySettingsSection
+import com.promenar.infinity.ui.common.InfinitySheetHeight
+import com.promenar.infinity.ui.common.InfinityTabItem
+import com.promenar.infinity.ui.common.SettingsToggle
+import com.promenar.infinity.ui.testing.UiTags
+import com.promenar.infinity.ui.theme.InfinitySpacing
+import kotlinx.coroutines.launch
+
+/** 长期记忆的标题与正文上限，与数据层校验一致。 */
+internal const val LONG_TERM_MEMORY_TITLE_MAX = 80
+internal const val LONG_TERM_MEMORY_CONTENT_MAX = 2000
+internal const val LONG_TERM_MEMORY_LIMIT = 200
+
+internal val LongTermMemoryKind.labelRes: Int
+    get() = when (this) {
+        LongTermMemoryKind.USER -> R.string.ltm_kind_user
+        LongTermMemoryKind.FEEDBACK -> R.string.ltm_kind_feedback
+        LongTermMemoryKind.PROJECT -> R.string.ltm_kind_project
+        LongTermMemoryKind.REFERENCE -> R.string.ltm_kind_reference
+    }
+
+private val LongTermMemoryKind.shortLabelRes: Int
+    get() = when (this) {
+        LongTermMemoryKind.USER -> R.string.ltm_kind_user_short
+        LongTermMemoryKind.FEEDBACK -> R.string.ltm_kind_feedback_short
+        LongTermMemoryKind.PROJECT -> R.string.ltm_kind_project_short
+        LongTermMemoryKind.REFERENCE -> R.string.ltm_kind_reference_short
+    }
+
+@Composable
+fun LongTermMemoryScreen(onNavigateBack: () -> Unit) {
+    val context = LocalContext.current
+    val viewModel: LongTermMemoryViewModel = viewModel(
+        factory = LongTermMemoryViewModel.factory(context.applicationContext as Application),
+    )
+    val enabled by viewModel.enabled.collectAsStateWithLifecycle()
+    val items by viewModel.items.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
+    var searchActive by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val deletedMessage = stringResource(R.string.ltm_deleted)
+    val undoLabel = stringResource(R.string.ltm_undo)
+    val saveFailed = stringResource(R.string.ltm_save_failed)
+    LaunchedEffect(notice) {
+        when (val current = notice) {
+            is LongTermMemoryNotice.Deleted -> {
+                viewModel.consumeNotice()
+                val result = snackbar.showSnackbar(deletedMessage, actionLabel = undoLabel, duration = SnackbarDuration.Long)
+                if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete(current.memory)
+            }
+            is LongTermMemoryNotice.SaveFailed -> {
+                viewModel.consumeNotice()
+                snackbar.showSnackbar(current.message.ifBlank { saveFailed })
+            }
+            null -> Unit
+        }
+    }
+
+    InfinitySettingsPageLayout(
+        title = stringResource(R.string.ltm_title),
+        onBack = onNavigateBack,
+        search = InfinityPageSearch(
+            query = query,
+            active = searchActive,
+            onQueryChange = viewModel::setQuery,
+            onActiveChange = { searchActive = it },
+            placeholder = stringResource(R.string.ltm_search_placeholder),
+        ),
+    ) { padding ->
+        Box(Modifier.fillMaxSize()) {
+            LongTermMemoryContent(
+                enabled = enabled,
+                items = items,
+                query = query,
+                onEnabledChange = viewModel::setEnabled,
+                onOpen = { editingId = it.id },
+                contentPadding = padding,
+            )
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+        }
+    }
+
+    val editing = items.firstOrNull { it.memory.id == editingId }
+    if (editingId != null && editing == null) editingId = null
+    if (editing != null) {
+        val source by produceState<LongTermMemorySourceLabel?>(null, editing.memory.id) {
+            value = viewModel.sourceLabel(editing.memory, editing.agentName)
+        }
+        LongTermMemoryEditSheet(
+            memory = editing.memory,
+            source = source,
+            onDismiss = { editingId = null },
+            onSave = { kind, title, content ->
+                scope.launch { if (viewModel.save(editing.memory, kind, title, content)) editingId = null }
+            },
+            onDelete = {
+                editingId = null
+                viewModel.delete(editing.memory)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun LongTermMemoryContent(
+    enabled: Boolean,
+    items: List<LongTermMemoryListItem>,
+    query: String,
+    onEnabledChange: (Boolean) -> Unit,
+    onOpen: (LongTermMemory) -> Unit,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues,
+    modifier: Modifier = Modifier,
+    nowMs: Long = System.currentTimeMillis(),
+) {
+    val groups = remember(items, query) { groupLongTermMemories(items, query) }
+    LazyColumn(
+        modifier = modifier.fillMaxSize().testTag(UiTags.LTM_LIST),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.SectionGap),
+    ) {
+        item(key = "toggle") {
+            InfinitySettingsSection(title = stringResource(R.string.ltm_section_switch), footer = stringResource(R.string.ltm_switch_footer)) {
+                SettingsToggle(
+                    title = stringResource(R.string.ltm_enabled),
+                    description = stringResource(R.string.ltm_enabled_desc),
+                    checked = enabled,
+                    icon = Icons.Rounded.Bookmarks,
+                    onCheckedChange = onEnabledChange,
+                    modifier = Modifier.testTag(UiTags.LTM_ENABLED),
+                )
+            }
+        }
+        if (groups.isEmpty()) {
+            item(key = "empty") {
+                Text(
+                    text = stringResource(if (query.isBlank()) R.string.ltm_empty else R.string.ltm_search_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = InfinitySpacing.RowHorizontal, vertical = InfinitySpacing.Large),
+                )
+            }
+        }
+        groups.forEach { (kind, group) ->
+            item(key = "group-${kind.name}") {
+                InfinitySettingsSection(title = stringResource(R.string.ltm_group_title, stringResource(kind.labelRes), group.size)) {
+                    group.forEach { item -> LongTermMemoryRow(item, nowMs, onClick = { onOpen(item.memory) }) }
+                }
+            }
+        }
+        if (items.isNotEmpty()) {
+            item(key = "count") {
+                Text(
+                    text = pluralStringResource(R.plurals.ltm_count, items.size, items.size, LONG_TERM_MEMORY_LIMIT),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = InfinitySpacing.RowHorizontal),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LongTermMemoryRow(item: LongTermMemoryListItem, nowMs: Long, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = InfinitySpacing.RowHorizontal, vertical = InfinitySpacing.Medium)
+            .testTag(UiTags.ltmItem(item.memory.id)),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(item.memory.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            item.memory.content,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            listOfNotNull(item.agentName, relativeDay(item.memory.updatedAt, nowMs)).joinToString(" · "),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+private fun relativeDay(timeMs: Long, nowMs: Long): String =
+    DateUtils.getRelativeTimeSpanString(timeMs, nowMs, DateUtils.DAY_IN_MILLIS).toString()
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun LongTermMemoryEditSheet(
+    memory: LongTermMemory,
+    source: LongTermMemorySourceLabel?,
+    onDismiss: () -> Unit,
+    onSave: (LongTermMemoryKind, String, String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    InfinityModalSheet(onDismissRequest = onDismiss, height = InfinitySheetHeight.Content) {
+        LongTermMemoryEditForm(memory, source, onSave, onDelete)
+    }
+}
+
+@Composable
+internal fun LongTermMemoryEditForm(
+    memory: LongTermMemory,
+    source: LongTermMemorySourceLabel?,
+    onSave: (LongTermMemoryKind, String, String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var kind by rememberSaveable(memory.id) { mutableStateOf(memory.kind) }
+    var title by rememberSaveable(memory.id) { mutableStateOf(memory.title) }
+    var content by rememberSaveable(memory.id) { mutableStateOf(memory.content) }
+    val valid = title.isNotBlank() && content.isNotBlank() &&
+        title.trim().length <= LONG_TERM_MEMORY_TITLE_MAX && content.trim().length <= LONG_TERM_MEMORY_CONTENT_MAX
+    val changed = kind != memory.kind || title.trim() != memory.title || content.trim() != memory.content
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InfinitySpacing.ScreenHorizontal)
+            .padding(bottom = InfinitySpacing.Large),
+        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+    ) {
+        Text(stringResource(R.string.ltm_edit_title), style = MaterialTheme.typography.titleLarge)
+        InfinityCapsuleTabRow(
+            tabs = LongTermMemoryKind.entries.map {
+                InfinityTabItem(title = stringResource(it.shortLabelRes), testTag = UiTags.ltmKind(it.name))
+            },
+            selectedIndex = LongTermMemoryKind.entries.indexOf(kind),
+            onTabSelected = { kind = LongTermMemoryKind.entries[it] },
+            itemRole = Role.RadioButton,
+        )
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it.take(LONG_TERM_MEMORY_TITLE_MAX) },
+            label = { Text(stringResource(R.string.ltm_field_title)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag(UiTags.LTM_EDIT_TITLE),
+        )
+        OutlinedTextField(
+            value = content,
+            onValueChange = { content = it.take(LONG_TERM_MEMORY_CONTENT_MAX) },
+            label = { Text(stringResource(R.string.ltm_field_content)) },
+            minLines = 3,
+            maxLines = 8,
+            supportingText = { Text("${content.length} / $LONG_TERM_MEMORY_CONTENT_MAX") },
+            modifier = Modifier.fillMaxWidth().testTag(UiTags.LTM_EDIT_CONTENT),
+        )
+        source?.let {
+            Text(
+                text = sourceText(memory, it),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = onDelete, modifier = Modifier.testTag(UiTags.LTM_EDIT_DELETE)) {
+                Text(stringResource(R.string.ltm_delete), color = MaterialTheme.colorScheme.error)
+            }
+            TextButton(
+                onClick = { onSave(kind, title.trim(), content.trim()) },
+                enabled = valid && changed,
+                modifier = Modifier.testTag(UiTags.LTM_EDIT_SAVE),
+            ) { Text(stringResource(R.string.ltm_save)) }
+        }
+    }
+}
+
+@Composable
+private fun sourceText(memory: LongTermMemory, source: LongTermMemorySourceLabel): String {
+    val time = DateUtils.formatDateTime(
+        LocalContext.current,
+        memory.createdAt,
+        DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_MONTH,
+    )
+    val parts = listOfNotNull(
+        source.agentName,
+        source.sessionTitle?.takeIf(String::isNotBlank)?.let { stringResource(R.string.ltm_source_session, it) },
+        time,
+    )
+    return stringResource(R.string.ltm_source, parts.joinToString(" · "))
+}
