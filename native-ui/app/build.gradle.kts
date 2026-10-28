@@ -1,15 +1,15 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
-import com.promenar.nexara.buildlogic.BuildTailnetBinary
-import com.promenar.nexara.buildlogic.BuildLinuxRuntime
-import com.promenar.nexara.buildlogic.FetchVerifiedFile
-import com.promenar.nexara.buildlogic.GenerateLauncherIcons
-import com.promenar.nexara.buildlogic.PackagedPythonRelease
-import com.promenar.nexara.buildlogic.PackagedPythonWheels
-import com.promenar.nexara.buildlogic.PreparePackagedPython
-import com.promenar.nexara.buildlogic.PreparePackagedSite
-import com.promenar.nexara.buildlogic.PrepareLinuxRuntimeAssets
-import com.promenar.nexara.buildlogic.LinuxRuntimeInputs
+import com.promenar.infinity.buildlogic.BuildTailnetBinary
+import com.promenar.infinity.buildlogic.BuildLinuxRuntime
+import com.promenar.infinity.buildlogic.FetchVerifiedFile
+import com.promenar.infinity.buildlogic.GenerateLauncherIcons
+import com.promenar.infinity.buildlogic.PackagedPythonRelease
+import com.promenar.infinity.buildlogic.PackagedPythonWheels
+import com.promenar.infinity.buildlogic.PreparePackagedPython
+import com.promenar.infinity.buildlogic.PreparePackagedSite
+import com.promenar.infinity.buildlogic.PrepareLinuxRuntimeAssets
+import com.promenar.infinity.buildlogic.LinuxRuntimeInputs
 import groovy.json.JsonSlurper
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -36,7 +36,7 @@ abstract class GenerateCurrentRoomSchemaContracts : DefaultTask() {
             "完整数据库校验必须包含 v18 至 v30 的导出合同"
         }
         val source = buildString {
-            appendLine("package com.promenar.nexara.data.local.db")
+            appendLine("package com.promenar.infinity.data.local.db")
             appendLine()
             appendLine("// 由导出的 Room schema 构建生成，禁止手工维护字段白名单。")
             appendLine("internal object GeneratedCurrentRoomSchemas {")
@@ -85,7 +85,7 @@ abstract class GenerateCurrentRoomSchemaContracts : DefaultTask() {
             appendLine("}")
         }
         val output = outputDirectory.file(
-            "com/promenar/nexara/data/local/db/GeneratedCurrentRoomSchemas.kt",
+            "com/promenar/infinity/data/local/db/GeneratedCurrentRoomSchemas.kt",
         ).get().asFile
         output.parentFile.mkdirs()
         output.writeText(source)
@@ -114,42 +114,42 @@ abstract class GenerateCurrentRoomSchemaContracts : DefaultTask() {
 }
 
 val realLlmEnvironmentNames = listOf(
-    "NEXARA_TEST_LLM_BASE_URL",
-    "NEXARA_TEST_LLM_API_KEY",
-    "NEXARA_TEST_LLM_MULTIMODAL_MODEL",
-    "NEXARA_TEST_LLM_FAST_TEXT_MODEL",
-    "NEXARA_TEST_LLM_REASONING_MODEL",
-    "NEXARA_TEST_LLM_BALANCED_MULTIMODAL_MODEL",
+    "INFINITY_TEST_LLM_BASE_URL",
+    "INFINITY_TEST_LLM_API_KEY",
+    "INFINITY_TEST_LLM_MULTIMODAL_MODEL",
+    "INFINITY_TEST_LLM_FAST_TEXT_MODEL",
+    "INFINITY_TEST_LLM_REASONING_MODEL",
+    "INFINITY_TEST_LLM_BALANCED_MULTIMODAL_MODEL",
 )
 val releaseSigningEnvironment = mapOf(
-    "NEXARA_KEYSTORE_PATH" to providers.environmentVariable("NEXARA_KEYSTORE_PATH").orNull?.trim(),
-    "NEXARA_STORE_PASSWORD" to providers.environmentVariable("NEXARA_STORE_PASSWORD").orNull,
-    "NEXARA_KEY_ALIAS" to providers.environmentVariable("NEXARA_KEY_ALIAS").orNull?.trim(),
-    "NEXARA_KEY_PASSWORD" to providers.environmentVariable("NEXARA_KEY_PASSWORD").orNull,
+    "INFINITY_KEYSTORE_PATH" to providers.environmentVariable("INFINITY_KEYSTORE_PATH").orNull?.trim(),
+    "INFINITY_STORE_PASSWORD" to providers.environmentVariable("INFINITY_STORE_PASSWORD").orNull,
+    "INFINITY_KEY_ALIAS" to providers.environmentVariable("INFINITY_KEY_ALIAS").orNull?.trim(),
+    "INFINITY_KEY_PASSWORD" to providers.environmentVariable("INFINITY_KEY_PASSWORD").orNull,
 )
 val missingReleaseSigningEnvironment = releaseSigningEnvironment
     .filterValues { it.isNullOrBlank() }
     .keys
     .sorted()
-val deviceE2eEnabled = providers.gradleProperty("nexara.deviceE2e")
+val deviceE2eEnabled = providers.gradleProperty("infinity.deviceE2e")
     .map(String::toBoolean)
     .getOrElse(false)
-val deviceE2eAbi = providers.gradleProperty("nexara.deviceE2eAbi")
+val deviceE2eAbi = providers.gradleProperty("infinity.deviceE2eAbi")
     .getOrElse("x86_64")
     .trim()
 val allowedE2eBuildTypes = setOf("debug", "deviceTest")
-val selectedDeviceE2eBuildType = providers.gradleProperty("nexara.deviceE2eTestBuildType")
+val selectedDeviceE2eBuildType = providers.gradleProperty("infinity.deviceE2eTestBuildType")
     .map(String::trim)
     .orElse(if (deviceE2eEnabled) "deviceTest" else "debug")
     .get()
 require(deviceE2eAbi in setOf("x86_64", "arm64-v8a")) {
-    "nexara.deviceE2eAbi 仅支持 x86_64 或 arm64-v8a，当前值：$deviceE2eAbi"
+    "infinity.deviceE2eAbi 仅支持 x86_64 或 arm64-v8a，当前值：$deviceE2eAbi"
 }
 require(selectedDeviceE2eBuildType in allowedE2eBuildTypes) {
-    "nexara.deviceE2eTestBuildType 仅支持 debug 或 deviceTest，当前值：$selectedDeviceE2eBuildType"
+    "infinity.deviceE2eTestBuildType 仅支持 debug 或 deviceTest，当前值：$selectedDeviceE2eBuildType"
 }
 require(!deviceE2eEnabled || selectedDeviceE2eBuildType == "deviceTest") {
-    "启用 nexara.deviceE2e 时，nexara.deviceE2eTestBuildType 必须为 deviceTest，当前值：$selectedDeviceE2eBuildType"
+    "启用 infinity.deviceE2e 时，infinity.deviceE2eTestBuildType 必须为 deviceTest，当前值：$selectedDeviceE2eBuildType"
 }
 val finalReleaseArtifactTasks = setOf(
     "assemblerelease",
@@ -179,7 +179,7 @@ kotlin.compilerOptions {
     languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
 }
 
-val launcherIconTask = tasks.register("generateNexaraLauncherIcons") {
+val launcherIconTask = tasks.register("generateInfinityLauncherIcons") {
     group = "verification"
     description = "验证并生成所有应用变体的折叠 N 图标。"
 }
@@ -187,20 +187,20 @@ val currentRoomSchemaContracts = tasks.register<GenerateCurrentRoomSchemaContrac
     group = "build setup"
     description = "依据 v18 至 v30 导出版本生成完整数据库结构校验合同。"
     schemaFiles.from((18..30).map { version ->
-        layout.projectDirectory.file("schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
+        layout.projectDirectory.file("schemas/com.promenar.infinity.data.local.db.InfinityDatabase/$version.json")
     })
     outputDirectory.set(layout.buildDirectory.dir("generated/sources/currentRoomSchemaContracts"))
 }
 // 官方 CPython Android 包：下载后按 SHA-256 校验，整理为 jniLibs 打包库；产物只在 build 与 Gradle 缓存目录，不入库。
 val packagedPython = PackagedPythonRelease.load(file("python/python-android.properties").toPath())
 val packagedPythonVersion: String = packagedPython.version
-val packagedPythonDistDir = providers.gradleProperty("nexara.pythonDistDir")
+val packagedPythonDistDir = providers.gradleProperty("infinity.pythonDistDir")
     .map { File(it) }
-    .orElse(provider { File(gradle.gradleUserHomeDir, "caches/nexara-python-android") })
+    .orElse(provider { File(gradle.gradleUserHomeDir, "caches/infinity-python-android") })
 // 标准库与 site zip 预编译哈希 pyc，需 magic 与打包 CPython 一致的宿主解释器（默认 PATH 中的 python<主次版本>）；
-// -Pnexara.hostPython 指定解释器，-Pnexara.pythonBytecode=false 跳过（发行校验会拒绝缺少字节码的 APK）。
-val packagedPythonBytecode = providers.gradleProperty("nexara.pythonBytecode").map { it.toBoolean() }.orElse(true)
-val packagedPythonHost = providers.gradleProperty("nexara.hostPython").orElse("python${packagedPython.majorMinor}")
+// -Pinfinity.hostPython 指定解释器，-Pinfinity.pythonBytecode=false 跳过（发行校验会拒绝缺少字节码的 APK）。
+val packagedPythonBytecode = providers.gradleProperty("infinity.pythonBytecode").map { it.toBoolean() }.orElse(true)
+val packagedPythonHost = providers.gradleProperty("infinity.hostPython").orElse("python${packagedPython.majorMinor}")
 val packagedPythonBytecodeCompiler = layout.projectDirectory.file("python/compile-bytecode.py")
 /** 官方只提供这两个 ABI；其它 ABI 的设备运行时报告 Python 不可用。 */
 val packagedPythonAbis = mapOf("arm64-v8a" to "aarch64", "x86_64" to "x86_64")
@@ -230,7 +230,7 @@ val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
     }
 }
 
-// 内置 git 的纯 Python 依赖：wheel 按 SHA-256 校验后与 python/site 中的 Nexara 模块合成 libpysite.so。
+// 内置 git 的纯 Python 依赖：wheel 按 SHA-256 校验后与 python/site 中的 Infinity Workbench 模块合成 libpysite.so。
 val packagedPythonWheels = PackagedPythonWheels.load(file("python/python-site.properties").toPath())
 val fetchPackagedPythonWheels = packagedPythonWheels.names.map { name ->
     tasks.register<FetchVerifiedFile>("fetchPackagedPythonWheel${name.replaceFirstChar { it.uppercaseChar() }}") {
@@ -256,11 +256,11 @@ val preparePackagedSite = packagedPythonAbis.keys.associateWith { abi ->
 }
 
 // 内置 Tailscale 节点（tsnet）：app/tailnet 的 Go 程序以固定 Go 版本与 go.sum 编译为 libnxtailnet.so，随两个渠道打包。
-// 宿主需要 Go 1.21 及以上（GOTOOLCHAIN 精确切换到登记版本）；-Pnexara.goExecutable 指定 go，
-// -Pnexara.tailnet=false 跳过（运行时报告不可用，发行校验会拒绝缺少该库的 APK）。
+// 宿主需要 Go 1.21 及以上（GOTOOLCHAIN 精确切换到登记版本）；-Pinfinity.goExecutable 指定 go，
+// -Pinfinity.tailnet=false 跳过（运行时报告不可用，发行校验会拒绝缺少该库的 APK）。
 val tailnetGoVersion = "1.27.1"
-val tailnetEnabled = providers.gradleProperty("nexara.tailnet").map(String::toBoolean).getOrElse(true)
-val tailnetGoExecutable = providers.gradleProperty("nexara.goExecutable").orElse("go")
+val tailnetEnabled = providers.gradleProperty("infinity.tailnet").map(String::toBoolean).getOrElse(true)
+val tailnetGoExecutable = providers.gradleProperty("infinity.goExecutable").orElse("go")
 // ABI → GOOS/GOARCH。android/amd64 只支持 cgo 外部链接，x86_64（模拟器设备测试）改用静态 linux/amd64，
 // androidbin 为在 Android 内核上运行的静态 linux 程序补上网卡、DNS 与系统证书。
 val tailnetGoTargets = mapOf("arm64-v8a" to ("android" to "arm64"), "x86_64" to ("linux" to "amd64"))
@@ -343,7 +343,7 @@ androidComponents.onVariants { variant ->
             variant.sources.jniLibs?.addGeneratedSourceDirectory(build, BuildTailnetBinary::getOutputDirectory)
         }
     }
-    val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
+    val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}InfinityLauncherIcons") {
         masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
         sourceRoots.from(layout.projectDirectory.dir("src"))
         sourceRoots.from(provider {
@@ -358,12 +358,12 @@ androidComponents.onVariants { variant ->
 }
 
 android {
-    namespace = "com.promenar.nexara"
+    namespace = "com.promenar.infinity"
     compileSdk = 36
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
 
     defaultConfig {
-        applicationId = "com.promenar.nexara.native"
+        applicationId = "com.promenar.infinity"
         minSdk = 31
         targetSdk = 36
         versionCode = 4
@@ -398,10 +398,10 @@ android {
     signingConfigs {
         create("release") {
             if (missingReleaseSigningEnvironment.isEmpty()) {
-                storeFile = file(requireNotNull(releaseSigningEnvironment["NEXARA_KEYSTORE_PATH"]))
-                storePassword = requireNotNull(releaseSigningEnvironment["NEXARA_STORE_PASSWORD"])
-                keyAlias = requireNotNull(releaseSigningEnvironment["NEXARA_KEY_ALIAS"])
-                keyPassword = requireNotNull(releaseSigningEnvironment["NEXARA_KEY_PASSWORD"])
+                storeFile = file(requireNotNull(releaseSigningEnvironment["INFINITY_KEYSTORE_PATH"]))
+                storePassword = requireNotNull(releaseSigningEnvironment["INFINITY_STORE_PASSWORD"])
+                keyAlias = requireNotNull(releaseSigningEnvironment["INFINITY_KEY_ALIAS"])
+                keyPassword = requireNotNull(releaseSigningEnvironment["INFINITY_KEY_PASSWORD"])
             }
         }
     }
@@ -409,14 +409,14 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
-            resValue("string", "app_name", "Nexara Native (Dev)")
+            resValue("string", "app_name", "Infinity Workbench (Dev)")
             buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "true")
             ndk {
                 abiFilters += listOf("arm64-v8a")
             }
             externalNativeBuild {
                 cmake {
-                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=ON"
+                    arguments += "-DINFINITY_ENABLE_LOCAL_INFERENCE=ON"
                 }
             }
         }
@@ -424,14 +424,14 @@ android {
             applicationIdSuffix = ".deviceTest"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
-            resValue("string", "app_name", "Nexara Native (Device Test)")
+            resValue("string", "app_name", "Infinity Workbench (Device Test)")
             buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
             ndk {
                 abiFilters += listOf(deviceE2eAbi)
             }
             externalNativeBuild {
                 cmake {
-                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                    arguments += "-DINFINITY_ENABLE_LOCAL_INFERENCE=OFF"
                 }
             }
         }
@@ -441,14 +441,14 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             signingConfig = signingConfigs.getByName("debug")
-            resValue("string", "app_name", "Nexara Native (Minified Test)")
+            resValue("string", "app_name", "Infinity Workbench (Minified Test)")
             buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
             ndk {
                 abiFilters += listOf(deviceE2eAbi)
             }
             externalNativeBuild {
                 cmake {
-                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                    arguments += "-DINFINITY_ENABLE_LOCAL_INFERENCE=OFF"
                 }
             }
             proguardFiles(
@@ -461,11 +461,11 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            resValue("string", "app_name", "Nexara Native")
+            resValue("string", "app_name", "Infinity Workbench")
             buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
             externalNativeBuild {
                 cmake {
-                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                    arguments += "-DINFINITY_ENABLE_LOCAL_INFERENCE=OFF"
                 }
             }
             proguardFiles(
@@ -703,7 +703,7 @@ tasks.register<JavaExec>("runSshTestServer") {
     description = "前台运行仅监听宿主回环的 SSH 设备验收夹具；Ctrl-C 退出。"
     dependsOn(compileSshTestServer)
     classpath = files(compileSshTestServer.flatMap { it.destinationDirectory }) + sshTestServerRuntime
-    mainClass.set("com.promenar.nexara.testserver.SshTestServer")
+    mainClass.set("com.promenar.infinity.testserver.SshTestServer")
     workingDir = project.projectDir
     standardInput = System.`in`
 }
@@ -726,9 +726,9 @@ afterEvaluate {
         classpath = debugUnitTest.get().classpath
         dependsOn("compileSideloadDebugUnitTestSources", "processSideloadDebugUnitTestJavaRes")
         filter { includeTestsMatching("*LocalGatewayIntegrationTest") }
-        systemProperty("nexara.localGatewayIntegration", "true")
-        providers.gradleProperty("nexara.localGatewayModels").orNull?.let {
-            systemProperty("nexara.localGatewayModels", it)
+        systemProperty("infinity.localGatewayIntegration", "true")
+        providers.gradleProperty("infinity.localGatewayModels").orNull?.let {
+            systemProperty("infinity.localGatewayModels", it)
         }
         outputs.upToDateWhen { false }
         outputs.cacheIf { false }
@@ -748,7 +748,7 @@ afterEvaluate {
             isFailOnNoMatchingTests = true
         }
         failOnNoDiscoveredTests.set(true)
-        systemProperty("nexara.realLlmIntegration", "true")
+        systemProperty("infinity.realLlmIntegration", "true")
         failFast = true
         // 显式真实网络门禁每次调用都必须重跑，禁止复用旧模型、旧凭据或旧服务状态的结果。
         outputs.upToDateWhen { false }

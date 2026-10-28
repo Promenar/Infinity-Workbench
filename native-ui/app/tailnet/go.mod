@@ -1,4 +1,4 @@
-module nexara/nxtailnet
+module infinity/nxtailnet
 
 go 1.27.1
 

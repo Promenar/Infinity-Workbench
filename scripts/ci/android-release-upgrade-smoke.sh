@@ -6,19 +6,21 @@ if [[ $# -ne 2 ]]; then
     exit 2
 fi
 
+# 新 ID 尚无同 ID 正式基线时不进入设备流程。
+[[ -f "$2" ]] || { echo "新版 APK 不存在" >&2; exit 1; }
+if [[ ! -f "$1" ]]; then
+    echo "UPGRADE_SMOKE=SKIPPED：com.promenar.infinity 没有上一版正式包基线；迁移请使用备份导入"
+    exit 0
+fi
 OLD_APK="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 NEW_APK="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
-PACKAGE="com.promenar.nexara.native"
+PACKAGE="com.promenar.infinity"
 SERIAL="${ANDROID_SERIAL:-}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 
 [[ -f "${OLD_APK}" && -f "${NEW_APK}" ]] || {
     echo "旧版或新版 APK 不存在" >&2
-    exit 1
-}
-[[ -n "${SERIAL}" ]] || {
-    echo "必须通过 ANDROID_SERIAL 明确指定专用测试设备" >&2
     exit 1
 }
 [[ -n "${SDK_ROOT}" ]] || {
@@ -46,10 +48,10 @@ adb_cmd() { "${ADB}" -s "${SERIAL}" "$@"; }
 
 wait_for_upgraded_startup() {
     local upgraded_db="$1" identity_marker="$2"
-    local timeout_seconds="${NEXARA_UPGRADE_STARTUP_TIMEOUT_SECONDS:-30}"
+    local timeout_seconds="${INFINITY_UPGRADE_STARTUP_TIMEOUT_SECONDS:-30}"
     local probe_db="${tmp_root}/upgrade-ready-probe.db"
     [[ "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || {
-        echo "NEXARA_UPGRADE_STARTUP_TIMEOUT_SECONDS 必须为正整数" >&2
+        echo "INFINITY_UPGRADE_STARTUP_TIMEOUT_SECONDS 必须为正整数" >&2
         return 1
     }
     local deadline=$((SECONDS + timeout_seconds))
@@ -100,10 +102,16 @@ old_code="$(apk_field "${OLD_APK}" versionCode)"
 new_code="$(apk_field "${NEW_APK}" versionCode)"
 old_name="$(apk_field "${OLD_APK}" versionName)"
 new_name="$(apk_field "${NEW_APK}" versionName)"
-[[ "${old_package}" == "${PACKAGE}" && "${new_package}" == "${PACKAGE}" ]] || {
-    echo "APK 包名不一致" >&2
+[[ "${new_package}" == "${PACKAGE}" ]] || { echo "新版 APK 包名错误" >&2; exit 1; }
+if [[ "${old_package}" != "${PACKAGE}" ]]; then
+    echo "UPGRADE_SMOKE=SKIPPED：上一版 APK 不属于 ${PACKAGE}，没有同 ID 正式包基线；迁移请使用备份导入"
+    exit 0
+fi
+[[ -n "${SERIAL}" ]] || {
+    echo "必须通过 ANDROID_SERIAL 明确指定专用测试设备" >&2
     exit 1
 }
+
 [[ "${old_code}" =~ ^[0-9]+$ && "${new_code}" =~ ^[0-9]+$ && "${new_code}" -gt "${old_code}" ]] || {
     echo "新版 versionCode 必须严格递增" >&2
     exit 1
@@ -152,9 +160,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-remote_db="${data_dir}/databases/nexara.db"
+remote_db="${data_dir}/databases/infinity.db"
 [[ "$(adb_cmd shell test -f "${remote_db}" && echo yes | tr -d '\r')" == "yes" ]] || {
-    echo "公开旧版启动后未创建 nexara.db" >&2
+    echo "公开旧版启动后未创建 infinity.db" >&2
     exit 1
 }
 db_name="$(basename "${remote_db}")"
@@ -233,7 +241,7 @@ finally:
     connection.close()
 PY
 
-cat >"${tmp_root}/nexara_provider.xml" <<'XML'
+cat >"${tmp_root}/infinity_provider.xml" <<'XML'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <string name="protocol_id">Generic_OpenAI_Compat</string>
@@ -243,7 +251,7 @@ cat >"${tmp_root}/nexara_provider.xml" <<'XML'
     <string name="provider_name">Upgrade Provider</string>
 </map>
 XML
-cat >"${tmp_root}/nexara_settings.xml" <<'XML'
+cat >"${tmp_root}/infinity_settings.xml" <<'XML'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <string name="user_name">UPGRADE_USER_SENTINEL</string>
@@ -255,19 +263,19 @@ adb_cmd shell mkdir -p "${data_dir}/shared_prefs" "${workspace_root}"
 adb_cmd push "${wal_fixture}/${db_name}" "${remote_db}" >/dev/null
 adb_cmd push "${wal_fixture}/${db_name}-wal" "${remote_db}-wal" >/dev/null
 adb_cmd push "${wal_fixture}/${db_name}-shm" "${remote_db}-shm" >/dev/null
-adb_cmd push "${tmp_root}/nexara_provider.xml" "${data_dir}/shared_prefs/nexara_provider.xml" >/dev/null
-adb_cmd push "${tmp_root}/nexara_settings.xml" "${data_dir}/shared_prefs/nexara_settings.xml" >/dev/null
+adb_cmd push "${tmp_root}/infinity_provider.xml" "${data_dir}/shared_prefs/infinity_provider.xml" >/dev/null
+adb_cmd push "${tmp_root}/infinity_settings.xml" "${data_dir}/shared_prefs/infinity_settings.xml" >/dev/null
 adb_cmd push "${tmp_root}/upgrade.txt" "${workspace_root}/upgrade.txt" >/dev/null
 adb_cmd shell chown "${app_uid}:${app_gid}" \
     "${remote_db}" \
     "${remote_db}-wal" \
     "${remote_db}-shm" \
-    "${data_dir}/shared_prefs/nexara_provider.xml" \
-    "${data_dir}/shared_prefs/nexara_settings.xml" \
+    "${data_dir}/shared_prefs/infinity_provider.xml" \
+    "${data_dir}/shared_prefs/infinity_settings.xml" \
     "${workspace_root}" \
     "${workspace_root}/upgrade.txt"
 adb_cmd shell chmod 660 "${remote_db}" "${remote_db}-wal" "${remote_db}-shm" \
-    "${data_dir}/shared_prefs/nexara_provider.xml" "${data_dir}/shared_prefs/nexara_settings.xml"
+    "${data_dir}/shared_prefs/infinity_provider.xml" "${data_dir}/shared_prefs/infinity_settings.xml"
 adb_cmd shell chmod 700 "${workspace_root}"
 adb_cmd shell chmod 600 "${workspace_root}/upgrade.txt"
 # root/adb 注入会继承宿主临时文件或上一轮安装的 MCS 类别；只改 Unix owner 不足以
@@ -284,15 +292,15 @@ adb_cmd shell chcon "${data_context}" \
     "${remote_db}" \
     "${remote_db}-wal" \
     "${remote_db}-shm" \
-    "${data_dir}/shared_prefs/nexara_provider.xml" \
-    "${data_dir}/shared_prefs/nexara_settings.xml"
+    "${data_dir}/shared_prefs/infinity_provider.xml" \
+    "${data_dir}/shared_prefs/infinity_settings.xml"
 adb_cmd shell chcon -R "${data_context}" "${data_dir}/files/workspaces"
 for injected_path in \
     "${remote_db}" \
     "${remote_db}-wal" \
     "${remote_db}-shm" \
-    "${data_dir}/shared_prefs/nexara_provider.xml" \
-    "${data_dir}/shared_prefs/nexara_settings.xml" \
+    "${data_dir}/shared_prefs/infinity_provider.xml" \
+    "${data_dir}/shared_prefs/infinity_settings.xml" \
     "${data_dir}/files/workspaces" \
     "${workspace_root}" \
     "${workspace_root}/upgrade.txt"; do
@@ -320,11 +328,11 @@ grep -Eq "versionCode=${new_code}([[:space:]]|$)" <<<"${installed_dump}" || {
 }
 
 launch_package
-upgraded_remote_db="${data_dir}/databases/nexara_v2.db"
-wait_for_upgraded_startup "${upgraded_remote_db}" "${workspace_root}/.nexara_root_identity"
+upgraded_remote_db="${data_dir}/databases/infinity_v2.db"
+wait_for_upgraded_startup "${upgraded_remote_db}" "${workspace_root}/.infinity_root_identity"
 adb_cmd shell am force-stop "${PACKAGE}"
 [[ "$(adb_cmd shell test -f "${upgraded_remote_db}" && echo yes | tr -d '\r')" == "yes" ]] || {
-    echo "新版未接管公开旧库到 nexara_v2.db" >&2
+    echo "新版未接管公开旧库到 infinity_v2.db" >&2
     exit 1
 }
 adb_cmd pull "${upgraded_remote_db}" "${tmp_root}/upgraded.db" >/dev/null
@@ -384,7 +392,7 @@ done
     echo "工作区物理文件哨兵丢失" >&2
     exit 1
 }
-[[ "$(adb_cmd shell test -f "${workspace_root}/.nexara_root_identity" && echo yes | tr -d '\r')" == "yes" ]] || {
+[[ "$(adb_cmd shell test -f "${workspace_root}/.infinity_root_identity" && echo yes | tr -d '\r')" == "yes" ]] || {
     echo "公开 v17 工作区未建立运行时身份标记" >&2
     exit 1
 }
@@ -393,8 +401,8 @@ workspace_sha="$(adb_cmd shell toybox sha256sum "${workspace_root}/upgrade.txt" 
     echo "工作区物理文件哈希不匹配" >&2
     exit 1
 }
-adb_cmd pull "${data_dir}/shared_prefs/nexara_provider.xml" "${tmp_root}/provider-after.xml" >/dev/null
-adb_cmd pull "${data_dir}/shared_prefs/nexara_settings.xml" "${tmp_root}/settings-after.xml" >/dev/null
+adb_cmd pull "${data_dir}/shared_prefs/infinity_provider.xml" "${tmp_root}/provider-after.xml" >/dev/null
+adb_cmd pull "${data_dir}/shared_prefs/infinity_settings.xml" "${tmp_root}/settings-after.xml" >/dev/null
 grep -Fq 'Generic_OpenAI_Compat' "${tmp_root}/provider-after.xml" || { echo "Provider 协议哨兵丢失" >&2; exit 1; }
 grep -Fq 'https://upgrade.invalid/v1/chat/completions' "${tmp_root}/provider-after.xml" || { echo "Provider 地址哨兵丢失" >&2; exit 1; }
 grep -Fq 'upgrade-model' "${tmp_root}/provider-after.xml" || { echo "Provider 模型哨兵丢失" >&2; exit 1; }

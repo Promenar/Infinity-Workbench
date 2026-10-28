@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <queries>
-        <package android:name="com.promenar.nexara.native" />
-        <package android:name="com.promenar.nexara.native.minifiedTest" />
+        <package android:name="com.promenar.infinity" />
+        <package android:name="com.promenar.infinity.minifiedTest" />
     </queries>
     <application
         android:allowBackup="false"
-        android:label="Nexara Black-box Fixture"
+        android:label="Infinity Workbench Black-box Fixture"
         android:supportsRtl="true">
         <provider
             android:name=".BlackBoxFixtureProvider"
-            android:authorities="com.promenar.nexara.blackboxfixture.documents"
+            android:authorities="com.promenar.infinity.blackboxfixture.documents"
             android:exported="true"
             android:grantUriPermissions="true" />
         <activity

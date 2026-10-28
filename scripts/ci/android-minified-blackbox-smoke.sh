@@ -6,12 +6,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NATIVE_ROOT="${REPO_ROOT}/native-ui"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 PNG_ALPHA_NORMALIZER="${REPO_ROOT}/scripts/ci/normalize-android-screencap-png.py"
-TARGET_APK_OVERRIDE="${NEXARA_MINIFIED_TARGET_APK:-}"
-TARGET_PACKAGE="${NEXARA_MINIFIED_TARGET_PACKAGE:-com.promenar.nexara.native.minifiedTest}"
-SKIP_BUILD="${NEXARA_MINIFIED_SKIP_BUILD:-false}"
-TARGET_ABI="${NEXARA_MINIFIED_E2E_ABI:-x86_64}"
-FIXTURE_PACKAGE="com.promenar.nexara.blackboxfixture"
-FIXTURE_AUTHORITY="com.promenar.nexara.blackboxfixture.documents"
+TARGET_APK_OVERRIDE="${INFINITY_MINIFIED_TARGET_APK:-}"
+TARGET_PACKAGE="${INFINITY_MINIFIED_TARGET_PACKAGE:-com.promenar.infinity.minifiedTest}"
+SKIP_BUILD="${INFINITY_MINIFIED_SKIP_BUILD:-false}"
+TARGET_ABI="${INFINITY_MINIFIED_E2E_ABI:-x86_64}"
+FIXTURE_PACKAGE="com.promenar.infinity.blackboxfixture"
+FIXTURE_AUTHORITY="com.promenar.infinity.blackboxfixture.documents"
 FIXTURE_SHARE_COMPONENT="${FIXTURE_PACKAGE}/.BlackBoxFixtureShareActivity"
 TALKBACK_PACKAGE="com.google.android.marvin.talkback"
 NOTIFICATION_PERMISSION="android.permission.POST_NOTIFICATIONS"
@@ -43,14 +43,14 @@ HOST_SYSTEM_ANR_RECOVERED=false
 case "${TARGET_ABI}" in
     x86_64|arm64-v8a) ;;
     *)
-        echo "NEXARA_MINIFIED_E2E_ABI 仅支持 x86_64 或 arm64-v8a：${TARGET_ABI}" >&2
+        echo "INFINITY_MINIFIED_E2E_ABI 仅支持 x86_64 或 arm64-v8a：${TARGET_ABI}" >&2
         exit 1
         ;;
 esac
 case "${SKIP_BUILD}" in
     true|false) ;;
     *)
-        echo "NEXARA_MINIFIED_SKIP_BUILD 仅支持 true 或 false：${SKIP_BUILD}" >&2
+        echo "INFINITY_MINIFIED_SKIP_BUILD 仅支持 true 或 false：${SKIP_BUILD}" >&2
         exit 1
         ;;
 esac
@@ -143,7 +143,7 @@ dump_ui() {
     if (( dump_timeout > remaining )); then
         dump_timeout="${remaining}"
     fi
-    python3 "${TIMEOUT_HELPER}" "${dump_timeout}" adb shell uiautomator dump /sdcard/nexara-blackbox-window.xml \
+    python3 "${TIMEOUT_HELPER}" "${dump_timeout}" adb shell uiautomator dump /sdcard/infinity-blackbox-window.xml \
         >/dev/null 2>&1
     remaining="$(remaining_seconds "${deadline}")"
     (( remaining > 0 )) || return 1
@@ -152,7 +152,7 @@ dump_ui() {
         pull_timeout="${remaining}"
     fi
     python3 "${TIMEOUT_HELPER}" "${pull_timeout}" adb pull \
-        /sdcard/nexara-blackbox-window.xml "${destination}" >/dev/null 2>&1
+        /sdcard/infinity-blackbox-window.xml "${destination}" >/dev/null 2>&1
 }
 
 capture_stable_screenshot() {
@@ -240,7 +240,7 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
     cd "${NATIVE_ROOT}"
     chmod +x gradlew
     if [[ "${DEFAULT_MINIFIED_MODE}" == "true" ]]; then
-        ./gradlew --no-daemon --stacktrace -Pnexara.deviceE2eAbi="${TARGET_ABI}" \
+        ./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2eAbi="${TARGET_ABI}" \
             :app:assembleSideloadMinifiedTest :blackbox-fixture:assembleDebug --console=plain
     else
         ./gradlew --no-daemon --stacktrace :blackbox-fixture:assembleDebug --console=plain
@@ -284,10 +284,10 @@ adb wait-for-device
 capture_device_display_state
 prepare_uiautomator_environment
 for stale_package in \
-    com.promenar.nexara.native.test \
-    com.promenar.nexara.native.minifiedTest.test \
-    com.promenar.nexara.native.deviceTest.test \
-    com.promenar.nexara.mainactivitye2e; do
+    com.promenar.infinity.test \
+    com.promenar.infinity.minifiedTest.test \
+    com.promenar.infinity.deviceTest.test \
+    com.promenar.infinity.mainactivitye2e; do
     adb shell pm uninstall "${stale_package}" >/dev/null 2>&1 || true
 done
 adb shell pm uninstall "${TARGET_PACKAGE}" >/dev/null 2>&1 || true
@@ -707,7 +707,7 @@ wait_for_initial_launcher_ui() {
             recover_host_system_anr_once "${xml}" "${deadline}" || return 1
             continue
         fi
-        if grep -Fq 'NEXARA' "${xml}" && \
+        if grep -Fq 'INFINITY' "${xml}" && \
             grep -Fq 'English' "${xml}" && \
             grep -Fq '中文 (简体)' "${xml}"; then
             LAST_WINDOW_XML="${xml}"
@@ -715,7 +715,7 @@ wait_for_initial_launcher_ui() {
         fi
         sleep 0.5
     done
-    echo "首次冷启动未出现稳定的 NEXARA/English/中文 (简体) UI" >&2
+    echo "首次冷启动未出现稳定的 INFINITY/English/中文 (简体) UI" >&2
     return 1
 }
 

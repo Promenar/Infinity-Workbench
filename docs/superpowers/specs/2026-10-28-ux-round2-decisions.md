@@ -63,9 +63,9 @@
 ### D7 版本号与设置页底部信息
 
 - 版本规则写入 `AGENTS.md` 第 6 节。下一次装机的签名正式版为 `0.3.0-beta`（versionCode 5），对应设置信息架构重组这一功能波次。
-- 设置首页底部改为“Nexara 0.3.0-beta（5）· 侧载版 / Play 版”，并去掉“Project Narcis”：
+- 设置首页底部改为“Infinity Workbench 0.3.0-beta（5）· 侧载版 / Play 版”，并去掉“Project Narcis”：
   - 点击这一行复制版本信息：版本名、versionCode、渠道、提交短 SHA。
-  - 行尾放 GitHub 标志按钮，打开 `https://github.com/Promenar/Nexara`。
+  - 行尾放 GitHub 标志按钮，打开 `https://github.com/Promenar/Infinity-Workbench`。
 - 提交短 SHA 在构建时写入 `BuildConfig`；源码不在 Git 仓库中时写 `unknown`，构建不得失败。
 - GitHub 标志使用官方单色标志的矢量资源，不改形不改色，跟随主题前景色。按钮需要无障碍标签与 48dp 触控区。
 

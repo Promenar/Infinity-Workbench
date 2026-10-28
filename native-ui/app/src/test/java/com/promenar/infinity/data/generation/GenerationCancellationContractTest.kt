@@ -1,0 +1,327 @@
+package com.promenar.infinity.data.generation
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.infinity.domain.generation.GenerationChunk
+import com.promenar.infinity.domain.generation.GenerationEvent
+import com.promenar.infinity.domain.generation.GenerationPhase
+import com.promenar.infinity.domain.generation.GenerationPreparationOutcome
+import com.promenar.infinity.domain.generation.GenerationRequest
+import com.promenar.infinity.domain.generation.GenerationRuntimePolicy
+import com.promenar.infinity.domain.generation.GenerationSnapshot
+import com.promenar.infinity.domain.generation.GenerationTerminalStatus
+import com.promenar.infinity.domain.generation.GenerationToolCall
+import com.promenar.infinity.domain.generation.GenerationToolDecision
+import com.promenar.infinity.domain.generation.CompletionReason
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+class GenerationCancellationContractTest {
+    @Test
+    fun `预检索真正停止后不调用模型工具后处理或成功终态`() = runTest {
+        val searchEntered = CompletableDeferred<Unit>()
+        val builder = com.promenar.infinity.ui.chat.manager.ContextBuilder(
+            ragProvider = object : com.promenar.infinity.ui.chat.manager.RagProvider {
+                override suspend fun retrieveContext(
+                    query: String,
+                    sessionId: String,
+                    options: com.promenar.infinity.data.model.RagOptions,
+                    onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?,
+                ): com.promenar.infinity.ui.chat.manager.RagRetrievalResult {
+                    searchEntered.complete(Unit)
+                    awaitCancellation()
+                }
+            },
+        )
+        val runtime = CancellationRuntime().apply {
+            contextAction = {
+                builder.buildContext(com.promenar.infinity.ui.chat.manager.ContextBuilderParams(
+                    sessionId = "session",
+                    content = "C++ coroutine cancellation",
+                    assistantMsgId = "assistant",
+                    session = com.promenar.infinity.data.model.Session(
+                        id = "session", agentId = "agent",
+                    ),
+                ))
+            }
+        }
+        val events = mutableListOf<GenerationEvent>()
+        val job = launch { ChatGenerationRunner(runtime).run(request(), events::add) }
+        searchEntered.await()
+        job.cancel()
+        job.join()
+
+        assertThat(job.isCancelled).isTrue()
+        assertThat(runtime.streamCalls).isEqualTo(0)
+        assertThat(runtime.toolCalls).isEqualTo(0)
+        assertThat(runtime.postProcessCalls).isEqualTo(0)
+        assertThat(runtime.terminals).doesNotContain(GenerationTerminalStatus.SUCCESS)
+        assertThat(events.filterIsInstance<GenerationEvent.PhaseChanged>().map { it.phase })
+            .doesNotContain(GenerationPhase.COMPLETED)
+    }
+
+    @Test
+    fun `成功终态markTerminal取消不得转为持久化失败或完成`() = runTest {
+        val cancellation = CancellationException("terminal-cancel")
+        val runtime = CancellationRuntime().apply { terminalCancellation = cancellation }
+        val events = mutableListOf<GenerationEvent>()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request(), events::add)
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(cancellation)).isTrue()
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>()).isEmpty()
+        assertThat(runtime.flushCalls).isEqualTo(1)
+        assertThat(events.filterIsInstance<GenerationEvent.PhaseChanged>().map { it.phase })
+            .doesNotContain(GenerationPhase.COMPLETED)
+    }
+
+    @Test
+    fun `轮次首次flush取消不得重试或转为持久化失败`() = runTest {
+        val cancellation = CancellationException("round-flush-cancel")
+        val runtime = CancellationRuntime(
+            chunks = toolRound("search"),
+        ).apply {
+            toolDecision = GenerationToolDecision.CONTINUE
+            flushCancellation = cancellation
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request(), events::add)
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(cancellation)).isTrue()
+        assertThat(runtime.flushCalls).isEqualTo(2) // 首次边界 + 取消终态清理，不得进行边界重试
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>()).isEmpty()
+    }
+
+    @Test
+    fun `轮次重试flush取消不得转为持久化失败`() = runTest {
+        val cancellation = CancellationException("round-retry-cancel")
+        val runtime = CancellationRuntime(
+            chunks = toolRound("search"),
+        ).apply {
+            toolDecision = GenerationToolDecision.CONTINUE
+            firstFlushFailure = IllegalStateException("first")
+            flushCancellation = cancellation
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request(), events::add)
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(cancellation)).isTrue()
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>()).isEmpty()
+        assertThat(runtime.flushCalls).isEqualTo(3)
+    }
+
+    @Test
+    fun `等待审批cleanup取消必须传播且不得误报持久化失败`() = runTest {
+        val cancellation = CancellationException("approval-flush-cancel")
+        val runtime = CancellationRuntime(
+            chunks = toolRound("write"),
+        ).apply {
+            toolDecision = GenerationToolDecision.WAIT_FOR_APPROVAL
+            flushCancellation = cancellation
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request(), events::add)
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(cancellation)).isTrue()
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>()).isEmpty()
+        assertThat(runtime.flushCalls).isEqualTo(2)
+    }
+
+    @Test
+    fun `已处理拒绝cleanup取消必须传播且不得误报持久化失败`() = runTest {
+        val cancellation = CancellationException("rejection-flush-cancel")
+        val runtime = CancellationRuntime().apply {
+            preparationOutcome = GenerationPreparationOutcome.Handled(
+                com.promenar.infinity.domain.generation.GenerationFailure.unknown("handled"),
+            )
+            flushCancellation = cancellation
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request(), events::add)
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(cancellation)).isTrue()
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>()).isEmpty()
+        assertThat(runtime.flushCalls).isEqualTo(2)
+    }
+
+    @Test
+    fun `finally普通清理失败不得覆盖取消主异常而应加入suppressed`() = runTest {
+        val primary = CancellationException("primary")
+        val cleanup = IllegalStateException("cleanup")
+        val runtime = CancellationRuntime().apply {
+            terminalCancellation = primary
+            finalFlushFailure = cleanup
+        }
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request()) {}
+        }.exceptionOrNull()
+
+        assertThat(result.hasCauseInstance(primary)).isTrue()
+        assertThat(result.hasSuppressedInstance(cleanup)).isTrue()
+    }
+
+    @Test
+    fun `phase observer 抛出的取消必须原样传播`() = runTest {
+        val cancellation = CancellationException("observer-cancel")
+        val runtime = CancellationRuntime()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request()) { event ->
+                if (event == GenerationEvent.PhaseChanged(GenerationPhase.PREPARING)) {
+                    throw cancellation
+                }
+            }
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+        assertThat(runtime.cancelled).isTrue()
+    }
+
+    @Test
+    fun `snapshot observer 抛出的取消不得被 persist 辅助逻辑吞掉`() = runTest {
+        val cancellation = CancellationException("snapshot-observer-cancel")
+        val runtime = CancellationRuntime()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request()) { event ->
+                if (event is GenerationEvent.SnapshotChanged) throw cancellation
+            }
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+        assertThat(runtime.cancelled).isTrue()
+    }
+
+    @Test
+    fun `普通 observer 异常仍不阻断成功终态`() = runTest {
+        val runtime = CancellationRuntime()
+
+        val result = runCatching {
+            ChatGenerationRunner(runtime).run(request()) { event ->
+                if (event is GenerationEvent.SnapshotChanged) error("ordinary-observer")
+            }
+        }.exceptionOrNull()
+
+        assertThat(result).isNull()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+    }
+
+    private fun request() = GenerationRequest(
+        sessionId = "session",
+        assistantMessageId = "assistant",
+        userMessageId = "user",
+        userContent = "hello",
+        imageDataUrls = emptyList(),
+        runtimePolicy = GenerationRuntimePolicy.FOREGROUND_ONLY,
+    )
+
+    private fun Throwable?.hasCauseInstance(expected: Throwable): Boolean {
+        var current = this
+        while (current != null) {
+            if (current === expected) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    private fun toolRound(name: String): Flow<GenerationChunk> = flowOf(
+        GenerationChunk.ToolCall("tool", name, "{}"),
+        GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("tool")),
+    )
+
+    private fun Throwable?.hasSuppressedInstance(expected: Throwable): Boolean {
+        var current = this
+        while (current != null) {
+            if (current.suppressed.any { it === expected }) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    private class CancellationRuntime(
+        private val chunks: Flow<GenerationChunk> = flowOf(
+            GenerationChunk.Text("ok"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        ),
+    ) : ChatGenerationRuntime {
+        var cancelled = false
+        val terminals = mutableListOf<GenerationTerminalStatus>()
+        var terminalCancellation: CancellationException? = null
+        var flushCancellation: CancellationException? = null
+        var firstFlushFailure: Throwable? = null
+        var finalFlushFailure: Throwable? = null
+        var toolDecision = GenerationToolDecision.COMPLETE
+        var preparationOutcome: GenerationPreparationOutcome = GenerationPreparationOutcome.Ready
+        var flushCalls = 0
+        var streamCalls = 0
+        var toolCalls = 0
+        var postProcessCalls = 0
+        var contextAction: suspend () -> Unit = {}
+
+        override suspend fun prepare(request: GenerationRequest) = Unit
+        override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
+            contextAction()
+            return preparationOutcome
+        }
+        override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> {
+            streamCalls++
+            return chunks
+        }
+        override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
+        override fun knownToolNames(request: GenerationRequest): Set<String> = setOf("search", "write")
+        override suspend fun handleTools(
+            request: GenerationRequest,
+            toolCalls: List<GenerationToolCall>,
+        ): GenerationToolDecision {
+            this.toolCalls++
+            return toolDecision
+        }
+        override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) {
+            postProcessCalls++
+        }
+        override suspend fun markTerminal(
+            request: GenerationRequest,
+            status: GenerationTerminalStatus,
+            snapshot: GenerationSnapshot,
+            cause: Throwable?,
+        ) {
+            terminals += status
+            terminalCancellation?.let { throw it }
+        }
+        override suspend fun flush(request: GenerationRequest) {
+            flushCalls++
+            firstFlushFailure?.let {
+                firstFlushFailure = null
+                throw it
+            }
+            flushCancellation?.let {
+                flushCancellation = null
+                throw it
+            }
+            finalFlushFailure?.let { throw it }
+        }
+        override fun cancelProvider() {
+            cancelled = true
+        }
+    }
+}

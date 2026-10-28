@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NexaraNative"
+rootProject.name = "InfinityWorkbench"
 include(":app")
 include(":mainactivity-e2e")
 include(":blackbox-fixture")

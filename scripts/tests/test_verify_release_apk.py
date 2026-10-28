@@ -37,7 +37,7 @@ class ApkFixtureTestCase(unittest.TestCase):
 class LocalInferenceArtifactVerificationTest(ApkFixtureTestCase):
     def test_rejects_local_inference_native_libraries_and_gguf_assets(self) -> None:
         forbidden_entries = (
-            "lib/arm64-v8a/libnexara_llama.so",
+            "lib/arm64-v8a/libinfinity_llama.so",
             "lib/x86_64/libllama.so",
             "lib/armeabi-v7a/libllama_android.so",
             "lib/arm64-v8a/libggml.so",
@@ -113,11 +113,11 @@ class ZipAndSizeVerificationTest(ApkFixtureTestCase):
 
 class BadgingVerificationTest(unittest.TestCase):
     def test_accepts_exact_package_identity(self) -> None:
-        output = "package: name='com.promenar.nexara.native' versionCode='2' versionName='0.2-beta'\n"
+        output = "package: name='com.promenar.infinity' versionCode='2' versionName='0.2-beta'\n"
         self.assertEqual(
             verify_release_apk.parse_badging(output),
             {
-                "name": "com.promenar.nexara.native",
+                "name": "com.promenar.infinity",
                 "versionCode": "2",
                 "versionName": "0.2-beta",
             },
@@ -125,7 +125,7 @@ class BadgingVerificationTest(unittest.TestCase):
 
     def test_ignores_android_16_badging_metadata_field_suffixes(self) -> None:
         output = (
-            "package: name='com.promenar.nexara.native' versionCode='2' "
+            "package: name='com.promenar.infinity' versionCode='2' "
             "versionName='0.2-beta' platformBuildVersionName='16' "
             "platformBuildVersionCode='36' compileSdkVersion='36' "
             "compileSdkVersionCodename='16'\n"
@@ -134,7 +134,7 @@ class BadgingVerificationTest(unittest.TestCase):
         self.assertEqual(
             verify_release_apk.parse_badging(output),
             {
-                "name": "com.promenar.nexara.native",
+                "name": "com.promenar.infinity",
                 "versionCode": "2",
                 "versionName": "0.2-beta",
             },
@@ -142,19 +142,19 @@ class BadgingVerificationTest(unittest.TestCase):
 
     def test_rejects_missing_or_duplicate_badging_fields(self) -> None:
         malformed = (
-            "package: name='com.promenar.nexara.native' "
+            "package: name='com.promenar.infinity' "
             "versionCode='2' versionCode='3' versionName='0.2-beta'\n"
         )
         with self.assertRaisesRegex(verify_release_apk.VerificationError, "badging"):
             verify_release_apk.parse_badging(malformed)
 
         with self.assertRaisesRegex(verify_release_apk.VerificationError, "badging"):
-            verify_release_apk.parse_badging("application-label:'Nexara'\n")
+            verify_release_apk.parse_badging("application-label:'Infinity Workbench'\n")
 
         duplicated_package_lines = (
-            "package: name='com.promenar.nexara.native' versionCode='2' "
+            "package: name='com.promenar.infinity' versionCode='2' "
             "versionName='0.2-beta'\n"
-            "package: name='com.promenar.nexara.native' versionCode='2' "
+            "package: name='com.promenar.infinity' versionCode='2' "
             "versionName='0.2-beta'\n"
         )
         with self.assertRaisesRegex(verify_release_apk.VerificationError, "badging"):
@@ -269,12 +269,12 @@ class SensitiveContentVerificationTest(ApkFixtureTestCase):
             ),
             "OpenAI-style key": b"sk-fixture_0123456789_ABCDEFGH",
             "Google-style key": b"AIza" + b"F" * 35,
-            "prompt fixture": b"NEXARA_PROMPT_FIXTURE=fixture-user-prompt",
-            "response fixture": b"NEXARA_RESPONSE_FIXTURE=fixture-model-response",
+            "prompt fixture": b"INFINITY_PROMPT_FIXTURE=fixture-user-prompt",
+            "response fixture": b"INFINITY_RESPONSE_FIXTURE=fixture-model-response",
             "WebDAV password": b"WEBDAV_PASSWORD_FIXTURE=fixture-password",
             "WebDAV plaintext password": b'webdav_password="fixture-password-0123"',
-            "WebDAV URL": b"NEXARA_WEBDAV_TEST_URL=https://example.invalid/webdav-test",
-            "absolute path": b"/Users/fixture-user/Projects/Nexara",
+            "WebDAV URL": b"INFINITY_WEBDAV_TEST_URL=https://example.invalid/webdav-test",
+            "absolute path": b"/Users/fixture-user/Projects/Infinity Workbench",
             "secure env": b"config/secure_env/release.properties",
         }
         for label, value in fixtures.items():
@@ -397,7 +397,7 @@ class PackagedPythonBytecodeTest(ApkFixtureTestCase):
     def test_rejects_python_zips_without_bytecode(self) -> None:
         entries = {
             "lib/arm64-v8a/libpystdlib.so": packaged_zip({"os.py": b"source"}),
-            "lib/arm64-v8a/libpysite.so": packaged_zip({"nexara_git.py": b"source"}),
+            "lib/arm64-v8a/libpysite.so": packaged_zip({"infinity_git.py": b"source"}),
         }
         with self.assertRaisesRegex(verify_release_apk.VerificationError, "缺少 os.pyc"):
             verify_release_apk.verify_packaged_python_bytecode(self.make_apk(entries))
@@ -405,7 +405,7 @@ class PackagedPythonBytecodeTest(ApkFixtureTestCase):
     def test_rejects_checked_or_timestamp_pyc_and_mixed_magic(self) -> None:
         cases = {
             "不核对源码": self.python_entries(**{"std:os.pyc": pyc(flags=0b11)}),
-            "不核对源码 ": self.python_entries(**{"site:nexara_git.pyc": pyc(flags=0)}),
+            "不核对源码 ": self.python_entries(**{"site:infinity_git.pyc": pyc(flags=0)}),
             "magic 不一致": self.python_entries(**{"site:dulwich/repo.pyc": pyc(magic=b"\x00\x0e\r\n")}),
         }
         for message, entries in cases.items():
@@ -480,7 +480,7 @@ class TailnetBinaryTest(ApkFixtureTestCase):
 class ChecksumVerificationTest(ApkFixtureTestCase):
     def test_writes_standard_checksum_with_apk_basename(self) -> None:
         apk = self.make_apk({"AndroidManifest.xml": b"manifest"})
-        output = apk.with_name("nexara.apk.sha256")
+        output = apk.with_name("infinity.apk.sha256")
         digest = verify_release_apk.write_checksum(apk, output)
 
         self.assertEqual(digest, verify_release_apk.sha256_file(apk))

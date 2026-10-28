@@ -25,7 +25,7 @@ SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="108px" height="108px" vi
 
 class LauncherIconGenerationTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(prefix="nexara-icon-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="infinity-icon-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.project = self.root / "native-ui"
@@ -35,22 +35,22 @@ class LauncherIconGenerationTest(unittest.TestCase):
         self.master = self.assets / "nexara-fold-master.svg"
         self.master.write_text(SVG, encoding="utf-8")
         (self.project / "settings.gradle.kts").write_text('rootProject.name = "icon-contract"\n')
-        (self.project / "build.gradle.kts").write_text('''import com.promenar.nexara.buildlogic.GenerateLauncherIcons
-tasks.register<GenerateLauncherIcons>("generateNexaraLauncherIcons") {
+        (self.project / "build.gradle.kts").write_text('''import com.promenar.infinity.buildlogic.GenerateLauncherIcons
+tasks.register<GenerateLauncherIcons>("generateInfinityLauncherIcons") {
     masterSvg.set(layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
     sourceRoots.from(layout.projectDirectory.dir("app/src"))
-    outputDirectory.set(layout.buildDirectory.dir("generated/nexaraLauncherIcons/res"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/infinityLauncherIcons/res"))
 }
 ''')
         shutil.copytree(TASK_SOURCE, self.project / "buildSrc", ignore=shutil.ignore_patterns("build", ".gradle"))
-        self.resources = self.project / "build/generated/nexaraLauncherIcons/res"
+        self.resources = self.project / "build/generated/infinityLauncherIcons/res"
 
     def run_generator(self, *, expect_success: bool = True) -> subprocess.CompletedProcess:
-        env = {key: value for key, value in os.environ.items() if not key.startswith("NEXARA_")}
+        env = {key: value for key, value in os.environ.items() if not key.startswith("INFINITY_")}
         result = subprocess.run(
             [str(ROOT / "native-ui/gradlew"), "-p", str(self.project), "--offline",
              "--no-daemon", "--max-workers=1", "-Dorg.gradle.jvmargs=-Xmx256m",
-             "generateNexaraLauncherIcons"],
+             "generateInfinityLauncherIcons"],
             env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180,
         )
         if expect_success:
@@ -78,8 +78,8 @@ tasks.register<GenerateLauncherIcons>("generateNexaraLauncherIcons") {
             self.assertEqual(vector.get(ANDROID + "viewportWidth"), "108")
             self.assertEqual([p.get(ANDROID + "pathData") for p in vector], source_paths)
         self.assertEqual({p.get(ANDROID + "fillColor") for p in monochrome}, {"#000000"})
-        for folder, expected in (("values", {"nexara_launcher_background": "#FFFFFF", "nexara_launcher_foreground": "#000000"}),
-                                 ("values-night", {"nexara_launcher_background": "#000000", "nexara_launcher_foreground": "#FFFFFF"})):
+        for folder, expected in (("values", {"infinity_launcher_background": "#FFFFFF", "infinity_launcher_foreground": "#000000"}),
+                                 ("values-night", {"infinity_launcher_background": "#000000", "infinity_launcher_foreground": "#FFFFFF"})):
             self.assertEqual({p.get("name"): p.text for p in self.xml(f"{folder}/launcher_icon_colors.xml")}, expected)
         self.assertEqual(self.xml("mipmap-anydpi/ic_launcher.xml").tag, "vector")
 
@@ -118,7 +118,7 @@ tasks.register<GenerateLauncherIcons>("generateNexaraLauncherIcons") {
     def test_rejects_night_color_alias_override_in_arbitrary_values_file(self) -> None:
         override = self.project / "app/src/main/res/values-night/old_palette.xml"
         override.parent.mkdir(parents=True)
-        override.write_text('<resources><color name="nexara_launcher_foreground">#6366F1</color></resources>')
+        override.write_text('<resources><color name="infinity_launcher_foreground">#6366F1</color></resources>')
         result = self.run_generator(expect_success=False)
         self.assertIn("图标资源必须由母版生成", result.stdout)
 

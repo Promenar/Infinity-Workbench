@@ -12,7 +12,7 @@ SIDELOAD_ONLY_PERMISSIONS = (
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.SCHEDULE_EXACT_ALARM",
 )
-SIDELOAD_ONLY_SERVICE = "com.promenar.nexara.background.exec.ExecForegroundService"
+SIDELOAD_ONLY_SERVICE = "com.promenar.infinity.background.exec.ExecForegroundService"
 ANDROID_NAME = "{http://schemas.android.com/apk/res/android}name"
 
 
@@ -31,7 +31,7 @@ def check_manifests(play: Path, sideload: Path) -> None:
         if "android.permission.RECEIVE_BOOT_COMPLETED" not in permissions:
             raise ValueError(f"{flavor} 合并清单缺少定时任务开机恢复权限")
         scheduled_services = {service.get(ANDROID_NAME): service for service in manifest.iter("service")}
-        job = scheduled_services.get("com.promenar.nexara.background.schedule.ScheduledTaskJobService")
+        job = scheduled_services.get("com.promenar.infinity.background.schedule.ScheduledTaskJobService")
         if job is None or job.get("{http://schemas.android.com/apk/res/android}permission") != "android.permission.BIND_JOB_SERVICE":
             raise ValueError(f"{flavor} 合并清单缺少受保护的定时 JobService")
         for permission in SIDELOAD_ONLY_PERMISSIONS:

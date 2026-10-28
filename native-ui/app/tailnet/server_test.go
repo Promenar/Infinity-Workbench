@@ -115,7 +115,7 @@ func (h *harness) event() map[string]any {
 	}
 }
 
-const validStart = `{"id":1,"op":"start","start":{"stateDir":"%s","hostname":"nexara-test","authKey":"tskey-auth-SECRETVALUE","proxyUser":"` + testUser + `","proxyPassword":"` + testPassword + `","allowedPeers":["nas"]}}`
+const validStart = `{"id":1,"op":"start","start":{"stateDir":"%s","hostname":"infinity-test","authKey":"tskey-auth-SECRETVALUE","proxyUser":"` + testUser + `","proxyPassword":"` + testPassword + `","allowedPeers":["nas"]}}`
 
 func TestProtocolLifecycle(t *testing.T) {
 	h := newHarness(t)
@@ -228,13 +228,13 @@ func TestShutdownCommandExits(t *testing.T) {
 }
 
 func TestValidateStart(t *testing.T) {
-	base := StartOptions{StateDir: "/data/tailnet", Hostname: "nexara-pixel", ProxyUser: testUser, ProxyPassword: testPassword}
+	base := StartOptions{StateDir: "/data/tailnet", Hostname: "infinity-pixel", ProxyUser: testUser, ProxyPassword: testPassword}
 	if p := validateStart(&base); p != "" {
 		t.Fatalf("合法参数被拒绝：%s", p)
 	}
 	for name, mutate := range map[string]func(*StartOptions){
 		"相对路径":     func(o *StartOptions) { o.StateDir = "tailnet" },
-		"主机名大写":    func(o *StartOptions) { o.Hostname = "Nexara" },
+		"主机名大写":    func(o *StartOptions) { o.Hostname = "Infinity Workbench" },
 		"主机名过长":    func(o *StartOptions) { o.Hostname = strings.Repeat("a", 64) },
 		"口令过短":     func(o *StartOptions) { o.ProxyPassword = "short" },
 		"控制服务器带凭据": func(o *StartOptions) { o.ControlURL = "https://u:p@hs.example.org" },

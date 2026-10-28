@@ -38,7 +38,7 @@ class CheckTextWrappingTest(unittest.TestCase):
                 fun Screen() {
                     OutlinedTextField(value = v, textStyle = LocalTextStyle.current.forInput())
                     BasicTextField(value = v)
-                    NexaraMetaLine(segments = listOf(a, b))
+                    InfinityMetaLine(segments = listOf(a, b))
                     val code = TextStyle(fontFamily = Mono).forInput()
                 }
             """,
@@ -50,7 +50,7 @@ class CheckTextWrappingTest(unittest.TestCase):
     def test_dot_join_in_ui_fails_but_allow_marker_and_non_ui_pass(self) -> None:
         failing = self._run({self.UI: 'val s = "$type · $state"\nval t = list.joinToString(" · ")\nval u = list.joinToString(" • ")\n'})
         self.assertEqual(failing.returncode, 1)
-        self.assertEqual(failing.stdout.count("NexaraMetaLine"), 3)
+        self.assertEqual(failing.stdout.count("InfinityMetaLine"), 3)
 
         allowed = self._run({
             self.UI: 'val a11y = "$a · $b" // wrap-check: allow 无障碍描述\n',

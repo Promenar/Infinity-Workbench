@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE resources [
-    <!ENTITY brand "Nexara">
+    <!ENTITY brand "Infinity Workbench">
 ]>
 <resources>
     <string name="chat_approval_execution_target">Target: %1$s</string>

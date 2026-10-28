@@ -8,8 +8,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-PACKAGE = "com.promenar.nexara.native.debug"
-COMPONENT = f"{PACKAGE}/com.promenar.nexara.StartupGateTestActivity"
+PACKAGE = "com.promenar.infinity.debug"
+COMPONENT = f"{PACKAGE}/com.promenar.infinity.StartupGateTestActivity"
 RECOVERING = {"Safe recovery in progress", "正在安全恢复数据"}
 BLOCKED = {"Safe recovery needs attention", "安全恢复需要处理"}
 RETRY = {"Retry safe recovery", "重试安全恢复"}

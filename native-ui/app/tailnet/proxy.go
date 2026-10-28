@@ -38,7 +38,7 @@ const (
 	socksReplyCmdUnsup = 7
 	socksReplyAddrUnsp = 8
 
-	proxyRealm       = "nexara-tailnet"
+	proxyRealm       = "infinity-tailnet"
 	handshakeTimeout = 15 * time.Second
 	dialTimeout      = 30 * time.Second
 )

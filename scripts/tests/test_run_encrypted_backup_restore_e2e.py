@@ -31,7 +31,7 @@ class InstrumentationResultTest(unittest.TestCase):
         MODULE.require_stage_termination(
             0,
             "INSTRUMENTATION_ABORTED: System has crashed.\n",
-            "I/NexaraRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
+            "I/InfinityRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
         )
 
     def test_stage_rejects_normal_test_completion(self):
@@ -39,7 +39,7 @@ class InstrumentationResultTest(unittest.TestCase):
             MODULE.require_stage_termination(
                 0,
                 "OK (1 test)\n",
-                "I/NexaraRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
+                "I/InfinityRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
             )
 
     def test_stage_rejects_missing_or_unsafe_relay_proof(self):
@@ -47,7 +47,7 @@ class InstrumentationResultTest(unittest.TestCase):
             MODULE.require_stage_termination(
                 1,
                 "INSTRUMENTATION_ABORTED\n",
-                "I/NexaraRestoreRelay: relay_pid=222 main_pid=111 payload=secret\n",
+                "I/InfinityRestoreRelay: relay_pid=222 main_pid=111 payload=secret\n",
             )
 
     def test_stage_rejects_assertion_failure_instead_of_treating_it_as_kill(self):
@@ -55,7 +55,7 @@ class InstrumentationResultTest(unittest.TestCase):
             MODULE.require_stage_termination(
                 0,
                 "FAILURES!!!\nTests run: 1,  Failures: 1\n",
-                "I/NexaraRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
+                "I/InfinityRestoreRelay: relay_pid=222 main_pid=111 payload=none\n",
             )
 
 

@@ -1,0 +1,1225 @@
+package com.promenar.infinity.ui.chat.components
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
+import android.text.format.Formatter
+import android.webkit.MimeTypeMap
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestoreFromTrash
+import androidx.compose.material.icons.rounded.SdStorage
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.promenar.infinity.BuildConfig
+import com.promenar.infinity.R
+import com.promenar.infinity.data.storage.RealPathMountSupport
+import com.promenar.infinity.distribution.DistributionCapabilities
+import com.promenar.infinity.domain.storage.ExternalFolderEntry
+import com.promenar.infinity.domain.storage.ExternalMount
+import com.promenar.infinity.data.storage.ExternalMountPaths
+import com.promenar.infinity.ui.workspace.KnowledgeReadOnlyTag
+import com.promenar.infinity.domain.storage.ExternalRecycleItem
+import com.promenar.infinity.domain.storage.IExternalFolderManager
+import com.promenar.infinity.ui.common.ConfirmDialog
+import com.promenar.infinity.ui.common.FolderBreadcrumbsBar
+import com.promenar.infinity.ui.common.FolderCrumb
+import com.promenar.infinity.ui.common.FolderEntriesList
+import com.promenar.infinity.ui.common.FolderStatusMessage
+import com.promenar.infinity.ui.common.InfinityBottomSheet
+import com.promenar.infinity.ui.common.InfinityDropdownMenu
+import com.promenar.infinity.ui.common.InfinityIdentifierText
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.common.InfinityNavigationHeader
+import com.promenar.infinity.ui.common.InfinitySettingsGroup
+import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
+import com.promenar.infinity.ui.common.InfinitySettingsSection
+import com.promenar.infinity.ui.common.InfinitySheetHeight
+import com.promenar.infinity.ui.common.SettingsToggle
+import com.promenar.infinity.ui.common.bettboxListGroup
+import com.promenar.infinity.ui.theme.InfinityMotion
+import com.promenar.infinity.ui.theme.InfinitySpacing
+import com.promenar.infinity.ui.theme.InfinityTypography
+import com.promenar.infinity.ui.theme.forInput
+import com.promenar.infinity.ui.theme.hierarchicalTransition
+import java.io.File
+import java.text.DateFormat
+import java.util.Date
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.promenar.infinity.ui.common.InfinityMenuItem
+
+/** 挂载状态按当前会话隔离；管理、添加、浏览与回收区在同一个全高面板内逐页切换。 */
+@Composable
+internal fun ExternalFoldersPanel(
+    sessionId: String?,
+    workspaceRootUuid: String?,
+    manager: IExternalFolderManager,
+    onReindex: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+    // true 时入口行不自带分组面，由调用方放进共享分组。
+    grouped: Boolean = false,
+) {
+    key(sessionId) {
+        ExternalFoldersPanelContent(sessionId, workspaceRootUuid, manager, onReindex, modifier, grouped)
+    }
+}
+
+@Composable
+private fun ExternalFoldersPanelContent(
+    sessionId: String?,
+    workspaceRootUuid: String?,
+    manager: IExternalFolderManager,
+    onReindex: ((String) -> Unit)?,
+    modifier: Modifier,
+    grouped: Boolean,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    val sessionKey = sessionId.orEmpty()
+    var mounts by remember { mutableStateOf<List<ExternalMount>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<Int?>(null) }
+    var managerOpen by rememberSaveable { mutableStateOf(false) }
+    var formSource by rememberSaveable { mutableStateOf<ExternalMountSource?>(null) }
+    var alias by rememberSaveable { mutableStateOf("") }
+    var sourcePath by rememberSaveable { mutableStateOf("") }
+    var pendingAlias by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingMountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pickerActive by rememberSaveable { mutableStateOf(false) }
+    var browseMountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var removeMountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var recycleOpen by rememberSaveable { mutableStateOf(false) }
+    var realPathPermission by remember { mutableStateOf(false) }
+    // Linux 会话只能挂载真实路径（以 /mnt/<别名> 绑定进 Linux）；SAF 目录对 Linux 会话的 Agent 不可见。
+    val app = context.applicationContext as? com.promenar.infinity.InfinityApplication
+    val runMode = remember(app, sessionKey) {
+        if (app == null || sessionKey.isBlank()) kotlinx.coroutines.flow.flowOf(null)
+        else app.sessionRunModes.observe(sessionKey)
+    }.collectAsState(initial = null).value?.mode
+    val linuxSession = runMode == com.promenar.infinity.domain.model.SessionRunMode.LINUX
+    val sources = availableExternalMountSources(
+        BuildConfig.ALL_FILES_ACCESS_AVAILABLE,
+        DistributionCapabilities.allFilesAccessAvailable,
+        linuxSession = linuxSession,
+    )
+    // 挂载变化后重算知识库挂载预览：已挂载或当前会话不允许时，入口置灰。
+    var knowledgePreview by remember { mutableStateOf<com.promenar.infinity.data.knowledge.KnowledgeAccessPreview?>(null) }
+    LaunchedEffect(app, sessionKey, mounts) {
+        knowledgePreview = if (app == null || sessionKey.isBlank()) null else try {
+            withContext(Dispatchers.IO) { app.knowledgeAccessPlanner.preview(sessionKey) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    val perform: (suspend () -> Unit) -> Unit = { action ->
+        if (!busy) {
+            busy = true
+            notice = null
+            scope.launch {
+                try {
+                    action()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    notice = R.string.mount_operation_error
+                } finally {
+                    busy = false
+                }
+            }
+        }
+    }
+
+    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        pickerActive = false
+        val requestedAlias = pendingAlias
+        val requestedMountId = pendingMountId
+        pendingAlias = null
+        pendingMountId = null
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val resultIntent = result.data ?: return@rememberLauncherForActivityResult
+        val treeUri = resultIntent.data ?: return@rememberLauncherForActivityResult
+        if (requestedAlias == null && requestedMountId == null) return@rememberLauncherForActivityResult
+        perform {
+            if (requestedMountId != null) {
+                manager.reauthorize(requestedMountId, treeUri.toString(), resultIntent.flags)
+            } else if (requestedAlias != null) {
+                manager.addSaf(
+                    alias = requestedAlias,
+                    sessionId = requireNotNull(sessionId?.takeIf(String::isNotBlank)),
+                    treeUri = treeUri.toString(),
+                    grantFlags = resultIntent.flags,
+                )
+            }
+            formSource = null
+            managerOpen = true
+        }
+    }
+
+    val launchTreePicker: (String?, String?) -> Unit = { requestedAlias, requestedMountId ->
+        pendingAlias = requestedAlias
+        pendingMountId = requestedMountId
+        pickerActive = true
+        notice = null
+        try {
+            treePicker.launch(
+                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+                ),
+            )
+        } catch (_: Exception) {
+            pickerActive = false
+            pendingAlias = null
+            pendingMountId = null
+            notice = R.string.mount_operation_error
+        }
+    }
+
+    val refresh: () -> Unit = {
+        scope.launch {
+            if (BuildConfig.ALL_FILES_ACCESS_AVAILABLE && DistributionCapabilities.allFilesAccessAvailable) {
+                realPathPermission = RealPathMountSupport.hasPermission(context)
+            }
+            try {
+                manager.refresh(sessionKey)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                notice = R.string.mount_load_error
+            }
+        }
+    }
+    val currentRefresh by rememberUpdatedState(refresh)
+    DisposableEffect(lifecycleOwner, manager, sessionKey) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) currentRefresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(manager, sessionKey) {
+        currentRefresh()
+        try {
+            manager.observeMounts(sessionKey).collect {
+                mounts = visibleExternalMounts(it, sessionId)
+                loading = false
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            loading = false
+            notice = R.string.mount_load_error
+        }
+    }
+
+    val openAccessSettings: (() -> Unit)? =
+        if (BuildConfig.ALL_FILES_ACCESS_AVAILABLE && DistributionCapabilities.allFilesAccessAvailable) {
+            {
+                try {
+                    val intent = RealPathMountSupport.permissionIntent(context)
+                    if (intent == null) notice = R.string.mount_operation_error
+                    else context.startActivity(intent)
+                } catch (_: Exception) {
+                    notice = R.string.mount_operation_error
+                }
+            }
+        } else null
+
+    ListItem(
+        modifier = modifier
+            .fillMaxWidth()
+            .let { if (grouped) it else it.bettboxListGroup() }
+            .testTag("external_folders_entry")
+            .clickable(role = Role.Button) { managerOpen = true },
+        headlineContent = { Text(stringResource(R.string.mount_title)) },
+        supportingContent = {
+            val label = notice ?: if (mounts.isEmpty()) R.string.mount_empty else R.string.mount_count
+            Text(
+                text = if (label == R.string.mount_count) stringResource(label, mounts.size) else stringResource(label),
+                color = if (notice != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+        trailingContent = {
+            if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            else Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+        },
+    )
+
+    if (managerOpen) {
+        val browseMount = mounts.firstOrNull { it.id == browseMountId }
+        val page = when {
+            formSource != null && formSource in sources -> ExternalMountPage.Form(formSource!!)
+            browseMount != null -> ExternalMountPage.Browse(browseMount.id)
+            recycleOpen -> ExternalMountPage.Recycle
+            else -> ExternalMountPage.Manager
+        }
+        val backToManager: () -> Unit = {
+            formSource = null
+            browseMountId = null
+            recycleOpen = false
+            notice = null
+        }
+        InfinityBottomSheet(
+            show = true,
+            onDismiss = {
+                managerOpen = false
+                backToManager()
+            },
+            height = InfinitySheetHeight.Full,
+            dismissEnabled = !(busy || pickerActive),
+            // 面板内有可滚动列表与输入框，关闭拖动避免与内容滚动争抢。
+            dragGesturesEnabled = false,
+        ) {
+            BackHandler(enabled = page is ExternalMountPage.Form || page is ExternalMountPage.Recycle) {
+                if (!busy && !pickerActive) backToManager()
+            }
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = { hierarchicalTransition { it.depth } },
+                label = "external_mount_page",
+            ) { current ->
+                when (current) {
+                    ExternalMountPage.Manager -> ExternalMountManagerContent(
+                        mounts = mounts,
+                        sources = sources,
+                        loading = loading,
+                        busy = busy || pickerActive,
+                        notice = notice,
+                        onRefresh = refresh,
+                        onAdd = { source ->
+                            var candidate = "external"
+                            var suffix = 2
+                            while (mounts.any { it.alias == candidate }) candidate = "external" + suffix++
+                            alias = candidate
+                            sourcePath = ""
+                            notice = null
+                            formSource = source
+                        },
+                        onBrowse = { notice = null; browseMountId = it.id },
+                        onReauthorize = { launchTreePicker(null, it.id) },
+                        onRemove = { removeMountId = it.id },
+                        onGrantRealPath = openAccessSettings,
+                        onRecycle = { notice = null; recycleOpen = true },
+                        linuxSession = linuxSession,
+                        knowledgeMount = knowledgePreview?.let(::knowledgeMountOption),
+                        onMountKnowledge = {
+                            val planner = app?.knowledgeAccessPlanner
+                            if (planner != null && sessionKey.isNotBlank()) perform {
+                                withContext(Dispatchers.IO) { planner.mount(planner.preview(sessionKey)) }
+                            }
+                        },
+                    )
+                    is ExternalMountPage.Form -> ExternalMountFormContent(
+                        source = current.source,
+                        alias = alias,
+                        sourcePath = sourcePath,
+                        hasCurrentSession = !sessionId.isNullOrBlank(),
+                        realPathPermission = realPathPermission,
+                        busy = busy || pickerActive,
+                        notice = notice,
+                        onAliasChanged = { alias = it },
+                        onPathChanged = { sourcePath = it },
+                        onGrantAccess = openAccessSettings,
+                        onBack = backToManager,
+                        onConfirm = {
+                            if (current.source == ExternalMountSource.Saf) {
+                                launchTreePicker(alias.trim(), null)
+                            } else if (BuildConfig.ALL_FILES_ACCESS_AVAILABLE && DistributionCapabilities.allFilesAccessAvailable) {
+                                perform {
+                                    manager.addRealPath(
+                                        alias = alias.trim(),
+                                        sessionId = requireNotNull(sessionId?.takeIf(String::isNotBlank)),
+                                        source = sourcePath.trim(),
+                                    )
+                                    formSource = null
+                                }
+                            }
+                        },
+                    )
+                    is ExternalMountPage.Browse -> mounts.firstOrNull { it.id == current.mountId }?.let { mount ->
+                        ExternalMountBrowserPage(
+                            mount = mount,
+                            sessionId = sessionKey,
+                            workspaceRootUuid = workspaceRootUuid,
+                            manager = manager,
+                            onReindex = onReindex,
+                            onExit = backToManager,
+                        )
+                    }
+                    ExternalMountPage.Recycle -> ExternalMountRecyclePage(
+                        sessionId = sessionKey,
+                        manager = manager,
+                        onBack = backToManager,
+                    )
+                }
+            }
+        }
+    }
+
+    removeMountId?.let { mountId ->
+        ConfirmDialog(
+            show = true,
+            onDismiss = { if (!busy) removeMountId = null },
+            onConfirm = {
+                perform {
+                    manager.remove(mountId)
+                    removeMountId = null
+                }
+            },
+            title = stringResource(R.string.mount_remove_title),
+            description = stringResource(R.string.mount_remove_message),
+            confirmLabel = stringResource(R.string.mount_remove),
+        )
+    }
+}
+
+/** 外部文件夹面板内的页面；挂载管理为根，其它页面比它深一层。 */
+private sealed interface ExternalMountPage {
+    data object Manager : ExternalMountPage
+    data class Form(val source: ExternalMountSource) : ExternalMountPage
+    data class Browse(val mountId: String) : ExternalMountPage
+    data object Recycle : ExternalMountPage
+
+    val depth: Int get() = if (this == Manager) 0 else 1
+}
+
+/** 挂载管理首页：已挂载、添加方式与回收区三组，刷新放在页头。 */
+@Composable
+internal fun ExternalMountManagerContent(
+    mounts: List<ExternalMount>,
+    sources: List<ExternalMountSource>,
+    loading: Boolean,
+    busy: Boolean,
+    notice: Int?,
+    onRefresh: () -> Unit,
+    onAdd: (ExternalMountSource) -> Unit,
+    onBrowse: (ExternalMount) -> Unit,
+    onReauthorize: (ExternalMount) -> Unit,
+    onRemove: (ExternalMount) -> Unit,
+    onGrantRealPath: (() -> Unit)?,
+    onRecycle: () -> Unit,
+    modifier: Modifier = Modifier,
+    linuxSession: Boolean = false,
+    /** 为空时不显示“挂载知识库”入口（无会话或无法取得预览）。 */
+    knowledgeMount: KnowledgeMountOption? = null,
+    onMountKnowledge: () -> Unit = {},
+) = Column(modifier.fillMaxSize()) {
+    InfinityNavigationHeader(
+        title = stringResource(R.string.mount_title),
+        titleStyle = MaterialTheme.typography.titleLarge,
+        actions = {
+            MountRefreshAction(refreshing = loading || busy, onRefresh = onRefresh)
+        },
+    )
+    MountNoticeBanner(notice)
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(top = InfinitySpacing.Small)
+            .testTag("external_mounts_list"),
+    ) {
+        InfinitySettingsSection(
+            title = stringResource(R.string.mount_section_mounted),
+            footer = stringResource(R.string.mount_empty_hint).takeIf { mounts.isEmpty() && !loading },
+        ) {
+            Column(Modifier.animateContentSize(tween(InfinityMotion.DurationMedium, easing = InfinityMotion.EmphasizedDecelerate))) {
+                if (mounts.isEmpty()) {
+                    InfinitySettingsRowLayout(
+                        title = stringResource(if (loading) R.string.shared_loading else R.string.mount_empty),
+                        titleColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        icon = Icons.Rounded.FolderOff,
+                    )
+                } else {
+                    mounts.forEach { mount ->
+                        key(mount.id) { ExternalMountRow(mount, busy, onBrowse, onReauthorize, onRemove, onGrantRealPath, linuxSession) }
+                    }
+                }
+            }
+        }
+        InfinitySettingsSection(
+            title = stringResource(R.string.agent_panels_mount_add),
+            footer = listOfNotNull(
+                stringResource(R.string.run_mode_folder_real_path_only).takeIf { linuxSession },
+                stringResource(R.string.mount_system_limits),
+                stringResource(R.string.mount_termux_hint),
+            ).joinToString("\n"),
+        ) {
+            sources.forEach { source ->
+                val saf = source == ExternalMountSource.Saf
+                InfinitySettingsItem(
+                    title = stringResource(if (saf) R.string.mount_add_saf else R.string.mount_add_real_path),
+                    subtitle = stringResource(if (saf) R.string.mount_add_saf_desc else R.string.mount_add_real_path_desc),
+                    subtitleMaxLines = 2,
+                    onClick = { onAdd(source) },
+                    enabled = !busy,
+                    showChevron = true,
+                    leadingContent = {
+                        Icon(
+                            if (saf) Icons.Rounded.CreateNewFolder else Icons.Rounded.SdStorage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier = Modifier.testTag("external_mount_add_" + source.name.lowercase()),
+                )
+            }
+            knowledgeMount?.let { option ->
+                InfinitySettingsItem(
+                    title = stringResource(R.string.knowledge_mount_add),
+                    subtitle = when (option) {
+                        is KnowledgeMountOption.Available -> stringResource(R.string.knowledge_mount_add_desc, option.paths.joinToString("、"))
+                        KnowledgeMountOption.Mounted -> stringResource(R.string.knowledge_mount_add_mounted)
+                        KnowledgeMountOption.Unavailable -> stringResource(R.string.knowledge_mount_add_unavailable)
+                    },
+                    subtitleMaxLines = 2,
+                    onClick = onMountKnowledge,
+                    enabled = !busy && option is KnowledgeMountOption.Available,
+                    leadingContent = {
+                        Icon(Icons.AutoMirrored.Rounded.LibraryBooks, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    modifier = Modifier.testTag(KNOWLEDGE_MOUNT_ADD_TAG),
+                )
+            }
+        }
+        InfinitySettingsGroup {
+            InfinitySettingsItem(
+                icon = Icons.Rounded.RestoreFromTrash,
+                title = stringResource(R.string.mount_recycle_title),
+                subtitle = stringResource(R.string.mount_recycle_desc),
+                subtitleMaxLines = 2,
+                onClick = onRecycle,
+                enabled = !busy,
+                showChevron = true,
+                modifier = Modifier.testTag("external_mount_recycle"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MountRefreshAction(refreshing: Boolean, onRefresh: () -> Unit) {
+    Box(Modifier.size(InfinitySpacing.MinimumTouchTarget), contentAlignment = Alignment.Center) {
+        AnimatedContent(
+            targetState = refreshing,
+            transitionSpec = { InfinityMotion.fadeThrough() },
+            label = "mount_refresh_action",
+        ) { active ->
+            if (active) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.mount_refresh))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalMountRow(
+    mount: ExternalMount,
+    busy: Boolean,
+    onBrowse: (ExternalMount) -> Unit,
+    onReauthorize: (ExternalMount) -> Unit,
+    onRemove: (ExternalMount) -> Unit,
+    onGrantRealPath: (() -> Unit)?,
+    linuxSession: Boolean = false,
+) {
+    var menuOpen by remember(mount.id) { mutableStateOf(false) }
+    val unavailable = mount.unavailableReason != null
+    val unavailableLabel = stringResource(R.string.mount_unavailable)
+    val knowledgeBase = mount.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE
+    val meta = listOfNotNull(
+        "/mnt/" + mount.alias,
+        if (knowledgeBase) null
+        else stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
+        stringResource(when {
+            linuxSession && mount.sourceType != "real_path" -> R.string.run_mode_folder_saf_hidden
+            mount.commandAccessible -> R.string.agent_reach_mount_command_visible
+            else -> R.string.agent_reach_mount_files_only
+        }),
+    ).joinToString(" · ")
+    InfinitySettingsItem(
+        title = mount.alias,
+        subtitle = if (unavailable) unavailableLabel else meta,
+        subtitleMaxLines = 2,
+        // 不可用的挂载点按后直接给出重新授权或移除等操作。
+        onClick = { if (unavailable) menuOpen = true else onBrowse(mount) },
+        enabled = !busy,
+        modifier = Modifier.semantics { if (unavailable) stateDescription = unavailableLabel },
+        leadingContent = {
+            Icon(
+                if (unavailable) Icons.Rounded.ErrorOutline else Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = if (unavailable) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (knowledgeBase) KnowledgeReadOnlyTag()
+                Box {
+                    IconButton(onClick = { menuOpen = true }, enabled = !busy) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.mount_more_actions, mount.alias))
+                    }
+                    InfinityDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        InfinityMenuItem(
+                            text = { Text(stringResource(R.string.mount_browse)) },
+                            leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
+                            enabled = !unavailable,
+                            onClick = { menuOpen = false; onBrowse(mount) },
+                        )
+                        if (mount.sourceType == "saf_tree") InfinityMenuItem(
+                            text = { Text(stringResource(R.string.mount_reauthorize)) },
+                            leadingIcon = { Icon(Icons.Rounded.Key, null) },
+                            onClick = { menuOpen = false; onReauthorize(mount) },
+                        )
+                        if (mount.sourceType == "real_path" && onGrantRealPath != null) InfinityMenuItem(
+                            text = { Text(stringResource(R.string.mount_grant_access)) },
+                            leadingIcon = { Icon(Icons.Rounded.Key, null) },
+                            onClick = { menuOpen = false; onGrantRealPath() },
+                        )
+                        InfinityMenuItem(
+                            text = { Text(stringResource(R.string.mount_remove), color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.LinkOff, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; onRemove(mount) },
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+/** “挂载知识库”入口的三种状态：可挂载（列出挂载路径）、已全部挂载、当前会话不允许。 */
+internal sealed interface KnowledgeMountOption {
+    data class Available(val paths: List<String>) : KnowledgeMountOption
+    data object Mounted : KnowledgeMountOption
+    data object Unavailable : KnowledgeMountOption
+}
+
+internal fun knowledgeMountOption(preview: com.promenar.infinity.data.knowledge.KnowledgeAccessPreview): KnowledgeMountOption {
+    if (!preview.allowed || preview.knowledgeBases.isEmpty()) return KnowledgeMountOption.Unavailable
+    val pending = preview.knowledgeBases.filterNot { it.alreadyMounted }
+    return if (pending.isEmpty()) KnowledgeMountOption.Mounted else KnowledgeMountOption.Available(pending.map { it.path })
+}
+
+internal const val KNOWLEDGE_MOUNT_ADD_TAG = "external_mount_add_knowledge"
+
+
+/** 添加挂载：别名与来源，主操作固定在底部。挂载只属于当前会话且可读写。 */
+@Composable
+internal fun ExternalMountFormContent(
+    source: ExternalMountSource,
+    alias: String,
+    sourcePath: String,
+    hasCurrentSession: Boolean,
+    realPathPermission: Boolean,
+    busy: Boolean,
+    notice: Int?,
+    onAliasChanged: (String) -> Unit,
+    onPathChanged: (String) -> Unit,
+    onGrantAccess: (() -> Unit)?,
+    onBack: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+) = Column(modifier.fillMaxSize()) {
+    val isSaf = source == ExternalMountSource.Saf
+    InfinityNavigationHeader(
+        title = stringResource(R.string.mount_form_title),
+        titleStyle = MaterialTheme.typography.titleLarge,
+        onBack = onBack.takeUnless { busy },
+        depth = 1,
+        supporting = {
+            Text(
+                stringResource(if (isSaf) R.string.mount_source_saf else R.string.mount_source_real_path),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    )
+    MountNoticeBanner(notice)
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(top = InfinitySpacing.Small),
+    ) {
+        InfinitySettingsSection(
+            title = stringResource(R.string.mount_form_section_target),
+            footer = if (isSaf) {
+                listOf(R.string.mount_saf_command_note, R.string.mount_system_limits, R.string.mount_termux_hint)
+            } else {
+                listOf(R.string.mount_real_path_command_note, R.string.mount_real_path_help)
+            }.map { stringResource(it) }.joinToString("\n"),
+        ) {
+            Column(
+                Modifier.padding(InfinitySpacing.Large),
+                verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+            ) {
+                OutlinedTextField(
+                    value = alias,
+                    onValueChange = onAliasChanged,
+                    label = { Text(stringResource(R.string.mount_alias)) },
+                    supportingText = { Text(stringResource(R.string.mount_alias_hint)) },
+                    singleLine = true,
+                    enabled = !busy,
+                    textStyle = InfinityTypography.bodyLarge.forInput(),
+                    modifier = Modifier.fillMaxWidth().testTag("external_mount_alias"),
+                )
+                if (!isSaf) {
+                    OutlinedTextField(
+                        value = sourcePath,
+                        onValueChange = onPathChanged,
+                        label = { Text(stringResource(R.string.mount_path)) },
+                        supportingText = { Text(stringResource(R.string.mount_path_hint)) },
+                        enabled = !busy,
+                        textStyle = InfinityTypography.bodyLarge.forInput(),
+                        modifier = Modifier.fillMaxWidth().testTag("external_mount_real_path"),
+                    )
+                }
+            }
+            if (!isSaf && !realPathPermission) {
+                InfinitySettingsItem(
+                    title = stringResource(R.string.mount_permission_missing),
+                    titleColor = MaterialTheme.colorScheme.error,
+                    subtitle = stringResource(R.string.mount_grant_access).takeIf { onGrantAccess != null },
+                    onClick = { onGrantAccess?.invoke() },
+                    enabled = onGrantAccess != null,
+                    showChevron = onGrantAccess != null,
+                    leadingContent = { Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error) },
+                )
+            }
+        }
+
+    }
+    AnimatedVisibility(visible = busy, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
+        LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = InfinitySpacing.Small))
+    }
+    Button(
+        onClick = onConfirm,
+        enabled = hasCurrentSession && !busy && alias.isNotBlank() && (isSaf || (realPathPermission && sourcePath.isNotBlank())),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = InfinitySpacing.Small)
+            .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+            .testTag("external_mount_confirm"),
+    ) { Text(stringResource(if (isSaf) R.string.mount_select_folder else R.string.mount_confirm)) }
+}
+
+@Composable
+private fun ExternalMountScopeOption(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    InfinitySettingsItem(
+        title = label,
+        onClick = onClick,
+        enabled = enabled,
+        role = Role.RadioButton,
+        selected = selected,
+        leadingContent = { RadioButton(selected = selected, onClick = null, enabled = enabled) },
+    )
+}
+
+/** 挂载目录的只读浏览：页头逐级返回，根目录返回挂载管理；文件页可加入资料或用其它应用打开。 */
+@Composable
+private fun ExternalMountBrowserPage(
+    mount: ExternalMount,
+    sessionId: String,
+    workspaceRootUuid: String?,
+    manager: IExternalFolderManager,
+    onReindex: ((String) -> Unit)?,
+    onExit: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val rootPath = "/mnt/" + mount.alias
+    val externalOpenTitle = stringResource(R.string.mount_open_external)
+    var path by rememberSaveable(mount.id) { mutableStateOf(rootPath) }
+    var entries by remember(mount.id) { mutableStateOf<List<ExternalFolderEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    var selectedFile by remember(mount.id) { mutableStateOf<ExternalFolderEntry?>(null) }
+    var preview by remember { mutableStateOf<ExternalTextPreview>(ExternalTextPreview.Loading) }
+    var sourceChanged by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<Int?>(null) }
+    // 图片、视频、音频按 `/mnt/<别名>/…` 虚拟路径在会话内查看或播放，其它文件保留文本预览。
+    val openMedia = rememberWorkspaceMediaOpener(sessionId.takeIf(String::isNotBlank), mount.id)
+
+    LaunchedEffect(manager, sessionId, path, reload, mount.unavailableReason) {
+        entries = emptyList()
+        loading = true
+        loadError = false
+        try {
+            if (mount.unavailableReason != null) {
+                loadError = true
+            } else {
+                entries = manager.list(sessionId, path).sortedWith(
+                    compareByDescending<ExternalFolderEntry> { it.isDirectory }.thenBy { it.name.lowercase() },
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            loadError = true
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(manager, sessionId, selectedFile?.path, reload) {
+        val entry = selectedFile ?: return@LaunchedEffect
+        notice = null
+        sourceChanged = false
+        preview = ExternalTextPreview.Loading
+        try {
+            sourceChanged = manager.snapshotChanged(sessionId, entry.path)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // 快照状态失败不阻断独立的文件预览。
+        }
+        preview = if (entry.size > EXTERNAL_TEXT_PREVIEW_BYTES) {
+            ExternalTextPreview.TooLarge
+        } else {
+            try {
+                val bytes = manager.read(sessionId, entry.path, EXTERNAL_TEXT_PREVIEW_BYTES.toLong())
+                withContext(Dispatchers.Default) {
+                    decodeExternalTextPreview(bytes, EXTERNAL_TEXT_PREVIEW_BYTES)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ExternalTextPreview.Failed
+            }
+        }
+    }
+
+    val parentPath = parentExternalFolderPath(rootPath, path)
+    BackHandler {
+        when {
+            busy -> Unit
+            selectedFile != null -> { selectedFile = null; notice = null }
+            parentPath != null -> path = parentPath
+            else -> onExit()
+        }
+    }
+    AnimatedContent(
+        targetState = selectedFile,
+        contentKey = { it?.path ?: "" },
+        transitionSpec = { hierarchicalTransition { if (it != null) 1 else 0 } },
+        label = "external_mount_browser",
+    ) { entry ->
+        if (entry == null) Column(Modifier.fillMaxSize()) {
+            val segments = path.removePrefix(rootPath).split('/').filter(String::isNotEmpty)
+            val crumbs = segments.mapIndexed { index, name ->
+                FolderCrumb(rootPath + "/" + segments.take(index + 1).joinToString("/"), name)
+            }
+            FolderBreadcrumbsBar(
+                folderStack = crumbs,
+                rootTitle = mount.alias,
+                onNavigateBack = { parentPath?.let { path = it } },
+                onNavigateToCrumb = { index -> path = if (index <= 0) rootPath else crumbs[index - 1].id },
+                backButtonTag = "external_mount_back",
+                onExitRoot = onExit,
+                titleStyle = MaterialTheme.typography.titleLarge,
+                actions = {
+                    IconButton(onClick = { reload++ }, enabled = !loading) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.mount_refresh))
+                    }
+                },
+            )
+            if (mount.unavailableReason != null) MountNoticeBanner(R.string.mount_unavailable)
+            FolderEntriesList(
+                path = path,
+                depth = crumbs.size,
+                entries = entries,
+                loading = loading,
+                error = stringResource(R.string.mount_load_error).takeIf { loadError },
+                emptyText = stringResource(R.string.mount_directory_empty),
+                onEntryClick = { file ->
+                    when {
+                        file.isDirectory -> path = file.path
+                        openMedia != null && isPreviewableMediaName(file.name) -> openMedia(file.path)
+                        else -> selectedFile = file
+                    }
+                },
+                onRetry = { reload++ },
+                listTag = "external_mount_browser",
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        } else Column(Modifier.fillMaxSize()) {
+            InfinityNavigationHeader(
+                title = entry.name,
+                titleStyle = MaterialTheme.typography.titleLarge,
+                onBack = ({ selectedFile = null; notice = null }).takeUnless { busy },
+                backButtonTag = "external_mount_file_back",
+                depth = 1,
+                supporting = {
+                    InfinityMetaLine(
+                        segments = buildList {
+                            add(Formatter.formatShortFileSize(context, entry.size))
+                            if (entry.lastModified > 0L) add(
+                                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                    .format(Date(entry.lastModified)),
+                            )
+                        },
+                        style = InfinityTypography.bodySmall,
+                    )
+                },
+            )
+            InfinityIdentifierText(
+                entry.path,
+                style = InfinityTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (sourceChanged) MountNoticeBanner(R.string.mount_source_changed, error = false)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = InfinitySpacing.Medium),
+                horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+            ) {
+                FilledTonalButton(
+                    modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
+                    enabled = !busy && workspaceRootUuid != null && mount.unavailableReason == null,
+                    onClick = {
+                        val rootUuid = workspaceRootUuid ?: return@FilledTonalButton
+                        busy = true
+                        notice = null
+                        scope.launch {
+                            try {
+                                val fileUuid = manager.importSnapshot(sessionId, rootUuid, entry.path)
+                                onReindex?.invoke(fileUuid)
+                                sourceChanged = false
+                                notice = R.string.mount_imported
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                notice = R.string.mount_operation_error
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(if (sourceChanged) R.string.mount_reimport_to_kb else R.string.mount_import_to_kb),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
+                    enabled = !busy && mount.unavailableReason == null,
+                    onClick = {
+                        if (entry.size > EXTERNAL_OPEN_BYTES) {
+                            notice = R.string.mount_open_limit
+                        } else {
+                            busy = true
+                            notice = null
+                            scope.launch {
+                                try {
+                                    val intent = prepareExternalFolderOpen(context, manager, sessionId, entry)
+                                    context.startActivity(
+                                        Intent.createChooser(intent, externalOpenTitle)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    notice = R.string.mount_open_failed
+                                } finally {
+                                    busy = false
+                                }
+                            }
+                        }
+                    },
+                ) { Text(externalOpenTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            AnimatedVisibility(visible = busy, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = InfinitySpacing.Small))
+            }
+            MountNoticeBanner(notice, error = notice != R.string.mount_imported)
+            FileTextPreviewPanel(
+                preview = preview,
+                failedText = stringResource(R.string.mount_preview_failed),
+                binaryText = stringResource(R.string.mount_preview_binary),
+                tooLargeText = stringResource(R.string.mount_preview_too_large),
+                modifier = Modifier.weight(1f).padding(top = InfinitySpacing.Medium),
+            )
+            Text(
+                stringResource(R.string.mount_snapshot_info),
+                style = InfinityTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = InfinitySpacing.RowHorizontal).padding(top = InfinitySpacing.FooterTop),
+            )
+        }
+    }
+}
+
+/** 挂载回收区：说明作为分组脚注，条目逐行恢复。 */
+@Composable
+private fun ExternalMountRecyclePage(
+    sessionId: String,
+    manager: IExternalFolderManager,
+    onBack: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var entries by remember { mutableStateOf<List<ExternalRecycleItem>>(emptyList()) }
+    var reload by remember { mutableStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(manager, sessionId, reload) {
+        loading = true
+        try {
+            entries = manager.recycleItems(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            notice = R.string.mount_load_error
+        } finally {
+            loading = false
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        InfinityNavigationHeader(
+            title = stringResource(R.string.mount_recycle_title),
+            titleStyle = MaterialTheme.typography.titleLarge,
+            onBack = onBack.takeUnless { busy },
+            depth = 1,
+            actions = {
+                MountRefreshAction(refreshing = loading || busy) { notice = null; reload++ }
+            },
+        )
+        MountNoticeBanner(notice, error = notice != R.string.mount_restored)
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(top = InfinitySpacing.Small),
+        ) {
+            AnimatedContent(
+                targetState = when {
+                    entries.isNotEmpty() -> 2
+                    loading -> 0
+                    else -> 1
+                },
+                transitionSpec = { InfinityMotion.fadeThrough() },
+                label = "mount_recycle_state",
+            ) { phase ->
+                when (phase) {
+                    0 -> Box(Modifier.fillMaxWidth().heightIn(min = 120.dp))
+                    1 -> FolderStatusMessage(
+                        text = stringResource(R.string.mount_recycle_empty),
+                        icon = Icons.Rounded.RestoreFromTrash,
+                    )
+                    else -> InfinitySettingsGroup(footer = stringResource(R.string.mount_recycle_help)) {
+                        Column(Modifier.animateContentSize(tween(InfinityMotion.DurationMedium, easing = InfinityMotion.EmphasizedDecelerate))) {
+                            entries.forEach { entry ->
+                                key(entry.id) {
+                                    InfinitySettingsRowLayout(
+                                        title = entry.originalPath,
+                                        subtitle = Formatter.formatShortFileSize(context, entry.size),
+                                        icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
+                                        trailingContent = {
+                                            TextButton(
+                                                modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget),
+                                                enabled = !busy && !loading,
+                                                onClick = {
+                                                    busy = true
+                                                    notice = null
+                                                    scope.launch {
+                                                        try {
+                                                            manager.restore(sessionId, entry.id)
+                                                            notice = R.string.mount_restored
+                                                            reload++
+                                                        } catch (cancelled: CancellationException) {
+                                                            throw cancelled
+                                                        } catch (_: Exception) {
+                                                            notice = R.string.mount_operation_error
+                                                        } finally {
+                                                            busy = false
+                                                        }
+                                                    }
+                                                },
+                                            ) { Text(stringResource(R.string.mount_restore)) }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (entries.isEmpty() && !loading) {
+                Text(
+                    stringResource(R.string.mount_recycle_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = InfinitySpacing.XLarge),
+                )
+            }
+        }
+    }
+}
+
+/** 面板顶部的提示条：出现与消失时纵向展开收起，读屏按礼貌级别播报。 */
+@Composable
+private fun MountNoticeBanner(resourceId: Int?, error: Boolean = true) {
+    AnimatedVisibility(visible = resourceId != null, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
+        // 收起动画期间提示已清空，沿用最后一次的文案避免文字先消失。
+        val lastResource = remember { IntArray(1) }
+        if (resourceId != null) lastResource[0] = resourceId
+        val shown = lastResource[0].takeIf { it != 0 } ?: return@AnimatedVisibility
+        Text(
+            text = stringResource(shown),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = InfinitySpacing.XSmall)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                )
+                .padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.Medium)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            color = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            style = InfinityTypography.bodySmall,
+        )
+    }
+}
+
+private suspend fun prepareExternalFolderOpen(
+    context: Context,
+    manager: IExternalFolderManager,
+    sessionId: String,
+    entry: ExternalFolderEntry,
+): Intent = prepareExternalFileOpen(context, entry.name) { maxBytes -> manager.read(sessionId, entry.path, maxBytes) }
+
+/** 外部应用只获得私有快照的临时读权限，不暴露来源路径或写权限；[read] 由调用方经目录后端读取。 */
+internal suspend fun prepareExternalFileOpen(
+    context: Context,
+    name: String,
+    read: suspend (maxBytes: Long) -> ByteArray,
+): Intent = withContext(Dispatchers.IO) {
+    val bytes = read(EXTERNAL_OPEN_BYTES)
+    check(bytes.size.toLong() <= EXTERNAL_OPEN_BYTES)
+    val previewsRoot = File(context.filesDir, "external-folder-previews")
+    check(previewsRoot.isDirectory || previewsRoot.mkdirs())
+    val retained = previewsRoot.listFiles().orEmpty().sortedByDescending { it.lastModified() }
+    retained.forEachIndexed { index, file ->
+        if (index >= 3 || System.currentTimeMillis() - file.lastModified() > EXTERNAL_PREVIEW_RETENTION_MS) {
+            file.deleteRecursively()
+        }
+    }
+    val directory = File(previewsRoot, UUID.randomUUID().toString())
+    check(directory.mkdir())
+    val snapshot = File(directory, externalPreviewFileName(name))
+    snapshot.writeBytes(bytes)
+    val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", snapshot)
+    val extension = snapshot.extension.lowercase()
+    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
+    Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mimeType)
+        clipData = ClipData.newRawUri(name, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+}
+
+private const val EXTERNAL_TEXT_PREVIEW_BYTES = 256 * 1024
+internal const val EXTERNAL_OPEN_BYTES = 8L * 1024 * 1024
+private const val EXTERNAL_PREVIEW_RETENTION_MS = 24L * 60 * 60 * 1000

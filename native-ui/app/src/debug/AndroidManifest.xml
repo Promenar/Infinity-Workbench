@@ -12,7 +12,7 @@
             android:name=".data.backup.RestoreRelayDebugReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.promenar.nexara.debug.TEST_RESTORE_RELAY" />
+                <action android:name="com.promenar.infinity.debug.TEST_RESTORE_RELAY" />
             </intent-filter>
         </receiver>
         <activity android:name=".ui.settings.SecretFieldTestActivity" android:exported="false" />

@@ -54,7 +54,7 @@ def successful_suite(output: str) -> bool:
 def run_device(session: dict, runner: str, timeout: int) -> int:
     if not re.fullmatch(r"[A-Za-z0-9_.]+/[A-Za-z0-9_.]+", runner) or timeout <= 0:
         raise ValueError("SSH instrumentation runner 或超时无效")
-    arguments = ["am", "instrument", "-w", "-r", "-e", "class", "com.promenar.nexara.data.ssh.SshDeviceTest"]
+    arguments = ["am", "instrument", "-w", "-r", "-e", "class", "com.promenar.infinity.data.ssh.SshDeviceTest"]
     for name, value in (("sshPort", session["port"]), ("sshEchoPort", session["echoPort"]),
                         ("sshFingerprint", session["fingerprint"]), ("sshPassword", session["password"]),
                         ("sshUsername", session["username"])):
@@ -99,13 +99,13 @@ def main() -> int:
     parser.add_argument("--runner")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
-    path = args.session or (Path(os.environ["NEXARA_SSH_TEST_SESSION"]) if os.environ.get("NEXARA_SSH_TEST_SESSION") else None)
+    path = args.session or (Path(os.environ["INFINITY_SSH_TEST_SESSION"]) if os.environ.get("INFINITY_SSH_TEST_SESSION") else None)
     try:
         session = load_session(path) if path else None
         if args.operation == "redact":
             redact(sys.stdin, sys.stdout, session)
         elif session is None:
-            raise ValueError("未指定 NEXARA_SSH_TEST_SESSION")
+            raise ValueError("未指定 INFINITY_SSH_TEST_SESSION")
         elif args.operation == "port":
             print(session["port"])
         elif args.operation == "stop":

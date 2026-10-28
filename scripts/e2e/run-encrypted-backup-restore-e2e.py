@@ -13,13 +13,13 @@ from pathlib import Path
 
 
 TEST_CLASS = (
-    "com.promenar.nexara.data.backup."
+    "com.promenar.infinity.data.backup."
     "AndroidRestoreRelayEndToEndTest#relayPhase"
 )
-DEFAULT_APP_PACKAGE = "com.promenar.nexara.native.debug"
+DEFAULT_APP_PACKAGE = "com.promenar.infinity.debug"
 DEFAULT_TEST_COMPONENT = (
-    "com.promenar.nexara.native.debug.test/"
-    "com.promenar.nexara.MainActivityE2eRunner"
+    "com.promenar.infinity.debug.test/"
+    "com.promenar.infinity.MainActivityE2eRunner"
 )
 FAILURE_MARKERS = ("FAILURES!!!", "INSTRUMENTATION_FAILED", "Process crashed.")
 STAGE_TERMINATION = re.compile(
@@ -27,7 +27,7 @@ STAGE_TERMINATION = re.compile(
     re.IGNORECASE,
 )
 RELAY_PROOF = re.compile(
-    r"NexaraRestoreRelay.*relay_pid=\d+\s+main_pid=\d+\s+payload=none"
+    r"InfinityRestoreRelay.*relay_pid=\d+\s+main_pid=\d+\s+payload=none"
 )
 
 
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     stage = instrument(adb, args.test_component, "stage")
     print(stage.output, end="")
     relay_log = adb.run(
-        "logcat", "-d", "-s", "NexaraRestoreRelay:I", "*:S", timeout=15
+        "logcat", "-d", "-s", "InfinityRestoreRelay:I", "*:S", timeout=15
     ).output
     require_stage_termination(stage.returncode, stage.output, relay_log)
 

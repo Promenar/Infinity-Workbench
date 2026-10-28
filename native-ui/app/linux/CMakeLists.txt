@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(nexara_linux_runtime C ASM)
+project(infinity_linux_runtime C ASM)
 
 if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
     message(FATAL_ERROR "Linux 运行时只支持 arm64-v8a")

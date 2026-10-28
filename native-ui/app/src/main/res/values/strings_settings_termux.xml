@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE resources [
-    <!ENTITY brand "Nexara">
+    <!ENTITY brand "Infinity Workbench">
 ]>
 <resources>
     <string name="termux_title">Termux</string>
@@ -65,7 +65,7 @@
     <string name="termux_error_detail">Details: %1$s</string>
     <string name="termux_stdout">Standard output</string>
     <string name="termux_stderr">Error output</string>
-    <string name="termux_diagnostic_expected">Expected output: NEXARA_TERMUX_OK, with exit code 0.</string>
+    <string name="termux_diagnostic_expected">Expected output: INFINITY_TERMUX_OK, with exit code 0.</string>
     <string name="termux_guidance_not_installed">Install Termux from F-Droid or GitHub, then open it once to finish initialization.</string>
     <string name="termux_guidance_version">Install Termux 0.109 or newer with a recognizable version number to receive command results.</string>
     <string name="termux_guidance_permission">Grant RUN_COMMAND permission on this page or in the &brand; system app permissions.</string>
@@ -102,7 +102,7 @@
     <string name="termux_error_picker">Could not open the folder picker. Confirm Termux is installed and has been opened once.</string>
     <string name="termux_error_key_code">Could not read the SSH public key (%1$s). Check the key in SSH host settings.</string>
     <string name="termux_error_system_permission">The system denied the required permission. Check access in app info and try again.</string>
-    <string name="termux_command_diagnostic" translatable="false">printf \'NEXARA_TERMUX_OK\\n\'</string>
+    <string name="termux_command_diagnostic" translatable="false">printf \'INFINITY_TERMUX_OK\\n\'</string>
     <string name="termux_command_external_apps" translatable="false">mkdir -p ~/.termux &amp;&amp; touch ~/.termux/termux.properties &amp;&amp; sed -i \'/^[[:space:]]*allow-external-apps[[:space:]]*=/d\' ~/.termux/termux.properties &amp;&amp; printf \'\\nallow-external-apps=true\\n\' &gt;&gt; ~/.termux/termux.properties &amp;&amp; termux-reload-settings</string>
     <string name="termux_command_ssh_setup" translatable="false">pkg install openssh\nwhoami</string>
     <string name="termux_command_password" translatable="false">passwd</string>

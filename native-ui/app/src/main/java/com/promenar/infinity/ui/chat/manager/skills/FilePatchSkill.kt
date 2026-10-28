@@ -1,0 +1,187 @@
+package com.promenar.infinity.ui.chat.manager.skills
+
+import com.promenar.infinity.data.model.ToolResult
+import com.promenar.infinity.domain.tool.ToolRisk
+import com.promenar.infinity.domain.repository.IFileOperationRepository
+import com.promenar.infinity.domain.repository.IWorkspaceRepository
+import com.promenar.infinity.domain.repository.PatchError
+import com.promenar.infinity.domain.repository.PatchOperation
+import com.promenar.infinity.domain.repository.PatchResult
+import com.promenar.infinity.ui.chat.manager.registry.SkillDefinition
+import com.promenar.infinity.ui.chat.manager.registry.SkillExecutionContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import com.promenar.infinity.ui.chat.manager.registry.arrayArgument
+import com.promenar.infinity.ui.chat.manager.registry.stringArgument
+
+class FilePatchSkill(
+    private val fileOpRepo: IFileOperationRepository,
+    private val workspaceRepo: IWorkspaceRepository? = null,
+) : SkillDefinition {
+    override val id = "patch_file"
+    override val name = "patch_file"
+    override val description = "按行号编辑文件，行号以 read_file 输出前缀为准（1-based）。支持 replace_lines、insert_after（afterLine=0 表示插到开头）、delete_lines；建议为替换/删除提供 expectedContent 校验原文。用 uuid 或 path 指定文件，带乐观锁冲突检测。" + " " + WORKSPACE_VERSION_REQUIREMENT
+    override val mcpServerId: String? = null
+    override val risk = ToolRisk.PATCH
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"path":{"type":"string","description":"文件路径"},"expectedHash":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"expected_sha256":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"},"expectedContent":{"type":"string","description":"替换或删除范围的精确原文上下文"}},"required":["action"]}}},"required":["operations"]}"""
+
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
+        if (resolveError != null) return resolveError
+        val uuid = resolvedUuid!!
+        workspaceVersionError(id, args)?.let { return it }
+        val expectedHash = workspaceExpectedHash(args)!!
+
+        val operationsRaw = args.arrayArgument("operations")
+        if (operationsRaw == null) {
+            return ToolResult("err", "缺少 operations 参数", "error")
+        }
+
+        val operations = parseOperations(operationsRaw)
+            ?: return ToolResult("err", "operations 格式无效，请检查 JSON 结构", "error")
+
+        if (operations.isEmpty()) {
+            return ToolResult("err", "operations 不能为空", "error")
+        }
+
+        return when (val result = fileOpRepo.patchFile(context.workspaceRootUuid, uuid, operations, expectedHash)) {
+            is PatchResult.Success -> ToolResult(
+                "patch_file_${System.currentTimeMillis()}",
+                if (result.indexQueued) {
+                    "补丁应用成功，索引已入队。新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                } else if (result.targetEpoch == null) {
+                    "补丁应用成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。" +
+                        "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                } else {
+                    "补丁应用成功，但索引尚未入队。文件内容已保存，无需重复打补丁；" +
+                        "如需立即可检索，可按返回契约依次调用 read_file 与 write_file 原样写回补偿。" +
+                        "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                },
+                status = if (result.indexQueued) "success" else "error",
+                data = indexResultData(
+                    workspaceRootUuid = context.workspaceRootUuid,
+                    fileUuid = uuid,
+                    contentHash = result.newHash,
+                    targetEpoch = result.targetEpoch,
+                    indexQueued = result.indexQueued,
+                    appliedOperations = result.appliedOperations,
+                ),
+            )
+            is PatchResult.Failure -> ToolResult(
+                "patch_file_${System.currentTimeMillis()}",
+                formatPatchError(result.error),
+                "error"
+            )
+        }
+    }
+
+    private fun indexResultData(
+        workspaceRootUuid: String,
+        fileUuid: String,
+        contentHash: String,
+        targetEpoch: Long?,
+        indexQueued: Boolean,
+        appliedOperations: Int,
+    ): String = buildJsonObject {
+        put("operation", "patch_file")
+        put("fileUuid", fileUuid)
+        put("contentHash", contentHash)
+        put("targetEpoch", targetEpoch?.let(::JsonPrimitive) ?: JsonNull)
+        put("indexQueued", indexQueued)
+        put("appliedOperations", appliedOperations)
+        if (!indexQueued && targetEpoch != null) {
+            put("indexRetry", buildJsonObject {
+                put("strategy", "read_then_rewrite_same_content")
+                put("workspaceRootUuid", workspaceRootUuid)
+                put("fileUuid", fileUuid)
+                put("contentHash", contentHash)
+                put("targetEpoch", targetEpoch)
+                put("steps", buildJsonArray {
+                    add(buildJsonObject {
+                        put("action", "read_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("mode", "range")
+                            put("startLine", 1)
+                            put("endLine", Int.MAX_VALUE)
+                        })
+                    })
+                    add(buildJsonObject {
+                        put("action", "write_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("content", "{{read_file.content}}")
+                            put("expectedHash", contentHash)
+                        })
+                    })
+                })
+            })
+        }
+    }.toString()
+
+    private fun parseOperations(raw: JsonArray): List<PatchOperation>? = parsePatchOperations(raw)
+
+    internal companion object {
+        /** 解析 operations 参数；任一项结构无效时返回 null。审批差异预览复用同一解析做干运行。 */
+        fun parsePatchOperations(raw: JsonArray): List<PatchOperation>? = raw.map { element ->
+            val obj = element as? JsonObject ?: return null
+            PatchOperation(
+                action = obj.stringArgument("action") ?: return null,
+                startLine = obj["startLine"]?.jsonPrimitive?.intOrNull,
+                endLine = obj["endLine"]?.jsonPrimitive?.intOrNull,
+                afterLine = obj["afterLine"]?.jsonPrimitive?.intOrNull,
+                newContent = obj.stringArgument("newContent"),
+                expectedContent = obj.stringArgument("expectedContent"),
+            )
+        }
+    }
+
+    private fun formatPatchError(error: PatchError): String {
+        val base = buildString {
+            appendLine("补丁应用失败！")
+            appendLine("错误码: ${error.code}")
+            appendLine("详细信息: ${error.message}")
+            if (error.operationIndex >= 0) {
+                appendLine("失败的操作索引: ${error.operationIndex}")
+            }
+        }
+
+        val suggestion = when (error.code) {
+            "LINE_OUT_OF_RANGE" ->
+                "行号超出文件范围（当前共 ${error.totalLines ?: "?"} 行）。" +
+                    "请先调用 read_file(uuid=\"${error.fileUuid}\", mode=\"page\") 获取当前行数后重试。"
+
+            "HASH_MISMATCH" ->
+                "乐观锁冲突：文件已被修改。当前 Hash 与你提供的基准不一致。" +
+                    "请先调用 diff_file(uuid=\"${error.fileUuid}\") 获取最新差异，再重新规划操作。"
+
+            "INVALID_JSON" ->
+                "JSON 格式错误。请检查 operations 数组中每个对象的 action/startLine/endLine/newContent 字段是否正确。"
+
+            "EMPTY_FILE" ->
+                "目标文件为空，无法应用 patch。请使用 write_file 全量写入内容。"
+
+            "BINARY_FILE" ->
+                "目标文件为二进制文件，不支持 patch 操作。请使用 write_file 全量写入。"
+
+            "LOCKED_BY_OTHER" ->
+                "文件被其他会话锁定（${error.suggestion ?: "请等待锁释放或通知用户"}）。"
+
+            else -> error.suggestion ?: "请检查参数后重试。"
+        }
+
+        return "$base\n建议: $suggestion"
+    }
+}

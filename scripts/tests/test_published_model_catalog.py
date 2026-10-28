@@ -20,7 +20,7 @@ THIRD_PARTY_NOTICES = ROOT / "scripts/model-catalog/third-party-notices.txt"
 FIXTURES = Path(__file__).resolve().parent / "fixtures/published-model-catalog"
 GENERATED_AT = "2026-09-22T05:00:00Z"
 CATALOG_VERSION = "1790053200"
-KEY_ID = "nexara-catalog-p256-20260922"
+KEY_ID = "infinity-catalog-p256-20260922"
 
 
 class PublishedModelCatalogTest(unittest.TestCase):
@@ -194,7 +194,7 @@ class PublishedModelCatalogTest(unittest.TestCase):
             self.assertIn("Creative Commons Attribution 4.0", notice)
             self.assertIn("https://github.com/OpenSenseNova/SenseNova6.8/blob/main/API_CN.md", notice)
             self.assertNotIn("BEGIN PRIVATE KEY", notice)
-            self.assertNotIn("NEXARA_MODEL_CATALOG_SIGNING_KEY", notice)
+            self.assertNotIn("INFINITY_MODEL_CATALOG_SIGNING_KEY", notice)
 
     def test_same_inputs_produce_same_catalog_bytes(self) -> None:
         """捕获依赖当前时间、输入对象顺序或非确定遍历顺序的输出。"""
@@ -302,11 +302,11 @@ class PublishedModelCatalogTest(unittest.TestCase):
             envelope = json.loads((publish_dir / "manifest.json").read_bytes())
             payload = json.loads(base64.b64decode(envelope["payload"], validate=True))
             catalog = json.loads((publish_dir / payload["catalogFile"]).read_bytes())
-            source = next(item for item in catalog["sources"] if item["id"] == "nexara-official-overrides")
+            source = next(item for item in catalog["sources"] if item["id"] == "infinity-official-overrides")
             self.assertEqual(source["sha256"], hashlib.sha256(OFFICIAL_OVERRIDES.read_bytes()).hexdigest())
             self.assertEqual(
                 source["url"],
-                "https://github.com/promenar/Nexara/blob/main/scripts/model-catalog/official-model-overrides.json",
+                "https://github.com/Promenar/Infinity-Workbench/blob/main/scripts/model-catalog/official-model-overrides.json",
             )
             self.assertEqual(
                 source["license"],
@@ -315,7 +315,7 @@ class PublishedModelCatalogTest(unittest.TestCase):
             records = {
                 item["canonicalModelId"]: item
                 for item in catalog["records"]
-                if item["source"] == "NEXARA_OVERRIDE"
+                if item["source"] == "INFINITY_OVERRIDE"
             }
             self.assertEqual(set(records), {"google/gemini-3.8-flash", "sensenova/sensenova-6.8-flash-lite"})
 
@@ -348,7 +348,7 @@ class PublishedModelCatalogTest(unittest.TestCase):
                     {
                         "schemaVersion": 1,
                         "source": {
-                            "id": "nexara-official-overrides",
+                            "id": "infinity-official-overrides",
                             "url": "https://example.invalid/override.json",
                             "license": "Factual citation",
                         },
@@ -356,7 +356,7 @@ class PublishedModelCatalogTest(unittest.TestCase):
                             {
                                 "canonicalModelId": "evil/model",
                                 "displayName": "Evil",
-                                "source": "NEXARA_OVERRIDE",
+                                "source": "INFINITY_OVERRIDE",
                                 "providerScope": "evil",
                                 "command": "ignored",
                                 "evidenceUrl": "https://example.invalid/evidence",
@@ -412,7 +412,7 @@ class PublishedModelCatalogTest(unittest.TestCase):
             curated_ids = {
                 record["canonicalModelId"]
                 for record in catalog["records"]
-                if record["source"] == "NEXARA_OVERRIDE"
+                if record["source"] == "INFINITY_OVERRIDE"
             }
             self.assertEqual(curated_ids, {"sensenova/sensenova-6.8-flash-lite"})
 

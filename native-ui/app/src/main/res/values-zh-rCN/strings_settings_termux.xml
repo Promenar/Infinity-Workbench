@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE resources [
-    <!ENTITY brand "Nexara">
+    <!ENTITY brand "Infinity Workbench">
 ]>
 <resources>
     <string name="termux_title">Termux</string>
@@ -65,7 +65,7 @@
     <string name="termux_error_detail">详情：%1$s</string>
     <string name="termux_stdout">标准输出</string>
     <string name="termux_stderr">错误输出</string>
-    <string name="termux_diagnostic_expected">预期输出为 NEXARA_TERMUX_OK，且退出码为 0。</string>
+    <string name="termux_diagnostic_expected">预期输出为 INFINITY_TERMUX_OK，且退出码为 0。</string>
     <string name="termux_guidance_not_installed">请从 F-Droid 或 GitHub 安装 Termux，并打开一次完成初始化。</string>
     <string name="termux_guidance_version">请安装可识别版本号的 Termux 0.109 或更高版本，以接收命令结果。</string>
     <string name="termux_guidance_permission">请在此页或 &brand; 的系统应用权限页授予 RUN_COMMAND 权限。</string>

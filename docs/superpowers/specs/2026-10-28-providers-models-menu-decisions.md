@@ -2,7 +2,7 @@
 
 - 状态：已确认（2026-10-28）
 - 原型：[提供商模型页与悬浮菜单原型](https://claude.ai/artifact/L8ohfDd3NQqXsbt2umNT5r)（私有 Artifact，含提供商列表、添加 / 编辑提供商、模型列表、编辑模型五屏流程，以及悬浮菜单现状与重设计对比）
-- 用途：W2-M 的界面依据。路径相对 `native-ui/app/src/main/java/com/promenar/nexara/`。
+- 用途：W2-M 的界面依据。路径相对 `native-ui/app/src/main/java/com/promenar/infinity/`。
 
 ## 1. 提供商
 
@@ -40,9 +40,9 @@
   - 浅色用最亮的容器色；深色用比 `surfaceContainerHigh` 更亮一档的底色，并加 0.5dp 顶部高光；
   - 两层阴影；
   - 文字 15sp 常规字重；危险项的按压高亮用错误色；
-  - 可选分组小标题（`NexaraMenuHeader`）与菜单项右侧的选中勾（`selected` 参数）；
+  - 可选分组小标题（`InfinityMenuHeader`）与菜单项右侧的选中勾（`selected` 参数）；
   - 宽度上限 280dp；
-  - 定位逻辑 `nexaraMenuPlacement` 不变。
+  - 定位逻辑 `infinityMenuPlacement` 不变。
 - D13 动效采用方案 B：
   - 入场等一帧，透明度 90ms，缩放 0.92→1 用弹簧（阻尼比 0.8、刚度 700）；
   - 菜单项每项错峰 18ms，最多 6 项；
@@ -54,9 +54,9 @@
 
 | 部件 | 位置 | 用途 |
 | --- | --- | --- |
-| `NexaraFieldRow` | `ui/common/` | 分组卡片内的无框输入行，含标签、错误、尾部动作，另有密钥变体 |
-| `NexaraChoiceChips` | `ui/common/` | 单选或多选标签组，自动换行，选中态带图标着色 |
-| `NexaraStatusStrip` | `ui/common/` | 成功、错误、提示、警示四色状态条，替换同步横幅与连接测试文字 |
+| `InfinityFieldRow` | `ui/common/` | 分组卡片内的无框输入行，含标签、错误、尾部动作，另有密钥变体 |
+| `InfinityChoiceChips` | `ui/common/` | 单选或多选标签组，自动换行，选中态带图标着色 |
+| `InfinityStatusStrip` | `ui/common/` | 成功、错误、提示、警示四色状态条，替换同步横幅与连接测试文字 |
 | `ModelCapabilityBadges` | `ui/common/` | 列表行内的类型标签、能力图标组与上下文长度 |
 | `ModelCapabilityIcons` | `ui/settings/` | 九项能力与图标、文案的单一映射，列表与编辑页共用，取代两份重复的能力标签实现 |
 | `ModelSpecGrid` | `ui/settings/` | 2×2 规格格子，带数据来源与可编辑格 |

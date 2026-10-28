@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.promenar.nexara.mainactivitye2e"
+    namespace = "com.promenar.infinity.mainactivitye2e"
     compileSdk = 36
     targetProjectPath = ":app"
 
@@ -12,7 +12,7 @@ android {
         minSdk = 31
         targetSdk = 36
         missingDimensionStrategy("distribution", "sideload")
-        testInstrumentationRunner = "com.promenar.nexara.MainActivityE2eRunner"
+        testInstrumentationRunner = "com.promenar.infinity.MainActivityE2eRunner"
     }
 
     buildTypes {

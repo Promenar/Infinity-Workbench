@@ -9,11 +9,11 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APK_PATH="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-PACKAGE_NAME="${NEXARA_EXPECTED_PACKAGE:-com.promenar.nexara.native}"
-EXPECTED_VERSION_CODE="${NEXARA_EXPECTED_VERSION_CODE:-4}"
-EXPECTED_VERSION_NAME="${NEXARA_EXPECTED_VERSION_NAME:-0.2.2-beta}"
-EXPECTED_CERT_SHA256="${NEXARA_SIGNING_CERT_SHA256:-}"
-EXPECTED_DISTRIBUTION="${NEXARA_EXPECTED_DISTRIBUTION:-sideload}"
+PACKAGE_NAME="${INFINITY_EXPECTED_PACKAGE:-com.promenar.infinity}"
+EXPECTED_VERSION_CODE="${INFINITY_EXPECTED_VERSION_CODE:-4}"
+EXPECTED_VERSION_NAME="${INFINITY_EXPECTED_VERSION_NAME:-0.2.2-beta}"
+EXPECTED_CERT_SHA256="${INFINITY_SIGNING_CERT_SHA256:-}"
+EXPECTED_DISTRIBUTION="${INFINITY_EXPECTED_DISTRIBUTION:-sideload}"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 ARTIFACT_DIR="${ANDROID_RELEASE_SMOKE_ARTIFACT_DIR:-${REPO_ROOT}/artifacts/release-smoke-api-${API_LEVEL:-unknown}}"
 
@@ -38,7 +38,7 @@ if [[ ! -f "${APK_PATH}" ]]; then
     exit 1
 fi
 if [[ -z "${EXPECTED_CERT_SHA256}" ]]; then
-    echo "缺少公开证书指纹 NEXARA_SIGNING_CERT_SHA256" >&2
+    echo "缺少公开证书指纹 INFINITY_SIGNING_CERT_SHA256" >&2
     exit 1
 fi
 

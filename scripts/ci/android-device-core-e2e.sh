@@ -7,19 +7,19 @@ set +x
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${REPO_ROOT}/scripts/ci/lib/android-instrumentation.sh"
 NATIVE_ROOT="${REPO_ROOT}/native-ui"
-DEVICE_E2E_ABI="${NEXARA_DEVICE_E2E_ABI:-x86_64}"
-DEVICE_E2E_SCOPE="${NEXARA_DEVICE_E2E_SCOPE:-full}"
+DEVICE_E2E_ABI="${INFINITY_DEVICE_E2E_ABI:-x86_64}"
+DEVICE_E2E_SCOPE="${INFINITY_DEVICE_E2E_SCOPE:-full}"
 BUILD_TYPE_TASK="DeviceTest"
 DISTRIBUTION_TASK="Sideload"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 case "${DEVICE_E2E_ABI}" in
     x86_64|arm64-v8a) ;;
     *)
-        echo "NEXARA_DEVICE_E2E_ABI 仅支持 x86_64 或 arm64-v8a：${DEVICE_E2E_ABI}" >&2
+        echo "INFINITY_DEVICE_E2E_ABI 仅支持 x86_64 或 arm64-v8a：${DEVICE_E2E_ABI}" >&2
         exit 1
         ;;
 esac
-TARGET_PACKAGE="com.promenar.nexara.native.deviceTest"
+TARGET_PACKAGE="com.promenar.infinity.deviceTest"
 TARGET_PACKAGE_REGEX="${TARGET_PACKAGE//./\\.}"
 APP_APK="${NATIVE_ROOT}/app/build/outputs/apk/sideload/deviceTest/app-sideload-deviceTest.apk"
 APP_TEST_APK="${NATIVE_ROOT}/app/build/outputs/apk/androidTest/sideload/deviceTest/app-sideload-deviceTest-androidTest.apk"
@@ -27,7 +27,7 @@ MAIN_ACTIVITY_TEST_APK="${NATIVE_ROOT}/mainactivity-e2e/build/outputs/apk/device
 case "${DEVICE_E2E_SCOPE}" in
     minimum|full) ;;
     *)
-        echo "NEXARA_DEVICE_E2E_SCOPE 仅支持 minimum 或 full：${DEVICE_E2E_SCOPE}" >&2
+        echo "INFINITY_DEVICE_E2E_SCOPE 仅支持 minimum 或 full：${DEVICE_E2E_SCOPE}" >&2
         exit 1
         ;;
 esac
@@ -52,9 +52,9 @@ PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
 SSH_HELPER="${REPO_ROOT}/scripts/ci/ssh-device-session.py"
 SSH_REVERSE_PORT=""
 SSH_REVERSE_ACTIVE=false
-if [[ -n "${NEXARA_SSH_TEST_SESSION:-}" ]]; then
-    if [[ "${NEXARA_SSH_TEST_SESSION}" != /* ]]; then
-        export NEXARA_SSH_TEST_SESSION="${PWD}/${NEXARA_SSH_TEST_SESSION}"
+if [[ -n "${INFINITY_SSH_TEST_SESSION:-}" ]]; then
+    if [[ "${INFINITY_SSH_TEST_SESSION}" != /* ]]; then
+        export INFINITY_SSH_TEST_SESSION="${PWD}/${INFINITY_SSH_TEST_SESSION}"
     fi
     python3 "${SSH_HELPER}" validate
 fi
@@ -75,8 +75,8 @@ capture_artifacts() {
     adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-log.txt"
     adb shell dumpsys activity processes 2>&1 | redact_output > "${ARTIFACT_DIR}/activity-processes.txt"
     adb shell dumpsys package "${TARGET_PACKAGE}" 2>&1 | redact_output > "${ARTIFACT_DIR}/target-package.txt"
-    adb shell uiautomator dump /sdcard/nexara-window.xml >/dev/null 2>&1
-    adb shell cat /sdcard/nexara-window.xml 2>/dev/null | redact_output > "${ARTIFACT_DIR}/window.xml"
+    adb shell uiautomator dump /sdcard/infinity-window.xml >/dev/null 2>&1
+    adb shell cat /sdcard/infinity-window.xml 2>/dev/null | redact_output > "${ARTIFACT_DIR}/window.xml"
     adb exec-out screencap -p > "${ARTIFACT_DIR}/screen.png" 2>/dev/null
     printf '%s\n' "${exit_code}" > "${ARTIFACT_DIR}/exit-code.txt"
     set -e
@@ -203,12 +203,12 @@ run_test() {
         echo "设备测试输出脱敏或产物写入失败：${name}" >&2
         return 1
     fi
-    nexara_assert_normal_instrumentation_output "${output_file}" "${status}"
+    infinity_assert_normal_instrumentation_output "${output_file}" "${status}"
 }
 
 run_ssh_device_contracts() {
-    if [[ -z "${NEXARA_SSH_TEST_SESSION:-}" ]]; then
-        echo "跳过 SSH 设备用例：未设置 NEXARA_SSH_TEST_SESSION。"
+    if [[ -z "${INFINITY_SSH_TEST_SESSION:-}" ]]; then
+        echo "跳过 SSH 设备用例：未设置 INFINITY_SSH_TEST_SESSION。"
         return 0
     fi
     SSH_REVERSE_PORT="$(python3 "${SSH_HELPER}" port)"
@@ -228,7 +228,7 @@ run_ssh_device_contracts() {
         echo "SSH 设备测试产物写入失败" >&2
         return 1
     fi
-    nexara_assert_normal_instrumentation_output "${output_file}" "${pipeline_status[0]}"
+    infinity_assert_normal_instrumentation_output "${output_file}" "${pipeline_status[0]}"
     adb reverse --remove "tcp:${SSH_REVERSE_PORT}"
     SSH_REVERSE_ACTIVE=false
 }
@@ -240,13 +240,13 @@ run_layout_and_accessibility_contracts() {
     # 这些测试在 Compose 测试宿主内自行覆盖 2.0x 字体、横屏、紧凑/展开宽度，
     # 不用 shell 强改显示参数；无论测试成功与否，阶段结束都恢复设备显示状态。
     run_test accessibility-smoke "${APP_RUNNER}" \
-        -e class com.promenar.nexara.ui.AccessibilitySmokeTest || status=$?
+        -e class com.promenar.infinity.ui.AccessibilitySmokeTest || status=$?
     run_test adaptive-navigation "${APP_RUNNER}" \
-        -e class com.promenar.nexara.ui.AdaptiveNavigationTest || status=$?
+        -e class com.promenar.infinity.ui.AdaptiveNavigationTest || status=$?
     run_test welcome-layout "${APP_RUNNER}" \
-        -e class com.promenar.nexara.onboarding.WelcomeScreenLayoutTest || status=$?
+        -e class com.promenar.infinity.onboarding.WelcomeScreenLayoutTest || status=$?
     run_test text-wrapping "${APP_RUNNER}" \
-        -e class com.promenar.nexara.ui.TextWrappingDeviceTest || status=$?
+        -e class com.promenar.infinity.ui.TextWrappingDeviceTest || status=$?
 
     restore_device_display_state
     return "${status}"
@@ -353,12 +353,12 @@ run_notification_permission_contracts() {
     reset_target_with_notification_permission_revoked
     run_notification_permission_test \
         notification-permission-deny notification-permission-deny-dialog.png \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#denyingSystemNotificationPermissionContinuesForegroundOnlyWithoutFgs
+        -e class com.promenar.infinity.MainActivityNotificationE2eTest#denyingSystemNotificationPermissionContinuesForegroundOnlyWithoutFgs
 
     reset_target_with_notification_permission_revoked
     run_notification_permission_test \
         notification-permission-grant notification-permission-grant-dialog.png \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#grantingSystemNotificationPermissionContinuesBackgroundAllowed
+        -e class com.promenar.infinity.MainActivityNotificationE2eTest#grantingSystemNotificationPermissionContinuesBackgroundAllowed
 }
 
 run_notification_open_session_contract() {
@@ -369,13 +369,13 @@ run_notification_open_session_contract() {
         wait_for_package_manager_idle
     fi
     run_test notification-open-session "${MAIN_ACTIVITY_RUNNER}" \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#postedNotificationOpenPendingIntentReturnsToExactSession
+        -e class com.promenar.infinity.MainActivityNotificationE2eTest#postedNotificationOpenPendingIntentReturnsToExactSession
 }
 
 run_notification_background_lifecycle_contract() {
     prepare_target_for_foreground_notification
     run_test notification-background-lifecycle "${MAIN_ACTIVITY_RUNNER}" \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#backgroundGenerationSurvivesRealLockWakeRotationAndRepeatedStopDoesNotRevive
+        -e class com.promenar.infinity.MainActivityNotificationE2eTest#backgroundGenerationSurvivesRealLockWakeRotationAndRepeatedStopDoesNotRevive
 }
 
 prepare_target_for_foreground_notification() {
@@ -398,15 +398,15 @@ run_expected_relay_death() {
     adb logcat -b main -c
     set +e
     python3 "${TIMEOUT_HELPER}" "${INSTRUMENT_TIMEOUT_SECONDS}" adb shell am instrument -w -r \
-        -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+        -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
         -e restoreRelayPhase "${phase}" \
         "${APP_RUNNER}" 2>&1 | redact_output | tee "${output_file}"
     status="${PIPESTATUS[0]}"
     set -e
 
-    nexara_assert_expected_process_death_output "${output_file}" "${status}"
-    adb logcat -b main -d -v threadtime -s NexaraLogger:D '*:S' 2>&1 | redact_output > "${relay_log_file}"
-    if ! grep -Eq '\[NexaraRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none' "${relay_log_file}"; then
+    infinity_assert_expected_process_death_output "${output_file}" "${status}"
+    adb logcat -b main -d -v threadtime -s InfinityLogger:D '*:S' 2>&1 | redact_output > "${relay_log_file}"
+    if ! grep -Eq '\[InfinityRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none' "${relay_log_file}"; then
         echo "预期进程死亡阶段缺少 RestoreRelayActivity 专属执行证据：${relay_log_file}" >&2
         return 1
     fi
@@ -421,8 +421,8 @@ run_expected_relay_death() {
 
 cd "${NATIVE_ROOT}"
 chmod +x gradlew
-./gradlew --no-daemon --stacktrace -Pnexara.deviceE2e=true \
-    -Pnexara.deviceE2eAbi="${DEVICE_E2E_ABI}" \
+./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2e=true \
+    -Pinfinity.deviceE2eAbi="${DEVICE_E2E_ABI}" \
     ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}" \
     ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}AndroidTest" \
     ":mainactivity-e2e:assemble${BUILD_TYPE_TASK}"
@@ -439,48 +439,48 @@ adb install -r --no-streaming "${APP_TEST_APK}"
 adb install -r --no-streaming "${MAIN_ACTIVITY_TEST_APK}"
 
 APP_RUNNER="$(discover_runner androidx.test.runner.AndroidJUnitRunner)"
-MAIN_ACTIVITY_RUNNER="$(discover_runner com.promenar.nexara.MainActivityE2eRunner)"
+MAIN_ACTIVITY_RUNNER="$(discover_runner com.promenar.infinity.MainActivityE2eRunner)"
 printf '%s\n' "${APP_RUNNER}" > "${ARTIFACT_DIR}/app-runner.txt"
 printf '%s\n' "${MAIN_ACTIVITY_RUNNER}" > "${ARTIFACT_DIR}/mainactivity-runner.txt"
 
 adb logcat -c
 
 run_test workspace-filesystem-contracts "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.repository.AndroidSecureWorkspaceFileOpsTest
+    -e class com.promenar.infinity.data.repository.AndroidSecureWorkspaceFileOpsTest
 run_test workspace-creation-races "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.repository.AndroidSecureWorkspaceCreationRaceTest
+    -e class com.promenar.infinity.data.repository.AndroidSecureWorkspaceCreationRaceTest
 run_test recovery-snapshot-contracts "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.recovery.AndroidRecoverySnapshotStoreTest
+    -e class com.promenar.infinity.data.local.db.recovery.AndroidRecoverySnapshotStoreTest
 run_test dual-database-recovery "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest
+    -e class com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest
 run_test dual-database-interruption "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryInterruptionTest
+    -e class com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseRecoveryInterruptionTest
 run_test dual-database-source-probe "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseSourceProbeSafetyTest
+    -e class com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseSourceProbeSafetyTest
 run_test dual-database-workspace-recovery "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest
+    -e class com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest
 run_test legacy-attachment-access "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest
+    -e class com.promenar.infinity.ui.chat.LegacyAttachmentDeviceTest
 run_test chat-image-encoder "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.chat.ChatImageEncoderDeviceTest
+    -e class com.promenar.infinity.ui.chat.ChatImageEncoderDeviceTest
 run_test rag-workspace-source-selector "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest
+    -e class com.promenar.infinity.ui.rag.RagWorkspaceSourceSelectorDeviceTest
 run_test agent-hub-content "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.hub.AgentHubScreenContentTest
+    -e class com.promenar.infinity.ui.hub.AgentHubScreenContentTest
 run_test packaged-python "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.exec.PackagedPythonDeviceTest
+    -e class com.promenar.infinity.data.exec.PackagedPythonDeviceTest
 run_test builtin-exec "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.exec.BuiltinExecDeviceTest
+    -e class com.promenar.infinity.data.exec.BuiltinExecDeviceTest
 run_test directory-workspace "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.workspace.DirectoryWorkspaceDeviceTest
+    -e class com.promenar.infinity.data.workspace.DirectoryWorkspaceDeviceTest
 run_test workspace-picker "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.workspace.WorkspacePickerDeviceTest
+    -e class com.promenar.infinity.data.workspace.WorkspacePickerDeviceTest
 run_test git-inspector "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.git.GitInspectorDeviceTest
+    -e class com.promenar.infinity.data.git.GitInspectorDeviceTest
 run_test git-remote-auth "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.git.remote.GitRemoteAuthDeviceTest
+    -e class com.promenar.infinity.data.git.remote.GitRemoteAuthDeviceTest
 run_test tailnet-node "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.tailnet.TailnetDeviceTest
+    -e class com.promenar.infinity.data.tailnet.TailnetDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then
@@ -494,34 +494,34 @@ fi
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test mainactivity-chat-flow "${MAIN_ACTIVITY_RUNNER}" \
-    -e class com.promenar.nexara.MainActivityChatFlowE2eTest
+    -e class com.promenar.infinity.MainActivityChatFlowE2eTest
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test mainactivity-new-session "${MAIN_ACTIVITY_RUNNER}" \
-    -e class com.promenar.nexara.MainActivityNewSessionE2eTest
+    -e class com.promenar.infinity.MainActivityNewSessionE2eTest
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test onboarding-full "${APP_RUNNER}" \
-    -e class com.promenar.nexara.onboarding.OnboardingAndroidEndToEndTest
+    -e class com.promenar.infinity.onboarding.OnboardingAndroidEndToEndTest
 run_test prompt-editor-contracts "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.common.UnifiedPromptEditorE2ETest
+    -e class com.promenar.infinity.ui.common.UnifiedPromptEditorE2ETest
 run_layout_and_accessibility_contracts
 
 # API 31 minimum 与 API 35 full 共用这些真实设备能力合同。
 run_test external-folder-saf "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.storage.SafExternalFolderDeviceTest
+    -e class com.promenar.infinity.data.storage.SafExternalFolderDeviceTest
 run_test script-runtime "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.script.ScriptRuntimeDeviceTest
+    -e class com.promenar.infinity.data.script.ScriptRuntimeDeviceTest
 run_test rich-content-webview "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.renderer.RichContentWebViewDeviceTest
+    -e class com.promenar.infinity.ui.renderer.RichContentWebViewDeviceTest
 run_test rich-content-theme "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.renderer.RichContentThemeTest
+    -e class com.promenar.infinity.ui.renderer.RichContentThemeTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]; then
     echo "跳过 SSH 设备用例：minimum 范围不运行 SSH。"
     adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-after-tests.txt"
     if grep -Eq "Process: ${TARGET_PACKAGE_REGEX}([,[:space:]]|$)|ANR in ${TARGET_PACKAGE_REGEX}" "${ARTIFACT_DIR}/crash-after-tests.txt"; then
-        echo "最低 SDK 核心回归后 crash buffer 包含 Nexara 崩溃" >&2
+        echo "最低 SDK 核心回归后 crash buffer 包含 Infinity Workbench 崩溃" >&2
         exit 1
     fi
     echo "API ${API_LEVEL} 最低 SDK 核心可达性、无障碍与自适应布局测试全部通过。"
@@ -529,89 +529,89 @@ if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]; then
 fi
 
 run_test external-folder-real-path "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.storage.RealPathExternalFolderDeviceTest
+    -e class com.promenar.infinity.data.storage.RealPathExternalFolderDeviceTest
 run_test database-migration-1-2 "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To2Test
+    -e class com.promenar.infinity.data.local.db.InfinityDatabaseMigration1To2Test
 run_test database-migration-2-3 "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration2To3Test
+    -e class com.promenar.infinity.data.local.db.InfinityDatabaseMigration2To3Test
 run_test database-migration-1-current "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To5Test
+    -e class com.promenar.infinity.data.local.db.InfinityDatabaseMigration1To5Test
 run_test database-migration-18-22 "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration18To23Test
+    -e class com.promenar.infinity.data.local.db.InfinityDatabaseMigration18To23Test
 run_test legacy-database-promotion "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.local.db.LegacyDatabasePromoterInstrumentedTest
+    -e class com.promenar.infinity.data.local.db.LegacyDatabasePromoterInstrumentedTest
 run_ssh_device_contracts
 
 run_test onboarding-seed-first-chat "${APP_RUNNER}" \
-    -e class com.promenar.nexara.onboarding.OnboardingAndroidEndToEndTest#forceStopPhaseCheckpoint \
+    -e class com.promenar.infinity.onboarding.OnboardingAndroidEndToEndTest#forceStopPhaseCheckpoint \
     -e onboardingPhase seed_first_chat
 force_stop_target
 run_test onboarding-verify-first-chat "${APP_RUNNER}" \
-    -e class com.promenar.nexara.onboarding.OnboardingAndroidEndToEndTest#forceStopPhaseCheckpoint \
+    -e class com.promenar.infinity.onboarding.OnboardingAndroidEndToEndTest#forceStopPhaseCheckpoint \
     -e onboardingPhase verify_first_chat
 
 run_test backup-compose-saf-roundtrip "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.settings.BackupComposeSafRoundTripTest
+    -e class com.promenar.infinity.ui.settings.BackupComposeSafRoundTripTest
 
 run_test backup-process-prepare "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidBackupProcessRecreationTest \
+    -e class com.promenar.infinity.data.backup.AndroidBackupProcessRecreationTest \
     -e backupPhase prepare
 force_stop_target
 run_test backup-process-commit "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidBackupProcessRecreationTest \
+    -e class com.promenar.infinity.data.backup.AndroidBackupProcessRecreationTest \
     -e backupPhase commit
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test restore-relay-export-no-key "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase exportNoKey
 force_stop_target
 run_expected_relay_death stageNoKey
 run_test restore-relay-verify-no-key "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase verifyNoKey
 force_stop_target
 run_test restore-relay-no-replay-no-key "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase noReplayNoKey
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test restore-relay-export "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase export
 force_stop_target
 run_expected_relay_death stage
 run_test restore-relay-verify "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase verify
 force_stop_target
 run_test restore-relay-no-replay "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e class com.promenar.infinity.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase noReplay
 
 run_test generation-notification-factory "${APP_RUNNER}" \
-    -e class com.promenar.nexara.background.generation.GenerationNotificationFactoryTest
+    -e class com.promenar.infinity.background.generation.GenerationNotificationFactoryTest
 prepare_target_for_foreground_notification
 run_test generation-foreground-service "${APP_RUNNER}" \
-    -e class com.promenar.nexara.background.generation.GenerationForegroundServiceDeviceTest
+    -e class com.promenar.infinity.background.generation.GenerationForegroundServiceDeviceTest
 
 run_test document-parser-fixtures "${APP_RUNNER}" \
-    -e class com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest
+    -e class com.promenar.infinity.data.rag.DocumentParserDeviceE2eTest
 run_test share-import-contracts "${APP_RUNNER}" \
-    -e class com.promenar.nexara.share.core.ShareImportAndroidEndToEndTest
+    -e class com.promenar.infinity.share.core.ShareImportAndroidEndToEndTest
 run_test rag-files-navigation "${APP_RUNNER}" \
-    -e class com.promenar.nexara.ui.rag.RagFilesPanelNavigationTest
+    -e class com.promenar.infinity.ui.rag.RagFilesPanelNavigationTest
 
 force_stop_target
 run_test generation-cold-track "${APP_RUNNER}" \
-    -e class com.promenar.nexara.background.generation.GenerationForegroundServiceColdStartDeviceTest#coldTrackDuringStartupRecoveryStopsGracefullyWithoutProcessCrash
+    -e class com.promenar.infinity.background.generation.GenerationForegroundServiceColdStartDeviceTest#coldTrackDuringStartupRecoveryStopsGracefullyWithoutProcessCrash
 force_stop_target
 run_test generation-cold-stop "${APP_RUNNER}" \
-    -e class com.promenar.nexara.background.generation.GenerationForegroundServiceColdStartDeviceTest#coldStopDuringStartupRecoveryStopsGracefullyWithoutCoordinator
+    -e class com.promenar.infinity.background.generation.GenerationForegroundServiceColdStartDeviceTest#coldStopDuringStartupRecoveryStopsGracefullyWithoutCoordinator
 
 adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-after-tests.txt"
 if grep -Eq "Process: ${TARGET_PACKAGE_REGEX}([,[:space:]]|$)|ANR in ${TARGET_PACKAGE_REGEX}" "${ARTIFACT_DIR}/crash-after-tests.txt"; then
-    echo "设备回归后 crash buffer 包含 Nexara 崩溃" >&2
+    echo "设备回归后 crash buffer 包含 Infinity Workbench 崩溃" >&2
     exit 1
 fi
 

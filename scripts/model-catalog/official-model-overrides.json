@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
   "source": {
-    "id": "nexara-official-overrides",
-    "url": "https://github.com/promenar/Nexara/blob/main/scripts/model-catalog/official-model-overrides.json",
+    "id": "infinity-official-overrides",
+    "url": "https://github.com/Promenar/Infinity-Workbench/blob/main/scripts/model-catalog/official-model-overrides.json",
     "license": "Google documentation: CC BY 4.0; SenseNova official API documentation: no repository license declared"
   },
   "records": [
     {
       "canonicalModelId": "google/gemini-3.8-flash",
       "displayName": "Gemini 3.8 Flash",
-      "source": "NEXARA_OVERRIDE",
+      "source": "INFINITY_OVERRIDE",
       "exactAliases": [
         "gemini-3.8-flash"
       ],
@@ -40,7 +40,7 @@
     {
       "canonicalModelId": "sensenova/sensenova-6.8-flash-lite",
       "displayName": "SenseNova 6.8 Flash Lite Preview",
-      "source": "NEXARA_OVERRIDE",
+      "source": "INFINITY_OVERRIDE",
       "exactAliases": [
         "sensenova-6.8-flash-lite"
       ],

@@ -1,4 +1,4 @@
-# Nexara — 全局架构设计文档
+# Infinity Workbench — 全局架构设计文档
 
 > **版本**: 2.3.0
 > **更新时间**: 2026-08-25
@@ -225,7 +225,7 @@ IProviderRepository
 
 ### 2.4 上下文构建引擎（ContextBuilder）
 
-上下文构建是 Nexara 的核心调度器，负责从多个数据源收集、打分、组装 System Prompt。
+上下文构建是 Infinity Workbench 的核心调度器，负责从多个数据源收集、打分、组装 System Prompt。
 数据源分为 **被动检索** 和 **主动工具回传** 两类：
 
 - **被动检索**（每次对话自动触发）：向量检索、FTS5 全文、知识图谱查询、历史摘要
@@ -568,7 +568,7 @@ sealed class NavRoute(val route: String) {
 
 ```
 native-ui/
-├── app/src/main/java/com/promenar/nexara/
+├── app/src/main/java/com/promenar/infinity/
 │   ├── data/          ← 100% Android 依赖（Room / OkHttp / Context）
 │   ├── ui/            ← 100% Compose Material3（Android-only API）
 │   └── navigation/    ← Compose Navigation（Android-only）
@@ -630,7 +630,7 @@ Step 4: 数据层迁移
 ### 6.3 Release 网络与日志边界
 
 - `v0.2.1-beta` Release 的云端 Provider、MCP 与 WebDAV 只允许 HTTPS；私网 HTTP 只允许显式 Debug/Integration 测试，不得通过 Release Manifest 放宽。
-- Debug 日志统一经 `NexaraLogger` 与 `SensitiveDataRedactor`；Release 输出入口受编译期门禁并由 R8 剥离。
+- Debug 日志统一经 `InfinityLogger` 与 `SensitiveDataRedactor`；Release 输出入口受编译期门禁并由 R8 剥离。
 - Release APK 验证器对包身份、单一签名者、证书指纹、ZIP 边界、GGUF/llama/ggml 制品、常见密钥/Authorization/私钥/本机路径和 SHA-256 执行 fail-closed 检查。
 
 ---
@@ -681,7 +681,7 @@ Foreground Service 只承接用户在可见界面发起的当前任务，支持�
 
 - `minSdk=31`、`targetSdk=36`、`versionCode=3`、`versionName=0.2.1-beta`；Release 使用环境变量签名并开启 R8/资源收缩。
 - GGUF/llama.cpp 不进入本版稳定能力，Release 关闭本地推理并由 APK 扫描器拒绝相关制品。
-- `scripts/nexara-metro-tui.js` 是 Debug Metro 事件的开发者 TUI，不是最终用户 CLI，也不承担 Android UI 的业务功能对等。
+- `scripts/infinity-metro-tui.js` 是 Debug Metro 事件的开发者 TUI，不是最终用户 CLI，也不承担 Android UI 的业务功能对等。
 - 最终放行证据以 [v0.2.1-beta validation](release/v0.2.1-beta-validation.md) 为准；当前签名 APK 必须同时通过冷安装和从冻结 `v0.1-beta` 同签名 APK 的 `adb install -r` 覆盖升级数据继承。未执行项必须保持 `PENDING`，编译或专项单测不能代替签名 APK、minified 业务验真和视觉矩阵。
 
 ---

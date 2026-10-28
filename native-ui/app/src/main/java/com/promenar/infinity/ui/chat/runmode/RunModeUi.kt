@@ -1,0 +1,557 @@
+package com.promenar.infinity.ui.chat.runmode
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.promenar.infinity.InfinityApplication
+import com.promenar.infinity.R
+import com.promenar.infinity.data.linux.LinuxRecoveryAction
+import com.promenar.infinity.data.linux.LinuxRecoveryEvent
+import com.promenar.infinity.data.linux.LinuxResetLossSummary
+import com.promenar.infinity.data.linux.LinuxRunModeExportFailureReason
+import com.promenar.infinity.data.linux.LinuxRunModeExportReport
+import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
+import com.promenar.infinity.data.session.SessionRunModeCheck
+import com.promenar.infinity.data.session.SessionRunModeSwitchResult
+import com.promenar.infinity.domain.linux.LinuxFailure
+import com.promenar.infinity.domain.linux.LinuxRuntimeState
+import com.promenar.infinity.domain.model.SessionRunMode
+import com.promenar.infinity.ui.common.InfinityBottomSheet
+import com.promenar.infinity.ui.common.InfinityConfirmDialog
+import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.linux.settings.linuxBytes
+import com.promenar.infinity.ui.linux.settings.linuxFailureText
+import com.promenar.infinity.ui.linux.settings.linuxStepTitle
+import com.promenar.infinity.ui.theme.InfinitySpacing
+import com.promenar.infinity.ui.theme.InfinityTypography
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+object RunModeTags {
+    const val CHIP = "run_mode_chip"
+    const val PICKER = "run_mode_picker"
+    const val CHECKPOINT = "run_mode_checkpoint"
+    const val PRIMARY = "run_mode_checkpoint_primary"
+    const val BUILTIN = "run_mode_checkpoint_builtin"
+    const val RESET = "run_mode_checkpoint_reset"
+    const val EXPORT = "run_mode_checkpoint_export"
+    fun option(mode: SessionRunMode) = "run_mode_option_${mode.name.lowercase()}"
+}
+
+/** 顶栏模式标识的数据；Play 版没有 Linux，不显示。 */
+data class RunModeBadge(val mode: SessionRunMode?, val unavailable: Boolean)
+
+/**
+ * 用户显式切换模式。返回仍需处理的检查点阶段：切到 Linux 但环境不可用时进入修复，
+ * 从 Linux 主目录工作区切到内置时提示导出；无需处理返回 null，切换失败抛出异常。
+ */
+suspend fun switchRunMode(application: InfinityApplication, sessionId: String, mode: SessionRunMode): RunModeCheckpointStage? =
+    withContext(Dispatchers.IO) {
+        when (val result = application.sessionRunModes.switchMode(sessionId, mode)) {
+            is SessionRunModeSwitchResult.Success -> when {
+                mode == SessionRunMode.LINUX -> initialStage(application.sessionRunModes.check(sessionId))
+                result.exportWorkspaceId != null -> RunModeCheckpointStage.ExportOffer
+                else -> null
+            }
+            SessionRunModeSwitchResult.LinuxUnsupported, SessionRunModeSwitchResult.SessionMissing ->
+                throw IllegalStateException("运行模式切换失败：$result")
+        }
+    }
+
+@StringRes
+fun SessionRunMode?.labelRes(): Int = when (this) {
+    SessionRunMode.LINUX -> R.string.run_mode_linux
+    SessionRunMode.BUILTIN -> R.string.run_mode_builtin
+    null -> R.string.run_mode_unset
+}
+
+/**
+ * 顶栏状态行开头的模式标识：图标加文字（状态行放不下时只留图标），不画边框，与其后的工作区、Git 信息同一行同一字号。
+ * Linux 用主色；内置用次要文字色；Linux 不可用时换成警示图标与警示色（读屏说明不可用），点按回到检查点。
+ */
+@Composable
+fun RunModeChip(
+    mode: SessionRunMode?,
+    unavailable: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
+) {
+    val label = stringResource(mode.labelRes())
+    val description = if (unavailable) stringResource(R.string.run_mode_chip_unavailable_cd, label)
+        else stringResource(R.string.run_mode_chip_cd, label)
+    val colors = MaterialTheme.colorScheme
+    val tint = when {
+        unavailable -> colors.tertiary
+        mode == SessionRunMode.LINUX -> colors.primary
+        else -> colors.onSurfaceVariant
+    }
+    Row(
+        modifier = modifier
+            .heightIn(min = 24.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .clearAndSetSemantics {
+                role = Role.Button
+                contentDescription = description
+            }
+            .testTag(RunModeTags.CHIP),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = when {
+                unavailable -> Icons.Rounded.WarningAmber
+                mode == SessionRunMode.LINUX -> Icons.Rounded.Terminal
+                else -> Icons.Rounded.Inventory2
+            },
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(14.dp),
+        )
+        if (showLabel) Text(
+            text = label,
+            style = InfinityTypography.labelMedium,
+            color = tint,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/** 会话菜单与首次选择共用的两项模式列表；Play 版只有内置。 */
+@Composable
+fun RunModeOptions(selected: SessionRunMode?, linuxSupported: Boolean, onSelect: (SessionRunMode) -> Unit) {
+    val modes = if (linuxSupported) SessionRunMode.entries else listOf(SessionRunMode.BUILTIN)
+    modes.forEach { mode ->
+        InfinitySettingsItem(
+            horizontalPadding = 0.dp,
+            title = stringResource(mode.labelRes()),
+            subtitle = stringResource(if (mode == SessionRunMode.LINUX) R.string.run_mode_linux_desc else R.string.run_mode_builtin_desc),
+            subtitleMaxLines = 3,
+            role = Role.RadioButton,
+            selected = mode == selected,
+            modifier = Modifier.testTag(RunModeTags.option(mode)),
+            onClick = { onSelect(mode) },
+            trailingContent = {
+                if (mode == selected) Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
+            },
+        )
+    }
+    Text(
+        stringResource(R.string.run_mode_switch_note),
+        style = InfinityTypography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = InfinitySpacing.Small),
+    )
+}
+
+/** 会话菜单里的手动切换；切换不搬文件，从 Linux 主目录工作区切到内置时提示导出。 */
+@Composable
+fun RunModePickerSheet(
+    show: Boolean,
+    selected: SessionRunMode?,
+    linuxSupported: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (SessionRunMode) -> Unit,
+    /** 宽窗口下贴着点按的运行模式标识或顶栏菜单弹出。 */
+    popover: com.promenar.infinity.ui.common.InfinityPopoverSpec? = null,
+) {
+    InfinityBottomSheet(show = show, onDismiss = onDismiss, title = stringResource(R.string.run_mode_title), scrollContent = true,
+        modifier = Modifier.testTag(RunModeTags.PICKER), popover = popover) {
+        RunModeOptions(selected, linuxSupported) { mode -> onDismiss(); if (mode != selected) onSelect(mode) }
+    }
+}
+
+enum class RunModeUnavailableReason { NOT_INSTALLED, INTERRUPTED, BROKEN, BUSY, UNSUPPORTED }
+
+internal fun unavailableReason(state: LinuxRuntimeState): RunModeUnavailableReason = when (state) {
+    is LinuxRuntimeState.NotInstalled -> RunModeUnavailableReason.NOT_INSTALLED
+    is LinuxRuntimeState.InstallInterrupted -> RunModeUnavailableReason.INTERRUPTED
+    is LinuxRuntimeState.Broken -> RunModeUnavailableReason.BROKEN
+    is LinuxRuntimeState.Installing, is LinuxRuntimeState.Maintaining -> RunModeUnavailableReason.BUSY
+    is LinuxRuntimeState.Unavailable -> RunModeUnavailableReason.UNSUPPORTED
+    // Ready 不会进入检查点；保持完整分支以免新增状态时静默归类。
+    is LinuxRuntimeState.Ready -> RunModeUnavailableReason.BUSY
+}
+
+/** 检查点的界面阶段：修复 → 重置或导出 → 改用内置，每一步都可直接改用内置。 */
+sealed interface RunModeCheckpointStage {
+    data class Select(val canChooseLinux: Boolean) : RunModeCheckpointStage
+    data class Unavailable(val reason: RunModeUnavailableReason) : RunModeCheckpointStage
+    /** [install] 表示修复动作是从“尚未安装”发起的首次安装，标题据此写成安装。 */
+    data class Working(
+        val action: LinuxRecoveryAction,
+        @param:StringRes val step: Int? = null,
+        val fraction: Float? = null,
+        val install: Boolean = false,
+    ) : RunModeCheckpointStage
+    /** [canReset] 为 false 表示重置也失败，只剩导出与改用内置。 */
+    data class RepairFailed(val failure: LinuxFailure?, val loss: LinuxResetLossSummary?, val canReset: Boolean) : RunModeCheckpointStage
+    data object ExportChoice : RunModeCheckpointStage
+    data object ExportOffer : RunModeCheckpointStage
+    data class Exported(val report: LinuxRunModeExportReport?, val privateTarget: Boolean) : RunModeCheckpointStage
+}
+
+internal fun initialStage(check: SessionRunModeCheck): RunModeCheckpointStage? = when (check) {
+    is SessionRunModeCheck.SelectionRequired -> RunModeCheckpointStage.Select(check.canChooseLinux)
+    is SessionRunModeCheck.EnvironmentUnavailable -> RunModeCheckpointStage.Unavailable(unavailableReason(check.linuxState))
+    is SessionRunModeCheck.Available, SessionRunModeCheck.SessionMissing -> null
+}
+
+@StringRes
+internal fun workingTitle(stage: RunModeCheckpointStage.Working): Int = when (stage.action) {
+    LinuxRecoveryAction.REPAIR -> if (stage.install) R.string.run_mode_working_install else R.string.run_mode_working_repair
+    LinuxRecoveryAction.RESET -> R.string.run_mode_working_reset
+    LinuxRecoveryAction.EXPORT -> R.string.run_mode_working_export
+}
+
+/** 恢复进度事件映射为界面阶段；完成事件由调用方按动作分别处理。 */
+internal fun progressStage(event: LinuxRecoveryEvent): RunModeCheckpointStage.Working? = when (event) {
+    is LinuxRecoveryEvent.Started -> RunModeCheckpointStage.Working(event.action)
+    is LinuxRecoveryEvent.Progress -> RunModeCheckpointStage.Working(
+        action = event.action,
+        step = event.install?.current?.step?.let(::linuxStepTitle),
+        fraction = event.install?.fraction,
+    )
+    is LinuxRecoveryEvent.Finished -> null
+}
+
+/**
+ * 进入会话的检查点：Linux 会话环境不可用或旧会话尚未选择模式时出现。只有用户显式选择才修复、重置、导出或切换，
+ * 不在失败后自动降级；关闭面板不改变会话模式。
+ */
+@Composable
+fun RunModeCheckpointSheet(
+    application: InfinityApplication,
+    sessionId: String,
+    initial: RunModeCheckpointStage,
+    workspaceId: String?,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var stage by remember(sessionId, initial) { mutableStateOf(initial) }
+    var confirmReset by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var canExport by remember(workspaceId) { mutableStateOf(false) }
+    LaunchedEffect(workspaceId) {
+        canExport = workspaceId != null && withContext(Dispatchers.IO) {
+            application.database.workspaceDao().getById(workspaceId)?.kind == WorkspaceEntity.KIND_LINUX_HOME
+        }
+    }
+    val failedText = stringResource(R.string.run_mode_action_failed)
+    val switchFailedText = stringResource(R.string.run_mode_switch_failed)
+
+    fun failed(error: Exception, text: String = failedText) {
+        if (error is CancellationException) throw error
+        message = text
+    }
+    fun switchTo(mode: SessionRunMode) = scope.launch {
+        message = null
+        try {
+            switchRunMode(application, sessionId, mode)?.let { stage = it } ?: onDismiss()
+        } catch (error: Exception) { failed(error, switchFailedText) }
+    }
+    suspend fun lossSummary(): LinuxResetLossSummary? = try {
+        application.linuxRunModeRecovery.resetLossSummary()
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        null
+    }
+    fun repair() = scope.launch {
+        message = null
+        val install = (stage as? RunModeCheckpointStage.Unavailable)?.reason == RunModeUnavailableReason.NOT_INSTALLED
+        try {
+            application.linuxRunModeRecovery.repair().collect { event ->
+                progressStage(event)?.let { stage = it.copy(install = install) }
+                if (event is LinuxRecoveryEvent.Finished) {
+                    if (event.result.success) onDismiss()
+                    else stage = RunModeCheckpointStage.RepairFailed(event.result.failure, lossSummary(), canReset = true)
+                }
+            }
+        } catch (error: Exception) {
+            failed(error)
+            stage = RunModeCheckpointStage.RepairFailed(null, lossSummary(), canReset = true)
+        }
+    }
+    fun reset() = scope.launch {
+        message = null
+        try {
+            application.linuxRunModeRecovery.reset().collect { event ->
+                progressStage(event)?.let { stage = it }
+                if (event is LinuxRecoveryEvent.Finished) {
+                    if (event.result.success) onDismiss()
+                    else stage = RunModeCheckpointStage.RepairFailed(event.result.failure, null, canReset = false)
+                }
+            }
+        } catch (error: Exception) {
+            failed(error)
+            stage = RunModeCheckpointStage.RepairFailed(null, null, canReset = false)
+        }
+    }
+    val returnStage = remember { mutableStateOf<RunModeCheckpointStage>(initial) }
+    fun export(treeUri: android.net.Uri?) = scope.launch {
+        message = null
+        try {
+            application.exportLinuxSessionHome(sessionId, treeUri).collect { event ->
+                progressStage(event)?.let { stage = it }
+                if (event is LinuxRecoveryEvent.Finished) {
+                    stage = RunModeCheckpointStage.Exported(event.result.export, privateTarget = treeUri == null)
+                }
+            }
+        } catch (error: Exception) {
+            failed(error)
+            stage = returnStage.value
+        }
+    }
+    val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) export(uri)
+    }
+    val working = stage is RunModeCheckpointStage.Working
+    InfinityBottomSheet(show = true, onDismiss = onDismiss, dismissEnabled = !working, scrollContent = true,
+        modifier = Modifier.testTag(RunModeTags.CHECKPOINT)) {
+        RunModeCheckpointContent(
+            stage = stage,
+            canExport = canExport,
+            message = message,
+            actions = RunModeCheckpointActions(
+                onChoose = ::switchTo,
+                onRepair = ::repair,
+                onUseBuiltin = { switchTo(SessionRunMode.BUILTIN) },
+                onLater = onDismiss,
+                onReset = { confirmReset = true },
+                onExport = { returnStage.value = stage; stage = RunModeCheckpointStage.ExportChoice },
+                onExportPrivate = { export(null) },
+                onExportExternal = { runCatching { treePicker.launch(null) }.onFailure { message = failedText } },
+                onBack = { stage = returnStage.value },
+                onDone = { if (returnStage.value is RunModeCheckpointStage.ExportOffer) onDismiss() else stage = returnStage.value },
+            ),
+        )
+    }
+    if (confirmReset) {
+        InfinityConfirmDialog(
+            onDismissRequest = { confirmReset = false },
+            title = stringResource(R.string.run_mode_reset_confirm_title),
+            message = stringResource(R.string.run_mode_reset_confirm_message),
+            confirmText = stringResource(R.string.run_mode_action_reset),
+            isDestructive = true,
+            onConfirm = { confirmReset = false; reset() },
+            onCancel = { confirmReset = false },
+        )
+    }
+}
+
+data class RunModeCheckpointActions(
+    val onChoose: (SessionRunMode) -> Unit = {},
+    val onRepair: () -> Unit = {},
+    val onUseBuiltin: () -> Unit = {},
+    val onLater: () -> Unit = {},
+    val onReset: () -> Unit = {},
+    val onExport: () -> Unit = {},
+    val onExportPrivate: () -> Unit = {},
+    val onExportExternal: () -> Unit = {},
+    val onBack: () -> Unit = {},
+    val onDone: () -> Unit = {},
+)
+
+@Composable
+fun RunModeCheckpointContent(
+    stage: RunModeCheckpointStage,
+    canExport: Boolean,
+    message: String?,
+    actions: RunModeCheckpointActions,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = InfinitySpacing.Large),
+        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+    ) {
+        when (stage) {
+            is RunModeCheckpointStage.Select -> {
+                Heading(R.string.run_mode_select_title, stringResource(R.string.run_mode_select_body))
+                RunModeOptions(selected = null, linuxSupported = stage.canChooseLinux, onSelect = actions.onChoose)
+            }
+            is RunModeCheckpointStage.Unavailable -> {
+                Heading(R.string.run_mode_unavailable_title,
+                    stringResource(R.string.run_mode_unavailable_body, stringResource(stage.reason.textRes())))
+                val primary = when (stage.reason) {
+                    RunModeUnavailableReason.NOT_INSTALLED -> R.string.run_mode_action_install
+                    RunModeUnavailableReason.UNSUPPORTED, RunModeUnavailableReason.BUSY -> null
+                    else -> R.string.run_mode_action_repair
+                }
+                primary?.let { PrimaryAction(it, onClick = actions.onRepair) }
+                SecondaryAction(R.string.run_mode_action_builtin, RunModeTags.BUILTIN, actions.onUseBuiltin)
+                if (canExport) SecondaryAction(R.string.run_mode_action_export, RunModeTags.EXPORT, actions.onExport)
+                LaterAction(actions.onLater)
+            }
+            is RunModeCheckpointStage.Working -> {
+                Heading(workingTitle(stage), stage.step?.let { stringResource(it) }.orEmpty())
+                val fraction = stage.fraction
+                if (fraction != null) LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            is RunModeCheckpointStage.RepairFailed -> {
+                Heading(
+                    if (stage.canReset) R.string.run_mode_repair_failed_title else R.string.run_mode_rebuild_failed_title,
+                    stringResource(if (stage.canReset) R.string.run_mode_repair_failed_body else R.string.run_mode_rebuild_failed_body),
+                )
+                stage.failure?.let { failure ->
+                    Text(stringResource(linuxFailureText(failure.code)), style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                if (stage.canReset) {
+                    stage.loss?.let { LossSummary(it) }
+                    PrimaryAction(R.string.run_mode_action_reset, RunModeTags.RESET, destructive = true, onClick = actions.onReset)
+                }
+                if (canExport) SecondaryAction(R.string.run_mode_action_export, RunModeTags.EXPORT, actions.onExport)
+                SecondaryAction(R.string.run_mode_action_builtin, RunModeTags.BUILTIN, actions.onUseBuiltin)
+                LaterAction(actions.onLater)
+            }
+            RunModeCheckpointStage.ExportChoice -> {
+                Heading(R.string.run_mode_action_export, "")
+                PrimaryAction(R.string.run_mode_export_private, onClick = actions.onExportPrivate)
+                SecondaryAction(R.string.run_mode_export_external, null, actions.onExportExternal)
+                LaterAction(actions.onBack, R.string.common_btn_cancel)
+            }
+            RunModeCheckpointStage.ExportOffer -> {
+                Heading(R.string.run_mode_export_offer_title, stringResource(R.string.run_mode_export_offer_body))
+                PrimaryAction(R.string.run_mode_action_export, RunModeTags.EXPORT, onClick = actions.onExport)
+                LaterAction(actions.onLater)
+            }
+            is RunModeCheckpointStage.Exported -> {
+                val report = stage.report
+                val complete = report != null && report.complete
+                Heading(if (complete) R.string.run_mode_export_done_title else R.string.run_mode_export_partial_title, "")
+                if (report == null) {
+                    Body(stringResource(R.string.run_mode_export_none))
+                } else {
+                    val location = if (stage.privateTarget) stringResource(R.string.run_mode_export_private_location) else report.destination
+                    Body(pluralStringResource(R.plurals.run_mode_export_files, report.filesCopied.toInt().coerceAtLeast(0),
+                        report.filesCopied, linuxBytes(report.bytesCopied), location))
+                    if (report.failures.isNotEmpty()) {
+                        Body(stringResource(R.string.run_mode_export_failures))
+                        report.failures.take(MAX_FAILURES_SHOWN).forEach { failure ->
+                            Text("${failure.path} · ${stringResource(failure.reason.textRes())}", style = InfinityTypography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (report.failures.size > MAX_FAILURES_SHOWN) Text("…", style = InfinityTypography.bodySmall)
+                    }
+                }
+                PrimaryAction(R.string.run_mode_done, onClick = actions.onDone)
+            }
+        }
+        message?.let { Text(it, style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+private const val MAX_FAILURES_SHOWN = 20
+
+@StringRes
+private fun RunModeUnavailableReason.textRes(): Int = when (this) {
+    RunModeUnavailableReason.NOT_INSTALLED -> R.string.run_mode_reason_not_installed
+    RunModeUnavailableReason.INTERRUPTED -> R.string.run_mode_reason_interrupted
+    RunModeUnavailableReason.BROKEN -> R.string.run_mode_reason_broken
+    RunModeUnavailableReason.BUSY -> R.string.run_mode_reason_busy
+    RunModeUnavailableReason.UNSUPPORTED -> R.string.run_mode_reason_unsupported
+}
+
+@StringRes
+private fun LinuxRunModeExportFailureReason.textRes(): Int = when (this) {
+    LinuxRunModeExportFailureReason.LINK_SKIPPED -> R.string.run_mode_export_reason_link
+    LinuxRunModeExportFailureReason.UNSUPPORTED_TYPE -> R.string.run_mode_export_reason_type
+    LinuxRunModeExportFailureReason.IO -> R.string.run_mode_export_reason_io
+    LinuxRunModeExportFailureReason.CHANGED -> R.string.run_mode_export_reason_changed
+    LinuxRunModeExportFailureReason.SOURCE_UNAVAILABLE -> R.string.run_mode_export_reason_source
+}
+
+@Composable
+private fun Heading(@StringRes title: Int, body: String) {
+    Text(stringResource(title), style = InfinityTypography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+    if (body.isNotEmpty()) Body(body)
+}
+
+@Composable
+private fun Body(text: String) {
+    Text(text, style = InfinityTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun LossSummary(loss: LinuxResetLossSummary) {
+    Column(verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall)) {
+        Body(stringResource(R.string.run_mode_loss_summary, linuxBytes(loss.rootfsBytes), linuxBytes(loss.rootHomeBytes), linuxBytes(loss.otherHomeBytes)))
+        if (loss.installedPackages.isNotEmpty()) {
+            Text(pluralStringResource(R.plurals.run_mode_loss_packages, loss.installedPackages.size, loss.installedPackages.size),
+                style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (loss.unreadablePaths.isNotEmpty()) {
+            Text(pluralStringResource(R.plurals.run_mode_loss_unreadable, loss.unreadablePaths.size, loss.unreadablePaths.size),
+                style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun PrimaryAction(@StringRes text: Int, tag: String = RunModeTags.PRIMARY, destructive: Boolean = false, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = if (destructive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError) else ButtonDefaults.buttonColors(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag(tag),
+    ) { Text(stringResource(text)) }
+}
+
+@Composable
+private fun SecondaryAction(@StringRes text: Int, tag: String?, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget).let { if (tag != null) it.testTag(tag) else it },
+    ) { Text(stringResource(text)) }
+}
+
+@Composable
+private fun LaterAction(onClick: () -> Unit, @StringRes text: Int = R.string.run_mode_action_later) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget)) {
+        Text(stringResource(text))
+    }
+}

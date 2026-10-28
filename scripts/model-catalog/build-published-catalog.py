@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从公开上游构建并签名 Nexara 独立模型目录。"""
+"""从公开上游构建并签名 Infinity Workbench 独立模型目录。"""
 
 from __future__ import annotations
 
@@ -115,7 +115,7 @@ def read_source(location: str, *, max_bytes: int = SOURCE_MAX_BYTES) -> tuple[st
             raise CatalogError(f"远程源必须使用 HTTPS: {location}")
         request = urllib.request.Request(
             location,
-            headers={"Accept": "application/json", "User-Agent": "Nexara-model-catalog-builder/1"},
+            headers={"Accept": "application/json", "User-Agent": "Infinity-Workbench-model-catalog-builder/1"},
         )
         opener = urllib.request.build_opener(_NoRedirectHandler())
         try:
@@ -532,8 +532,8 @@ def _normalize_official_overrides(document: SourceDocument) -> tuple[dict[str, s
     if unexpected_source:
         raise CatalogError(f"{document.source_id}.source 包含不允许字段: {', '.join(sorted(unexpected_source))}")
     source_id = _required_text(source.get("id"), f"{document.source_id}.source.id")
-    if source_id != "nexara-official-overrides":
-        raise CatalogError(f"{document.source_id}.source.id 必须为 nexara-official-overrides")
+    if source_id != "infinity-official-overrides":
+        raise CatalogError(f"{document.source_id}.source.id 必须为 infinity-official-overrides")
     source_metadata = {
         "id": source_id,
         "url": _https_url(source.get("url"), f"{document.source_id}.source.url"),
@@ -556,8 +556,8 @@ def _normalize_official_overrides(document: SourceDocument) -> tuple[dict[str, s
             "displayName": _required_text(item.get("displayName"), f"{path}.displayName"),
             "source": _required_text(item.get("source"), f"{path}.source"),
         }
-        if record["source"] != "NEXARA_OVERRIDE":
-            raise CatalogError(f"{path}.source 必须为 NEXARA_OVERRIDE")
+        if record["source"] != "INFINITY_OVERRIDE":
+            raise CatalogError(f"{path}.source 必须为 INFINITY_OVERRIDE")
         aliases = item.get("exactAliases")
         if not isinstance(aliases, list) or not aliases or len(aliases) > 32:
             raise CatalogError(f"{path}.exactAliases 必须是 1..32 项数组")
@@ -644,7 +644,7 @@ def _read_third_party_notices() -> bytes:
     )
     if any(marker not in text for marker in required):
         raise CatalogError("third-party-notices.txt 缺少必需许可或来源声明")
-    forbidden = ("BEGIN PRIVATE KEY", "NEXARA_MODEL_CATALOG_SIGNING_KEY")
+    forbidden = ("BEGIN PRIVATE KEY", "INFINITY_MODEL_CATALOG_SIGNING_KEY")
     if any(marker in text for marker in forbidden):
         raise CatalogError("third-party-notices.txt 包含禁止的秘密标记")
     return raw
@@ -682,7 +682,7 @@ def _load_signing_key(signing_key: str | None, signing_key_env: str | None) -> t
     encoded = secret.encode("utf-8")
     if len(encoded) > 64 * 1024:
         raise CatalogError("签名私钥超过大小上限")
-    handle = tempfile.NamedTemporaryFile(prefix="nexara-catalog-key-", suffix=".pem", delete=False)
+    handle = tempfile.NamedTemporaryFile(prefix="infinity-catalog-key-", suffix=".pem", delete=False)
     try:
         handle.write(encoded)
         handle.flush()
@@ -841,7 +841,7 @@ def _default_timestamp() -> tuple[int, str]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     default_version, default_generated_at = _default_timestamp()
-    parser = argparse.ArgumentParser(description="构建并签名 Nexara 独立模型目录")
+    parser = argparse.ArgumentParser(description="构建并签名 Infinity Workbench 独立模型目录")
     parser.add_argument("--models-dev-models", default=DEFAULT_SOURCES["models-dev-models"])
     parser.add_argument("--models-dev-api", default=DEFAULT_SOURCES["models-dev-api"])
     parser.add_argument("--litellm", default=DEFAULT_SOURCES["litellm"])

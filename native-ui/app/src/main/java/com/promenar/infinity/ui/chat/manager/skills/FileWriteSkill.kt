@@ -1,0 +1,122 @@
+package com.promenar.infinity.ui.chat.manager.skills
+
+import com.promenar.infinity.data.model.ToolResult
+import com.promenar.infinity.data.repository.WorkspaceTextPolicyException
+import com.promenar.infinity.domain.tool.ToolRisk
+import com.promenar.infinity.domain.repository.IFileOperationRepository
+import com.promenar.infinity.domain.repository.IWorkspaceRepository
+import com.promenar.infinity.domain.repository.WriteResult
+import com.promenar.infinity.ui.chat.manager.registry.SkillDefinition
+import com.promenar.infinity.ui.chat.manager.registry.SkillExecutionContext
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonObject
+import com.promenar.infinity.ui.chat.manager.registry.stringArgument
+
+class FileWriteSkill(
+    private val fileOpRepo: IFileOperationRepository,
+    private val workspaceRepo: IWorkspaceRepository? = null,
+) : SkillDefinition {
+    override val id = "write_file"
+    override val name = "write_file"
+    override val description = "全量覆盖一个已存在的工作区文件（新建文件请用 create_file）。用 uuid 或 path 指定文件；expectedHash 取自 read_file 或 list_files 返回的 hash，用于乐观锁冲突检测。" + " " + WORKSPACE_VERSION_REQUIREMENT
+    override val mcpServerId: String? = null
+    override val risk = ToolRisk.FILE_WRITE
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"path":{"type":"string","description":"目标文件路径，如 /docs/a.md"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"},"expected_sha256":{"type":"string","description":"必须提供 expectedHash 或 expected_sha256 之一，取自 read_file 的 Hash 或 sha256"}},"required":["content"]}"""
+
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
+        if (resolveError != null) return resolveError
+        val uuid = resolvedUuid!!
+        val content = args.stringArgument("content")
+            ?: return ToolResult("err", "缺少 content", "error")
+        workspaceVersionError(id, args)?.let { return it }
+        val expectedHash = workspaceExpectedHash(args)!!
+
+        val result = try {
+            fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)
+        } catch (failure: WorkspaceTextPolicyException) {
+            return workspaceTextFailureResult("write_file", failure)
+        }
+        return when (result) {
+            is WriteResult.Success -> ToolResult(
+                "write_file_${System.currentTimeMillis()}",
+                if (result.indexQueued) {
+                    "写入成功，索引已入队。新 Hash: ${result.newHash}"
+                } else if (result.targetEpoch == null) {
+                    "写入成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。"
+                } else {
+                    "写入成功，但索引尚未入队。文件内容已保存（新 Hash: ${result.newHash}），无需重写内容；" +
+                        "如需立即可检索，可按返回契约依次调用 read_file 与 write_file 原样写回补偿。"
+                },
+                status = if (result.indexQueued) "success" else "error",
+                data = indexResultData(
+                    operation = "write_file",
+                    workspaceRootUuid = context.workspaceRootUuid,
+                    fileUuid = uuid,
+                    contentHash = result.newHash,
+                    targetEpoch = result.targetEpoch,
+                    indexQueued = result.indexQueued,
+                ),
+            )
+            is WriteResult.Conflict -> ToolResult(
+                "write_file_${System.currentTimeMillis()}",
+                "写入冲突！文件已被其他会话修改。当前 Hash: ${result.currentHash}，你的基准: ${result.expectedHash}。" +
+                    "请先调用 read_file 获取最新内容，或调用 diff_file 查看差异后重新写入。",
+                "error"
+            )
+            is WriteResult.NotFound -> ToolResult(
+                "write_file_${System.currentTimeMillis()}",
+                "文件不存在: $uuid",
+                "error"
+            )
+        }
+    }
+
+    private fun indexResultData(
+        operation: String,
+        workspaceRootUuid: String,
+        fileUuid: String,
+        contentHash: String,
+        targetEpoch: Long?,
+        indexQueued: Boolean,
+    ): String = buildJsonObject {
+        put("operation", operation)
+        put("fileUuid", fileUuid)
+        put("contentHash", contentHash)
+        put("targetEpoch", targetEpoch?.let(::JsonPrimitive) ?: JsonNull)
+        put("indexQueued", indexQueued)
+        if (!indexQueued && targetEpoch != null) {
+            put("indexRetry", buildJsonObject {
+                put("strategy", "read_then_rewrite_same_content")
+                put("workspaceRootUuid", workspaceRootUuid)
+                put("fileUuid", fileUuid)
+                put("contentHash", contentHash)
+                put("targetEpoch", targetEpoch)
+                put("steps", buildJsonArray {
+                    add(buildJsonObject {
+                        put("action", "read_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("mode", "range")
+                            put("startLine", 1)
+                            put("endLine", Int.MAX_VALUE)
+                        })
+                    })
+                    add(buildJsonObject {
+                        put("action", "write_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("content", "{{read_file.content}}")
+                            put("expectedHash", contentHash)
+                        })
+                    })
+                })
+            })
+        }
+    }.toString()
+}

@@ -8,7 +8,7 @@
 
 ## 背景
 
-需要为 Nexara 接入图像生成能力，LLM 可通过工具调用生成图片并在对话界面中内联展示。
+需要为 Infinity Workbench 接入图像生成能力，LLM 可通过工具调用生成图片并在对话界面中内联展示。
 
 核心挑战：
 1. LLM 聊天模型与图像生成模型可能调用**不同端点**（如 OpenAI 聊天 + Stability AI 生图）
@@ -71,14 +71,14 @@
 - 模型/端点可能运行时切换（ProviderManager 实时读取）
 - 避免长时间持有 HTTP 连接池
 
-**替代方案**: 在 NexaraApplication 中创建全局单例 → 拒绝，配置变更时无法自动刷新。
+**替代方案**: 在 InfinityApplication 中创建全局单例 → 拒绝，配置变更时无法自动刷新。
 
 ---
 
 ## 影响
 
 - **新增 3 个文件**: `ImageGenClient.kt`, `ImageGenerationSkill.kt`, `GeneratedImageData`
-- **修改 4 个文件**: `NexaraApplication.kt`（注册），`ChatScreen.kt`（渲染），`ToolExecutor.kt`（数据传递），`ARCHITECTURE.md`（文档）
+- **修改 4 个文件**: `InfinityApplication.kt`（注册），`ChatScreen.kt`（渲染），`ToolExecutor.kt`（数据传递），`ARCHITECTURE.md`（文档）
 - **无数据库迁移**: 复用现有 `Message.images` 字段
 - **无 API 变更**: 使用标准 OpenAI Images API 格式
 

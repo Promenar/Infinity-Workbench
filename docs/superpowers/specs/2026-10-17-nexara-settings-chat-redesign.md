@@ -1,4 +1,4 @@
-# Nexara 设置页与会话界面重设计规格
+# Infinity Workbench 设置页与会话界面重设计规格
 
 > 状态：批次一、批次二均已实施
 > 日期：2026-10-17
@@ -31,7 +31,7 @@
 
 ### 2.1 字体（`ui/theme/Type.kt`）
 
-界面角色调整如下，换行策略（`NexaraUiLineBreak` 等）保持不变。
+界面角色调整如下，换行策略（`InfinityUiLineBreak` 等）保持不变。
 
 | 角色 | 字号/行高 | 字重 | 用途 |
 | --- | --- | --- | --- |
@@ -48,7 +48,7 @@
 
 ### 2.2 间距与尺寸（`ui/theme/Spacing.kt`）
 
-在 `NexaraSpacing` 现有令牌之外新增：
+在 `InfinitySpacing` 现有令牌之外新增：
 
 | 令牌 | 值 | 含义 |
 | --- | --- | --- |
@@ -87,39 +87,39 @@
 
 ### 3.2 组件契约（`ui/common/`）
 
-**NexaraSettingsItem（重写）**：不再使用 M3 `ListItem`（其两行默认 72dp 是分组臃肿的来源），改为自定义 `Row`，按 2.2 节令牌实现。插槽：可选前导图标、标题（`bodyLarge`，普通状态最多 2 行，窄屏与放大字号按 3.1 节完整换行）、可选副标题（`bodySmall`，1 行，`TextOverflow.Ellipsis`）、尾部插槽。保留现有参数签名（`showChevron`、`trailingContent`、`subtitleIsIdentifier`、`enabled` 等）以免改动调用方；禁用态整体 38% 透明度。
+**InfinitySettingsItem（重写）**：不再使用 M3 `ListItem`（其两行默认 72dp 是分组臃肿的来源），改为自定义 `Row`，按 2.2 节令牌实现。插槽：可选前导图标、标题（`bodyLarge`，普通状态最多 2 行，窄屏与放大字号按 3.1 节完整换行）、可选副标题（`bodySmall`，1 行，`TextOverflow.Ellipsis`）、尾部插槽。保留现有参数签名（`showChevron`、`trailingContent`、`subtitleIsIdentifier`、`enabled` 等）以免改动调用方；禁用态整体 38% 透明度。
 
-**SettingsToggle（调整）**：与 NexaraSettingsItem 共用同一行布局与高度规则；`description` 同样限 1 行。
+**SettingsToggle（调整）**：与 InfinitySettingsItem 共用同一行布局与高度规则；`description` 同样限 1 行。
 
-**NexaraSettingsSection（扩展）**：新增 `footer: String? = null`。脚注渲染在分组容器下方，`bodySmall`、`onSurfaceVariant`、`NexaraReadingLineBreak`，左右 16dp、上 8dp；411dp 默认中文不超过 3 行，完整安全或风险说明可例外并在验收报告登记。首页导航不使用脚注。数值解释进入其选择弹层头部，其它说明每项一句；列表说明紧邻所属项目，不拼成整组文字墙。`NexaraSettingsGroup` 提供无重复标题的单项分组。
+**InfinitySettingsSection（扩展）**：新增 `footer: String? = null`。脚注渲染在分组容器下方，`bodySmall`、`onSurfaceVariant`、`InfinityReadingLineBreak`，左右 16dp、上 8dp；411dp 默认中文不超过 3 行，完整安全或风险说明可例外并在验收报告登记。首页导航不使用脚注。数值解释进入其选择弹层头部，其它说明每项一句；列表说明紧邻所属项目，不拼成整组文字墙。`InfinitySettingsGroup` 提供无重复标题的单项分组。
 
-**NexaraValueRow（新增）**：`title`、可选 `subtitle`、`value: String`、`onClick`。尾部为值文本（`bodyMedium`、`onSurfaceVariant`、tnum，最大宽度为行宽 40%，超出截断）加 18dp `ChevronRight`。点击打开 NexaraValuePickerSheet。语义：`Role.Button`，`stateDescription` 为当前值。
+**InfinityValueRow（新增）**：`title`、可选 `subtitle`、`value: String`、`onClick`。尾部为值文本（`bodyMedium`、`onSurfaceVariant`、tnum，最大宽度为行宽 40%，超出截断）加 18dp `ChevronRight`。点击打开 InfinityValuePickerSheet。语义：`Role.Button`，`stateDescription` 为当前值。
 
-**NexaraValuePickerSheet（新增）**：基于现有 `NexaraBottomSheet`。
+**InfinityValuePickerSheet（新增）**：基于现有 `InfinityBottomSheet`。
 
 - 头部：标题与触发行标题完全一致，`titleMedium`；说明 `bodySmall`，窄屏时允许完整换行。标题、说明、预设文字、“自定义…”与输入框左缘均距弹层边缘 24dp。
 - 离散模式：预设项为单选行（48dp，选中项尾部显示 20dp `Check`、`primary`）；点击预设立即生效并关闭弹层。
 - 自定义：列表末行“自定义…”，点击后原地展开数字输入框（`OutlinedTextField`，数字键盘，带单位后缀），超出范围时在输入框下方以 `bodySmall`、`error` 提示合法范围；展开后弹层底部出现唯一主按钮“完成”。
-- 连续模式（小数参数）：顶部大号当前值（`headlineMedium`、tnum、居中），下方 `NexaraSlider` 与两端最小/最大值标签（`labelSmall`），再下方一行预设胶囊（`FilterChip`，高 32dp）与“恢复默认”`TextButton`。拖动时实时更新值，松手提交。
+- 连续模式（小数参数）：顶部大号当前值（`headlineMedium`、tnum、居中），下方 `InfinitySlider` 与两端最小/最大值标签（`labelSmall`），再下方一行预设胶囊（`FilterChip`，高 32dp）与“恢复默认”`TextButton`。拖动时实时更新值，松手提交。
 - 弹层内容不超过屏高 70%，超出时内部滚动。
-- 枚举选择弹层显式启用内容滚动，横屏与放大字号下全部选项可达；通用 `NexaraBottomSheet` 的内容滚动为可选参数，已有滚动表单保持自身容器。
+- 枚举选择弹层显式启用内容滚动，横屏与放大字号下全部选项可达；通用 `InfinityBottomSheet` 的内容滚动为可选参数，已有滚动表单保持自身容器。
 
 **NumericSettingSpec（新增纯逻辑）**：描述 `min`、`max`、`step`、`presets: List<Preset(value, labelRes?)>`、`unit`、`unlimitedValue: Number?`（如 0 表示“不限”）、`format`、`kind`（离散/连续）。提供 `parseCustom(input): Result`、`clamp`、`format(value)`、`selectedPreset(value)` 等纯函数，并配单元测试（边界、非法输入、不限值、小数精度、步长对齐）。
 
-**NexaraInlineStepper（新增，替换 NexaraStepperSetting 的行尾部分）**：行尾胶囊 `[− n +]`，整体高 36dp、圆角 18dp、`surfaceContainerHigh`；两侧按钮可见区 32dp 圆形，图标 18dp，触控区 48dp（通过 `minimumInteractiveComponentSize` 横向延展，不增加行高）；中间数字最小宽 32dp、`labelLarge`、tnum、居中。到达边界时对应按钮 38% 透明并禁用。长按连续步进（首次 400ms 后每 80ms 一步）。`NexaraStepperSetting` 改为“设置行 + 行尾 NexaraInlineStepper”的组合，删除值叠在按钮上方的布局。
+**InfinityInlineStepper（新增，替换 InfinityStepperSetting 的行尾部分）**：行尾胶囊 `[− n +]`，整体高 36dp、圆角 18dp、`surfaceContainerHigh`；两侧按钮可见区 32dp 圆形，图标 18dp，触控区 48dp（通过 `minimumInteractiveComponentSize` 横向延展，不增加行高）；中间数字最小宽 32dp、`labelLarge`、tnum、居中。到达边界时对应按钮 38% 透明并禁用。长按连续步进（首次 400ms 后每 80ms 一步）。`InfinityStepperSetting` 改为“设置行 + 行尾 InfinityInlineStepper”的组合，删除值叠在按钮上方的布局。
 
 ### 3.3 控件选择规则
 
 | 设置性质 | 控件 |
 | --- | --- |
 | 布尔 | SettingsToggle |
-| 整数，步长 1，可选值不超过 20 个 | 设置行 + NexaraInlineStepper |
-| 其它整数（大范围、步长非 1、含“不限”） | NexaraValueRow + 离散模式选择弹层 |
-| 小数（温度、Top P、惩罚系数等） | NexaraValueRow + 连续模式选择弹层 |
-| 2–5 个枚举选项 | NexaraValueRow + 离散弹层；页面主维度的切换（如搜索引擎）可用分段按钮 |
-| 跳转 | NexaraSettingsItem + 箭头 |
+| 整数，步长 1，可选值不超过 20 个 | 设置行 + InfinityInlineStepper |
+| 其它整数（大范围、步长非 1、含“不限”） | InfinityValueRow + 离散模式选择弹层 |
+| 小数（温度、Top P、惩罚系数等） | InfinityValueRow + 连续模式选择弹层 |
+| 2–5 个枚举选项 | InfinityValueRow + 离散弹层；页面主维度的切换（如搜索引擎）可用分段按钮 |
+| 跳转 | InfinitySettingsItem + 箭头 |
 
-设置页正文中不得再直接出现 `NexaraSlider`；滑块只存在于连续模式弹层。实施前以 `grep -rn "NexaraSlider(\|NexaraStepperSetting(" app/src/main` 列出全部调用点，逐项按上表迁移并在报告中列出映射。
+设置页正文中不得再直接出现 `InfinitySlider`；滑块只存在于连续模式弹层。实施前以 `grep -rn "InfinitySlider(\|InfinityStepperSetting(" app/src/main` 列出全部调用点，逐项按上表迁移并在报告中列出映射。
 
 ### 3.4 文案规则
 
@@ -139,13 +139,13 @@
 
 ### 4.1 设置首页与各二级页
 
-全部改用 3.2 节组件；页面左右边距 16dp，顶部大标题沿用 `NexaraSettingsPageLayout`。逐页检查第 3.1 节七条规则。
+全部改用 3.2 节组件；页面左右边距 16dp，顶部大标题沿用 `InfinitySettingsPageLayout`。逐页检查第 3.1 节七条规则。
 
 ### 4.2 工具设置（`SkillsScreen`、`AgentRuntimeSettingsCard`、`ScriptRuntimeSettingsCard`）
 
 - “执行预算”分组：
-  - 最大轮次：NexaraValueRow，预设 10 / 25 / 50（默认）/ 100 / 不限，自定义 1–100。原“不限”独立开关删除，由预设“不限”写入 0，保持原存储语义。
-  - Token 上限：NexaraValueRow，预设 关闭 / 100K / 500K / 1M / 5M，自定义 0–10,000,000，步长对齐 10,000。
+  - 最大轮次：InfinityValueRow，预设 10 / 25 / 50（默认）/ 100 / 不限，自定义 1–100。原“不限”独立开关删除，由预设“不限”写入 0，保持原存储语义。
+  - Token 上限：InfinityValueRow，预设 关闭 / 100K / 500K / 1M / 5M，自定义 0–10,000,000，步长对齐 10,000。
   - 重复调用上限：设置行 + 行内步进器（2–20）。
   - 重置授权：设置行，标题 `error` 色，无副标题，说明移入脚注。
 - 搜索配置弹层：结果数量（1–20）改为行内步进器；搜索引擎保留分段/单选；密钥编辑器保持现状。
@@ -154,21 +154,21 @@
 ### 4.3 Termux、SSH、备份、主题、模型与提供商页
 
 - Termux：诊断卡保留“运行诊断测试”为本屏唯一主按钮；安装/权限步骤的操作改为 `TextButton` 或设置行；后台限制说明进入脚注。
-- 主题：文字缩放改为 NexaraValueRow，预设 80%–140% 每 10% 一档；颜色选择盘为允许的独立控件。
+- 主题：文字缩放改为 InfinityValueRow，预设 80%–140% 每 10% 一档；颜色选择盘为允许的独立控件。
 - 提供商、模型、默认模型、备份、用量统计页：按 3.1 节规则逐页整理，不改变数据展示内容。
 
 ### 4.4 检索设置（`ui/rag/*`、`ui/hub/AgentRagConfigScreen`、`AgentAdvancedRetrievalScreen`）
 
-所有滑块按 3.3 节迁移为 NexaraValueRow + 弹层；阈值类小数用连续模式；数量类按可选值个数决定步进器或离散弹层。
+所有滑块按 3.3 节迁移为 InfinityValueRow + 弹层；阈值类小数用连续模式；数量类按可选值个数决定步进器或离散弹层。
 
 ### 4.5 会话设置弹层（`SessionSettingsSheet`）
 
 - 四个标签依次为：模型 / 参数 / 工具 / 上下文。`sheet_tab_settings` 中文改为“上下文”、英文改为“Context”，键名不变；其余标签名不变。
-- 弹层标题 `titleLarge`；标签切换器使用全站统一的 `NexaraCapsuleTabRow`，容器高 56dp，单个页签触控高度不低于 48dp（调用方不可自定义高度）。
-- 各面板的“分隔线 + 粗体小标题 + 独立标题行 + 滑块行”结构全部改为 NexaraSettingsSection + 3.2 节组件。
+- 弹层标题 `titleLarge`；标签切换器使用全站统一的 `InfinityCapsuleTabRow`，容器高 56dp，单个页签触控高度不低于 48dp（调用方不可自定义高度）。
+- 各面板的“分隔线 + 粗体小标题 + 独立标题行 + 滑块行”结构全部改为 InfinitySettingsSection + 3.2 节组件。
 - 参数面板（思考强度选择保持现有卡片式单选）中的推理参数：流式超时（预设 60 / 120 / 180 / 300 秒，自定义 30–300）、Top P（连续）、最大输出 Token（预设 不限 / 1024 / 2048 / 4096 / 8192，自定义 0–8192）、Top K（预设 不限 / 20 / 40 / 100，自定义）、重复/存在/频率惩罚（连续）。
 - 上下文面板顺序：
-  1. “上下文管理”：自动压缩阈值（NexaraValueRow，预设 70% / 80% / 90%，自定义 50–95 步长 5）、保留最近轮次（行内步进器 1–20）、立即压缩（设置行，不可用原因作为副标题，原理说明进脚注）。
+  1. “上下文管理”：自动压缩阈值（InfinityValueRow，预设 70% / 80% / 90%，自定义 50–95 步长 5）、保留最近轮次（行内步进器 1–20）、立即压缩（设置行，不可用原因作为副标题，原理说明进脚注）。
   2. “检索”：记忆、全局记忆、文档、重排、知识图谱等开关改用 SettingsToggle（替换自定义 `ToolToggleRow`），不可用提示进脚注。
   3. “长期记忆”：与其它分组同样的卡片样式。
   4. “显示”：字号（行内步进器 10–18）。
@@ -336,7 +336,7 @@
 | 批次 | 所有权 |
 | --- | --- |
 | 一：令牌、设置组件与全部设置页 | `ui/theme/Type.kt`、`ui/theme/Spacing.kt`；`ui/common/` 中设置行、开关、分组、步进器、新增值行/选择弹层/NumericSettingSpec；`ui/settings/*`、`ui/rag/*`、`ui/hub/` 中的配置页、`ui/chat/SessionSettingsSheet.kt`；相关中英文字符串；截图基线 |
-| 二：会话界面 | `ui/chat/PipelineBubble.kt`、`CompactStepRow.kt`、`ToolInvocationPresentation.kt`（含新增摘要函数）、`ChatScreen.kt` 顶栏/消息流/输入区、`ChatInlineComponents.kt` 审批卡与检索行；`ui/common/SmoothStreamContent.kt`（StreamRevealer）、`ui/common/MarkdownText.kt`、`ui/renderer/NexaraMarkdownTheme.kt`；相关字符串；截图基线 |
+| 二：会话界面 | `ui/chat/PipelineBubble.kt`、`CompactStepRow.kt`、`ToolInvocationPresentation.kt`（含新增摘要函数）、`ChatScreen.kt` 顶栏/消息流/输入区、`ChatInlineComponents.kt` 审批卡与检索行；`ui/common/SmoothStreamContent.kt`（StreamRevealer）、`ui/common/MarkdownText.kt`、`ui/renderer/InfinityMarkdownTheme.kt`；相关字符串；截图基线 |
 
 每批验收命令（Gradle 在 `native-ui/` 运行，Python 在仓库根运行）：
 
@@ -363,7 +363,7 @@ python3 scripts/ci/check-distribution-manifests.py
 
 ## 9. 逐屏截图验收清单
 
-拍摄条件：Nexara_API_35 模拟器（1080×2400，420dpi，宽约 411dp）与 360dp 窄宽各一套；深色为主，浅色抽查设置首页、工具设置、会话页；中文为主，英文抽查工具设置与会话页。
+拍摄条件：Infinity_API_35 模拟器（1080×2400，420dpi，宽约 411dp）与 360dp 窄宽各一套；深色为主，浅色抽查设置首页、工具设置、会话页；中文为主，英文抽查工具设置与会话页。
 
 ### 9.1 全局检查项（每张设置截图逐项检查）
 

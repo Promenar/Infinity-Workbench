@@ -5,7 +5,7 @@ App 为 shell_exec / python_exec 注入 https_proxy、http_proxy、all_proxy（�
 Python urllib 与内置 git 使用的 dulwich（urllib3）都读取这些变量、带上 Proxy-Authorization、以域名形式
 把 tailnet 目标交给代理（HTTPS 走 CONNECT），而 no_proxy 中的本机地址直接连接。
 
-dulwich 部分通过环境变量 NEXARA_DULWICH_PATH（解压后的 dulwich 与 urllib3 wheel 所在目录）或已安装的
+dulwich 部分通过环境变量 INFINITY_DULWICH_PATH（解压后的 dulwich 与 urllib3 wheel 所在目录）或已安装的
 dulwich 导入，导入失败时跳过。不访问网络。
 """
 
@@ -71,7 +71,7 @@ class _Recorder:
                 self.requests.append((request_line, auth))
                 if self.proxy and auth != EXPECTED_AUTH:
                     conn.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n"
-                                 b"Proxy-Authenticate: Basic realm=\"nexara-tailnet\"\r\nContent-Length: 0\r\n\r\n")
+                                 b"Proxy-Authenticate: Basic realm=\"infinity-tailnet\"\r\nContent-Length: 0\r\n\r\n")
                     continue
                 # CONNECT 与普通请求都以 502 结束：只验证请求如何到达代理。
                 conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -128,7 +128,7 @@ class UrllibProxyEnvTest(_ProxyCase):
 
 
 def _load_dulwich() -> None:
-    for entry in reversed([part for part in os.environ.get("NEXARA_DULWICH_PATH", "").split(os.pathsep) if part]):
+    for entry in reversed([part for part in os.environ.get("INFINITY_DULWICH_PATH", "").split(os.pathsep) if part]):
         if entry not in sys.path:
             sys.path.insert(0, entry)
     import dulwich.client  # noqa: F401

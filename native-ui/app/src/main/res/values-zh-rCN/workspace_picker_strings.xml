@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE resources [
-    <!ENTITY brand "Nexara">
+    <!ENTITY brand "Infinity Workbench">
 ]>
 <resources>
     <string name="workspace_picker_title">选择工作区</string>
