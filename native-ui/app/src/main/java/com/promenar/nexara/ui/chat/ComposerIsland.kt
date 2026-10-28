@@ -43,7 +43,10 @@ import com.promenar.nexara.ui.common.motion.slowBlink
 import com.promenar.nexara.ui.common.network.rememberAnimationsEnabled
 import com.promenar.nexara.ui.theme.ComposerGlowStyle
 import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
+import com.promenar.nexara.ui.theme.NexaraMotionStyles
+import com.promenar.nexara.ui.theme.ScopeScreenPlacement
 import com.promenar.nexara.ui.theme.nexaraDomainColors
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.flow.collectLatest
@@ -143,15 +146,53 @@ internal class ComposerGlowState {
     var stripPhase = 0f
     /** 扫光点阵在流式阶段的扫光相位（圈数）。 */
     var sweepPhase = 0f
+    /** 扫光点阵流式阶段的强度：[act] 按 [SweepGridSpec.RateExponent] 次方映射。 */
+    var sweepLevel = 0f
+    /** 扫光点阵写入头的位置（格），平滑追赶已到达字数乘 [SweepGridSpec.CellsPerChar]。 */
+    var writeHead = 0f
+    /** 输入区在浮岛里的上沿（像素）；运行坞等顶层内容在它之上，灯珠墙类样式只铺到这里以下。 */
+    var lightsTop by mutableFloatStateOf(0f)
 
     fun advance(delta: Float, motion: GenerationMotion) {
         timeSeconds += delta
         act = motion.act(timeSeconds)
+        sweepLevel = sweepRateLevel(act)
         headDegrees = (headDegrees + delta * auroraHeadSpeed(motion, act)).mod(360f)
         breathPhase += delta * (0.6f + 1.4f * act) / 2.6f
         stripPhase += delta * (0.4f + act)
-        sweepPhase += delta * (0.5f + act) / 2.4f
+        sweepPhase += delta * (0.5f + sweepLevel) / 2.4f
+        val target = motion.writtenChars(timeSeconds) * SweepGridSpec.CellsPerChar
+        // 新一轮从头累计时直接回到起点；否则按时间常数追上，一批字到达时写入头平滑前进。
+        writeHead = if (target < writeHead) target else writeHead + (target - writeHead) * (1 - exp(-delta / SweepGridSpec.HeadEaseSeconds))
     }
+}
+
+/** 点阵波形屏在浮岛里的槽位。 */
+internal enum class ScopeSlot {
+    /** 不画点阵屏（其它光效样式）。 */
+    NONE,
+    /** 输入行右侧，画在灯效层里。 */
+    INPUT_ROW,
+    /** 浮岛顶沿：没有运行坞时，输入区上方一条。 */
+    ISLAND_TOP,
+    /** 运行坞与输入区的接缝处，顶替运行坞细灯带；与 [ISLAND_TOP] 是同一位置（贴着输入区上沿），只是上面多了运行坞。 */
+    DOCK_SEAM,
+}
+
+/** 浮岛里点阵带的排布：点阵屏放在哪个槽位，运行坞下沿是否画细灯带。同一浮岛只保留一条点阵带。 */
+internal data class ComposerBandLayout(val scope: ScopeSlot, val dockStrip: Boolean)
+
+/**
+ * 按光效样式、点阵屏位置、运行坞是否出现、点阵屏此刻是否在显示（生成中或本轮结束后停留），决定点阵带排布：
+ * - 点阵屏为输入行右侧模式或其它样式时，运行坞出现就画细灯带；
+ * - 点阵屏为顶沿模式且正在显示时，它贴在输入区上沿：有运行坞时位于接缝处、顶替细灯带，没有运行坞时就是浮岛顶沿；
+ * - 顶沿模式的点阵屏不在显示时收起，运行坞照常画细灯带。
+ */
+internal fun composerBandLayout(styles: NexaraMotionStyles, dockVisible: Boolean, screenActive: Boolean): ComposerBandLayout {
+    if (styles.composer != ComposerGlowStyle.SCOPE_SCREEN) return ComposerBandLayout(ScopeSlot.NONE, dockStrip = dockVisible)
+    if (styles.scopePlacement == ScopeScreenPlacement.INPUT_ROW) return ComposerBandLayout(ScopeSlot.INPUT_ROW, dockStrip = dockVisible)
+    if (!screenActive) return ComposerBandLayout(ScopeSlot.NONE, dockStrip = dockVisible)
+    return ComposerBandLayout(if (dockVisible) ScopeSlot.DOCK_SEAM else ScopeSlot.ISLAND_TOP, dockStrip = false)
 }
 
 /**
@@ -213,6 +254,7 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean, comp
     LaunchedEffect(animate, motion) {
         if (!animate) {
             state.act = motion.act(0.37f)
+            state.sweepLevel = sweepRateLevel(state.act)
             return@LaunchedEffect
         }
         // 只在光效可见时逐帧推进；空闲时不申请帧。

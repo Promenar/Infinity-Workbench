@@ -1756,7 +1756,7 @@
     <string name="motion_composer_bottom_strip">底沿数据流</string>
     <string name="motion_composer_bottom_strip_desc">底沿两排细灯，数据包从左往右流过。</string>
     <string name="motion_composer_scope_screen">点阵波形屏</string>
-    <string name="motion_composer_scope_screen_desc">输入行右侧的点阵屏，画出不断左移的输出速率柱状图。</string>
+    <string name="motion_composer_scope_screen_desc">点阵信息屏：左侧数字读数，右侧不断左移的输出速率柱状图。</string>
     <string name="motion_composer_sweep_grid">扫光点阵</string>
     <string name="motion_composer_sweep_grid_desc">一道光带扫过输入框里隐藏的灯珠墙。</string>
     <string name="motion_indicator_wave">波浪跳跃</string>

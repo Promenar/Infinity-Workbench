@@ -13,7 +13,7 @@ enum class ComposerGlowStyle {
     MESH,
     /** 底沿内侧两排细灯，数据包从左往右流过。 */
     BOTTOM_STRIP,
-    /** 右上角一块点阵屏，画出不断左移的速率柱状图。 */
+    /** 一块点阵信息屏：左侧数字读数，右侧不断左移的速率柱状图；位置与数字见 [ScopeScreenPlacement] 与 [NexaraMotionStyles.scopeDigits]。 */
     SCOPE_SCREEN,
     /** 斜向光带扫过浮岛里隐藏的灯珠墙。 */
     SWEEP_GRID;
@@ -21,6 +21,19 @@ enum class ComposerGlowStyle {
     companion object {
         internal fun fromPreferenceValue(value: String?): ComposerGlowStyle =
             entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: AURORA
+    }
+}
+
+/** 点阵波形屏在浮岛里的位置。 */
+enum class ScopeScreenPlacement {
+    /** 输入行右侧一块 7 行点阵。 */
+    INPUT_ROW,
+    /** 浮岛顶沿一条 5 行点阵，铺满浮岛内宽，浮岛相应增高；运行坞出现时位于运行坞与输入区的接缝处。 */
+    TOP_EDGE;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): ScopeScreenPlacement =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: INPUT_ROW
     }
 }
 
@@ -90,6 +103,10 @@ data class NexaraMotionStyles(
     val composer: ComposerGlowStyle = ComposerGlowStyle.AURORA,
     val indicator: GenerationIndicatorStyle = GenerationIndicatorStyle.WAVE,
     val emptyChat: EmptyChatStyle = EmptyChatStyle.FLOW,
+    /** 点阵波形屏的位置，只在 [composer] 为 [ComposerGlowStyle.SCOPE_SCREEN] 时生效。 */
+    val scopePlacement: ScopeScreenPlacement = ScopeScreenPlacement.INPUT_ROW,
+    /** 点阵波形屏是否显示数字读数；关闭时波形铺满整块屏。 */
+    val scopeDigits: Boolean = true,
 )
 
 /** 当前生效的动效样式；由 [NexaraTheme] 按外观设置提供，设置页预览可以局部覆盖。 */

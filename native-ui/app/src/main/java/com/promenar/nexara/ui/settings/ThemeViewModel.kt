@@ -76,6 +76,14 @@ class ThemeViewModel(
         store.setEmptyChatStyle(style)
     }
 
+    fun setScopePlacement(placement: com.promenar.nexara.ui.theme.ScopeScreenPlacement) {
+        store.setScopePlacement(placement)
+    }
+
+    fun setScopeDigits(enabled: Boolean) {
+        store.setScopeDigits(enabled)
+    }
+
     fun setPureBlack(enabled: Boolean) {
         store.setPureBlack(enabled)
     }

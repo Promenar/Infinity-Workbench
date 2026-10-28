@@ -16,9 +16,9 @@ class GenerationMotionTest {
     }
 
     @Test
-    fun `思考归入首字前，工具执行与等待用户各自成阶段`() {
+    fun `思考归入流式家族，工具执行与等待用户各自成阶段`() {
         assertEquals(GenerationMotionPhase.WAIT, generationMotionPhase(GenerationPhase.CONNECTING, awaitingUser = false))
-        assertEquals(GenerationMotionPhase.WAIT, generationMotionPhase(GenerationPhase.THINKING, awaitingUser = false))
+        assertEquals(GenerationMotionPhase.STREAM, generationMotionPhase(GenerationPhase.THINKING, awaitingUser = false))
         assertEquals(GenerationMotionPhase.STREAM, generationMotionPhase(GenerationPhase.STREAMING, awaitingUser = false))
         assertEquals(GenerationMotionPhase.TOOL, generationMotionPhase(GenerationPhase.EXECUTING_TOOLS, awaitingUser = false))
         assertEquals(GenerationMotionPhase.APPROVAL, generationMotionPhase(GenerationPhase.WAITING_APPROVAL, awaitingUser = false))
@@ -149,9 +149,9 @@ class GenerationMotionTest {
     }
 
     @Test
-    fun `流式阶段只有思考内容、正文还没到达时仍按首字前显示`() {
+    fun `进入流式但还没有任何内容到达时仍按首字前显示`() {
         val motion = GenerationMotion(GenerationMotion.Source.LIVE)
-        // 服务商首个分片只带思考内容时，生成任务已进入流式阶段，但正文字数仍为 0。
+        // 生成任务已进入流式阶段，但正文与思考内容都还是 0 字。
         motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = true)
         motion.step(frame)
         assertEquals(GenerationMotionPhase.WAIT, motion.actual)
@@ -231,6 +231,139 @@ class GenerationMotionTest {
         assertEquals(1f, evenBlink(0.1f))
         assertEquals(0f, evenBlink(0.5f))
         assertEquals(1f, evenBlink(0.9f))
+    }
+
+    @Test
+    fun `速率表计入思考字数`() {
+        assertEquals(12, generationOutputLength("", "思考".repeat(6)))
+        assertEquals(7, generationOutputLength("正文", "思考五个字"))
+        assertEquals(3, generationOutputLength("abc", null))
+        val meter = OutputRateMeter()
+        var reasoning = ""
+        meter.report(generationOutputLength("", reasoning))
+        // 只有思考内容到达：每 0.1 秒 3 个字，约 30 字/秒。
+        repeat(180) { i ->
+            if (i % 6 == 0) {
+                reasoning += "思考中"
+                meter.report(generationOutputLength("", reasoning))
+            }
+            meter.step(frame)
+        }
+        assertEquals(30f, meter.rate, 6f)
+        assertEquals(reasoning.length, meter.total)
+    }
+
+    @Test
+    fun `思考阶段只有思考内容到达时显示流式，没有内容到达时回落首字前`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        val thinking = generationMotionPhase(GenerationPhase.THINKING, awaitingUser = false)
+        motion.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
+        motion.update(thinking, retry = null, outputLength = generationOutputLength("", ""), animate = true)
+        assertEquals("思考内容还没到达", GenerationMotionPhase.WAIT, motion.actual)
+        motion.update(thinking, retry = null, outputLength = generationOutputLength("", "先想一想"), animate = true)
+        assertEquals("思考内容到达后进入流式家族", GenerationMotionPhase.STREAM, motion.actual)
+        // 思考转正文：仍在流式家族，不回落。
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = generationOutputLength("答", "先想一想"), animate = true)
+        assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+    }
+
+    @Test
+    fun `点阵屏读数：首字等待秒数逐秒递增，工具轮次逐次累加`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        motion.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
+        assertEquals(0, motion.waitSeconds)
+        motion.run(2.5f)
+        assertEquals(2, motion.waitSeconds)
+        assertEquals(0, motion.toolRound)
+        motion.update(GenerationMotionPhase.TOOL, retry = null, outputLength = 0, animate = true)
+        assertEquals(1, motion.toolRound)
+        motion.run(0.5f)
+        motion.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
+        assertEquals("重新进入首字前时从 0 计", 0, motion.waitSeconds)
+        motion.run(1.2f)
+        assertEquals(1, motion.waitSeconds)
+        motion.update(GenerationMotionPhase.TOOL, retry = null, outputLength = 0, animate = true)
+        assertEquals(2, motion.toolRound)
+        // 下一轮生成从头计数。
+        motion.update(null, retry = null, outputLength = 0, animate = true)
+        motion.update(GenerationMotionPhase.TOOL, retry = null, outputLength = 0, animate = true)
+        assertEquals(1, motion.toolRound)
+    }
+
+    @Test
+    fun `点阵屏读数：每秒字数按固定间隔取样，不逐帧跳动`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        var length = 0
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = length, animate = true)
+        repeat(180) { i ->
+            if (i % 6 == 0) {
+                length += 4
+                motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = length, animate = true)
+            }
+            motion.step(frame)
+        }
+        assertEquals(40f, motion.readoutRate, 8f)
+        // 1 秒 60 帧里读数最多换 4、5 次。
+        val seen = mutableListOf(motion.readoutRate)
+        repeat(60) {
+            motion.step(frame)
+            if (motion.readoutRate != seen.last()) seen += motion.readoutRate
+        }
+        assertTrue("读数变化次数：${seen.size - 1}", seen.size - 1 <= (1f / GenerationMotion.ScopeReadoutHoldSeconds).toInt() + 1)
+    }
+
+    @Test
+    fun `本轮结束后停留显示平均速率，到时淡出`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        var length = 0
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = true)
+        // 2 秒内到达 100 字。
+        repeat(120) { i ->
+            if (i % 6 == 0) {
+                length += 5
+                motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = length, animate = true)
+            }
+            motion.step(frame)
+        }
+        motion.update(null, retry = null, outputLength = 0, animate = true)
+        assertTrue(motion.lingering)
+        assertEquals(50f, motion.summaryRate, 5f)
+        motion.run(0.5f)
+        assertEquals(1f, motion.summaryAlpha, 0.01f)
+        motion.run(GenerationMotion.ScopeSummarySeconds)
+        assertTrue(!motion.lingering)
+        assertEquals(0f, motion.summaryAlpha)
+    }
+
+    @Test
+    fun `没有内容或系统关闭动画时结束后不停留`() {
+        val idle = GenerationMotion(GenerationMotion.Source.LIVE)
+        idle.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
+        idle.run(1f)
+        idle.update(null, retry = null, outputLength = 0, animate = true)
+        assertTrue(!idle.lingering)
+        val still = GenerationMotion(GenerationMotion.Source.LIVE)
+        still.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = false)
+        still.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 50, animate = false)
+        still.update(null, retry = null, outputLength = 0, animate = false)
+        assertTrue(!still.lingering)
+        assertNull(GenerationMotion.averageRate(0, 3f))
+        assertNull(GenerationMotion.averageRate(10, 0.1f))
+        assertEquals(20f, GenerationMotion.averageRate(60, 3f)!!, 1e-4f)
+    }
+
+    @Test
+    fun `演示脚本含思考段，思考段属于流式家族`() {
+        val motion = GenerationMotion(GenerationMotion.Source.DEMO)
+        var sawThinking = false
+        repeat((30f / frame).toInt()) {
+            motion.step(frame)
+            if (motion.demoThinking) {
+                sawThinking = true
+                assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+            }
+        }
+        assertTrue(sawThinking)
     }
 
     @Test

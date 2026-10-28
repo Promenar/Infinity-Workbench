@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,9 +28,9 @@ import kotlin.math.pow
  * 工具执行像忙碌寻道（第三色按固定节拍推进），等待审批像告警慢闪（第三色每秒慢闪），重试等待像降速待机（压暗等间隔闪）。
  */
 enum class GenerationMotionPhase {
-    /** 已发出请求、等模型开口；思考过程也算在这里。 */
+    /** 已发出请求、还没有任何内容到达；思考阶段在思考内容到达前也算在这里。 */
     WAIT,
-    /** 正文逐字到达。 */
+    /** 思考内容或正文逐字到达；两者共用同一套表现，速率按二者合计的字数估算。 */
     STREAM,
     /** 在等工具结果。 */
     TOOL,
@@ -51,8 +52,9 @@ internal fun generationMotionPhase(phase: GenerationPhase?, awaitingUser: Boolea
         GenerationPhase.PREPARING,
         GenerationPhase.BUILDING_CONTEXT,
         GenerationPhase.CONNECTING,
-        GenerationPhase.THINKING,
         GenerationPhase.POST_PROCESSING -> GenerationMotionPhase.WAIT
+        // 思考归入流式家族；思考内容到达前由 [GenerationMotion] 按“没有新增内容”回落为首字前。
+        GenerationPhase.THINKING,
         GenerationPhase.STREAMING -> GenerationMotionPhase.STREAM
         GenerationPhase.EXECUTING_TOOLS -> GenerationMotionPhase.TOOL
         GenerationPhase.WAITING_APPROVAL,
@@ -96,16 +98,23 @@ internal fun actOn(id: Int, time: Float, act: Float, seed: Float = 0f): Boolean 
     return motionHash(id * 3.3f, floor(time * hz + id * 5.1f)) < 0.08f + 0.8f * burst
 }
 
+/** 速率表上报的累计字数：正文加思考内容，二者都算“有内容到达”。 */
+internal fun generationOutputLength(content: String, reasoning: String?): Int = content.length + (reasoning?.length ?: 0)
+
 /** 出字速率达到这个值（字/秒）时流式动效最满。 */
 internal const val GenerationMotionFullRate = 60f
 
 /**
- * 出字速率：按上报的累计字数估算，时间常数 0.5 秒的指数平滑；每 0.09 秒记一次历史，供点阵波形屏画柱状图。
+ * 出字速率：按上报的累计字数（正文加思考内容）估算，时间常数 0.5 秒的指数平滑；每 0.09 秒记一次历史，供点阵波形屏画柱状图。
  * 累计字数变小（新一轮回复）时只更新基准，不计入速率。
  */
 internal class OutputRateMeter {
     private var lastLength = -1
     private var pending = 0
+
+    /** 本轮累计到达的字数，只计增量；扫光点阵的写入头按它前进，点阵屏按它算平均速率。 */
+    var total = 0
+        private set
     private var historyClock = 0f
     private val history = FloatArray(HistorySize)
     private var historyHead = 0
@@ -118,7 +127,10 @@ internal class OutputRateMeter {
     val act: Float get() = clamp01(rate / GenerationMotionFullRate)
 
     fun report(length: Int) {
-        if (lastLength >= 0 && length > lastLength) pending += length - lastLength
+        if (lastLength >= 0 && length > lastLength) {
+            pending += length - lastLength
+            total += length - lastLength
+        }
         lastLength = length
     }
 
@@ -145,6 +157,7 @@ internal class OutputRateMeter {
     fun reset() {
         lastLength = -1
         pending = 0
+        total = 0
         rate = 0f
         historyClock = 0f
         historyHead = 0
@@ -210,10 +223,10 @@ internal class MotionPhaseController {
 }
 
 /**
- * 一个会话界面共用的生成动效状态：显示阶段与各阶段权重、出字速率与重试倒计时。
- * 字段只在绘制阶段读取，推进时不触发重组。三种来源：
+ * 一个会话界面共用的生成动效状态：显示阶段与各阶段权重、出字速率与重试倒计时，以及点阵屏读数（首字等待秒数、
+ * 工具轮次、本轮平均速率）。字段只在绘制阶段读取，推进时不触发重组。三种来源：
  * - 实时：由 [rememberGenerationMotion] 按生成任务推进；
- * - 演示：设置页预览按固定脚本轮播五个阶段；
+ * - 演示：设置页预览按固定脚本轮播五个阶段，流式之前有一段思考；
  * - 环境：没有提供方时（首页会话列表、静态预览）固定为流式，速率取噪声。
  */
 @Stable
@@ -230,13 +243,20 @@ class GenerationMotion internal constructor(private val source: Source) {
     private var retry: GenerationRetry? = null
     private var retryStartedAt = 0f
     private var demoRetryLeft = 0f
+    private var trackedPhase: GenerationMotionPhase? = null
+    private var waitStartedAt = 0f
+    private var toolRounds = 0
+    private var streamSeconds = 0f
+    private var heldRate = 0f
+    private var heldRateClock = 0f
+    private var summaryLeft = 0f
 
     /** 真实阶段（已叠加重试倒计时）；没有进行中的生成时为 null。值相同时写入不触发重组，组合中可以读取。 */
     var actual: GenerationMotionPhase? by mutableStateOf(if (source == Source.AMBIENT) GenerationMotionPhase.STREAM else null)
         private set
 
     init {
-        // 演示从脚本里第一段流式开始，系统关闭动画时停在流式。
+        // 演示从脚本里的思考段开始，系统关闭动画时停在流式。
         if (source == Source.DEMO) clock = DemoStreamStart
         if (source != Source.LIVE) controller.snap(GenerationMotionPhase.STREAM)
     }
@@ -254,6 +274,10 @@ class GenerationMotion internal constructor(private val source: Source) {
     var displayed: GenerationMotionPhase? by mutableStateOf(controller.shown)
         private set
 
+    /** 演示脚本正处在思考段（流式家族，只有思考内容到达），供设置页预览显示阶段名；实时来源恒为 false。 */
+    var demoThinking: Boolean by mutableStateOf(false)
+        private set
+
     /** 流式动效强度 0..1：实际出字速率除以 [GenerationMotionFullRate]。环境与演示来源按 [time] 取噪声。 */
     fun act(time: Float): Float = when (source) {
         Source.LIVE -> meter.act
@@ -268,6 +292,34 @@ class GenerationMotion internal constructor(private val source: Source) {
         Source.AMBIENT -> clamp01(0.2f + 0.65f * valueNoise(slot * 0.19f) + (motionHash(slot, 1.3f) - 0.5f) * 0.35f)
         else -> clamp01(meter.historyAt(back) / (GenerationMotionFullRate * 1.15f))
     }
+
+    /** 本轮累计到达的字数（正文加思考），扫光点阵的写入头按它前进；环境来源按 [time] 匀速合成。 */
+    fun writtenChars(time: Float): Float = when (source) {
+        Source.LIVE -> meter.total.toFloat()
+        Source.DEMO -> demoChars
+        Source.AMBIENT -> time * 20f
+    }
+
+    /** 点阵屏显示的每秒字数：每 [ScopeReadoutHoldSeconds] 取一次速率，数字不逐帧跳动。 */
+    val readoutRate: Float get() = if (source == Source.AMBIENT) 32f else heldRate
+
+    /** 首字前已等待的整秒数，从进入首字前起逐秒递增。 */
+    val waitSeconds: Int get() = if (source == Source.AMBIENT) 0 else floor(clock - waitStartedAt).toInt().coerceAtLeast(0)
+
+    /** 本轮第几次进入工具执行，从 1 起；还没执行过工具时为 0。 */
+    val toolRound: Int get() = toolRounds
+
+    /** 本轮结束后点阵屏停留显示的平均速率（字/秒）；只在 [summaryAlpha] 大于 0 时有意义。 */
+    var summaryRate: Float = 0f
+        private set
+
+    /** 本轮结束后点阵屏停留显示平均速率期间为 true；只在开始与结束时写入，组合中可以读取。 */
+    var lingering: Boolean by mutableStateOf(false)
+        private set
+
+    /** 平均速率读数的透明度 0..1：结束后很快亮起，停留 [ScopeSummarySeconds] 后淡出。逐帧写入，只在绘制阶段读取。 */
+    var summaryAlpha: Float by mutableFloatStateOf(0f)
+        private set
 
     /** 重试倒计时剩余比例 1→0。 */
     val retryLeft: Float
@@ -287,12 +339,14 @@ class GenerationMotion internal constructor(private val source: Source) {
     private fun retryDelaySeconds(): Float = (retry?.delayMs ?: 0L).coerceAtLeast(1L) / 1000f
 
     internal fun update(phase: GenerationMotionPhase?, retry: GenerationRetry?, outputLength: Int, animate: Boolean) {
+        if (phase != null && rawPhase == null) beginRun()
+        if (phase == null && rawPhase != null) finishRun(animate)
         if (retry != this.retry) {
             this.retry = retry
             retryStartedAt = clock
         }
         if (phase == null) meter.reset() else meter.report(outputLength)
-        // 生成任务收到首个分片就进入流式，其中可能只有思考内容；正文比进入流式前有新增后才按流式显示。
+        // 生成任务收到首个分片就进入流式；思考内容或正文比进入流式前有新增后才按流式显示，没有内容到达时仍是首字前。
         if (phase == GenerationMotionPhase.STREAM) {
             if (rawPhase != GenerationMotionPhase.STREAM) streamBaseLength = preStreamLength
             if (outputLength < streamBaseLength) streamBaseLength = outputLength
@@ -301,10 +355,29 @@ class GenerationMotion internal constructor(private val source: Source) {
         }
         rawPhase = phase
         basePhase = if (phase == GenerationMotionPhase.STREAM && outputLength <= streamBaseLength) GenerationMotionPhase.WAIT else phase
-        actual = resolveActual()
+        publishActual(resolveActual())
         // 不推进时（系统关闭动画）直接显示真实阶段。
         if (!animate) actual?.let(controller::snap)
         displayed = controller.shown
+    }
+
+    private fun beginRun() {
+        toolRounds = 0
+        streamSeconds = 0f
+        heldRate = 0f
+        heldRateClock = 0f
+        summaryLeft = 0f
+        summaryAlpha = 0f
+        lingering = false
+    }
+
+    /** 本轮结束：流式累计够久时算出平均速率，点阵屏停留显示；系统关闭动画时不停留。 */
+    private fun finishRun(animate: Boolean) {
+        val average = averageRate(meter.total, streamSeconds)
+        if (!animate || average == null) return
+        summaryRate = average
+        summaryLeft = ScopeSummarySeconds
+        lingering = true
     }
 
     private fun resolveActual(): GenerationMotionPhase? {
@@ -314,64 +387,112 @@ class GenerationMotion internal constructor(private val source: Source) {
         return if (clock - retryStartedAt < pending.delayMs / 1000f) GenerationMotionPhase.RETRY else base
     }
 
+    /** 写入真实阶段，同时记下首字前的起点与工具轮次。 */
+    private fun publishActual(next: GenerationMotionPhase?) {
+        if (next != trackedPhase) {
+            if (next == GenerationMotionPhase.WAIT) waitStartedAt = clock
+            if (next == GenerationMotionPhase.TOOL) toolRounds++
+            trackedPhase = next
+        }
+        actual = next
+    }
+
     internal fun step(dt: Float) {
         clock += dt
         if (source == Source.DEMO) {
             stepDemo(dt)
         } else {
-            actual = resolveActual()
+            publishActual(resolveActual())
         }
         meter.step(dt)
+        if (actual == GenerationMotionPhase.STREAM) streamSeconds += dt
+        heldRateClock += dt
+        if (heldRateClock >= ScopeReadoutHoldSeconds) {
+            heldRateClock = 0f
+            heldRate = meter.rate
+        }
+        if (summaryLeft > 0f) {
+            summaryLeft -= dt
+            if (summaryLeft <= 0f) {
+                summaryLeft = 0f
+                summaryAlpha = 0f
+                lingering = false
+            } else {
+                summaryAlpha = clamp01((ScopeSummarySeconds - summaryLeft) / SummaryFadeInSeconds) * clamp01(summaryLeft / SummaryFadeOutSeconds)
+            }
+        }
         controller.step(dt, actual)
         if (displayed != controller.shown) displayed = controller.shown
     }
 
-    /** 演示脚本：首字前 → 流式 → 工具（含三次连续短调用）→ 等待审批 → 工具 → 重试 → 首字前 → 流式，循环。 */
+    /** 演示脚本：首字前 → 思考 → 流式 → 工具（含三次连续短调用）→ 等待审批 → 工具 → 重试 → 首字前 → 流式，循环。 */
     private fun stepDemo(dt: Float) {
-        val t = clock.mod(DemoScript.sumOf { it.second.toDouble() }.toFloat())
+        val t = clock.mod(DemoScriptSeconds)
+        if (t < lastDemoTime) toolRounds = 0
+        lastDemoTime = t
         var start = 0f
-        var phase = GenerationMotionPhase.WAIT
+        var segment = DemoScript.first()
         var segmentStart = 0f
-        var segmentLength = 1f
-        for ((p, length) in DemoScript) {
-            if (t < start + length) {
-                phase = p
+        for (s in DemoScript) {
+            if (t < start + s.seconds) {
+                segment = s
                 segmentStart = start
-                segmentLength = length
                 break
             }
-            start += length
+            start += s.seconds
         }
-        actual = phase
-        demoRetryLeft = if (phase == GenerationMotionPhase.RETRY) clamp01(1 - (t - segmentStart) / segmentLength) else 0f
+        val phase = segment.phase
+        publishActual(phase)
+        if (demoThinking != segment.thinking) demoThinking = segment.thinking
+        demoRetryLeft = if (phase == GenerationMotionPhase.RETRY) clamp01(1 - (t - segmentStart) / segment.seconds) else 0f
         if (phase == GenerationMotionPhase.STREAM) {
             val stall = valueNoise(clock * 0.8f + 7f) < 0.14f
-            val rate = if (stall) 0f else 32f * (0.3f + 1.4f * valueNoise(clock * 0.5f + 3f))
+            // 思考段出字慢一些，正文段快一些，预览能看出速率联动。
+            val base = if (segment.thinking) 18f else 32f
+            val rate = if (stall) 0f else base * (0.3f + 1.4f * valueNoise(clock * 0.5f + 3f))
             demoChars += rate * dt
             meter.report(demoChars.toInt())
         }
     }
 
     private var demoChars = 0f
+    private var lastDemoTime = 0f
+
+    private class DemoSegment(val phase: GenerationMotionPhase, val seconds: Float, val thinking: Boolean = false)
 
     internal companion object {
+        /** 点阵屏每秒字数读数的刷新间隔。 */
+        const val ScopeReadoutHoldSeconds = 0.25f
+        /** 本轮结束后点阵屏停留显示平均速率的时长。 */
+        const val ScopeSummarySeconds = 2.5f
+        /** 流式累计不足这个时长时不显示平均速率，避免极短回复给出离谱的数字。 */
+        const val MinSummaryStreamSeconds = 0.3f
+        private const val SummaryFadeInSeconds = 0.2f
+        private const val SummaryFadeOutSeconds = 0.4f
+
+        /** 本轮平均速率：到达字数除以流式累计时长；没有字或流式太短时为 null。 */
+        fun averageRate(chars: Int, streamSeconds: Float): Float? =
+            if (chars <= 0 || streamSeconds < MinSummaryStreamSeconds) null else chars / streamSeconds
+
         private const val DemoStreamStart = 1.6f
         private const val DemoRetrySeconds = 2.6f
         private val DemoScript = listOf(
-            GenerationMotionPhase.WAIT to 1.6f,
-            GenerationMotionPhase.STREAM to 3.6f,
-            GenerationMotionPhase.TOOL to 2f,
-            GenerationMotionPhase.WAIT to 0.12f,
-            GenerationMotionPhase.TOOL to 0.18f,
-            GenerationMotionPhase.WAIT to 0.1f,
-            GenerationMotionPhase.TOOL to 0.15f,
-            GenerationMotionPhase.WAIT to 0.9f,
-            GenerationMotionPhase.APPROVAL to 2.6f,
-            GenerationMotionPhase.TOOL to 1.2f,
-            GenerationMotionPhase.RETRY to DemoRetrySeconds,
-            GenerationMotionPhase.WAIT to 0.9f,
-            GenerationMotionPhase.STREAM to 3.6f,
+            DemoSegment(GenerationMotionPhase.WAIT, 1.6f),
+            DemoSegment(GenerationMotionPhase.STREAM, 2.4f, thinking = true),
+            DemoSegment(GenerationMotionPhase.STREAM, 3.6f),
+            DemoSegment(GenerationMotionPhase.TOOL, 2f),
+            DemoSegment(GenerationMotionPhase.WAIT, 0.12f),
+            DemoSegment(GenerationMotionPhase.TOOL, 0.18f),
+            DemoSegment(GenerationMotionPhase.WAIT, 0.1f),
+            DemoSegment(GenerationMotionPhase.TOOL, 0.15f),
+            DemoSegment(GenerationMotionPhase.WAIT, 0.9f),
+            DemoSegment(GenerationMotionPhase.APPROVAL, 2.6f),
+            DemoSegment(GenerationMotionPhase.TOOL, 1.2f),
+            DemoSegment(GenerationMotionPhase.RETRY, DemoRetrySeconds),
+            DemoSegment(GenerationMotionPhase.WAIT, 0.9f),
+            DemoSegment(GenerationMotionPhase.STREAM, 3.6f),
         )
+        private val DemoScriptSeconds = DemoScript.sumOf { it.seconds.toDouble() }.toFloat()
 
         val Ambient = GenerationMotion(Source.AMBIENT)
     }
@@ -382,7 +503,8 @@ val LocalGenerationMotion = staticCompositionLocalOf { GenerationMotion.Ambient 
 
 /**
  * 会话界面的实时生成动效：[phase] 为 [generationMotionPhase] 的结果，[retry] 为正在等待的自动重试，
- * [outputLength] 为本轮已到达的正文字数（用于估算出字速率）。只在有进行中的生成时逐帧推进。
+ * [outputLength] 为本轮已到达的正文加思考内容的字数（用于估算出字速率）。只在有进行中的生成、
+ * 或本轮结束后点阵屏停留显示平均速率期间逐帧推进。
  */
 @Composable
 fun rememberGenerationMotion(phase: GenerationMotionPhase?, retry: GenerationRetry?, outputLength: Int): GenerationMotion {
@@ -395,10 +517,10 @@ fun rememberGenerationMotion(phase: GenerationMotionPhase?, retry: GenerationRet
     }
     LaunchedEffect(motion, animate) {
         if (!animate) return@LaunchedEffect
-        snapshotFlow { active }.collect { running ->
+        snapshotFlow { active || motion.lingering }.collect { running ->
             if (!running) return@collect
             var last = -1L
-            while (active) {
+            while (active || motion.lingering) {
                 withInfiniteAnimationFrameNanos { now ->
                     if (last > 0) motion.step(((now - last) / 1_000_000_000f).coerceAtMost(0.1f))
                     last = now
@@ -409,7 +531,7 @@ fun rememberGenerationMotion(phase: GenerationMotionPhase?, retry: GenerationRet
     return motion
 }
 
-/** 设置页预览用：按演示脚本轮播五个阶段，从第一段流式开始。系统关闭动画时停在流式。 */
+/** 设置页预览用：按演示脚本轮播五个阶段，从思考段开始。系统关闭动画时停在流式。 */
 @Composable
 internal fun rememberDemoGenerationMotion(): GenerationMotion {
     val motion = remember { GenerationMotion(GenerationMotion.Source.DEMO) }

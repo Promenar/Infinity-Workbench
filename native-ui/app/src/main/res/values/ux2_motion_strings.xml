@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="motion_phase_thinking">Thinking</string>
+    <string name="motion_scope_placement">Screen position</string>
+    <string name="motion_scope_placement_input_row">Right of input</string>
+    <string name="motion_scope_placement_top_edge">Top edge</string>
+    <string name="motion_scope_digits">Show numbers</string>
+    <string name="motion_scope_digits_desc">Seconds waited, characters per second, tool round, countdown, and the turn\'s average rate. When off, the waveform fills the screen.</string>
+</resources>

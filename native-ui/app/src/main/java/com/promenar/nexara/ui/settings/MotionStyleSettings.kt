@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.chat.ComposerIslandCorner
 import com.promenar.nexara.ui.chat.ComposerIslandLights
+import com.promenar.nexara.ui.chat.ComposerScopeBand
 import com.promenar.nexara.ui.chat.LedEmptyChat
 import com.promenar.nexara.ui.chat.ParticleWordmark
 import com.promenar.nexara.ui.chat.composerIslandGlow
@@ -48,7 +49,10 @@ import com.promenar.nexara.ui.common.GenerationDots
 import com.promenar.nexara.ui.common.LocalNexaraHaptics
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraPopoverSpec
+import com.promenar.nexara.ui.common.NexaraSegment
+import com.promenar.nexara.ui.common.NexaraSegmentedControl
 import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.nexaraPopoverAnchor
 import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import com.promenar.nexara.ui.theme.ComposerGlowStyle
@@ -56,6 +60,7 @@ import com.promenar.nexara.ui.theme.EmptyChatStyle
 import com.promenar.nexara.ui.theme.GenerationIndicatorStyle
 import com.promenar.nexara.ui.theme.LocalNexaraMotionStyles
 import com.promenar.nexara.ui.theme.NexaraMotionStyles
+import com.promenar.nexara.ui.theme.ScopeScreenPlacement
 
 /** 一个可选样式的名称与一句话说明。 */
 internal data class MotionStyleLabel(@StringRes val name: Int, @StringRes val description: Int)
@@ -88,13 +93,15 @@ internal fun EmptyChatStyle.label(): MotionStyleLabel = when (this) {
     EmptyChatStyle.LED_GLOBE -> MotionStyleLabel(R.string.motion_empty_led_globe, R.string.motion_empty_led_globe_desc)
 }
 
-/** 外观页“生成动效”分组：三行分别打开带实时预览的样式选择面板。 */
+/** 外观页“生成动效”分组：三行分别打开带实时预览的样式选择面板；浮岛光效选“点阵波形屏”时另有位置与数字两个子选项。 */
 @Composable
 internal fun MotionStyleRows(
     motion: NexaraMotionStyles,
     onComposerSelect: (ComposerGlowStyle) -> Unit,
     onIndicatorSelect: (GenerationIndicatorStyle) -> Unit,
     onEmptyChatSelect: (EmptyChatStyle) -> Unit,
+    onScopePlacementSelect: (ScopeScreenPlacement) -> Unit = {},
+    onScopeDigitsChange: (Boolean) -> Unit = {},
 ) {
     MotionStylePicker(
         title = stringResource(R.string.motion_composer_title),
@@ -105,6 +112,9 @@ internal fun MotionStyleRows(
         onSelect = onComposerSelect,
         phaseDemo = true,
     ) { ComposerPreview(it) }
+    if (motion.composer == ComposerGlowStyle.SCOPE_SCREEN) {
+        ScopeScreenOptions(motion, onScopePlacementSelect, onScopeDigitsChange)
+    }
     MotionStylePicker(
         title = stringResource(R.string.motion_indicator_title),
         options = GenerationIndicatorStyle.entries,
@@ -150,8 +160,10 @@ private fun <T : Enum<T>> MotionStylePicker(
         CompositionLocalProvider(LocalGenerationMotion provides demo) {
         Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (phaseDemo) {
+                // 演示脚本的思考段属于流式家族，阶段名单独标出“思考”。
+                val phaseName = if (demo.demoThinking) R.string.motion_phase_thinking else (demo.displayed ?: GenerationMotionPhase.STREAM).labelRes()
                 Text(
-                    stringResource(R.string.motion_preview_phase, stringResource((demo.displayed ?: GenerationMotionPhase.STREAM).labelRes())),
+                    stringResource(R.string.motion_preview_phase, stringResource(phaseName)),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp).testTag("${tag}_phase"),
@@ -193,6 +205,40 @@ private fun <T : Enum<T>> MotionStylePicker(
     }
 }
 
+/** 点阵波形屏的两个子选项：位置（输入行右侧 / 浮岛顶沿）与是否显示数字。 */
+@Composable
+private fun ScopeScreenOptions(
+    motion: NexaraMotionStyles,
+    onPlacementSelect: (ScopeScreenPlacement) -> Unit,
+    onDigitsChange: (Boolean) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            stringResource(R.string.motion_scope_placement),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        NexaraSegmentedControl(
+            segments = listOf(
+                NexaraSegment(ScopeScreenPlacement.INPUT_ROW, stringResource(R.string.motion_scope_placement_input_row), tag = "theme_motion_scope_placement_input_row"),
+                NexaraSegment(ScopeScreenPlacement.TOP_EDGE, stringResource(R.string.motion_scope_placement_top_edge), tag = "theme_motion_scope_placement_top_edge"),
+            ),
+            selected = motion.scopePlacement,
+            onSelect = onPlacementSelect,
+            fillWidth = true,
+            compact = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("theme_motion_scope_placement"),
+        )
+    }
+    SettingsToggle(
+        title = stringResource(R.string.motion_scope_digits),
+        description = stringResource(R.string.motion_scope_digits_desc),
+        checked = motion.scopeDigits,
+        onCheckedChange = onDigitsChange,
+        modifier = Modifier.testTag("theme_motion_scope_digits"),
+    )
+}
+
 /** 生成阶段在设置预览中的名称。 */
 internal fun GenerationMotionPhase.labelRes(): Int = when (this) {
     GenerationMotionPhase.WAIT -> R.string.motion_phase_wait
@@ -202,20 +248,24 @@ internal fun GenerationMotionPhase.labelRes(): Int = when (this) {
     GenerationMotionPhase.RETRY -> R.string.motion_phase_retry
 }
 
-/** 浮岛预览：一个处于生成中的迷你浮岛，右下角画出停止键的位置。 */
+/** 浮岛预览：一个处于生成中的迷你浮岛，右下角画出停止键的位置；点阵波形屏为顶沿模式时浮岛顶部多一条点阵屏。 */
 @Composable
 private fun ComposerPreview(style: ComposerGlowStyle) {
-    CompositionLocalProvider(LocalNexaraMotionStyles provides LocalNexaraMotionStyles.current.copy(composer = style)) {
+    val styles = LocalNexaraMotionStyles.current.copy(composer = style)
+    CompositionLocalProvider(LocalNexaraMotionStyles provides styles) {
         val glow = rememberComposerGlowState(generating = true, error = false)
         val material = composerIslandMaterial()
-        Box(Modifier.fillMaxWidth().height(124.dp).clipToBounds().padding(horizontal = 20.dp, vertical = 18.dp)) {
+        val topBand = style == ComposerGlowStyle.SCOPE_SCREEN && styles.scopePlacement == ScopeScreenPlacement.TOP_EDGE
+        Box(Modifier.fillMaxWidth().clipToBounds().padding(horizontal = 20.dp, vertical = 18.dp)) {
             Surface(
-                modifier = Modifier.fillMaxWidth().height(88.dp).composerIslandGlow(glow, material.topHighlight),
+                modifier = Modifier.fillMaxWidth().composerIslandGlow(glow, material.topHighlight),
                 shape = RoundedCornerShape(ComposerIslandCorner),
                 color = material.container,
                 border = material.border,
             ) {
-                Box {
+                Column {
+                if (topBand) ComposerScopeBand(glow)
+                Box(Modifier.fillMaxWidth().height(88.dp)) {
                     ComposerIslandLights(glow, style, Modifier.matchParentSize())
                     Text(
                         stringResource(R.string.motion_preview_placeholder),
@@ -230,6 +280,7 @@ private fun ComposerPreview(style: ComposerGlowStyle) {
                     ) {
                         Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.surface))
                     }
+                }
                 }
             }
         }
