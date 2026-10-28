@@ -22,8 +22,8 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 
 @PreviewTest
-@Preview(name = "助手默认参数 深中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")
-@Preview(name = "助手默认参数 深中360 字号130", widthDp = 360, heightDp = 1100, locale = "zh-rCN", fontScale = 1.3f)
+@Preview(name = "智能体默认参数 深中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")
+@Preview(name = "智能体默认参数 深中360 字号130", widthDp = 360, heightDp = 1100, locale = "zh-rCN", fontScale = 1.3f)
 @Composable
 fun agentDefaultParamsPreview() {
     val profile = resolveModelParameterProfile(ProtocolType.DeepSeek, "deepseek-v4-pro")

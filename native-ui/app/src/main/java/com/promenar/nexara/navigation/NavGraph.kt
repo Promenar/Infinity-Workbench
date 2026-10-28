@@ -27,9 +27,7 @@ import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.onboarding.OnboardingLanguageSelectionCoordinator
 import com.promenar.nexara.onboarding.isSuccessfulOnboardingAssistant
 import com.promenar.nexara.ui.chat.ChatRoute
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
-import com.promenar.nexara.ui.hub.AgentRagConfigScreen
 import com.promenar.nexara.ui.rag.DocEditorScreen
 import com.promenar.nexara.ui.rag.KnowledgeBaseSettingsScreen
 import com.promenar.nexara.ui.rag.KnowledgeDebugSettingsScreen
@@ -63,8 +61,6 @@ object NavDestinations {
     const val PROVIDER_FORM = "provider_form?providerId={providerId}"
     const val PROVIDER_MODELS = "provider_models/{providerId}"
     const val AGENT_EDIT = "agent_edit/{agentId}"
-    const val AGENT_RAG_CONFIG = "agent_rag_config/{agentId}"
-    const val AGENT_ADVANCED_RETRIEVAL = "agent_advanced_retrieval/{agentId}"
     const val DOC_EDITOR = "doc_editor/{workspaceRootUuid}/{docId}"
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
     const val KNOWLEDGE_GRAPH_ROUTE = "knowledge_graph?query={query}"
@@ -102,8 +98,6 @@ object NavDestinations {
 
     fun chatHero(sessionId: String) = "chat_hero/$sessionId"
     fun agentEdit(agentId: String) = "agent_edit/$agentId"
-    fun agentRagConfig(agentId: String) = "agent_rag_config/$agentId"
-    fun agentAdvancedRetrieval(agentId: String) = "agent_advanced_retrieval/$agentId"
     fun providerForm(providerId: String? = null) =
         if (providerId != null) "provider_form?providerId=$providerId" else "provider_form"
     fun providerModels(providerId: String) = "provider_models/$providerId"
@@ -287,32 +281,10 @@ fun NexaraNavGraph(
             AgentEditScreen(
                 agentId = agentId,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToRagConfig = { navController.navigate(NavDestinations.agentRagConfig(agentId)) },
-                onNavigateToAdvancedRetrieval = { navController.navigate(NavDestinations.agentAdvancedRetrieval(agentId)) }
-            )
-        }
-
-        composable(
-            route = NavDestinations.AGENT_RAG_CONFIG,
-            arguments = listOf(navArgument("agentId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val agentId = backStackEntry.arguments?.getString("agentId") ?: ""
-            AgentRagConfigScreen(
-                agentId = agentId,
-                scopeLabel = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.agent_scope_label),
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = NavDestinations.AGENT_ADVANCED_RETRIEVAL,
-            arguments = listOf(navArgument("agentId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val agentId = backStackEntry.arguments?.getString("agentId") ?: ""
-            AgentAdvancedRetrievalScreen(
-                agentId = agentId,
-                scopeLabel = androidx.compose.ui.res.stringResource(com.promenar.nexara.R.string.agent_scope_label),
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateToSkills = { navController.navigate(NavDestinations.SKILLS_CONFIG) { launchSingleTop = true } },
+                onNavigateToKnowledgeSettings = {
+                    navController.navigate(NavDestinations.RAG_GLOBAL_CONFIG) { launchSingleTop = true }
+                },
             )
         }
 

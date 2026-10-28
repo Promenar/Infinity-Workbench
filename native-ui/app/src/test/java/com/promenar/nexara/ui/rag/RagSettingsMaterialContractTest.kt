@@ -12,7 +12,7 @@ class RagSettingsMaterialContractTest {
         "ragAdvanced" to source("ui/rag/KnowledgeGraphSettingsScreen.kt"),
         "debug" to source("ui/rag/RagDebugScreen.kt"),
         "graph" to source("ui/rag/KnowledgeGraphScreen.kt"),
-        "agentAdvanced" to source("ui/hub/AgentAdvancedRetrievalScreen.kt"),
+        "agentKnowledge" to source("ui/hub/AgentEditSections.kt"),
     )
 
     @Test
@@ -26,7 +26,7 @@ class RagSettingsMaterialContractTest {
             assertThat(screen).doesNotContain("Surface(")
             assertThat(screen.contains("MaterialTheme.colorScheme") || screen.contains("NexaraSettingsSection(")).isTrue()
             assertThat(screen.contains("MaterialTheme.typography") || screen.contains("NexaraSettingsSection(")).isTrue()
-            if (key != "agentAdvanced") {
+            if (key != "agentKnowledge") {
                 assertThat(screen).contains("NexaraSettingsPageLayout(")
             }
         }
@@ -87,15 +87,14 @@ class RagSettingsMaterialContractTest {
     }
 
     @Test
-    fun `agent retrieval keeps independent state with standard controls`() {
-        val screen = sources.getValue("agentAdvanced")
-        assertThat(screen).contains("AgentEditViewModel")
+    fun `智能体知识设置用值行与单选面板且不再覆盖检索参数`() {
+        val screen = sources.getValue("agentKnowledge")
         assertThat(screen).contains("NexaraSettingsSection(")
-        assertThat(screen).contains("SettingsToggle(")
-        assertThat(screen).contains("RetrievalStrategySetting(")
-        assertThat(screen).contains("NexaraNumericSetting(")
+        assertThat(screen).contains("NexaraValueRow(")
+        assertThat(screen).contains("NexaraBottomSheet(")
+        assertThat(screen).contains("Role.RadioButton")
+        assertThat(screen).doesNotContain("NexaraNumericSetting(")
         assertThat(screen).doesNotContain("NexaraSlider(")
-        assertThat(screen).contains("NexaraConfirmDialog(")
         assertThat(screen).doesNotContain("AlertDialog(")
     }
 

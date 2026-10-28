@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -92,6 +93,8 @@ import com.promenar.nexara.data.storage.RealPathMountSupport
 import com.promenar.nexara.distribution.DistributionCapabilities
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalMount
+import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.ui.workspace.KnowledgeReadOnlyTag
 import com.promenar.nexara.domain.storage.ExternalRecycleItem
 import com.promenar.nexara.domain.storage.IExternalFolderManager
 import com.promenar.nexara.ui.common.ConfirmDialog
@@ -183,6 +186,17 @@ private fun ExternalFoldersPanelContent(
         DistributionCapabilities.allFilesAccessAvailable,
         linuxSession = linuxSession,
     )
+    // 挂载变化后重算知识库挂载预览：已挂载或当前会话不允许时，入口置灰。
+    var knowledgePreview by remember { mutableStateOf<com.promenar.nexara.data.knowledge.KnowledgeAccessPreview?>(null) }
+    LaunchedEffect(app, sessionKey, mounts) {
+        knowledgePreview = if (app == null || sessionKey.isBlank()) null else try {
+            withContext(Dispatchers.IO) { app.knowledgeAccessPlanner.preview(sessionKey) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     val perform: (suspend () -> Unit) -> Unit = { action ->
         if (!busy) {
@@ -378,6 +392,13 @@ private fun ExternalFoldersPanelContent(
                         onGrantRealPath = openAccessSettings,
                         onRecycle = { notice = null; recycleOpen = true },
                         linuxSession = linuxSession,
+                        knowledgeMount = knowledgePreview?.let(::knowledgeMountOption),
+                        onMountKnowledge = {
+                            val planner = app?.knowledgeAccessPlanner
+                            if (planner != null && sessionKey.isNotBlank()) perform {
+                                withContext(Dispatchers.IO) { planner.mount(planner.preview(sessionKey)) }
+                            }
+                        },
                     )
                     is ExternalMountPage.Form -> ExternalMountFormContent(
                         source = current.source,
@@ -470,6 +491,9 @@ internal fun ExternalMountManagerContent(
     onRecycle: () -> Unit,
     modifier: Modifier = Modifier,
     linuxSession: Boolean = false,
+    /** 为空时不显示“挂载知识库”入口（无会话或无法取得预览）。 */
+    knowledgeMount: KnowledgeMountOption? = null,
+    onMountKnowledge: () -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
     NexaraNavigationHeader(
         title = stringResource(R.string.mount_title),
@@ -532,6 +556,23 @@ internal fun ExternalMountManagerContent(
                     modifier = Modifier.testTag("external_mount_add_" + source.name.lowercase()),
                 )
             }
+            knowledgeMount?.let { option ->
+                NexaraSettingsItem(
+                    title = stringResource(R.string.knowledge_mount_add),
+                    subtitle = when (option) {
+                        is KnowledgeMountOption.Available -> stringResource(R.string.knowledge_mount_add_desc, option.paths.joinToString("、"))
+                        KnowledgeMountOption.Mounted -> stringResource(R.string.knowledge_mount_add_mounted)
+                        KnowledgeMountOption.Unavailable -> stringResource(R.string.knowledge_mount_add_unavailable)
+                    },
+                    subtitleMaxLines = 2,
+                    onClick = onMountKnowledge,
+                    enabled = !busy && option is KnowledgeMountOption.Available,
+                    leadingContent = {
+                        Icon(Icons.AutoMirrored.Rounded.LibraryBooks, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    modifier = Modifier.testTag(KNOWLEDGE_MOUNT_ADD_TAG),
+                )
+            }
         }
         NexaraSettingsGroup {
             NexaraSettingsItem(
@@ -580,9 +621,11 @@ private fun ExternalMountRow(
     var menuOpen by remember(mount.id) { mutableStateOf(false) }
     val unavailable = mount.unavailableReason != null
     val unavailableLabel = stringResource(R.string.mount_unavailable)
-    val meta = listOf(
+    val knowledgeBase = mount.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE
+    val meta = listOfNotNull(
         "/mnt/" + mount.alias,
-        stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
+        if (knowledgeBase) null
+        else stringResource(if (mount.sourceType == "real_path") R.string.mount_source_real_path else R.string.mount_source_saf),
         stringResource(when {
             linuxSession && mount.sourceType != "real_path" -> R.string.run_mode_folder_saf_hidden
             mount.commandAccessible -> R.string.agent_reach_mount_command_visible
@@ -605,37 +648,56 @@ private fun ExternalMountRow(
             )
         },
         trailingContent = {
-            Box {
-                IconButton(onClick = { menuOpen = true }, enabled = !busy) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.mount_more_actions, mount.alias))
-                }
-                NexaraDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    NexaraMenuItem(
-                        text = { Text(stringResource(R.string.mount_browse)) },
-                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
-                        enabled = !unavailable,
-                        onClick = { menuOpen = false; onBrowse(mount) },
-                    )
-                    if (mount.sourceType == "saf_tree") NexaraMenuItem(
-                        text = { Text(stringResource(R.string.mount_reauthorize)) },
-                        leadingIcon = { Icon(Icons.Rounded.Key, null) },
-                        onClick = { menuOpen = false; onReauthorize(mount) },
-                    )
-                    if (mount.sourceType == "real_path" && onGrantRealPath != null) NexaraMenuItem(
-                        text = { Text(stringResource(R.string.mount_grant_access)) },
-                        leadingIcon = { Icon(Icons.Rounded.Key, null) },
-                        onClick = { menuOpen = false; onGrantRealPath() },
-                    )
-                    NexaraMenuItem(
-                        text = { Text(stringResource(R.string.mount_remove), color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = { Icon(Icons.Rounded.LinkOff, null, tint = MaterialTheme.colorScheme.error) },
-                        onClick = { menuOpen = false; onRemove(mount) },
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (knowledgeBase) KnowledgeReadOnlyTag()
+                Box {
+                    IconButton(onClick = { menuOpen = true }, enabled = !busy) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.mount_more_actions, mount.alias))
+                    }
+                    NexaraDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        NexaraMenuItem(
+                            text = { Text(stringResource(R.string.mount_browse)) },
+                            leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
+                            enabled = !unavailable,
+                            onClick = { menuOpen = false; onBrowse(mount) },
+                        )
+                        if (mount.sourceType == "saf_tree") NexaraMenuItem(
+                            text = { Text(stringResource(R.string.mount_reauthorize)) },
+                            leadingIcon = { Icon(Icons.Rounded.Key, null) },
+                            onClick = { menuOpen = false; onReauthorize(mount) },
+                        )
+                        if (mount.sourceType == "real_path" && onGrantRealPath != null) NexaraMenuItem(
+                            text = { Text(stringResource(R.string.mount_grant_access)) },
+                            leadingIcon = { Icon(Icons.Rounded.Key, null) },
+                            onClick = { menuOpen = false; onGrantRealPath() },
+                        )
+                        NexaraMenuItem(
+                            text = { Text(stringResource(R.string.mount_remove), color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.LinkOff, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; onRemove(mount) },
+                        )
+                    }
                 }
             }
         },
     )
 }
+
+/** “挂载知识库”入口的三种状态：可挂载（列出挂载路径）、已全部挂载、当前会话不允许。 */
+internal sealed interface KnowledgeMountOption {
+    data class Available(val paths: List<String>) : KnowledgeMountOption
+    data object Mounted : KnowledgeMountOption
+    data object Unavailable : KnowledgeMountOption
+}
+
+internal fun knowledgeMountOption(preview: com.promenar.nexara.data.knowledge.KnowledgeAccessPreview): KnowledgeMountOption {
+    if (!preview.allowed || preview.knowledgeBases.isEmpty()) return KnowledgeMountOption.Unavailable
+    val pending = preview.knowledgeBases.filterNot { it.alreadyMounted }
+    return if (pending.isEmpty()) KnowledgeMountOption.Mounted else KnowledgeMountOption.Available(pending.map { it.path })
+}
+
+internal const val KNOWLEDGE_MOUNT_ADD_TAG = "external_mount_add_knowledge"
+
 
 /** 添加挂载：别名与来源，主操作固定在底部。挂载只属于当前会话且可读写。 */
 @Composable

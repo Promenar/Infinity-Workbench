@@ -174,7 +174,6 @@
     <string name="shared_btn_save">Save</string>
     <string name="shared_btn_edit">Edit</string>
     <string name="shared_btn_add">Add</string>
-    <string name="shared_btn_reset">Reset</string>
     <string name="shared_btn_close">Close</string>
     <string name="common_dismiss">Dismiss</string>
     <string name="shared_btn_done">Done</string>
@@ -282,7 +281,7 @@
 
     <!-- ============ Hub ============ -->
     <string name="hub_title">&brand;</string>
-    <string name="hub_subtitle">Your AI Assistant Team</string>
+    <string name="hub_subtitle">Your Agent Team</string>
     <string name="hub_search_placeholder">Search agents…</string>
     <string name="hub_btn_add_agent">Add Agent</string>
     <string name="hub_empty_title">No Agents Yet</string>
@@ -299,8 +298,8 @@
     <string name="hub_session_awaiting_approval">Awaiting approval</string>
 
     <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
-    <string name="preset_agent_default_name">&brand; Assistant</string>
-    <string name="preset_agent_default_desc">General AI assistant with streaming chat and knowledge retrieval</string>
+    <string name="preset_agent_default_name">General Agent</string>
+    <string name="preset_agent_default_desc">General agent with streaming chat and knowledge retrieval</string>
     <string name="preset_agent_coder_name">Coding Expert</string>
     <string name="preset_agent_coder_desc">Full-stack development and architecture design</string>
     <string name="preset_agent_writer_name">Creative Writing</string>
@@ -316,28 +315,24 @@
 
     <!-- ============ Agent Edit ============ -->
     <string name="agent_edit_title">Edit Agent</string>
-    <string name="agent_edit_section_basic">Basic Info</string>
+    <string name="agent_edit_section_basic">Basics &amp; appearance</string>
     <string name="agent_edit_label_name">Name</string>
     <string name="agent_edit_placeholder_name">Enter agent name…</string>
     <string name="agent_edit_label_desc">Description</string>
     <string name="agent_edit_placeholder_desc">Describe this agent…</string>
-    <string name="agent_edit_section_appearance">Appearance</string>
-    <string name="agent_edit_label_icon">Select Icon</string>
+    <string name="agent_edit_label_icon">Icon</string>
     <string name="agent_edit_icon_toggle_collapse">Collapse</string>
     <string name="agent_edit_icon_toggle_expand">View all</string>
     <string name="agent_edit_icon_custom">Custom</string>
     <string name="agent_edit_icon_upload">Upload Image</string>
-    <string name="agent_edit_section_personality">Personality</string>
+    <string name="agent_edit_section_personality">Prompt</string>
     <string name="agent_edit_prompt_label">System Prompt</string>
     <string name="agent_edit_prompt_placeholder">Define agent behavior…</string>
     <string name="agent_edit_prompt_hint">Tap to edit system prompt…</string>
     <string name="agent_edit_prompt_not_set">Not Set</string>
-    <string name="agent_edit_section_model">Model Configuration</string>
+    <string name="agent_edit_section_model">Model &amp; parameters</string>
     <string name="agent_edit_current_model">Current Model</string>
     <string name="agent_edit_label_presets">Inference Presets</string>
-    <string name="agent_edit_section_knowledge">Knowledge</string>
-    <string name="agent_edit_rag_config">RAG Configuration</string>
-    <string name="agent_edit_advanced_retrieval">Advanced Retrieval</string>
     <string name="agent_edit_section_danger">Danger Zone</string>
     <string name="agent_edit_delete_btn">Delete Agent</string>
     <string name="agent_edit_delete_title">Delete Agent</string>
@@ -345,49 +340,19 @@
     <string name="agent_edit_delete_confirm">Delete</string>
 
     <!-- ============ RAG Config ============ -->
-    <string name="agent_rag_title">RAG Configuration</string>
-    <string name="agent_rag_status_inherited">Inherited from Global</string>
-    <string name="agent_rag_status_custom">Custom</string>
-    <string name="agent_rag_reset_title">Reset Configuration</string>
-    <string name="agent_rag_reset_message">Are you sure you want to reset to global defaults? All custom settings will be lost.</string>
-    <string name="agent_rag_reset_confirm">Reset</string>
-    <string name="agent_rag_section_chunk">Document Chunking</string>
-    <string name="agent_rag_chunk_size">Chunk Size</string>
-    <string name="agent_rag_overlap">Chunk Overlap</string>
-    <string name="agent_rag_section_memory">Memory</string>
-    <string name="agent_rag_memory_chunk">Memory Chunk Size</string>
     <string name="agent_rag_section_context">Context</string>
 
-    <string name="agent_rag_section_summary">Summary Template</string>
-    <string name="agent_rag_summary_placeholder">Enter summary template…</string>
     <string name="agent_rag_summary_hint">Tap to edit summary template…</string>
-    <string name="agent_rag_summary_configured">Configured</string>
-    <string name="agent_rag_summary_default">Using Default</string>
     <string name="agent_rag_unit_char">char</string>
     <string name="agent_rag_unit_messages">messages</string>
 
     <!-- ============ Advanced Retrieval ============ -->
-    <string name="agent_retrieval_title">Advanced Retrieval</string>
-    <string name="agent_retrieval_section_memory">Memory Retrieval</string>
-    <string name="agent_retrieval_memory_limit">Memory Limit</string>
     <string name="agent_retrieval_memory_threshold">Memory Similarity Threshold</string>
-    <string name="agent_retrieval_section_document">Document Retrieval</string>
-    <string name="agent_retrieval_doc_limit">Document Limit</string>
     <string name="agent_retrieval_doc_threshold">Document Similarity Threshold</string>
-    <string name="agent_retrieval_section_rerank">Reranking</string>
-    <string name="agent_retrieval_rerank_enable">Enable Reranking</string>
-    <string name="agent_retrieval_recall_count">Recall Count</string>
-    <string name="agent_retrieval_final_count">Final Result Count</string>
-    <string name="agent_retrieval_section_rewrite">Query Rewriting</string>
-    <string name="agent_retrieval_rewrite_enable">Enable Query Rewriting</string>
     <string name="agent_retrieval_strategy_label">Strategy</string>
     <string name="agent_retrieval_strategy_hyde">HyDE</string>
     <string name="agent_retrieval_strategy_multi">Multi-Query</string>
     <string name="agent_retrieval_strategy_expansion">Expansion</string>
-    <string name="agent_retrieval_variant_count">Variant Count</string>
-    <string name="agent_retrieval_section_hybrid">Hybrid Search</string>
-    <string name="agent_retrieval_vector_weight">Vector Weight</string>
-    <string name="agent_retrieval_bm25_boost">BM25 Boost</string>
 
     <!-- ============ Settings ============ -->
     <string name="settings_title">Settings</string>
@@ -1319,8 +1284,6 @@
     <string name="retrieval_doc_section">Document Retrieval</string>
     <string name="retrieval_doc_limit">Top-K Documents</string>
     <string name="retrieval_hybrid_section">Hybrid Search</string>
-    <string name="retrieval_hybrid_enable">Enable hybrid search</string>
-    <string name="retrieval_hybrid_desc">Search by meaning and keywords together</string>
     <string name="retrieval_vector_weight">Vector Weight</string>
     <string name="retrieval_bm25_boost">BM25 Boost</string>
     <string name="retrieval_advanced_features">Advanced Features</string>
@@ -1331,7 +1294,6 @@
     <string name="retrieval_rerank_final">Final Results</string>
     <string name="retrieval_rewrite_section">Query Rewrite</string>
     <string name="retrieval_rewrite_enable">Enable Query Rewrite</string>
-    <string name="retrieval_rewrite_desc">Rewrites the question before searching to find more matches</string>
     <string name="retrieval_section_observability">Observability</string>
     <string name="retrieval_show_progress">Show Retrieval Progress</string>
     <string name="retrieval_show_progress_desc">Display progress indicators during retrieval</string>
@@ -1505,7 +1467,6 @@
     <string name="sheet_settings_rerank_unavailable">Set a rerank model in Default models first.</string>
     <string name="retrieval_rerank_model_unconfigured">Model not configured</string>
     <string name="retrieval_rerank_model_unavailable_message">Set a rerank model in Default models first.</string>
-    <string name="agent_retrieval_rerank_model_unavailable_message">Set a rerank model in Default models first.</string>
 
     <!-- Generation failure messages: stable UI mapping only -->
     <string name="generation_failure_network">Could not connect. Check your network and retry.</string>
@@ -1671,7 +1632,7 @@
     <string name="skill_python_exec_desc">Run Python in the workspace (arm64 devices)</string>
     <string name="skill_python_sandbox">Python sandbox</string>
     <string name="skill_python_sandbox_desc">Run Python in an isolated sandbox, offline by default (arm64 devices)</string>
-    <string name="agent_skills_intro">Skill packs are reusable task instructions (SKILL.md). When enabled, the assistant loads a skill\'s instructions and reference files only when a task matches it. Skill packs never run code.</string>
+    <string name="agent_skills_intro">Skill packs are reusable task instructions (SKILL.md). When enabled, the agent loads a skill\'s instructions and reference files only when a task matches it. Skill packs never run code.</string>
     <string name="agent_skills_empty">No skill packs yet. Import a .zip or SKILL.md, or create one.</string>
     <string name="agent_skills_import">Import</string>
     <string name="agent_skills_create">New skill</string>
@@ -1770,7 +1731,7 @@
     <string name="common_mode_workspace">Workspace</string>
     <string name="common_mode_full_access">Full access</string>
     <string name="common_mode_workspace_desc">File tools work freely inside the workspace; every command asks first.</string>
-    <string name="common_mode_full_access_desc">Commands also run without asking, as &brand; with access to all app data.</string>
+    <string name="common_mode_full_access_desc">Commands also run without asking, with this app\'s permissions and access to all app data.</string>
     <string name="chat_runtime_changes_title">Critical app data changed</string>
     <plurals name="chat_runtime_changes_more">
         <item quantity="one">%d more</item>

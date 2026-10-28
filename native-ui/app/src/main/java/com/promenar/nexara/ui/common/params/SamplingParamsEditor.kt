@@ -220,6 +220,8 @@ fun ParameterSchemeSection(
     modelName: String?,
     modifier: Modifier = Modifier,
     scrollState: ScrollableState? = null,
+    /** 方案卡下方的说明，例如智能体编辑页注明方案全局共享。 */
+    footer: String? = null,
 ) {
     val haptics = LocalNexaraHaptics.current
     val selection = state.selection
@@ -359,6 +361,15 @@ fun ParameterSchemeSection(
                     }
                 }
             }
+        }
+        if (footer != null) {
+            Text(
+                footer,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = NexaraSpacing.RowHorizontal).padding(top = NexaraSpacing.FooterTop)
+                    .testTag("params_scheme_footer"),
+            )
         }
     }
     deleting?.let { scheme ->

@@ -25,7 +25,7 @@
     <string name="run_detail_current">当前</string>
     <string name="run_detail_elapsed_seconds">用时 %1$d 秒</string>
     <string name="run_detail_elapsed_minutes">用时 %1$d 分 %2$02d 秒</string>
-    <string name="state_board_maintained_by_agent">Agent 维护</string>
+    <string name="state_board_maintained_by_agent">智能体维护</string>
     <string name="state_board_updated_at">%1$s 更新</string>
     <plurals name="state_board_field_count">
         <item quantity="other">%d 项</item>
@@ -33,8 +33,8 @@
     <string name="state_board_more">更多操作</string>
     <string name="state_board_tag_manual">你改过</string>
     <string name="state_board_tag_recent">刚更新</string>
-    <string name="state_board_manual_note">你改过的项，Agent 再更新前会先看到你的修改。</string>
-    <string name="state_board_edit_note">状态由 Agent 维护，点按任一项可以修改。</string>
+    <string name="state_board_manual_note">你改过的项，智能体再更新前会先看到你的修改。</string>
+    <string name="state_board_edit_note">状态由智能体维护，点按任一项可以修改。</string>
     <plurals name="run_detail_jobs_running">
         <item quantity="other">%1$d 个后台任务运行中</item>
     </plurals>

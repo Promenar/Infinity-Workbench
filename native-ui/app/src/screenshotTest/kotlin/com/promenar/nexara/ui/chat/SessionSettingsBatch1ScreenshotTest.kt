@@ -198,12 +198,13 @@ fun retrievalScopeChoicesPreview() = SessionFrame(3) {
 @Composable
 fun agentMemoryPolicyPreview() = SessionFrame(3) {
     Column(Modifier.padding(16.dp)) {
-        com.promenar.nexara.ui.hub.AgentMemoryPolicySection(
+        com.promenar.nexara.ui.hub.AgentScopeSection(
             policy = com.promenar.nexara.data.agent.AgentMemoryPolicy(
                 memoryCap = com.promenar.nexara.data.model.ConversationScope.AGENT,
                 shareWithOtherAgents = false,
             ),
             onPolicyChange = {},
+            onOpenKnowledgeSettings = {},
         )
     }
 }

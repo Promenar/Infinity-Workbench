@@ -44,7 +44,7 @@
     <string name="linux_install_space_title">Free space</string>
     <string name="linux_install_space_ok">%1$s free on this device, enough</string>
     <string name="linux_install_space_low">Only %1$s free; at least %2$s is needed</string>
-    <string name="linux_install_warning">Commands run as &brand; with access to app data and the network. In Workspace mode, each command needs your approval.</string>
+    <string name="linux_install_warning">Commands run with this app\'s permissions, with access to app data and the network. In Workspace mode, each command needs your approval.</string>
     <string name="linux_install_action">Install</string>
     <string name="linux_install_alternatives">You can also keep using Termux or SSH hosts</string>
 

@@ -156,9 +156,9 @@ fun workspacePickerSharedListPreview() = SheetFrame(stringResource(R.string.work
 @Composable
 fun agentDefaultWorkspacePreview() = WorkspaceTheme {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        AgentDefaultWorkspaceSection(workspaceId = null, workspace = null, onChoose = {}, onClear = {})
-        AgentDefaultWorkspaceSection(workspaceId = Shared.id, workspace = Shared, onChoose = {}, onClear = {})
-        AgentDefaultWorkspaceSection(workspaceId = "gone", workspace = null, onChoose = {}, onClear = {})
+        AgentDefaultWorkspaceRow(workspaceId = null, workspace = null, onChoose = {})
+        AgentDefaultWorkspaceRow(workspaceId = Shared.id, workspace = Shared, onChoose = {})
+        AgentDefaultWorkspaceRow(workspaceId = "gone", workspace = null, onChoose = {})
     }
 }
 

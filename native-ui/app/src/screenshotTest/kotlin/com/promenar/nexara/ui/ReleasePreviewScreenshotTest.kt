@@ -4,6 +4,8 @@ import android.content.res.Configuration
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -157,10 +159,6 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenActions
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
-import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
@@ -3605,7 +3603,7 @@ fun advancedRetrievalChineseLightReleasePreview() {
 
 @PreviewTest
 @Preview(
-    name = "Agent retrieval English light large font",
+    name = "Agent knowledge English light large font",
     widthDp = 360,
     heightDp = 800,
     locale = "en",
@@ -3613,20 +3611,23 @@ fun advancedRetrievalChineseLightReleasePreview() {
     uiMode = Configuration.UI_MODE_NIGHT_NO,
 )
 @Composable
-fun agentRetrievalEnglishLightLargeFontReleasePreview() {
+fun agentKnowledgeEnglishLightLargeFontReleasePreview() {
     RagSettingsPreviewSurface(dark = false) {
-        AgentAdvancedRetrievalScreenContent(
-            state = AgentAdvancedRetrievalScreenState(
-                scopeLabel = "Release review assistant",
-                useInheritedConfig = false,
-                retrievalConfig = AgentRetrievalConfig(
-                    enableQueryRewrite = true,
-                    enableHybridSearch = true,
-                ),
-                isRerankAvailable = true,
-            ),
-            actions = AgentAdvancedRetrievalScreenActions(),
-        )
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            com.promenar.nexara.ui.hub.AgentKnowledgeMemorySection(
+                retrievalMode = com.promenar.nexara.data.agent.AgentRetrievalMode.BOTH,
+                fileAccess = com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST,
+                policy = com.promenar.nexara.data.agent.AgentMemoryPolicy(shareWithOtherAgents = false),
+                onRetrievalModeChange = {},
+                onFileAccessChange = {},
+                onPolicyChange = {},
+            )
+            com.promenar.nexara.ui.hub.AgentScopeSection(
+                policy = com.promenar.nexara.data.agent.AgentMemoryPolicy(),
+                onPolicyChange = {},
+                onOpenKnowledgeSettings = {},
+            )
+        }
     }
 }
 

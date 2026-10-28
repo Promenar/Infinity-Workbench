@@ -618,7 +618,7 @@ internal fun AgentHubScreenContent(
                 state.pendingDeleteAgentId?.let(actions.onConfirmDelete)
             },
             title = stringResource(R.string.agent_edit_delete_title),
-            description = stringResource(R.string.agent_edit_delete_message),
+            description = agentDeleteMessage(state.sessionsByAgent[state.pendingDeleteAgentId].orEmpty().size),
             confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
             destructive = true
         )

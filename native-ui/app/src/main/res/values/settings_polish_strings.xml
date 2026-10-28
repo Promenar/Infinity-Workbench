@@ -9,7 +9,6 @@
     <string name="tools_reset_consent_desc">Ask again before unlimited full access</string>
     <string name="tools_section_mcp_servers">MCP servers</string>
     <string name="tools_skill_import_row">Import skill pack</string>
-    <string name="agent_scope_label">This assistant</string>
     <string name="ssh_host_actions">Host actions</string>
     <string name="token_by_model">By model</string>
 </resources>

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="ltm_title">Long-term memory</string>
-    <string name="settings_long_term_memory_summary">What assistants remember across chats</string>
+    <string name="settings_long_term_memory_summary">What agents remember across chats</string>
     <string name="ltm_search_placeholder">Search memories</string>
     <string name="ltm_section_switch">Memory</string>
-    <string name="ltm_enabled">Let assistants remember</string>
-    <string name="ltm_enabled_desc">Shared by non-private assistants and added to every turn</string>
-    <string name="ltm_switch_footer">Assistants save things worth keeping across chats, like your preferences and project facts. Private assistants never read or write these memories.</string>
-    <string name="ltm_empty">No memories yet. When an assistant learns something worth keeping, it shows up here.</string>
+    <string name="ltm_enabled">Let agents remember</string>
+    <string name="ltm_enabled_desc">Shared by non-private agents and added to every turn</string>
+    <string name="ltm_switch_footer">Agents save things worth keeping across chats, like your preferences and project facts. Private agents never read or write these memories.</string>
+    <string name="ltm_empty">No memories yet. When an agent learns something worth keeping, it shows up here.</string>
     <string name="ltm_search_empty">No memories match.</string>
     <string name="ltm_group_title">%1$s · %2$d</string>
     <plurals name="ltm_count">

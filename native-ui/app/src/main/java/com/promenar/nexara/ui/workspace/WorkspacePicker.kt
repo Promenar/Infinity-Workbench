@@ -107,6 +107,8 @@ data class WorkspacePickerUiState(
     val currentWorkspaceId: String? = null,
     /** 为 true 时列出“会话专用空间”，[currentWorkspaceId] 为 null 即表示当前使用它。 */
     val showPrivate: Boolean = false,
+    /** “会话专用空间”一行的标题；为 null 时显示“本会话”。 */
+    val privateTitle: String? = null,
     val sharedSupported: Boolean = false,
     val sharedPermission: Boolean = false,
     val sharedRoots: List<File> = emptyList(),
@@ -189,6 +191,8 @@ fun WorkspacePickerSheet(
     currentWorkspaceId: String? = null,
     /** 非 null 时可选回会话专用空间（仅会话资源管理器提供）。 */
     onPickPrivate: (() -> Unit)? = null,
+    /** 智能体默认工作区等非会话场景下，“会话专用空间”一行的标题。 */
+    privateTitle: String? = null,
 ) {
     if (!show) return
     val context = LocalContext.current
@@ -266,6 +270,7 @@ fun WorkspacePickerSheet(
 
     val state = WorkspacePickerUiState(
         page = page, registered = registered, currentWorkspaceId = currentWorkspaceId, showPrivate = onPickPrivate != null,
+        privateTitle = privateTitle,
         sharedSupported = browser.sharedSupported, sharedPermission = permission, sharedRoots = roots,
         folders = folders, loading = loading, loadError = loadError, selectedProject = selectedProject,
         busy = busy, error = error, linuxHome = linuxHome,
@@ -510,7 +515,7 @@ private fun LazyListScope.homeItems(
         item(key = "private_header") { WorkspaceKindHeader(null) }
         item(key = "private") {
             PickerRow(
-                title = stringResource(R.string.workspace_picker_this_chat),
+                title = state.privateTitle ?: stringResource(R.string.workspace_picker_this_chat),
                 selected = state.currentWorkspaceId == null,
                 enabled = !state.busy,
                 onClick = onPickPrivate,

@@ -36,14 +36,10 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
-import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RetrievalDepth
 import com.promenar.nexara.data.rag.retrievalDepth
 import com.promenar.nexara.data.rag.withRetrievalDepth
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenActions
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
-import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
 import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.SearchSecretOperation
 import com.promenar.nexara.ui.settings.SearchSecretErrorCode
@@ -441,17 +437,10 @@ class RagSettingsAccessibilityTest {
     }
 
     @Test
-    fun agentRetrievalParameterAndResetActionsUseProductionContent() {
-        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
-        val reset = AtomicBoolean(false)
-        var state by mutableStateOf(
-            AgentAdvancedRetrievalScreenState(
-                scopeLabel = "Release assistant",
-                useInheritedConfig = false,
-                retrievalConfig = AgentRetrievalConfig(),
-                isRerankAvailable = true,
-            ),
-        )
+    fun agentKnowledgeChoicesUseRadioSheetsAndPrivateToggle() {
+        var mode by mutableStateOf(com.promenar.nexara.data.agent.AgentRetrievalMode.AUTO)
+        var access by mutableStateOf(com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST)
+        var policy by mutableStateOf(com.promenar.nexara.data.agent.AgentMemoryPolicy())
         rule.setContent {
             NexaraTheme(
                 preferences = NexaraThemePreferences(
@@ -459,83 +448,33 @@ class RagSettingsAccessibilityTest {
                     colorSource = NexaraColorSource.NEXARA,
                 ),
             ) {
-                AgentAdvancedRetrievalScreenContent(
-                    state = state,
-                    actions = AgentAdvancedRetrievalScreenActions(
-                        onRetrievalConfigChanged = { transform ->
-                            state = state.copy(
-                                retrievalConfig = state.retrievalConfig.transform(),
-                            )
-                        },
-                        onResetToGlobal = { reset.set(true) },
-                    ),
+                com.promenar.nexara.ui.hub.AgentKnowledgeMemorySection(
+                    retrievalMode = mode,
+                    fileAccess = access,
+                    policy = policy,
+                    onRetrievalModeChange = { mode = it },
+                    onFileAccessChange = { access = it },
+                    onPolicyChange = { transform -> policy = transform(policy) },
                 )
             }
         }
 
-        rule.onNodeWithTag("agent_retrieval_memory_limit_slider")
-            .performScrollTo()
-        repeat(3) {
-            rule.onNodeWithContentDescription(
-                resources.getString(R.string.p0_increase_setting, resources.getString(R.string.agent_retrieval_memory_limit)),
-                useUnmergedTree = true,
-            ).performClick()
-        }
-        rule.runOnIdle { assertThat(state.retrievalConfig.memoryLimit).isEqualTo(8) }
-        val semanticOrder = buildList<String> {
-            fun collect(node: SemanticsNode) {
-                if (SemanticsProperties.TestTag in node.config) {
-                    add(node.config[SemanticsProperties.TestTag])
-                }
-                node.children.forEach(::collect)
-            }
-            collect(rule.onRoot(useUnmergedTree = true).fetchSemanticsNode())
-        }
-        assertThat(semanticOrder.indexOf("agent_retrieval_rerank_toggle"))
-            .isLessThan(semanticOrder.indexOf("agent_retrieval_rewrite_toggle"))
-        assertThat(semanticOrder.indexOf("agent_retrieval_rewrite_toggle"))
-            .isLessThan(semanticOrder.indexOf("agent_retrieval_hybrid_toggle"))
-        assertAgentToggle(
-            tag = "agent_retrieval_rerank_toggle",
-            switchTag = "agent_retrieval_rerank_switch",
-        )
-        rule.onNodeWithTag("agent_retrieval_rerank_toggle").performClick()
-        rule.runOnIdle { assertThat(state.retrievalConfig.enableRerank).isFalse() }
-        assertAgentToggle(
-            tag = "agent_retrieval_rewrite_toggle",
-            switchTag = "agent_retrieval_rewrite_switch",
-        )
-        rule.onNodeWithTag("agent_retrieval_rewrite_toggle").performClick()
-        rule.runOnIdle { assertThat(state.retrievalConfig.enableQueryRewrite).isFalse() }
-        assertAgentToggle(
-            tag = "agent_retrieval_hybrid_toggle",
-            switchTag = "agent_retrieval_hybrid_switch",
-        )
-        rule.onNodeWithTag("agent_retrieval_hybrid_toggle").performClick()
-        rule.runOnIdle { assertThat(state.retrievalConfig.enableHybridSearch).isFalse() }
-        rule.onNodeWithTag("agent_retrieval_reset_action")
-            .performScrollTo()
-            .assertIsDisplayed()
-            .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag("agent_edit_retrieval_mode").assertHasClickAction().assertHeightIsAtLeast(48.dp).performClick()
+        rule.onNodeWithTag("agent_edit_retrieval_mode_auto").assertIsSelected()
+        rule.onNodeWithTag("agent_edit_retrieval_mode_tool").performClick()
+        rule.runOnIdle { assertThat(mode).isEqualTo(com.promenar.nexara.data.agent.AgentRetrievalMode.TOOL) }
+        // 检索方式与文件访问互不联动。
+        rule.runOnIdle { assertThat(access).isEqualTo(com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST) }
+
+        rule.onNodeWithTag("agent_edit_file_access").performClick()
+        rule.onNodeWithTag("agent_edit_file_access_always").performClick()
+        rule.runOnIdle { assertThat(access).isEqualTo(com.promenar.nexara.data.agent.KnowledgeFileAccess.ALWAYS) }
+
+        rule.onNodeWithTag("agent_memory_private")
+            .assertIsToggleable()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
             .performClick()
-        rule.onNodeWithTag("agent_retrieval_reset_dialog").assertIsDisplayed()
-        rule.onNodeWithTag("agent_retrieval_reset_confirm").performClick()
-        rule.runOnIdle { assertThat(reset.get()).isTrue() }
+        rule.runOnIdle { assertThat(policy.shareWithOtherAgents).isFalse() }
     }
 
-    private fun assertAgentToggle(
-        tag: String,
-        switchTag: String,
-    ) {
-        rule.onNodeWithTag(tag)
-            .performScrollTo()
-            .assertIsToggleable()
-            .assertIsOn()
-            .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch),
-            )
-        rule.onNodeWithTag(switchTag, useUnmergedTree = true)
-            .assert(!hasClickAction())
-    }
 }

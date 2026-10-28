@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
-    <string name="bg_subagent_notification_title">Nexara 正在后台处理任务</string>
+    <string name="bg_subagent_notification_title">&brand; 正在后台处理任务</string>
     <string name="bg_subagent_notification_starting">正在准备后台子代理</string>
     <string name="bg_subagent_notification_stop_generations">停止会话生成</string>
     <string name="bg_subagent_notification_with_generations">%1$d 个活跃子代理 · %2$d 个会话生成中</string>

@@ -6,9 +6,6 @@
     <string name="settings_retrieval_graph_short">Extraction and graph options</string>
     <string name="settings_retrieval_template_default">Default template</string>
     <string name="settings_retrieval_template_custom">Custom template</string>
-    <string name="settings_retrieval_config_source_title">Configuration source</string>
-    <string name="settings_retrieval_reset_global_title">Restore global settings</string>
-    <string name="settings_retrieval_model_unavailable_short">No default rerank model</string>
     <string name="settings_retrieval_hybrid_short">Vector and keyword matching</string>
     <string name="settings_retrieval_rewrite_short">Rewrite queries for retrieval</string>
     <string name="settings_retrieval_rerank_managed">Reranking is on, so the limits and thresholds above don\'t apply.</string>
@@ -22,9 +19,7 @@
     <string name="settings_retrieval_kg_duration_title">Time limit (sec)</string>
     <string name="settings_retrieval_kg_confirm_title">Large document threshold</string>
     <string name="settings_retrieval_kg_budget_footer">Applied per document. You\'re asked first when estimated calls exceed the threshold.</string>
-    <string name="settings_retrieval_agent_rag_short">Chunking and memory settings</string>
-    <string name="settings_retrieval_agent_advanced_short">Rerank, rewrite and hybrid search</string>
-    <string name="settings_retrieval_agent_actions_section">Agent management</string>
+    <string name="settings_retrieval_agent_actions_section">Manage</string>
     <string name="settings_retrieval_icon_sparkles">Sparkles</string>
     <string name="settings_retrieval_icon_code">Code</string>
     <string name="settings_retrieval_icon_note">Note</string>

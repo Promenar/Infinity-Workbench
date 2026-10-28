@@ -12,7 +12,7 @@
     <string name="settings_batch1_text_scale_value">文字大小</string>
     <string name="settings_batch1_termux_integration_summary">通过 Termux 执行命令</string>
     <string name="settings_batch1_mount_read_only_summary">禁止修改挂载文件</string>
-    <string name="settings_batch1_home_skills_summary">Agent 工具与 MCP</string>
+    <string name="settings_batch1_home_skills_summary">智能体工具与 MCP</string>
     <string name="settings_batch1_home_token_summary">模型用量与费用</string>
     <string name="settings_batch1_ssh_summary">保存的 SSH 连接</string>
     <string name="settings_batch1_ssh_keep_summary">保留终端进程</string>

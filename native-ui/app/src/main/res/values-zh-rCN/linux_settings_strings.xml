@@ -36,15 +36,15 @@
     <string name="linux_open_ssh">SSH 主机</string>
 
     <!-- 安装引导 -->
-    <string name="linux_install_hero_title">给 Agent 一套完整的 Linux</string>
-    <string name="linux_install_hero_body">在 &brand; 内运行 Alpine Linux。Agent 的命令在其中执行，可用 apk 安装 Python、Node、git 等，也能在终端直接使用。无需 Termux 或 root。</string>
+    <string name="linux_install_hero_title">给智能体一套完整的 Linux</string>
+    <string name="linux_install_hero_body">在 &brand; 内运行 Alpine Linux。智能体的命令在其中执行，可用 apk 安装 Python、Node、git 等，也能在终端直接使用。无需 Termux 或 root。</string>
     <string name="linux_install_contents">安装内容</string>
     <string name="linux_install_base_title">Alpine Linux %1$s</string>
     <string name="linux_install_base_subtitle">随应用内置，解包后约 10 MB，可离线安装</string>
     <string name="linux_install_space_title">可用空间</string>
     <string name="linux_install_space_ok">设备剩余 %1$s，足够</string>
     <string name="linux_install_space_low">设备只剩 %1$s，至少需要 %2$s</string>
-    <string name="linux_install_warning">命令以 &brand; 身份运行，可访问应用数据和网络；“工作区”档位下每条命令都需你批准。</string>
+    <string name="linux_install_warning">命令以本应用权限运行，可访问应用数据和网络；“工作区”档位下每条命令都需你批准。</string>
     <string name="linux_install_action">安装</string>
     <string name="linux_install_alternatives">也可以继续使用 Termux 或 SSH 主机</string>
 
@@ -153,7 +153,7 @@
     <string name="linux_packages_filter_all">全部</string>
     <string name="linux_packages_filter_installed">已安装</string>
     <string name="linux_packages_filter_updates">可更新 %1$d</string>
-    <string name="linux_packages_filter_agent">由 Agent 安装</string>
+    <string name="linux_packages_filter_agent">由智能体安装</string>
     <string name="linux_packages_search_results">搜索结果 · %1$s</string>
     <string name="linux_packages_installed_section">已安装</string>
     <string name="linux_packages_install">安装</string>
@@ -163,8 +163,8 @@
     <string name="linux_packages_update">更新</string>
     <string name="linux_packages_updating">更新中</string>
     <string name="linux_packages_refreshing">正在刷新索引</string>
-    <string name="linux_packages_origin_agent">由 Agent 安装 · 会话“%1$s”</string>
-    <string name="linux_packages_origin_agent_unnamed">由 Agent 安装</string>
+    <string name="linux_packages_origin_agent">由智能体安装 · 会话“%1$s”</string>
+    <string name="linux_packages_origin_agent_unnamed">由智能体安装</string>
     <string name="linux_packages_origin_preset">安装时选择</string>
     <string name="linux_packages_origin_user">由你安装</string>
     <string name="linux_packages_dependency">依赖</string>

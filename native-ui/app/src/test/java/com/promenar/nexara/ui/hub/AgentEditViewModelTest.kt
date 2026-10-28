@@ -1,6 +1,5 @@
 package com.promenar.nexara.ui.hub
 
-import android.content.SharedPreferences
 import app.cash.turbine.test
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
@@ -9,7 +8,6 @@ import com.promenar.nexara.data.agent.KnowledgeFileAccess
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionMode
-import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -20,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -37,18 +36,11 @@ class AgentEditViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 
     private lateinit var repo: AgentRepository
-    private lateinit var prefs: SharedPreferences
 
     @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         repo = mockk(relaxed = true)
-        prefs = mockk {
-            every { getInt(any(), any()) } returns 0
-            every { getFloat(any(), any()) } returns 0.0f
-            every { getBoolean(any(), any()) } returns false
-            every { getString(any(), any()) } returns null
-        }
     }
 
     @AfterEach
@@ -87,7 +79,7 @@ class AgentEditViewModelTest {
             assertThat(ids).containsExactly("s1")
             events += "close"
         }
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), deleteAgentUseCase = deletion)
+        val vm = AgentEditViewModel(repo, deleteAgentUseCase = deletion)
         vm.deleteAgent("a1") { events += "callback" }
         assertThat(events).containsExactly("close", "delete", "callback").inOrder()
         assertThat(vm.saveError.value).isNull()
@@ -99,7 +91,7 @@ class AgentEditViewModelTest {
         coEvery { sessions.getAll() } returns emptyList()
         val deletion = com.promenar.nexara.domain.usecase.DeleteAgentUseCase(repo, sessions)
         val release = deletion.registerSessionCloser { error("关闭失败") }
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), deleteAgentUseCase = deletion)
+        val vm = AgentEditViewModel(repo, deleteAgentUseCase = deletion)
         var callbacks = 0
         vm.deleteAgent("a1") { callbacks++ }
         coVerify(exactly = 0) { repo.delete(any()) }
@@ -133,7 +125,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         assertThat(vm.name.value).isEqualTo("Test Agent")
@@ -152,7 +144,7 @@ class AgentEditViewModelTest {
     @Test
     fun `missing agent exposes typed not found instead of silent empty editor`() = runTest {
         every { repo.observeById("missing") } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("missing")
 
@@ -166,7 +158,6 @@ class AgentEditViewModelTest {
         every { repo.observeById("a1") } returns flowOf(agent)
         val vm = AgentEditViewModel(
             repo,
-            RagConfigPersistence(prefs),
             avatarImporter = { _, _ -> null },
         )
         vm.loadAgent("a1")
@@ -184,7 +175,6 @@ class AgentEditViewModelTest {
         every { repo.observeById("a1") } returns flowOf(agent)
         val vm = AgentEditViewModel(
             repo,
-            RagConfigPersistence(prefs),
             avatarImporter = { _, _ -> "/avatar/replacement.png" },
         )
         vm.loadAgent("a1")
@@ -201,7 +191,7 @@ class AgentEditViewModelTest {
     fun `delayed field autosave does not depend on observing hasChanges`() = runTest {
         val agent = Agent(id = "a1", name = "Original")
         every { repo.observeById("a1") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         vm.setName("Persisted")
@@ -212,24 +202,12 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `loadAgent with useInheritedConfig=true loads global rag config`() = runTest {
-        val agent = Agent(id = "a1", name = "n", useInheritedConfig = true)
-        every { repo.observeById("a1") } returns flowOf(agent)
-        every { prefs.getInt("doc_chunk_size", 800) } returns 500
-
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
-        vm.loadAgent("a1")
-
-        assertThat(vm.ragConfig.value.docChunkSize).isEqualTo(500)
-    }
-
-    @Test
-    fun `继承全局检索参数时编辑普通字段保留智能体检索与文件访问设置`() = runTest {
+    fun `编辑普通字段保留智能体检索方式、文件访问与旧继承标记`() = runTest {
         val config = AgentRetrievalConfig(retrievalMode = AgentRetrievalMode.TOOL,
             knowledgeFileAccess = KnowledgeFileAccess.ALWAYS)
         every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称", useInheritedConfig = true,
             retrievalConfig = config))
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         assertThat(vm.retrievalConfig.value.retrievalMode).isEqualTo(AgentRetrievalMode.TOOL)
@@ -244,25 +222,98 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `切换继承与重置检索参数不重置智能体检索方式和文件授权`() = runTest {
+    fun `检索方式与知识库文件访问各自立即持久化且保留旧检索参数`() = runTest {
+        val legacyRag = AgentRagConfig(docChunkSize = 123)
         val config = AgentRetrievalConfig(memoryLimit = 11, retrievalMode = AgentRetrievalMode.BOTH,
             knowledgeFileAccess = KnowledgeFileAccess.OFF)
         every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称", useInheritedConfig = false,
-            retrievalConfig = config))
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+            ragConfig = legacyRag, retrievalConfig = config))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
-        vm.setUseInheritedConfig(true)
-        assertThat(vm.retrievalConfig.value.retrievalMode).isEqualTo(AgentRetrievalMode.BOTH)
-        assertThat(vm.retrievalConfig.value.knowledgeFileAccess).isEqualTo(KnowledgeFileAccess.OFF)
-        vm.resetToGlobal()
-        vm.saveAgent("a1")
-
-        coVerify { repo.update(match {
-            it.useInheritedConfig && it.retrievalConfig?.retrievalMode == AgentRetrievalMode.BOTH &&
+        vm.setRetrievalMode(AgentRetrievalMode.TOOL)
+        runCurrent()
+        coVerify(exactly = 1) { repo.update(match {
+            it.retrievalConfig?.retrievalMode == AgentRetrievalMode.TOOL &&
                 it.retrievalConfig?.knowledgeFileAccess == KnowledgeFileAccess.OFF &&
-                it.retrievalConfig?.memoryLimit == AgentRetrievalConfig().memoryLimit
+                it.retrievalConfig?.memoryLimit == 11 && it.ragConfig == legacyRag && !it.useInheritedConfig
         }) }
+
+        vm.setKnowledgeFileAccess(KnowledgeFileAccess.ALWAYS)
+        runCurrent()
+        coVerify(exactly = 1) { repo.update(match {
+            it.retrievalConfig?.retrievalMode == AgentRetrievalMode.TOOL &&
+                it.retrievalConfig?.knowledgeFileAccess == KnowledgeFileAccess.ALWAYS
+        }) }
+        assertThat(vm.retrievalConfig.value.knowledgeFileAccess).isEqualTo(KnowledgeFileAccess.ALWAYS)
+    }
+
+    @Test
+    fun `新会话默认的执行模式与 MCP 立即持久化并保留技能名单`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称", skills = listOf("skill-a"),
+            mcpServerIds = listOf("m1")))
+        val vm = AgentEditViewModel(repo)
+        vm.loadAgent("a1")
+        assertThat(vm.executionMode.value).isEqualTo(ExecutionMode.WORKSPACE)
+        assertThat(vm.mcpServerIds.value).containsExactly("m1")
+
+        vm.setExecutionMode(ExecutionMode.FULL_ACCESS)
+        runCurrent()
+        coVerify(exactly = 1) { repo.update(match {
+            it.executionMode == ExecutionMode.FULL_ACCESS && it.skills == listOf("skill-a") && it.mcpServerIds == listOf("m1")
+        }) }
+
+        vm.setMcpServerEnabled("m2", true)
+        vm.setMcpServerEnabled("m2", true)
+        runCurrent()
+        assertThat(vm.mcpServerIds.value).containsExactly("m1", "m2").inOrder()
+        vm.setMcpServerEnabled("m1", false)
+        runCurrent()
+        coVerify { repo.update(match { it.mcpServerIds == listOf("m2") && it.executionMode == ExecutionMode.FULL_ACCESS }) }
+    }
+
+    @Test
+    fun `新会话默认改动不计入未保存变更`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称"))
+        val vm = AgentEditViewModel(repo)
+        backgroundScope.launch { vm.hasChanges.collect {} }
+        vm.loadAgent("a1")
+        runCurrent()
+        assertThat(vm.hasChanges.value).isFalse()
+
+        vm.setExecutionMode(ExecutionMode.FULL_ACCESS)
+        vm.setMcpServerEnabled("m1", true)
+        runCurrent()
+        assertThat(vm.hasChanges.value).isFalse()
+    }
+
+    @Test
+    fun `删除确认的会话数按智能体统计并可刷新`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称"))
+        var count = 3
+        val vm = AgentEditViewModel(repo, countAgentSessions = { id -> if (id == "a1") count else 0 })
+        assertThat(vm.sessionCount.value).isEqualTo(0)
+        vm.loadAgent("a1")
+        runCurrent()
+        assertThat(vm.sessionCount.value).isEqualTo(3)
+
+        count = 5
+        vm.refreshSessionCount()
+        runCurrent()
+        assertThat(vm.sessionCount.value).isEqualTo(5)
+    }
+
+    @Test
+    fun `会话数读取失败时保留上次结果`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称"))
+        var fail = false
+        val vm = AgentEditViewModel(repo, countAgentSessions = { if (fail) error("db") else 2 })
+        vm.loadAgent("a1")
+        runCurrent()
+        fail = true
+        vm.refreshSessionCount()
+        runCurrent()
+        assertThat(vm.sessionCount.value).isEqualTo(2)
     }
 
     @Test
@@ -270,7 +321,7 @@ class AgentEditViewModelTest {
         every { repo.observeById("a1") } returns flowOf(Agent("a1", "自定义", retrievalConfig =
             AgentRetrievalConfig(retrievalMode = AgentRetrievalMode.TOOL, knowledgeFileAccess = KnowledgeFileAccess.ALWAYS)))
         every { repo.observeById("legacy") } returns flowOf(Agent("legacy", "旧智能体"))
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         vm.loadAgent("legacy")
@@ -284,18 +335,6 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `loadAgent with useInheritedConfig=false uses agent rag config`() = runTest {
-        val ragConfig = AgentRagConfig(docChunkSize = 123)
-        val agent = Agent(id = "a1", name = "n", useInheritedConfig = false, ragConfig = ragConfig)
-        every { repo.observeById("a1") } returns flowOf(agent)
-
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
-        vm.loadAgent("a1")
-
-        assertThat(vm.ragConfig.value.docChunkSize).isEqualTo(123)
-    }
-
-    @Test
     fun `saveAgent delegates to repository update`() = runTest {
         val agent = Agent(
             id = "a1", name = "Original", modelId = "old",
@@ -304,7 +343,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         vm.setName("Updated")
@@ -327,7 +366,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Original", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
         vm.setName("Updated")
         vm.saveAgent("a1")
@@ -340,7 +379,7 @@ class AgentEditViewModelTest {
         every { repo.observeById(any()) } returns flowOf(null)
         var deleted = false
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.deleteAgent("a1") { deleted = true }
 
         coVerify { repo.delete("a1") }
@@ -350,7 +389,7 @@ class AgentEditViewModelTest {
     @Test
     fun `setName updates state`() = runTest {
         every { repo.observeById(any()) } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.setName("New Name")
         assertThat(vm.name.value).isEqualTo("New Name")
     }
@@ -358,7 +397,7 @@ class AgentEditViewModelTest {
     @Test
     fun `setModel updates state`() = runTest {
         every { repo.observeById(any()) } returns flowOf(null)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.setModel("gpt-4o")
         assertThat(vm.selectedModel.value).isEqualTo("gpt-4o")
     }
@@ -372,7 +411,7 @@ class AgentEditViewModelTest {
             avatarPath = "/avatar/custom.png",
         )
         every { repo.observeById("a1") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         vm.setIcon("🧪")
@@ -395,7 +434,7 @@ class AgentEditViewModelTest {
         )
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         vm.hasChanges.test {
@@ -408,7 +447,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Name", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("a1") } returns flowOf(agent)
 
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
         vm.setName("Changed")
 
@@ -421,7 +460,7 @@ class AgentEditViewModelTest {
     fun `saveAgent persists customized text flag with text in one repository update`() = runTest {
         val agent = Agent(id = "coder", name = "Coder", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("coder") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("coder")
         vm.setName("My Coder")
         vm.saveAgent("coder")
@@ -433,7 +472,7 @@ class AgentEditViewModelTest {
     fun `saveAgent persists literal edits for non preset agents`() = runTest {
         val agent = Agent(id = "user-1", name = "Custom", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("user-1") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("user-1")
         vm.setName("Renamed")
         vm.saveAgent("user-1")
@@ -451,7 +490,7 @@ class AgentEditViewModelTest {
             executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("coder", "编程专家", "本地化描述")
         vm.setModel("provider::new")
@@ -478,7 +517,7 @@ class AgentEditViewModelTest {
             executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("coder", "编程专家", "本地化描述")
 
@@ -494,7 +533,7 @@ class AgentEditViewModelTest {
             executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("coder", "编程专家", "本地化描述")
         vm.setName("我的编程助手")
@@ -517,7 +556,7 @@ class AgentEditViewModelTest {
             executionMode = ExecutionMode.WORKSPACE,
         )
         every { repo.observeById("coder") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("coder", "编程专家", "本地化描述")
         vm.setDescription("我的专属描述")
@@ -536,7 +575,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "coder", name = "Coding Expert", executionMode = ExecutionMode.WORKSPACE)
         every { repo.observeById("coder") } returns flowOf(agent)
         coEvery { repo.update(any()) } throws IllegalStateException("room failed")
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
 
         vm.loadAgent("coder", "编程专家", "本地化描述")
         vm.setName("用户文本")
@@ -564,7 +603,7 @@ class AgentEditViewModelTest {
         every { repo.observeById("a1") } returns flowOf(agent)
         val release = CompletableDeferred<Unit>()
         coEvery { repo.update(any()) } coAnswers { release.await() }
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         val saving = async { vm.saveSystemPrompt("after") }
@@ -582,7 +621,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Agent", systemPrompt = "before")
         every { repo.observeById("a1") } returns flowOf(agent)
         coEvery { repo.update(any()) } throws IllegalStateException("room failed")
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         val result = vm.saveSystemPrompt("after")
@@ -596,7 +635,7 @@ class AgentEditViewModelTest {
         val agent = Agent(id = "a1", name = "Agent", systemPrompt = "before")
         every { repo.observeById("a1") } returns flowOf(agent)
         coEvery { repo.update(any()) } throws CancellationException("cancelled")
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
 
         var thrown: CancellationException? = null
@@ -610,31 +649,10 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `saveRagConfig persists complete non inherited configuration before success`() = runTest {
-        val agent = Agent(id = "a1", name = "Agent", useInheritedConfig = true)
-        every { repo.observeById("a1") } returns flowOf(agent)
-        every { prefs.getInt("doc_chunk_size", 800) } returns 800
-        every { prefs.getInt("memory_limit", 5) } returns 5
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
-        vm.loadAgent("a1")
-
-        val result = vm.saveRagConfig { it.copy(summaryTemplate = "new template") }
-
-        assertThat(result.isSuccess).isTrue()
-        coVerify {
-            repo.update(match {
-                !it.useInheritedConfig &&
-                    it.ragConfig?.summaryTemplate == "new template" &&
-                    it.retrievalConfig != null
-            })
-        }
-    }
-
-    @Test
     fun `编辑保存保留默认工作区与用户规则`() = runTest {
         val agent = Agent(id = "a1", name = "Agent", defaultWorkspaceId = "ws-1", userRules = "只用中文回答")
         every { repo.observeById("a1") } returns flowOf(agent)
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        val vm = AgentEditViewModel(repo)
         vm.loadAgent("a1")
         assertThat(vm.defaultWorkspaceId.value).isEqualTo("ws-1")
 
@@ -657,7 +675,7 @@ class AgentEditViewModelTest {
         val workspace = com.promenar.nexara.data.local.db.entity.WorkspaceEntity(
             "ws-2", com.promenar.nexara.data.local.db.entity.WorkspaceEntity.KIND_SHARED, "仓库", "/storage/emulated/0/repo", 1,
         )
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), workspaces = flowOf(listOf(workspace)))
+        val vm = AgentEditViewModel(repo, workspaces = flowOf(listOf(workspace)))
         vm.loadAgent("a1")
         vm.defaultWorkspace.test {
             assertThat(awaitItem()).isNull()
@@ -674,7 +692,7 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `助手选用方案、改项与保存方案都写入默认参数`() = runTest {
+    fun `智能体选用方案、改项与保存方案都写入默认参数`() = runTest {
         every { repo.observeById("a1") } returns flowOf(Agent(id = "a1", name = "Agent", modelId = "p::m", temperature = 0.5))
         val dao = object : com.promenar.nexara.data.local.db.dao.ParameterSchemeDao {
             val rows = kotlinx.coroutines.flow.MutableStateFlow<List<com.promenar.nexara.data.local.db.entity.ParameterSchemeEntity>>(emptyList())
@@ -686,7 +704,7 @@ class AgentEditViewModelTest {
             override suspend fun delete(id: String) { rows.value = rows.value.filterNot { it.id == id } }
         }
         val schemes = com.promenar.nexara.data.repository.ParameterSchemeRepository(dao, newId = { "s1" })
-        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), parameterSchemeRepository = schemes)
+        val vm = AgentEditViewModel(repo, parameterSchemeRepository = schemes)
         vm.loadAgent("a1")
 
         vm.applyModelDefaultSampling()

@@ -54,7 +54,7 @@ class SessionSubagentSkill(
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
     override val description = when (name) {
-        "session_read" -> "读取家族会话或本会话子代理的状态与最近记录。同助手其它会话的读取每次需批准，跨助手不可见。"
+        "session_read" -> "读取家族会话或本会话子代理的状态与最近记录。同一智能体其它会话的读取每次需批准，其它智能体的会话不可见。"
         "session_send" -> "向主会话或本会话的分支、子代理发消息；wrapUp=true 请求收尾并交回结论。其它会话不能发送。停止的子代理不能恢复。"
         else -> "立即停止本会话分支当前一轮生成或本会话子代理；不删除会话。分支不能停止主会话。"
     }

@@ -17,7 +17,7 @@ class SessionListTool(private val service: () -> BranchSessionService) : SkillDe
     override val name = id
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SESSION_STATE
-    override val description = "列出当前会话家族。scope=assistant 每次需用户批准，只列同一助手会话；其它助手不可见。分支与子代理只访问自己的主会话。"
+    override val description = "列出当前会话家族。scope=assistant 每次需用户批准，只列同一智能体的会话；其它智能体不可见。分支与子代理只访问自己的主会话。"
     override val parametersSchema = """{"type":"object","additionalProperties":false,"properties":{"scope":{"type":"string","enum":["family","assistant"],"default":"family"}}}"""
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = try {
         require(ToolSchemaValidator().validate(parametersSchema, args) !is ToolSchemaValidation.Invalid) { "session_list 参数不合法" }

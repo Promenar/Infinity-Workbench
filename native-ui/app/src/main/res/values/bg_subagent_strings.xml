@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY brand "Nexara">]>
 <resources>
-    <string name="bg_subagent_notification_title">Nexara is working in the background</string>
+    <string name="bg_subagent_notification_title">&brand; is working in the background</string>
     <string name="bg_subagent_notification_starting">Preparing background subagents</string>
     <string name="bg_subagent_notification_stop_generations">Stop conversation generation</string>
     <string name="bg_subagent_notification_with_generations">%1$d subagents · %2$d conversations generating</string>

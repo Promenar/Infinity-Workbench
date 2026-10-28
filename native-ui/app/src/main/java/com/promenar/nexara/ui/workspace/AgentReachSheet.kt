@@ -207,13 +207,14 @@ private fun WorkspaceSection(state: AgentReachState, switch: AgentReachWorkspace
 }
 
 @Composable
-private fun PathRow(path: String, meaning: String, tag: String) {
+private fun PathRow(path: String, meaning: String, tag: String, knowledgeBase: Boolean = false) {
     NexaraSettingsRowLayout(
         title = path,
         subtitle = meaning,
         titleTextStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = NexaraMonospace),
         subtitleMaxLines = 2,
         modifier = Modifier.testTag(tag),
+        trailingContent = if (knowledgeBase) ({ KnowledgeReadOnlyTag() }) else null,
     )
 }
 
@@ -242,11 +243,13 @@ private fun PathSection(state: AgentReachState) {
             PathRow("/mnt", stringResource(R.string.agent_reach_path_mnt_empty), "agent_reach_path_mnt_empty")
         } else {
             state.mounts.forEach { mount ->
-                val attributes = listOf(
-                    stringResource(if (mount.source == ReachMountSource.PATH) R.string.agent_reach_mount_path else R.string.agent_reach_mount_saf),
+                val attributes = listOfNotNull(
+                    if (mount.knowledgeBase) null
+                    else stringResource(if (mount.source == ReachMountSource.PATH) R.string.agent_reach_mount_path else R.string.agent_reach_mount_saf),
                     stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_command_visible else R.string.agent_reach_mount_files_only),
-                ) + listOfNotNull(if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null)
-                PathRow("/mnt/${mount.alias}", attributes.joinToString(" · "), "agent_reach_path_mount")
+                    if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null,
+                )
+                PathRow("/mnt/${mount.alias}", attributes.joinToString(" · "), "agent_reach_path_mount", knowledgeBase = mount.knowledgeBase)
             }
         }
     }

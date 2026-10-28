@@ -206,7 +206,7 @@ class BranchSessionService(
         val all = args["scope"]?.jsonPrimitive?.content == "assistant"
         if (all) {
             require(source.parentSessionId == null && source.branchPlanJson == null && context.sourceSubagentId == null) { "分支或子代理只能访问自己的主会话" }
-            require(context.isApprovalBoundExecution && context.approvedExecutionTarget == SessionCommunicationPolicy.approvalTarget(source, "assistant")) { "读取同助手会话列表需要用户批准" }
+            require(context.isApprovalBoundExecution && context.approvedExecutionTarget == SessionCommunicationPolicy.approvalTarget(source, "assistant")) { "读取同一智能体的会话列表需要用户批准" }
         }
         val rows = database.sessionDao().getAll().filter { it.agentId == source.agentId &&
             (all || SessionCommunicationPolicy.access(source, it, "session_read", context.sourceSubagentId) == SessionCommunicationPolicy.Access.FREE) }
