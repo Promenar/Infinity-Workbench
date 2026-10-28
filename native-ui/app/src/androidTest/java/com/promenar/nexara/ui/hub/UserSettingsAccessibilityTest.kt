@@ -141,7 +141,7 @@ class UserSettingsAccessibilityTest {
         val opened = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
-                GitHubProjectFooter { opened.set(true) }
+                GitHubProjectFooter(onOpen = { opened.set(true) })
             }
         }
 
