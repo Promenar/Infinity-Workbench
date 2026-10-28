@@ -48,9 +48,9 @@ class BettboxGroupedSurfacesContractTest {
             "hub/AgentAdvancedRetrievalScreen.kt",
             "hub/AgentEditScreen.kt",
             "hub/AgentRagConfigScreen.kt",
-            "rag/GlobalRagConfigScreen.kt",
-            "rag/AdvancedRetrievalScreen.kt",
-            "rag/RagAdvancedScreen.kt",
+            "rag/KnowledgeBaseSettingsScreen.kt",
+            "rag/KnowledgeDebugSettingsScreen.kt",
+            "rag/KnowledgeGraphSettingsScreen.kt",
             "rag/RagDebugScreen.kt",
             "rag/KnowledgeGraphScreen.kt",
         )
@@ -80,12 +80,17 @@ class BettboxGroupedSurfacesContractTest {
 
     @Test
     fun `记忆设置应按语义使用多个分组面且不使用装饰分割线`() {
-        val globalRag = source("rag/GlobalRagConfigScreen.kt")
-        val content = globalRag.substringAfter("internal fun GlobalRagConfigScreenContent(")
+        val globalRag = source("rag/KnowledgeBaseSettingsScreen.kt")
+        val content = globalRag.substringAfter("internal fun KnowledgeBaseSettingsContent(")
 
         assertThat(globalRag).doesNotContain("HorizontalDivider")
         assertThat(content).contains("NexaraSettingsSection(")
-        listOf("rag_config_presets", "rag_config_retrieval_params", "settings_retrieval_data_section").forEach {
+        listOf(
+            "settings_ia_new_session_section",
+            "settings_ia_retrieval_section",
+            "settings_ia_section_models",
+            "settings_ia_extraction_section",
+        ).forEach {
             assertThat(content).contains(it)
         }
         assertThat(globalRag).doesNotContain(".verticalScroll(rememberScrollState())\n                .padding(contentPadding)\n                .bettboxListGroup()")

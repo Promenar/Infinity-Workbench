@@ -31,12 +31,12 @@ import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
 import com.promenar.nexara.ui.hub.AgentRagConfigScreen
 import com.promenar.nexara.ui.rag.DocEditorScreen
-import com.promenar.nexara.ui.rag.GlobalRagConfigScreen
+import com.promenar.nexara.ui.rag.KnowledgeBaseSettingsScreen
+import com.promenar.nexara.ui.rag.KnowledgeDebugSettingsScreen
+import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsScreen
 import com.promenar.nexara.ui.rag.KnowledgeGraphScreen
-import com.promenar.nexara.ui.rag.RagAdvancedScreen
 import com.promenar.nexara.ui.rag.RagDebugScreen
 import com.promenar.nexara.ui.rag.RagFolderScreen
-import com.promenar.nexara.ui.rag.AdvancedRetrievalScreen
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
 import com.promenar.nexara.ui.settings.LocalModelsScreen
 import com.promenar.nexara.data.model.ModelInfo
@@ -45,6 +45,7 @@ import com.promenar.nexara.ui.settings.ProviderModelsScreen
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.ProviderListScreen
 import com.promenar.nexara.ui.settings.DefaultModelsScreen
+import com.promenar.nexara.ui.settings.AgentRuntimeSection
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
@@ -68,14 +69,17 @@ object NavDestinations {
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
     const val KNOWLEDGE_GRAPH_ROUTE = "knowledge_graph?query={query}"
     const val SUBAGENT_VIEWER_ROUTE = "subagent/{sessionId}/{stepId}/{index}"
-    const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
     const val RAG_GLOBAL_CONFIG = "rag_global_config"
     const val LONG_TERM_MEMORY = "long_term_memory"
     const val RAG_FOLDER = "rag_folder/{folderId}"
     const val RAG_DEBUG = "rag_debug"
+    const val RAG_VECTOR_STATS = "rag_vector_stats"
     const val TOKEN_USAGE = "token_usage"
     const val SKILLS_CONFIG = "skills_config"
+    const val AGENT_BUDGET = "agent_budget"
+    const val BUILTIN_TOOLS = "builtin_tools"
+    const val MCP_SERVERS = "mcp_servers"
     const val SSH_CONFIG = "ssh_config"
     const val TERMUX_CONFIG = "termux_config"
     const val LINUX_ENVIRONMENT = "linux_environment"
@@ -440,7 +444,17 @@ private fun ChatHeroDestination(
             },
         )
     }
-    CompositionLocalProvider(com.promenar.nexara.ui.linux.LocalLinuxNavigation provides linuxNavigation) {
+    val sessionSettingsNavigation = remember(navController) {
+        com.promenar.nexara.ui.chat.SessionSettingsNavigation(
+            openSkills = { navController.navigate(NavDestinations.SKILLS_CONFIG) { launchSingleTop = true } },
+            openNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) { launchSingleTop = true } },
+            openAgentEdit = { agentId -> navController.navigate(NavDestinations.agentEdit(agentId)) { launchSingleTop = true } },
+        )
+    }
+    CompositionLocalProvider(
+        com.promenar.nexara.ui.linux.LocalLinuxNavigation provides linuxNavigation,
+        com.promenar.nexara.ui.chat.LocalSessionSettingsNavigation provides sessionSettingsNavigation,
+    ) {
         chatDestination(
             sessionId,
             onNavigateBack,
@@ -519,30 +533,31 @@ private fun NavGraphBuilder.hubPaneDestinations(
  * 设置子页的注册：主导航（整页）与宽屏设置右列（[SettingsNavigator] 带 outside）共用。
  * 页面间跳转经 [navigator]，右列中打开终端、文件、知识图谱与会话等整页内容时交给主导航。
  */
-internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) {
-    composable(NavDestinations.RAG_ADVANCED) { entry ->
+/** “智能体运行”的四个页面：执行轮次与预算、内置工具、技能包、MCP 服务器。 */
+private fun NavGraphBuilder.agentRuntimeDestination(navigator: SettingsNavigator, route: String, section: AgentRuntimeSection) {
+    composable(route) { entry ->
         navigator.Page(entry) {
-            AdvancedRetrievalScreen(
-                onNavigateBack = { navigator.back() }
-            )
+            SkillsScreen(onNavigateBack = { navigator.back() }, section = section)
         }
     }
+}
 
+internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) {
     composable(NavDestinations.RAG_ADVANCED_KG) { entry ->
         navigator.Page(entry) {
-            RagAdvancedScreen(
+            KnowledgeGraphSettingsScreen(
                 onNavigateBack = { navigator.back() },
-                onNavigateToGraph = { navigator.open(NavDestinations.KNOWLEDGE_GRAPH) }
+                onNavigateToGraph = { navigator.open(NavDestinations.KNOWLEDGE_GRAPH) },
+                onNavigateToDebug = { navigator.open(NavDestinations.RAG_DEBUG) },
             )
         }
     }
 
     composable(NavDestinations.RAG_GLOBAL_CONFIG) { entry ->
         navigator.Page(entry) {
-            GlobalRagConfigScreen(
+            KnowledgeBaseSettingsScreen(
                 onNavigateBack = { navigator.back() },
-                onNavigateToAdvanced = { navigator.open(NavDestinations.RAG_ADVANCED_KG) },
-                onNavigateToDebug = { navigator.open(NavDestinations.RAG_DEBUG) }
+                onOpenDefaultModels = { navigator.open(NavDestinations.DEFAULT_MODELS) },
             )
         }
     }
@@ -555,9 +570,16 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
 
     composable(NavDestinations.RAG_DEBUG) { entry ->
         navigator.Page(entry) {
-            RagDebugScreen(
-                onNavigateBack = { navigator.back() }
+            KnowledgeDebugSettingsScreen(
+                onNavigateBack = { navigator.back() },
+                onOpenVectorStats = { navigator.open(NavDestinations.RAG_VECTOR_STATS) },
             )
+        }
+    }
+
+    composable(NavDestinations.RAG_VECTOR_STATS) { entry ->
+        navigator.Page(entry) {
+            RagDebugScreen(onNavigateBack = { navigator.back() })
         }
     }
 
@@ -622,20 +644,10 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.SKILLS_CONFIG) { entry ->
-        navigator.Page(entry) {
-            SkillsScreen(
-                onNavigateBack = { navigator.back() },
-                onOpenSsh = { navigator.open(NavDestinations.SSH_CONFIG) },
-                onOpenTermux = { navigator.open(NavDestinations.TERMUX_CONFIG) },
-                onOpenGitCredentials = { navigator.open(NavDestinations.GIT_CREDENTIALS) },
-                onOpenTailscale = { navigator.open(NavDestinations.TAILSCALE_CONFIG) },
-                onOpenBackground = { navigator.open(NavDestinations.BACKGROUND_ACTIVITY) },
-                onOpenNetworkAccess = { navigator.open(NavDestinations.NETWORK_ACCESS) },
-                onOpenLinux = { navigator.open(NavDestinations.LINUX_ENVIRONMENT) },
-            )
-        }
-    }
+    agentRuntimeDestination(navigator, NavDestinations.AGENT_BUDGET, AgentRuntimeSection.Budget)
+    agentRuntimeDestination(navigator, NavDestinations.BUILTIN_TOOLS, AgentRuntimeSection.BuiltinTools)
+    agentRuntimeDestination(navigator, NavDestinations.SKILLS_CONFIG, AgentRuntimeSection.SkillPacks)
+    agentRuntimeDestination(navigator, NavDestinations.MCP_SERVERS, AgentRuntimeSection.Mcp)
 
     composable(NavDestinations.LINUX_ENVIRONMENT) { entry ->
         navigator.Page(entry) {

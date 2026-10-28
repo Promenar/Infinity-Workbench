@@ -153,18 +153,18 @@ private fun SettingsVisualTheme(dark: Boolean, content: @Composable () -> Unit) 
 private fun ToolsHeaderPreview(dark: Boolean) = SettingsVisualTheme(dark) {
     NexaraSettingsPageLayout(title = stringResource(R.string.skills_title), onBack = {}) { padding ->
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding)) {
-            SkillsSettingsHeaderContent(
-                state = SkillsSettingsVisualState(
-                    loopLimit = 50,
-                    tokenLimit = 0,
-                    repeatLimit = 3,
-                    networkHostCount = if (dark) 2 else 0,
-                    sshHostCount = 2,
-                    termuxAvailability = TermuxAvailability(true, "0.119.1", true),
-                    gitCredentialCount = 2,
-                ),
-                actions = SkillsSettingsVisualActions(),
-            )
+            // 执行环境与连接各行已移到设置首页“执行环境与连接”分组。
+            NexaraSettingsSection(title = stringResource(R.string.settings_ia_section_environment)) {
+                EnvironmentConnectionRows(
+                    state = EnvironmentConnectionState(
+                        termuxAvailability = TermuxAvailability(true, "0.119.1", true),
+                        sshHostCount = 2,
+                        networkHostCount = if (dark) 2 else 0,
+                        gitCredentialCount = 2,
+                    ),
+                    onOpen = {},
+                )
+            }
         }
     }
 }

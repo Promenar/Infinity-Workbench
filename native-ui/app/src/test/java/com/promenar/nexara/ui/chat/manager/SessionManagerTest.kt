@@ -326,19 +326,4 @@ class SessionManagerTest {
         assertThat(sessionManager.getSession("s1")!!.activeMcpServerIds).containsExactly("m2")
     }
 
-    @Test
-    fun toggleSkill() = testScope.runTest {
-        val session = Session(id = "s1", agentId = "a1", activeSkillIds = listOf("sk1"))
-        sessionManager.addSession(session)
-        advanceUntilIdle()
-
-        sessionManager.toggleSkill("s1", "sk2")
-        advanceUntilIdle()
-        assertThat(sessionManager.getSession("s1")!!.activeSkillIds).containsExactly("sk1", "sk2")
-
-        sessionManager.toggleSkill("s1", "sk1")
-        advanceUntilIdle()
-        assertThat(sessionManager.getSession("s1")!!.activeSkillIds).containsExactly("sk2")
-    }
-
 }

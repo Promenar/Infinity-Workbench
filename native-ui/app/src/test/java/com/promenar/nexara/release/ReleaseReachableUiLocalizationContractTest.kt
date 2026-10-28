@@ -27,8 +27,8 @@ class ReleaseReachableUiLocalizationContractTest {
         "ui/chat/ChatInlineComponents.kt",
         "ui/common/MarkdownText.kt",
         "ui/common/AgentAvatar.kt",
-        "ui/rag/AdvancedRetrievalScreen.kt",
-        "ui/rag/GlobalRagConfigScreen.kt",
+        "ui/rag/KnowledgeDebugSettingsScreen.kt",
+        "ui/rag/KnowledgeBaseSettingsScreen.kt",
         "ui/hub/AgentAdvancedRetrievalScreen.kt",
         "ui/settings/ProviderModelsScreen.kt",
     )

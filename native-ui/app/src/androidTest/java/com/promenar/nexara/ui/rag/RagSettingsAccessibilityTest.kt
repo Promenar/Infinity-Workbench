@@ -38,6 +38,9 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.data.rag.RetrievalDepth
+import com.promenar.nexara.data.rag.retrievalDepth
+import com.promenar.nexara.data.rag.withRetrievalDepth
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenActions
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
@@ -67,13 +70,11 @@ class RagSettingsAccessibilityTest {
     val rule = createComposeRule()
 
     @Test
-    fun globalRagPresetsSlidersAndClearConfirmationUseProductionContentAt2x() {
-        val selectedPreset = AtomicReference<String>()
-        val clearedWithGraph = AtomicReference<Boolean>()
-        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+    fun knowledgeBaseDepthSegmentsAndToggleNodesUseProductionContentAt2x() {
         var state by mutableStateOf(
-            GlobalRagConfigScreenState(
-                config = RagConfiguration(currentPreset = "balanced"),
+            KnowledgeBaseSettingsState(
+                config = RagConfiguration(enableHybridSearch = true, enableQueryRewrite = true)
+                    .withRetrievalDepth(RetrievalDepth.BALANCED),
             ),
         )
         rule.setContent {
@@ -82,44 +83,93 @@ class RagSettingsAccessibilityTest {
                     DeviceConfigurationOverride.FontScale(2f),
             ) {
                 NexaraTheme(dynamicColor = false) {
-                    GlobalRagConfigScreenContent(
+                    KnowledgeBaseSettingsContent(
                         state = state,
-                        actions = GlobalRagConfigScreenActions(
-                            onPresetSelected = { preset ->
-                                selectedPreset.set(preset)
-                                state = state.copy(
-                                    config = state.config.copy(currentPreset = preset),
-                                )
+                        actions = KnowledgeBaseSettingsActions(
+                            onDepthSelected = { depth ->
+                                state = state.copy(config = state.config.withRetrievalDepth(depth))
                             },
                             onConfigChanged = { transform ->
                                 state = state.copy(config = state.config.transform())
                             },
-                            onClearVectors = clearedWithGraph::set,
                         ),
                     )
                 }
             }
         }
 
-        rule.onNodeWithTag("rag_global_presets")
-            .assertIsDisplayed()
-            .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithTag("rag_global_chunk_size_slider")
-            .assertIsDisplayed()
+        rule.onNodeWithTag("kb_depth_control").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag("kb_depth_balanced", useUnmergedTree = true).assertIsSelected()
+        rule.onNodeWithTag("kb_depth_custom", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("kb_depth_lean", useUnmergedTree = true).performClick()
+        rule.runOnIdle { assertThat(state.config.retrievalDepth()).isEqualTo(RetrievalDepth.LEAN) }
+        rule.onNodeWithTag("kb_depth_lean", useUnmergedTree = true).assertIsSelected()
+
+        // 原始值偏离档位：出现选中但不可点按的“自定义”段。
+        rule.runOnIdle { state = state.copy(config = state.config.copy(rerankFinalK = 7)) }
+        rule.onNodeWithTag("kb_depth_custom", useUnmergedTree = true)
+            .assertIsSelected()
+            .assertIsNotEnabled()
+
+        rule.onNodeWithTag("kb_hybrid_toggle")
+            .performScrollTo()
+            .assertIsToggleable()
+            .assertIsOn()
             .performClick()
+        rule.runOnIdle { assertThat(state.config.enableHybridSearch).isFalse() }
+        rule.onNodeWithTag("kb_hybrid_switch", useUnmergedTree = true).assert(!hasClickAction())
+        rule.onNodeWithTag("kb_rewrite_toggle")
+            .performScrollTo()
+            .assertIsToggleable()
+            .assertIsOn()
+            .performClick()
+        rule.runOnIdle { assertThat(state.config.enableQueryRewrite).isFalse() }
+        rule.onNodeWithTag("kb_rewrite_switch", useUnmergedTree = true).assert(!hasClickAction())
+    }
+
+    @Test
+    fun knowledgeDebugChunkPickerNoticeAndClearConfirmationUseProductionContentAt2x() {
+        val clearedWithGraph = AtomicReference<Boolean>()
+        val reindexed = AtomicBoolean(false)
+        val initial = RagConfiguration()
+        var state by mutableStateOf(
+            KnowledgeDebugSettingsState(
+                config = initial,
+                indexedChunkSettings = initial.chunkSettings(),
+                vectorCount = 42,
+                initiallyExpanded = true,
+            ),
+        )
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    KnowledgeDebugSettingsContent(
+                        state = state,
+                        actions = KnowledgeDebugSettingsActions(
+                            onReindexAll = { reindexed.set(true) },
+                            onClearVectors = clearedWithGraph::set,
+                            onConfigChanged = { transform ->
+                                state = state.copy(config = state.config.transform())
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag("kb_debug_chunk_notice").assertDoesNotExist()
+        rule.onNodeWithTag("kb_debug_chunk_size").performScrollTo().performClick()
         rule.onNodeWithTag("numeric_custom").performScrollTo().performClick()
         rule.onNodeWithTag("numeric_custom_input").performScrollTo().performTextReplacement("500")
         rule.onNodeWithTag("numeric_done").performScrollTo().performClick()
         rule.runOnIdle { assertThat(state.config.docChunkSize).isEqualTo(500) }
-        rule.onNodeWithText(resources.getString(R.string.rag_config_preset_coding)).performClick()
-        rule.runOnIdle { assertThat(selectedPreset.get()).isEqualTo("coding") }
-        rule.onNodeWithTag("rag_global_preset_coding").assertIsSelected()
-
-        val presetTop = rule.onNodeWithTag("rag_global_presets")
-            .fetchSemanticsNode().boundsInRoot.top
-        val sliderTop = rule.onNodeWithTag("rag_global_chunk_size_slider")
-            .fetchSemanticsNode().boundsInRoot.top
-        assertThat(presetTop).isLessThan(sliderTop)
+        // 分块参数与建索引时不同：顶部出现重建提示。
+        rule.onNodeWithTag("kb_debug_chunk_notice").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("kb_debug_chunk_notice_reindex").performScrollTo().performClick()
+        rule.runOnIdle { assertThat(reindexed.get()).isTrue() }
 
         rule.onNodeWithTag("rag_global_clear_action")
             .performScrollTo()
@@ -362,86 +412,32 @@ class RagSettingsAccessibilityTest {
     }
 
     @Test
-    fun advancedRetrievalUsesAtomicTransformsAndSingleToggleNodes() {
-        var state by mutableStateOf(
-            AdvancedRetrievalScreenState(
-                config = RagConfiguration(
-                    enableHybridSearch = true,
-                    enableQueryRewrite = true,
-                    enableRerank = false,
-                ),
-                isRerankAvailable = true,
-            ),
-        )
+    fun knowledgeGraphPageDispatchesGraphAndDebugNavigationFromProductionContent() {
+        val navigatedToGraph = AtomicBoolean(false)
+        val navigatedToDebug = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
-                AdvancedRetrievalScreenContent(
-                    state = state,
-                    actions = AdvancedRetrievalScreenActions(
-                        onConfigChanged = { transform ->
-                            state = state.copy(config = state.config.transform())
-                        },
+                KnowledgeGraphSettingsContent(
+                    state = KnowledgeGraphSettingsState(config = RagConfiguration(), entityCount = 3),
+                    actions = KnowledgeGraphSettingsActions(
+                        onNavigateToGraph = { navigatedToGraph.set(true) },
+                        onNavigateToDebug = { navigatedToDebug.set(true) },
                     ),
                 )
             }
         }
 
-        rule.onNodeWithTag("advanced_retrieval_memory_limit_slider")
-            .assertHasClickAction()
-            .performClick()
-        rule.onNodeWithText("20").performScrollTo().performClick()
-        rule.runOnIdle { assertThat(state.config.memoryLimit).isEqualTo(20) }
-        rule.onNodeWithTag("advanced_retrieval_hybrid_toggle")
-            .performScrollTo()
-            .assertIsToggleable()
-            .assertIsOn()
-            .performClick()
-        rule.runOnIdle { assertThat(state.config.enableHybridSearch).isFalse() }
-        rule.onNodeWithTag("advanced_retrieval_hybrid_switch", useUnmergedTree = true)
-            .assert(!hasClickAction())
-        rule.onNodeWithTag("advanced_retrieval_rewrite_toggle")
-            .performScrollTo()
-            .assertIsToggleable()
-            .assertIsOn()
-            .performClick()
-        rule.runOnIdle { assertThat(state.config.enableQueryRewrite).isFalse() }
-        rule.onNodeWithTag("advanced_retrieval_rewrite_switch", useUnmergedTree = true)
-            .assert(!hasClickAction())
-    }
-
-    @Test
-    fun ragAdvancedDispatchesValuePickerAndGraphNavigationFromProductionContent() {
-        var state by mutableStateOf(
-            RagAdvancedScreenState(
-                config = RagConfiguration(kgExtractionTimeoutSeconds = 120),
-                allModels = emptyList(),
-            ),
-        )
-        val navigated = AtomicBoolean(false)
-        rule.setContent {
-            NexaraTheme(dynamicColor = false) {
-                RagAdvancedScreenContent(
-                    state = state,
-                    actions = RagAdvancedScreenActions(
-                        onConfigChanged = { transform ->
-                            state = state.copy(config = state.config.transform())
-                        },
-                        onNavigateToGraph = { navigated.set(true) },
-                    ),
-                )
-            }
-        }
-
-        rule.onNodeWithTag("rag_advanced_timeout_slider")
-            .assertHasClickAction()
-            .performClick()
-        rule.onNodeWithText("30").performScrollTo().performClick()
-        rule.runOnIdle { assertThat(state.config.kgExtractionTimeoutSeconds).isEqualTo(30) }
         rule.onNodeWithTag("rag_advanced_graph_row")
             .performScrollTo()
             .assertHasClickAction()
             .performClick()
-        rule.runOnIdle { assertThat(navigated.get()).isTrue() }
+        rule.runOnIdle { assertThat(navigatedToGraph.get()).isTrue() }
+        rule.onNodeWithTag("rag_advanced_model_row").performScrollTo().assertHasClickAction()
+        rule.onNodeWithTag("kg_settings_debug_row")
+            .performScrollTo()
+            .assertHasClickAction()
+            .performClick()
+        rule.runOnIdle { assertThat(navigatedToDebug.get()).isTrue() }
     }
 
     @Test

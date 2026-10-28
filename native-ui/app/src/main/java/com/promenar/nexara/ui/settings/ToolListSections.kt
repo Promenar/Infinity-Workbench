@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
@@ -37,29 +37,47 @@ import com.promenar.nexara.ui.common.NexaraSwitch
 import com.promenar.nexara.R
 import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
-/** 内置工具按类别分组，每组一张卡片；说明写在行内，不再逐个工具拆成卡片加脚注。 */
+/**
+ * 内置工具按类别分组，每组一张卡片；说明写在行内，不再逐个工具拆成卡片加脚注。
+ * 知识检索没有全局开关，是否提供由智能体的检索方式决定，在文件分组末尾以说明行列出（T1）。
+ */
 @Composable
 internal fun BuiltinToolsSections(
     tools: List<SkillInfo>,
     onToggle: (String) -> Unit,
     onConfigureSearch: () -> Unit,
 ) {
+    val grouped = tools.groupedByToolCategory().toMap()
+    val categories = BuiltinToolCategory.entries.filter { it in grouped || it == BuiltinToolCategory.FILES }
     Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
-        tools.groupedByToolCategory().forEach { (category, items) ->
+        categories.forEach { category ->
             NexaraSettingsSection(title = stringResource(category.titleRes)) {
-                items.forEach { tool ->
+                grouped[category].orEmpty().forEach { tool ->
                     BuiltinToolRow(
                         tool = tool,
                         onToggle = { onToggle(tool.id) },
                         onConfig = if (tool.id == "web_search") onConfigureSearch else null,
                     )
                 }
+                if (category == BuiltinToolCategory.FILES) KnowledgeSearchInfoRow()
             }
         }
     }
+}
+
+@Composable
+private fun KnowledgeSearchInfoRow() {
+    NexaraSettingsRowLayout(
+        icon = Icons.AutoMirrored.Rounded.LibraryBooks,
+        title = stringResource(R.string.settings_ia_knowledge_search_title),
+        subtitle = stringResource(R.string.settings_ia_knowledge_search_desc),
+        subtitleMaxLines = 2,
+        modifier = Modifier.testTag("builtin_tool:knowledge_search"),
+    )
 }
 
 @Composable
@@ -88,41 +106,6 @@ private fun BuiltinToolRow(
             }
         },
     )
-}
-
-/** 旧版自定义工具：仅保留查看、编辑与删除，说明与不可执行提示放在同一分组里。 */
-@Composable
-internal fun LegacyUserToolsSection(
-    tools: List<SkillInfo>,
-    onToggle: (String) -> Unit,
-    onEdit: (String) -> Unit,
-    onDelete: (String) -> Unit,
-) {
-    NexaraSettingsSection(
-        title = stringResource(R.string.agent_skills_legacy_header),
-        footer = stringResource(R.string.sheet_tool_custom_unsandboxed),
-    ) {
-        tools.forEach { tool ->
-            var enabled by remember(tool.id, tool.enabled) { mutableStateOf(tool.enabled) }
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Code,
-                title = tool.name,
-                subtitle = tool.description.ifBlank { null },
-                onClick = { enabled = !enabled; onToggle(tool.id) },
-                trailingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { onEdit(tool.id) }) {
-                            Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.skills_configure), modifier = Modifier.size(20.dp))
-                        }
-                        IconButton(onClick = { onDelete(tool.id) }) {
-                            Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.shared_btn_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                        }
-                        NexaraSwitch(checked = enabled, onCheckedChange = { enabled = it; onToggle(tool.id) })
-                    }
-                },
-            )
-        }
-    }
 }
 
 /** MCP 服务器列表：地址与连接状态写在行内，添加入口是分组末行。 */

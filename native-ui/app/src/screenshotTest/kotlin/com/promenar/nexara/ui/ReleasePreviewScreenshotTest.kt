@@ -113,15 +113,15 @@ import com.promenar.nexara.ui.rag.RagFolderContentState
 import com.promenar.nexara.ui.rag.RagFolderScreenActions
 import com.promenar.nexara.ui.rag.RagFolderScreenContent
 import com.promenar.nexara.ui.rag.RagFolderScreenState
-import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenActions
-import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenContent
-import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenState
-import com.promenar.nexara.ui.rag.GlobalRagConfigScreenActions
-import com.promenar.nexara.ui.rag.GlobalRagConfigScreenContent
-import com.promenar.nexara.ui.rag.GlobalRagConfigScreenState
-import com.promenar.nexara.ui.rag.RagAdvancedScreenActions
-import com.promenar.nexara.ui.rag.RagAdvancedScreenContent
-import com.promenar.nexara.ui.rag.RagAdvancedScreenState
+import com.promenar.nexara.ui.rag.KnowledgeBaseSettingsActions
+import com.promenar.nexara.ui.rag.KnowledgeBaseSettingsContent
+import com.promenar.nexara.ui.rag.KnowledgeBaseSettingsState
+import com.promenar.nexara.ui.rag.KnowledgeDebugSettingsActions
+import com.promenar.nexara.ui.rag.KnowledgeDebugSettingsContent
+import com.promenar.nexara.ui.rag.KnowledgeDebugSettingsState
+import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsActions
+import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsContent
+import com.promenar.nexara.ui.rag.KnowledgeGraphSettingsState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
 import com.promenar.nexara.ui.settings.ModelEditorSheet
@@ -3562,16 +3562,17 @@ private fun ModelPickerReleasePreview(
 @Composable
 fun ragGlobalChineseDarkLargeFontReleasePreview() {
     RagSettingsPreviewSurface(dark = true) {
-        GlobalRagConfigScreenContent(
-            state = GlobalRagConfigScreenState(
+        KnowledgeBaseSettingsContent(
+            state = KnowledgeBaseSettingsState(
                 config = RagConfiguration(
                     currentPreset = "writing",
                     docChunkSize = 1200,
                     chunkOverlap = 180,
                     summaryTemplate = "请先整理资料，再生成适合移动端阅读的简洁答案。",
                 ),
+                embeddingModelId = "text-embedding-3-small",
             ),
-            actions = GlobalRagConfigScreenActions(),
+            actions = KnowledgeBaseSettingsActions(),
         )
     }
 }
@@ -3587,17 +3588,18 @@ fun ragGlobalChineseDarkLargeFontReleasePreview() {
 @Composable
 fun advancedRetrievalChineseLightReleasePreview() {
     RagSettingsPreviewSurface(dark = false) {
-        AdvancedRetrievalScreenContent(
-            state = AdvancedRetrievalScreenState(
+        KnowledgeDebugSettingsContent(
+            state = KnowledgeDebugSettingsState(
                 config = RagConfiguration(
                     enableHybridSearch = true,
                     enableQueryRewrite = true,
                     memoryLimit = 12,
                     docLimit = 16,
                 ),
-                isRerankAvailable = true,
+                vectorCount = 2048,
+                initiallyExpanded = true,
             ),
-            actions = AdvancedRetrievalScreenActions(),
+            actions = KnowledgeDebugSettingsActions(),
         )
     }
 }
@@ -3640,15 +3642,15 @@ fun agentRetrievalEnglishLightLargeFontReleasePreview() {
 @Composable
 fun ragAdvancedEnglishDarkReleasePreview() {
     RagSettingsPreviewSurface(dark = true) {
-        RagAdvancedScreenContent(
-            state = RagAdvancedScreenState(
+        KnowledgeGraphSettingsContent(
+            state = KnowledgeGraphSettingsState(
                 config = RagConfiguration(
                     kgExtractionTimeoutSeconds = 90,
                     kgExtractionPrompt = "Extract entities, concepts, and relationships with source references.",
                 ),
-                allModels = emptyList(),
+                entityCount = 42,
             ),
-            actions = RagAdvancedScreenActions(),
+            actions = KnowledgeGraphSettingsActions(),
         )
     }
 }

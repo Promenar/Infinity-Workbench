@@ -7,9 +7,9 @@ import org.junit.Test
 
 class RagSettingsMaterialContractTest {
     private val sources = mapOf(
-        "global" to source("ui/rag/GlobalRagConfigScreen.kt"),
-        "advanced" to source("ui/rag/AdvancedRetrievalScreen.kt"),
-        "ragAdvanced" to source("ui/rag/RagAdvancedScreen.kt"),
+        "global" to source("ui/rag/KnowledgeBaseSettingsScreen.kt"),
+        "advanced" to source("ui/rag/KnowledgeDebugSettingsScreen.kt"),
+        "ragAdvanced" to source("ui/rag/KnowledgeGraphSettingsScreen.kt"),
         "debug" to source("ui/rag/RagDebugScreen.kt"),
         "graph" to source("ui/rag/KnowledgeGraphScreen.kt"),
         "agentAdvanced" to source("ui/hub/AgentAdvancedRetrievalScreen.kt"),
@@ -52,28 +52,38 @@ class RagSettingsMaterialContractTest {
     }
 
     @Test
-    fun `全局检索使用胶囊预设与值行弹层及确认`() {
+    fun `知识库设置用分段控件选检索深度且自定义段不可点`() {
         val screen = sources.getValue("global")
-        assertThat(screen).contains("NexaraCapsuleTabRow(")
-        assertThat(screen).contains("itemRole = Role.RadioButton")
-        assertThat(screen).doesNotContain("SegmentedButton(")
+        assertThat(screen).contains("NexaraSegmentedControl(")
+        assertThat(screen).contains("clickable = false")
+        assertThat(screen).doesNotContain("NexaraCapsuleTabRow(")
         assertThat(screen).contains("NexaraSettingsSection(")
-        assertThat(screen).contains("NexaraNumericSetting(")
+        assertThat(screen).contains("KnowledgeModelRow(")
         assertThat(screen).doesNotContain("NexaraSlider(")
-        assertThat(screen).contains("NexaraConfirmDialog(")
-        assertThat(screen).doesNotContain("AlertDialog(")
     }
 
     @Test
-    fun `global and advanced retrieval pages use continuous list sections`() {
-        listOf("advanced", "ragAdvanced").forEach { key ->
-            val screen = sources.getValue(key)
-            assertThat(screen).contains("NexaraSettingsSection(")
-            assertThat(screen).doesNotContain("ListItem(")
-            assertThat(screen).contains("NexaraNumericSetting(")
-            assertThat(screen).doesNotContain("NexaraSlider(")
-            assertThat(screen).doesNotContain("Modifier.alpha(")
-        }
+    fun `调试与高级用折叠行承载原始参数且清除向量走确认`() {
+        val screen = sources.getValue("advanced")
+        assertThat(screen).contains("NexaraSettingsExpandableRow(")
+        assertThat(screen).contains("NexaraSettingsSection(")
+        assertThat(screen).doesNotContain("ListItem(")
+        assertThat(screen).contains("NexaraNumericSetting(")
+        assertThat(screen).doesNotContain("NexaraSlider(")
+        assertThat(screen).doesNotContain("Modifier.alpha(")
+        assertThat(screen).contains("NexaraConfirmDialog(")
+        assertThat(screen).doesNotContain("AlertDialog(")
+        // 高级参数展开状态不跨页面保留（A1）。
+        assertThat(screen).doesNotContain("rememberSaveable")
+    }
+
+    @Test
+    fun `知识图谱页列出抽取预算与抽取模型`() {
+        val screen = sources.getValue("ragAdvanced")
+        assertThat(screen).contains("NexaraSettingsSection(")
+        assertThat(screen).contains("KgBudgetRows(")
+        assertThat(screen).contains("KnowledgeModelRow(")
+        assertThat(screen).doesNotContain("ListItem(")
     }
 
     @Test

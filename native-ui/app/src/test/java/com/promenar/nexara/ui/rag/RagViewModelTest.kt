@@ -445,6 +445,7 @@ class RagViewModelTest {
         kgEstimator: suspend (FileEntry) -> com.promenar.nexara.data.rag.KgExtractionEstimate = {
             com.promenar.nexara.data.rag.KgExtractionEstimate(1, 100, 2048, 1, false)
         },
+        indexBaseline: IndexedChunkBaseline = FakeIndexBaseline(),
     ): RagViewModel {
         assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
@@ -460,7 +461,15 @@ class RagViewModelTest {
             injectedListRagWorkspaceRoots = listRoots,
             injectedEnsureRagWorkspaceRootForSession = ensureForSession,
             injectedKgEstimator = kgEstimator,
+            injectedIndexBaseline = indexBaseline,
         )
+    }
+
+    private class FakeIndexBaseline(var stored: ChunkSettings? = null) : IndexedChunkBaseline {
+        override fun load(): ChunkSettings? = stored
+        override fun save(settings: ChunkSettings) {
+            stored = settings
+        }
     }
 
     @Test
@@ -514,7 +523,7 @@ class RagViewModelTest {
     @Test
     fun `RAG configuration UI and debug screen do not expose unused embedding or no-op cleanup controls`() {
         val configScreen = java.nio.file.Files.readAllBytes(
-            java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/rag/GlobalRagConfigScreen.kt"),
+            java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/rag/KnowledgeDebugSettingsScreen.kt"),
         ).toString(Charsets.UTF_8)
         val debugScreen = java.nio.file.Files.readAllBytes(
             java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/rag/RagDebugScreen.kt"),
@@ -1417,6 +1426,124 @@ class RagViewModelTest {
 
         assertThat(cancellationPropagated).isTrue()
         assertThat(vm.pendingRenameIndexTargets.value).containsExactly(target)
+    }
+
+    @Test
+    fun `套用检索深度档位只改四个检索数量`() = runTest {
+        val saved = mutableListOf<com.promenar.nexara.data.rag.RagConfiguration>()
+        val vm = createViewModel(configSaver = { saved += it })
+        advanceUntilIdle()
+        val before = vm.config.value
+
+        vm.applyRetrievalDepth(com.promenar.nexara.data.rag.RetrievalDepth.COMPREHENSIVE)
+        advanceUntilIdle()
+
+        val after = vm.config.value
+        assertThat(listOf(after.memoryLimit, after.docLimit, after.rerankTopK, after.rerankFinalK))
+            .containsExactly(8, 15, 60, 10).inOrder()
+        assertThat(after.copy(memoryLimit = before.memoryLimit, docLimit = before.docLimit,
+            rerankTopK = before.rerankTopK, rerankFinalK = before.rerankFinalK)).isEqualTo(before)
+        assertThat(selectedRetrievalDepthChoice(after))
+            .isEqualTo(RetrievalDepthChoice.Level(com.promenar.nexara.data.rag.RetrievalDepth.COMPREHENSIVE))
+        assertThat(saved.last()).isEqualTo(after)
+    }
+
+    @Test
+    fun `首次加载以当前分块参数为索引基线，改分块后提示且改回后消失`() = runTest {
+        val baseline = FakeIndexBaseline()
+        val vm = createViewModel(indexBaseline = baseline)
+        advanceUntilIdle()
+        val initial = vm.config.value.chunkSettings()
+        assertThat(baseline.stored).isEqualTo(initial)
+        assertThat(vm.indexedChunkSettings.value).isEqualTo(initial)
+
+        vm.updateConfig { it.copy(docChunkSize = initial.docChunkSize + 100) }
+        advanceUntilIdle()
+        assertThat(chunkSettingsChanged(vm.config.value, vm.indexedChunkSettings.value)).isTrue()
+
+        vm.updateConfig { it.copy(docChunkSize = initial.docChunkSize) }
+        advanceUntilIdle()
+        assertThat(chunkSettingsChanged(vm.config.value, vm.indexedChunkSettings.value)).isFalse()
+    }
+
+    @Test
+    fun `已有基线时不被当前配置覆盖`() = runTest {
+        val old = ChunkSettings(docChunkSize = 400, chunkOverlap = 50, memoryChunkSize = 1000)
+        val vm = createViewModel(indexBaseline = FakeIndexBaseline(old))
+        advanceUntilIdle()
+        assertThat(vm.indexedChunkSettings.value).isEqualTo(old)
+        assertThat(chunkSettingsChanged(vm.config.value, vm.indexedChunkSettings.value))
+            .isEqualTo(vm.config.value.chunkSettings() != old)
+    }
+
+    @Test
+    fun `全部重新向量化提交知识库内可索引文档并改写基线`() = runTest {
+        val old = ChunkSettings(docChunkSize = 400, chunkOverlap = 50, memoryChunkSize = 1000)
+        val baseline = FakeIndexBaseline(old)
+        val folder = rootEntry().copy(uuid = "dir-1", parentUuid = "rag-root", name = "notes", materializedPath = "/notes")
+        val top = fileEntry("doc-1", "a.txt", materializedPath = "/a.txt").copy(mimeType = "text/plain")
+        val nested = fileEntry("doc-2", "b.md", parentUuid = "dir-1", materializedPath = "/notes/b.md").copy(mimeType = "text/markdown")
+        val unsupported = fileEntry("doc-3", "c.bin", materializedPath = "/c.bin").copy(mimeType = "application/octet-stream")
+        val unhashed = fileEntry("doc-4", "d.txt", materializedPath = "/d.txt").copy(mimeType = "text/plain", hash = "")
+        every { workspaceRepository.observeRoots("rag-root") } returns flowOf(listOf(folder, top, unsupported, unhashed))
+        coEvery { workspaceRepository.getSubtree("rag-root", "/notes") } returns listOf(folder, nested)
+        val vm = createViewModel(indexBaseline = baseline)
+        advanceUntilIdle()
+
+        var submitted = -1
+        vm.reindexAllDocuments { submitted = it }
+        advanceUntilIdle()
+
+        assertThat(submitted).isEqualTo(2)
+        coVerify(exactly = 1) {
+            vectorizationQueue.enqueueDocumentReference("rag-root", "doc-1", "a.txt", "text/plain", "hash-doc-1", 1L, any())
+        }
+        coVerify(exactly = 1) {
+            vectorizationQueue.enqueueDocumentReference("rag-root", "doc-2", "b.md", "text/markdown", "hash-doc-2", 1L, any())
+        }
+        coVerify(exactly = 0) {
+            vectorizationQueue.enqueueDocumentReference(any(), "doc-3", any(), any(), any(), any(), any())
+        }
+        coVerify(exactly = 0) {
+            vectorizationQueue.enqueueDocumentReference(any(), "doc-4", any(), any(), any(), any(), any())
+        }
+        assertThat(baseline.stored).isEqualTo(vm.config.value.chunkSettings())
+        assertThat(vm.indexedChunkSettings.value).isEqualTo(vm.config.value.chunkSettings())
+        assertThat(vm.indexingNotice.value).isNull()
+    }
+
+    @Test
+    fun `全部重新向量化部分失败时保留旧基线并提示`() = runTest {
+        val old = ChunkSettings(docChunkSize = 400, chunkOverlap = 50, memoryChunkSize = 1000)
+        val baseline = FakeIndexBaseline(old)
+        val ok = fileEntry("doc-1", "a.txt", materializedPath = "/a.txt").copy(mimeType = "text/plain")
+        val bad = fileEntry("doc-2", "b.txt", materializedPath = "/b.txt").copy(mimeType = "text/plain")
+        every { workspaceRepository.observeRoots("rag-root") } returns flowOf(listOf(ok, bad))
+        coEvery {
+            vectorizationQueue.enqueueDocumentReference(any(), "doc-2", any(), any(), any(), any(), any())
+        } throws IllegalStateException("queue full")
+        val vm = createViewModel(indexBaseline = baseline)
+        advanceUntilIdle()
+
+        var submitted = -1
+        vm.reindexAllDocuments { submitted = it }
+        advanceUntilIdle()
+
+        assertThat(submitted).isEqualTo(1)
+        assertThat(baseline.stored).isEqualTo(old)
+        assertThat(vm.indexingNotice.value!!.code).isEqualTo(IndexingNotice.CODE_WARNING)
+    }
+
+    @Test
+    fun `清除全部向量后把当前分块参数记为基线`() = runTest {
+        val baseline = FakeIndexBaseline(ChunkSettings(400, 50, 1000))
+        val vm = createViewModel(indexBaseline = baseline)
+        advanceUntilIdle()
+
+        vm.clearAllVectors()
+        advanceUntilIdle()
+
+        assertThat(baseline.stored).isEqualTo(vm.config.value.chunkSettings())
     }
 
     private fun rootEntry() = FileEntry(

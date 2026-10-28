@@ -90,6 +90,8 @@ class BackupPreferenceInventoryTest {
             "data/model/catalog/ModelCatalogUpdater.kt#prefs" to "catalog_update_schedule",
             // 内置 Tailscale 设置：独立偏好文件，不在备份命名空间内（键为常量，见 TailnetSettingsStoreTest）。
             "data/tailnet/TailnetSettings.kt#preferences" to "nexara_tailnet",
+            // 已建索引的分块基线：随本机向量索引走，独立偏好文件，不在备份命名空间内（键为常量）。
+            "ui/rag/KnowledgeBaseSettingsLogic.kt#prefs" to "rag_index_baseline",
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")

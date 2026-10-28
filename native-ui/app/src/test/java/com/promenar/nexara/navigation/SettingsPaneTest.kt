@@ -122,6 +122,35 @@ class SettingsPaneTest {
     }
 
     @Test
+    fun `首页智能体运行与知识库条目按决定顺序成为右列根页面`() {
+        val runtime = listOf(
+            NavDestinations.AGENT_BUDGET, NavDestinations.BUILTIN_TOOLS,
+            NavDestinations.SKILLS_CONFIG, NavDestinations.MCP_SERVERS,
+        )
+        val knowledge = listOf(
+            NavDestinations.RAG_GLOBAL_CONFIG, NavDestinations.RAG_ADVANCED_KG,
+            NavDestinations.LONG_TERM_MEMORY, NavDestinations.RAG_DEBUG,
+        )
+        assertThat(SettingsPaneRoots).containsAtLeastElementsIn(runtime).inOrder()
+        assertThat(SettingsPaneRoots).containsAtLeastElementsIn(knowledge).inOrder()
+        // 向量统计是调试页的下一层，不是根页面，但仍在右列打开。
+        assertThat(SettingsPaneRoots).doesNotContain(NavDestinations.RAG_VECTOR_STATS)
+        assertThat(isSettingsPaneRoute(NavDestinations.RAG_VECTOR_STATS)).isTrue()
+    }
+
+    @Test
+    fun `会话面板也会打开的连接页变宽时不收回，智能体运行页照常收回`() {
+        listOf(
+            NavDestinations.NETWORK_ACCESS, NavDestinations.LINUX_ENVIRONMENT,
+            NavDestinations.SSH_CONFIG, NavDestinations.TAILSCALE_CONFIG,
+        ).forEach { assertThat(settingsPagesAboveMainTabs(listOf(it))).isNull() }
+        assertThat(settingsPagesAboveMainTabs(listOf(NavDestinations.AGENT_BUDGET)))
+            .containsExactly(NavDestinations.AGENT_BUDGET)
+        assertThat(settingsPagesAboveMainTabs(listOf(NavDestinations.RAG_DEBUG, NavDestinations.RAG_VECTOR_STATS)))
+            .containsExactly(NavDestinations.RAG_DEBUG, NavDestinations.RAG_VECTOR_STATS).inOrder()
+    }
+
+    @Test
     fun `折叠重建界面后仍记得刚才是双列，右列层级改为整页而不是清空`() {
         // 开合屏不在 configChanges 中，Activity 会重建；“上一刻是否双列”必须跨重建保存。
         val tabs = String(

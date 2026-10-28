@@ -54,13 +54,17 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-/** 分段滑块中的一段；[count] 以弱化数字跟在名称后，[leading] 是名称前的小图标或状态点。 */
+/**
+ * 分段滑块中的一段；[count] 以弱化数字跟在名称后，[leading] 是名称前的小图标或状态点。
+ * [clickable] 为 false 的段只用于展示状态（例如选中的“自定义”档位）：照常显示选中滑块，但不可点按。
+ */
 class NexaraSegment<T>(
     val value: T,
     val label: String,
     val tag: String? = null,
     val count: Int? = null,
     val leading: (@Composable () -> Unit)? = null,
+    val clickable: Boolean = true,
 )
 
 /**
@@ -141,7 +145,7 @@ fun <T> NexaraSegmentedControl(
                         }
                         .selectable(
                             selected = isSelected,
-                            enabled = enabled,
+                            enabled = enabled && segment.clickable,
                             role = Role.RadioButton,
                             onClick = { haptics.select(isSelected); onSelect(segment.value) },
                         )

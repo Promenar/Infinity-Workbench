@@ -22,7 +22,8 @@ class SettingsPopoverContractTest {
             "settings/ModelEditorSheet.kt" to "typePickerAnchor",
             "settings/ProviderApiSourceSection.kt" to "anchor",
             "settings/SkillsScreen.kt" to "depthAnchor",
-            "rag/AdvancedRetrievalScreen.kt" to "anchor",
+            "rag/RetrievalSettingControls.kt" to "anchor",
+            "rag/KnowledgeModelPicker.kt" to "anchor",
         ).forEach { (file, anchor) ->
             val text = source(file)
             assertWithMessage(file).that(text).contains("nexaraPopoverAnchor($anchor)")

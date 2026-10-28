@@ -17,8 +17,8 @@ import com.promenar.nexara.data.skills.DiscoveredSkill
 import com.promenar.nexara.data.skills.SkillScope
 import com.promenar.nexara.data.skills.SkillSnapshot
 import com.promenar.nexara.data.skills.SkillStatus
-import com.promenar.nexara.ui.skills.SessionSkillsSections
-import com.promenar.nexara.ui.skills.SkillCatalogActions
+import com.promenar.nexara.data.skills.SkillWorkspace
+import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.ui.skills.SkillCatalogUiState
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.theme.*
@@ -97,28 +97,37 @@ fun sessionToolsSkillsPreview() = SessionFrame(2) { SessionToolsSkillsSample() }
 @Composable
 fun sessionToolsSkillsLightPreview() = SessionFrame(2, light = true) { SessionToolsSkillsSample() }
 
+@PreviewTest
+@Preview(name = "会话工具 已关闭 仅联网搜索 深中411", widthDp = 411, heightDp = 1000, locale = "zh-rCN")
+@Preview(name = "会话工具 已关闭 仅联网搜索 深中360", widthDp = 360, heightDp = 1100, locale = "zh-rCN")
+@Composable
+fun sessionToolsOffPreview() = SessionFrame(2) {
+    SessionToolsContent(
+        options = SessionOptions(toolsEnabled = false, keepWebSearchWhenToolsOff = true),
+        skillsSummary = SessionSkillsSummary(enabledUserSkills = 2, projectSkills = null, workspaceName = null),
+        onOpenSkills = {},
+    )
+}
+
+/** 技能分组只读摘要：用户技能已启用数与当前工作区的项目技能数，点按跳全局技能包。 */
 @Composable
 private fun SessionToolsSkillsSample() {
-    SessionToolsContent(skillsSection = {
-        SessionSkillsSections(
-            SkillCatalogUiState(
-                loading = false,
-                projectAvailable = true,
-                snapshot = SkillSnapshot(
-                    workspace = null,
-                    skills = listOf(
-                        previewSkill("pdf-report", "把分析结果整理为带目录与图表的 PDF 报告。"),
-                        previewSkill("git-release", "按仓库约定生成版本说明并打标签。", modified = true),
-                        previewSkill("meeting-notes", "从会议录音转写中提炼决议与待办。", status = SkillStatus.DISABLED, implicit = false),
-                        previewSkill("android-build", "构建并校验两个发行渠道的 APK。", scope = SkillScope.PROJECT),
-                        previewSkill("db-migration", "为 Room 迁移编写测试并核对 schema。", scope = SkillScope.PROJECT, status = SkillStatus.PENDING_TRUST),
-                        previewSkill("broken-skill", "", scope = SkillScope.PROJECT, status = SkillStatus.BROKEN, reason = "name 与目录名不一致"),
-                    ),
-                ),
+    val state = SkillCatalogUiState(
+        loading = false,
+        projectAvailable = true,
+        snapshot = SkillSnapshot(
+            workspace = SkillWorkspace(key = "preview", root = java.io.File("/workspaces/nexara-app")),
+            skills = listOf(
+                previewSkill("pdf-report", "把分析结果整理为带目录与图表的 PDF 报告。"),
+                previewSkill("git-release", "按仓库约定生成版本说明并打标签。", modified = true),
+                previewSkill("meeting-notes", "从会议录音转写中提炼决议与待办。", status = SkillStatus.DISABLED, implicit = false),
+                previewSkill("android-build", "构建并校验两个发行渠道的 APK。", scope = SkillScope.PROJECT),
+                previewSkill("db-migration", "为 Room 迁移编写测试并核对 schema。", scope = SkillScope.PROJECT, status = SkillStatus.PENDING_TRUST),
+                previewSkill("broken-skill", "", scope = SkillScope.PROJECT, status = SkillStatus.BROKEN, reason = "name 与目录名不一致"),
             ),
-            SkillCatalogActions(),
-        )
-    })
+        ),
+    )
+    SessionToolsContent(skillsSummary = sessionSkillsSummary(state), onOpenSkills = {})
 }
 
 private fun previewSkill(

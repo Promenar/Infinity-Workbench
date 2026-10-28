@@ -31,9 +31,6 @@ import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -41,24 +38,22 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSheetHeight
-import com.promenar.nexara.ui.settings.LanHostsEditorSheet
 import com.promenar.nexara.ui.settings.NetworkAccessRows
-import com.promenar.nexara.ui.settings.lanHostsSummary
-import com.promenar.nexara.ui.settings.saveLanHosts
 import com.promenar.nexara.ui.settings.tailnetSummary
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
 internal data class AgentReachActions(
-    val onEditLanHosts: () -> Unit = {},
+    /** 局域网白名单是全局设置：非 null 时该行关闭面板并打开全局网络访问页（R3），为 null 时只显示项数。 */
+    val onOpenNetworkAccess: (() -> Unit)? = null,
     /** 所在页面无法跳转设置时为 null，Tailscale 行只显示状态。 */
     val onOpenTailscale: (() -> Unit)? = null,
     /** 非 null 时 Linux 行可点按，进入 Linux 环境页安装、修复或开关。 */
@@ -94,8 +89,8 @@ internal fun AgentReachSheet(
     )
     LaunchedEffect(viewModel, workspaceKey) { viewModel.refresh() }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var editingHosts by remember { mutableStateOf(false) }
     val linuxNavigation = com.promenar.nexara.ui.linux.LocalLinuxNavigation.current
+    val sessionSettingsNavigation = com.promenar.nexara.ui.chat.LocalSessionSettingsNavigation.current
     NexaraBottomSheet(
         show = true,
         onDismiss = onDismiss,
@@ -105,20 +100,13 @@ internal fun AgentReachSheet(
         AgentReachContent(
             state = state.copy(executionMode = ExecutionModeCodec.parseOrWorkspace(executionMode)),
             actions = AgentReachActions(
-                onEditLanHosts = { editingHosts = true },
+                onOpenNetworkAccess = sessionSettingsNavigation?.let { navigation -> { onDismiss(); navigation.openNetworkAccess() } },
                 onOpenTailscale = onOpenTailscaleSettings?.let { open -> { onDismiss(); open() } },
                 onOpenLinux = linuxNavigation?.let { navigation -> { onDismiss(); navigation.openEnvironment() } },
                 workspaceSwitch = workspaceSwitch,
             ),
         )
     }
-    val access = (application as NexaraApplication).agentNetworkAccess
-    LanHostsEditorSheet(
-        show = editingHosts,
-        stored = state.network?.lanHosts.orEmpty().joinToString("\n"),
-        onDismiss = { editingHosts = false },
-        onSave = { text -> saveLanHosts(access::setLanHosts, text) },
-    )
 }
 
 /**
@@ -367,15 +355,25 @@ private fun NetworkSection(state: AgentReachState, actions: AgentReachActions) {
             NexaraSettingsRowLayout(title = stringResource(R.string.settings_status_loading))
             return@NexaraSettingsSection
         }
-        NexaraSettingsItem(
-            icon = Icons.Rounded.Dns,
-            title = stringResource(R.string.network_lan_hosts_title),
-            subtitle = lanHostsSummary(network),
-            onClick = actions.onEditLanHosts,
-            showChevron = true,
-            subtitleMaxLines = 2,
-            modifier = Modifier.testTag("agent_reach_lan_hosts"),
-        )
+        val lanSummary = pluralStringResource(R.plurals.settings_ia_reach_lan_summary, network.lanHosts.size, network.lanHosts.size)
+        val openNetworkAccess = actions.onOpenNetworkAccess
+        if (openNetworkAccess != null) {
+            NexaraValueRow(
+                icon = Icons.Rounded.Dns,
+                title = stringResource(R.string.network_lan_hosts_title),
+                subtitle = lanSummary,
+                value = stringResource(R.string.settings_ia_reach_lan_change),
+                onClick = openNetworkAccess,
+                modifier = Modifier.testTag("agent_reach_lan_hosts"),
+            )
+        } else {
+            NexaraSettingsRowLayout(
+                title = stringResource(R.string.network_lan_hosts_title),
+                subtitle = lanSummary,
+                icon = Icons.Rounded.Dns,
+                modifier = Modifier.testTag("agent_reach_lan_hosts"),
+            )
+        }
         val openTailscale = actions.onOpenTailscale
         if (openTailscale != null) {
             NexaraSettingsItem(

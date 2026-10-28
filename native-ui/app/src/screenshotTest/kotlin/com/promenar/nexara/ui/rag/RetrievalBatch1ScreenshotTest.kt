@@ -26,27 +26,37 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 
 @PreviewTest
-@Preview(name = "全局检索 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
-@Preview(name = "全局检索 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
+@Preview(name = "知识库设置 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
+@Preview(name = "知识库设置 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
 @Composable
-fun globalRagBatch1DefaultPreview() = RetrievalBatch1Surface {
-    GlobalRagConfigScreenContent(GlobalRagConfigScreenState(RagConfiguration()))
+fun knowledgeBaseSettingsDefaultPreview() = RetrievalBatch1Surface {
+    KnowledgeBaseSettingsContent(KnowledgeBaseSettingsState(RagConfiguration(), embeddingModelId = "text-embedding-3-small"))
 }
 
 @PreviewTest
-@Preview(name = "检索高级 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
-@Preview(name = "检索高级 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
+@Preview(name = "知识库设置 自定义深度 无重排 深色 中文 411dp", widthDp = 411, heightDp = 1400, locale = "zh-rCN")
+@Preview(name = "知识库设置 自定义深度 无重排 浅色 中文 360dp", widthDp = 360, heightDp = 1500, locale = "zh-rCN")
 @Composable
-fun ragAdvancedBatch1DefaultPreview() = RetrievalBatch1Surface {
-    RagAdvancedScreenContent(RagAdvancedScreenState(RagConfiguration(), allModels = emptyList()))
+fun knowledgeBaseSettingsCustomDepthPreview() = RetrievalBatch1Surface {
+    KnowledgeBaseSettingsContent(
+        KnowledgeBaseSettingsState(RagConfiguration(memoryLimit = 6, docLimit = 9, enableQueryRewrite = false)),
+    )
 }
 
 @PreviewTest
-@Preview(name = "高级检索 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
-@Preview(name = "高级检索 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
+@Preview(name = "知识图谱设置 默认 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
+@Preview(name = "知识图谱设置 默认 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
 @Composable
-fun advancedRetrievalBatch1DefaultPreview() = RetrievalBatch1Surface {
-    AdvancedRetrievalScreenContent(AdvancedRetrievalScreenState(RagConfiguration(), isRerankAvailable = false))
+fun knowledgeGraphSettingsDefaultPreview() = RetrievalBatch1Surface {
+    KnowledgeGraphSettingsContent(KnowledgeGraphSettingsState(RagConfiguration(), entityCount = 128))
+}
+
+@PreviewTest
+@Preview(name = "调试与高级 收起 深色 中文 411dp", widthDp = 411, heightDp = 914, locale = "zh-rCN")
+@Preview(name = "调试与高级 收起 深色 中文 360dp", widthDp = 360, heightDp = 800, locale = "zh-rCN")
+@Composable
+fun knowledgeDebugSettingsCollapsedPreview() = RetrievalBatch1Surface {
+    KnowledgeDebugSettingsContent(KnowledgeDebugSettingsState(RagConfiguration(), vectorCount = 1024, rerankAvailable = false))
 }
 
 @PreviewTest
@@ -79,11 +89,19 @@ fun agentAdvancedRetrievalBatch1DefaultPreview() = RetrievalBatch1Surface {
 }
 
 @PreviewTest
-@Preview(name = "高级检索 全页 深色 中文 411dp", widthDp = 411, heightDp = 2800, locale = "zh-rCN")
-@Preview(name = "高级检索 全页 深色 中文 360dp", widthDp = 360, heightDp = 3000, locale = "zh-rCN")
+@Preview(name = "调试与高级 展开 分块已改 深色 中文 411dp", widthDp = 411, heightDp = 3600, locale = "zh-rCN")
+@Preview(name = "调试与高级 展开 分块已改 深色 中文 360dp", widthDp = 360, heightDp = 3900, locale = "zh-rCN")
 @Composable
-fun advancedRetrievalBatch1FullPagePreview() = RetrievalBatch1Surface {
-    AdvancedRetrievalScreenContent(AdvancedRetrievalScreenState(RagConfiguration(), isRerankAvailable = true))
+fun knowledgeDebugSettingsExpandedPreview() = RetrievalBatch1Surface {
+    val config = RagConfiguration(docChunkSize = 1200)
+    KnowledgeDebugSettingsContent(
+        KnowledgeDebugSettingsState(
+            config = config,
+            indexedChunkSettings = config.chunkSettings().copy(docChunkSize = 800),
+            vectorCount = 1024,
+            initiallyExpanded = true,
+        ),
+    )
 }
 
 @PreviewTest

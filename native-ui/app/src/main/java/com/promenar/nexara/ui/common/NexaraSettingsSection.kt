@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -23,6 +24,8 @@ fun NexaraSettingsSection(
     headerStartPadding: Dp = 0.dp,
     footer: String? = null,
     footerModifier: Modifier = Modifier,
+    /** 含可点链接的页脚；给出时代替 [footer]。 */
+    linkedFooter: AnnotatedString? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val groupHorizontalPadding = headerStartPadding
@@ -39,6 +42,7 @@ fun NexaraSettingsSection(
         NexaraSettingsGroup(
             footer = footer,
             footerModifier = footerModifier,
+            linkedFooter = linkedFooter,
             modifier = Modifier.padding(horizontal = groupHorizontalPadding),
             content = content,
         )
@@ -51,11 +55,20 @@ fun NexaraSettingsGroup(
     modifier: Modifier = Modifier,
     footer: String? = null,
     footerModifier: Modifier = Modifier,
+    /** 含可点链接的页脚；给出时代替 [footer]，不放进可选择文本，避免长按选择抢走点按。 */
+    linkedFooter: AnnotatedString? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier.fillMaxWidth().padding(bottom = NexaraSpacing.SectionGap)) {
         BettboxListGroup(modifier = Modifier.fillMaxWidth(), content = content)
-        if (!footer.isNullOrBlank()) {
+        if (linkedFooter != null) {
+            Text(
+                text = linkedFooter,
+                style = MaterialTheme.typography.bodySmall.forReading(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = footerModifier.padding(horizontal = NexaraSpacing.RowHorizontal).padding(top = NexaraSpacing.FooterTop),
+            )
+        } else if (!footer.isNullOrBlank()) {
             SelectionContainer {
                 Text(
                     text = footer.keepCjkTailTogether(),

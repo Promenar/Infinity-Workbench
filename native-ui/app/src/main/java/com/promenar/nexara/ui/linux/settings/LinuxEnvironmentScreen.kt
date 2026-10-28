@@ -333,7 +333,7 @@ private fun LinuxInstallGuideContent(
             )
         }
         LinuxCallout(stringResource(R.string.linux_install_warning))
-        LinuxDefaultModeSection(state.installDefaultMode, actions.onSetInstallDefaultMode)
+        // 新会话默认模式不在安装流程中选择：首次安装沿用 installDefaultMode，之后在管理页“会话”分组修改（H5）。
     }
 }
 

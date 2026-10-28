@@ -18,6 +18,9 @@ import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.data.rag.KgExtractionBudget
 import com.promenar.nexara.data.rag.KgExtractionEstimate
 import com.promenar.nexara.utils.NexaraLogger
+import com.promenar.nexara.data.rag.DocumentReferenceExtractor
+import com.promenar.nexara.data.rag.RetrievalDepth
+import com.promenar.nexara.data.rag.withRetrievalDepth
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -94,6 +97,7 @@ class RagViewModel(
     injectedEnsureRagWorkspaceRootForSession: (suspend (String) -> FileEntry)? = null,
     injectedCompositeWorkspaceRepository: IWorkspaceRepository? = null,
     private val injectedKgEstimator: (suspend (FileEntry) -> KgExtractionEstimate)? = null,
+    injectedIndexBaseline: IndexedChunkBaseline? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -229,6 +233,13 @@ class RagViewModel(
 
     private val _vectorStats = MutableStateFlow<VectorStats?>(null)
     val vectorStats: StateFlow<VectorStats?> = _vectorStats.asStateFlow()
+
+    private val indexBaseline: IndexedChunkBaseline = injectedIndexBaseline
+        ?: SharedPreferencesIndexedChunkBaseline(app.getSharedPreferences(SharedPreferencesIndexedChunkBaseline.PREFS_NAME, 0))
+
+    /** 现有索引建立时的分块参数；与当前配置不同时，调试页提示全部重新向量化。 */
+    private val _indexedChunkSettings = MutableStateFlow<ChunkSettings?>(null)
+    val indexedChunkSettings: StateFlow<ChunkSettings?> = _indexedChunkSettings.asStateFlow()
 
     init {
         loadConfig()
@@ -649,6 +660,15 @@ class RagViewModel(
             currentPreset = rag.currentPreset,
             rerankMaxPerCall = prefs.getInt("rerank_max_per_call", 100)
         ), prefs)
+        _indexedChunkSettings.value = indexBaseline.load()
+            ?: _config.value.chunkSettings().also(indexBaseline::save)
+    }
+
+    /** 把当前分块参数记为索引基线：全部重新向量化已提交或向量已清空时调用。 */
+    private fun recordIndexBaseline() {
+        val current = _config.value.chunkSettings()
+        indexBaseline.save(current)
+        _indexedChunkSettings.value = current
     }
 
     private fun saveConfig(config: RagConfiguration) {
@@ -1426,12 +1446,72 @@ class RagViewModel(
                 if (withGraph) {
                     kgRepository.clear()
                 }
+                recordIndexBaseline()
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
                 workspaceRepository.resetAllRAGStatus(rootUuid)
                 loadStats()
             } catch (_: Exception) { }
         }
     }
+
+    /**
+     * 按当前分块设置重新向量化全局知识库中的全部文档，提交后把当前分块参数记为索引基线。
+     * 对话记忆的向量来自已结束的对话，不在重建范围内。[onSubmitted] 收到提交的文档数。
+     */
+    fun reindexAllDocuments(onSubmitted: (Int) -> Unit = {}) {
+        discardFailedIndexTarget()
+        viewModelScope.launch {
+            val rootUuid = try {
+                ensureGlobalKnowledgeRoot().uuid
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                NexaraLogger.logError("[RagViewModel] reindexAllDocuments root failed", e)
+                _indexingNotice.value = UiStatusNotice(NoticeSeverity.Error, IndexingNotice.CODE_FAILED)
+                return@launch
+            }
+            val documents = try {
+                knowledgeBaseDocuments(rootUuid)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                NexaraLogger.logError("[RagViewModel] reindexAllDocuments list failed", e)
+                _indexingNotice.value = UiStatusNotice(NoticeSeverity.Error, IndexingNotice.CODE_FAILED)
+                return@launch
+            }
+            var submitted = 0
+            var failed = 0
+            documents.forEach { entry ->
+                try {
+                    enqueueCurrentDocumentReference(rootUuid, entry)
+                    submitted += 1
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    NexaraLogger.logError("[RagViewModel] reindexAllDocuments failed: uuid=${entry.uuid}", e)
+                    failed += 1
+                }
+            }
+            if (failed == 0) recordIndexBaseline()
+            _indexingNotice.value = when {
+                failed == 0 -> null
+                submitted == 0 -> UiStatusNotice(NoticeSeverity.Error, IndexingNotice.CODE_FAILED)
+                else -> UiStatusNotice(NoticeSeverity.Warning, IndexingNotice.CODE_WARNING)
+            }
+            onSubmitted(submitted)
+        }
+    }
+
+    /** 知识库根下所有可索引的文档（含子文件夹），不含回收站。 */
+    private suspend fun knowledgeBaseDocuments(rootUuid: String): List<FileEntry> =
+        workspaceRepository.observeRoots(rootUuid).first()
+            .flatMap { entry ->
+                if (entry.isDirectory) workspaceRepository.getSubtree(rootUuid, entry.materializedPath) else listOf(entry)
+            }
+            .filter { entry ->
+                DocumentReferenceExtractor.supports(entry) && entry.hash.isNotBlank() && entry.updatedAt > 0
+            }
+            .distinctBy { it.uuid }
 
     fun updateConfig(config: RagConfiguration) {
         updateConfig { config }
@@ -1443,6 +1523,11 @@ class RagViewModel(
             _config.value = newConfig
             configSaver(newConfig)
         }
+    }
+
+    /** 套用检索深度档位：一次写入四个原始值，保存后随配置重建记忆管理器。 */
+    fun applyRetrievalDepth(depth: RetrievalDepth) {
+        updateConfig { current -> current.withRetrievalDepth(depth) }
     }
 
     fun applyPreset(preset: String) {

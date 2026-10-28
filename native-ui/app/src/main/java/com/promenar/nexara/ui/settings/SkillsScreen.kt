@@ -67,8 +67,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
-import com.promenar.nexara.ui.common.NexaraTabItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -83,6 +81,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -105,26 +104,15 @@ import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.NexaraNumericSetting
 import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.NexaraBottomSheet
-import com.promenar.nexara.ui.theme.NexaraMotion
 import com.promenar.nexara.ui.theme.forInput
-import com.promenar.nexara.NexaraApplication
-import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.ui.common.NexaraStepperSetting
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.NexaraSnackbar
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SnackbarType
-import com.promenar.nexara.ui.theme.NexaraSpacing
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.withContext
 import com.promenar.nexara.ui.common.NexaraPopoverSpec
 import com.promenar.nexara.ui.common.nexaraPopoverAnchor
 import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
@@ -137,22 +125,16 @@ private data class AgentSkillEditorState(
     val allowedTools: List<String>,
 )
 
+/** “智能体运行”下的四个页面，共用技能与工具的视图模型与面板。 */
+enum class AgentRuntimeSection { Budget, BuiltinTools, SkillPacks, Mcp }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(
     onNavigateBack: () -> Unit,
-    onOpenSsh: () -> Unit = {},
-    onOpenTermux: () -> Unit = {},
-    onOpenGitCredentials: () -> Unit = {},
-    onOpenTailscale: () -> Unit = {},
-    onOpenBackground: () -> Unit = {},
-    onOpenNetworkAccess: () -> Unit = {},
-    onOpenLinux: () -> Unit = {},
+    section: AgentRuntimeSection = AgentRuntimeSection.SkillPacks,
 ) {
     val context = LocalContext.current
-    val linuxRuntime = (context.applicationContext as com.promenar.nexara.NexaraApplication).linux.runtime
-    val linuxState by linuxRuntime.state.collectAsState()
-    val linuxAgentEnabled by linuxRuntime.agentEnabled.collectAsState()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val agentSkillsViewModel: AgentSkillsViewModel =
         viewModel(factory = AgentSkillsViewModel.factory(context.applicationContext as android.app.Application))
@@ -169,52 +151,28 @@ fun SkillsScreen(
     ) { uri -> uri?.let { agentSkillsViewModel.import(it) } }
 
     val presetSkills by viewModel.skills.collectAsState()
-    val userSkills by viewModel.userSkills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
     val loopLimit by viewModel.loopLimit.collectAsState()
     val tokenLimit by viewModel.taskTokenLimit.collectAsState()
     val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
     val retryLimit by viewModel.streamRetryLimit.collectAsState()
-    val application = context.applicationContext as NexaraApplication
-    val networkSnapshot by application.agentNetworkAccess.snapshot.collectAsState()
-    val sshHosts by remember(application) {
-        application.sshHostStore.observeHosts().flowOn(Dispatchers.IO)
-    }.collectAsState(initial = emptyList())
-    var termuxAvailability by remember { mutableStateOf<TermuxAvailability?>(null) }
-    // 凭据存储首次取用时解密 Keystore 中的主机列表，放到 IO 线程。
-    val gitCredentialCount by androidx.compose.runtime.produceState<Int?>(null, application) {
-        withContext(Dispatchers.IO) { application.gitCredentialStore }.credentials.collect { value = it.size }
-    }
-    val tailscaleState by application.tailnetManager.state.collectAsState()
-    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
     val resetMessage = stringResource(R.string.settings_consent_reset)
-    DisposableEffect(lifecycleOwner, application) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                scope.launch { termuxAvailability = withContext(Dispatchers.IO) { application.termuxRuntime.availability() } }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf(
-        stringResource(R.string.skills_tab_preset),
-        stringResource(R.string.skills_tab_user),
-        stringResource(R.string.skills_tab_mcp)
-    )
 
     var showAddMcp by remember { mutableStateOf(false) }
-    var showCreateSkill by remember { mutableStateOf(false) }
     var showSearchConfig by remember { mutableStateOf(false) }
-    var selectedSkillForEdit by remember { mutableStateOf<String?>(null) }
     var expandedServerId by remember { mutableStateOf<String?>(null) }
 
     NexaraSettingsPageLayout(
-        title = stringResource(R.string.skills_title),
+        title = stringResource(
+            when (section) {
+                AgentRuntimeSection.Budget -> R.string.settings_execution_budget
+                AgentRuntimeSection.BuiltinTools -> R.string.settings_ia_builtin_tools_title
+                AgentRuntimeSection.SkillPacks -> R.string.settings_ia_skills_title
+                AgentRuntimeSection.Mcp -> R.string.settings_ia_mcp_title
+            },
+        ),
         onBack = onNavigateBack,
     ) { contentPadding ->
         Box(Modifier.fillMaxSize()) {
@@ -224,111 +182,60 @@ fun SkillsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(contentPadding),
             ) {
-
-                SkillsSettingsHeaderContent(
-                    state = SkillsSettingsVisualState(
-                        loopLimit, tokenLimit, repeatLimit,
-                        sshHostCount = sshHosts.size,
-                        termuxAvailability = termuxAvailability,
-                        retryLimit = retryLimit,
-                        gitCredentialCount = gitCredentialCount,
-                        tailscaleState = tailscaleState,
-                        networkHostCount = networkSnapshot.lanHosts.size,
-                        linuxState = linuxState,
-                        linuxAgentEnabled = linuxAgentEnabled,
-                    ),
-                    actions = SkillsSettingsVisualActions(
-                        onLoopLimitChange = viewModel::updateLoopLimit,
-                        onTokenLimitChange = viewModel::updateTaskTokenLimit,
-                        onRepeatLimitChange = viewModel::updateToolLoopRepeatLimit,
-                        onRetryLimitChange = viewModel::updateStreamRetryLimit,
-                        onResetConsent = {
-                            viewModel.resetUnlimitedAutoConsent()
-                            scope.launch { snackbarHost.showSnackbar(resetMessage) }
-                        },
-                        onOpenNetworkAccess = onOpenNetworkAccess,
-                        onOpenSsh = onOpenSsh,
-                        onOpenTermux = onOpenTermux,
-                        onOpenGitCredentials = onOpenGitCredentials,
-                        onOpenTailscale = onOpenTailscale,
-                        onOpenBackground = onOpenBackground,
-                        onOpenLinux = onOpenLinux,
-                    ),
-                )
-
-                val skillTabs = remember(tabs) {
-                    tabs.map { NexaraTabItem(title = it) }
-                }
-                NexaraCapsuleTabRow(
-                    tabs = skillTabs,
-                    selectedIndex = selectedTab,
-                    onTabSelected = { selectedTab = it },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 同级标签按左右顺序做共享 X 轴切换，高度差由尺寸过渡平滑衔接。
-                androidx.compose.animation.AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = { NexaraMotion.sharedAxisX(forward = targetState > initialState) },
-                    label = "skills_tab",
-                ) { tab ->
-                    when (tab) {
-                        0 -> BuiltinToolsSections(
-                            tools = presetSkills,
-                            onToggle = viewModel::toggleSkill,
-                            onConfigureSearch = { showSearchConfig = true },
-                        )
-                        1 -> Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large)) {
-                            AgentSkillsSection(
-                                skills = skillCatalogState.snapshot?.user.orEmpty(),
-                                actions = com.promenar.nexara.ui.skills.SkillCatalogActions(
-                                    onToggle = { skill, enabled -> skillCatalogViewModel.setEnabled(skill, enabled) },
-                                    onAcknowledge = skillCatalogViewModel::acknowledgeModified,
-                                    onDelete = skillCatalogViewModel::delete,
-                                    loadDocument = skillCatalogViewModel::loadDocument,
-                                    onEdit = { skill ->
-                                        agentSkillScope.launch {
-                                            val document = agentSkillsViewModel.loadDocument(skill.name) ?: return@launch
-                                            agentSkillEditor = AgentSkillEditorState(
-                                                name = skill.name,
-                                                description = document.metadata.description,
-                                                body = document.body,
-                                                allowedTools = document.metadata.allowedTools,
-                                            )
-                                        }
-                                    },
-                                ),
-                                onImport = {
-                                    importSkillLauncher.launch(
-                                        arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
+                when (section) {
+                    AgentRuntimeSection.Budget -> AgentRuntimeSettingsCard(
+                        state = SkillsSettingsVisualState(loopLimit, tokenLimit, repeatLimit, retryLimit = retryLimit),
+                        actions = SkillsSettingsVisualActions(
+                            onLoopLimitChange = viewModel::updateLoopLimit,
+                            onTokenLimitChange = viewModel::updateTaskTokenLimit,
+                            onRepeatLimitChange = viewModel::updateToolLoopRepeatLimit,
+                            onRetryLimitChange = viewModel::updateStreamRetryLimit,
+                            onResetConsent = {
+                                viewModel.resetUnlimitedAutoConsent()
+                                scope.launch { snackbarHost.showSnackbar(resetMessage) }
+                            },
+                        ),
+                    )
+                    AgentRuntimeSection.BuiltinTools -> BuiltinToolsSections(
+                        tools = presetSkills,
+                        onToggle = viewModel::toggleSkill,
+                        onConfigureSearch = { showSearchConfig = true },
+                    )
+                    AgentRuntimeSection.SkillPacks -> AgentSkillsSection(
+                        skills = skillCatalogState.snapshot?.user.orEmpty(),
+                        actions = com.promenar.nexara.ui.skills.SkillCatalogActions(
+                            onToggle = { skill, enabled -> skillCatalogViewModel.setEnabled(skill, enabled) },
+                            onAcknowledge = skillCatalogViewModel::acknowledgeModified,
+                            onDelete = skillCatalogViewModel::delete,
+                            loadDocument = skillCatalogViewModel::loadDocument,
+                            onEdit = { skill ->
+                                agentSkillScope.launch {
+                                    val document = agentSkillsViewModel.loadDocument(skill.name) ?: return@launch
+                                    agentSkillEditor = AgentSkillEditorState(
+                                        name = skill.name,
+                                        description = document.metadata.description,
+                                        body = document.body,
+                                        allowedTools = document.metadata.allowedTools,
                                     )
-                                },
-                                onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
+                                }
+                            },
+                        ),
+                        onImport = {
+                            importSkillLauncher.launch(
+                                arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
                             )
-                            if (userSkills.isNotEmpty()) {
-                                LegacyUserToolsSection(
-                                    tools = userSkills.map { SkillInfo(it.id, it.name, it.description, it.enabled) },
-                                    onToggle = viewModel::toggleSkill,
-                                    onEdit = { id ->
-                                        selectedSkillForEdit = id
-                                        showCreateSkill = true
-                                    },
-                                    onDelete = viewModel::deleteCustomSkill,
-                                )
-                            }
-                        }
-                        2 -> McpServersSection(
-                            servers = mcpServers,
-                            expandedServerId = expandedServerId,
-                            onToggleExpand = { id -> expandedServerId = if (expandedServerId == id) null else id },
-                            onToggleEnabled = viewModel::toggleMcpServer,
-                            onDelete = viewModel::deleteMcpServer,
-                            onSync = viewModel::syncMcpServer,
-                            onAdd = { showAddMcp = true },
-                        )
-                    }
+                        },
+                        onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
+                    )
+                    AgentRuntimeSection.Mcp -> McpServersSection(
+                        servers = mcpServers,
+                        expandedServerId = expandedServerId,
+                        onToggleExpand = { id -> expandedServerId = if (expandedServerId == id) null else id },
+                        onToggleEnabled = viewModel::toggleMcpServer,
+                        onDelete = viewModel::deleteMcpServer,
+                        onSync = viewModel::syncMcpServer,
+                        onAdd = { showAddMcp = true },
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -437,76 +344,6 @@ fun SkillsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(if (mcpSaving) R.string.mcp_config_saving else R.string.skills_mcp_add_btn))
-                }
-            }
-        }
-    }
-
-    if (showCreateSkill) {
-        val skillToEdit = selectedSkillForEdit?.let { id -> userSkills.find { it.id == id } }
-        var skillName by remember { mutableStateOf(skillToEdit?.name ?: "") }
-        var skillDesc by remember { mutableStateOf(skillToEdit?.description ?: "") }
-        var skillCode by remember { mutableStateOf(skillToEdit?.code ?: "") }
-
-        NexaraModalSheet(onDismissRequest = { showCreateSkill = false }, height = NexaraSheetHeight.Full) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = if (selectedSkillForEdit == null) stringResource(R.string.skills_add_custom)
-                           else stringResource(R.string.skills_edit_custom),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Text(stringResource(R.string.skills_metadata), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-
-                OutlinedTextField(
-                    textStyle = LocalTextStyle.current.forInput(),
-                    value = skillName,
-                    onValueChange = { skillName = it },
-                    label = { Text(stringResource(R.string.skills_tool_name_hint)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    textStyle = LocalTextStyle.current.forInput(),
-                    value = skillDesc,
-                    onValueChange = { skillDesc = it },
-                    label = { Text(stringResource(R.string.skills_description_hint)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Text(stringResource(R.string.skills_implementation), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-
-                OutlinedTextField(
-                    value = skillCode,
-                    onValueChange = { skillCode = it },
-                    label = { Text(stringResource(R.string.skills_code_example)) },
-                    textStyle = TextStyle(fontFamily = NexaraMonospace, fontSize = 13.sp).forInput(),
-                    modifier = Modifier.fillMaxWidth().height(200.dp)
-                )
-
-                Button(
-                    onClick = {
-                        if (skillName.isNotBlank()) {
-                            viewModel.addCustomSkill(
-                                name = skillName,
-                                description = skillDesc,
-                                schema = "{}",
-                                code = skillCode,
-                                id = selectedSkillForEdit
-                            )
-                            showCreateSkill = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.shared_btn_save))
                 }
             }
         }
@@ -676,6 +513,8 @@ internal fun SearchConfigBottomSheet(
             onResultCountChange = searchViewModel::updateResultCount,
             onSearchDepthChange = searchViewModel::updateSearchDepth,
             onSearXngUrlChange = searchViewModel::updateSearXngUrl,
+            onIncludeDomainsChange = searchViewModel::setIncludeDomains,
+            onExcludeDomainsChange = searchViewModel::setExcludeDomains,
             keenableSecretEditor = { KeenableSecretEditor(searchViewModel, searchState) },
             tavilySecretEditor = { TavilySecretEditor(searchViewModel, searchState) },
         )
@@ -689,10 +528,13 @@ internal fun SearchConfigContent(
     onResultCountChange: (Int) -> Unit = {},
     onSearchDepthChange: (String) -> Unit = {},
     onSearXngUrlChange: (String) -> Unit = {},
+    onIncludeDomainsChange: (String) -> Unit = {},
+    onExcludeDomainsChange: (String) -> Unit = {},
     keenableSecretEditor: @Composable () -> Unit = {},
     tavilySecretEditor: @Composable () -> Unit = {},
 ) {
     val depthAnchor = rememberNexaraPopoverAnchor()
+    var editingDomains by remember { mutableStateOf<DomainListKind?>(null) }
     var showDepthPicker by remember(searchState.searchEngine) { mutableStateOf(false) }
         Column(
             modifier = Modifier
@@ -733,6 +575,24 @@ internal fun SearchConfigContent(
                 onDecrease = { onResultCountChange(searchState.resultCount - 1) },
                 onIncrease = { onResultCountChange(searchState.resultCount + 1) },
             )
+            }
+
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_ia_domain_section),
+                footer = stringResource(R.string.settings_ia_domain_footer),
+            ) {
+                NexaraValueRow(
+                    title = stringResource(R.string.settings_ia_domain_include),
+                    value = domainCountLabel(searchState.includeDomains, R.string.settings_ia_domain_any),
+                    onClick = { editingDomains = DomainListKind.Include },
+                    modifier = Modifier.testTag("search_domains_include"),
+                )
+                NexaraValueRow(
+                    title = stringResource(R.string.settings_ia_domain_exclude),
+                    value = domainCountLabel(searchState.excludeDomains, R.string.settings_ia_domain_none),
+                    onClick = { editingDomains = DomainListKind.Exclude },
+                    modifier = Modifier.testTag("search_domains_exclude"),
+                )
             }
 
             if (searchState.searchEngine == "keenable") {
@@ -787,7 +647,55 @@ internal fun SearchConfigContent(
             showDepthPicker = false
         }
     }
+    when (editingDomains) {
+        DomainListKind.Include -> DomainListDialog(
+            title = stringResource(R.string.settings_ia_domain_include),
+            initial = searchState.includeDomains,
+            onSave = onIncludeDomainsChange,
+            onDismiss = { editingDomains = null },
+        )
+        DomainListKind.Exclude -> DomainListDialog(
+            title = stringResource(R.string.settings_ia_domain_exclude),
+            initial = searchState.excludeDomains,
+            onSave = onExcludeDomainsChange,
+            onDismiss = { editingDomains = null },
+        )
+        null -> Unit
+    }
 
+}
+
+/** Web 搜索的两份域名名单。 */
+private enum class DomainListKind { Include, Exclude }
+
+@Composable
+private fun domainCountLabel(domains: List<String>, emptyLabel: Int): String =
+    if (domains.isEmpty()) stringResource(emptyLabel)
+    else pluralStringResource(R.plurals.settings_ia_domain_count, domains.size, domains.size)
+
+/** 每行一个域名的编辑对话框，保存时由视图模型整理名单。 */
+@Composable
+private fun DomainListDialog(title: String, initial: List<String>, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial.joinToString("\n")) }
+    NexaraConfirmDialog(
+        title = title,
+        message = stringResource(R.string.settings_ia_domain_dialog_hint),
+        confirmText = stringResource(R.string.shared_btn_save),
+        onConfirm = { onSave(text); onDismiss() },
+        onCancel = onDismiss,
+        modifier = Modifier.testTag("search_domains_dialog"),
+        content = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                textStyle = TextStyle(fontFamily = NexaraMonospace).forInput(),
+                placeholder = { Text("example.com") },
+                minLines = 4,
+                maxLines = 8,
+                modifier = Modifier.fillMaxWidth().testTag("search_domains_input"),
+            )
+        },
+    )
 }
 
 @Composable
