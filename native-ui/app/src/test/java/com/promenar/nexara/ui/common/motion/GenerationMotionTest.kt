@@ -149,6 +149,44 @@ class GenerationMotionTest {
     }
 
     @Test
+    fun `流式阶段只有思考内容、正文还没到达时仍按首字前显示`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        // 服务商首个分片只带思考内容时，生成任务已进入流式阶段，但正文字数仍为 0。
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = true)
+        motion.step(frame)
+        assertEquals(GenerationMotionPhase.WAIT, motion.actual)
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 12, animate = true)
+        motion.step(frame)
+        assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+    }
+
+    @Test
+    fun `进入流式与首段正文同时到达时直接显示流式`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        motion.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
+        // 一次重组里阶段切到流式、正文也已到达（短回复可能只有这一个分片）。
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 8, animate = true)
+        assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+    }
+
+    @Test
+    fun `工具执行后新一轮思考时，正文没有新增前回到首字前`() {
+        val motion = GenerationMotion(GenerationMotion.Source.LIVE)
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 40, animate = true)
+        motion.update(GenerationMotionPhase.TOOL, retry = null, outputLength = 40, animate = true)
+        // 上一轮正文保留在累计内容里，新一轮先输出思考。
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 40, animate = true)
+        assertEquals(GenerationMotionPhase.WAIT, motion.actual)
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 41, animate = true)
+        assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+        // 累计正文变短（新一轮从头累计）后，以新的长度为基准。
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = true)
+        assertEquals(GenerationMotionPhase.WAIT, motion.actual)
+        motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 3, animate = true)
+        assertEquals(GenerationMotionPhase.STREAM, motion.actual)
+    }
+
+    @Test
     fun `等待审批不被重试倒计时覆盖`() {
         val motion = GenerationMotion(GenerationMotion.Source.LIVE)
         val retry = GenerationRetry(attempt = 1, maxAttempts = 10, code = GenerationFailureCode.NETWORK, delayMs = 5_000)

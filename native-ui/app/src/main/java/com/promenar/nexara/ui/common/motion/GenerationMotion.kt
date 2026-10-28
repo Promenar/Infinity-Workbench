@@ -223,6 +223,9 @@ class GenerationMotion internal constructor(private val source: Source) {
     private val controller = MotionPhaseController()
     private val meter = OutputRateMeter()
     private var clock = 0f
+    private var rawPhase: GenerationMotionPhase? = null
+    private var preStreamLength = 0
+    private var streamBaseLength = 0
     private var basePhase: GenerationMotionPhase? = null
     private var retry: GenerationRetry? = null
     private var retryStartedAt = 0f
@@ -289,7 +292,15 @@ class GenerationMotion internal constructor(private val source: Source) {
             retryStartedAt = clock
         }
         if (phase == null) meter.reset() else meter.report(outputLength)
-        basePhase = phase
+        // 生成任务收到首个分片就进入流式，其中可能只有思考内容；正文比进入流式前有新增后才按流式显示。
+        if (phase == GenerationMotionPhase.STREAM) {
+            if (rawPhase != GenerationMotionPhase.STREAM) streamBaseLength = preStreamLength
+            if (outputLength < streamBaseLength) streamBaseLength = outputLength
+        } else {
+            preStreamLength = outputLength
+        }
+        rawPhase = phase
+        basePhase = if (phase == GenerationMotionPhase.STREAM && outputLength <= streamBaseLength) GenerationMotionPhase.WAIT else phase
         actual = resolveActual()
         // 不推进时（系统关闭动画）直接显示真实阶段。
         if (!animate) actual?.let(controller::snap)
