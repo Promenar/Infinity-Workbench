@@ -33,4 +33,16 @@ class SystemPromptMountsTest {
         val docs = listOf(mount("docs", "real_path", "/storage/emulated/0/Documents"))
         assertThat(SystemPromptSections.toolGuidance(setOf("web_search"), generic = false, mounts = docs)).doesNotContain("Mounted Folders")
     }
+
+    @Test fun `知识库在普通与Linux提示中均显示只读且不暴露物理路径`() {
+        val knowledge = mount("knowledge", ExternalMountPaths.KNOWLEDGE_BASE_SOURCE, "root-uuid").copy(readOnly = true)
+        for (linux in listOf(false, true)) {
+            val text = SystemPromptSections.toolGuidance(setOf("read_file"), generic = false, mounts = listOf(knowledge),
+                runMode = if (linux) com.promenar.nexara.domain.model.SessionRunMode.LINUX else com.promenar.nexara.domain.model.SessionRunMode.BUILTIN)
+            assertThat(text).contains("`/mnt/knowledge/`：只读")
+            assertThat(text).contains("命令无法访问知识库挂载")
+            assertThat(text).doesNotContain("root-uuid")
+            assertThat(text).doesNotContain("may read, write and delete")
+        }
+    }
 }

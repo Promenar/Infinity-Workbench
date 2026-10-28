@@ -35,7 +35,9 @@ class MemoryManager(
         val documentScope: DocumentScope = DocumentScope.WORKSPACE,
         val sessionId: String = "",
         val enableRerank: Boolean = false,  // 从 RagOptions 传递，结合 ragConfig.enableRerank 共同决定
-        val configOverride: RagConfiguration? = null
+        val configOverride: RagConfiguration? = null,
+        /** 工具已提供检索语句时关闭改写，避免隐含模型请求。 */
+        val allowQueryRewrite: Boolean = true,
     )
 
     data class RetrieveResult(
@@ -127,7 +129,7 @@ class MemoryManager(
             NexaraLogger.log("[$TAG] vectors DB state query failed: ${e.message?.take(80)}")
         }
 
-        val queryVariants = buildQueryVariants(query, effectiveConfig)
+        val queryVariants = if (options.allowQueryRewrite) buildQueryVariants(query, effectiveConfig) else listOf(query)
         val queryEmbeddings = mutableListOf<Pair<String, FloatArray>>()
         var firstEmbedMs = 0L
         for ((index, searchQuery) in queryVariants.withIndex()) {

@@ -503,9 +503,9 @@ class DefaultWorkspaceMediaTest {
         code("INVALID_PATH") { service.save("session", payload, MediaOrigin.MCP, targetPath = "https://host/a") }
         assertThat(opened).isFalse()
         assertThat(album.list()).isEmpty()
-        service.save("session", payload, MediaOrigin.MCP, targetPath = "/mnt/只读/a.png")
-        assertThat(opened).isTrue()
-        assertThat(File(album, "a.png").readBytes()).isEqualTo(png)
+        code("READ_ONLY") { service.save("session", payload, MediaOrigin.MCP, targetPath = "/mnt/只读/a.png") }
+        assertThat(opened).isFalse()
+        assertThat(File(album, "a.png").exists()).isFalse()
     }
 
     @Test fun `流载荷在成功和读取失败时关闭且清理缓存`() = runBlocking {

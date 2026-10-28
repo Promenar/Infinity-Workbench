@@ -771,7 +771,7 @@ class ToolExecutionLedgerRepository(
             val terminal = terminalMessage(
                 ToolTerminalRequest(key, target.toolName, context.assistant.thoughtSignature),
                 ToolLedgerState.REJECTED,
-                "工具执行已拒绝。",
+                if (target.toolName == "request_knowledge_access") "用户未授权" else "工具执行已拒绝。",
                 createdAt,
             )
             if (dao.decideTerminal(

@@ -176,6 +176,11 @@ class DefaultChatGenerationRuntimeTest {
         stateBoardRepository: com.promenar.nexara.data.repository.StateBoardRepository? = null,
         askLedger: com.promenar.nexara.data.repository.AskUserLedgerRepository? = null,
         subagentCompletions: com.promenar.nexara.data.trigger.SubagentCompletionSteering? = null,
+        knowledgeConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
+        knowledgeCatalog: com.promenar.nexara.data.knowledge.KnowledgeCatalogSource? = null,
+        knowledgePlanner: com.promenar.nexara.data.knowledge.KnowledgeAccessPlanner? = null,
+        knowledgeTurns: com.promenar.nexara.data.knowledge.KnowledgeTurnState? = null,
+        toolLedger: com.promenar.nexara.data.repository.ToolExecutionLedger = mockk(relaxed = true),
     ): SkillsFixture {
         val settings = mockk<SharedPreferences> {
             every { getInt(any(), any()) } answers { secondArg() }
@@ -198,7 +203,7 @@ class DefaultChatGenerationRuntimeTest {
         val strategy = mockk<ChatGenerationContentStrategy> {
             every { buildTools(any()) } answers {
                 toolThreads += Thread.currentThread()
-                toolNames.map { ProtocolTool(function = ProtocolToolFunction(it, "", "{}")) }
+                toolNames.map { ProtocolTool(function = ProtocolToolFunction(it, "", "{}"), runtimeToolId = it) }
             }
             every { buildProtocolMessages(any(), any(), any(), any(), any()) } answers {
                 val prompt = secondArg<String>()
@@ -216,15 +221,58 @@ class DefaultChatGenerationRuntimeTest {
             }
         }
         val runtime = DefaultChatGenerationRuntime(
-            settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            settings, this, store, mockk<IAgentRepository> { coEvery { getById(any()) } returns
+                knowledgeConfig?.let { com.promenar.nexara.domain.model.Agent("agent", "智能体", retrievalConfig = it) } },
             AgentConfigResolver(settings), ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder, messageManager, { mockk() }, mockk(), mockk(relaxed = true), executor,
+            contextBuilder, messageManager, { mockk() }, mockk(), toolLedger, executor,
             mockk(), null, mockk(), mockk(), strategy, mockk(relaxed = true), skillCatalog = catalog, sessionWorkspace = workspace,
             stateBoardRepository = stateBoardRepository,
             askUserLedger = askLedger,
             subagentCompletions = subagentCompletions,
+            knowledgeCatalog = knowledgeCatalog, knowledgeAccessPlanner = knowledgePlanner, knowledgeTurns = knowledgeTurns,
         )
         return SkillsFixture(runtime, GenerationRequest("skills-session", "assistant", "user", content, emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED), prompts, toolThreads, executor, store)
+    }
+
+    @Test fun `实际运行时读取智能体工具模式目录并播种自动引用`() = runTest {
+        val reference = com.promenar.nexara.data.model.RagReference("injected", "正文", "资料")
+        val builder = mockk<ContextBuilder> {
+            coEvery { buildContext(any()) } returns ContextBuilderResult("", "", emptyList(), listOf(reference), null, "system")
+        }
+        val skills = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
+        val catalog = mockk<com.promenar.nexara.data.knowledge.KnowledgeCatalogSource> {
+            coEvery { snapshot(any(), any()) } returns com.promenar.nexara.data.knowledge.KnowledgeCatalogSnapshot(
+                groups = listOf(com.promenar.nexara.data.knowledge.KnowledgeCatalogGroup("root", "知识库标题", 1, true)))
+        }
+        val turns = com.promenar.nexara.data.knowledge.KnowledgeTurnState()
+        val fixture = skillsFixture(skills, contextBuilder = builder,
+            knowledgeConfig = com.promenar.nexara.data.agent.AgentRetrievalConfig(retrievalMode = com.promenar.nexara.data.agent.AgentRetrievalMode.TOOL),
+            knowledgeCatalog = catalog, knowledgeTurns = turns)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        coVerify { builder.buildContext(match { it.retrievalMode == com.promenar.nexara.data.agent.AgentRetrievalMode.TOOL && it.knowledgeCatalog.contains("知识库标题") }) }
+        assertThat(turns.isInjected("skills-session", "user", "injected")).isTrue()
+    }
+
+    @Test fun `知识库审批绑定预览且同轮拒绝后不再创建审批`() = runTest {
+        val skills = mockk<com.promenar.nexara.data.skills.SkillCatalog> { coEvery { scan(any()) } returns com.promenar.nexara.data.skills.SkillSnapshot(null, emptyList()) }
+        val preview = com.promenar.nexara.data.knowledge.KnowledgeAccessPreview("skills-session", allowed = true,
+            knowledgeBases = listOf(com.promenar.nexara.data.knowledge.KnowledgeAccessTarget("kb", "资料", 3, "knowledge", "/mnt/knowledge")))
+        val planner = mockk<com.promenar.nexara.data.knowledge.KnowledgeAccessPlanner> { coEvery { preview("skills-session", null) } returns preview }
+        val turns = com.promenar.nexara.data.knowledge.KnowledgeTurnState()
+        val ledger = mockk<com.promenar.nexara.data.repository.ToolExecutionLedger>(relaxed = true) {
+            coEvery { createToolApproval(any(), any(), any(), any(), any()) } returns com.promenar.nexara.data.repository.ToolApprovalCreation.CREATED
+        }
+        val fixture = skillsFixture(skills, toolNames = listOf("request_knowledge_access"), knowledgePlanner = planner, knowledgeTurns = turns, toolLedger = ledger)
+        assertThat(fixture.runtime.buildContext(fixture.request)).isEqualTo(GenerationPreparationOutcome.Ready)
+        val first = fixture.runtime.handleTools(fixture.request, listOf(GenerationToolCall("first", "request_knowledge_access", """{"reason":"需要全文"}""")))
+        assertThat(first).isEqualTo(GenerationToolDecision.WAIT_FOR_APPROVAL)
+        val target = fixture.store.getSession("skills-session")!!.approvalRequest!!.calls.single().executionTarget!!
+        assertThat(com.promenar.nexara.data.model.json.decodeFromString<com.promenar.nexara.data.knowledge.KnowledgeAccessPreview>(target)).isEqualTo(preview)
+        turns.deny("skills-session", "user")
+        fixture.store.updateSession("skills-session") { it.copy(approvalRequest = null) }
+        assertThat(fixture.runtime.handleTools(fixture.request, listOf(GenerationToolCall("second", "request_knowledge_access", """{"reason":"再次读取"}""")))).isEqualTo(GenerationToolDecision.CONTINUE)
+        coVerify(exactly = 1) { ledger.createToolApproval(any(), any(), any(), any(), any()) }
+        coVerify { fixture.executor.executeTools(any(), any(), any(), match { "second" in it }, any(), any()) }
     }
 
     @Test fun `无界面不广告提问或分支且误提问返回工具错误继续生成`() = runTest {
@@ -2074,7 +2122,7 @@ class DefaultChatGenerationRuntimeTailnetTest {
         assertThat(chunks.filterIsInstance<GenerationChunk.Failure>()).isEmpty()
         assertThat(sent).hasSize(1)
         assertThat(sent.single().streamTimeout).isNull()
-        assertThat(sent.single().webSearch).isNull()
+        assertThat(sent.single().webSearch).isFalse()
         assertThat(sent.single().enableGeminiSearch).isNull()
         assertThat(waits.last()).isEqualTo(TailnetWaitState.Connected)
     }

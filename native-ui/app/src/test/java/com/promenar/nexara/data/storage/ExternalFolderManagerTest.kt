@@ -91,16 +91,100 @@ class ExternalFolderManagerTest {
         coVerify(exactly = 1) { dao.delete("mount") }
     }
 
-    @Test fun `历史只读挂载允许写入且别的会话无法读取`() = runBlocking {
+    @Test fun `只读挂载保留查询且所有写原语在备份前拒绝`() = runBlocking {
         memory.write("/a.txt", "hello".toByteArray())
         rows.value = rows.value.map { it.copy(readOnly = true) }
-        manager.write("session", "/mnt/termux/a.txt", "changed".toByteArray(), null, false)
-        manager.createDirectory("session", "/mnt/termux/dir")
-        manager.backupBeforeMove("session", "/mnt/termux/a.txt")
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("changed")
+        val backend = manager.backend("session")
+        val operations: List<suspend () -> Any?> = listOf(
+            { manager.write("session", "/mnt/termux/a.txt", "changed".toByteArray(), null, false) },
+            { manager.createDirectory("session", "/mnt/termux/dir") },
+            { manager.delete("session", "/mnt/termux/a.txt", null, true) },
+            { manager.backupBeforeMove("session", "/mnt/termux/a.txt") },
+            { manager.importSnapshot("session", "root", "/mnt/termux/a.txt") },
+            { backend.write("/mnt/termux/a.txt", "changed".toByteArray()) },
+            { backend.createDirectory("/mnt/termux/dir") },
+            { backend.delete("/mnt/termux/a.txt") },
+            { backend.move("/mnt/termux/a.txt", "/mnt/termux/b.txt") },
+            { backend.copy("/mnt/termux/a.txt", "/mnt/termux/b.txt") },
+        )
+        operations.forEach { action ->
+            val failure = assertThrows(ExternalFolderException::class.java) { runBlocking { action() } }
+            assertThat(failure.code).isEqualTo("READ_ONLY")
+            assertThat(failure.message).isEqualTo("知识库挂载为只读")
+        }
+        assertThat(String(manager.read("session", "/mnt/termux/a.txt"))).isEqualTo("hello")
+        assertThat(manager.list("session", "/mnt/termux").map { it.name }).containsExactly("a.txt")
+        assertThat(backend.stat("/mnt/termux/a.txt")?.isDirectory).isFalse()
+        assertThat(manager.visible("session").single { it.id == "mount" }.readOnly).isTrue()
+        assertThat(manager.recycleItems("session")).isEmpty()
+        assertThat(memory.stat("/dir")).isNull()
+        assertThat(memory.stat("/b.txt")).isNull()
         assertThat(assertThrows(ExternalFolderException::class.java) { runBlocking { manager.read("different", "/mnt/termux/a.txt") } }.code).isEqualTo("NOT_FOUND")
-        manager.delete("session", "/mnt/termux/a.txt", null, false)
+        coVerify(exactly = 0) { workspace.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `只读挂载不能恢复或清理已有移动备份`() = runBlocking<Unit> {
+        memory.write("/a.txt", "hello".toByteArray())
+        val backup = manager.backupBeforeMove("session", "/mnt/termux/a.txt")
+        memory.delete("/a.txt")
+        rows.value = rows.value.map { it.copy(readOnly = true) }
+        listOf<suspend () -> Unit>(
+            { manager.restore("session", backup) },
+            { manager.completeMoveBackup("session", backup) },
+        ).forEach { action ->
+            val failure = assertThrows(ExternalFolderException::class.java) { runBlocking { action() } }
+            assertThat(failure.code).isEqualTo("READ_ONLY")
+            assertThat(failure.message).isEqualTo("知识库挂载为只读")
+        }
         assertThat(memory.stat("/a.txt")).isNull()
+        assertThat(manager.recycleItems("session").map { it.id }).containsExactly(backup)
+    }
+
+    @Test fun `挂载文件工具写入修补新建移动删除均被只读收口而搜索正常`() = runBlocking {
+        memory.write("/a.txt", "original".toByteArray())
+        memory.createDirectory("/docs")
+        rows.value = rows.value.map { it.copy(readOnly = true) }
+        val operations = mockk<com.promenar.nexara.domain.repository.IFileOperationRepository>()
+        fun skill(original: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
+            MountedWorkspaceSkill(original, manager, workspace, operations, FileIndexEventSink.None)
+        val hash = Sha256Utils.hash("original")
+        val calls = listOf(
+            FileWriteSkill(operations, workspace) to """{"path":"/mnt/termux/a.txt","content":"changed","expected_sha256":"$hash"}""",
+            FilePatchSkill(operations, workspace) to """{"path":"/mnt/termux/a.txt","expected_sha256":"$hash","operations":[{"action":"insert_after","afterLine":1,"newContent":"changed"}]}""",
+            CreateFileSkill(workspace, operations) to """{"parentPath":"/mnt/termux","name":"new.txt","content":"changed"}""",
+            CreateDirectorySkill(workspace) to """{"parentPath":"/mnt/termux","name":"new"}""",
+            MoveFileSkill(workspace, FileIndexEventSink.None) to """{"path":"/mnt/termux/a.txt","newParentPath":"/mnt/termux/docs"}""",
+            DeleteFileSkill(workspace) to """{"path":"/mnt/termux/a.txt"}""",
+        )
+        calls.forEach { (original, arguments) ->
+            val result = skill(original).execute(args(arguments), executionContext)
+            assertThat(result.status).isEqualTo("error")
+            assertThat(result.content).contains("READ_ONLY：知识库挂载为只读")
+        }
+        coEvery { workspace.searchByName("root", "a.txt") } returns MutableStateFlow(emptyList())
+        assertThat(skill(FileSearchSkill(workspace, operations)).execute(args("""{"query":"a.txt"}"""), executionContext).content)
+            .contains("/mnt/termux/a.txt")
+        assertThat(skill(FileReadSkill(operations, workspace)).execute(args("""{"path":"/mnt/termux/a.txt"}"""), executionContext).content)
+            .contains("original")
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("original")
+        assertThat(memory.stat("/docs/a.txt")).isNull()
+        assertThat(manager.recycleItems("session")).isEmpty()
+    }
+
+    @Test fun `移动可写来源到只读目标在创建回收副本前拒绝`() = runBlocking {
+        memory.write("/a.txt", "original".toByteArray())
+        memory.createDirectory("/docs")
+        rows.value = rows.value + rows.value.single().copy(id = "readonly", alias = "readonly", readOnly = true)
+        val operations = mockk<com.promenar.nexara.domain.repository.IFileOperationRepository>()
+        val skill = MountedWorkspaceSkill(MoveFileSkill(workspace, FileIndexEventSink.None), manager, workspace,
+            operations, FileIndexEventSink.None)
+        val before = manager.recycleItems("session")
+        val result = skill.execute(args("""{"path":"/mnt/termux/a.txt","newParentPath":"/mnt/readonly/docs"}"""), executionContext)
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("READ_ONLY：知识库挂载为只读")
+        assertThat(manager.recycleItems("session")).isEqualTo(before)
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("original")
+        assertThat(memory.stat("/docs/a.txt")).isNull()
     }
 
     @Test fun `授权撤销写入不可用状态且恢复授权清除错误`() = runBlocking {

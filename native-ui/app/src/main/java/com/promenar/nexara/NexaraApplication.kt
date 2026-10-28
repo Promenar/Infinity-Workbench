@@ -2,6 +2,7 @@ package com.promenar.nexara
 
 import androidx.room.withTransaction
 import com.promenar.nexara.startup.*
+import kotlinx.serialization.encodeToString
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
@@ -367,7 +368,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val sessionRepository: ISessionRepository by lazy {
-        SessionRepository(database.sessionDao(), database.messageDao(), newSessionRunMode = sessionRunModes::newSessionMode)
+        SessionRepository(database.sessionDao(), database.messageDao(), newSessionRunMode = sessionRunModes::newSessionMode,
+            onSessionCreated = { session -> knowledgeAccessPlanner.mountIfAlways(session) })
     }
 
     val sessionRunModes by lazy {
@@ -683,7 +685,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     // 会话私有工作区只属于该会话，删除会话时一并撤销绑定到它的白名单条目。
                     { toolAllowlistStore.removeScope("session:$sessionId") },
                     { toolOutputStore.deleteSession(sessionId) },
-                    deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
+                    deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId); knowledgeTurns.forget(sessionId) },
                     deleteFolds = { contextFoldStore.deleteSession(sessionId) },
                     deleteSubagents = { subagentLauncher.deleteSession(sessionId) },
                     deleteComposerQueue = {
@@ -828,7 +830,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 withContext(Dispatchers.IO) {
                     val base = branchUnderlyingWorkspace(session)
                     val launch = linux.runtime.prepareLaunch(com.promenar.nexara.domain.linux.LinuxLaunchSpec.shell(command, base)
-                        .copy(workingDirectory = cwd, mounts = externalFolderManager.visible(session.id).filter { it.sourceType == "real_path" }
+                        .copy(workingDirectory = cwd, mounts = externalFolderManager.visible(session.id).filter { it.commandAccessible }
                             .map { com.promenar.nexara.domain.linux.LinuxBind(File(it.sourceId), "/mnt/${it.alias}") }))
                     val output = backgroundCommandRunner.run(com.promenar.nexara.data.exec.BuiltinCommandRequest(
                         launch.command, launch.hostWorkingDirectory, launch.environment, timeoutSeconds = 120))
@@ -851,7 +853,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
         if (path == "/workspace" || path.startsWith("/workspace/")) return File(branchUnderlyingWorkspace(session), path.removePrefix("/workspace").removePrefix("/"))
         if (path.startsWith("/mnt/")) {
             val alias = path.removePrefix("/mnt/").substringBefore('/')
-            val mount = externalFolderManager.visible(session.id).singleOrNull { it.alias == alias && it.sourceType == "real_path" } ?: return null
+            val mount = externalFolderManager.visible(session.id).singleOrNull { it.alias == alias && it.commandAccessible } ?: return null
             return File(mount.sourceId, path.removePrefix("/mnt/$alias").removePrefix("/"))
         }
         return null
@@ -1155,6 +1157,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             linuxFiles = linuxSessionFiles,
             askUserLedger = askUserLedger,
             branchService = { branchService }, branchPlans = branchPlans, sessionMailbox = sessionMailbox,
+            knowledgeCatalog = knowledgeCatalog, knowledgeAccessPlanner = knowledgeAccessPlanner, knowledgeTurns = knowledgeTurns,
         )
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
@@ -1396,7 +1399,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 if (sessionRunModes.modeFor(sessionId) != com.promenar.nexara.domain.model.SessionRunMode.LINUX) null else {
                     val session = checkNotNull(database.sessionDao().getById(sessionId))
                     mapOf("/" to linux.runtime.paths.rootfs.canonicalPath, "/workspace" to branchUnderlyingWorkspace(session).canonicalPath) +
-                        externalFolderManager.visible(sessionId).filter { it.sourceType == "real_path" }.associate { "/mnt/${it.alias}" to File(it.sourceId).canonicalPath }
+                        externalFolderManager.visible(sessionId).filter { it.commandAccessible }.associate { "/mnt/${it.alias}" to File(it.sourceId).canonicalPath }
                 }
             },
         )
@@ -1438,6 +1441,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             this, database.externalMountDao(), workspaceRepository, pendingDocumentIndexCoordinator,
             workspaces = sessionWorkspaceResolver,
             userSkillsDirectory = skillCatalog.userRoot,
+            // 每次知识库挂载访问都会核验根，只查根列，不加载会话实体。
+            knowledgeBaseRoots = { withContext(Dispatchers.IO) { database.query(androidx.sqlite.db.SimpleSQLiteQuery(
+                "SELECT DISTINCT workspace_root_uuid FROM sessions WHERE agent_id = ? AND workspace_root_uuid IS NOT NULL AND workspace_root_uuid != ''",
+                arrayOf(com.promenar.nexara.data.rag.RetrievalScopeResolver.KNOWLEDGE_BASE_AGENT_ID),
+            )).use { cursor -> buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) } } } },
+            knowledgeBaseOwnerRoot = { sessionId -> database.sessionDao().getById(sessionId)
+                ?.takeIf { it.agentId == "__system__" }?.workspaceRootUuid },
         )
     }
 
@@ -1578,6 +1588,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 )
             startupDiagnosticTools(startupIssueManager).forEach(::register)
             com.promenar.nexara.ui.chat.manager.skills.longTermMemoryTools(longTermMemoryRepository, longTermMemoryAccess).forEach(::register)
+            register(com.promenar.nexara.ui.chat.manager.skills.KnowledgeSearchSkill(
+                sessionRepository::getById, { agentRepository.getById(it)?.retrievalConfig }, knowledgeCatalog,
+                com.promenar.nexara.data.rag.MemoryManagerRagAdapter { memoryManager }, kgProvider, knowledgeTurns))
+            register(com.promenar.nexara.ui.chat.manager.skills.RequestKnowledgeAccessSkill(
+                knowledgeAccessPlanner, sessionRepository::getById, { agentRepository.getById(it)?.retrievalConfig }, knowledgeTurns))
             register(CalculatorSkill())
             register(com.promenar.nexara.ui.chat.manager.AskUserTool())
             register(com.promenar.nexara.data.branch.SessionBranchTool())
@@ -1692,6 +1707,24 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
             )
         ))
 
+    private fun knowledgeConfigForTools(agentId: String): com.promenar.nexara.data.agent.AgentRetrievalConfig? =
+        database.query(androidx.sqlite.db.SimpleSQLiteQuery("SELECT retrieval_config FROM agents WHERE id = ?", arrayOf(agentId))).use {
+            if (it.moveToFirst()) com.promenar.nexara.data.local.db.Converters.toRetrievalConfig(it.getString(0)) else null
+        }
+
+    val knowledgeTurns = com.promenar.nexara.data.knowledge.KnowledgeTurnState()
+    val knowledgeCatalog by lazy { com.promenar.nexara.data.knowledge.RoomKnowledgeCatalog(database, externalFolderManager) }
+    val knowledgeAccessPlanner by lazy { com.promenar.nexara.data.knowledge.KnowledgeAccessPlanner(
+        sessionRepository::getById, { agentRepository.getById(it)?.retrievalConfig }, externalFolderManager, knowledgeCatalog,
+    ) }
+
+    suspend fun knowledgeAccessApprovalTarget(session: com.promenar.nexara.data.model.Session, name: String, arguments: String): String? {
+        if (name != "request_knowledge_access") return null
+        val args = (com.promenar.nexara.domain.tool.ToolArgumentsValidator().validate(arguments) as? com.promenar.nexara.domain.tool.ToolArgumentsValidation.Valid)?.arguments ?: return null
+        val base = (args["knowledge_base"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        return com.promenar.nexara.data.model.json.encodeToString(knowledgeAccessPlanner.preview(session.id, base))
+    }
+
     val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver by lazy {
         object : com.promenar.nexara.data.generation.SessionToolResolver {
             override fun resolve(session: com.promenar.nexara.data.model.Session): List<com.promenar.nexara.data.remote.protocol.ProtocolTool> =
@@ -1699,6 +1732,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                     getSharedPreferences("nexara_settings", MODE_PRIVATE),
                     createSkillRegistry(session.id),
                     longTermMemoryAllowed = longTermMemoryAccess::isEnabledForToolAdvertisement,
+                    knowledgeSearchAllowed = { current ->
+                        val config = knowledgeConfigForTools(current.agentId)
+                        com.promenar.nexara.data.rag.effectiveRetrievalMode(config, current.options.toolsEnabled) != com.promenar.nexara.data.agent.AgentRetrievalMode.AUTO &&
+                            knowledgeCatalog.hasIndexedMaterial(current, com.promenar.nexara.data.rag.resolveEffectiveRagOptions(current.ragOptions,
+                                memoryPolicy = config?.memoryPolicy ?: com.promenar.nexara.data.agent.AgentMemoryPolicy()))
+                    },
+                    knowledgeAccessAllowed = { current -> com.promenar.nexara.data.rag.effectiveKnowledgeFileAccess(
+                        knowledgeConfigForTools(current.agentId), current.options.toolsEnabled) == com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST },
                 ) { current ->
                     com.promenar.nexara.data.generation.MediaViewTarget.capabilities(
                         ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == current.modelId },
@@ -2362,7 +2403,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 llmProvider.protocol,
                 modelRouteResolver = { selected ->
                     providerRequestRouter.requireModelRoute(
-                        selected?.takeIf(String::isNotBlank) ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty(),
+                        com.promenar.nexara.data.rag.resolveQueryRewriteModel(selected,
+                            getSharedPreferences("nexara_settings", MODE_PRIVATE).getString("preset_summary_model", null),
+                            ProviderManager.getInstance().getMainConfiguredModelId()).orEmpty(),
                         ::modelRouteError,
                     )
                 },

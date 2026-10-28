@@ -8,6 +8,8 @@ enum class ToolRisk {
     SESSION_STATE,
     /** 创建会在未来自行执行的任务，所有模式均需用户批准。 */
     SCHEDULE,
+    /** 授予智能体新的数据访问权限，所有模式均需用户批准。 */
+    ACCESS_GRANT,
     FILE_WRITE,
     PATCH,
     DELETE,
@@ -25,7 +27,7 @@ object ToolExecutionPolicy {
         arguments: String = "{}",
         resolvedTarget: String? = null,
         usesLinux: Boolean = false,
-    ): Boolean = risk == ToolRisk.SCHEDULE || toolName == "schedule_create" ||
+    ): Boolean = risk in setOf(ToolRisk.SCHEDULE, ToolRisk.ACCESS_GRANT) || toolName in setOf("schedule_create", "request_knowledge_access") ||
         ToolArgumentApprovalRules.requiresExplicitApproval(toolName, arguments, resolvedTarget) ||
         (mode == ExecutionMode.WORKSPACE && (CommandToolClassification.backendFor(toolName, usesLinux) != null ||
             usesLinux && ToolExecutionTargets.isPathMutation(toolName) && isLinuxRootfsTarget(resolvedTarget)))

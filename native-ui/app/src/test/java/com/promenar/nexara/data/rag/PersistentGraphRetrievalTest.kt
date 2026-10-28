@@ -163,4 +163,64 @@ class PersistentGraphRetrievalTest {
         disabled.retrieveContext("不存在", "s", refs, options)
         assertThat(calls).isEqualTo(1)
     }
+
+    @Test fun `工具检索返回持久图但种子不足时也不调用JIT`() = runBlocking<Unit> {
+        val scope = KgScope(sessionId = "s")
+        val a = store.upsertNode("甲", scope = scope)
+        val b = store.upsertNode("乙", scope = scope)
+        store.createEdge(a, b, "关系", scope = scope)
+        var calls = 0
+        val jit = object : KgProvider {
+            override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>): KgContextResult {
+                calls++
+                return KgContextResult("", jitExtractionCount = 1)
+            }
+        }
+        val provider = PersistentGraphKgProvider(store, jit) { RagConfiguration(kgJitMinSeeds = 32) }
+        val options = RagOptions(activeDocIds = listOf("doc"), enableKnowledgeGraph = true)
+        val references = listOf(RagReference("chunk", "片段", documentId = "doc"))
+
+        val persistent = provider.retrieveForTool("甲", "s", references, options)
+        val empty = provider.retrieveForTool("无覆盖", "s", references, options)
+
+        assertThat(persistent.paths).hasSize(1)
+        assertThat(persistent.paths.single().edges.single().relation).isEqualTo("关系")
+        assertThat(empty.paths).isEmpty()
+        assertThat(persistent.jitExtractionCount).isEqualTo(0)
+        assertThat(empty.jitExtractionCount).isEqualTo(0)
+        assertThat(calls).isEqualTo(0)
+
+        provider.retrieveContext("无覆盖", "s", references, options)
+        assertThat(calls).isEqualTo(1)
+    }
+
+    @Test fun `工具图谱严格按请求来源过滤而自动图谱保持独立范围`() = runBlocking<Unit> {
+        db.sessionDao().insert(com.promenar.nexara.data.local.db.entity.SessionEntity(
+            "s", "agent", createdAt = 1, updatedAt = 1))
+        val conversation = KgScope(sessionId = "s")
+        val document = KgScope(docId = "doc")
+        val historySource = store.upsertNode("历史来源", scope = conversation)
+        val historyTarget = store.upsertNode("历史目标", scope = conversation)
+        store.createEdge(historySource, historyTarget, "历史关系", scope = conversation)
+        val documentSource = store.upsertNode("文档来源", scope = document)
+        val documentTarget = store.upsertNode("文档目标", scope = document)
+        store.createEdge(documentSource, documentTarget, "文档关系", scope = document)
+        val provider = PersistentGraphKgProvider(store, object : KgProvider {
+            override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>): KgContextResult {
+                error("不应调用即时抽取")
+            }
+        }) { RagConfiguration(kgJitFallbackEnabled = false) }
+        val options = RagOptions(activeDocIds = listOf("doc"), enableKnowledgeGraph = true)
+
+        fun KgContextResult.relations() = paths.flatMap { it.edges }.map { it.relation }
+        val documents = provider.retrieveForTool("来源", "s", emptyList(), options.copy(enableMemory = false))
+        val history = provider.retrieveForTool("来源", "s", emptyList(), options.copy(enableDocs = false))
+        val neither = provider.retrieveForTool("来源", "s", emptyList(), options.copy(enableDocs = false, enableMemory = false))
+        val automatic = provider.retrieveContext("来源", "s", emptyList(), options.copy(enableDocs = false, enableMemory = false))
+
+        assertThat(documents.relations()).containsExactly("文档关系")
+        assertThat(history.relations()).containsExactly("历史关系")
+        assertThat(neither.paths).isEmpty()
+        assertThat(automatic.relations()).containsExactly("文档关系", "历史关系")
+    }
 }

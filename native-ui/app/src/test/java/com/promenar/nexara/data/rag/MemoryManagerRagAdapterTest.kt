@@ -11,6 +11,23 @@ import org.junit.Test
 
 class MemoryManagerRagAdapterTest {
     @Test
+    fun `工具调用关闭改写但自动调用保留全局改写配置`() = runTest {
+        val manager = mockk<MemoryManager>()
+        val options = mutableListOf<MemoryManager.RetrieveOptions>()
+        val global = RagConfiguration(enableQueryRewrite = true)
+        every { manager.ragConfig } returns global
+        coEvery { manager.retrieveContext(any(), any(), capture(options), any()) } returns
+            MemoryManager.RetrieveResult("", emptyList(), MemoryManager.RetrieveMetadata())
+        val adapter = MemoryManagerRagAdapter(manager)
+
+        adapter.retrieveForTool("q", "s", RagOptions(), null)
+        adapter.retrieveContext("q", "s", RagOptions(), null)
+
+        assertThat(options.map { it.allowQueryRewrite }).containsExactly(false, true).inOrder()
+        assertThat(options.map { it.configOverride }).containsExactly(global, global)
+    }
+
+    @Test
     fun `Adapter完整传递文档与文件夹范围而不丢失约束`() = runTest {
         val manager = mockk<MemoryManager>()
         val captured = slot<MemoryManager.RetrieveOptions>()
@@ -72,5 +89,11 @@ class MemoryManagerRagAdapterTest {
         assertThat(captured.captured.enableRerank).isTrue()
         assertThat(override.enableMemory).isTrue()
         assertThat(override.enableRerank).isTrue()
+        MemoryManagerRagAdapter(manager).retrieveForTool("q", "s", RagOptions(enableKnowledgeGraph = true), null)
+        assertThat(captured.captured.enableMemory).isTrue()
+        assertThat(captured.captured.enableDocs).isTrue()
+        assertThat(captured.captured.enableRerank).isTrue()
+        assertThat(captured.captured.configOverride!!.enableKnowledgeGraph).isTrue()
+        assertThat(captured.captured.allowQueryRewrite).isFalse()
     }
 }

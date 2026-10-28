@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.generation
 
+import kotlinx.serialization.encodeToString
+
 import com.promenar.nexara.data.model.TurnMemoryState
 import android.content.SharedPreferences
 import com.promenar.nexara.data.manager.ProviderManager
@@ -183,6 +185,9 @@ internal class DefaultChatGenerationRuntime(
     private val branchService: (() -> com.promenar.nexara.data.branch.BranchSessionService)? = null,
     private val branchPlans: com.promenar.nexara.data.branch.BranchPlanLedger? = null,
     private val sessionMailbox: com.promenar.nexara.data.branch.SessionMessageStore? = null,
+    private val knowledgeCatalog: com.promenar.nexara.data.knowledge.KnowledgeCatalogSource? = null,
+    private val knowledgeAccessPlanner: com.promenar.nexara.data.knowledge.KnowledgeAccessPlanner? = null,
+    private val knowledgeTurns: com.promenar.nexara.data.knowledge.KnowledgeTurnState? = null,
 ) : ChatGenerationRuntime {
     private var interactionMode = com.promenar.nexara.domain.generation.GenerationInteractionMode.INTERACTIVE
     private val compactionTurnState = ContextCompactionTurnState()
@@ -400,7 +405,7 @@ internal class DefaultChatGenerationRuntime(
             ragOptions = session.ragOptions,
             agentSystemPrompt = config.systemPrompt.takeIf(String::isNotBlank),
             sessionCustomPrompt = session.customPrompt,
-            agentRetrievalConfig = config.retrievalConfig,
+            retrievalMode = com.promenar.nexara.data.rag.effectiveRetrievalMode(agent?.retrievalConfig, session.options.toolsEnabled),
             agentMemoryPolicy = config.memoryPolicy,
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
             availableSkills = storedSkills,
@@ -518,7 +523,11 @@ internal class DefaultChatGenerationRuntime(
             },
             agentSystemPrompt = agentConfig.systemPrompt.takeIf(String::isNotBlank),
             sessionCustomPrompt = session.customPrompt,
-            agentRetrievalConfig = agentConfig.retrievalConfig,
+            retrievalMode = com.promenar.nexara.data.rag.effectiveRetrievalMode(agent?.retrievalConfig, session.options.toolsEnabled),
+            knowledgeCatalog = if (com.promenar.nexara.data.rag.effectiveRetrievalMode(agent?.retrievalConfig, session.options.toolsEnabled) != com.promenar.nexara.data.agent.AgentRetrievalMode.AUTO) {
+                knowledgeCatalog?.snapshot(session, com.promenar.nexara.data.rag.resolveEffectiveRagOptions(session.ragOptions, memoryPolicy = agentConfig.memoryPolicy))
+                    ?.let { com.promenar.nexara.data.knowledge.renderKnowledgeCatalog(it) }.orEmpty()
+            } else "",
             agentMemoryPolicy = agentConfig.memoryPolicy,
             workspace = sessionWorkspace?.invoke(request.sessionId),
             mounts = visibleMounts(request.sessionId),
@@ -575,6 +584,7 @@ internal class DefaultChatGenerationRuntime(
                 messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
             }
             cachedRetrieval = context.retrieval
+            knowledgeTurns?.seed(session, request.userMessageId ?: com.promenar.nexara.data.knowledge.knowledgeTurnId(session, assistantMessageId(request)), context.ragReferences)
         }
         val tools = routeTools
         val inference = session.inferenceParams.withDefaults(agentConfig.inferenceDefaults())
@@ -909,10 +919,17 @@ internal class DefaultChatGenerationRuntime(
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
-            call.id to tool?.let { branchService?.invoke()?.approvalTarget(session, call.name, call.arguments) ?: resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }, linuxFiles) }
+            call.id to tool?.let { if (call.name == "request_knowledge_access") {
+                val args = (com.promenar.nexara.domain.tool.ToolArgumentsValidator().validate(call.arguments) as? com.promenar.nexara.domain.tool.ToolArgumentsValidation.Valid)?.arguments
+                val base = (args?.get("knowledge_base") as? kotlinx.serialization.json.JsonPrimitive)?.content
+                knowledgeAccessPlanner?.preview(session.id, base)?.let { com.promenar.nexara.data.model.json.encodeToString(it) }
+            } else branchService?.invoke()?.approvalTarget(session, call.name, call.arguments) ?: resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }, linuxFiles) }
         }
         val mode = com.promenar.nexara.domain.model.ExecutionModeCodec.parseOrWorkspace(session.executionMode)
+        val turnId = request.userMessageId ?: com.promenar.nexara.data.knowledge.knowledgeTurnId(session, assistantMessageId(request))
+        knowledgeTurns?.seed(session, turnId)
         val requestedPendingIds = calls.filter { call ->
+            !(call.name == "request_knowledge_access" && knowledgeTurns?.isDenied(session.id, turnId) == true) &&
             com.promenar.nexara.domain.tool.ToolExecutionPolicy.requiresApproval(
                 mode, call.name, preparedByName[call.name]?.singleOrNull()?.risk ?: contentStrategy.riskForTool(call.name),
                 call.arguments, targets[call.id], usesLinux = session.runMode == com.promenar.nexara.domain.model.SessionRunMode.LINUX,
@@ -1086,7 +1103,7 @@ internal class DefaultChatGenerationRuntime(
                     agent = com.promenar.nexara.data.model.Agent(session.agentId, session.agentId),
                     session = session,
                     ragEnabled = rag?.enableMemory == true || rag?.enableDocs == true,
-                    ragUsage = context.ragUsage,
+                    ragUsage = com.promenar.nexara.data.knowledge.mergeKnowledgeUsage(context.ragUsage, knowledgeTurns?.usage(session.id, userMessageId)),
                     accumulatedUsage = TokenUsage(snapshot.inputTokens, snapshot.outputTokens, snapshot.totalTokens),
                     totalContextTokens = context.ragUsage?.ragSystem ?: 0,
                     modelId = session.modelId ?: "",

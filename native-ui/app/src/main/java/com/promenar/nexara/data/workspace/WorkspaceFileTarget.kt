@@ -5,6 +5,7 @@ import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.data.storage.isWorkspaceRoot
+import com.promenar.nexara.data.storage.requireWritable
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalMount
@@ -25,7 +26,7 @@ internal data class WorkspaceFileTarget(
     val sourceIdentity: String? = null,
     val accessPrefix: String = "",
 ) {
-    val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, workspaceMount?.id, destination?.workspaceId, destination?.destination?.name, linuxNamespace.toString(), sourceIdentity)
+    val identity: List<String?> get() = listOf(root?.uuid, root?.hash, root?.physicalRootPath, directory?.path, mount?.id, mount?.sourceType, mount?.sourceId, mount?.readOnly?.toString(), workspaceMount?.id, workspaceMount?.readOnly?.toString(), destination?.workspaceId, destination?.destination?.name, linuxNamespace.toString(), sourceIdentity)
     val mountIds: Map<String, String> get() = listOfNotNull(workspaceMount, mount).associate { it.alias to it.id }
     fun relative(path: String): String = privatePathPrefix?.let { path.removePrefix(it).ifEmpty { "/" } }
         ?: ExternalMountPaths.parse(path)?.second ?: path
@@ -127,6 +128,7 @@ internal class WorkspaceFileTargetResolver(
             val mount = if (alias == ExternalMountPaths.WORKSPACE_ALIAS) workspaceMount
                 else mounts.visible(sessionId).singleOrNull { it.alias == alias }
             if (mount == null || mount.unavailableReason != null) unavailable("挂载已失效或不属于当前会话")
+            if (writing) mount.requireWritable()
             val directory = when {
                 mount.isWorkspaceRoot -> (current as? SessionWorkspace.Directory)?.root
                 mount.isUserSkills -> userSkillsDirectory.canonicalFile
@@ -183,6 +185,7 @@ internal class WorkspaceFileTargetResolver(
             LinuxSessionPathKind.EXTERNAL -> {
                 val alias = ExternalMountPaths.parse(routed.path)?.first ?: unavailable("挂载已失效或不属于当前会话")
                 val mount = mounts.visible(sessionId).singleOrNull { it.alias == alias }
+                if (writing) mount?.requireWritable()
                 if (mount == null || mount.sourceType != "real_path" && !mount.isUserSkills) unavailable("挂载已失效或不属于当前会话")
                 builtinTarget(sessionId, routed.path, writing, destination, initializeMissingPrivateRoot).let {
                     if (mount.isUserSkills) it.copy(privatePathPrefix = LinuxSessionPaths.SKILLS_ROOT, accessPrefix = "/skills") else it

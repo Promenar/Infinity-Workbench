@@ -485,7 +485,7 @@ class ContextBuilderTest {
             }
         }
 
-        val builder = ContextBuilder(webSearchProvider = webSearchProvider)
+        val builder = ContextBuilder()
         val session = Session(
             id = "s1",
             agentId = "a1",
@@ -725,20 +725,7 @@ class ContextBuilderTest {
             sessionId = "s1",
             content = "tell me about X",
             assistantMsgId = "m1",
-            session = session,
-            agentRetrievalConfig = AgentRetrievalConfig(
-                memoryLimit = 2,
-                memoryThreshold = 0.25f,
-                docLimit = 3,
-                docThreshold = 0.2f,
-                rerankTopK = 9,
-                rerankFinalK = 4,
-                enableQueryRewrite = false,
-                enableHybridSearch = false,
-                hybridAlpha = 0.3f,
-                hybridBM25Boost = 1.7f
-            )
-        ))
+            session = session))
 
         val options = capturedOptions!!
         assertThat(options).isEqualTo(com.promenar.nexara.data.agent.AgentMemoryPolicy().clamp(RagOptions()))
@@ -1091,7 +1078,7 @@ class ContextBuilderTest {
             override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> =
                 error("旧开关不能触发被动搜索")
         }
-        val result = ContextBuilder(webSearchProvider = web).buildContext(ContextBuilderParams(
+        val result = ContextBuilder().buildContext(ContextBuilderParams(
             "s", "q", assistantMsgId = "m", session = Session("s", "a",
                 options = com.promenar.nexara.data.model.SessionOptions(webSearch = true)),
         ))
@@ -1192,9 +1179,7 @@ class ContextBuilderTest {
             sessionId = "s1",
             content = "hello",
             assistantMsgId = "m1",
-            session = session,
-            agentRetrievalConfig = AgentRetrievalConfig(enableKnowledgeGraph = false)
-        ))
+            session = session))
 
         assertThat(kgCalled).isTrue()
         assertThat(result.kgPaths).isEmpty()
@@ -1345,9 +1330,7 @@ class ContextBuilderTest {
             sessionId = "s1",
             content = "hello",
             assistantMsgId = "m1",
-            session = session,
-            agentRetrievalConfig = AgentRetrievalConfig(enableKnowledgeGraph = true, memoryLimit = 7)
-        ))
+            session = session))
 
         // 智能体旧调优值不进入生效配置。
         assertThat(capturedRagOptions).isNotNull()

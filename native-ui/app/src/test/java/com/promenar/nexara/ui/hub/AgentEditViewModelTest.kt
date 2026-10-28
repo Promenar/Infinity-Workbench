@@ -4,6 +4,8 @@ import android.content.SharedPreferences
 import app.cash.turbine.test
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.agent.AgentRetrievalMode
+import com.promenar.nexara.data.agent.KnowledgeFileAccess
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionMode
@@ -219,6 +221,66 @@ class AgentEditViewModelTest {
         vm.loadAgent("a1")
 
         assertThat(vm.ragConfig.value.docChunkSize).isEqualTo(500)
+    }
+
+    @Test
+    fun `继承全局检索参数时编辑普通字段保留智能体检索与文件访问设置`() = runTest {
+        val config = AgentRetrievalConfig(retrievalMode = AgentRetrievalMode.TOOL,
+            knowledgeFileAccess = KnowledgeFileAccess.ALWAYS)
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称", useInheritedConfig = true,
+            retrievalConfig = config))
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        assertThat(vm.retrievalConfig.value.retrievalMode).isEqualTo(AgentRetrievalMode.TOOL)
+        assertThat(vm.retrievalConfig.value.knowledgeFileAccess).isEqualTo(KnowledgeFileAccess.ALWAYS)
+        vm.setName("新名称")
+        advanceTimeBy(1_001)
+        runCurrent()
+
+        coVerify(exactly = 1) { repo.update(match {
+            it.name == "新名称" && it.useInheritedConfig && it.retrievalConfig == config
+        }) }
+    }
+
+    @Test
+    fun `切换继承与重置检索参数不重置智能体检索方式和文件授权`() = runTest {
+        val config = AgentRetrievalConfig(memoryLimit = 11, retrievalMode = AgentRetrievalMode.BOTH,
+            knowledgeFileAccess = KnowledgeFileAccess.OFF)
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称", useInheritedConfig = false,
+            retrievalConfig = config))
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        vm.setUseInheritedConfig(true)
+        assertThat(vm.retrievalConfig.value.retrievalMode).isEqualTo(AgentRetrievalMode.BOTH)
+        assertThat(vm.retrievalConfig.value.knowledgeFileAccess).isEqualTo(KnowledgeFileAccess.OFF)
+        vm.resetToGlobal()
+        vm.saveAgent("a1")
+
+        coVerify { repo.update(match {
+            it.useInheritedConfig && it.retrievalConfig?.retrievalMode == AgentRetrievalMode.BOTH &&
+                it.retrievalConfig?.knowledgeFileAccess == KnowledgeFileAccess.OFF &&
+                it.retrievalConfig?.memoryLimit == AgentRetrievalConfig().memoryLimit
+        }) }
+    }
+
+    @Test
+    fun `同一编辑器加载旧智能体时不沿用其他智能体的检索与文件访问设置`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "自定义", retrievalConfig =
+            AgentRetrievalConfig(retrievalMode = AgentRetrievalMode.TOOL, knowledgeFileAccess = KnowledgeFileAccess.ALWAYS)))
+        every { repo.observeById("legacy") } returns flowOf(Agent("legacy", "旧智能体"))
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        vm.loadAgent("legacy")
+        vm.setName("新名称")
+        advanceTimeBy(1_001)
+        runCurrent()
+
+        assertThat(vm.retrievalConfig.value.retrievalMode).isEqualTo(AgentRetrievalMode.AUTO)
+        assertThat(vm.retrievalConfig.value.knowledgeFileAccess).isEqualTo(KnowledgeFileAccess.ON_REQUEST)
+        coVerify(exactly = 1) { repo.update(match { it.id == "legacy" && it.retrievalConfig == null }) }
     }
 
     @Test

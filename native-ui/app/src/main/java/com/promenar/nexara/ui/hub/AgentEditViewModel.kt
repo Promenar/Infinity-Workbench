@@ -126,6 +126,8 @@ class AgentEditViewModel(
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
         initial.useInheritedConfig != useIn || initial.memoryPolicy != policy ||
+        (initial.retrievalConfig?.retrievalMode ?: com.promenar.nexara.data.agent.AgentRetrievalMode.AUTO) != retr.retrievalMode ||
+        (initial.retrievalConfig?.knowledgeFileAccess ?: com.promenar.nexara.data.agent.KnowledgeFileAccess.ON_REQUEST) != retr.knowledgeFileAccess ||
         initial.samplingValues() != values || initial.reasoningEffort != effort ||
         (!useIn && (initial.ragConfig != rag || initial.retrievalConfig != retr))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -168,10 +170,10 @@ class AgentEditViewModel(
 
                 if (agent.useInheritedConfig) {
                     _ragConfig.value = getGlobalRagConfig()
-                    _retrievalConfig.value = getGlobalRetrievalConfig()
+                    _retrievalConfig.value = getGlobalRetrievalConfig(agent.retrievalConfig)
                 } else {
                     _ragConfig.value = agent.ragConfig ?: getGlobalRagConfig()
-                    _retrievalConfig.value = agent.retrievalConfig ?: getGlobalRetrievalConfig()
+                    _retrievalConfig.value = agent.retrievalConfig ?: getGlobalRetrievalConfig(null)
                 }
                     _saveError.value = null
                     retryAction = null
@@ -192,8 +194,15 @@ class AgentEditViewModel(
         return ragConfigPersistence.loadRagConfig()
     }
 
-    private fun getGlobalRetrievalConfig(): com.promenar.nexara.data.agent.AgentRetrievalConfig {
-        return ragConfigPersistence.loadRetrievalConfig()
+    private fun getGlobalRetrievalConfig(
+        agentOptions: com.promenar.nexara.data.agent.AgentRetrievalConfig? = _retrievalConfig.value,
+    ): com.promenar.nexara.data.agent.AgentRetrievalConfig {
+        val options = agentOptions ?: com.promenar.nexara.data.agent.AgentRetrievalConfig()
+        // 检索方式与文件授权属于智能体，继承只更新全局检索参数。
+        return ragConfigPersistence.loadRetrievalConfig().copy(
+            retrievalMode = options.retrievalMode,
+            knowledgeFileAccess = options.knowledgeFileAccess,
+        )
     }
 
     fun setName(value: String) {
@@ -468,8 +477,11 @@ class AgentEditViewModel(
             reasoningEffort = _reasoningEffort.value,
             ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
             retrievalConfig = if (_useInheritedConfig.value) {
-                _memoryPolicy.value.takeIf { it != com.promenar.nexara.data.agent.AgentMemoryPolicy() }
-                    ?.let { com.promenar.nexara.data.agent.AgentRetrievalConfig(memoryPolicy = it) }
+                com.promenar.nexara.data.agent.AgentRetrievalConfig(
+                    memoryPolicy = _memoryPolicy.value,
+                    retrievalMode = _retrievalConfig.value.retrievalMode,
+                    knowledgeFileAccess = _retrievalConfig.value.knowledgeFileAccess,
+                ).takeUnless { it == com.promenar.nexara.data.agent.AgentRetrievalConfig() }
             } else {
                 _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
             },

@@ -436,6 +436,22 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `知识检索结构化数据经过执行器持久化仍可供详情读取`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val reference = com.promenar.nexara.data.model.RagReference("r", "文档内容", "资料", score = .8f)
+        val body = com.promenar.nexara.data.knowledge.KnowledgeSearchData("问题", listOf("documents"),
+            references = listOf(reference), results = listOf(com.promenar.nexara.data.knowledge.KnowledgeSearchHit("r", "K1")))
+        val encoded = com.promenar.nexara.data.model.json.encodeToString(com.promenar.nexara.data.knowledge.KnowledgeSearchData.serializer(), body)
+        val search = testSkill("knowledge_search") { ToolResult("search", "[K1] 文档内容", data = encoded) }
+        val registry = skillsRegistry(search)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+        executor.executeTools("s1", "m1", listOf(ToolCall("search", "knowledge_search", "{}")), preparedTools = registry.getAllTools(null))
+        messageManager.flushNonApprovalUpdatesNow("s1", "m1")
+        val stored = store.getSession("s1")!!.messages.single { it.id == "m1" }.executionSteps.orEmpty().single { it.type == "tool_result" }
+        assertThat(com.promenar.nexara.data.model.json.decodeFromString<com.promenar.nexara.data.knowledge.KnowledgeSearchData>(requireNotNull(stored.data))).isEqualTo(body)
+    }
+
+    @Test
     fun `关闭工具时搜索经过真实解析与账本执行且拒绝其它工具`() = testScope.runTest {
         seedSessionWithAssistant(toolsEnabled = false)
         var searches = 0
@@ -453,9 +469,11 @@ class ToolExecutorTest {
         executor.executeTools("s1", "m1", listOf(ToolCall("web", "web_search", "{}"), ToolCall("read", "read_file", "{}")), preparedTools = prepared)
         assertThat(searches).isEqualTo(1)
         assertThat(reads).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.single { it.toolCallId == "read" }.content).isEqualTo(disabledToolsMessage(true))
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", "web"))).isEqualTo(ToolLedgerState.SUCCEEDED)
         store.updateSession("s1") { it.copy(options = it.options.copy(keepWebSearchWhenToolsOff = false)) }
         executor.executeTools("s1", "m1", listOf(ToolCall("off", "web_search", "{}")), preparedTools = prepared)
+        assertThat(store.getSession("s1")!!.messages.single { it.toolCallId == "off" }.content).isEqualTo(disabledToolsMessage(false))
         assertThat(searches).isEqualTo(1)
         store.updateSession("s1") { it.copy(options = it.options.copy(keepWebSearchWhenToolsOff = true)) }
         every { settings.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns emptySet()

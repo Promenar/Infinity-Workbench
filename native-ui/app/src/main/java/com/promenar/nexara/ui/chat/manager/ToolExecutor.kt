@@ -143,7 +143,7 @@ class ToolExecutor internal constructor(
                 messageManager.addMessage(sessionId, Message(
                     id = "tool_shield_${java.util.UUID.randomUUID()}", role = MessageRole.TOOL,
                     toolCallId = call.id, parentMessageId = targetMsg.id, name = call.name,
-                    content = "[SYSTEM WARNING]: This tool is DISABLED by the user configuration.",
+                    content = disabledToolsMessage(sessionAllowedTools.any { it.function.name == "web_search" }),
                     thoughtSignature = targetMsg.thoughtSignature, createdAt = System.currentTimeMillis(),
                 ))
                 false
@@ -336,7 +336,7 @@ class ToolExecutor internal constructor(
         val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound, stepId, targetMsgId)
         hooks.afterSkillExecution()
         val failed = result.status != "success"
-        val safeResultData = sanitizeResultData(result.data, failed)
+        val safeResultData = sanitizeResultData(result.data, failed, currentSkill)
 
         // 解析并合并 active search 的 citations 注入消息体，高保真呈现在 UI 上
         var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
@@ -637,11 +637,26 @@ class ToolExecutor internal constructor(
         }
     }
 
-    private fun sanitizeResultData(data: String?, failed: Boolean): String? {
+    private fun sanitizeResultData(data: String?, failed: Boolean, skill: SkillDefinition): String? {
         if (failed || data.isNullOrBlank()) return null
         val trimmed = data.trim()
         sanitizeImageData(trimmed)?.let { return it }
         if (trimmed.length > MAX_SAFE_RESULT_DATA_CHARS) return null
+        if (skill.sourceId == "builtin" && skill.runtimeToolId == "knowledge_search" && skill.name == "knowledge_search") {
+            return runCatching {
+                val search = com.promenar.nexara.data.model.json.decodeFromString<com.promenar.nexara.data.knowledge.KnowledgeSearchData>(trimmed)
+                require(search.references.size <= 10 && search.references.map { it.id }.distinct().size == search.references.size)
+                require(search.results.map { it.referenceId } == search.references.map { it.id })
+                require(search.results.all { it.citationId.matches(Regex("K[1-9][0-9]*")) })
+                com.promenar.nexara.data.model.json.encodeToString(search)
+            }.getOrNull()
+        }
+        if (skill.sourceId == "builtin" && skill.runtimeToolId == "request_knowledge_access" && skill.name == "request_knowledge_access") {
+            return runCatching {
+                com.promenar.nexara.data.model.json.encodeToString(
+                    com.promenar.nexara.data.model.json.decodeFromString<com.promenar.nexara.data.knowledge.KnowledgeAccessPreview>(trimmed))
+            }.getOrNull()
+        }
         return runCatching {
             val citations = kotlinx.serialization.json.Json.decodeFromString<
                 List<com.promenar.nexara.data.model.Citation>
@@ -730,4 +745,14 @@ class ToolExecutor internal constructor(
             "(?i)(?:authorization|bearer\\s|sk-|api[_-]?key|/(?:Users|home|private|var|tmp)/|[A-Z]:\\\\)",
         )
     }
+}
+
+internal fun disabledToolsMessage(webSearchAllowed: Boolean): String = if (webSearchAllowed) {
+    """[SYSTEM WARNING]: All tools except web_search are currently DISABLED by the user configuration.
+You CANNOT use these other tools in this turn.
+Please STOP trying to use these tools and answer the user's request directly using your internal knowledge or the permitted web_search."""
+} else {
+    """[SYSTEM WARNING]: Tool usage is currently DISABLED by the user configuration.
+You CANNOT use tools in this turn.
+Please STOP trying to use tools and answer the user's request directly using your internal knowledge."""
 }

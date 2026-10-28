@@ -4,6 +4,7 @@ import android.content.Context
 import com.promenar.nexara.data.local.db.dao.ExternalMountDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceDao
+import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceEntity
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.session.SessionExecutionGate
@@ -42,7 +43,10 @@ class DirectoryWorkspaceFilesTest {
         val row = WorkspaceEntity("project", kind, "项目", if (kind == WorkspaceEntity.KIND_PROJECT) root.name else root.path, 1)
         val sessions = mockk<SessionDao>()
         val workspaces = mockk<WorkspaceDao>()
-        coEvery { sessions.getById("s") } returns mockk { every { workspaceId } returns "project" }
+        coEvery { sessions.getById("s") } returns SessionEntity(
+            id = "s", agentId = "a", workspaceId = "project", branchPlanJson = null,
+            worktreeDirectory = null, createdAt = 1, updatedAt = 1,
+        )
         coEvery { workspaces.getById("project") } returns row
         val shared = mockk<SharedWorkspaceAccess> { every { root(row.location) } returns root }
         val resolver = SessionWorkspaceResolver(sessions, workspaces, checkNotNull(root.parentFile), shared)

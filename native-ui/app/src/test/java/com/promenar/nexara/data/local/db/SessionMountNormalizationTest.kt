@@ -38,7 +38,8 @@ class SessionMountNormalizationTest {
             assertThat(all.map { it.id }.distinct()).hasSize(6)
             assertThat(all.map { it.id }).containsNoneOf("global", "global-2")
             assertThat(all.map { it.scopeKey }).containsExactly("a", "a", "a", "a", "b", "b")
-            assertThat(all.any { it.readOnly }).isFalse()
+            assertThat(all.filter { it.readOnly }.map { it.sourceId }).containsExactly(
+                "content://test/tree/local", "content://test/tree/global", "content://test/tree/global")
             assertThat(dao.visible("a").map { it.alias }).containsExactly("资料", "资料-2", "资料-3", "其它")
             assertThat(dao.observeVisible("b").first().map { it.alias }).containsExactly("资料", "其它")
             assertThat(dao.visible("")).isEmpty()
@@ -97,8 +98,20 @@ class SessionMountNormalizationTest {
         }) { room ->
             val all = room.externalMountDao().all()
             assertThat(all.map { it.scopeKey }).containsExactly("a")
-            assertThat(all.single().readOnly).isFalse()
+            assertThat(all.single().readOnly).isTrue()
             assertThat(all.single().alias).isEqualTo("旧资料")
+        }
+    }
+
+    @Test fun `会话知识库挂载的只读标志在重复打开时保持`() = runBlocking {
+        opened(seed = { db ->
+            session(db, "a")
+            db.execSQL("INSERT INTO external_mounts VALUES ('kb', 'knowledge', 'knowledge_base', 'kb-root', 'a', 1, 123, NULL)")
+        }, reopen = true) { room ->
+            val row = room.externalMountDao().visible("a").single()
+            assertThat(row.sourceType).isEqualTo("knowledge_base")
+            assertThat(row.sourceId).isEqualTo("kb-root")
+            assertThat(row.readOnly).isTrue()
         }
     }
 

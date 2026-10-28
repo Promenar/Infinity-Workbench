@@ -29,6 +29,13 @@ class ExternalMountCommandAccessTest {
         assertThat(access.unavailableReason).contains("文件工具")
     }
 
+    @Test fun `只读真实路径挂载不向命令暴露路径`() {
+        val readOnly = mount.copy(readOnly = true)
+        assertThat(readOnly.commandAccessible).isFalse()
+        assertThat(ExternalMountPaths.commandAccess(readOnly, "/a.txt").accessible).isFalse()
+        assertThat(ExternalMountPaths.commandAccess(readOnly).realPath).isNull()
+    }
+
     @Test fun `不可用与未知来源不返回命令路径`() {
         val unavailable = ExternalMountPaths.commandAccess(mount.copy(unavailableReason = "权限被撤销"))
         assertThat(unavailable.accessible).isFalse()

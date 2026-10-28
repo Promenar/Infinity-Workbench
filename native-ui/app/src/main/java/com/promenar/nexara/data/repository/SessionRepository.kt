@@ -29,6 +29,7 @@ open class SessionRepository(
     private val sessionDao: SessionDao,
     private val messageDao: MessageDao,
     private val newSessionRunMode: () -> SessionRunMode = { SessionRunMode.BUILTIN },
+    private val onSessionCreated: suspend (Session) -> Unit = {},
 ) : ISessionRepository,
     com.promenar.nexara.domain.repository.ISessionRepository {
 
@@ -38,7 +39,17 @@ open class SessionRepository(
     // ── Data-layer ISessionRepository (existing) ────────────────────────
 
     override suspend fun create(session: Session) {
-        sessionDao.insert(session.copy(runMode = session.runMode ?: newSessionRunMode()).toEntity())
+        val isNew = sessionDao.getById(session.id) == null
+        val created = session.copy(runMode = session.runMode ?: newSessionRunMode())
+        sessionDao.insert(created.toEntity())
+        // 创建后附加动作（知识库自动挂载）失败不影响会话本身的创建。
+        if (isNew) try {
+            onSessionCreated(created)
+        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            NexaraLogger.logError("[SessionRepository] 新会话创建回调失败", failure)
+        }
     }
 
     open suspend fun update(session: Session) {
@@ -163,7 +174,7 @@ open class SessionRepository(
             createdAt = now,
             updatedAt = now
         )
-        sessionDao.insert(dataSession.toEntity())
+        create(dataSession)
         return dataSession.toDomainSession()
     }
 

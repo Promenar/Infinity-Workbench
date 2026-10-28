@@ -15,6 +15,8 @@ class DefaultSessionToolResolver(
     private val settings: SharedPreferences,
     private val skillRegistry: SkillRegistry?,
     private val longTermMemoryAllowed: (Session) -> Boolean = { false },
+    private val knowledgeSearchAllowed: (Session) -> Boolean = { false },
+    private val knowledgeAccessAllowed: (Session) -> Boolean = { false },
     private val mediaCapabilities: (Session) -> com.promenar.nexara.data.model.ModelCapabilities = { com.promenar.nexara.data.model.ModelCapabilities() },
 ) : SessionToolResolver {
     override fun resolve(session: Session): List<ProtocolTool> {
@@ -25,6 +27,8 @@ class DefaultSessionToolResolver(
         val canView = capabilities.vision || capabilities.audioInput || capabilities.videoUnderstanding
         return allTools.filter { tool ->
             if (!SessionToolAvailability.allows(session, tool)) return@filter false
+            if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "knowledge_search" && !knowledgeSearchAllowed(session)) return@filter false
+            if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "request_knowledge_access" && !knowledgeAccessAllowed(session)) return@filter false
             if (tool.sourceId == "builtin" && tool.function.name == "session_branch" &&
                 (session.parentSessionId != null || session.branchPlanJson != null || session.parentSessionDeleted)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } in com.promenar.nexara.data.memory.LongTermMemoryPreferences.TOOL_IDS && !memoryToolsAllowed) return@filter false
