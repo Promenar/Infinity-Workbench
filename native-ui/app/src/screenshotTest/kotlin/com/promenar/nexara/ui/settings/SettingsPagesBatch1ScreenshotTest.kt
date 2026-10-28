@@ -20,6 +20,7 @@ import com.promenar.nexara.data.ssh.SshHost
 import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.data.termux.TermuxCommandResult
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenState
@@ -45,17 +46,28 @@ private val Batch1ToolsState = SkillsSettingsVisualState(
     loopLimit = 50,
     tokenLimit = 0,
     repeatLimit = 3,
-    sshHostCount = 0,
-    termuxAvailability = TermuxAvailability(false, null, false),
-    gitCredentialCount = 0,
 )
 
+/** 执行环境与连接各行已移到设置首页；非预算变体展示这一组。 */
 @Composable
 private fun Batch1ToolsContent(budgetOnly: Boolean = false) {
     NexaraSettingsPageLayout(title = stringResource(R.string.skills_title), onBack = {}) { padding ->
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding)) {
-            if (budgetOnly) AgentRuntimeSettingsCard(Batch1ToolsState, SkillsSettingsVisualActions())
-            else SkillsSettingsHeaderContent(Batch1ToolsState, SkillsSettingsVisualActions())
+            if (budgetOnly) {
+                AgentRuntimeSettingsCard(Batch1ToolsState, SkillsSettingsVisualActions())
+            } else {
+                NexaraSettingsSection(title = stringResource(R.string.settings_ia_section_environment)) {
+                    EnvironmentConnectionRows(
+                        state = EnvironmentConnectionState(
+                            termuxAvailability = TermuxAvailability(false, null, false),
+                            sshHostCount = 0,
+                            networkHostCount = 0,
+                            gitCredentialCount = 0,
+                        ),
+                        onOpen = {},
+                    )
+                }
+            }
         }
     }
 }
@@ -144,6 +156,15 @@ fun toolsBudgetBatch1() = Batch1PagesTheme {
 @Composable
 fun searchConfigBatch1() = Batch1PagesTheme {
     SearchConfigContent()
+}
+
+@PreviewTest
+@Preview(name = "搜索配置 域名过滤 深色中文 411", widthDp = 411, heightDp = 1200, locale = "zh-rCN")
+@Composable
+fun searchConfigDomainsBatch1() = Batch1PagesTheme {
+    SearchConfigContent(
+        searchState = SearchConfigState(includeDomains = listOf("developer.android.com", "kotlinlang.org")),
+    )
 }
 
 @PreviewTest

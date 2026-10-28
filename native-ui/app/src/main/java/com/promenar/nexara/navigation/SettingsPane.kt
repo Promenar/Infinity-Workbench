@@ -41,28 +41,30 @@ internal val SettingsPaneRoots: List<String> = listOf(
     NavDestinations.PROVIDER_LIST,
     NavDestinations.DEFAULT_MODELS,
     NavDestinations.LOCAL_MODELS,
-    NavDestinations.RAG_GLOBAL_CONFIG,
-    NavDestinations.RAG_ADVANCED,
-    NavDestinations.LONG_TERM_MEMORY,
+    NavDestinations.AGENT_BUDGET,
+    NavDestinations.BUILTIN_TOOLS,
     NavDestinations.SKILLS_CONFIG,
+    NavDestinations.MCP_SERVERS,
+    NavDestinations.RAG_GLOBAL_CONFIG,
+    NavDestinations.RAG_ADVANCED_KG,
+    NavDestinations.LONG_TERM_MEMORY,
+    NavDestinations.RAG_DEBUG,
+    NavDestinations.LINUX_ENVIRONMENT,
+    NavDestinations.TERMUX_CONFIG,
+    NavDestinations.SSH_CONFIG,
+    NavDestinations.TAILSCALE_CONFIG,
+    NavDestinations.NETWORK_ACCESS,
+    NavDestinations.GIT_CREDENTIALS,
+    NavDestinations.BACKGROUND_ACTIVITY,
     NavDestinations.TOKEN_USAGE,
     NavDestinations.BACKUP_SETTINGS,
 )
 
 /** 能在右列内打开的设置页（路由的首段）；终端、文件、知识图谱、会话等整页内容不在其中。 */
 private val SettingsPaneRouteBases: Set<String> = SettingsPaneRoots.toSet() + setOf(
-    NavDestinations.RAG_ADVANCED_KG,
-    NavDestinations.RAG_DEBUG,
+    NavDestinations.RAG_VECTOR_STATS,
     "provider_form",
     "provider_models",
-    NavDestinations.SKILLS_CONFIG,
-    NavDestinations.SSH_CONFIG,
-    NavDestinations.TERMUX_CONFIG,
-    NavDestinations.GIT_CREDENTIALS,
-    NavDestinations.TAILSCALE_CONFIG,
-    NavDestinations.NETWORK_ACCESS,
-    NavDestinations.BACKGROUND_ACTIVITY,
-    NavDestinations.LINUX_ENVIRONMENT,
     NavDestinations.LINUX_PACKAGES,
     NavDestinations.LINUX_MIRRORS,
 )
@@ -107,8 +109,22 @@ private val PLACEHOLDER = Regex("\\{([^}]+)\\}")
 internal fun settingsPagesAboveMainTabs(routesAboveMain: List<String?>): List<String>? {
     if (routesAboveMain.isEmpty() || routesAboveMain.any { it == null || !isSettingsPaneRoute(it) }) return null
     val routes = routesAboveMain.filterNotNull()
-    return routes.takeIf { it.first() in SettingsPaneRoots }
+    return routes.takeIf { it.first() in SettingsPaneRoots && it.first() !in OpenedFromSessionRoots }
 }
+
+/**
+ * 首页“执行环境与连接”各页也能从会话里直接打开（例如可达范围跳网络访问），
+ * 只凭栈底分不清来源，变宽时不收回。
+ */
+private val OpenedFromSessionRoots: Set<String> = setOf(
+    NavDestinations.LINUX_ENVIRONMENT,
+    NavDestinations.TERMUX_CONFIG,
+    NavDestinations.SSH_CONFIG,
+    NavDestinations.TAILSCALE_CONFIG,
+    NavDestinations.NETWORK_ACCESS,
+    NavDestinations.GIT_CREDENTIALS,
+    NavDestinations.BACKGROUND_ACTIVITY,
+)
 
 /** 返回栈的逐层操作：公开的 NavController 接口只能看到栈顶与其下一层，收回整页时逐层弹出。 */
 internal interface SettingsBackStack {

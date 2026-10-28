@@ -129,7 +129,7 @@ class ModelPickerMaterialContractTest {
         val producerSources = listOf(
             source("ui/hub/AgentHubScreen"),
             source("ui/hub/UserSettingsHomeScreen"),
-            source("ui/rag/RagAdvancedScreen"),
+            source("ui/rag/KnowledgeModelPicker"),
             source("ui/rag/RagViewModel"),
         )
 

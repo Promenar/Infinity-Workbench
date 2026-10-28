@@ -42,15 +42,16 @@ class RagKnowledgeGraphTask10AccessibilityTest {
     fun advancedRagDoesNotExposeFourRuntimeUnusedControls() {
         rule.setContent {
             NexaraTheme {
-                RagAdvancedScreenContent(
-                    state = RagAdvancedScreenState(
+                // 原始图谱参数都收在“调试与高级 › 高级参数”里，展开后检查。
+                KnowledgeDebugSettingsContent(
+                    state = KnowledgeDebugSettingsState(
                         config = RagConfiguration(
                             jitMaxChunks = 128,
                             kgDomainAuto = true,
                             enableIncrementalHash = true,
                             enableLocalPreprocess = true,
                         ),
-                        allModels = emptyList(),
+                        initiallyExpanded = true,
                     ),
                 )
             }

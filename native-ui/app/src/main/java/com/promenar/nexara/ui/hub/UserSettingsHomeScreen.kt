@@ -34,7 +34,11 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Loop
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Toll
@@ -52,8 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,7 +85,10 @@ import com.promenar.nexara.ui.common.NexaraPopoverSpec
 import com.promenar.nexara.ui.common.nexaraPopoverAnchor
 import com.promenar.nexara.ui.common.rememberNexaraPopoverAnchor
 import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.settings.EnvironmentConnectionRows
+import com.promenar.nexara.ui.settings.EnvironmentConnectionState
 import com.promenar.nexara.ui.settings.SettingsViewModel
+import com.promenar.nexara.ui.settings.rememberEnvironmentConnectionState
 import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -101,6 +108,8 @@ fun UserSettingsHomeScreen(
     val userAvatar by viewModel.userAvatar.collectAsState()
     val language by viewModel.language.collectAsState()
     val settingsError by viewModel.settingsError.collectAsState()
+    val mcpServers by viewModel.mcpServers.collectAsState()
+    val environment = rememberEnvironmentConnectionState()
     val diagnosticsChooserTitle = stringResource(R.string.settings_diagnostics_export)
     val coroutineScope = rememberCoroutineScope()
 
@@ -113,13 +122,16 @@ fun UserSettingsHomeScreen(
         onFailure = viewModel::reportAvatarImportFailure,
     )
 
-    val state = remember(userName, userAvatar, settingsError, selectedRoute) {
+    val state = remember(userName, userAvatar, settingsError, selectedRoute, language, mcpServers.size, environment) {
         UserSettingsHomeScreenState(
             userName = userName,
             selectedRoute = selectedRoute,
             userAvatar = userAvatar,
             error = settingsError,
-            localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
+            localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE,
+            language = language,
+            mcpServerCount = mcpServers.size,
+            environment = environment,
         )
     }
     val exportDiagnostics: () -> Unit = {
@@ -202,6 +214,10 @@ internal data class UserSettingsHomeScreenState(
     val userAvatar: String? = null,
     val localInferenceAvailable: Boolean = false,
     val error: SettingsAsyncErrorCode? = null,
+    /** 偏好中保存的界面语言（"zh" / "en"），语言行按它显示，不读系统区域。 */
+    val language: String = "zh",
+    val mcpServerCount: Int? = null,
+    val environment: EnvironmentConnectionState = EnvironmentConnectionState(),
 )
 
 internal data class UserSettingsHomeScreenActions(
@@ -278,8 +294,7 @@ internal fun UserSettingsHomeScreenContent(
                     NexaraValueRow(
                         icon = Icons.Rounded.Language,
                         title = stringResource(R.string.settings_language),
-                        value = stringResource(if (LocalConfiguration.current.locales[0].language == "en")
-                            R.string.settings_language_en else R.string.settings_language_zh),
+                        value = stringResource(if (state.language == "en") R.string.settings_language_en else R.string.settings_language_zh),
                         onClick = actions.onShowLanguageDialog,
                         modifier = if (languageAnchor != null) Modifier.nexaraPopoverAnchor(languageAnchor) else Modifier,
                     )
@@ -295,7 +310,7 @@ internal fun UserSettingsHomeScreenContent(
 
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.settings_section_ai_models),
+                    title = stringResource(R.string.settings_ia_section_models),
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
@@ -308,6 +323,7 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.settings_default_models),
+                        subtitle = stringResource(R.string.settings_ia_default_models_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
                         selected = state.selectedRoute == NavDestinations.DEFAULT_MODELS,
                         modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
@@ -318,8 +334,8 @@ internal fun UserSettingsHomeScreenContent(
                                 icon = Icons.Rounded.Memory,
                                 title = stringResource(R.string.settings_local_models),
                                 subtitle = stringResource(R.string.settings_local_models_desc),
-                                onClick = { actions.onNavigateToSecondary("local_models") },
-                                selected = state.selectedRoute == "local_models",
+                                onClick = { actions.onNavigateToSecondary(NavDestinations.LOCAL_MODELS) },
+                                selected = state.selectedRoute == NavDestinations.LOCAL_MODELS,
                             )
                         }
                     }
@@ -328,58 +344,110 @@ internal fun UserSettingsHomeScreenContent(
 
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.settings_section_knowledge_retrieval),
+                    title = stringResource(R.string.settings_ia_section_agent_runtime),
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
-                        icon = Icons.Rounded.Psychology,
-                        title = stringResource(R.string.settings_rag_config),
-                        subtitle = stringResource(R.string.settings_batch1_home_rag_summary),
-                        onClick = { actions.onNavigateToSecondary("rag_global_config") },
-                        selected = state.selectedRoute == "rag_global_config",
+                        icon = Icons.Rounded.Loop,
+                        title = stringResource(R.string.settings_execution_budget),
+                        subtitle = stringResource(R.string.settings_ia_budget_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.AGENT_BUDGET) },
+                        selected = state.selectedRoute == NavDestinations.AGENT_BUDGET,
                     )
                     UserSettingsNavigationItem(
-                        icon = Icons.Rounded.Search,
-                        title = stringResource(R.string.settings_advanced_retrieval),
-                        subtitle = stringResource(R.string.settings_batch1_home_retrieval_summary),
-                        onClick = { actions.onNavigateToSecondary("rag_advanced") },
-                        selected = state.selectedRoute == "rag_advanced",
+                        icon = Icons.Rounded.Build,
+                        title = stringResource(R.string.settings_ia_builtin_tools_title),
+                        subtitle = stringResource(R.string.settings_ia_builtin_tools_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.BUILTIN_TOOLS) },
+                        selected = state.selectedRoute == NavDestinations.BUILTIN_TOOLS,
                     )
                     UserSettingsNavigationItem(
-                        icon = Icons.Rounded.Bookmarks,
-                        title = stringResource(R.string.ltm_title),
-                        subtitle = stringResource(R.string.settings_long_term_memory_summary),
-                        onClick = { actions.onNavigateToSecondary("long_term_memory") },
-                        selected = state.selectedRoute == "long_term_memory",
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = stringResource(R.string.settings_ia_skills_title),
+                        subtitle = stringResource(R.string.settings_ia_skills_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.SKILLS_CONFIG) },
+                        selected = state.selectedRoute == NavDestinations.SKILLS_CONFIG,
+                    )
+                    UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Hub,
+                        title = stringResource(R.string.settings_ia_mcp_title),
+                        subtitle = when (val count = state.mcpServerCount) {
+                            null, 0 -> stringResource(R.string.settings_ia_mcp_empty)
+                            else -> pluralStringResource(R.plurals.settings_ia_mcp_count, count, count)
+                        },
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.MCP_SERVERS) },
+                        selected = state.selectedRoute == NavDestinations.MCP_SERVERS,
                     )
                 }
             }
 
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.settings_section_tools_data),
+                    title = stringResource(R.string.settings_ia_section_knowledge),
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
-                        icon = Icons.Rounded.Build,
-                        title = stringResource(R.string.settings_skills),
-                        subtitle = stringResource(R.string.settings_batch1_home_skills_summary),
-                        onClick = { actions.onNavigateToSecondary("skills_config") },
-                        selected = state.selectedRoute == "skills_config",
+                        icon = Icons.Rounded.Psychology,
+                        title = stringResource(R.string.settings_ia_kb_settings_title),
+                        subtitle = stringResource(R.string.settings_ia_kb_settings_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.RAG_GLOBAL_CONFIG) },
+                        selected = state.selectedRoute == NavDestinations.RAG_GLOBAL_CONFIG,
                     )
+                    UserSettingsNavigationItem(
+                        icon = Icons.Rounded.AccountTree,
+                        title = stringResource(R.string.settings_ia_kg_title),
+                        subtitle = stringResource(R.string.settings_ia_kg_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.RAG_ADVANCED_KG) },
+                        selected = state.selectedRoute == NavDestinations.RAG_ADVANCED_KG,
+                    )
+                    UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Bookmarks,
+                        title = stringResource(R.string.ltm_title),
+                        subtitle = stringResource(R.string.settings_ia_ltm_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.LONG_TERM_MEMORY) },
+                        selected = state.selectedRoute == NavDestinations.LONG_TERM_MEMORY,
+                    )
+                    UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Tune,
+                        title = stringResource(R.string.settings_ia_debug_title),
+                        subtitle = stringResource(R.string.settings_ia_debug_desc),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.RAG_DEBUG) },
+                        selected = state.selectedRoute == NavDestinations.RAG_DEBUG,
+                    )
+                }
+            }
+
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_ia_section_environment),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    EnvironmentConnectionRows(
+                        state = state.environment,
+                        onOpen = actions.onNavigateToSecondary,
+                        selectedRoute = state.selectedRoute,
+                    )
+                }
+            }
+
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_ia_section_data),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Toll,
                         title = stringResource(R.string.settings_token_usage),
                         subtitle = stringResource(R.string.settings_batch1_home_token_summary),
-                        onClick = { actions.onNavigateToSecondary("token_usage") },
-                        selected = state.selectedRoute == "token_usage",
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.TOKEN_USAGE) },
+                        selected = state.selectedRoute == NavDestinations.TOKEN_USAGE,
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Backup,
                         title = stringResource(R.string.settings_backup),
                         subtitle = stringResource(R.string.settings_backup_desc),
-                        onClick = { actions.onNavigateToSecondary("backup_settings") },
-                        selected = state.selectedRoute == "backup_settings",
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.BACKUP_SETTINGS) },
+                        selected = state.selectedRoute == NavDestinations.BACKUP_SETTINGS,
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.BugReport,
@@ -526,7 +594,7 @@ internal fun GitHubProjectFooter(onOpen: () -> Unit) {
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
     ) {
         Text(
-            text = "Nexara AI • Project Narcis",
+            text = stringResource(R.string.settings_ia_home_footer),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

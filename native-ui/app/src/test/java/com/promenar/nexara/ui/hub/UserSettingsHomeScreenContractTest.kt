@@ -58,9 +58,11 @@ class UserSettingsHomeScreenContractTest {
             .substringBefore("private fun UserProfileListItem(")
         val orderedMarkers = listOf(
             "settings_section_general",
-            "settings_section_ai_models",
-            "settings_section_knowledge_retrieval",
-            "settings_section_tools_data",
+            "settings_ia_section_models",
+            "settings_ia_section_agent_runtime",
+            "settings_ia_section_knowledge",
+            "settings_ia_section_environment",
+            "settings_ia_section_data",
             "settings_section_about",
         )
         val indices = orderedMarkers.map(content::indexOf)
@@ -70,8 +72,8 @@ class UserSettingsHomeScreenContractTest {
         assertThat(content.substringBefore("settings_section_general"))
             .contains("UserProfileListItem(")
         assertThat(content).doesNotContain("settings_section_account")
-        val aiSection = content.substringAfter("settings_section_ai_models")
-            .substringBefore("settings_section_knowledge_retrieval")
+        val aiSection = content.substringAfter("settings_ia_section_models")
+            .substringBefore("settings_ia_section_agent_runtime")
         assertThat(aiSection.indexOf("PROVIDER_LIST")).isLessThan(aiSection.indexOf("DEFAULT_MODELS"))
     }
 
@@ -100,10 +102,35 @@ class UserSettingsHomeScreenContractTest {
         assertThat(screenSource).doesNotContain("settings_section_account")
         assertThat(screenSource).contains("BettboxListGroup(")
         assertThat(screenSource).contains("settings_section_general")
-        assertThat(screenSource).contains("settings_section_ai_models")
-        assertThat(screenSource).contains("settings_section_knowledge_retrieval")
-        assertThat(screenSource).contains("settings_section_tools_data")
+        assertThat(screenSource).contains("settings_ia_section_models")
+        assertThat(screenSource).contains("settings_ia_section_agent_runtime")
+        assertThat(screenSource).contains("settings_ia_section_knowledge")
+        assertThat(screenSource).contains("settings_ia_section_environment")
+        assertThat(screenSource).contains("settings_ia_section_data")
         assertThat(screenSource).contains("settings_section_about")
+    }
+
+    @Test
+    fun `智能体运行与知识库分组各四行且按决定顺序排列`() {
+        val content = screenSource.substringAfter("fun UserSettingsHomeScreenContent(")
+            .substringBefore("private fun UserProfileListItem(")
+        val runtime = content.substringAfter("settings_ia_section_agent_runtime").substringBefore("settings_ia_section_knowledge")
+        val runtimeRoutes = listOf("AGENT_BUDGET", "BUILTIN_TOOLS", "SKILLS_CONFIG", "MCP_SERVERS").map(runtime::indexOf)
+        assertThat(runtimeRoutes).doesNotContain(-1)
+        assertThat(runtimeRoutes).isInStrictOrder()
+        val knowledge = content.substringAfter("settings_ia_section_knowledge").substringBefore("settings_ia_section_environment")
+        val knowledgeRoutes = listOf("RAG_GLOBAL_CONFIG", "RAG_ADVANCED_KG", "LONG_TERM_MEMORY", "RAG_DEBUG").map(knowledge::indexOf)
+        assertThat(knowledgeRoutes).doesNotContain(-1)
+        assertThat(knowledgeRoutes).isInStrictOrder()
+        assertThat(content).contains("EnvironmentConnectionRows(")
+    }
+
+    @Test
+    fun `语言行按偏好显示且页脚文案走资源`() {
+        assertThat(screenSource).doesNotContain("LocalConfiguration.current.locales")
+        assertThat(screenSource).contains("state.language == \"en\"")
+        assertThat(screenSource).doesNotContain("\"Nexara AI • Project Narcis\"")
+        assertThat(screenSource).contains("settings_ia_home_footer")
     }
 
     @Test

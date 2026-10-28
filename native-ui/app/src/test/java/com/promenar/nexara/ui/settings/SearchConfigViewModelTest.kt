@@ -39,6 +39,30 @@ class SearchConfigViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `域名清单按换行逗号空白拆分并规整为主机名`() {
+        assertThat(parseDomainList("https://Example.com/path, *.docs.rs\n\tgithub.com.  example.com\n\n"))
+            .containsExactly("example.com", "docs.rs", "github.com").inOrder()
+        assertThat(parseDomainList("  ")).isEmpty()
+    }
+
+    @Test
+    fun `设置包含与排除域名会写入状态并在重建后恢复`() = runTest(dispatcher) {
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+
+        viewModel.setIncludeDomains("a.com\nb.com")
+        viewModel.setExcludeDomains("spam.net")
+        assertThat(viewModel.uiState.value.includeDomains).containsExactly("a.com", "b.com").inOrder()
+        assertThat(viewModel.uiState.value.excludeDomains).containsExactly("spam.net")
+
+        val restored = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        assertThat(restored.uiState.value.includeDomains).containsExactly("a.com", "b.com").inOrder()
+        viewModel.setIncludeDomains("")
+        assertThat(viewModel.uiState.value.includeDomains).isEmpty()
+    }
+
+    @Test
     fun `production factory creates the dependency injected AndroidViewModel`() {
         val created = SearchConfigViewModel.factory(app, secrets, dispatcher)
             .create(SearchConfigViewModel::class.java)

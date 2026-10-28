@@ -167,7 +167,8 @@ class NavigationMotionContractTest {
         mapOf(
             "git/GitChangesPanel.kt" to listOf("label = \"git_panel_page\"", "label = \"git_panel_tab\"", "label = \"git_panel_title\"", "GitLoadContent("),
             "chat/components/RagDetailsSheet.kt" to listOf("label = \"rag_details_tab\""),
-            "settings/SkillsScreen.kt" to listOf("label = \"skills_tab\""),
+            // 智能体运行各节已拆为独立页面，没有标签切换；改为检查高级参数的展开过渡。
+            "common/NexaraSettingsExpandableRow.kt" to listOf("AnimatedVisibility(", "label = \"settings_expandable_chevron\""),
             "welcome/OnboardingScreen.kt" to listOf("label = \"onboarding_intro\"", "label = \"onboarding_step\""),
             "rag/DocEditorScreen.kt" to listOf("label = \"doc_editor_state\"", "exit = ExitTransition.None"),
             "rag/KnowledgeGraphScreen.kt" to listOf("label = \"kg_canvas_phase\""),

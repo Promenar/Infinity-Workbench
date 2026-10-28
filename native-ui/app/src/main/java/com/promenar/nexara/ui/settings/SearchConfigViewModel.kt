@@ -270,6 +270,19 @@ class SearchConfigViewModel(
         prefs.edit().putInt("result_count", count).apply()
     }
 
+    /** 对话框按行编辑整份名单（T2）。 */
+    fun setIncludeDomains(text: String) {
+        val list = parseDomainList(text)
+        _uiState.update { it.copy(includeDomains = list) }
+        prefs.edit().putString("include_domains", Json.encodeToString(list)).apply()
+    }
+
+    fun setExcludeDomains(text: String) {
+        val list = parseDomainList(text)
+        _uiState.update { it.copy(excludeDomains = list) }
+        prefs.edit().putString("exclude_domains", Json.encodeToString(list)).apply()
+    }
+
     fun addIncludeDomain(domain: String) {
         val newList = _uiState.value.includeDomains + domain
         _uiState.update { it.copy(includeDomains = newList) }
@@ -294,6 +307,22 @@ class SearchConfigViewModel(
         prefs.edit().putString("exclude_domains", Json.encodeToString(newList)).apply()
     }
 }
+
+/**
+ * 把“每行一个域名”的文本整理为名单：去掉首尾空白、协议、路径与 `*.` 前缀，转小写，丢弃空行与重复项。
+ * 逗号与空格也视为分隔，便于粘贴。
+ */
+internal fun parseDomainList(text: String): List<String> =
+    text.split('\n', ',', ' ', '\t')
+        .map { raw ->
+            raw.trim().lowercase()
+                .substringAfter("://")
+                .substringBefore('/')
+                .removePrefix("*.")
+                .trimEnd('.')
+        }
+        .filter { it.isNotEmpty() }
+        .distinct()
 
 data class SearchConfigState(
     val webSearchEnabled: Boolean = true,

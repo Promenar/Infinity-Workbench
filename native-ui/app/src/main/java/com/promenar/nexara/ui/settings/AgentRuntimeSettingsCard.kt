@@ -1,44 +1,25 @@
 package com.promenar.nexara.ui.settings
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Loop
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.WifiProtectedSetup
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.WorkHistory
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.promenar.nexara.R
-import com.promenar.nexara.data.termux.TermuxAvailability
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraStepperSetting
 import com.promenar.nexara.ui.common.NexaraNumericSetting
 
+/** “执行轮次与预算”页的设置值。 */
 internal data class SkillsSettingsVisualState(
     val loopLimit: Int,
     val tokenLimit: Int,
     val repeatLimit: Int,
-    val sshHostCount: Int? = null,
-    val termuxAvailability: TermuxAvailability? = null,
     val retryLimit: Int = com.promenar.nexara.domain.generation.DEFAULT_STREAM_RETRY_LIMIT,
-    val gitCredentialCount: Int? = null,
-    val tailscaleState: com.promenar.nexara.data.tailnet.TailnetState? = null,
-    /** 共享局域网与本机白名单条数；尚未读取时为 null。 */
-    val networkHostCount: Int? = null,
-    /** 内置 Linux 环境状态；为 null 或渠道不提供时不显示入口。 */
-    val linuxState: com.promenar.nexara.domain.linux.LinuxRuntimeState? = null,
-    val linuxAgentEnabled: Boolean = true,
 )
 
 internal data class SkillsSettingsVisualActions(
@@ -47,89 +28,7 @@ internal data class SkillsSettingsVisualActions(
     val onRepeatLimitChange: (Int) -> Unit = {},
     val onRetryLimitChange: (Int) -> Unit = {},
     val onResetConsent: () -> Unit = {},
-    val onOpenNetworkAccess: () -> Unit = {},
-    val onOpenSsh: () -> Unit = {},
-    val onOpenTermux: () -> Unit = {},
-    val onOpenGitCredentials: () -> Unit = {},
-    val onOpenTailscale: () -> Unit = {},
-    val onOpenBackground: () -> Unit = {},
-    val onOpenLinux: () -> Unit = {},
 )
-
-/** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
-@Composable
-internal fun SkillsSettingsHeaderContent(
-    state: SkillsSettingsVisualState,
-    actions: SkillsSettingsVisualActions,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier) {
-        AgentRuntimeSettingsCard(state, actions)
-        NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
-            com.promenar.nexara.ui.linux.settings.LinuxEntryRow(state.linuxState, state.linuxAgentEnabled, actions.onOpenLinux)
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Public,
-                title = stringResource(R.string.network_access_title),
-                subtitle = when (val count = state.networkHostCount) {
-                    null -> stringResource(R.string.settings_status_loading)
-                    0 -> stringResource(R.string.network_access_entry_empty)
-                    else -> pluralStringResource(R.plurals.network_access_entry_count, count, count)
-                },
-                onClick = actions.onOpenNetworkAccess,
-                showChevron = true,
-                modifier = Modifier.testTag("network_access_entry"),
-            )
-            NexaraSettingsItem(
-                icon = Icons.Rounded.WorkHistory,
-                title = stringResource(R.string.settings_background_title),
-                subtitle = stringResource(R.string.settings_background_entry_subtitle),
-                onClick = actions.onOpenBackground,
-                showChevron = true,
-                modifier = Modifier.testTag("background_activity_entry"),
-            )
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Terminal,
-                title = stringResource(R.string.ssh_settings_entry),
-                subtitle = state.sshHostCount?.let { stringResource(R.string.settings_ssh_hosts_count, it) }
-                    ?: stringResource(R.string.settings_status_loading),
-                onClick = actions.onOpenSsh,
-                showChevron = true,
-            )
-            NexaraSettingsItem(
-                icon = Icons.Rounded.PhoneAndroid,
-                title = stringResource(R.string.settings_termux_entry),
-                subtitle = stringResource(when (termuxEntryStatus(state.termuxAvailability)) {
-                    TermuxEntryStatus.Loading -> R.string.settings_status_loading
-                    TermuxEntryStatus.NotInstalled -> R.string.settings_termux_not_installed
-                    TermuxEntryStatus.UnsupportedVersion -> R.string.settings_termux_unsupported_version
-                    TermuxEntryStatus.PermissionRequired -> R.string.settings_termux_permission_required
-                    TermuxEntryStatus.Available -> R.string.settings_termux_available
-                }),
-                onClick = actions.onOpenTermux,
-                showChevron = true,
-            )
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Key,
-                title = stringResource(R.string.git_credentials_entry),
-                subtitle = when (val count = state.gitCredentialCount) {
-                    null -> stringResource(R.string.settings_status_loading)
-                    0 -> stringResource(R.string.git_credentials_entry_empty)
-                    else -> pluralStringResource(R.plurals.git_credentials_entry_count, count, count)
-                },
-                onClick = actions.onOpenGitCredentials,
-                showChevron = true,
-            )
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Hub,
-                title = stringResource(R.string.settings_tailscale_entry),
-                subtitle = state.tailscaleState?.let { stringResource(tailscalePhaseText(it)) }
-                    ?: stringResource(R.string.settings_status_loading),
-                onClick = actions.onOpenTailscale,
-                showChevron = true,
-            )
-        }
-    }
-}
 
 @Composable
 internal fun AgentRuntimeSettingsCard(

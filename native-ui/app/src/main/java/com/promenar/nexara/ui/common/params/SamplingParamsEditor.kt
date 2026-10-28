@@ -548,14 +548,22 @@ private fun SamplingParamItem(
                 .testTag("params_row_${param.name.lowercase()}"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FlowRow(
-                Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.align(Alignment.CenterVertically))
-                tags.forEach { (text, tone) -> ParamTag(text, tone, Modifier.align(Alignment.CenterVertically)) }
+            Column(Modifier.weight(1f)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.align(Alignment.CenterVertically))
+                    tags.forEach { (text, tone) -> ParamTag(text, tone, Modifier.align(Alignment.CenterVertically)) }
+                }
+                // 中文主名下方给出接口参数名，便于对照服务商文档（S8）。
+                Text(
+                    param.wireName,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = com.promenar.nexara.ui.theme.NexaraMonospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("params_row_${param.name.lowercase()}_wire"),
+                )
             }
             Spacer(Modifier.width(12.dp))
             Text(
@@ -837,11 +845,23 @@ fun samplingParamTitle(param: SamplingParam): String = stringResource(
         SamplingParam.TOP_P -> R.string.sheet_settings_top_p
         SamplingParam.TOP_K -> R.string.sheet_settings_top_k
         SamplingParam.MAX_TOKENS -> R.string.sheet_settings_max_tokens
-        SamplingParam.FREQUENCY_PENALTY -> R.string.sheet_settings_frequency_penalty
-        SamplingParam.PRESENCE_PENALTY -> R.string.sheet_settings_presence_penalty
+        SamplingParam.FREQUENCY_PENALTY -> R.string.settings_ia_param_frequency_penalty
+        SamplingParam.PRESENCE_PENALTY -> R.string.settings_ia_param_presence_penalty
         SamplingParam.REPETITION_PENALTY -> R.string.sheet_settings_repetition_penalty
     },
 )
+
+/** 参数行副标题中的接口参数名。 */
+internal val SamplingParam.wireName: String
+    get() = when (this) {
+        SamplingParam.TEMPERATURE -> "temperature"
+        SamplingParam.TOP_P -> "top_p"
+        SamplingParam.TOP_K -> "top_k"
+        SamplingParam.MAX_TOKENS -> "max_tokens"
+        SamplingParam.FREQUENCY_PENALTY -> "frequency_penalty"
+        SamplingParam.PRESENCE_PENALTY -> "presence_penalty"
+        SamplingParam.REPETITION_PENALTY -> "repetition_penalty"
+    }
 
 /** 显示顺序：常用的温度、Top P 在前，惩罚项在后。 */
 val SAMPLING_PARAM_ORDER: List<SamplingParam> = listOf(

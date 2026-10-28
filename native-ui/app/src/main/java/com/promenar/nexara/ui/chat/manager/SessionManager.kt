@@ -173,17 +173,6 @@ class SessionManager(
         updateSession(sessionId, mapOf("activeMcpServerIds" to next))
     }
 
-    suspend fun toggleSkill(sessionId: String, skillId: String) {
-        val session = store.getSession(sessionId) ?: return
-        val current = session.activeSkillIds
-        val next = if (current.contains(skillId)) {
-            current.filter { it != skillId }
-        } else {
-            current + skillId
-        }
-        updateSession(sessionId, mapOf("activeSkillIds" to next))
-    }
-
     @Suppress("UNCHECKED_CAST")
     private fun applyUpdatesToSession(session: Session, updates: Map<String, Any?>): Session {
         var result = session

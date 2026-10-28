@@ -375,9 +375,6 @@ class ChatViewModel(
     private val appContext = application
     private val directoryBusyRegistration = (application as? NexaraApplication)
         ?.registerDirectoryWorkspaceBusyCheck { id -> id == _currentSessionId.value && isWorkspaceSwitchBlocked() }
-    val availableSessionCustomSkills = (application as NexaraApplication).skillRepository
-        .getAllCustomSkills()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val availableSessionMcpServers = (application as NexaraApplication).skillRepository
         .getAllMcpServers()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -2555,11 +2552,6 @@ class ChatViewModel(
         viewModelScope.launch {
             sessionManager.updateSessionOptions(sessionId, nextOptions)
         }
-    }
-
-    fun toggleSessionSkill(skillId: String) {
-        val sessionId = _currentSessionId.value ?: return
-        viewModelScope.launch { sessionManager.toggleSkill(sessionId, skillId) }
     }
 
     fun toggleSessionMcpServer(serverId: String) {

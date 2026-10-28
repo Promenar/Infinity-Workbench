@@ -49,19 +49,6 @@ fun mcpServersDarkPreview() = PolishTheme(dark = true) { McpPreview(empty = fals
 fun mcpServersEmptyPreview() = PolishTheme(dark = false) { McpPreview(empty = true) }
 
 @PreviewTest
-@Preview(name = "旧版自定义工具 深色中文", widthDp = 412, heightDp = 400, locale = "zh-rCN")
-@Composable
-fun legacyToolsDarkPreview() = PolishTheme(dark = true) {
-    LegacyUserToolsSection(
-        tools = listOf(
-            SkillInfo("custom-1", "天气查询", "按城市名返回当前天气。", enabled = true),
-            SkillInfo("custom-2", "汇率换算", "", enabled = false),
-        ),
-        onToggle = {}, onEdit = {}, onDelete = {},
-    )
-}
-
-@PreviewTest
 @Preview(name = "SSH 主机操作 深色中文", widthDp = 412, heightDp = 760, locale = "zh-rCN")
 @Composable
 fun sshHostActionsDarkPreview() = PolishTheme(dark = true) {

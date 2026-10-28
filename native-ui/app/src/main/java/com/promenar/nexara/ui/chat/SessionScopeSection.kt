@@ -5,7 +5,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -27,7 +34,7 @@ import com.promenar.nexara.ui.common.withGraphScope
 import com.promenar.nexara.ui.common.withMemoryScope
 
 /**
- * 会话的三类检索范围。档位在助手上限内选择；会话保存的档位超出上限时（助手上限后来调低），
+ * 会话的三类检索范围。档位在智能体上限内选择；会话保存的档位超出上限时（智能体上限后来调低），
  * 行内显示实际生效的档位并注明受上限限制。对应功能关闭时整行停用。
  */
 @Composable
@@ -37,11 +44,13 @@ internal fun SessionScopeSection(
     onRagOptionsChange: ((RagOptions) -> RagOptions) -> Unit,
     reachStats: Map<ConversationScope, ConversationReachStats> = emptyMap(),
     graphQueue: SessionGraphQueueStatus? = null,
+    /** 页脚“智能体设置”的去向（S7）；为 null 时页脚是纯文字。 */
+    onOpenAgentSettings: (() -> Unit)? = null,
 ) {
     var picking by remember { mutableStateOf<ScopeResource?>(null) }
     NexaraSettingsSection(
         title = stringResource(R.string.memory_scope_section),
-        footer = stringResource(R.string.memory_scope_section_footer),
+        linkedFooter = scopeFooter(onOpenAgentSettings),
     ) {
         ScopeResource.entries.forEach { resource ->
             val enabled = when (resource) {
@@ -97,6 +106,31 @@ internal fun SessionScopeSection(
             onDismiss = { picking = null },
             testTagPrefix = "session_scope_option_${resource.name.lowercase()}",
         )
+    }
+}
+
+/** 范围页脚：“智能体设置”可点时带下划线链接色。 */
+@Composable
+private fun scopeFooter(onOpenAgentSettings: (() -> Unit)?): AnnotatedString {
+    val linkText = stringResource(R.string.settings_ia_scope_footer_link)
+    val full = stringResource(R.string.settings_ia_scope_footer, linkText)
+    val linkColor = MaterialTheme.colorScheme.primary
+    return remember(full, linkText, onOpenAgentSettings, linkColor) {
+        buildAnnotatedString {
+            append(full)
+            val start = full.indexOf(linkText)
+            if (onOpenAgentSettings != null && start >= 0) {
+                addLink(
+                    LinkAnnotation.Clickable(
+                        tag = "agent_settings",
+                        styles = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
+                        linkInteractionListener = { onOpenAgentSettings() },
+                    ),
+                    start,
+                    start + linkText.length,
+                )
+            }
+        }
     }
 }
 

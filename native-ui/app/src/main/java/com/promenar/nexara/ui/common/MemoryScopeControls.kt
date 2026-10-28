@@ -54,14 +54,14 @@ private fun ConversationScope.descriptionRes(resource: ScopeResource): Int = whe
 @StringRes
 internal fun DocumentScope.labelRes(): Int = when (this) {
     DocumentScope.WORKSPACE -> R.string.document_scope_workspace
-    DocumentScope.KNOWLEDGE_BASE -> R.string.document_scope_knowledge_base
+    DocumentScope.KNOWLEDGE_BASE -> R.string.settings_ia_doc_scope_kb
     DocumentScope.ALL_INDEXED -> R.string.document_scope_all
 }
 
 @StringRes
 private fun DocumentScope.descriptionRes(): Int = when (this) {
-    DocumentScope.WORKSPACE -> R.string.document_scope_workspace_desc
-    DocumentScope.KNOWLEDGE_BASE -> R.string.document_scope_knowledge_base_desc
+    DocumentScope.WORKSPACE -> R.string.settings_ia_doc_scope_workspace_desc
+    DocumentScope.KNOWLEDGE_BASE -> R.string.settings_ia_doc_scope_kb_desc
     DocumentScope.ALL_INDEXED -> R.string.document_scope_all_desc
 }
 
@@ -81,7 +81,7 @@ internal fun scopeChoices(resource: ScopeResource): List<ScopeChoice> = if (reso
 
 /**
  * 档位单选面板，选中即关闭。超过 [maxOrdinal] 的档位保留在列表中但不可选，并注明原因，
- * 让用户知道更大的范围存在、由助手设置限制。
+ * 让用户知道更大的范围存在、由智能体设置限制，可去调高（S7）。
  */
 @Composable
 internal fun ScopePickerSheet(
@@ -113,7 +113,7 @@ internal fun ScopeChoiceList(
         NexaraSettingsItem(
             horizontalPadding = 0.dp,
             title = stringResource(choice.labelRes),
-            subtitle = stringResource(if (allowed) choice.descriptionRes else R.string.memory_scope_above_cap),
+            subtitle = stringResource(if (allowed) choice.descriptionRes else R.string.settings_ia_scope_above_cap),
             subtitleMaxLines = 3,
             role = Role.RadioButton,
             selected = selected,

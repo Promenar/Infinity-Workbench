@@ -62,7 +62,7 @@ private fun AgentReachPreview(dark: Boolean, shared: Boolean) {
             AgentReachContent(
                 state = state,
                 // 从顶栏打开时工作区一行带切换；共享工作区预览为生成进行中，切换停用并提示。
-                actions = AgentReachActions(onOpenTailscale = {}, workspaceSwitch = AgentReachWorkspaceSwitch(busy = shared, failed = false, onChoose = {})),
+                actions = AgentReachActions(onOpenTailscale = {}, onOpenNetworkAccess = {}, workspaceSwitch = AgentReachWorkspaceSwitch(busy = shared, failed = false, onChoose = {})),
                 modifier = Modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal),
             )
         }
