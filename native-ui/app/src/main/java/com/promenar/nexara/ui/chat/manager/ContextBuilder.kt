@@ -2,7 +2,7 @@ package com.promenar.nexara.ui.chat.manager
 
 import com.promenar.nexara.data.workspace.isWorkspaceSwitchNotice
 import com.promenar.nexara.data.agent.AgentMemoryPolicy
-import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.agent.AgentRetrievalMode
 import com.promenar.nexara.data.memory.LongTermMemoryAccess
 import com.promenar.nexara.data.memory.LongTermMemoryRepository
 import com.promenar.nexara.data.model.RagReference
@@ -67,7 +67,8 @@ data class ContextBuilderParams(
     val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
     val agentSystemPrompt: String? = null,
     val sessionCustomPrompt: String? = null,
-    val agentRetrievalConfig: AgentRetrievalConfig? = null,
+    val retrievalMode: AgentRetrievalMode = AgentRetrievalMode.AUTO,
+    val knowledgeCatalog: String = "",
     /** 助手的记忆权限；会话档位超出上限时按上限执行。 */
     val agentMemoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
     /** 本轮实际广告给模型的工具名；null 表示调用方未提供，按会话开关输出通用工具说明。 */
@@ -106,6 +107,13 @@ interface RagProvider {
         options: com.promenar.nexara.data.model.RagOptions,
         onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null
     ): RagRetrievalResult
+
+    suspend fun retrieveForTool(
+        query: String,
+        sessionId: String,
+        options: com.promenar.nexara.data.model.RagOptions,
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
+    ): RagRetrievalResult = throw UnsupportedOperationException("检索提供者未实现工具检索")
 }
 
 data class KgContextResult(
@@ -121,6 +129,14 @@ data class KgContextResult(
 )
 
 interface KgProvider {
+    /** 未声明支持持久图读取的提供者不参与工具检索，避免间接触发抽取。 */
+    suspend fun retrieveForTool(
+        query: String,
+        sessionId: String,
+        topKResults: List<RagReference>,
+        options: com.promenar.nexara.data.model.RagOptions,
+    ): KgContextResult? = null
+
     suspend fun retrieveContext(
         query: String,
         sessionId: String,
@@ -136,7 +152,6 @@ interface KgProvider {
 }
 
 class ContextBuilder(
-    private val webSearchProvider: WebSearchProvider? = null,
     private val ragProvider: RagProvider? = null,
     private val kgProvider: KgProvider? = null,
     private val taskRepository: ITaskRepository? = null,
@@ -215,9 +230,13 @@ class ContextBuilder(
         val searchContext = ""
         val searchCitations = emptyList<com.promenar.nexara.data.model.Citation>()
 
-        // RAG 与 KG 共用会话开关、范围及全局门控。
+        // RAG 与 KG 共用会话开关、范围及智能体上限。
         val effectiveRagOptions = computeEffectiveRagOptions(params)
 
+        if (contextRetrievalMode(params) == AgentRetrievalMode.TOOL) {
+            return ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList(),
+                effectiveRagOptions = effectiveRagOptions)
+        }
         val ragResult = performRagRetrieval(params, effectiveRagOptions)
 
         // KG 启用判定与 RAG 共享同一份生效配置。
@@ -271,24 +290,17 @@ class ContextBuilder(
     }
 
 
-    /** 开关与范围只取临时选项与会话；全局开关仅作新会话初值，智能体只收紧记忆权限上限。 */
-    private fun computeEffectiveRagOptions(params: ContextBuilderParams): com.promenar.nexara.data.model.RagOptions {
-        val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
-        val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
-
-        val mergedRagOptions = com.promenar.nexara.data.model.RagOptions(
-            enableMemory = tempRagOptions.enableMemory && sessionRagOptions.enableMemory,
-            enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
-            activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
-            activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
-            memoryScope = (params.ragOptions ?: sessionRagOptions).effectiveMemoryScope,
-            graphScope = (params.ragOptions ?: sessionRagOptions).effectiveGraphScope,
-            documentScope = (params.ragOptions ?: sessionRagOptions).effectiveDocumentScope,
-            enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
-            enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
-        )
-        return params.agentMemoryPolicy.clamp(mergedRagOptions)
+    /** 本轮未广告 knowledge_search（工具关闭、模型不支持工具调用或工具被全局停用）时回到自动检索，避免检索丢失。 */
+    private fun contextRetrievalMode(params: ContextBuilderParams): AgentRetrievalMode = when {
+        !params.session.options.toolsEnabled -> AgentRetrievalMode.AUTO
+        params.availableToolNames != null && "knowledge_search" !in params.availableToolNames -> AgentRetrievalMode.AUTO
+        else -> params.retrievalMode
     }
+
+    private fun computeEffectiveRagOptions(params: ContextBuilderParams) =
+        com.promenar.nexara.data.rag.resolveEffectiveRagOptions(
+            params.session.ragOptions, params.ragOptions, params.agentMemoryPolicy,
+        )
 
     /**
      * 对 provider 返回的 paths 做嵌套防御性快照：复制每条 path 及其内部列表，
@@ -465,6 +477,9 @@ class ContextBuilder(
 
         // 5. 外部检索数据：只作为资料，不作为指令。
         val references = buildString {
+            if (contextRetrievalMode(params) != AgentRetrievalMode.AUTO && params.knowledgeCatalog.isNotBlank()) {
+                appendLine(params.knowledgeCatalog)
+            }
             if (memoryContext.isNotEmpty()) append(memoryContext)
             if (ragContext.isNotBlank()) {
                 if (isNotEmpty()) appendLine()

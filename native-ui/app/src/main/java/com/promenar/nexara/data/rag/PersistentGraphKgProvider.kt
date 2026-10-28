@@ -21,10 +21,27 @@ class PersistentGraphKgProvider(
     override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>) =
         retrieveContext(query, sessionId, topKResults, RagOptions(enableKnowledgeGraph = true))
 
-    override suspend fun retrieveContext(query: String, sessionId: String, topKResults: List<RagReference>, options: RagOptions): KgContextResult {
+    override suspend fun retrieveContext(query: String, sessionId: String, topKResults: List<RagReference>, options: RagOptions): KgContextResult =
+        retrieve(query, sessionId, topKResults, options)
+
+    override suspend fun retrieveForTool(query: String, sessionId: String, topKResults: List<RagReference>, options: RagOptions): KgContextResult =
+        retrieve(query, sessionId, topKResults, options, allowJit = false)
+
+    private suspend fun retrieve(
+        query: String,
+        sessionId: String,
+        topKResults: List<RagReference>,
+        options: RagOptions,
+        allowJit: Boolean = true,
+    ): KgContextResult {
         if (options.enableKnowledgeGraph != true) return KgContextResult("")
         val config = configProvider()
-        val scope = KgRetrievalScope.of(scopeResolver.resolve(sessionId, options))
+        val resolvedScope = KgRetrievalScope.of(scopeResolver.resolve(sessionId, options))
+        // 自动图谱沿用独立开关；工具只读取本次所请求来源的证据。
+        val scope = if (allowJit) resolvedScope else resolvedScope.copy(
+            documents = if (options.enableDocs) resolvedScope.documents else DocumentReach.Scoped(emptySet(), emptySet()),
+            allowConversation = options.enableMemory,
+        )
         val documents = retrieval.visibleDocumentIds(scope)
         val visibleReferences = withContext(Dispatchers.IO) {
             // 即时抽取只用可见文档与本会话记忆：证据归属本会话，删除其他会话的聊天记录时无法据此失效。
@@ -37,7 +54,7 @@ class PersistentGraphKgProvider(
         }
         val persistent = retrieval.retrieve(query, scope, visibleReferences.mapNotNull { it.documentId }, config)
         val needsJit = persistent.seedCount < config.kgJitMinSeeds.coerceIn(1, 32) || persistent.paths.isEmpty()
-        val instant = if (config.kgJitFallbackEnabled && needsJit && visibleReferences.isNotEmpty()) {
+        val instant = if (allowJit && config.kgJitFallbackEnabled && needsJit && visibleReferences.isNotEmpty()) {
             try {
                 jit.extractContext(query, sessionId, visibleReferences)?.takeIf { it.status == KgExtractionStatus.SUCCESS && it.error == null }
             } catch (cancelled: CancellationException) { throw cancelled }

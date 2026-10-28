@@ -11,8 +11,9 @@ data class ExternalMount(
     val sessionId: String,
     val createdAt: Long,
     val unavailableReason: String? = null,
+    val readOnly: Boolean = false,
 ) {
-    val commandAccessible: Boolean get() = sourceType == "real_path"
+    val commandAccessible: Boolean get() = sourceType == "real_path" && !readOnly
 }
 
 data class ExternalMountCommandAccess(
@@ -35,6 +36,9 @@ interface IExternalFolderManager {
     fun observeMounts(sessionId: String): Flow<List<ExternalMount>>
     suspend fun addSaf(alias: String, sessionId: String, treeUri: String, grantFlags: Int): ExternalMount
     suspend fun addRealPath(alias: String, sessionId: String, source: String): ExternalMount
+    suspend fun addKnowledgeBase(alias: String, sessionId: String, rootUuid: String): ExternalMount {
+        throw ExternalFolderException("UNSUPPORTED", "该挂载管理器不支持知识库挂载")
+    }
     suspend fun remove(mountId: String)
     suspend fun reauthorize(mountId: String, treeUri: String, grantFlags: Int)
     suspend fun refresh(sessionId: String)

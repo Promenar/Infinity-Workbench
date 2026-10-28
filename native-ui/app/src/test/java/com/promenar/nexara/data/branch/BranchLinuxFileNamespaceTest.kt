@@ -10,6 +10,7 @@ import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.data.storage.ExternalFolderManager
+import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.data.storage.JvmBoundRealPathFileSystem
 import com.promenar.nexara.data.workspace.SessionWorkspace
 import com.promenar.nexara.data.workspace.SessionWorkspaceResolver
@@ -18,6 +19,7 @@ import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.storage.ExternalFolderBackend
 import com.promenar.nexara.domain.storage.ExternalFolderEntry
+import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.startup.StartupWriteBarrier
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -33,6 +35,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -48,6 +51,7 @@ class BranchLinuxFileNamespaceTest {
     private val child = File(base, "branches/foo").apply { mkdirs() }
     private val home = File(temporary, "private-child").apply { mkdirs() }
     private val skills = File(temporary, "skills").apply { mkdirs() }
+    private val knowledge = File(temporary, "knowledge").apply { mkdirs() }
     private val fileSystem = JvmBoundRealPathFileSystem()
     private val selected = SessionWorkspace.Directory(WorkspaceEntity("child-worktree", "project", "分支", "child", 1), child)
     private val resolver = mockk<SessionWorkspaceResolver> {
@@ -55,9 +59,10 @@ class BranchLinuxFileNamespaceTest {
         coEvery { resolveWorkspace("child-worktree") } returns selected
         every { backend(selected) } answers { fileSystem.backend(child) }
     }
+    private var mountRows = emptyList<ExternalMountEntity>()
     private val dao = mockk<ExternalMountDao> {
-        coEvery { visible(any()) } returns emptyList<ExternalMountEntity>()
-        every { observeVisible(any()) } returns flowOf(emptyList<ExternalMountEntity>())
+        coEvery { visible(any()) } answers { mountRows.filter { it.scopeKey == firstArg<String>() } }
+        every { observeVisible(any()) } answers { flowOf(mountRows) }
     }
     private val context = mockk<Context> {
         every { noBackupFilesDir } returns File(temporary, "no-backup")
@@ -65,13 +70,21 @@ class BranchLinuxFileNamespaceTest {
     }
     private val privateRoot = FileEntry("child-private-root", "child-private-root", null, "", "private-identity",
         physicalRootPath = home.path, materializedPath = "/", isDirectory = true, createdAt = 1, updatedAt = 1)
-    private val workspace = mockk<IWorkspaceRepository> { coEvery { ensureSessionRoot("branch") } returns privateRoot }
+    private val workspace = mockk<IWorkspaceRepository> {
+        coEvery { ensureSessionRoot("branch") } returns privateRoot
+        coEvery { getByUuid("knowledge-root", "knowledge-root") } returns privateRoot.copy(
+            uuid = "knowledge-root", workspaceRootUuid = "knowledge-root", physicalRootPath = knowledge.path)
+    }
     private val files = mockk<IFileOperationRepository>()
     private val rootfs = mockk<ExternalFolderBackend> {
         coEvery { stat("/") } returns ExternalFolderEntry("/", "", true, 0, 1, identity = "rootfs-identity")
     }
     private val original = ExternalFolderManager(context, dao, workspace, FileIndexEventSink.None, resolver,
-        userSkillsDirectory = skills, backendOverride = { if (it.id == "builtin:skills") fileSystem.backend(skills) else null })
+        userSkillsDirectory = skills, knowledgeBaseRoots = { setOf("knowledge-root") }, backendOverride = {
+            when { it.id == "builtin:skills" -> fileSystem.backend(skills)
+                it.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE -> fileSystem.backend(knowledge)
+                else -> null }
+        })
     private var namespace = BranchLinuxFileNamespace(BranchLinuxCommandWorkspace(base, "/workspace/branches/foo"), fileSystem.backend(base))
     private val access = LinuxSessionExternalWorkspaceAccess(original, workspace, files, { selected }, rootfs,
         branchNamespace = { namespace })
@@ -128,6 +141,52 @@ class BranchLinuxFileNamespaceTest {
         assertEquals("parent", File(base, "parent.txt").readText())
         assertEquals("child", File(child, "plain.txt").readText())
         assertFalse(File(base, "plain.txt").exists())
+    }
+
+    @Test fun `分支Linux文件命名空间可读取知识库而全部修改入口拒绝`() = runBlocking {
+        mountRows = listOf(ExternalMountEntity("kb", "knowledge", ExternalMountPaths.KNOWLEDGE_BASE_SOURCE,
+            "knowledge-root", "branch", true, 1))
+        File(knowledge, "note.md").writeText("知识库全文")
+        assertEquals("知识库全文", access.read("branch", "/mnt/knowledge/note.md", 1024).toString(Charsets.UTF_8))
+        assertEquals(listOf("note.md"), access.list("branch", "/mnt/knowledge").map { it.name })
+        val mount = access.visible("branch").single { it.id == "kb" }
+        assertTrue(mount.readOnly)
+        assertFalse(mount.commandAccessible)
+        assertEquals(null, ExternalMountPaths.commandAccess(mount).realPath)
+        assertFalse(linuxExecSpec("pwd", child, "project", listOf(mount), skills, home, namespace.commandWorkspace)
+            .mounts.any { it.guestPath == "/mnt/knowledge" })
+        val readOnlyPath = mount.copy(id = "readonly-path", alias = "readonly-path", sourceType = "real_path", sourceId = knowledge.path)
+        assertFalse(linuxExecSpec("pwd", child, "project", listOf(readOnlyPath), skills, home, namespace.commandWorkspace)
+            .mounts.any { it.guestPath == "/mnt/readonly-path" })
+        val backend = access.backend("branch")
+        val actions: List<suspend () -> Any?> = listOf(
+            { access.write("branch", "/mnt/knowledge/note.md", byteArrayOf(), null, false) },
+            { access.createDirectory("branch", "/mnt/knowledge/new") },
+            { access.delete("branch", "/mnt/knowledge/note.md", null, true) },
+            { access.backupBeforeMove("branch", "/mnt/knowledge/note.md") },
+            { backend.move("/mnt/knowledge/note.md", "/mnt/knowledge/new") },
+            { backend.copy("/mnt/knowledge/note.md", "/mnt/knowledge/new") },
+            { access.importSnapshot("branch", privateRoot.uuid, "/mnt/knowledge/note.md") },
+        )
+        actions.forEach { action ->
+            val failure = assertThrows(ExternalFolderException::class.java) { runBlocking { action() } }
+            assertEquals("READ_ONLY", failure.code)
+            assertEquals("知识库挂载为只读", failure.message)
+        }
+        val skill = LinuxSessionFileSkill(CreateFileSkill(workspace, files), { SessionRunMode.LINUX }, access,
+            workspace, files, FileIndexEventSink.None, captureFileChanges = false)
+        val invocation = object : SkillExecutionContext {
+            override val sessionId = "branch"
+            override val agentId = "agent"
+            override val workspaceRootUuid = privateRoot.uuid
+            override val workspacePath: String? = null
+            override val runMode = SessionRunMode.LINUX
+        }
+        val result = skill.execute(Json.parseToJsonElement("""{"parentPath":"/mnt/knowledge","name":"new.md","content":"修改"}""").jsonObject, invocation)
+        assertEquals("error", result.status)
+        assertTrue(result.content.contains("READ_ONLY：知识库挂载为只读"))
+        assertEquals("知识库全文", File(knowledge, "note.md").readText())
+        assertFalse(File(knowledge, "new.md").exists())
     }
 
     @Test fun `版本回收和恢复保持原管理器语义且操作真实父目录`() = runBlocking {

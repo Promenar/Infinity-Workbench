@@ -20,7 +20,7 @@ class KgChatRoutingRegressionTest {
         ContextBuilder(kgProvider = provider).buildContext(ContextBuilderParams(
             sessionId = "s", content = "问题", assistantMsgId = "m", session = Session(id = "s", agentId = "a",
                 ragOptions = RagOptions(enableDocs = false, enableMemory = false, isGlobal = true, activeDocIds = listOf("d"), enableKnowledgeGraph = true)),
-            agentRetrievalConfig = com.promenar.nexara.data.agent.AgentRetrievalConfig(enableKnowledgeGraph = true),
+
         ))
         assertThat(captured?.graphScope).isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT)
         assertThat(captured?.memoryScope).isEqualTo(com.promenar.nexara.data.model.ConversationScope.AGENT)

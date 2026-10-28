@@ -21,6 +21,8 @@ data class KgRetrievalScope(
     val conversation: ConversationReach? = null,
     /** 已解析的文档范围；非空时取代上面三个文档字段，与向量检索使用同一范围。 */
     val documents: DocumentReach? = null,
+    /** 工具未请求历史对话时，从查询入口排除全部对话证据。 */
+    val allowConversation: Boolean = true,
 ) {
     companion object {
         fun of(scope: ResolvedRetrievalScope) = KgRetrievalScope(
@@ -142,7 +144,7 @@ class GraphRetrievalStore(private val database: NexaraDatabase) {
             DocumentReach.All -> "$liveFiles UNION SELECT doc_id FROM kg_evidence WHERE doc_id IS NOT NULL AND doc_id NOT IN (SELECT uuid FROM workspace_files)"
             is DocumentReach.Scoped -> "SELECT id FROM explicit_docs UNION $liveFiles AND w.workspace_root_uuid IN (${sqlList(documents.workspaceRootUuids)})"
         }
-        val visibleSessions = when (val reach = scope.conversation ?: ConversationReach.Session(scope.sessionId)) {
+        val visibleSessions = if (!scope.allowConversation) "SELECT NULL WHERE 0" else when (val reach = scope.conversation ?: ConversationReach.Session(scope.sessionId)) {
             is ConversationReach.Session -> "VALUES (${sqlText(reach.sessionId)})"
             is ConversationReach.Agent -> "SELECT id FROM sessions WHERE agent_id=${sqlText(reach.agentId)}"
             is ConversationReach.SharedAgents -> "SELECT id FROM sessions WHERE agent_id=${sqlText(reach.agentId)} " +

@@ -38,7 +38,7 @@ class RetrievalConfigConvergenceTest {
             queryRewriteCount = 1, enableHybridSearch = false, hybridAlpha = 0.1f, hybridBM25Boost = 9f)
         val result = ContextBuilder(ragProvider = MemoryManagerRagAdapter(manager))
             .buildContext(ContextBuilderParams("s", "q", assistantMsgId = "m", session = Session("s", "a", ragOptions = saved),
-                agentRetrievalConfig = agent.retrievalConfig, agentMemoryPolicy = resolved.memoryPolicy))
+                 agentMemoryPolicy = resolved.memoryPolicy))
         // 除会话开关外，检索参数与全局完全一致。
         val override = captured.captured.configOverride!!
         assertThat(override.copy(enableMemory = global.enableMemory, enableDocs = global.enableDocs,
@@ -62,8 +62,7 @@ class RetrievalConfigConvergenceTest {
         coEvery { kg.retrieveContext(any(), any(), any(), any()) } returns null
         val result = ContextBuilder(ragProvider = rag, kgProvider = kg)
             .buildContext(ContextBuilderParams("s", "q", assistantMsgId = "m", session = Session("s", "a",
-                ragOptions = RagOptions(enableKnowledgeGraph = true)),
-                agentRetrievalConfig = AgentRetrievalConfig(enableMemory = false, enableKnowledgeGraph = false, enableRerank = false)))
+                ragOptions = RagOptions(enableKnowledgeGraph = true))))
         val effective = result.retrieval.effectiveRagOptions!!
         assertThat(effective.enableMemory).isTrue()
         assertThat(effective.enableDocs).isTrue()

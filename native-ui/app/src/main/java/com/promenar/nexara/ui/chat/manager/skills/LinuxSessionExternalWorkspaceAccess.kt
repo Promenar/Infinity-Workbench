@@ -13,6 +13,7 @@ import com.promenar.nexara.data.storage.ExternalMountPaths
 import com.promenar.nexara.data.storage.ExternalTreeTransfer
 import com.promenar.nexara.data.storage.externalSnapshotMime
 import com.promenar.nexara.data.storage.isUserSkills
+import com.promenar.nexara.data.storage.requireWritable
 import com.promenar.nexara.data.workspace.*
 import com.promenar.nexara.domain.repository.*
 import com.promenar.nexara.domain.storage.*
@@ -254,6 +255,14 @@ class LinuxSessionExternalWorkspaceAccess(
             this@LinuxSessionExternalWorkspaceAccess.createDirectory(sessionId, path).let { ExternalFolderEntry(it.materializedPath, it.name, true, it.sizeBytes, it.updatedAt, it.hash, it.uuid) }
         }
         override suspend fun delete(path: String, expectedSha256: String?) = bound { this@LinuxSessionExternalWorkspaceAccess.delete(sessionId, path, expectedSha256, false) }
+        override suspend fun move(sourcePath: String, targetPath: String) = unsupportedTransfer(sourcePath, targetPath)
+        override suspend fun copy(sourcePath: String, targetPath: String) = unsupportedTransfer(sourcePath, targetPath)
+        private suspend fun unsupportedTransfer(sourcePath: String, targetPath: String): Unit = bound {
+            val current = namespace(sessionId)
+            requireWritable(sessionId, current, normalize(current, sourcePath))
+            requireWritable(sessionId, current, normalize(current, targetPath))
+            fail("UNSUPPORTED", "Linux 文件后端不支持直接移动或复制")
+        }
     }
 
     /** 与审批解析器共用，确保别名存在且来源不为 SAF。 */
@@ -436,9 +445,13 @@ class LinuxSessionExternalWorkspaceAccess(
     }
 
     private suspend fun requireWritable(sessionId: String, current: Namespace, path: String) {
+        val target = route(current, path)
+        if (target.kind == LinuxSessionPathKind.EXTERNAL) {
+            val alias = ExternalMountPaths.parse(target.path)?.first
+            visible(sessionId).singleOrNull { it.alias == alias }?.requireWritable()
+        }
         com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = current.root.uuid,
             path = current.root.physicalRootPath)
-        val target = route(current, path)
         current.workspaceOverride?.takeIf { target.kind == LinuxSessionPathKind.WORKSPACE }?.let {
             com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, path = it.baseRoot.canonicalPath)
             com.promenar.nexara.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId,
@@ -574,7 +587,8 @@ class LinuxSessionExternalWorkspaceAccess(
         // 目录工作区可能位于共享存储（FUSE 不支持用户属性），不向用户目录写 nonce；与工作区 id、路径一起只取 inode，不含设备号。
         return com.promenar.nexara.data.repository.PersistentFileIdentity.inode(attributes.fileKey())
     }
-    private fun allowed(mount: ExternalMount) = mount.sourceType == "real_path" || mount.isUserSkills
+    private fun allowed(mount: ExternalMount) = mount.sourceType == "real_path" ||
+        mount.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE || mount.isUserSkills
     private fun directory(path: String) = ExternalFolderEntry(path, path.substringAfterLast('/'), true, 0, 0)
     private fun parent(path: String) = path.substringBeforeLast('/').ifEmpty { "/" }
     private fun child(path: String, name: String) = path.trimEnd('/') + "/$name"

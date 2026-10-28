@@ -451,6 +451,16 @@ class ApprovalManagerTest {
     }
 
     @Test
+    fun `拒绝知识库授权时目标漂移不阻断拒绝决定`() = testScope.runTest {
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo,
+            resolveExecutionTarget = { _, _, _ -> error("拒绝不应再读取授权目标") })
+        val request = seedExactApproval(calls = listOf(ToolCall("risk", "request_knowledge_access", "{}")), executionTarget = "原知识库预览")
+        approvalManager.setCallbacks(null) { _, _, _ -> error("拒绝不应执行") }
+        approvalManager.resumeGeneration("s1", request, approved = false)
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.REJECTED)
+    }
+
+    @Test
     fun `台账已取消的精确审批不能产生目标授权`() = testScope.runTest {
         val grants = ToolAllowlistStore(grantFiles.newFolder("grants"))
         approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolAllowlistStore = grants,

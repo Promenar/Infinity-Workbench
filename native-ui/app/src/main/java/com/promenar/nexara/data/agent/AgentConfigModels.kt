@@ -15,6 +15,12 @@ data class AgentRagConfig(
 )
 
 @Serializable
+enum class AgentRetrievalMode { AUTO, TOOL, BOTH }
+
+@Serializable
+enum class KnowledgeFileAccess { OFF, ON_REQUEST, ALWAYS }
+
+@Serializable
 data class AgentRetrievalConfig(
     val memoryLimit: Int = 5,
     val memoryThreshold: Float = 0.7f,
@@ -43,6 +49,8 @@ data class AgentRetrievalConfig(
     val jitMaxChunks: Int = 0,
     /** 助手自身的记忆权限；即使检索参数继承全局设置，也按助手单独保存。 */
     val memoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
+    val retrievalMode: AgentRetrievalMode = AgentRetrievalMode.AUTO,
+    val knowledgeFileAccess: KnowledgeFileAccess = KnowledgeFileAccess.ON_REQUEST,
 )
 
 /**

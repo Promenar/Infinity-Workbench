@@ -87,6 +87,28 @@ import kotlinx.serialization.json.jsonPrimitive
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
     @Test
+    fun `智能体检索方式与知识库访问设置经过完整备份恢复保持一致`() = runBlocking {
+        val configs = com.promenar.nexara.data.agent.AgentRetrievalMode.entries.flatMap { mode ->
+            com.promenar.nexara.data.agent.KnowledgeFileAccess.entries.map { access ->
+                com.promenar.nexara.data.agent.AgentRetrievalConfig(retrievalMode = mode, knowledgeFileAccess = access)
+            }
+        }
+        configs.forEachIndexed { index, config ->
+            db.agentDao().insert(AgentEntity("retrieval-$index", "智能体$index", createdAt = 1, retrievalConfig = config))
+        }
+        db.agentDao().insert(AgentEntity("legacy-null", "旧智能体", createdAt = 1))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.clearAllTables()
+
+        newDataSource().restore(validated(snapshot))
+
+        configs.forEachIndexed { index, config ->
+            assertThat(db.agentDao().getById("retrieval-$index")!!.retrievalConfig).isEqualTo(config)
+        }
+        assertThat(db.agentDao().getById("legacy-null")!!.retrievalConfig).isNull()
+    }
+
+    @Test
     fun `分支备份恢复保留父子关系方案worktree与自动处理状态`() = runBlocking {
         seedCompleteGraph()
         val branch = SessionEntity("branch", "agent-1", createdAt = 1, updatedAt = 2,

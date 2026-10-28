@@ -42,6 +42,7 @@ object ExternalMountPaths {
     /** 工作区挂载的别名；其虚拟路径以 `/` 为根，`/mnt` 和 `/skills` 为独立保留根。 */
     const val WORKSPACE_ALIAS = ""
     const val WORKSPACE_SOURCE = "workspace"
+    const val KNOWLEDGE_BASE_SOURCE = "knowledge_base"
     fun workspaceMountId(workspaceId: String) = "ws_$workspaceId"
 
     fun virtualPath(mount: ExternalMount, relative: String): String = when {
@@ -78,6 +79,13 @@ object ExternalMountPaths {
 
 val ExternalMount.isWorkspaceRoot: Boolean get() = alias == ExternalMountPaths.WORKSPACE_ALIAS
 val ExternalMount.isUserSkills: Boolean get() = id == ExternalMountPaths.SKILLS_MOUNT_ID && sourceType == ExternalMountPaths.SKILLS_SOURCE
+
+/** 知识库来源始终只读，即使历史或受损记录的标志没有置位。 */
+internal fun ExternalMount.requireWritable() {
+    if (readOnly || sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE) {
+        throw ExternalFolderException("READ_ONLY", "知识库挂载为只读")
+    }
+}
 
 /** 一次工具调用要固定的全部挂载身份：可见挂载加当前工作区挂载。 */
 suspend fun com.promenar.nexara.domain.storage.ExternalWorkspaceAccess.namespaceBindings(sessionId: String): Map<String, String> =

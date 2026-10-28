@@ -1,0 +1,129 @@
+package com.promenar.nexara.data.knowledge
+
+import com.promenar.nexara.data.agent.AgentMemoryPolicy
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.agent.KnowledgeFileAccess
+import com.promenar.nexara.data.model.DocumentScope
+import com.promenar.nexara.data.model.RagOptions
+import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.rag.resolveEffectiveRagOptions
+import com.promenar.nexara.data.storage.ExternalMountPaths
+import com.promenar.nexara.domain.storage.ExternalFolderException
+import com.promenar.nexara.domain.storage.ExternalMount
+import com.promenar.nexara.domain.storage.ExternalWorkspaceAccess
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class KnowledgeAccessTarget(
+    val rootUuid: String,
+    val title: String,
+    val documentCount: Int,
+    val alias: String,
+    val path: String,
+    val readOnly: Boolean = true,
+    val alreadyMounted: Boolean = false,
+)
+
+@Serializable
+data class KnowledgeAccessPreview(
+    val sessionId: String,
+    val knowledgeBase: String? = null,
+    val allowed: Boolean,
+    val reason: String? = null,
+    val knowledgeBases: List<KnowledgeAccessTarget> = emptyList(),
+)
+
+/** 预览无写入；批准的完整预览在执行前重新解析并核验。 */
+class KnowledgeAccessPlanner(
+    private val loadSession: suspend (String) -> Session?,
+    private val loadAgentConfig: suspend (String) -> AgentRetrievalConfig?,
+    private val externalAccess: ExternalWorkspaceAccess,
+    private val catalog: KnowledgeCatalogSource,
+    private val effectiveOptions: (Session, AgentRetrievalConfig?) -> RagOptions = { session, config ->
+        resolveEffectiveRagOptions(session.ragOptions, memoryPolicy = config?.memoryPolicy ?: AgentMemoryPolicy())
+    },
+) {
+    suspend fun preview(sessionId: String, knowledgeBase: String? = null): KnowledgeAccessPreview {
+        val selectedName = knowledgeBase?.trim()?.takeIf(String::isNotEmpty)
+        fun denied(reason: String) = KnowledgeAccessPreview(sessionId, selectedName, false, reason)
+        val session = loadSession(sessionId) ?: return denied("会话不存在")
+        val config = loadAgentConfig(session.agentId) ?: AgentRetrievalConfig()
+        if (!session.options.toolsEnabled) return denied("本会话已关闭工具，知识库文件访问未启用")
+        if (config.knowledgeFileAccess == KnowledgeFileAccess.OFF) return denied("知识库文件访问已关闭")
+        val options = effectiveOptions(session, config)
+        if (!options.enableDocs) return denied("本会话已关闭资料检索")
+        if (options.effectiveDocumentScope == DocumentScope.WORKSPACE) return denied("文档范围仅限本会话工作区，不能挂载知识库")
+        val roots = catalog.knowledgeBases(session, options).distinctBy { it.rootUuid }
+            .sortedWith(compareBy<KnowledgeBaseSummary>({ !it.isDefault }, { it.title }, { it.rootUuid }))
+        val selected = if (selectedName == null) roots else roots.filter { it.title == selectedName }
+        if (selected.isEmpty()) return denied(if (selectedName == null) "可见范围内没有知识库" else "可见范围内没有该知识库")
+        if (selectedName != null && selected.size > 1) return denied("有多个同名知识库，请指定唯一名称后申请")
+        val mounts = externalAccess.visible(sessionId)
+        val occupied = mounts.mapTo(linkedSetOf()) { it.alias }
+        val targets = selected.map { root ->
+            val matching = mounts.filter { it.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE && it.sourceId == root.rootUuid }
+            if (matching.size > 1) return denied("同一知识库存在重复挂载，请整理后申请")
+            val existing = matching.singleOrNull()
+            if (existing != null && !existing.readOnly) return denied("已有知识库挂载不是只读，无法授予访问")
+            val alias = existing?.alias ?: uniqueAlias(if (root.isDefault) "knowledge" else root.title, occupied)
+            occupied += alias
+            KnowledgeAccessTarget(root.rootUuid, root.title, root.documentCount, alias, "/mnt/$alias", alreadyMounted = existing != null)
+        }
+        return KnowledgeAccessPreview(sessionId, selectedName, true, knowledgeBases = targets)
+    }
+
+    suspend fun mount(approved: KnowledgeAccessPreview): List<ExternalMount> = mountMutex.withLock {
+        mountApproved(approved)
+    }
+
+    private suspend fun mountApproved(approved: KnowledgeAccessPreview): List<ExternalMount> {
+        if (!approved.allowed || approved.knowledgeBases.isEmpty() || approved.knowledgeBases.any { !it.readOnly }) {
+            throw ExternalFolderException("ACCESS_DENIED", approved.reason ?: "知识库访问未获有效授权")
+        }
+        if (preview(approved.sessionId, approved.knowledgeBase) != approved) {
+            throw ExternalFolderException("APPROVAL_TARGET_CHANGED", "知识库访问目标或范围已变化，请重新申请授权")
+        }
+        return approved.knowledgeBases.map { target ->
+            if (target.alreadyMounted) {
+                externalAccess.visible(approved.sessionId).singleOrNull {
+                    it.sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE && it.sourceId == target.rootUuid &&
+                        it.alias == target.alias && it.readOnly
+                } ?: throw ExternalFolderException("APPROVAL_TARGET_CHANGED", "知识库挂载已变化，请重新申请授权")
+            } else {
+                externalAccess.addKnowledgeBase(target.alias, approved.sessionId, target.rootUuid).also { mount ->
+                    if (mount.sourceType != ExternalMountPaths.KNOWLEDGE_BASE_SOURCE || mount.sourceId != target.rootUuid ||
+                        mount.alias != target.alias || mount.sessionId != approved.sessionId || !mount.readOnly) {
+                        throw ExternalFolderException("ACCESS_DENIED", "知识库挂载结果与已批准目标不一致")
+                    }
+                }
+            }
+        }
+    }
+
+    /** 仅由新会话创建事件调用；没有监听或补齐已移除挂载的行为。 */
+    suspend fun mountIfAlways(session: Session): List<ExternalMount> = mountMutex.withLock {
+        if (!session.options.toolsEnabled) return emptyList()
+        val current = loadSession(session.id) ?: return emptyList()
+        val config = loadAgentConfig(current.agentId) ?: AgentRetrievalConfig()
+        if (config.knowledgeFileAccess != KnowledgeFileAccess.ALWAYS) return emptyList()
+        val target = preview(session.id)
+        if (loadAgentConfig(current.agentId)?.knowledgeFileAccess != KnowledgeFileAccess.ALWAYS) return emptyList()
+        return if (target.allowed) mountApproved(target) else emptyList()
+    }
+
+    private fun uniqueAlias(title: String, occupied: Set<String>): String {
+        val candidate = title.trim().replace(Regex("[/\\\\\\p{Cc}\\p{Cf}]+"), "-")
+            .trim(' ', '.', '-').take(80).ifBlank { "knowledge" }
+        val base = runCatching { ExternalMountPaths.validateAlias(candidate) }.getOrDefault("knowledge")
+        var alias = base
+        var index = 2
+        while (alias in occupied) alias = "$base-${index++}"
+        return ExternalMountPaths.validateAlias(alias)
+    }
+
+    private companion object {
+        val mountMutex = Mutex()
+    }
+}

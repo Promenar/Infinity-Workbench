@@ -175,7 +175,7 @@ object SubagentLimits {
 
     /** 子代理不能再派生子代理，也不能改动父会话的计划等内部状态。 */
     fun toolset(parentTools: List<ProtocolTool>, profile: SubagentToolProfile): List<ProtocolTool> = parentTools.filter { tool ->
-        tool.function.name !in EXCLUDED_TOOLS && tool.runtimeToolId !in EXCLUDED_TOOLS && tool.risk != ToolRisk.SESSION_STATE &&
+        tool.function.name !in EXCLUDED_TOOLS && tool.runtimeToolId !in EXCLUDED_TOOLS && tool.risk != ToolRisk.SESSION_STATE && tool.risk != ToolRisk.ACCESS_GRANT &&
             (profile == SubagentToolProfile.INHERIT || tool.risk == ToolRisk.SAFE_READ)
     }
 

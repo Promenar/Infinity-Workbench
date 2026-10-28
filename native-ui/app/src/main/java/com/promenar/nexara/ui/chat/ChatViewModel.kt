@@ -172,11 +172,12 @@ internal suspend fun resolveChatApprovalExecutionTarget(
     sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
     linuxFiles: com.promenar.nexara.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     sessionCommunicationTarget: (suspend (Session, String, String) -> String?)? = null,
+    knowledgeAccessTarget: (suspend (Session, String, String) -> String?)? = null,
 ): String? {
     val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
         .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName } ?: return null
     val tool = toolLookup(identity.runtimeToolId) ?: return null
-    return sessionCommunicationTarget?.invoke(session, call.name, call.arguments) ?: com.promenar.nexara.data.generation.resolveSessionToolTarget(
+    return knowledgeAccessTarget?.invoke(session, call.name, call.arguments) ?: sessionCommunicationTarget?.invoke(session, call.name, call.arguments) ?: com.promenar.nexara.data.generation.resolveSessionToolTarget(
         session, tool, call.arguments, workspaceRepository, mounts, sshHostStore, sshSessionHost, linuxFiles,
     )
 }
@@ -420,6 +421,7 @@ class ChatViewModel(
                 sshHostStore = (application as NexaraApplication).sshHostStore,
                 linuxFiles = (application as NexaraApplication).linuxSessionFiles,
                 sessionCommunicationTarget = (application as NexaraApplication)::sessionCommunicationApprovalTarget,
+                knowledgeAccessTarget = (application as NexaraApplication)::knowledgeAccessApprovalTarget,
             )
         },
         resolveAllowlistScope = (application as NexaraApplication)::resolveToolAllowlistScope,

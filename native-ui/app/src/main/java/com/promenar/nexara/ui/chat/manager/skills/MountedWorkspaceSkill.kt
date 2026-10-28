@@ -12,6 +12,7 @@ import com.promenar.nexara.data.workspace.SessionPrivateWorkspaceBackend
 import com.promenar.nexara.data.storage.isUserSkills
 import com.promenar.nexara.data.storage.ExternalTreeTransfer
 import com.promenar.nexara.data.storage.externalSnapshotMime
+import com.promenar.nexara.data.storage.requireWritable
 import com.promenar.nexara.domain.repository.*
 import com.promenar.nexara.domain.storage.*
 import com.promenar.nexara.domain.tool.ToolExecutionTargets
@@ -131,6 +132,13 @@ class MountedWorkspaceSkill(
                         .mapNotNull(::aliasOf)
                     if (usedAliases.any { it !in approvedMountIds }) fail("CONFLICT", "批准目标缺少挂载或工作区身份，请重新审批")
                 }
+                if (ToolExecutionTargets.isPathMutation(original.id)) {
+                    val writeMounts = mounts.visible(context.sessionId) + listOfNotNull(mounts.workspaceMount(context.sessionId))
+                    listOfNotNull(sourcePath?.takeIf { sourceMounted }, parentPath?.takeIf { parentMounted }, destinationParent?.takeIf { destinationMounted })
+                        .filter { it.external() }.mapNotNull(::aliasOf).distinct().forEach { alias ->
+                            writeMounts.singleOrNull { it.alias == alias }?.requireWritable()
+                        }
+                }
                 if (original.id in setOf("write_file", "patch_file")) {
                     workspaceVersionError(original.id, routedArgs)?.let { return@bound it }
                 }
@@ -232,6 +240,8 @@ class MountedWorkspaceSkill(
         listOfNotNull(source.takeIf { sourceMounted }, destination.takeIf { destinationMounted }).forEach { path ->
             val alias = if (linuxPaths) com.promenar.nexara.data.workspace.LinuxSessionPaths.aliasOf(path) else ExternalMountPaths.aliasOf(path, rooted)
             if (alias !in bindings) fail("NOT_FOUND", "移动涉及的挂载不可见")
+            (mounts.visible(context.sessionId) + listOfNotNull(mounts.workspaceMount(context.sessionId)))
+                .singleOrNull { it.alias == alias }?.requireWritable()
         }
         val externalBackend = mounts.backend(context.sessionId, bindings)
         val privateNamespace = SessionPrivateWorkspaceBackend(privateBackend)

@@ -61,14 +61,23 @@ class ScriptWorkspaceGatewayTest {
     }
     @After fun cleanup() { directory.deleteRecursively() }
 
-    @Test fun `代理拒绝路径越界和保留名称且历史只读挂载可写`() = runBlocking {
+    @Test fun `代理拒绝路径越界和保留名称且只读挂载拒绝全部修改`() = runBlocking {
         val gateway = open()
         for (path in listOf("/mnt/demo/../outside.txt", "/mnt/demo/.nexara/x.txt", "/mnt/demo/.recycle_bin/x.txt")) {
             try { gateway.invoke("read", args(path)); error("应拒绝") } catch (_: ExternalFolderException) { }
         }
+        memory.write("/a.txt", "old".toByteArray())
         row = row.copy(readOnly = true)
-        gateway.invoke("create", args("/mnt/demo/a.txt", "x"))
-        assertThat(String(memory.read("/a.txt"))).isEqualTo("x")
+        for (operation in listOf("create", "mkdir", "write", "delete")) {
+            val path = if (operation in setOf("create", "mkdir")) "/mnt/demo/new" else "/mnt/demo/a.txt"
+            val failure = runCatching { gateway.invoke(operation, args(path, "x", Sha256Utils.hash("old"))) }.exceptionOrNull()
+            assertThat((failure as? ScriptFailure)?.code).isEqualTo("FILE_ERROR")
+            assertThat(failure?.message).contains("知识库挂载为只读")
+        }
+        assertThat(String(memory.read("/a.txt"))).isEqualTo("old")
+        assertThat(memory.stat("/new")).isNull()
+        assertThat(gateway.invoke("read", args("/mnt/demo/a.txt")).jsonObject["content"]?.jsonPrimitive?.content).isEqualTo("old")
+        assertThat(broker.pending.value).isEmpty()
     }
 
     @Test fun `写入删除免审批且覆盖仍须满足哈希条件`() = runBlocking {

@@ -204,16 +204,19 @@ object SystemPromptSections {
 
     /** 挂载别名与设备路径都由用户输入，截断后写入提示，避免挤占上下文。 */
     private fun mountedFolders(mounts: List<com.promenar.nexara.domain.storage.ExternalMount>, usesLinux: Boolean): String? {
-        val visible = mounts.filterNot { it.isUserSkills || usesLinux && it.sourceType != "real_path" }.sortedBy { it.alias }
+        val visible = mounts.filterNot { it.isUserSkills || usesLinux && it.sourceType != "real_path" &&
+            it.sourceType != com.promenar.nexara.data.storage.ExternalMountPaths.KNOWLEDGE_BASE_SOURCE }.sortedBy { it.alias }
         if (visible.isEmpty()) return null
         return buildString {
             appendLine("### Mounted Folders")
-            appendLine("- The user added these folders to this conversation. File tools reach them at `/mnt/<alias>/` and may read, write and delete inside them.")
+            appendLine("- 文件工具通过 `/mnt/<alias>/` 访问会话挂载；标记为只读的挂载只允许读取、列目录和搜索。")
             visible.forEach { mount ->
                 val alias = mount.alias.take(64)
                 val realPath = runCatching { com.promenar.nexara.data.storage.ExternalMountPaths.commandAccess(mount).realPath }.getOrNull()
                 appendLine(when {
                     mount.unavailableReason != null -> "- `/mnt/$alias/`: currently unavailable; ask the user to check or re-authorize it."
+                    mount.sourceType == com.promenar.nexara.data.storage.ExternalMountPaths.KNOWLEDGE_BASE_SOURCE -> "- `/mnt/$alias/`：只读；仅文件工具可访问，命令无法访问知识库挂载。"
+                    mount.readOnly -> "- `/mnt/$alias/`：只读；仅允许读取、列目录和搜索。"
                     realPath != null && usesLinux -> "- `/mnt/$alias/`：Linux 命令与文件工具使用同一路径。"
                     realPath != null -> "- `/mnt/$alias/`: commands reach it at the real path `${realPath.take(256)}`."
                     else -> "- `/mnt/$alias/`: file tools only. It was authorized through the system folder picker, so shell, Python and Termux commands cannot reach it."

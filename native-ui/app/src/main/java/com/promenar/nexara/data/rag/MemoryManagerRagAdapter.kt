@@ -15,6 +15,21 @@ class MemoryManagerRagAdapter(
         sessionId: String,
         options: RagOptions,
         onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+    ): RagRetrievalResult = retrieve(query, sessionId, options, onProgress, allowQueryRewrite = true)
+
+    override suspend fun retrieveForTool(
+        query: String,
+        sessionId: String,
+        options: RagOptions,
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+    ): RagRetrievalResult = retrieve(query, sessionId, options, onProgress, allowQueryRewrite = false)
+
+    private suspend fun retrieve(
+        query: String,
+        sessionId: String,
+        options: RagOptions,
+        onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?,
+        allowQueryRewrite: Boolean,
     ): RagRetrievalResult {
         val memoryManager = memoryManagerProvider()
         // 检索参数一律取全局；会话只提供开关与范围，旧会话调优字段不再读取。
@@ -28,6 +43,7 @@ class MemoryManagerRagAdapter(
             documentScope = options.effectiveDocumentScope,
             sessionId = sessionId,
             enableRerank = options.enableRerank,
+            allowQueryRewrite = allowQueryRewrite,
             configOverride = global.copy(
                 enableMemory = options.enableMemory,
                 enableDocs = options.enableDocs,

@@ -149,7 +149,7 @@ class ApprovalManager(
         } ?: return
         val currentCall = request.calls.first()
         val resolve = resolveExecutionTarget
-        if (currentCall.executionTarget != null && resolve != null) {
+        if (approved && currentCall.executionTarget != null && resolve != null) {
             val resolved = try {
                 resolve(session, assistantMessageId, currentCall)
             } catch (cancelled: CancellationException) {
