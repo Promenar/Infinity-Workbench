@@ -115,6 +115,7 @@ data class InferenceParams(
      * 非空时采样参数完全由会话决定，不再逐项沿用助手设置；null 时逐项回退到助手。
      */
     val parameterSchemeId: String? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val streamTimeout: Int? = 120,
     val autoSummaryThreshold: Double = 0.8,
     val keepRecentTurns: Int? = null,
@@ -440,17 +441,29 @@ data class RagOptions(
     val documentScope: DocumentScope? = null,
     val enableKnowledgeGraph: Boolean? = null,
     val enableRerank: Boolean = true,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val memoryLimit: Int? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val memoryThreshold: Float? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val docLimit: Int? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val docThreshold: Float? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val rerankTopK: Int? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val rerankFinalK: Int? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val enableQueryRewrite: Boolean? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val queryRewriteStrategy: String? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val queryRewriteCount: Int? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val enableHybridSearch: Boolean? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val hybridAlpha: Float? = null,
+    /** 仅为旧数据解码保留，运行时不读取。 */
     val hybridBM25Boost: Float? = null
 ) {
     // 旧会话只有 isGlobal：开启时迁移为“本助手”，关闭时为“仅本会话”；文档统一为“工作区 + 全局知识库”。
@@ -466,12 +479,15 @@ data class RagOptions(
 data class SessionOptions(
     val toolsEnabled: Boolean = true,
     val enableTimeInjection: Boolean = true,
-    val webSearch: Boolean = false,  // 降级：默认关闭被动预注入，不影响工具调用
+    /** 仅为旧数据解码保留，运行时不读取。 */
+    val webSearch: Boolean = false,
     val ragOptions: RagOptions? = null,
     val fontSize: Int = 15,
     /** 仅兼容已保存会话的解码，不参与上下文构建。 */
     val economyMode: Boolean = false,
-    val enableGeminiSearch: Boolean = true
+    /** 仅为旧数据解码保留，运行时不读取。 */
+    val enableGeminiSearch: Boolean = true,
+    val keepWebSearchWhenToolsOff: Boolean = true
 )
 
 @Serializable

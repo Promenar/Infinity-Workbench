@@ -21,6 +21,27 @@ class RagConfigPersistenceTest {
     }
 
     @Test
+    fun `深度档位只保存四个原始键且默认读取为均衡`() {
+        val prefs = emptyPrefs()
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { prefs.edit() } returns editor
+        every { editor.putInt(any(), any()) } returns editor
+        val persistence = RagConfigPersistence(prefs)
+        assertThat(persistence.loadRetrievalDepth()).isEqualTo(com.promenar.nexara.data.rag.RetrievalDepth.BALANCED)
+        persistence.saveRetrievalDepth(com.promenar.nexara.data.rag.RetrievalDepth.LEAN)
+        verify(exactly = 1) { editor.putInt(RagConfigPersistence.KEY_MEMORY_LIMIT, 3) }
+        verify(exactly = 1) { editor.putInt(RagConfigPersistence.KEY_DOC_LIMIT, 4) }
+        verify(exactly = 1) { editor.putInt(RagConfigPersistence.KEY_RERANK_TOP_K, 20) }
+        verify(exactly = 1) { editor.putInt(RagConfigPersistence.KEY_RERANK_FINAL_K, 3) }
+        verify(exactly = 4) { editor.putInt(any(), any()) }
+        verify(exactly = 0) { editor.remove(any()) }
+        verify(exactly = 0) { editor.putString(any(), any()) }
+        verify(exactly = 0) { editor.putBoolean(any(), any()) }
+        verify(exactly = 0) { editor.putFloat(any(), any()) }
+        verify(exactly = 1) { editor.apply() }
+    }
+
+    @Test
     fun `loadRagConfig returns defaults when prefs empty`() {
         val config = RagConfigPersistence(emptyPrefs()).loadRagConfig()
         assertThat(config.docChunkSize).isEqualTo(800)

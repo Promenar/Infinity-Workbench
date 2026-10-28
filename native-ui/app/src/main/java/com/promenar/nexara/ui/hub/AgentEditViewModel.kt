@@ -44,6 +44,7 @@ class AgentEditViewModel(
     workspaces: Flow<List<WorkspaceEntity>> = flowOf(emptyList()),
     /** 按模型保存的参数方案；为 null 时不提供方案。 */
     private val parameterSchemeRepository: com.promenar.nexara.data.repository.ParameterSchemeRepository? = null,
+    private val deleteAgentUseCase: com.promenar.nexara.domain.usecase.DeleteAgentUseCase? = null,
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -386,7 +387,7 @@ class AgentEditViewModel(
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
         viewModelScope.launch {
             try {
-                agentRepository.delete(agentId)
+                if (deleteAgentUseCase != null) deleteAgentUseCase.invoke(agentId) else agentRepository.delete(agentId)
                 _saveError.value = null
                 retryAction = null
                 onDeleted()
@@ -537,6 +538,7 @@ class AgentEditViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return AgentEditViewModel(
+                        deleteAgentUseCase = app.deleteAgentUseCase,
                         parameterSchemeRepository = app.parameterSchemeRepository,
                         agentRepository = app.agentRepository,
                         ragConfigPersistence = RagConfigPersistence(

@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.manager
 
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.generation.BuiltinToolPreferences
 import com.promenar.nexara.data.generation.DefaultSessionToolResolver
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.generation.SessionToolResolver
@@ -432,6 +433,35 @@ class ToolExecutorTest {
         assertThat(failure).isInstanceOf(com.promenar.nexara.data.session.SessionDeletingException::class.java)
         release.complete(Unit)
         deletion.await()
+    }
+
+    @Test
+    fun `关闭工具时搜索经过真实解析与账本执行且拒绝其它工具`() = testScope.runTest {
+        seedSessionWithAssistant(toolsEnabled = false)
+        var searches = 0
+        var reads = 0
+        val web = testSkill("web_search") { searches++; ToolResult("web", "搜索结果") }
+        val read = testSkill("read_file") { reads++; ToolResult("read", "不应执行") }
+        val registry = skillsRegistry(web, read)
+        val settings = mockk<SharedPreferences>(relaxed = true)
+        every { settings.getStringSet(any(), any()) } returns null
+        val resolver = DefaultSessionToolResolver(settings, registry)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, registry, resolver, ledger = ledger)
+        val prepared = resolver.resolve(store.getSession("s1")!!)
+        assertThat(prepared.map { it.function.name }).containsExactly("web_search")
+        executor.executeTools("s1", "m1", listOf(ToolCall("web", "web_search", "{}"), ToolCall("read", "read_file", "{}")), preparedTools = prepared)
+        assertThat(searches).isEqualTo(1)
+        assertThat(reads).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "web"))).isEqualTo(ToolLedgerState.SUCCEEDED)
+        store.updateSession("s1") { it.copy(options = it.options.copy(keepWebSearchWhenToolsOff = false)) }
+        executor.executeTools("s1", "m1", listOf(ToolCall("off", "web_search", "{}")), preparedTools = prepared)
+        assertThat(searches).isEqualTo(1)
+        store.updateSession("s1") { it.copy(options = it.options.copy(keepWebSearchWhenToolsOff = true)) }
+        every { settings.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns emptySet()
+        every { settings.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns setOf("web_search")
+        executor.executeTools("s1", "m1", listOf(ToolCall("global-off", "web_search", "{}")), preparedTools = prepared)
+        assertThat(searches).isEqualTo(1)
     }
 
     @Test

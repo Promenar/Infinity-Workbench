@@ -117,11 +117,8 @@ internal object GeminiContentCodec {
                     )))
                 })
             }
-            // 内置 Google 搜索与函数调用组合时，响应会带需要原样回传的内置工具 part；Agent 模式不叠加内置搜索。
-            val useGoogleSearch = request.enableGeminiSearch != false && !hasFunctionTools
-            if (hasFunctionTools || useGoogleSearch) {
+            if (hasFunctionTools) {
                 put("tools", buildJsonArray {
-                    if (useGoogleSearch) add(buildJsonObject { put("googleSearch", buildJsonObject {}) })
                     if (hasFunctionTools) {
                         add(buildJsonObject {
                             put("functionDeclarations", JsonArray(request.tools.orEmpty().map { tool ->

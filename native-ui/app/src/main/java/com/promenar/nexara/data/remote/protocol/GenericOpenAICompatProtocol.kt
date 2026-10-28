@@ -340,8 +340,7 @@ class GenericOpenAICompatProtocol(
                 put("stream_options", buildJsonObject { put("include_usage", true) })
             }
 
-            // OpenAI 兼容端点只接受 function 工具；Gemini 原生 googleSearchRetrieval 仅由 VertexAIProtocol 发送，
-            // 注入到兼容请求会被网关以 400 拒绝。
+            // OpenAI 兼容端点只接受 function 工具。
             if (request.tools != null && request.tools.isNotEmpty()) {
                 put("tools", buildJsonArray {
                     request.tools.forEach { tool ->

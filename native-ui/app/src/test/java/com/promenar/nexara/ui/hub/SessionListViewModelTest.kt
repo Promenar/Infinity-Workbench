@@ -69,13 +69,15 @@ class SessionListViewModelTest {
             id = "a1", name = "Agent", modelId = "provider::gpt-4",
             temperature = 0.5, topP = 0.8, maxTokens = 2048,
             executionMode = ExecutionMode.WORKSPACE,
+            defaultWorkspaceId = "workspace-a",
             skills = listOf("read_file", "calculator"),
             mcpServerIds = listOf("server-a", "server-b"),
         )
         every { agentRepo.observeById("a1") } returns flowOf(agent)
         coEvery { sessionRepo.getAll() } returns emptyList()
 
-        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
+        val global = com.promenar.nexara.data.rag.RagConfiguration(enableDocs = false)
+        val vm = SessionListViewModel(store, sessionRepo, agentRepo, globalRagConfig = { global })
         var createdSessionId: String? = null
         vm.createSession("a1") { createdSessionId = it }
 
@@ -83,6 +85,10 @@ class SessionListViewModelTest {
         assertThat(createdSessionId!!).startsWith("session_")
         val session = store.get().sessions.first()
         assertThat(session.modelId).isEqualTo("provider::gpt-4")
+        assertThat(session.workspaceId).isEqualTo("workspace-a")
+        assertThat(session.ragOptions).isNotNull()
+        assertThat(session).isEqualTo(com.promenar.nexara.domain.usecase.newSessionDefaults(
+            session.id, "a1", agent, null, global, session.createdAt))
         // 会话不复制助手参数，生成时按 会话 → 助手 → 模型默认 解析。
         assertThat(session.inferenceParams).isNull()
         assertThat(session.executionMode).isEqualTo("workspace")

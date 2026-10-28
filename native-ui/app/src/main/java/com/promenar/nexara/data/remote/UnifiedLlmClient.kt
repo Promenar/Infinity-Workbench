@@ -94,7 +94,6 @@ class UnifiedLlmClient(
             toolChoice = finalParams.toolChoice,
             stream = true,
             webSearch = finalParams.enableWebSearch || config.enableWebSearch,
-            enableGeminiSearch = finalParams.enableGeminiSearch,
             streamTimeout = finalParams.streamTimeout,
             sessionHeaders = resolveSessionRequestHeaders(providerConfig.sessionHeaderName, config.sessionId, sessionIdentifier),
         )

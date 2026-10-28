@@ -53,7 +53,7 @@ data class ContextRetrieval(
     val kgContext: String,
     val kgPaths: List<com.promenar.nexara.data.model.KgPath>,
     val ragTrace: RagRetrievalTrace? = null,
-    /** 本轮实际生效的检索选项（会话、临时选项与助手配置合并后）；轮后写入记忆按它判断。 */
+    /** 本轮实际生效的检索选项（全局门控、会话范围与助手记忆上限合并后）；轮后写入记忆按它判断。 */
     val effectiveRagOptions: com.promenar.nexara.data.model.RagOptions? = null,
 )
 
@@ -150,7 +150,7 @@ class ContextBuilder(
         val retrieval = params.cachedRetrieval ?: retrieve(params)
 
         // 预取任务计划（suspend 调用）
-        val activePlan: TaskState? = try {
+        val activePlan: TaskState? = if (!params.session.options.toolsEnabled) null else try {
             taskRepository?.getPlan(params.sessionId)
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
@@ -164,7 +164,9 @@ class ContextBuilder(
                 java.nio.file.Files.exists(it.root.resolve("skills").toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
             }
         } ?: false
-        val stateSnapshot = stateBoardRepository?.get(params.sessionId, params.stateExcludedMessageIds)
+        val stateSnapshot = if (params.session.options.toolsEnabled) {
+            stateBoardRepository?.get(params.sessionId, params.stateExcludedMessageIds)
+        } else null
         stateBoardRepository?.recordContextRead(params.sessionId, params.assistantMsgId, stateSnapshot?.revision ?: 0)
         val memoryContext = if (params.session.options.toolsEnabled && longTermMemoryRepository != null && longTermMemoryAccess != null) {
             try {
@@ -210,18 +212,15 @@ class ContextBuilder(
     }
 
     private suspend fun retrieve(params: ContextBuilderParams): ContextRetrieval {
-        val (searchContext, searchCitations) = if (params.session.options.webSearch) {
-            val cleanedQuery = cleanSearchQuery(params.content)
-            NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 已提炼: inputChars=${params.content.length}, outputChars=${cleanedQuery.length}")
-            performClientSideSearch(cleanedQuery)
-        } else "" to emptyList()
+        val searchContext = ""
+        val searchCitations = emptyList<com.promenar.nexara.data.model.Citation>()
 
-        // effective RagOptions 只计算一次：RAG 与 KG 共享同一份配置（含 agent 覆盖）
+        // RAG 与 KG 共用会话开关、范围及全局门控。
         val effectiveRagOptions = computeEffectiveRagOptions(params)
 
         val ragResult = performRagRetrieval(params, effectiveRagOptions)
 
-        // KG 启用判定与 RAG 共享 effective 配置：agent enableKnowledgeGraph=false 可覆盖 session true
+        // KG 启用判定与 RAG 共享同一份生效配置。
         val kgEnabled = effectiveRagOptions.enableKnowledgeGraph == true
         var jitExtractionCount = 0
         var jitModel: String? = null
@@ -272,10 +271,7 @@ class ContextBuilder(
     }
 
 
-    /**
-     * 合并 session/temp RagOptions 后应用 agent 检索配置，作为 RAG 与 KG 共用的唯一 effective 配置。
-     * agent.enableKnowledgeGraph=false 可强制关闭 KG（覆盖 session 的 true）。
-     */
+    /** 开关与范围只取临时选项与会话；全局开关仅作新会话初值，智能体只收紧记忆权限上限。 */
     private fun computeEffectiveRagOptions(params: ContextBuilderParams): com.promenar.nexara.data.model.RagOptions {
         val sessionRagOptions = params.session.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
         val tempRagOptions = params.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
@@ -291,7 +287,7 @@ class ContextBuilder(
             enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
             enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
         )
-        return params.agentMemoryPolicy.clamp(applyAgentRetrievalConfig(mergedRagOptions, params.agentRetrievalConfig))
+        return params.agentMemoryPolicy.clamp(mergedRagOptions)
     }
 
     /**
@@ -369,22 +365,6 @@ class ContextBuilder(
         const val MAX_KG_SERIALIZED_BYTES = 512 * 1024
     }
 
-    private fun cleanSearchQuery(rawQuery: String): String {
-        return rawQuery.trim().replace("\\s+".toRegex(), " ")
-    }
-
-    private suspend fun performClientSideSearch(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
-        if (webSearchProvider == null) return "" to emptyList()
-        return try {
-            webSearchProvider.search(query)
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            NexaraLogger.logError("ContextBuilder.WebSearch", e)
-            "" to emptyList()
-        }
-    }
-
     private suspend fun performRagRetrieval(
         params: ContextBuilderParams,
         effectiveRagOptions: com.promenar.nexara.data.model.RagOptions
@@ -418,32 +398,6 @@ class ContextBuilder(
             NexaraLogger.logError("ContextBuilder.RAGRetrieval", e)
             skipped.copy(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED))
         }
-    }
-
-    private fun applyAgentRetrievalConfig(
-        base: com.promenar.nexara.data.model.RagOptions,
-        agentConfig: AgentRetrievalConfig?
-    ): com.promenar.nexara.data.model.RagOptions {
-        if (agentConfig == null) return base
-        return base.copy(
-            enableMemory = base.enableMemory && agentConfig.enableMemory,
-            enableDocs = base.enableDocs && agentConfig.enableDocs,
-            // agent 的 KG 关闭可强制覆盖 session 的开启；session 未显式开启时仍保持关闭
-            enableKnowledgeGraph = base.enableKnowledgeGraph == true && agentConfig.enableKnowledgeGraph,
-            enableRerank = base.enableRerank && agentConfig.enableRerank,
-            memoryLimit = agentConfig.memoryLimit,
-            memoryThreshold = agentConfig.memoryThreshold,
-            docLimit = agentConfig.docLimit,
-            docThreshold = agentConfig.docThreshold,
-            rerankTopK = agentConfig.rerankTopK,
-            rerankFinalK = agentConfig.rerankFinalK,
-            enableQueryRewrite = agentConfig.enableQueryRewrite,
-            queryRewriteStrategy = agentConfig.queryRewriteStrategy,
-            queryRewriteCount = agentConfig.queryRewriteCount,
-            enableHybridSearch = agentConfig.enableHybridSearch,
-            hybridAlpha = agentConfig.hybridAlpha,
-            hybridBM25Boost = agentConfig.hybridBM25Boost
-        )
     }
 
     private fun buildSystemPrompt(
@@ -504,7 +458,7 @@ class ContextBuilder(
         }
 
         // 4. 任务计划
-        if (activePlan != null && activePlan.status !in listOf("idle", "dropped")) {
+        if (session.options.toolsEnabled && activePlan != null && activePlan.status !in listOf("idle", "dropped")) {
             sb.appendLine()
             appendTaskContext(sb, activePlan)
         }

@@ -25,8 +25,8 @@ class AgentConfigResolver(
             systemPrompt = agent?.systemPrompt ?: "",
             modelId = agent?.modelId ?: globalPrefs.getString("default_model", "") ?: "",
             inferenceDefaults = agent?.inferenceDefaults() ?: InferenceParams(),
-            ragConfig = agent?.ragConfig,
-            retrievalConfig = agent?.retrievalConfig?.takeUnless { agent.useInheritedConfig },
+            ragConfig = null,
+            retrievalConfig = null,
             memoryPolicy = agent?.memoryPolicy ?: AgentMemoryPolicy(),
         )
     }

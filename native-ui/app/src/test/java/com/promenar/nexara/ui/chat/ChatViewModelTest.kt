@@ -849,6 +849,33 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `首页和斜杠新建会话初值一致且携带智能体默认工作区`() = runTest {
+        val agent = Agent("shared-agent", "智能体", modelId = "local::model",
+            defaultWorkspaceId = "ws-shared", skills = listOf("custom"), mcpServerIds = listOf("mcp"),
+            executionMode = com.promenar.nexara.domain.model.ExecutionMode.FULL_ACCESS)
+        stubAgentRepo.create(agent)
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val global = com.promenar.nexara.domain.usecase.RagConfigPersistence(app.getSharedPreferences("rag_settings", 0)).loadFullConfig()
+        val hubAgents = io.mockk.mockk<com.promenar.nexara.data.repository.AgentRepository>()
+        io.mockk.every { hubAgents.observeById(agent.id) } returns kotlinx.coroutines.flow.flowOf(agent)
+        val hubRepo = io.mockk.mockk<ISessionRepository>(relaxed = true)
+        io.mockk.coEvery { hubRepo.getById(any()) } returns null
+        val hubStore = ChatStore()
+        val home = com.promenar.nexara.ui.hub.SessionListViewModel(hubStore, hubRepo, hubAgents, globalRagConfig = { global })
+        home.createSession(agent.id) {}
+        advanceUntilIdle()
+        val homeSession = hubStore.get().sessions.single()
+        viewModel.createNewSession(agent.id)
+        advanceUntilIdle()
+        val slashId = viewModel.createSessionForCurrentAgent()!!
+        advanceUntilIdle()
+        val slash = savedSessions.single { it.id == slashId }
+        assertThat(slash.workspaceId).isEqualTo("ws-shared")
+        assertThat(slash.copy(id = homeSession.id, createdAt = homeSession.createdAt, updatedAt = homeSession.updatedAt,
+            workspacePath = homeSession.workspacePath, workspaceRootUuid = homeSession.workspaceRootUuid)).isEqualTo(homeSession)
+    }
+
+    @Test
     fun createNewSessionCopiesAgentDefaultWorkspace() = runTest {
         stubAgentRepo.create(Agent(id = "workspace-agent", name = "Workspace Agent", defaultWorkspaceId = "ws-1"))
 

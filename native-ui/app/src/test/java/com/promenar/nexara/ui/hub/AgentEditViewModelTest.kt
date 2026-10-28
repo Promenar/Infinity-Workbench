@@ -55,6 +55,60 @@ class AgentEditViewModelTest {
     }
 
     @Test
+    fun `无宿主删除及宿主重建后均清理保存的会话路由且重放一次`() = runTest {
+        val sessions = mockk<com.promenar.nexara.data.repository.ISessionRepository>()
+        coEvery { sessions.getAll() } returns listOf(com.promenar.nexara.data.model.Session("s", "a"))
+        val deletion = com.promenar.nexara.domain.usecase.DeleteAgentUseCase(repo, sessions)
+        deletion("a")
+        val first = mutableListOf<Set<String>>()
+        val release = deletion.registerSessionCloser { first += it }
+        assertThat(first).containsExactly(setOf("s"))
+        deletion("a")
+        assertThat(first).hasSize(2)
+        release()
+        val restored = mutableListOf<Set<String>>()
+        val releaseRestored = deletion.registerSessionCloser { restored += it }
+        assertThat(restored).containsExactly(setOf("s"))
+        releaseRestored()
+        deletion.registerSessionCloser { error("关闭记录已重放，不应重复") }
+    }
+
+    @Test
+    fun `编辑页通过共享删除流程先关闭所属会话再删智能体`() = runTest {
+        val events = mutableListOf<String>()
+        val sessions = mockk<com.promenar.nexara.data.repository.ISessionRepository>()
+        coEvery { sessions.getAll() } returns listOf(
+            com.promenar.nexara.data.model.Session("s1", "a1"), com.promenar.nexara.data.model.Session("other", "a2"))
+        coEvery { repo.delete("a1") } coAnswers { events += "delete" }
+        val deletion = com.promenar.nexara.domain.usecase.DeleteAgentUseCase(repo, sessions)
+        deletion.registerSessionCloser { ids ->
+            assertThat(ids).containsExactly("s1")
+            events += "close"
+        }
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), deleteAgentUseCase = deletion)
+        vm.deleteAgent("a1") { events += "callback" }
+        assertThat(events).containsExactly("close", "delete", "callback").inOrder()
+        assertThat(vm.saveError.value).isNull()
+    }
+
+    @Test
+    fun `关闭会话失败不删除智能体且可重试`() = runTest {
+        val sessions = mockk<com.promenar.nexara.data.repository.ISessionRepository>()
+        coEvery { sessions.getAll() } returns emptyList()
+        val deletion = com.promenar.nexara.domain.usecase.DeleteAgentUseCase(repo, sessions)
+        val release = deletion.registerSessionCloser { error("关闭失败") }
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs), deleteAgentUseCase = deletion)
+        var callbacks = 0
+        vm.deleteAgent("a1") { callbacks++ }
+        coVerify(exactly = 0) { repo.delete(any()) }
+        assertThat(vm.saveError.value).isEqualTo(AgentEditErrorCode.DELETE_FAILED)
+        release()
+        vm.retryLastFailure()
+        coVerify(exactly = 1) { repo.delete("a1") }
+        assertThat(callbacks).isEqualTo(1)
+    }
+
+    @Test
     fun `loadAgent populates state from repository`() = runTest {
         val agent = Agent(
             id = "a1",

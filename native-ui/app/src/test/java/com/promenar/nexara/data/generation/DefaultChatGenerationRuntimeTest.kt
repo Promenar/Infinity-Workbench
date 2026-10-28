@@ -1755,10 +1755,10 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(prompts.map { it.toolChoice }).containsExactly(
             ProtocolToolChoice.AUTO, ProtocolToolChoice.AUTO, ProtocolToolChoice.AUTO,
         ).inOrder()
-        // 检索只依赖用户问题：三轮请求只联网一次，且每轮系统提示都带同一份检索结果。
+        // 检索只依赖用户问题：三轮请求只检索一次，且每轮系统提示都带同一份检索结果。
         assertThat(searches).isEqualTo(1)
         assertThat(prompts.all { prompt ->
-            prompt.messages.first { it.role == "system" }.content.contains("SEARCH-CONTEXT-MARKER")
+            prompt.messages.first { it.role == "system" }.content.contains("RAG-CONTEXT-MARKER")
         }).isTrue()
     }
 
@@ -1885,10 +1885,11 @@ class DefaultChatGenerationRuntimeTest {
             override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
         }
         var searches = 0
-        val countingSearch = object : com.promenar.nexara.ui.chat.manager.WebSearchProvider {
-            override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+        val countingRetrieval = object : com.promenar.nexara.ui.chat.manager.RagProvider {
+            override suspend fun retrieveContext(query: String, sessionId: String, options: RagOptions,
+                onProgress: ((String, Int, String?) -> Unit)?): com.promenar.nexara.ui.chat.manager.RagRetrievalResult {
                 searches++
-                return "SEARCH-CONTEXT-MARKER" to emptyList()
+                return com.promenar.nexara.ui.chat.manager.RagRetrievalResult("RAG-CONTEXT-MARKER", emptyList(), null)
             }
         }
         val toolExecutor = mockk<ToolExecutor>()
@@ -1934,7 +1935,7 @@ class DefaultChatGenerationRuntimeTest {
             agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
             configResolver = AgentConfigResolver(settings),
             routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder = ContextBuilder(webSearchProvider = countingSearch),
+            contextBuilder = ContextBuilder(ragProvider = countingRetrieval),
             messageManager = messageManager,
             localProviderFactory = { provider },
             provider = provider,
@@ -1985,6 +1986,8 @@ class DefaultChatGenerationRuntimeTailnetTest {
             update {
                 ChatState(sessions = listOf(Session(
                     id = "s-tailnet", agentId = "agent", modelId = "gateway::qwen",
+                    inferenceParams = InferenceParams(streamTimeout = 7),
+                    options = SessionOptions(webSearch = true, enableGeminiSearch = true),
                     messages = listOf(Message("u", MessageRole.USER, "question"), Message("a-tailnet", MessageRole.ASSISTANT, "")),
                 )))
             }
@@ -2070,6 +2073,9 @@ class DefaultChatGenerationRuntimeTailnetTest {
 
         assertThat(chunks.filterIsInstance<GenerationChunk.Failure>()).isEmpty()
         assertThat(sent).hasSize(1)
+        assertThat(sent.single().streamTimeout).isNull()
+        assertThat(sent.single().webSearch).isNull()
+        assertThat(sent.single().enableGeminiSearch).isNull()
         assertThat(waits.last()).isEqualTo(TailnetWaitState.Connected)
     }
 }

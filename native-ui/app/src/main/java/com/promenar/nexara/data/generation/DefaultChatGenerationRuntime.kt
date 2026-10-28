@@ -607,10 +607,7 @@ internal class DefaultChatGenerationRuntime(
             tools = tools.ifEmpty { null },
             // 收尾轮仍声明工具（历史中的调用需要它们才能被部分协议解析），但禁止再发起调用。
             toolChoice = if (finalAnswerMode) ProtocolToolChoice.NONE else ProtocolToolChoice.AUTO,
-            webSearch = session.options.webSearch,
-            enableGeminiSearch = session.options.enableGeminiSearch,
             stream = true,
-            streamTimeout = (inference.streamTimeout ?: 120).toLong() * 1000,
         )
         val budgetedPrompt = compactContext(request, session, prompt, systemPrompt).prompt
         val hasFullContextDocuments = request.userMessageId
@@ -674,12 +671,10 @@ internal class DefaultChatGenerationRuntime(
                     repetitionPenalty = prompt.repetitionPenalty,
                     reasoningEffort = prompt.reasoningEffort,
                     streamTimeout = prompt.streamTimeout,
-                    enableGeminiSearch = prompt.enableGeminiSearch,
                     tools = preparedTools.associateBy { it.function.name },
                     toolChoice = prompt.toolChoice,
-                    enableWebSearch = prompt.webSearch == true,
                 ),
-                StreamConfig(enableWebSearch = prompt.webSearch == true, sessionId = request.sessionId),
+                StreamConfig(sessionId = request.sessionId),
             )
         }
         return source.mapNotNull(::toGenerationChunk)

@@ -10,7 +10,9 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.usecase.IdGenerator
-import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.usecase.newSessionDefaults
+import com.promenar.nexara.domain.usecase.RagConfigPersistence
+import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.utils.NexaraLogger
@@ -32,6 +34,7 @@ class SessionListViewModel(
     private val agentRepository: AgentRepository,
     coordinatedDelete: (suspend (String, Boolean) -> com.promenar.nexara.data.session.SessionDeletionResult)? = null,
     private val onDeleted: (com.promenar.nexara.data.session.SessionDeletionResult) -> Unit = {},
+    private val globalRagConfig: () -> RagConfiguration = { RagConfiguration() },
 ) : ViewModel() {
 
     private val sessionManager = SessionManager(store, sessionRepository, coordinatedDelete)
@@ -66,20 +69,9 @@ class SessionListViewModel(
         viewModelScope.launch {
             _operationFailed.value = false
             val agent = try { agentRepository.observeById(agentId).first() } catch (_: Exception) { null }
-            val defaultModelId = agent?.modelId
-                ?.takeIf { it.isNotBlank() }
-                ?: resolveDefaultModelId()
             val sessionId = IdGenerator.session()
-            val session = Session(
-                id = sessionId,
-                agentId = agentId,
-                modelId = defaultModelId,
-                executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "workspace",
-                activeSkillIds = agent?.skills.orEmpty(),
-                activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
-                // 参数不复制进会话：生成时逐项回退到助手设置，修改助手后未自定义的会话随之生效。
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+            val session = newSessionDefaults(
+                sessionId, agentId, agent, resolveDefaultModelId(), globalRagConfig(), System.currentTimeMillis(),
             )
             try {
                 sessionMutationMutex.withLock {
@@ -153,6 +145,7 @@ class SessionListViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val app = application as NexaraApplication
                     return SessionListViewModel(
+                        globalRagConfig = { RagConfigPersistence(app.getSharedPreferences("rag_settings", 0)).loadFullConfig() },
                         store = app.chatStore,
                         sessionRepository = app.sessionRepository,
                         agentRepository = app.agentRepository,

@@ -38,6 +38,22 @@ class AgentHubViewModelTest {
     }
 
     @Test
+    fun `首页删除同样先关闭会话且重新绑定不重复调用`() = runTest {
+        val events = mutableListOf<String>()
+        val repo = mockk<AgentRepository>(relaxed = true)
+        every { repo.observeAll() } returns flowOf(emptyList())
+        val sessions = mockk<com.promenar.nexara.data.repository.ISessionRepository>()
+        coEvery { sessions.getAll() } returns listOf(com.promenar.nexara.data.model.Session("s", "a"))
+        coEvery { repo.delete("a") } coAnswers { events += "delete" }
+        val deletion = com.promenar.nexara.domain.usecase.DeleteAgentUseCase(repo, sessions)
+        val vm = AgentHubViewModel(repo, CreateAgentUseCase(repo), emptyList(), deletion)
+        vm.bindSessionCloser { error("已被替换的回调") }
+        vm.bindSessionCloser { assertThat(it).containsExactly("s"); events += "close" }
+        vm.deleteAgent("a")
+        assertThat(events).containsExactly("close", "delete").inOrder()
+    }
+
+    @Test
     fun `init loads agents from repository`() = runTest {
         val repo: AgentRepository = mockk()
         val agents = listOf(
