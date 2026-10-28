@@ -242,6 +242,8 @@ internal fun shouldShowEmptyWordmark(uiState: ChatUiState): Boolean =
 data class ChatScreenState(
     val uiState: ChatUiState = ChatUiState(),
     val inputText: String = "",
+    /** 本页看到的生成正常完成次数，驱动浮岛完成闪光。 */
+    val completionFlashes: Int = 0,
     val tokenState: ChatViewModel.TokenIndicatorState = ChatViewModel.TokenIndicatorState(),
     val ragPhases: List<com.promenar.nexara.data.model.RagPhase> = emptyList(),
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
@@ -1189,6 +1191,7 @@ fun ChatScreenContent(
                             status = uiState.status,
                             isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
+                            completionFlashes = state.completionFlashes,
                             onSendSteering = { submitDraft(actions.onSendSteering) },
                             onStopAndSend = { submitDraft(actions.onStopAndSend) },
                             onDismissError = actions.onDismissGenerationError,
@@ -2598,6 +2601,8 @@ fun ChatInputBar(
     isGenerating: Boolean = status == GenerationStatus.UPLOADING ||
         status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING,
     onStop: () -> Unit = {},
+    /** 本页看到的生成正常完成次数，每次增加时浮岛整圈泛绿一次。 */
+    completionFlashes: Int = 0,
     /** 生成中把草稿排到队首，当前步骤结束后发出（长按菜单）。 */
     onSendSteering: () -> Unit = {},
     /** 停止本轮并立即发出草稿（长按菜单）。 */
@@ -2659,12 +2664,16 @@ fun ChatInputBar(
             trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.None,
         ),
     )
-    // 浮岛与底部导航栏同一套材质：抬升底色、半透明描边与投影；生成时外圈流光环绕，出错时整圈泛红。
+    // 浮岛与底部导航栏同一套材质：抬升底色、半透明描边与投影；生成时外圈流光环绕，出错时整圈泛红，本轮完成时整圈泛绿。
     val material = composerIslandMaterial()
     // 等待审批时生成已暂停，浮岛仍保持第三色慢闪，提示轮到用户处理。
     val awaitingUser = com.promenar.nexara.ui.common.motion.LocalGenerationMotion.current.actual ==
         com.promenar.nexara.ui.common.motion.GenerationMotionPhase.APPROVAL
-    val glow = rememberComposerGlowState(generating = isGenerating || awaitingUser, error = status == GenerationStatus.ERROR)
+    val glow = rememberComposerGlowState(
+        generating = isGenerating || awaitingUser,
+        error = status == GenerationStatus.ERROR,
+        completions = completionFlashes,
+    )
     // 生成中写好了下一条：主按钮变为排队发送，外圈转动表示本轮仍在进行；长按展开插队、停止并发送与只停止。
     val hasDraft = text.isNotBlank() || hasImages || hasDocuments
     val queueing = isGenerating && hasDraft && status in QueueableStatuses

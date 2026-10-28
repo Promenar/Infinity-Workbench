@@ -26,6 +26,7 @@ import androidx.compose.runtime.SideEffect
 import com.promenar.nexara.ui.common.NexaraPaneLevel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -324,9 +325,16 @@ fun ChatRoute(
     LaunchedEffect(statusHaptics, hapticSnapshot) {
         statusHaptics.next(hapticSnapshot, System.currentTimeMillis())?.let(haptics::perform)
     }
+    val completionFlashGate = remember(chatViewModel) { CompletionFlashGate() }
+    var completionFlashes by remember(chatViewModel) { mutableIntStateOf(0) }
+    val runObserved = uiState.isGenerating || uiState.approvalRequest != null
+    LaunchedEffect(completionFlashGate, uiState.session?.id, runObserved) {
+        completionFlashGate.observe(uiState.session?.id, runObserved)
+    }
     LaunchedEffect(statusHaptics) {
         chatViewModel.generationOutcomes.collect { outcome ->
             statusHaptics.onOutcome(outcome, System.currentTimeMillis())?.let(haptics::perform)
+            if (completionFlashGate.onOutcome(outcome)) completionFlashes++
         }
     }
     val taskCompletionUndo by chatViewModel.taskCompletionUndo.collectAsStateWithLifecycle()
@@ -827,6 +835,7 @@ fun ChatRoute(
             state = ChatScreenState(
                 uiState = uiState,
                 inputText = inputText,
+                completionFlashes = completionFlashes,
                 pendingQuestion = pendingQuestion,
                 tokenState = tokenState,
                 ragPhases = ragPhases,
