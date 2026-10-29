@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <plurals name="delete_session_files">
-        <item quantity="other">会话专用空间里有 %1$d 个文件</item>
+        <item quantity="other">本会话文件夹里有 %1$d 个文件</item>
     </plurals>
     <string name="delete_session_keep_files">保留文件</string>
     <string name="delete_session_keep_files_to">存到%1$s</string>

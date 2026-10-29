@@ -61,4 +61,6 @@
     <string name="network_tool_termux_hint">使用 Termux 自己的网络，内置 Tailscale 对它无效</string>
     <string name="network_tool_ssh">SSH</string>
     <string name="network_tool_ssh_hint">只连设置中登记的主机；tailnet 主机经内置 Tailscale</string>
+    <string name="network_tool_linux">Linux 命令 shell_exec</string>
+    <string name="network_tool_linux_hint">在 Alpine 中运行，由系统网络决定；tailnet 经内置 Tailscale 代理</string>
 </resources>

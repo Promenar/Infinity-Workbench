@@ -1,6 +1,7 @@
 package com.promenar.infinity.ui.workspace
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.infinity.R
 import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
 import com.promenar.infinity.data.workspace.SessionWorkspace
 import java.io.File
@@ -34,15 +35,23 @@ class SessionWorkspaceUiTest {
         assertThat(deleted.reason).isEqualTo("工作区登记已删除")
     }
 
-    @Test fun `三类工作区各有一条提醒与一条优势标签`() {
-        listOf(null, WorkspaceEntity.KIND_PROJECT, WorkspaceEntity.KIND_SHARED).forEach { kind ->
-            assertThat(workspaceKindTags(kind)).hasSize(2)
-        }
-        // 会随会话消失、随卸载消失的类型必须带提醒色，避免用户误以为文件长期安全。
-        assertThat(workspaceKindTags(null).map { it.label to it.tone })
-            .contains(com.promenar.infinity.R.string.workspace_tag_gone_with_chat to WorkspaceTagTone.CAUTION)
-        assertThat(workspaceKindTags(WorkspaceEntity.KIND_PROJECT).map { it.label to it.tone })
-            .contains(com.promenar.infinity.R.string.workspace_tag_gone_on_uninstall to WorkspaceTagTone.CAUTION)
-        assertThat(workspaceKindTags(WorkspaceEntity.KIND_SHARED).map { it.tone }).doesNotContain(WorkspaceTagTone.CAUTION)
+    @Test fun `每类工作区两条标签依次说备份与何时消失，只有会被清掉的用提醒色`() {
+        fun tags(kind: String?) = workspaceKindTags(kind).map { it.label to it.tone }
+        assertThat(tags(null)).containsExactly(
+            R.string.workspace_tag_backed_up to WorkspaceTagTone.NEUTRAL,
+            R.string.workspace_tag_kept_on_delete to WorkspaceTagTone.NEUTRAL,
+        ).inOrder()
+        assertThat(tags(WorkspaceEntity.KIND_PROJECT)).containsExactly(
+            R.string.workspace_tag_not_backed_up to WorkspaceTagTone.NEUTRAL,
+            R.string.workspace_tag_gone_on_uninstall to WorkspaceTagTone.CAUTION,
+        ).inOrder()
+        assertThat(tags(WorkspaceEntity.KIND_LINUX_HOME)).containsExactly(
+            R.string.workspace_tag_not_backed_up to WorkspaceTagTone.NEUTRAL,
+            R.string.workspace_tag_cleared_on_reset to WorkspaceTagTone.CAUTION,
+        ).inOrder()
+        assertThat(tags(WorkspaceEntity.KIND_SHARED)).containsExactly(
+            R.string.workspace_tag_not_backed_up to WorkspaceTagTone.NEUTRAL,
+            R.string.workspace_tag_kept_on_uninstall to WorkspaceTagTone.NEUTRAL,
+        ).inOrder()
     }
 }

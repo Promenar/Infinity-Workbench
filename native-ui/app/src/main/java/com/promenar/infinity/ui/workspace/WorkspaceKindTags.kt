@@ -2,8 +2,8 @@ package com.promenar.infinity.ui.workspace
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -28,27 +28,28 @@ import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.infinityDomainColors
 
-enum class WorkspaceTagTone { NEUTRAL, GOOD, CAUTION }
+/** 只有“会被清掉”的情况用提醒色，其余一律中性。 */
+enum class WorkspaceTagTone { NEUTRAL, CAUTION }
 
 data class WorkspaceTag(@StringRes val label: Int, val tone: WorkspaceTagTone)
 
-/** 每类工作区最影响选择的两条差异：文件能否找回、何时会消失。 */
+/** 每类工作区固定两条标签，依次回答“进不进备份”和“什么时候会消失”。 */
 fun workspaceKindTags(kind: String?): List<WorkspaceTag> = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> listOf(
-        WorkspaceTag(R.string.workspace_tag_cross_session, WorkspaceTagTone.NEUTRAL),
+        WorkspaceTag(R.string.workspace_tag_not_backed_up, WorkspaceTagTone.NEUTRAL),
         WorkspaceTag(R.string.workspace_tag_gone_on_uninstall, WorkspaceTagTone.CAUTION),
     )
     WorkspaceEntity.KIND_SHARED -> listOf(
-        WorkspaceTag(R.string.workspace_tag_termux, WorkspaceTagTone.NEUTRAL),
-        WorkspaceTag(R.string.workspace_tag_kept_on_uninstall, WorkspaceTagTone.GOOD),
+        WorkspaceTag(R.string.workspace_tag_not_backed_up, WorkspaceTagTone.NEUTRAL),
+        WorkspaceTag(R.string.workspace_tag_kept_on_uninstall, WorkspaceTagTone.NEUTRAL),
     )
     WorkspaceEntity.KIND_LINUX_HOME -> listOf(
         WorkspaceTag(R.string.workspace_tag_not_backed_up, WorkspaceTagTone.NEUTRAL),
         WorkspaceTag(R.string.workspace_tag_cleared_on_reset, WorkspaceTagTone.CAUTION),
     )
     else -> listOf(
-        WorkspaceTag(R.string.workspace_tag_recycle_bin, WorkspaceTagTone.GOOD),
-        WorkspaceTag(R.string.workspace_tag_gone_with_chat, WorkspaceTagTone.CAUTION),
+        WorkspaceTag(R.string.workspace_tag_backed_up, WorkspaceTagTone.NEUTRAL),
+        WorkspaceTag(R.string.workspace_tag_kept_on_delete, WorkspaceTagTone.NEUTRAL),
     )
 }
 
@@ -58,7 +59,6 @@ fun WorkspaceTagChip(label: String, tone: WorkspaceTagTone, modifier: Modifier =
     val domain = MaterialTheme.infinityDomainColors
     val (container, content) = when (tone) {
         WorkspaceTagTone.NEUTRAL -> scheme.surfaceContainerHighest to scheme.onSurfaceVariant
-        WorkspaceTagTone.GOOD -> domain.successContainer to domain.onSuccessContainer
         WorkspaceTagTone.CAUTION -> domain.warningContainer to domain.onWarningContainer
     }
     Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.small, modifier = modifier) {
@@ -71,24 +71,31 @@ fun WorkspaceTagChip(label: String, tone: WorkspaceTagTone, modifier: Modifier =
     }
 }
 
-/** 分组标题右侧并列该类工作区的差异标签，取代逐行说明文字。 */
+/** 一类工作区的两条标签，窄屏或大字号时自动换行。 */
 @Composable
-fun WorkspaceKindHeader(kind: String?, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = InfinitySpacing.Large + InfinitySpacing.XSmall).padding(top = InfinitySpacing.Small),
-        verticalAlignment = Alignment.CenterVertically,
+fun WorkspaceKindTagRow(kind: String?, modifier: Modifier = Modifier) {
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
+        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
     ) {
-        Text(
-            workspaceKindLabel(kind),
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.semantics { heading() },
-        )
-        Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall)) {
-            workspaceKindTags(kind).forEach { tag -> WorkspaceTagChip(stringResource(tag.label), tag.tone) }
-        }
+        workspaceKindTags(kind).forEach { tag -> WorkspaceTagChip(stringResource(tag.label), tag.tone) }
     }
+}
+
+/** 选择器的分组标题：按存放位置分组（应用内存储、Linux 环境、手机存储）。 */
+@Composable
+fun WorkspaceStorageHeader(kind: String?, modifier: Modifier = Modifier) {
+    Text(
+        workspaceStorageLabel(kind),
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = InfinitySpacing.Large + InfinitySpacing.XSmall)
+            .padding(top = InfinitySpacing.Small)
+            .semantics { heading() },
+    )
 }
 
 /** 知识库挂载的只读标签：信息色带锁，与授权方式、工具范围等中性标签同排。 */

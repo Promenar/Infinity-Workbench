@@ -101,6 +101,7 @@ fun workspacePickerLinuxRootsPreview() = SheetFrame(stringResource(R.string.work
     )
 }
 
+/** Linux 模式会话：三组都可选，本会话文件夹补 Linux 中的路径。 */
 private val PermissionState = WorkspacePickerUiState(
     registered = listOf(Project, Shared),
     currentWorkspaceId = Project.id,
@@ -108,6 +109,8 @@ private val PermissionState = WorkspacePickerUiState(
     sharedSupported = true,
     sharedPermission = false,
     sharedRoots = listOf(Volume),
+    linuxHome = com.promenar.infinity.data.workspace.LinuxHomeAvailability.READY,
+    runMode = com.promenar.infinity.domain.model.SessionRunMode.LINUX,
 )
 
 @PreviewTest
@@ -124,6 +127,23 @@ fun workspacePickerPermissionLightPreview() =
     SheetFrame(stringResource(R.string.workspace_picker_title), InfinityThemeMode.LIGHT) {
         WorkspacePickerContent(PermissionState)
     }
+
+@PreviewTest
+@Preview(name = "选择器 内置模式会话 深中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")
+@Preview(name = "选择器 内置模式会话 浅英360 大字", widthDp = 360, heightDp = 1100, locale = "en", fontScale = 1.3f)
+@Composable
+fun workspacePickerBuiltinSessionPreview() = SheetFrame(stringResource(R.string.workspace_picker_title)) {
+    WorkspacePickerContent(
+        WorkspacePickerUiState(
+            showPrivate = true,
+            sharedSupported = true,
+            sharedPermission = true,
+            sharedRoots = listOf(Volume, File("/storage/1A2B-3C4D")),
+            linuxHome = com.promenar.infinity.data.workspace.LinuxHomeAvailability.READY,
+            runMode = com.promenar.infinity.domain.model.SessionRunMode.BUILTIN,
+        ),
+    )
+}
 
 @PreviewTest
 @Preview(name = "选择器 Play 起始页 深中411", widthDp = 411, heightDp = 560, locale = "zh-rCN")

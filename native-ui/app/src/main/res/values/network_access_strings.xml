@@ -66,4 +66,6 @@
     <string name="network_tool_termux_hint">Uses Termux\'s own network; built-in Tailscale does not apply</string>
     <string name="network_tool_ssh">SSH</string>
     <string name="network_tool_ssh_hint">Only hosts saved in settings; tailnet hosts go through built-in Tailscale</string>
+    <string name="network_tool_linux">Linux commands shell_exec</string>
+    <string name="network_tool_linux_hint">Runs in Alpine on the system network; tailnet goes through the built-in Tailscale proxy</string>
 </resources>

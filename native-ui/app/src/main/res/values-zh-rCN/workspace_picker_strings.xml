@@ -25,11 +25,10 @@
     <string name="workspace_picker_load_failed">无法读取此目录：%1$s</string>
     <string name="workspace_picker_register_failed">无法使用此文件夹：%1$s</string>
 
-    <string name="workspace_kind_private">会话专用空间</string>
-    <string name="workspace_kind_session_dir">会话目录</string>
-    <string name="workspace_kind_project">内置文件系统</string>
-    <string name="workspace_kind_shared">设备文件系统</string>
-    <string name="workspace_location_project">内置 / %1$s</string>
+    <string name="workspace_kind_private">本会话文件夹</string>
+    <string name="workspace_kind_project">应用内存储</string>
+    <string name="workspace_kind_shared">手机存储</string>
+    <string name="workspace_location_project">共享文件夹 / %1$s</string>
     <string name="workspace_missing_name">已删除的工作区</string>
     <string name="workspace_unavailable_reason">工作区不可用：%1$s</string>
 
@@ -43,7 +42,7 @@
     <string name="workspace_switch_failed">切换失败，请重试</string>
 
     <string name="workspace_agent_default">默认工作区</string>
-    <string name="workspace_agent_default_none">会话私有工作区（默认）</string>
+    <string name="workspace_agent_default_none">本会话文件夹（默认）</string>
 
     <string name="workspace_kb_entry">工作区</string>
     <plurals name="workspace_kb_count">
@@ -67,13 +66,14 @@
     <string name="workspace_kb_preview_binary">此类型无法进行文本预览。</string>
     <string name="workspace_kb_preview_too_large">文本预览上限为 256 KB。</string>
     <string name="workspace_kb_preview_failed">无法预览文件：%1$s</string>
-    <string name="workspace_picker_this_chat">本会话</string>
-    <string name="workspace_picker_all_folders">全部文件夹</string>
     <string name="workspace_picker_use_named">使用 %1$s</string>
-    <string name="workspace_tag_recycle_bin">回收站</string>
-    <string name="workspace_tag_gone_with_chat">随会话删除</string>
-    <string name="workspace_tag_cross_session">跨会话</string>
-    <string name="workspace_tag_gone_on_uninstall">卸载即删</string>
-    <string name="workspace_tag_termux">Termux 可见</string>
-    <string name="workspace_tag_kept_on_uninstall">卸载保留</string>
+    <string name="workspace_tag_gone_on_uninstall">卸载应用时删除</string>
+    <string name="workspace_tag_kept_on_uninstall">卸载后保留</string>
+    <string name="workspace_picker_private_desc">只有这个会话能用</string>
+    <string name="workspace_picker_private_desc_linux">只有这个会话能用 · Linux 中为 %1$s</string>
+    <string name="workspace_picker_shared_folder">共享文件夹</string>
+    <string name="workspace_picker_shared_folder_desc">所有会话都能用</string>
+    <string name="workspace_picker_shared_volume_desc">所有会话和其它应用都能访问</string>
+    <string name="workspace_tag_backed_up">进备份</string>
+    <string name="workspace_tag_kept_on_delete">删会话时可选保留</string>
 </resources>

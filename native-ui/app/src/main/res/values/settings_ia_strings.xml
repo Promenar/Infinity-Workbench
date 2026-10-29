@@ -164,9 +164,4 @@
     <string name="settings_ia_param_frequency_penalty">Frequency penalty</string>
 
     <!-- 智能体可达范围 -->
-    <plurals name="settings_ia_reach_lan_summary">
-        <item quantity="one">Global setting · %d entry</item>
-        <item quantity="other">Global setting · %d entries</item>
-    </plurals>
-    <string name="settings_ia_reach_lan_change">Change</string>
 </resources>
