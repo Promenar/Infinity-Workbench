@@ -2,6 +2,7 @@ package com.promenar.infinity.data.generation
 
 import com.promenar.infinity.data.model.LoopStatus
 import com.promenar.infinity.data.model.Message
+import com.promenar.infinity.data.model.contentForModel
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.Session
 import com.promenar.infinity.data.session.SessionExecutionGate
@@ -75,7 +76,7 @@ class HeadlessGenerationResumer(
             ))
             val start = coordinator.start(GenerationRequest(
                 sessionId = session.id, assistantMessageId = preparedAssistantId, userMessageId = user.id,
-                userContent = user.content, imageDataUrls = user.userImages.orEmpty(),
+                userContent = user.contentForModel(), imageDataUrls = user.userImages.orEmpty(),
                 runtimePolicy = GenerationRuntimePolicy.BACKGROUND_ALLOWED,
                 requestId = prompt.id,
             )) { taskId ->

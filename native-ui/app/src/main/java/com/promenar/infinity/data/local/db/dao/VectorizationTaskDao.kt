@@ -1,5 +1,7 @@
 package com.promenar.infinity.data.local.db.dao
 
+import com.promenar.infinity.data.local.db.entity.MessageEntity
+import com.promenar.infinity.data.model.contentForModel
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -134,8 +136,12 @@ interface VectorizationTaskDao {
     @Query("DELETE FROM vectorization_tasks WHERE id = :id AND type = 'session_state' AND created_at = :createdAt")
     suspend fun deleteSessionStateSnapshot(id: String, createdAt: Long): Int
 
-    @Query("SELECT EXISTS(SELECT 1 FROM messages u JOIN messages a ON a.session_id = u.session_id WHERE u.id = :userId AND a.id = :assistantId AND u.session_id = :sessionId AND u.role = 'user' AND a.role = 'assistant' AND u.content = :userContent AND a.content = :aiContent)")
-    suspend fun hasSessionStateSource(sessionId: String?, userId: String?, assistantId: String?, userContent: String?, aiContent: String?): Boolean
+    @Query("SELECT u.* FROM messages u JOIN messages a ON a.session_id = u.session_id WHERE u.id = :userId AND a.id = :assistantId AND u.session_id = :sessionId AND u.role = 'user' AND a.role = 'assistant' AND a.content = :aiContent")
+    suspend fun getSessionStateUserSource(sessionId: String?, userId: String?, assistantId: String?, aiContent: String?): MessageEntity?
+
+    @Transaction
+    suspend fun hasSessionStateSource(sessionId: String?, userId: String?, assistantId: String?, userContent: String?, aiContent: String?): Boolean =
+        getSessionStateUserSource(sessionId, userId, assistantId, aiContent)?.contentForModel() == userContent && userContent != null
 
     /** 验证正文与入队同属一个事务，过期调度不能替换编辑后的新任务。 */
     @Transaction

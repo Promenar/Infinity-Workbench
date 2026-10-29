@@ -1,5 +1,10 @@
 package com.promenar.infinity.data.rag
 
+import com.promenar.infinity.data.model.Message
+import com.promenar.infinity.data.model.MessageQuote
+import com.promenar.infinity.data.model.MessageRole
+import com.promenar.infinity.data.model.toEntity
+
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.Room
@@ -42,6 +47,18 @@ class SessionGraphQueueTest {
 
     @After
     fun tearDown() = database.close()
+
+    @Test
+    fun `正文为空的引用消息能进入图谱抽取队列且包含批注`() = runTest {
+        seedTurn(assistantContent = "这是一段足够长的助手回复，用于后台抽取实体与关系。")
+        database.messageDao().update(Message("u1", MessageRole.USER, "", quotes = listOf(MessageQuote("source", "引文", "批注"))).toEntity("s1"))
+        val queue = idleQueue()
+        try {
+            assertThat(RoomSessionGraphScheduler({ database }, { true }, { queue }).schedule("s1", "a1", null)).isTrue()
+            assertThat(database.vectorizationTaskDao().getById(VectorizationQueue.sessionGraphTaskId("a1"))!!.userContent)
+                .isEqualTo("> 引文\n\n批注")
+        } finally { queue.shutdown() }
+    }
 
     @Test
     fun `开关关闭或轮次过短时不排入任务`() = runTest {

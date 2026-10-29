@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.promenar.infinity.data.local.db.InfinityDatabase
 import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.VectorEntity
+import com.promenar.infinity.data.model.contentForModel
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.session.SessionExecutionGate
 import kotlinx.coroutines.Dispatchers
@@ -135,7 +136,7 @@ private data class StateTurn(val user: MessageEntity, val assistant: MessageEnti
     fun sameSource(other: StateTurn?): Boolean {
         fun matches(first: MessageEntity, second: MessageEntity) = first.id == second.id &&
             first.sessionId == second.sessionId && first.role == second.role &&
-            first.parentMessageId == second.parentMessageId && first.content == second.content && first.createdAt == second.createdAt
+            first.parentMessageId == second.parentMessageId && first.content == second.content && first.quotes == second.quotes && first.createdAt == second.createdAt
         return other != null && matches(user, other.user) && matches(assistant, other.assistant)
     }
 }
@@ -166,8 +167,8 @@ class RoomSessionStateScheduler(
     override suspend fun schedule(sessionId: String, assistantMessageId: String, userMessageId: String?): Boolean = withContext(Dispatchers.IO) {
         if (!enabled()) return@withContext false
         val turn = loadStateTurn(databaseProvider(), sessionId, assistantMessageId, userMessageId) ?: return@withContext false
-        if (SessionGraphTurn.text(turn.user.content, turn.assistant.content) == null) return@withContext false
-        queue().enqueueSessionState(sessionId, turn.user.id, assistantMessageId, turn.user.content, turn.assistant.content)
+        if (SessionGraphTurn.text(turn.user.contentForModel(), turn.assistant.content) == null) return@withContext false
+        queue().enqueueSessionState(sessionId, turn.user.id, assistantMessageId, turn.user.contentForModel(), turn.assistant.content)
     }
 }
 
@@ -191,8 +192,8 @@ class RoomSessionStateProcessor(
                 it.createdAt == task.createdAt && it.userContent == task.userContent && it.aiContent == task.aiContent }
             ?: return@withContext
         val turn = loadStateTurn(database, sessionId, assistantId, task.userMessageId) ?: return@withContext
-        if (turn.user.content != task.userContent || turn.assistant.content != task.aiContent) return@withContext
-        val text = SessionGraphTurn.text(turn.user.content, turn.assistant.content) ?: return@withContext
+        if (turn.user.contentForModel() != task.userContent || turn.assistant.content != task.aiContent) return@withContext
+        val text = SessionGraphTurn.text(turn.user.contentForModel(), turn.assistant.content) ?: return@withContext
         val owner = database.sessionDao().getById(sessionId) ?: return@withContext
         val known = latestStates(database.vectorDao().getConversationByAgent("state", owner.agentId).mapNotNull(::parseStateRow))
             .takeLast(40).joinToString("\n") { "${it.subject} · ${it.attribute}: ${it.value}" }

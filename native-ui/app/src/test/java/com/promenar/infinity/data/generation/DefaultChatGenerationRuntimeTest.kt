@@ -74,6 +74,48 @@ import kotlinx.coroutines.launch
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test
+    fun `只有引用的当前用户轮次写入记忆时包含引文批注且不重复格式化`() = runTest {
+        val memory = mockk<MemoryManager> { every { canEmbed } returns true }
+        val written = mutableListOf<String>()
+        coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } coAnswers {
+            written += arg<String>(1); 1
+        }
+        val fixture = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false), memoryManager = memory)
+        val quote = com.promenar.infinity.data.model.MessageQuote("source", "引文", "批注")
+        fixture.store.updateSession("session") { it.copy(messages = listOf(Message("user", MessageRole.USER, "", quotes = listOf(quote))) + it.messages) }
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        fixture.messageManager.runTurnMemoryWrites()
+
+        fixture.runtime.postProcess(fixture.request.copy(userContent = ""), GenerationSnapshot(content = "answer"))
+        fixture.runtime.postProcess(fixture.request.copy(userContent = "> 引文\n\n批注"), GenerationSnapshot(content = "answer"))
+
+        assertThat(written).containsExactly("> 引文\n\n批注", "> 引文\n\n批注").inOrder()
+    }
+
+    @Test
+    fun `摘要与归档输入包含用户引用而压缩恢复源保留结构化原消息`() = runTest {
+        val fixture = postProcessFixture(ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0), messageCount = 6)
+        val quote = com.promenar.infinity.data.model.MessageQuote("source", "引文", "批注")
+        fixture.store.updateSession("session") { session -> session.copy(messages = session.messages.map {
+            if (it.id == "message-0") it.copy(content = "", quotes = listOf(quote)) else it
+        }) }
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        val archived = slot<List<Message>>()
+        coEvery { fixture.postProcessor.archiveMessagesToRag(any(), capture(archived), any(), any()) } returns Unit
+        val summarized = slot<List<Message>>()
+        coEvery { fixture.summaryManager.summarizeOrNull(any(), capture(summarized), any(), any(), any(), any()) } returns "摘要"
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        assertThat(archived.captured.first().content).isEqualTo("> 引文\n\n批注")
+        assertThat(summarized.captured.first().content).isEqualTo("> 引文\n\n批注")
+        coVerify { fixture.sessionManager.commitContextCompaction(any(), any(), any(), match {
+            it.messages.first().content == "" && it.messages.first().quotes == listOf(quote)
+        }) }
+    }
+
     @Test fun `主聊天每轮环境模型与实际请求一致且切换后不残留旧ID`() = runTest {
         val requests = mutableListOf<PromptRequest>()
         val local = mockk<LlmProvider> {

@@ -4,8 +4,24 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.SessionEntity
 import org.junit.Test
+import com.promenar.infinity.data.model.*
 
 class BranchSessionPlannerTest {
+    @Test
+    fun `分支引用来源在复制范围内时改写否则保留且只有引用的用户消息可分支`() {
+        val quotes = listOf(MessageQuote("m1", "来源", "批注"), MessageQuote("outside", "外部来源", "外部批注"))
+        val messages = listOf(message("m1", "assistant", "来源"),
+            Message("m2", MessageRole.USER, "", quotes = quotes).toEntity("source"),
+            message("m3", "assistant", "不复制"))
+        val result = BranchSessionPlanner.plan(session(), messages, "m2", "branch", 2) { "copy-$it" }
+        val plan = (result as BranchSessionPlanResult.Ready).plan
+        assertThat(plan.messages.map { it.id }).containsExactly("copy-m1", "copy-m2").inOrder()
+        assertThat(plan.messages.last().toDomain().quotes).containsExactly(
+            MessageQuote("copy-m1", "来源", "批注"), MessageQuote("outside", "外部来源", "外部批注"),
+        ).inOrder()
+        assertThat(plan.messages.last().content).isEmpty()
+    }
+
     @Test
     fun `历史消息克隆不继承派发关系worktree与自动处理暂停`() {
         val source = session().copy(parentSessionId = "parent", branchPlanJson = "{}",

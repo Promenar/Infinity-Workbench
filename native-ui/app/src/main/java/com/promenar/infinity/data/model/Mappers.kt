@@ -56,6 +56,26 @@ private fun logKgPathsDecodeFailure() {
     )
 }
 
+internal fun decodeMessageQuotesOrNull(text: String): List<MessageQuote>? = try {
+    decodeFromJson<List<MessageQuote>>(text).takeIf { it.isNotEmpty() }
+} catch (_: SerializationException) {
+    logMessageQuotesDecodeFailure()
+    null
+} catch (_: IllegalArgumentException) {
+    logMessageQuotesDecodeFailure()
+    null
+}
+
+private fun logMessageQuotesDecodeFailure() {
+    InfinityLogger.logError(
+        "MessageMapper.QuotesDecode",
+        IllegalArgumentException("quotes JSON 解析失败"),
+    )
+}
+
+internal fun MessageEntity.contentForModel(): String =
+    if (role == "user") MessageQuoteFormatter.formatUserContent(content, quotes?.let(::decodeMessageQuotesOrNull)) else content
+
 fun SessionEntity.toDomain(): Session = Session(
     id = id,
     agentId = agentId,
@@ -149,6 +169,7 @@ fun MessageEntity.toDomain(): Message {
         thoughtSignature = thoughtSignature,
         images = images,
         userDocuments = envelope?.documents,
+        quotes = quotes?.let(::decodeMessageQuotesOrNull),
         legacyFilesPayload = if (envelope != null) envelope.legacyFilesPayload else files,
         legacyAttachmentsPayload = legacyAttachments,
         userImages = userImages?.let { decodeFromJson<List<String>>(it) },
@@ -198,6 +219,7 @@ fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     } else legacyFilesPayload,
     legacyAttachments = legacyAttachmentsPayload,
     userImages = userImages?.let { encodeToJson(it) },
+    quotes = quotes?.takeIf { it.isNotEmpty() }?.let { encodeToJson(it) },
     tokens = tokens?.let { encodeToJson(it) },
     citations = citations?.let { encodeToJson(it) },
     ragReferences = ragReferences?.let { encodeToJson(it) },

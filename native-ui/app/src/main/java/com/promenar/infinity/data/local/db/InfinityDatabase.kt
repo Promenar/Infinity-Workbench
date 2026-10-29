@@ -103,7 +103,7 @@ import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
         ParameterSchemeEntity::class,
         com.promenar.infinity.data.local.db.entity.StateBoardVersionEntity::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -216,3 +216,5 @@ val MIGRATION_25_26 = object : androidx.room.migration.Migration(25, 26) {
 internal const val INFINITY_SCHEMA_V28_IDENTITY_HASH = "3ecd53e343d156d2165df7963419da0c"
 internal const val INFINITY_SCHEMA_V29_IDENTITY_HASH = "9d0bef4ef8c9c7850437f0141ebd97b4"
 internal const val INFINITY_SCHEMA_V30_IDENTITY_HASH = "ccac3b935d14b590734779048ef2eaf2"
+
+internal const val INFINITY_SCHEMA_V31_IDENTITY_HASH = "f4d6fe7e2fb95b1bb98f165bb840d058"

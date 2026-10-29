@@ -1,5 +1,10 @@
 package com.promenar.infinity.data.rag
 
+import com.promenar.infinity.data.model.Message
+import com.promenar.infinity.data.model.MessageQuote
+import com.promenar.infinity.data.model.MessageRole
+import com.promenar.infinity.data.model.toEntity
+
 import android.app.Application
 import android.content.Context
 import androidx.room.Room
@@ -42,6 +47,23 @@ import java.nio.ByteBuffer
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class SessionStateMemoryIntegrationTest {
+    @Test
+    fun `只有引用的用户消息排入状态抽取后按相同文本校验并发送模型`() = runTest {
+        seedTurn()
+        database.messageDao().update(Message("u1", MessageRole.USER, "", quotes = listOf(MessageQuote("source", "引文", "批注")), createdAt = 100).toEntity("s1"))
+        val queue = idleQueue()
+        assertThat(RoomSessionStateScheduler({ database }, { true }, { queue }).schedule("s1", "a1", "u1")).isTrue()
+        val row = database.vectorizationTaskDao().getById("session-state-a1")!!
+        assertThat(row.userContent).isEqualTo("> 引文\n\n批注")
+        val requests = mutableListOf<PromptRequest>()
+        val protocol = mockk<LlmProtocol> { coEvery { sendPromptSync(any()) } answers {
+            requests += firstArg<PromptRequest>()
+            PromptResponse(content = """{"event":null,"states":[]}""")
+        } }
+        processor(protocol).processPersisted(task().copy(userContent = "> 引文\n\n批注", createdAt = row.createdAt))
+        assertThat(requests.single().messages.last().content).contains("> 引文\n\n批注")
+    }
+
     @Test
     fun `生产状态记忆抽取带当前会话标识且关闭设置时保留原请求体`() = runTest {
         seedTurn()

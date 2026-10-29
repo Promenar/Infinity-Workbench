@@ -1,5 +1,10 @@
 package com.promenar.infinity.data.rag
 
+import com.promenar.infinity.data.model.Message
+import com.promenar.infinity.data.model.MessageQuote
+import com.promenar.infinity.data.model.MessageRole
+import com.promenar.infinity.data.model.toEntity
+
 import com.promenar.infinity.data.model.TurnMemoryState
 import android.content.Context
 import androidx.room.Room
@@ -49,6 +54,17 @@ class ConversationMemoryLifecycleTest {
 
     @After
     fun tearDown() = database.close()
+
+    @Test
+    fun `手动重写和编辑回复后的记忆保留空正文用户消息的引用`() = runTest {
+        seedTurn()
+        database.messageDao().update(Message("u1", MessageRole.USER, "", quotes = listOf(MessageQuote("source", "引文", "批注"))).toEntity("s1"))
+        database.messageDao().update(assistant().copy(parentMessageId = "u1"))
+        assertThat(lifecycle.rewriteTurn("s1", "a1")).isEqualTo(1)
+        assertThat(writes.last()[1]).isEqualTo("> 引文\n\n批注")
+        lifecycle.onMessageEdited("s1", "a1")
+        assertThat(writes.last()[1]).isEqualTo("> 引文\n\n批注")
+    }
 
     @Test
     fun `删除回复后该轮记忆在向量与关键词检索中都不可见，恢复后重新可见`() = runTest {

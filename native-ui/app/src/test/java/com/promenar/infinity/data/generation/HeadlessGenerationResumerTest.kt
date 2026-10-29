@@ -56,6 +56,28 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [33])
 class HeadlessGenerationResumerTest {
     @Test
+    fun `无界面恢复保留只有引用的用户消息并序列化一次`() = runTest {
+        val delegate = coordinator()
+        var captured: GenerationRequest? = null
+        val coordinator = object : GenerationCoordinator by delegate {
+            override suspend fun start(request: GenerationRequest, onAdmission: (String) -> Boolean): StartGenerationResult {
+                captured = request
+                return delegate.start(request, onAdmission)
+            }
+        }
+        val fixture = fixture(coordinator)
+        val quote = com.promenar.infinity.data.model.MessageQuote("source", "引文", "批注")
+        fixture.store.updateSession("target") { it.copy(messages = it.messages.map { message ->
+            if (message.role == MessageRole.USER) message.copy(content = "", quotes = listOf(quote)) else message
+        }) }
+
+        fixture.app.resume(fixture.prompt("target"))
+
+        assertThat(captured!!.userContent).isEqualTo("> 引文\n\n批注")
+        assertThat(delegate.observe("target").value?.phase).isEqualTo(GenerationPhase.PREPARING)
+    }
+
+    @Test
     fun `启动逐会话校验不受检查期间页面切换影响`() = runTest {
         val missingFirst = GenerationInteraction("old-first", "missing-first", GenerationInteractionKind.REPEATED_TOOL)
         val retained = GenerationInteraction("keep", "retained", GenerationInteractionKind.REPEATED_TOOL)

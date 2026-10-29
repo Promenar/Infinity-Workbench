@@ -11,6 +11,7 @@ import com.promenar.infinity.domain.usecase.resolvedKeepRecentTurns
 import com.promenar.infinity.domain.usecase.inferenceDefaults
 import com.promenar.infinity.domain.usecase.withDefaults
 import com.promenar.infinity.domain.usecase.resolvedReasoningEffort
+import com.promenar.infinity.data.model.contentForModel
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.PhaseStatus
 import com.promenar.infinity.data.model.PostProcessStatus
@@ -271,6 +272,10 @@ internal class DefaultChatGenerationRuntime(
         return com.promenar.infinity.ui.chat.manager.skills.SlashSkillActivation.resolve(text, skills) { catalog.readDocument(it) }
     }
 
+    private fun userContent(request: GenerationRequest, session: com.promenar.infinity.data.model.Session): String =
+        session.messages.firstOrNull { it.id == request.userMessageId && it.role == MessageRole.USER }
+            ?.takeIf { !it.quotes.isNullOrEmpty() }?.contentForModel() ?: request.userContent
+
     private suspend fun compactContext(
         request: GenerationRequest,
         session: com.promenar.infinity.data.model.Session,
@@ -304,7 +309,7 @@ internal class DefaultChatGenerationRuntime(
                 summarizeTool = { text -> summarizeToolResult(request, prompt, text) },
                 summarizeHistory = { previous, messages ->
                     val estimatedInput = 128L + ApproximateTokenEstimator.estimate(previous.summary.orEmpty()) +
-                        messages.sumOf { ApproximateTokenEstimator.estimate(it.content.take(2000)).toLong() + 8 }
+                        messages.sumOf { ApproximateTokenEstimator.estimate(it.contentForModel().take(2000)).toLong() + 8 }
                     if (!canSpendOnSummary(request, estimatedInput + 1024)) null else {
                         if (memoryEnabled(session)) {
                             archiveMessages(request, preparedRoute?.modelId ?: prompt.model, messages)
@@ -380,7 +385,7 @@ internal class DefaultChatGenerationRuntime(
             sessionId = sessionId,
             assistantMessageId = "manual-compaction-${java.util.UUID.randomUUID()}",
             userMessageId = lastUser?.id,
-            userContent = lastUser?.content.orEmpty(),
+            userContent = lastUser?.contentForModel().orEmpty(),
             imageDataUrls = emptyList(),
             runtimePolicy = com.promenar.infinity.domain.generation.GenerationRuntimePolicy.FOREGROUND_ONLY,
         )
@@ -403,7 +408,7 @@ internal class DefaultChatGenerationRuntime(
         )
         val context = contextBuilder.buildContext(ContextBuilderParams(
             sessionId = sessionId,
-            content = lastUser?.content.orEmpty(),
+            content = lastUser?.contentForModel().orEmpty(),
             assistantMsgId = request.assistantMessageId,
             session = session,
             ragOptions = session.ragOptions,
@@ -413,7 +418,7 @@ internal class DefaultChatGenerationRuntime(
             agentMemoryPolicy = config.memoryPolicy,
             availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
             availableSkills = storedSkills,
-            requestedSkill = requestedSkill(session, lastUser?.id, lastUser?.content.orEmpty(), storedSkills),
+            requestedSkill = requestedSkill(session, lastUser?.id, lastUser?.contentForModel().orEmpty(), storedSkills),
             cachedRetrieval = com.promenar.infinity.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
             workspace = workspace,
             mounts = visibleMounts(sessionId),
@@ -515,7 +520,7 @@ internal class DefaultChatGenerationRuntime(
         val params = ContextBuilderParams(
             sessionId = request.sessionId,
             stateExcludedMessageIds = request.messageIdsToReplace,
-            content = request.userContent,
+            content = userContent(request, session),
             assistantMsgId = assistantMessageId(request),
             session = session,
             ragOptions = effectiveRagOptions,
@@ -1124,6 +1129,7 @@ internal class DefaultChatGenerationRuntime(
         val userMessageId = request.userMessageId ?: return
         val context = requireNotNull(preparedContext)
         val session = store.getSession(request.sessionId) ?: return
+        val userContent = userContent(request, session)
         try {
             val rag = session.ragOptions
             postProcessor.updateStats(
@@ -1131,7 +1137,7 @@ internal class DefaultChatGenerationRuntime(
                     sessionId = request.sessionId,
                     assistantMsgId = assistantMessageId(request),
                     userMsgId = userMessageId,
-                    userContent = request.userContent,
+                    userContent = userContent,
                     assistantContent = snapshot.content,
                     agent = com.promenar.infinity.data.model.Agent(session.agentId, session.agentId),
                     session = session,
@@ -1144,14 +1150,14 @@ internal class DefaultChatGenerationRuntime(
             )
             val memory = memoryManager
             // 未配置嵌入模型时不写入也不显示写入状态，由嵌入模型设置提示引导用户。
-            if (memoryEnabled(session) && request.userContent.isNotBlank() &&
+            if (memoryEnabled(session) && userContent.isNotBlank() &&
                 snapshot.content.isNotBlank() && memory != null && memory.canEmbed
             ) {
                 val turnMessageId = assistantMessageId(request)
                 messageManager.writeTurnMemory(request.sessionId, turnMessageId, previous = null) {
                     val written = memory.addTurnToMemory(
                         request.sessionId,
-                        request.userContent,
+                        userContent,
                         snapshot.content,
                         userMessageId,
                         turnMessageId,
@@ -1162,7 +1168,7 @@ internal class DefaultChatGenerationRuntime(
             // 后台抽取从数据库读取本轮正文，并在写回前核对正文未变；流式正文按防抖落库，
             // 此时可能还缺最后一段，必须先落库，否则抽取读到残缺正文、结果又在终态写入后被判为过期。
             val extractable = snapshot.failure == null && memoryEnabled(session) &&
-                request.userContent.isNotBlank() && snapshot.content.isNotBlank() &&
+                userContent.isNotBlank() && snapshot.content.isNotBlank() &&
                 (sessionGraph != null || sessionState != null) && try {
                     messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
                     true
@@ -1403,7 +1409,7 @@ internal class DefaultChatGenerationRuntime(
     ) {
         val taskId = ui.addPostProcessTask(PostProcessType.ARCHIVE_TO_RAG, "")
         try {
-            postProcessor.archiveMessagesToRag(request.sessionId, messages, modelId) { progress, detail ->
+            postProcessor.archiveMessagesToRag(request.sessionId, messages.map { it.copy(content = it.contentForModel(), quotes = null) }, modelId) { progress, detail ->
                 ui.updatePostProcessTask(taskId, progress = progress)
             }
             ui.updatePostProcessTask(taskId, PostProcessStatus.DONE, 1f)
@@ -1429,7 +1435,7 @@ internal class DefaultChatGenerationRuntime(
             val summary = try {
                 summaryManager.summarizeOrNull(
                     session.summary,
-                    messages,
+                    messages.map { it.copy(content = it.contentForModel(), quotes = null) },
                     preparedRoute?.modelId ?: preparedPrompt?.model ?: session.modelId.orEmpty(),
                     onProgress = { ui.updatePostProcessTask(taskId, progress = 0.5f) },
                     onUsage = { usage = it },

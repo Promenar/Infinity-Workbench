@@ -46,6 +46,7 @@ internal const val ROOM_SCHEMA_V26_IDENTITY_HASH = com.promenar.infinity.data.lo
 internal const val ROOM_SCHEMA_V27_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V27_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V28_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V28_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V29_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V29_IDENTITY_HASH
+internal const val ROOM_SCHEMA_V31_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V31_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V30_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V30_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V25_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V25_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V24_IDENTITY_HASH = com.promenar.infinity.data.local.db.INFINITY_SCHEMA_V24_IDENTITY_HASH
@@ -514,10 +515,11 @@ class RoomBackupDataSource(
         }
         val upgraded = when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> return decoded
-            10 -> return upgradeV10Payload(decoded)
-            9 -> return upgradeV10Payload(upgradeV9Payload(decoded))
-            8 -> return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(decoded)))
-            7 -> return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(decoded))))
+            11 -> decoded
+            10 -> upgradeV10Payload(decoded)
+            9 -> upgradeV10Payload(upgradeV9Payload(decoded))
+            8 -> upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(decoded)))
+            7 -> upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(decoded))))
             1 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV1Payload(decoded))))
             2 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(upgradeV2Payload(decoded))))
             3 -> upgradeV5Payload(upgradeV4Payload(upgradeV3Payload(decoded)))
@@ -526,8 +528,15 @@ class RoomBackupDataSource(
             6 -> decoded
             else -> return decoded
         }
-        if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
-        return upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList()))))))
+        val current = if (decoded.schemaVersion in 1..6) {
+            if ("state_board_versions" in upgraded.tables) throw BackupValidationException("历史备份不应包含状态面板表")
+            upgradeV10Payload(upgradeV9Payload(upgradeV8Payload(upgradeV7Payload(
+                upgraded.copy(tables = upgraded.tables + ("state_board_versions" to emptyList())),
+            ))))
+        } else upgraded
+        val messages = current.tables["messages"] ?: throw BackupValidationException("数据库 payload 缺少表: messages")
+        return current.copy(schemaVersion = DATABASE_SCHEMA_VERSION, tables = current.tables +
+            ("messages" to messages.map { row -> JsonObject(mapOf("quotes" to JsonNull) + row) }))
     }
 
     /** 历史包没有运行模式，恢复为未确定状态，首次进入会话时再检查。 */
@@ -902,8 +911,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (sqlite.version != 30 || identityHash != ROOM_SCHEMA_V30_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v30")
+        if (sqlite.version != 31 || identityHash != ROOM_SCHEMA_V31_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v31")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1704,7 +1713,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 11
+        const val DATABASE_SCHEMA_VERSION = DATABASE_BACKUP_SCHEMA_VERSION
         const val LONG_TERM_MEMORY_TABLE = "long_term_memories"
         const val MAX_LONG_TERM_MEMORIES = LongTermMemoryValidation.MAX_MEMORIES
         const val PARAMETER_SCHEME_TABLE = "parameter_schemes"

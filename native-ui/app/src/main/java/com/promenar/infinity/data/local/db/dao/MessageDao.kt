@@ -31,7 +31,13 @@ interface MessageDao {
     @Transaction
     suspend fun updateWith(messageId: String, transform: (MessageEntity) -> MessageEntity): Int {
         val existing = getById(messageId) ?: return -1
-        return update(transform(existing))
+        val updated = transform(existing)
+        val affected = update(updated)
+        if (affected == 1 && existing.quotes != updated.quotes && existing.isArchived != 0) {
+            clearContextSummaries(existing.sessionId)
+            restoreArchivedContextMessages(existing.sessionId)
+        }
+        return affected
     }
 
     @Query("UPDATE messages SET content = :content WHERE session_id = :sessionId AND id = :messageId")

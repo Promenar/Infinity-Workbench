@@ -63,6 +63,36 @@ class ContextCompactionPersistenceTest {
     fun tearDown() = database.close()
 
     @Test
+    fun `引用在摘要生成期间变化时拒绝提交并保留新引用`() = runBlocking {
+        seedSession()
+        val messages = MessageRepository(database.messageDao())
+        val first = com.promenar.infinity.data.model.MessageQuote("source", "引文", "批注A")
+        messages.updatePartial("m1", mapOf("quotes" to listOf(first)))
+        val source = sourceFor(listOf("m1", "m2"))
+        messages.updatePartial("m1", mapOf("quotes" to listOf(first.copy(annotation = "批注B"))))
+
+        val failure = runCatching { repository().commitContextCompaction(SESSION, "过期摘要", listOf("m1", "m2"), source) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(database.contextSummaryDao().getBySessionId(SESSION)).isEmpty()
+        assertThat(database.messageDao().getById("m1")!!.isArchived).isEqualTo(0)
+        assertThat(messages.getById("m1")!!.quotes!!.single().annotation).isEqualTo("批注B")
+    }
+
+    @Test
+    fun `已归档消息的引用变化时同事务清除旧摘要并恢复原文`() = runBlocking {
+        seedSession()
+        repository().commitContextCompaction(SESSION, "旧摘要", listOf("m1", "m2"), sourceFor(listOf("m1", "m2")))
+        MessageRepository(database.messageDao()).updatePartial("m1", mapOf("quotes" to listOf(
+            com.promenar.infinity.data.model.MessageQuote("source", "引文", "补充批注"),
+        )))
+
+        assertThat(database.contextSummaryDao().getBySessionId(SESSION)).isEmpty()
+        assertThat(database.messageDao().getBySession(SESSION).map { it.isArchived }).containsExactly(0, 0, 0)
+        Unit
+    }
+
+    @Test
     fun `摘要与归档跨仓库实例恢复且原文和其它字段不变`() = runBlocking {
         val originals = seedSession()
 

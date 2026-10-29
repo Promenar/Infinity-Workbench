@@ -1,6 +1,7 @@
 package com.promenar.infinity.domain.usecase
 
 import com.promenar.infinity.domain.model.Message
+import com.promenar.infinity.data.model.MessageQuoteFormatter
 import com.promenar.infinity.domain.repository.IMessageRepository
 import com.promenar.infinity.domain.repository.ISessionRepository
 import kotlinx.coroutines.flow.first
@@ -49,7 +50,7 @@ class ExportSessionUseCase(
             } else {
                 messages.forEach { msg ->
                     appendLine("## ${messageHeading(msg)}")
-                    appendLine(msg.content)
+                    appendLine(MessageQuoteFormatter.formatUserContent(msg.content, msg.quotes))
                     if (msg.thinking != null) {
                         appendLine("--- Thinking ---")
                         appendLine(msg.thinking)
@@ -72,7 +73,7 @@ class ExportSessionUseCase(
                 messages.forEach { msg ->
                     appendLine("### ${messageHeading(msg)}")
                     appendLine()
-                    appendLine(msg.content)
+                    appendLine(MessageQuoteFormatter.formatUserContent(msg.content, msg.quotes))
                     appendLine()
                     if (msg.thinking != null) {
                         appendLine("> **Thinking:**")

@@ -7,6 +7,7 @@ import com.promenar.infinity.data.model.ExecutionStep
 import com.promenar.infinity.data.model.KgPath
 import com.promenar.infinity.data.model.Message
 import com.promenar.infinity.data.model.MessageRole
+import com.promenar.infinity.data.model.MessageQuote
 import com.promenar.infinity.data.model.RagMetadata
 import com.promenar.infinity.data.model.RagProgress
 import com.promenar.infinity.data.model.RagReference
@@ -101,6 +102,7 @@ open class MessageRepository(
         updates.forEach { (key, value) ->
             result = when (key) {
                 "content" -> result.copy(content = value as? String ?: result.content)
+                "quotes" -> result.copy(quotes = (value as? List<MessageQuote>)?.takeIf { it.isNotEmpty() }?.let { encode(it) })
                 "status" -> result.copy(status = value as? String)
                 "reasoning" -> result.copy(reasoning = value as? String)
                 "thoughtSignature" -> result.copy(thoughtSignature = value as? String)
@@ -177,6 +179,7 @@ open class MessageRepository(
             role = com.promenar.infinity.domain.model.MessageRole.valueOf(role.name),
             content = content,
             modelId = modelId,
+            quotes = quotes,
             documents = userDocuments.orEmpty().map { document ->
                 com.promenar.infinity.domain.model.MessageDocumentAttachment(
                     name = document.name,
