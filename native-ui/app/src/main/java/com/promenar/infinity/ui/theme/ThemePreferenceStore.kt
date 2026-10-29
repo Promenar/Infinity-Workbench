@@ -26,6 +26,8 @@ class ThemePreferenceStore(context: Context) {
         const val SCOPE_DIGITS_KEY = "motion_scope_digits"
         const val COMPOSER_SURFACE_KEY = "motion_composer_surface"
         const val RECENT_CUSTOM_COLORS_KEY = "theme_recent_custom_colors"
+        /** 主色键里表示“内置淡紫配色”的值：显式写入，和从未选择过（缺键，走冰蓝默认）区分开。 */
+        const val BUILT_IN_PRIMARY_COLOR = 0L
         /** 最近使用的自定义色最多保留几个。 */
         const val RECENT_CUSTOM_COLOR_LIMIT = 8
         private const val PREFERENCES_NAME = "infinity_settings"
@@ -78,7 +80,7 @@ class ThemePreferenceStore(context: Context) {
     fun setPrimaryColor(color: Long?) {
         _state.value = _state.value.copy(primaryColor = color)
         preferences.edit().apply {
-            if (color == null) remove(PRIMARY_COLOR_KEY) else putLong(PRIMARY_COLOR_KEY, color)
+            putLong(PRIMARY_COLOR_KEY, color ?: BUILT_IN_PRIMARY_COLOR)
         }.apply()
     }
 
@@ -166,12 +168,14 @@ class ThemePreferenceStore(context: Context) {
         colorSource = InfinityColorSource.fromPreferenceValue(
             preferences.getString(COLOR_SOURCE_KEY, null),
         ),
+        // 缺键才回退冰蓝；选过内置淡紫的写的是 BUILT_IN_PRIMARY_COLOR。
         primaryColor = if (preferences.contains(PRIMARY_COLOR_KEY)) {
-            preferences.getLong(PRIMARY_COLOR_KEY, 0L)
+            preferences.getLong(PRIMARY_COLOR_KEY, BUILT_IN_PRIMARY_COLOR).takeIf { it != BUILT_IN_PRIMARY_COLOR }
         } else {
-            null
+            InfinityDefaultPrimaryColor
         },
-        pureBlack = preferences.getBoolean(PURE_BLACK_KEY, false),
+        // 纯黑背景缺省开启；只有用户显式关闭后才写入 false。
+        pureBlack = !preferences.contains(PURE_BLACK_KEY) || preferences.getBoolean(PURE_BLACK_KEY, true),
         textScaleEnabled = preferences.getBoolean(TEXT_SCALE_ENABLED_KEY, false),
         textScale = if (preferences.contains(TEXT_SCALE_KEY)) {
             preferences.getFloat(TEXT_SCALE_KEY, 1f).coerceIn(0.8f, 1.4f)

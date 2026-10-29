@@ -63,11 +63,12 @@ private val PreviewModels = listOf(
     ModelInfo(name = "my-tuned-assistant", id = "p::ft", description = "", enabled = true, type = "unknown", providerId = "p", remoteModelId = "ft:gpt-5.1-mini:acme::9xQ2"),
 )
 
+/** 引导页固定深色加纯黑背景、主色跟随主题色；这里用默认外观（冰蓝）。 */
 @Composable
-private fun OnboardingPreviewSurface(dark: Boolean = true, content: @Composable () -> Unit) {
+private fun OnboardingPreviewSurface(content: @Composable () -> Unit) {
     InfinityTheme(
         preferences = InfinityThemePreferences(
-            mode = if (dark) InfinityThemeMode.DARK else InfinityThemeMode.LIGHT,
+            mode = InfinityThemeMode.DARK,
             colorSource = InfinityColorSource.INFINITY,
         ),
     ) {
@@ -83,16 +84,28 @@ fun onboardingLanguagePreview() {
 }
 
 @PreviewTest
-@Preview(name = "Onboarding language English light foldable", widthDp = FOLD_WIDTH_DP, heightDp = FOLD_HEIGHT_DP, locale = "en")
+@Preview(name = "Onboarding language English foldable", widthDp = FOLD_WIDTH_DP, heightDp = FOLD_HEIGHT_DP, locale = "en", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun onboardingLanguageFoldLightPreview() {
-    OnboardingPreviewSurface(dark = false) { OnboardingScreen(OnboardingUiState(OnboardingStep.LANGUAGE), OnboardingActions()) }
+fun onboardingLanguageFoldPreview() {
+    OnboardingPreviewSurface { OnboardingScreen(OnboardingUiState(OnboardingStep.LANGUAGE), OnboardingActions()) }
 }
 
 @PreviewTest
 @Preview(name = "Onboarding Linux Chinese", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "zh-rCN", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 fun onboardingLinuxPreview() {
+    OnboardingPreviewSurface {
+        OnboardingScreen(
+            OnboardingUiState(OnboardingStep.LINUX, linux = OnboardingLinuxStatus(LinuxRuntimeState.NotInstalled(41L * 1024 * MB))),
+            OnboardingActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(name = "Onboarding Linux Chinese foldable", widthDp = FOLD_WIDTH_DP, heightDp = FOLD_HEIGHT_DP, locale = "zh-rCN", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun onboardingLinuxFoldPreview() {
     OnboardingPreviewSurface {
         OnboardingScreen(
             OnboardingUiState(OnboardingStep.LINUX, linux = OnboardingLinuxStatus(LinuxRuntimeState.NotInstalled(41L * 1024 * MB))),
@@ -111,10 +124,10 @@ fun onboardingProviderLargeFontPreview() {
 }
 
 @PreviewTest
-@Preview(name = "Onboarding provider failure Chinese light", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "zh-rCN")
+@Preview(name = "Onboarding provider failure Chinese", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "zh-rCN", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun onboardingProviderFailureLightPreview() {
-    OnboardingPreviewSurface(dark = false) {
+fun onboardingProviderFailurePreview() {
+    OnboardingPreviewSurface {
         OnboardingScreen(
             OnboardingUiState(
                 OnboardingStep.PROVIDER,
@@ -164,10 +177,10 @@ fun onboardingModelEmptyPreview() {
 }
 
 @PreviewTest
-@Preview(name = "Onboarding agent Chinese light", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "zh-rCN")
+@Preview(name = "Onboarding agent Chinese", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP, locale = "zh-rCN", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun onboardingAgentLightPreview() {
-    OnboardingPreviewSurface(dark = false) {
+fun onboardingAgentPreview() {
+    OnboardingPreviewSurface {
         OnboardingScreen(
             OnboardingUiState(OnboardingStep.AGENT, linux = Installing, modelName = "GPT-5.1"),
             OnboardingActions(),

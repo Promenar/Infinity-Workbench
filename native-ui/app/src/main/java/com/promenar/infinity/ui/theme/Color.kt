@@ -5,8 +5,19 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 
+/**
+ * 冰蓝：默认主色的种子。目标是柔和风格下深色主色接近 #9FD3FF、浅色主色与白字对比度满足 WCAG AA。
+ * 待主控验证的候选值：与 #9FD3FF 同色相（HSV 约 207°），未经构建实测；生成结果以 SeededColorSchemeStyleTest 的断言为准。
+ */
+val InfinityIceBlueSeed = Color(0xFF3D9BE9)
+
+/** 内置淡紫配色的种子：用户选“默认配色”且配色风格不是柔和时，按该风格以它生成配色。 */
+internal val InfinityIndigoSeed = Color(0xFF6366F1)
+
+/** 预设主色，冰蓝排第一且是默认主色。 */
 val InfinityPresetColors = listOf(
-    Color(0xFF6366F1),
+    InfinityIceBlueSeed,
+    InfinityIndigoSeed,
     Color(0xFFF43F5E),
     Color(0xFF10B981),
     Color(0xFFF59E0B),
@@ -72,6 +83,10 @@ val InfinityTouchLockWarning = Color(0xFFFAC775)
 // 颜色运算端点：取色器的明度/饱和度渐变、指示灯提亮与面板压暗都以纯白、纯黑为端点，不随主题变化。
 internal val InfinityPureWhite = Color(0xFFFFFFFF)
 internal val InfinityPureBlack = Color(0xFF000000)
+
+/** 引导页星空的星色：冷白为主，少量偏暖。 */
+internal val InfinityStarCold = Color(0xFFE9E8FF)
+internal val InfinityStarWarm = Color(0xFFFFD6AA)
 /** 浅色主题下 LED 面板底板：极淡的墨绿灰，衬出熄灭的灯位。 */
 internal val InfinityLedFaceplateLight = Color(0x12141E19)
 

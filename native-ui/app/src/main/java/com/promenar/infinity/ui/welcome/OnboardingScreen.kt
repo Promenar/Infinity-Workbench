@@ -12,15 +12,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -36,14 +37,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
@@ -63,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -75,30 +73,31 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.linux.LinuxRuntimeState
 import com.promenar.infinity.onboarding.OnboardingStep
-import com.promenar.infinity.ui.chat.ParticleWordmark
+import com.promenar.infinity.ui.chat.LedMorphWordmark
+import com.promenar.infinity.ui.chat.WordmarkPointer
+import com.promenar.infinity.ui.chat.trackWordmarkPointer
 import com.promenar.infinity.ui.common.network.rememberAnimationsEnabled
 import com.promenar.infinity.ui.theme.InfinityMotion
-import com.promenar.infinity.ui.theme.InfinitySpacing
+import com.promenar.infinity.ui.theme.InfinityPureDarkTheme
 import com.promenar.infinity.ui.theme.hierarchicalTransition
 import com.promenar.infinity.ui.theme.infinityDomainColors
 import kotlinx.coroutines.delay
 
-/** 宽于此值（折叠屏内屏、平板）时左侧常驻小字标与纵向进度，右侧内容限宽。 */
+/** 宽于此值（折叠屏内屏、平板）时左栏常驻字标与竖排步骤，右栏是内容。 */
 private val WideLayoutMinWidth = 600.dp
-private val ContentMaxWidth = 560.dp
 /** 步骤内元素依次上浮的错峰间隔。 */
 private const val RiseStaggerMillis = 45L
 
 /**
  * 首次引导：语言 → Linux（仅侧载 arm64）→ 连接提供商 → 选择模型 → 创建 Agent → 准备就绪。
- * 页面切换沿用共享 X 轴；系统“移除动画”时粒子直接落位、元素不上浮、没有呼吸与流动。
+ * 外观固定为深色加纯黑背景、稀疏星空，主色跟随当前主题色；字标是会话页同一套灯珠变形。
+ * 页面切换沿用共享 X 轴；系统“移除动画”时灯珠停在字标、星点不闪、元素不上浮。
  */
 @Composable
 internal fun OnboardingScreen(
@@ -115,30 +114,29 @@ internal fun OnboardingScreen(
             else -> Unit
         }
     }
-    Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-      Box(Modifier.fillMaxSize()) {
-        OnboardingAura()
-        AnimatedContent(
-            targetState = state.step == OnboardingStep.LANGUAGE,
-            transitionSpec = { InfinityMotion.sharedAxisX(forward = !targetState) },
-            label = "onboarding_intro",
-            modifier = Modifier.fillMaxSize(),
-        ) { intro ->
-            if (intro) {
-                OnboardingIntro(onLanguageSelected = actions.onLanguageSelected, busy = state.busy)
-            } else {
-                OnboardingFrame(state, actions, onOpenLinux = { linuxSheetOpen = true })
+    InfinityPureDarkTheme {
+        OnboardingBackdrop(modifier) {
+            AnimatedContent(
+                targetState = state.step == OnboardingStep.LANGUAGE,
+                transitionSpec = { InfinityMotion.sharedAxisX(forward = !targetState) },
+                label = "onboarding_intro",
+                modifier = Modifier.fillMaxSize(),
+            ) { intro ->
+                if (intro) {
+                    OnboardingIntro(onLanguageSelected = actions.onLanguageSelected, busy = state.busy)
+                } else {
+                    OnboardingFrame(state, actions, onOpenLinux = { linuxSheetOpen = true })
+                }
             }
         }
-      }
-    }
-    val linux = state.linux
-    if (linuxSheetOpen && linux != null) {
-        OnboardingLinuxSheet(
-            status = linux,
-            actions = actions,
-            onDismiss = { linuxSheetOpen = false },
-        )
+        val linux = state.linux
+        if (linuxSheetOpen && linux != null) {
+            OnboardingLinuxSheet(
+                status = linux,
+                actions = actions,
+                onDismiss = { linuxSheetOpen = false },
+            )
+        }
     }
 }
 
@@ -153,30 +151,12 @@ private fun OnboardingFrame(state: OnboardingUiState, actions: OnboardingActions
         val wide = maxWidth >= WideLayoutMinWidth
         val ready = state.step == OnboardingStep.FIRST_CHAT
         Row(Modifier.fillMaxSize()) {
-            if (wide && !ready) {
-                Column(
-                    Modifier
-                        .width(260.dp)
-                        .fillMaxHeight()
-                        .padding(start = InfinitySpacing.XLarge, top = InfinitySpacing.XLarge, bottom = InfinitySpacing.XLarge),
-                ) {
-                    ParticleWordmark(
-                        dispersed = false,
-                        modifier = Modifier.fillMaxWidth().height(120.dp),
-                        centerFraction = 0.5f,
-                        maxTextSizeDp = 40f,
-                        logoLimit = 420,
-                        ambientCount = 70,
-                    )
-                    Spacer(Modifier.height(InfinitySpacing.XLarge))
-                    OnboardingVerticalRail(railSteps, state.step)
-                }
-            }
+            if (wide && !ready) OnboardingSidePanel(railSteps, state.step)
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                OnboardingTopBar(
+                OnboardingHeader(
                     state = state,
                     railSteps = railSteps,
-                    showRail = !wide && !ready,
+                    compact = !wide,
                     actions = actions,
                     onOpenLinux = onOpenLinux,
                 )
@@ -187,13 +167,16 @@ private fun OnboardingFrame(state: OnboardingUiState, actions: OnboardingActions
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.TopCenter,
                 ) { step ->
+                    // 宽屏配置页贴着左栏、限宽 520dp；就绪页居中单栏。
+                    val centered = step == OnboardingStep.FIRST_CHAT
                     Box(
                         Modifier
                             .fillMaxSize()
                             .testTag(OnboardingTags.step(step)),
-                        contentAlignment = Alignment.TopCenter,
+                        contentAlignment = if (centered || !wide) Alignment.TopCenter else Alignment.TopStart,
                     ) {
-                        Box(Modifier.widthIn(max = ContentMaxWidth).fillMaxSize()) {
+                        val contentWidth = if (centered) OnboardingDimens.CenteredMaxWidth else OnboardingDimens.ContentMaxWidth
+                        Box(Modifier.widthIn(max = contentWidth).fillMaxSize()) {
                             when (step) {
                                 OnboardingStep.LINUX -> state.linux?.let { OnboardingLinuxStep(it, actions) }
                                 OnboardingStep.PROVIDER -> OnboardingProviderStep(state, actions, wide)
@@ -210,11 +193,42 @@ private fun OnboardingFrame(state: OnboardingUiState, actions: OnboardingActions
     }
 }
 
+/** 灯珠变形字标；点按跳到下一段变形。 */
 @Composable
-private fun OnboardingTopBar(
+internal fun OnboardingWordmark(modifier: Modifier = Modifier, dispersed: Boolean = false) {
+    val pointer = remember { WordmarkPointer() }
+    LedMorphWordmark(
+        modifier = modifier.trackWordmarkPointer(pointer),
+        dispersed = dispersed,
+        pointer = pointer,
+        centerFraction = 0.5f,
+    )
+}
+
+/** 宽屏左栏：字标与竖排步骤，固定不随内容滚动。 */
+@Composable
+private fun OnboardingSidePanel(steps: List<OnboardingStep>, current: OnboardingStep) {
+    Column(
+        Modifier
+            .width(260.dp)
+            .fillMaxHeight()
+            .padding(start = 40.dp, top = 48.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(36.dp),
+    ) {
+        OnboardingWordmark(Modifier.offset(x = (-10).dp).size(220.dp, 140.dp))
+        OnboardingVerticalRail(steps, current)
+    }
+}
+
+/**
+ * 页头：返回按钮与 Linux 胶囊一行；下面是手机上的小字标、“第 n 步，共 N 步 · 标题”与分段进度条。
+ * 宽屏的字标与步骤在左栏，这里只留步骤文字。
+ */
+@Composable
+private fun OnboardingHeader(
     state: OnboardingUiState,
     railSteps: List<OnboardingStep>,
-    showRail: Boolean,
+    compact: Boolean,
     actions: OnboardingActions,
     onOpenLinux: () -> Unit,
 ) {
@@ -224,13 +238,13 @@ private fun OnboardingTopBar(
         else -> null
     }
     val index = railSteps.indexOf(state.step)
-    Column(Modifier.fillMaxWidth().padding(horizontal = InfinitySpacing.Small, vertical = InfinitySpacing.Small)) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                androidx.compose.animation.AnimatedVisibility(visible = back != null, enter = fadeIn(), exit = fadeOut()) {
+                AnimatedVisibility(visible = back != null, enter = fadeIn(), exit = fadeOut()) {
                     IconButton(
                         onClick = { back?.invoke() },
                         enabled = !state.busy,
@@ -240,28 +254,31 @@ private fun OnboardingTopBar(
                     }
                 }
             }
-            Box(Modifier.weight(1f).padding(horizontal = InfinitySpacing.XSmall)) {
-                if (showRail) OnboardingRail(railSteps, state.step)
-            }
+            Spacer(Modifier.weight(1f))
             OnboardingLinuxCapsule(
                 status = state.linux?.takeIf { state.step != OnboardingStep.LINUX },
                 onClick = onOpenLinux,
-                modifier = Modifier.padding(end = InfinitySpacing.Small),
             )
         }
         if (index >= 0) {
-            AnimatedContent(
-                targetState = index,
-                transitionSpec = { InfinityMotion.sharedAxisY(forward = targetState > initialState) },
-                label = "onboarding_step_label",
-            ) { shown ->
-                Text(
-                    text = stringResource(R.string.onboarding_step_of, shown + 1, railSteps.size) + " · " +
-                        stringResource(railSteps[shown].railLabel()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 56.dp, top = InfinitySpacing.XSmall),
-                )
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = OnboardingDimens.PageMargin),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (compact) OnboardingWordmark(Modifier.offset(x = (-12).dp).size(176.dp, 64.dp))
+                AnimatedContent(
+                    targetState = index,
+                    transitionSpec = { InfinityMotion.sharedAxisY(forward = targetState > initialState) },
+                    label = "onboarding_step_label",
+                ) { shown ->
+                    Text(
+                        text = stringResource(R.string.onboarding_step_of, shown + 1, railSteps.size) + " · " +
+                            stringResource(railSteps[shown].railLabel()),
+                        style = OnboardingType.eyebrow(),
+                        color = onboardingFaintText,
+                    )
+                }
+                if (compact) OnboardingProgressBar(count = railSteps.size, current = index)
             }
         }
     }
@@ -274,114 +291,51 @@ private fun OnboardingStep.railLabel(): Int = when (this) {
     else -> R.string.onboarding_rail_agent
 }
 
-/** 横向进度：节点与连线随步骤点亮；已完成节点显示对勾。 */
-@Composable
-private fun OnboardingRail(steps: List<OnboardingStep>, current: OnboardingStep) {
-    val currentIndex = if (current == OnboardingStep.FIRST_CHAT) steps.size else steps.indexOf(current)
-    Row(
-        Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        steps.forEachIndexed { index, _ ->
-            RailNode(index = index, currentIndex = currentIndex)
-            if (index < steps.lastIndex) {
-                RailLink(lit = index < currentIndex, modifier = Modifier.weight(1f).padding(horizontal = InfinitySpacing.XSmall))
-            }
-        }
-    }
-}
-
+/** 宽屏竖排步骤：已完成打勾，当前步骤主色描边，未到的步骤淡显；不画连线。 */
 @Composable
 private fun OnboardingVerticalRail(steps: List<OnboardingStep>, current: OnboardingStep) {
     val currentIndex = steps.indexOf(current)
-    Column {
+    Column(Modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         steps.forEachIndexed { index, step ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RailNode(index = index, currentIndex = currentIndex)
-                Spacer(Modifier.width(InfinitySpacing.Medium))
+            val done = index < currentIndex
+            val active = index == currentIndex
+            val primary = MaterialTheme.colorScheme.primary
+            val border by animateColorAsState(
+                if (done || active) primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                tween(InfinityMotion.DurationMedium),
+                label = "rail_node_border",
+            )
+            val fill by animateColorAsState(if (done) primary else Color.Transparent, tween(InfinityMotion.DurationMedium), label = "rail_node_fill")
+            Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(22.dp).background(fill, CircleShape).border(1.5.dp, border, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (done) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(13.dp))
+                    } else {
+                        Text(
+                            "${index + 1}",
+                            style = OnboardingType.caption(),
+                            color = if (active) primary else onboardingFaintText,
+                        )
+                    }
+                }
                 Text(
                     stringResource(step.railLabel()),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (index == currentIndex) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (index <= currentIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (index < steps.lastIndex) {
-                val lit = index < currentIndex
-                val color by animateColorAsState(
-                    if (lit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                    tween(InfinityMotion.DurationMedium),
-                    label = "rail_vertical_link",
-                )
-                Box(
-                    Modifier
-                        .padding(start = 11.dp, top = InfinitySpacing.XSmall, bottom = InfinitySpacing.XSmall)
-                        .width(2.dp)
-                        .height(24.dp)
-                        .background(color, RoundedCornerShape(1.dp)),
+                    style = OnboardingType.body(),
+                    color = when {
+                        active -> MaterialTheme.colorScheme.onSurface
+                        done -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> onboardingFaintText
+                    },
                 )
             }
         }
     }
 }
 
-@Composable
-private fun RailNode(index: Int, currentIndex: Int) {
-    val done = index < currentIndex
-    val active = index == currentIndex
-    val primary = MaterialTheme.colorScheme.primary
-    val fill by animateColorAsState(
-        when {
-            done -> primary
-            active -> MaterialTheme.colorScheme.primaryContainer
-            else -> Color.Transparent
-        },
-        tween(InfinityMotion.DurationMedium),
-        label = "rail_node_fill",
-    )
-    val border by animateColorAsState(
-        if (done || active) primary else MaterialTheme.colorScheme.outlineVariant,
-        tween(InfinityMotion.DurationMedium),
-        label = "rail_node_border",
-    )
-    Box(
-        Modifier
-            .size(24.dp)
-            .background(fill, CircleShape)
-            .border(1.5.dp, border, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (done) {
-            Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(14.dp))
-        } else {
-            Text(
-                "${index + 1}",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun RailLink(lit: Boolean, modifier: Modifier) {
-    val progress by animateFloatAsState(
-        if (lit) 1f else 0f,
-        tween(InfinityMotion.DurationMedium * 2, easing = InfinityMotion.EmphasizedDecelerate),
-        label = "rail_link",
-    )
-    val track = MaterialTheme.colorScheme.outlineVariant
-    val litColor = MaterialTheme.colorScheme.primary
-    Canvas(modifier.height(2.dp)) {
-        val y = size.height / 2f
-        drawLine(track, Offset(0f, y), Offset(size.width, y), strokeWidth = size.height, cap = StrokeCap.Round)
-        if (progress > 0f) {
-            drawLine(litColor, Offset(0f, y), Offset(size.width * progress, y), strokeWidth = size.height, cap = StrokeCap.Round)
-        }
-    }
-}
-
-/** 顶部 Linux 胶囊：安装中显示进度环与百分比，中断显示警示，就绪显示对勾；点按打开 Linux 面板。 */
+/** 顶部 Linux 胶囊：安装中显示进度环与百分比，中断显示警示，就绪显示对勾；点按打开 Linux 面板。样式与卡片一致。 */
 @Composable
 private fun OnboardingLinuxCapsule(status: OnboardingLinuxStatus?, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val runtime = status?.runtime
@@ -401,20 +355,21 @@ private fun OnboardingLinuxCapsule(status: OnboardingLinuxStatus?, onClick: () -
         val label = linuxCapsuleLabel(current)
         Surface(
             onClick = onClick,
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = CircleShape,
+            color = onboardingCardColor,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = BorderStroke(1.dp, onboardingLineColor),
             modifier = Modifier
-                .heightIn(min = 36.dp)
                 .testTag(OnboardingTags.LINUX_CAPSULE)
                 .semantics { contentDescription = label },
         ) {
             Row(
-                Modifier.padding(horizontal = InfinitySpacing.Medium, vertical = 6.dp),
+                Modifier.heightIn(min = 30.dp).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 LinuxCapsuleIcon(current)
-                Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label, style = OnboardingType.caption(), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -433,15 +388,15 @@ private fun linuxCapsuleLabel(runtime: LinuxRuntimeState): String = when (runtim
 private fun LinuxCapsuleIcon(runtime: LinuxRuntimeState) {
     val success = MaterialTheme.infinityDomainColors.success
     when (runtime) {
-        is LinuxRuntimeState.Installing -> OnboardingProgressRing(runtime.progress.fraction, Modifier.size(16.dp))
+        is LinuxRuntimeState.Installing -> OnboardingProgressRing(runtime.progress.fraction, Modifier.size(12.dp))
         is LinuxRuntimeState.InstallInterrupted -> Box(
-            Modifier.size(16.dp).background(MaterialTheme.colorScheme.error, CircleShape),
+            Modifier.size(14.dp).background(MaterialTheme.colorScheme.error, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.PriorityHigh, null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(12.dp))
+            Icon(Icons.Rounded.PriorityHigh, null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(10.dp))
         }
-        else -> Box(Modifier.size(16.dp).background(success, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(12.dp))
+        else -> Box(Modifier.size(14.dp).background(success, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(10.dp))
         }
     }
 }
@@ -450,34 +405,15 @@ private fun LinuxCapsuleIcon(runtime: LinuxRuntimeState) {
 @Composable
 internal fun OnboardingProgressRing(fraction: Float?, modifier: Modifier = Modifier) {
     val animated by animateFloatAsState(fraction ?: 0.25f, tween(InfinityMotion.DurationMedium), label = "linux_ring")
-    val track = MaterialTheme.colorScheme.outlineVariant
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val value = MaterialTheme.colorScheme.primary
     Canvas(modifier) {
-        val stroke = 2.5.dp.toPx()
+        val stroke = 2.dp.toPx()
         val inset = stroke / 2f
         val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
         drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
         drawArc(value, -90f, 360f * animated.coerceIn(0f, 1f), false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
     }
-}
-
-/** 背景的两团柔光，与原欢迎页一致。 */
-@Composable
-private fun BoxScope.OnboardingAura() {
-    Box(
-        Modifier
-            .align(Alignment.TopStart)
-            .offset(x = (-100).dp, y = (-100).dp)
-            .size(400.dp)
-            .background(Brush.radialGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), Color.Transparent))),
-    )
-    Box(
-        Modifier
-            .align(Alignment.BottomEnd)
-            .offset(x = 100.dp, y = 100.dp)
-            .size(400.dp)
-            .background(Brush.radialGradient(listOf(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f), Color.Transparent))),
-    )
 }
 
 /** 步骤页骨架：可滚动的正文加固定在底部的操作区。 */
@@ -492,17 +428,11 @@ internal fun OnboardingStepPage(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = InfinitySpacing.XLarge, vertical = InfinitySpacing.Large),
-            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Large),
+                .padding(start = OnboardingDimens.PageMargin, end = OnboardingDimens.PageMargin, top = 32.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(OnboardingDimens.SectionGap),
             content = content,
         )
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = InfinitySpacing.XLarge, vertical = InfinitySpacing.Large),
-            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
-            content = footer,
-        )
+        OnboardingFooter(footer)
     }
 }
 
@@ -516,40 +446,47 @@ internal fun OnboardingLazyStepPage(
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth().selectableGroup().testTag(listTag),
-            contentPadding = PaddingValues(horizontal = InfinitySpacing.XLarge, vertical = InfinitySpacing.Large),
-            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+            contentPadding = PaddingValues(start = OnboardingDimens.PageMargin, end = OnboardingDimens.PageMargin, top = 32.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             content = content,
         )
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = InfinitySpacing.XLarge, vertical = InfinitySpacing.Large),
-            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
-            content = footer,
-        )
+        OnboardingFooter(footer)
     }
+}
+
+@Composable
+private fun OnboardingFooter(footer: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = OnboardingDimens.PageMargin, end = OnboardingDimens.PageMargin, top = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        content = footer,
+    )
 }
 
 @Composable
 internal fun OnboardingHeading(title: String, description: String, centered: Boolean = false, index: Int = 0) {
     val align = if (centered) TextAlign.Center else TextAlign.Start
-    RiseIn(index) {
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = align,
-            modifier = Modifier.fillMaxWidth().semantics { heading() },
-        )
-    }
-    RiseIn(index + 1) {
-        Text(
-            description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = align,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        RiseIn(index) {
+            Text(
+                title,
+                style = OnboardingType.title(),
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = align,
+                modifier = Modifier.fillMaxWidth().semantics { heading() },
+            )
+        }
+        RiseIn(index + 1) {
+            Text(
+                description,
+                style = OnboardingType.body(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = align,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

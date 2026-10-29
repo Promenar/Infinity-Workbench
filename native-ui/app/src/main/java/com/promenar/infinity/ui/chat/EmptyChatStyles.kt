@@ -40,7 +40,6 @@ import com.promenar.infinity.ui.theme.EmptyChatStyle
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
-import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.pow
@@ -75,9 +74,6 @@ private class EmptyChatScene(val style: EmptyChatStyle) {
     var dust: FloatArray? = null
     var morph: MorphParticles? = null
     var morphMask: WordmarkMask? = null
-    var ledMorph: LedMorphBeads? = null
-    /** 灯珠变形的时间轴时钟（秒），见 [LedMorphTimeline]。 */
-    var ledMorphClock = 0f
     val ripples = ArrayList<FloatArray>()
     val sphere: FloatArray by lazy { fibonacciSphere(GlobeBeads) }
     val beads = LedBatch(levels = 8, glowFrom = 4)
@@ -98,7 +94,7 @@ private const val GlobeBeads = 700
 private const val DustCount = 70
 
 /**
- * 灯语与莫比乌斯类空会话动画：灯珠字标、粒子流环、灯珠环、字标变形与灯珠星球。颜色都跟随主题色。
+ * 灯语与莫比乌斯类空会话动画：灯珠字标、粒子流环、灯珠环、字标变形、灯珠星球与灯珠变形（交给 [LedMorphWordmark]）。颜色都跟随主题色。
  * 手指按住拖动转视角（字标除外），点按触发散开、波纹或跳到下一段变形；开始输入后整体压暗。
  * [particleScale] 缩减粒子数量，设置页的小预览用。纯装饰，不进入无障碍树。
  */
@@ -111,6 +107,10 @@ internal fun LedEmptyChat(
     centerFraction: Float = WordmarkCenterFraction,
     particleScale: Float = 1f,
 ) {
+    if (style == EmptyChatStyle.LED_MORPH) {
+        LedMorphWordmark(modifier, dispersed, pointer, centerFraction, particleScale)
+        return
+    }
     val wordmark = stringResource(R.string.brand_wordmark)
     val density = LocalDensity.current.density
     val inspection = LocalInspectionMode.current
@@ -119,39 +119,21 @@ internal fun LedEmptyChat(
     val clock = rememberMotionClock(running = animate)
     val scene = remember(style, particleScale) { EmptyChatScene(style) }
     val dim by animateFloatAsState(if (dispersed) 0.3f else 1f, tween(500), label = "empty_scene_dim")
-    val needsMask = style == EmptyChatStyle.LED_WORDMARK || style == EmptyChatStyle.MORPH || style == EmptyChatStyle.LED_MORPH
+    val needsMask = style == EmptyChatStyle.LED_WORDMARK || style == EmptyChatStyle.MORPH
 
     BoxWithConstraints(modifier) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
         val centerY = heightPx * centerFraction
-        // 字标栅格只按宽度重建；高度随键盘变化时绘制阶段整体平移。静态预览同步生成，截图才有确定内容。
-        val maskHolder = remember { mutableStateOf<WordmarkMask?>(null) }
-        if (needsMask && inspection && maskHolder.value == null) {
-            maskHolder.value = rasterizeWordmark(wordmark, widthPx, heightPx, centerY, density)
-        }
-        LaunchedEffect(needsMask, wordmark, widthPx, density) {
-            if (!needsMask || inspection) return@LaunchedEffect
-            maskHolder.value = withContext(Dispatchers.Default) { rasterizeWordmark(wordmark, widthPx, heightPx, centerY, density) }
-        }
+        val mask = rememberWordmarkMask(needsMask, wordmark, widthPx, heightPx, centerY, density)
         val origin = remember { floatArrayOf(0f, 0f) }
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .clearAndSetSemantics {}
-                .onGloballyPositioned { coordinates ->
-                    val position = coordinates.positionInRoot()
-                    origin[0] = position.x
-                    origin[1] = position.y
-                },
-        ) {
+        Canvas(Modifier.fillMaxSize().clearAndSetSemantics {}.trackCanvasOrigin(origin)) {
             // 静止时停在 1.3 秒，画面固定。
             val time = if (animate) clock.time else 1.3f
             val delta = if (animate) scene.advance(time) else 0f
             val px = pointer?.root?.get(0)?.let { (it - origin[0]) / density } ?: Float.NaN
             val py = pointer?.root?.get(1)?.let { (it - origin[1]) / density } ?: Float.NaN
             val tapped = scene.gesture.update(px, py, time, delta)
-            val mask = maskHolder.value
             drawIntoCanvas { canvas ->
                 val native = canvas.nativeCanvas
                 native.saveLayerAlpha(0f, 0f, size.width, size.height, (255 * dim).toInt())
@@ -161,8 +143,7 @@ internal fun LedEmptyChat(
                     EmptyChatStyle.MOBIUS_LED -> drawMobiusLed(scene, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.MORPH -> if (mask != null) drawMorph(scene, mask, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.LED_GLOBE -> drawLedGlobe(scene, centerY, time, delta, tapped, palette, particleScale)
-                    EmptyChatStyle.LED_MORPH -> if (mask != null) drawLedMorph(scene, mask, centerY, time, delta, tapped, palette, particleScale)
-                    EmptyChatStyle.FLOW -> Unit
+                    EmptyChatStyle.LED_MORPH, EmptyChatStyle.FLOW -> Unit
                 }
                 native.restore()
             }
@@ -170,19 +151,51 @@ internal fun LedEmptyChat(
     }
 }
 
-private fun DrawScope.mobiusView(scene: EmptyChatScene, centerY: Float, time: Float): MobiusProjector =
-    scene.projector.configure(
+/**
+ * 字标栅格：只按宽度重建，高度随键盘变化时绘制阶段整体平移；[enabled] 为 false 时不生成。
+ * 静态预览同步生成，截图才有确定内容；运行时放到后台线程。
+ */
+@Composable
+internal fun rememberWordmarkMask(enabled: Boolean, wordmark: String, widthPx: Float, heightPx: Float, centerY: Float, density: Float): WordmarkMask? {
+    val inspection = LocalInspectionMode.current
+    val maskHolder = remember { mutableStateOf<WordmarkMask?>(null) }
+    if (enabled && inspection && maskHolder.value == null) {
+        maskHolder.value = rasterizeWordmark(wordmark, widthPx, heightPx, centerY, density)
+    }
+    LaunchedEffect(enabled, wordmark, widthPx, density) {
+        if (!enabled || inspection) return@LaunchedEffect
+        maskHolder.value = withContext(Dispatchers.Default) { rasterizeWordmark(wordmark, widthPx, heightPx, centerY, density) }
+    }
+    return maskHolder.value
+}
+
+/** 记录画布在根坐标系里的左上角，用来把 [WordmarkPointer] 的根坐标换算到画布内。 */
+internal fun Modifier.trackCanvasOrigin(origin: FloatArray): Modifier = onGloballyPositioned { coordinates ->
+    val position = coordinates.positionInRoot()
+    origin[0] = position.x
+    origin[1] = position.y
+}
+
+/** 莫比乌斯带的视角：缓慢摇摆，叠加手势转动与点按散开。 */
+internal fun DrawScope.mobiusView(projector: MobiusProjector, gesture: EmptyChatGesture, centerY: Float, time: Float, burst: Float = 0f): MobiusProjector =
+    projector.configure(
         radius = mobiusRadius(size.width, size.height),
         cx = size.width / 2,
         cy = centerY,
-        yaw = 0.22f * sin(time * 0.3f) + scene.gesture.rotY,
-        pitch = 0.78f + scene.gesture.rotX,
-        burst = burstAmount(time - scene.burstTime),
+        yaw = 0.22f * sin(time * 0.3f) + gesture.rotY,
+        pitch = 0.78f + gesture.rotX,
+        burst = burst,
     )
 
-private fun DrawScope.flushBeads(scene: EmptyChatScene, palette: MotionPalette) {
-    drawIntoCanvas { scene.beads.draw(it.nativeCanvas, palette.leds, palette.dark, blur = 2.5f * density, whitenFrom = 6, glowAlpha = 0.7f) }
+private fun DrawScope.mobiusView(scene: EmptyChatScene, centerY: Float, time: Float): MobiusProjector =
+    mobiusView(scene.projector, scene.gesture, centerY, time, burstAmount(time - scene.burstTime))
+
+/** 把一帧攒下的灯珠按主题色画出来。 */
+internal fun DrawScope.flushLedBeads(beads: LedBatch, palette: MotionPalette) {
+    drawIntoCanvas { beads.draw(it.nativeCanvas, palette.leds, palette.dark, blur = 2.5f * density, whitenFrom = 6, glowAlpha = 0.7f) }
 }
+
+private fun DrawScope.flushBeads(scene: EmptyChatScene, palette: MotionPalette) = flushLedBeads(scene.beads, palette)
 
 /** 灯珠字标：字标排成灯珠点阵，笔画常亮打底；数据光带从左往右缓缓扫过，光带里的灯珠按 ACT 节奏闪。点按从指尖发出一圈波纹。 */
 private fun DrawScope.drawLedWordmark(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette) {
@@ -210,63 +223,6 @@ private fun DrawScope.drawLedWordmark(scene: EmptyChatScene, mask: WordmarkMask,
             if (kotlin.math.abs(hypot(x - ripple[1], y - ripple[2]) - radius) < pitch * 1.4f) level = maxOf(level, 1 - (t - ripple[0]) / 1.6f)
         }
         scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.05f) 1 else 0, level, x, y, bead, bead * 1.8f)
-    }
-    flushBeads(scene, palette)
-}
-
-/**
- * 灯珠变形：字标与灯珠环之间往复变形（时间轴见 [LedMorphTimeline]），两种形态共用同一组细沙粒。
- * 灯珠数、环上排布与亮度规则都和灯珠环一致；字标形态是撒在字形内的近似蓝噪声星尘，数据光带从左往右扫过。
- * 两种形态按横向位置一一配对、错开出发，飞行途中带少量旋涡偏移与零星闪光。
- * 点按跳到下一形态；环阶段拖动转视角。系统关闭动画时时钟不走，停在静态字标。
- */
-private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette, particleScale: Float) {
-    val k = density
-    val columns = mobiusLedColumns(particleScale)
-    val beads = scene.ledMorph?.takeIf { it.mask === mask && it.width == size.width && it.count == columns * MobiusLedLanes }
-        ?: buildLedMorphBeads(mask, size.width, k, columns, mobiusRadius(size.width, size.height)).also { scene.ledMorph = it }
-    if (tapped) scene.ledMorphClock = LedMorphTimeline.skip(scene.ledMorphClock)
-    scene.ledMorphClock += delta
-    scene.bandClock += delta
-    val clock = scene.ledMorphClock
-    val progress = LedMorphTimeline.progress(clock)
-    val gathering = LedMorphTimeline.stageAt(clock) == LedMorphTimeline.Stage.GATHER
-    val view = mobiusView(scene, centerY, t)
-    val offsetY = centerY - mask.centerY
-    val flashSlot = floor(t * 18)
-    val p = scene.point
-    scene.beads.reset()
-    for (i in 0 until beads.count) {
-        val id = beads.id[i]
-        val e = LedMorphTimeline.beadProgress(progress, gathering, beads.rank[i])
-        val wx = beads.wordX[i]
-        val wy = beads.wordY[i] + offsetY
-        var x = wx
-        var y = wy
-        var level = 0f
-        var bead = 0f
-        if (e < 1f) {
-            val dw = beads.dw[i]
-            val band = (0.5f + 0.5f * sin(wx / k * 0.048f - scene.bandClock * 2.2f)).pow(14)
-            level = beadLevel(id, t, band, 0.2f) * (0.6f + 0.4f * dw)
-            bead = (0.7f + 0.8f * dw) * k
-        }
-        val fly = sin(Math.PI.toFloat() * e)
-        if (e > 0f) {
-            val u = beads.ringU[i]
-            view.project(u, beads.ringV[i] * view.halfWidth, p, 0.6f)
-            val swirl = fly * 14 * k
-            val angle = beads.angle[i] + t * 0.8f
-            x = wx + (p[0] - wx) * e + cos(angle) * swirl
-            y = wy + (p[1] - wy) * e + sin(angle) * swirl
-            val band = (0.5f + 0.5f * sin(2 * u - scene.bandClock * 1.6f)).pow(14)
-            val ringLevel = beadLevel(id, t, band) * (0.35f + 0.65f * p[2])
-            val ringBead = (0.8f + 0.9f * p[2]) * k
-            level += (ringLevel - level) * e
-            bead += (ringBead - bead) * e
-        }
-        if (fly > 0.05f && motionHash(id.toFloat(), flashSlot) > 0.82f) level = maxOf(level, 0.55f * fly)
-        scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.06f) 1 else 0, level, x, y, bead, bead * 1.8f)
     }
     flushBeads(scene, palette)
 }

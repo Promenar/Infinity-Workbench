@@ -293,4 +293,61 @@ class ThemePreferenceStoreTest {
         assertThat(decodeRecentColors(encodeRecentColors(listOf(0xFF000000.toInt(), 0xFFABCDEF.toInt()))))
             .containsExactly(0xFF000000.toInt(), 0xFFABCDEF.toInt()).inOrder()
     }
+
+    @Test
+    fun `从未设置过外观时走新默认：冰蓝主色与纯黑背景`() {
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { getString(any(), any()) } returns null
+            every { contains(any()) } returns false
+        }
+
+        val state = ThemePreferenceStore(contextFor(prefs)).state.value
+
+        assertThat(state.primaryColor).isEqualTo(InfinityIceBlueSeed.value.toLong())
+        assertThat(state.primaryColor).isEqualTo(InfinityDefaultPrimaryColor)
+        assertThat(state.pureBlack).isTrue()
+        assertThat(state.mode).isEqualTo(InfinityThemeMode.DARK)
+        assertThat(InfinityPresetColors.first()).isEqualTo(InfinityIceBlueSeed)
+    }
+
+    @Test
+    fun `已有的主色与纯黑设置原样保留，不被新默认覆盖`() {
+        val custom = InfinityPresetColors[3].value.toLong()
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { getString(any(), any()) } returns null
+            every { contains(any()) } returns false
+            every { contains("theme_primary_color") } returns true
+            every { getLong("theme_primary_color", any()) } returns custom
+            every { contains("theme_pure_black") } returns true
+            every { getBoolean("theme_pure_black", any()) } returns false
+        }
+
+        val state = ThemePreferenceStore(contextFor(prefs)).state.value
+
+        assertThat(state.primaryColor).isEqualTo(custom)
+        assertThat(state.pureBlack).isFalse()
+    }
+
+    @Test
+    fun `选过内置淡紫的写入显式标记，读回仍是内置配色而不是冰蓝`() {
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putLong(any(), any()) } returns editor
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { edit() } returns editor
+            every { getString(any(), any()) } returns null
+            every { contains(any()) } returns false
+            every { contains("theme_primary_color") } returns true
+            every { getLong("theme_primary_color", any()) } returns ThemePreferenceStore.BUILT_IN_PRIMARY_COLOR
+        }
+
+        val store = ThemePreferenceStore(contextFor(prefs))
+        assertThat(store.state.value.primaryColor).isNull()
+
+        store.setPrimaryColor(InfinityDefaultPrimaryColor)
+        store.setPrimaryColor(null)
+
+        assertThat(store.state.value.primaryColor).isNull()
+        verify { editor.putLong("theme_primary_color", ThemePreferenceStore.BUILT_IN_PRIMARY_COLOR) }
+        verify(exactly = 0) { editor.remove("theme_primary_color") }
+    }
 }

@@ -2,8 +2,6 @@ package com.promenar.infinity.ui.welcome
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -30,8 +27,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.SdStorage
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
@@ -58,8 +53,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -67,19 +60,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.linux.LinuxOptionalPackage
 import com.promenar.infinity.domain.linux.LinuxRuntimeState
 import com.promenar.infinity.domain.linux.LinuxStepStatus
 import com.promenar.infinity.onboarding.OnboardingStep
-import com.promenar.infinity.ui.chat.ParticleWordmark
-import com.promenar.infinity.ui.chat.WordmarkPointer
-import com.promenar.infinity.ui.chat.trackWordmarkPointer
 import com.promenar.infinity.ui.common.network.rememberAnimationsEnabled
 import com.promenar.infinity.ui.linux.settings.LINUX_BUNDLED_ALPINE_VERSION
-import com.promenar.infinity.ui.linux.settings.LinuxCallout
 import com.promenar.infinity.ui.linux.settings.LinuxFailureCard
 import com.promenar.infinity.ui.linux.settings.LinuxInstallStepRow
 import com.promenar.infinity.ui.linux.settings.LinuxOutputBox
@@ -93,7 +87,7 @@ import com.promenar.infinity.ui.theme.infinityDomainColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** 选中语言后等粒子散开再推进；语言切换可能重建 Activity。 */
+/** 选中语言后等字标压暗再推进；语言切换可能重建 Activity。 */
 private const val LanguageDisperseMillis = 420L
 private const val LinuxOutputLines = 6
 
@@ -102,52 +96,55 @@ internal fun OnboardingIntro(onLanguageSelected: (String) -> Unit, busy: Boolean
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
     var selecting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val pointer = remember { WordmarkPointer() }
     val select: (String) -> Unit = { code ->
         if (!selecting && !busy) {
             selecting = true
             scope.launch {
                 if (animate) delay(LanguageDisperseMillis)
                 onLanguageSelected(code)
-                // 语言未能保存时引导停在本页，粒子重新聚拢后可再次选择。
+                // 语言未能保存时引导停在本页，字标恢复后可再次选择。
                 delay(1_000)
                 selecting = false
             }
         }
     }
     val wordmark: @Composable (Modifier) -> Unit = { modifier ->
-        Box(modifier.trackWordmarkPointer(pointer), contentAlignment = Alignment.Center) {
-            ParticleWordmark(dispersed = selecting, pointer = pointer, modifier = Modifier.fillMaxSize(), centerFraction = 0.5f)
+        Column(
+            modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+        ) {
+            OnboardingWordmark(Modifier.fillMaxWidth().heightIn(max = 200.dp).weight(1f, fill = false).fillMaxHeight(), dispersed = selecting)
             Text(
                 stringResource(R.string.welcome_slogan),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                modifier = Modifier.offset(y = 56.dp),
+                style = OnboardingType.body().copy(fontSize = 12.5.sp, letterSpacing = 0.32.em),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
     val choices: @Composable (Modifier) -> Unit = { modifier ->
         Column(
             modifier
-                .widthIn(max = 420.dp)
+                .widthIn(max = OnboardingDimens.CenteredMaxWidth)
                 .fillMaxWidth()
-                .padding(horizontal = InfinitySpacing.XLarge, vertical = InfinitySpacing.XLarge),
-            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+                .padding(start = OnboardingDimens.PageMargin, end = OnboardingDimens.PageMargin, top = 24.dp, bottom = 44.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             RiseIn(0) {
                 Text(
                     stringResource(R.string.onboarding_choose_language),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = OnboardingType.caption(),
+                    color = onboardingFaintText,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             RiseIn(1) {
-                LanguageButton("文", stringResource(R.string.welcome_lang_chinese), "zh", enabled = !selecting && !busy, onClick = select)
-            }
-            RiseIn(2) {
-                LanguageButton("A", stringResource(R.string.welcome_lang_english), "en", enabled = !selecting && !busy, onClick = select)
+                OnboardingCard {
+                    LanguageRow("文", stringResource(R.string.welcome_lang_chinese), "zh", enabled = !selecting && !busy, onClick = select)
+                    HorizontalDivider(color = onboardingLineColor)
+                    LanguageRow("A", stringResource(R.string.welcome_lang_english), "en", enabled = !selecting && !busy, onClick = select)
+                }
             }
         }
     }
@@ -160,60 +157,48 @@ internal fun OnboardingIntro(onLanguageSelected: (String) -> Unit, busy: Boolean
         if (maxWidth > maxHeight && maxHeight < 480.dp) {
             // 横屏矮窗口：字标与语言按钮左右并排，按钮列可滚动，放大字号也能点到。
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                wordmark(Modifier.weight(1f).fillMaxHeight())
+                wordmark(Modifier.weight(1f).fillMaxHeight().padding(vertical = InfinitySpacing.Large))
                 Box(
                     Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
                     contentAlignment = Alignment.Center,
                 ) { choices(Modifier) }
             }
         } else {
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                wordmark(Modifier.weight(1f).fillMaxWidth())
+            // 竖屏与折叠屏内屏：居中单栏。
+            Column(
+                Modifier.fillMaxSize().padding(top = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                wordmark(Modifier.weight(1f).widthIn(max = OnboardingDimens.CenteredMaxWidth).fillMaxWidth())
                 choices(Modifier)
             }
         }
     }
 }
 
+/** 语言卡片里的一行：字形小图块、语言名与右侧箭头。 */
 @Composable
-private fun LanguageButton(glyph: String, label: String, code: String, enabled: Boolean, onClick: (String) -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.97f else 1f, label = "language_press")
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier
+private fun LanguageRow(glyph: String, label: String, code: String, enabled: Boolean, onClick: (String) -> Unit) {
+    Row(
+        Modifier
             .fillMaxWidth()
-            .scale(scale)
-            .clickable(enabled = enabled, interactionSource = interaction, indication = androidx.compose.material3.ripple(), role = Role.Button) {
-                onClick(code)
-            }
+            .clickable(enabled = enabled, role = Role.Button) { onClick(code) }
+            .heightIn(min = OnboardingDimens.RowMinHeight)
+            .padding(horizontal = 16.dp)
             .testTag(OnboardingTags.LANGUAGE_PREFIX + code),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            Modifier.heightIn(min = 56.dp).padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.Medium),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
-        ) {
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), CircleShape)
-                    .clearAndSetSemantics {},
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(glyph, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
-            Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(16.dp),
-            )
+        OnboardingIconTile(Modifier.clearAndSetSemantics {}) {
+            Text(glyph, style = OnboardingType.caption().copy(fontSize = 13.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Text(label, style = OnboardingType.rowTitle(), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+        Icon(
+            Icons.AutoMirrored.Rounded.ArrowForwardIos,
+            contentDescription = null,
+            tint = onboardingFaintText,
+            modifier = Modifier.size(12.dp),
+        )
     }
 }
 
@@ -226,23 +211,24 @@ internal fun OnboardingLinuxStep(status: OnboardingLinuxStatus, actions: Onboard
     OnboardingStepPage(
         footer = {
             RiseIn(6) {
-                Button(
+                OnboardingPrimaryButton(
                     onClick = actions.onInstallLinux,
                     enabled = enoughSpace,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag(OnboardingTags.LINUX_INSTALL),
-                ) { Text(stringResource(R.string.onboarding_linux_install), style = MaterialTheme.typography.titleSmall) }
+                    modifier = Modifier.testTag(OnboardingTags.LINUX_INSTALL),
+                ) { Text(stringResource(R.string.onboarding_linux_install), style = OnboardingType.button()) }
             }
             RiseIn(7) {
-                TextButton(
+                OnboardingTextButton(
+                    stringResource(R.string.onboarding_linux_skip),
                     onClick = actions.onSkipLinux,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(OnboardingTags.LINUX_SKIP),
-                ) { Text(stringResource(R.string.onboarding_linux_skip)) }
+                    modifier = Modifier.testTag(OnboardingTags.LINUX_SKIP),
+                )
             }
             RiseIn(8) {
                 Text(
                     stringResource(R.string.onboarding_linux_background_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = OnboardingType.caption(),
+                    color = onboardingFaintText,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -256,25 +242,21 @@ internal fun OnboardingLinuxStep(status: OnboardingLinuxStatus, actions: Onboard
             index = 1,
         )
         RiseIn(3) {
-            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-                Column {
+            OnboardingCard {
+                LinuxPackageRow(
+                    title = stringResource(R.string.linux_install_base_title, LINUX_BUNDLED_ALPINE_VERSION),
+                    subtitle = stringResource(R.string.linux_install_base_subtitle),
+                    checked = true,
+                    onCheckedChange = null,
+                )
+                LinuxOptionalPackage.entries.forEach { item ->
+                    HorizontalDivider(color = onboardingLineColor)
                     LinuxPackageRow(
-                        icon = Icons.Rounded.Inventory2,
-                        title = stringResource(R.string.linux_install_base_title, LINUX_BUNDLED_ALPINE_VERSION),
-                        subtitle = stringResource(R.string.linux_install_base_subtitle),
-                        checked = true,
-                        onCheckedChange = null,
+                        title = stringResource(linuxOptionalPackageTitle(item)),
+                        subtitle = linuxOptionalPackageSubtitle(item),
+                        checked = item in status.packages,
+                        onCheckedChange = { actions.onSetLinuxPackage(item, it) },
                     )
-                    LinuxOptionalPackage.entries.forEach { item ->
-                        HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        LinuxPackageRow(
-                            icon = Icons.Rounded.Code,
-                            title = stringResource(linuxOptionalPackageTitle(item)),
-                            subtitle = linuxOptionalPackageSubtitle(item),
-                            checked = item in status.packages,
-                            onCheckedChange = { actions.onSetLinuxPackage(item, it) },
-                        )
-                    }
                 }
             }
         }
@@ -285,24 +267,42 @@ internal fun OnboardingLinuxStep(status: OnboardingLinuxStatus, actions: Onboard
                         if (enoughSpace) Icons.Rounded.SdStorage else Icons.Rounded.WarningAmber,
                         contentDescription = null,
                         tint = if (enoughSpace) MaterialTheme.infinityDomainColors.success else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                     Text(
                         if (enoughSpace) stringResource(R.string.onboarding_linux_space, linuxBytes(freeBytes), linuxBytes(required))
                         else stringResource(R.string.linux_install_space_low, linuxBytes(freeBytes), linuxBytes(required)),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = OnboardingType.caption(),
                         color = if (enoughSpace) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                     )
                 }
             }
         }
-        RiseIn(5) { LinuxCallout(stringResource(R.string.linux_install_warning)) }
+        RiseIn(5) { OnboardingNotice(stringResource(R.string.linux_install_warning)) }
+    }
+}
+
+/** 引导页的提示条：卡片样式，左侧警示图标用警示色。 */
+@Composable
+private fun OnboardingNotice(text: String) {
+    OnboardingCard {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                Icons.Rounded.WarningAmber,
+                contentDescription = null,
+                tint = MaterialTheme.infinityDomainColors.warning,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(text, style = OnboardingType.caption(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 @Composable
 private fun LinuxPackageRow(
-    icon: ImageVector,
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -317,15 +317,14 @@ private fun LinuxPackageRow(
         Modifier
             .fillMaxWidth()
             .then(toggle)
-            .heightIn(min = 64.dp)
-            .padding(horizontal = InfinitySpacing.Large, vertical = 10.dp),
+            .heightIn(min = OnboardingDimens.RowMinHeight)
+            .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = OnboardingType.rowTitle(), color = MaterialTheme.colorScheme.onSurface)
+            Text(subtitle, style = OnboardingType.rowSubtitle(), color = onboardingFaintText)
         }
         Checkbox(checked = checked, onCheckedChange = null, enabled = onCheckedChange != null)
     }
@@ -333,7 +332,7 @@ private fun LinuxPackageRow(
 
 private val TerminalLines = listOf("~ $ uname -sm", "Linux aarch64", "~ $ apk add git python3", "OK")
 
-/** 终端预览：逐字打出几行命令；关闭动画时直接显示全文。纯装饰。 */
+/** 终端预览：逐字打出几行命令，光标用主色；关闭动画时直接显示全文。纯装饰。 */
 @Composable
 private fun LinuxTerminalPreview() {
     val animate = rememberAnimationsEnabled() && !LocalInspectionMode.current
@@ -347,26 +346,36 @@ private fun LinuxTerminalPreview() {
             shown++
         }
     }
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
-    ) {
-        Column(Modifier.padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.Medium)) {
+    val cursor = MaterialTheme.colorScheme.primary
+    OnboardingCard(Modifier.clearAndSetSemantics {}) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(MaterialTheme.colorScheme.error, MaterialTheme.infinityDomainColors.warning, MaterialTheme.infinityDomainColors.success).forEach {
-                    Box(Modifier.size(8.dp).background(it.copy(alpha = 0.8f), CircleShape))
-                }
+                repeat(3) { Box(Modifier.size(9.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)) }
             }
-            Spacer(Modifier.height(InfinitySpacing.Small))
+            Spacer(Modifier.height(10.dp))
             Text(
                 // 预留全文高度，逐字出现时卡片不跳动。
-                text = full.substring(0, shown) + "▍" + "\n".repeat(full.count { it == '\n' } - full.substring(0, shown).count { it == '\n' }),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = InfinityMonospace),
+                text = buildAnnotatedString {
+                    append(full.substring(0, shown))
+                    withStyle(SpanStyle(color = cursor)) { append("▍") }
+                    append("\n".repeat(full.count { it == '\n' } - full.substring(0, shown).count { it == '\n' }))
+                },
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = InfinityMonospace, fontSize = 11.5.sp, lineHeight = 19.sp),
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
+}
+
+/** 30dp 的小图块：服务、语言与智能体列表行的图标底。 */
+@Composable
+internal fun OnboardingIconTile(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(
+        modifier
+            .size(OnboardingDimens.TileIcon)
+            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(9.dp)),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 /** Linux 面板：分步进度、实时输出尾部与取消、重试、跳过。安装在应用级作用域进行，关闭面板不影响。 */
