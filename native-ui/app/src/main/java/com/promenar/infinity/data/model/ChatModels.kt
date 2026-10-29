@@ -557,6 +557,8 @@ data class Message(
     val thoughtSignature: String? = null,
     val images: String? = null,
     val userDocuments: List<MessageDocumentAttachment>? = null,
+    /** 用户消息附带的引用批注，按添加顺序排列。 */
+    val quotes: List<MessageQuote>? = null,
     val legacyFilesPayload: String? = null,
     val legacyAttachmentsPayload: String? = null,
     val userImages: List<String>? = null,
