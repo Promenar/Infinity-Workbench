@@ -1595,6 +1595,9 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 com.promenar.infinity.data.rag.MemoryManagerRagAdapter { memoryManager }, kgProvider, knowledgeTurns))
             register(com.promenar.infinity.ui.chat.manager.skills.RequestKnowledgeAccessSkill(
                 knowledgeAccessPlanner, sessionRepository::getById, { agentRepository.getById(it)?.retrievalConfig }, knowledgeTurns))
+            register(com.promenar.infinity.ui.chat.manager.skills.CopyKnowledgeToLinuxSkill(
+                sessionRepository::getById, { current -> knowledgeAccessAllowedForTools(current) }, externalFolderManager,
+                workspaceRepository, linux.files, { linux.runtime.state.value is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready }, ::reconcileSessionHome))
             register(CalculatorSkill())
             register(com.promenar.infinity.ui.chat.manager.AskUserTool())
             register(com.promenar.infinity.data.branch.SessionBranchTool())
@@ -1727,6 +1730,10 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         return com.promenar.infinity.data.model.json.encodeToString(knowledgeAccessPlanner.preview(session.id, base))
     }
 
+    private fun knowledgeAccessAllowedForTools(current: com.promenar.infinity.data.model.Session): Boolean =
+        com.promenar.infinity.data.rag.effectiveKnowledgeFileAccess(knowledgeConfigForTools(current.agentId), current.options.toolsEnabled) ==
+            com.promenar.infinity.data.agent.KnowledgeFileAccess.ON_REQUEST
+
     val sessionToolResolver: com.promenar.infinity.data.generation.SessionToolResolver by lazy {
         object : com.promenar.infinity.data.generation.SessionToolResolver {
             override fun resolve(session: com.promenar.infinity.data.model.Session): List<com.promenar.infinity.data.remote.protocol.ProtocolTool> =
@@ -1740,8 +1747,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                             knowledgeCatalog.hasIndexedMaterial(current, com.promenar.infinity.data.rag.resolveEffectiveRagOptions(current.ragOptions,
                                 memoryPolicy = config?.memoryPolicy ?: com.promenar.infinity.data.agent.AgentMemoryPolicy()))
                     },
-                    knowledgeAccessAllowed = { current -> com.promenar.infinity.data.rag.effectiveKnowledgeFileAccess(
-                        knowledgeConfigForTools(current.agentId), current.options.toolsEnabled) == com.promenar.infinity.data.agent.KnowledgeFileAccess.ON_REQUEST },
+                    knowledgeAccessAllowed = ::knowledgeAccessAllowedForTools,
                 ) { current ->
                     com.promenar.infinity.data.generation.MediaViewTarget.capabilities(
                         ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == current.modelId },

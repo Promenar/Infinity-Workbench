@@ -88,7 +88,8 @@ open class MainActivity : ComponentActivity() {
         ShareImportTargetProvider(
             app.database.sessionDao(),
             app.workspaceRepository,
-            app.globalKnowledgeWorkspaceProvisioner::ensureRoot,
+            ensureKnowledgeRoot = app.globalKnowledgeWorkspaceProvisioner::ensureRoot,
+            linuxRuntime = app.linux.runtime,
         )
     }
     private val sharedFileImporter by lazy {
@@ -97,6 +98,8 @@ open class MainActivity : ComponentActivity() {
             source = durableShareInbox.contentSource(),
             workspace = app.workspaceRepository,
             indexScheduler = AndroidShareIndexScheduler(app),
+            linuxFiles = app.linux.files,
+            linuxReady = { app.linux.runtime.state.value is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready },
         )
     }
     private val shareImportViewModel by viewModels<ShareImportViewModel> {

@@ -52,6 +52,9 @@ object ApprovalPreview {
         val newChild = (args.string("parentPath") ?: args.string("parentUuid") ?: "").trimEnd('/') +
             "/" + args.string("name").orEmpty()
         return when (toolName) {
+            "copy_knowledge_to_linux" -> Preview(Action.CREATE_FILE,
+                args.string("target") ?: com.promenar.infinity.ui.chat.manager.skills.CopyKnowledgeToLinuxSkill.DEFAULT_TARGET,
+                args.string("source")?.let { "来源：$it" })
             "write_file" -> Preview(Action.OVERWRITE, target, args.string("content"))
             "create_file" -> Preview(Action.CREATE_FILE, newChild, args.string("content"))
             "create_directory" -> Preview(Action.CREATE_DIRECTORY, newChild, null)
