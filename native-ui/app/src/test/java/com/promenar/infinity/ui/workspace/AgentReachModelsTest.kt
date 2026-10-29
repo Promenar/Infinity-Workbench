@@ -19,9 +19,9 @@ import org.junit.Test
 
 class AgentReachModelsTest {
     @Test
-    fun `应用内存储进备份，Linux 主目录与手机存储不进`() {
+    fun `只有本会话文件夹进备份，共享文件夹、Linux 主目录与手机存储不进`() {
         assertThat(workspaceTraits(null)).isEqualTo(WorkspaceTraits(backedUp = true, termuxVisible = false))
-        assertThat(workspaceTraits(WorkspaceEntity.KIND_PROJECT)).isEqualTo(WorkspaceTraits(backedUp = true, termuxVisible = false))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_PROJECT)).isEqualTo(WorkspaceTraits(backedUp = false, termuxVisible = false))
         assertThat(workspaceTraits(WorkspaceEntity.KIND_SHARED)).isEqualTo(WorkspaceTraits(backedUp = false, termuxVisible = true))
         assertThat(workspaceTraits(WorkspaceEntity.KIND_LINUX_HOME)).isEqualTo(WorkspaceTraits(backedUp = false, termuxVisible = false))
     }

@@ -36,7 +36,7 @@ data class WorkspaceTag(@StringRes val label: Int, val tone: WorkspaceTagTone)
 /** 每类工作区固定两条标签，依次回答“进不进备份”和“什么时候会消失”。 */
 fun workspaceKindTags(kind: String?): List<WorkspaceTag> = when (kind) {
     WorkspaceEntity.KIND_PROJECT -> listOf(
-        WorkspaceTag(R.string.workspace_tag_backed_up, WorkspaceTagTone.NEUTRAL),
+        WorkspaceTag(R.string.workspace_tag_not_backed_up, WorkspaceTagTone.NEUTRAL),
         WorkspaceTag(R.string.workspace_tag_gone_on_uninstall, WorkspaceTagTone.CAUTION),
     )
     WorkspaceEntity.KIND_SHARED -> listOf(

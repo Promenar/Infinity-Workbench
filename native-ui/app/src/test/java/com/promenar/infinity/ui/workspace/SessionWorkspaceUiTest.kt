@@ -42,7 +42,7 @@ class SessionWorkspaceUiTest {
             R.string.workspace_tag_kept_on_delete to WorkspaceTagTone.NEUTRAL,
         ).inOrder()
         assertThat(tags(WorkspaceEntity.KIND_PROJECT)).containsExactly(
-            R.string.workspace_tag_backed_up to WorkspaceTagTone.NEUTRAL,
+            R.string.workspace_tag_not_backed_up to WorkspaceTagTone.NEUTRAL,
             R.string.workspace_tag_gone_on_uninstall to WorkspaceTagTone.CAUTION,
         ).inOrder()
         assertThat(tags(WorkspaceEntity.KIND_LINUX_HOME)).containsExactly(

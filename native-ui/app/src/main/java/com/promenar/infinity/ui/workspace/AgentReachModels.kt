@@ -78,13 +78,14 @@ internal fun linuxReachStatus(state: LinuxRuntimeState, agentEnabled: Boolean): 
 
 /** 工作区类型决定的备份与可见性，与备份范围和执行层规则一一对应。 */
 internal data class WorkspaceTraits(
-    /** 应用内存储（本会话文件夹与共享文件夹）进入本地与 WebDAV 备份；Linux 主目录与手机存储不进。 */
+    /** 只有本会话文件夹（Room 登记的文件）进入本地与 WebDAV 备份；共享文件夹、Linux 主目录与手机存储不进。 */
     val backedUp: Boolean,
     /** Termux 能直接看到这个目录（需 termux-setup-storage）。 */
     val termuxVisible: Boolean,
 )
 
 internal fun workspaceTraits(kind: String?): WorkspaceTraits = when (kind) {
+    WorkspaceEntity.KIND_PROJECT -> WorkspaceTraits(backedUp = false, termuxVisible = false)
     WorkspaceEntity.KIND_SHARED -> WorkspaceTraits(backedUp = false, termuxVisible = true)
     WorkspaceEntity.KIND_LINUX_HOME -> WorkspaceTraits(backedUp = false, termuxVisible = false)
     else -> WorkspaceTraits(backedUp = true, termuxVisible = false)
